@@ -30,6 +30,7 @@ Paid is built on the [Bitter Lesson](https://www.cs.utexas.edu/~eunsol/courses/d
 | [SECURITY.md](docs/SECURITY.md) | Security model and container isolation |
 | [OBSERVABILITY.md](docs/OBSERVABILITY.md) | Metrics, logging, dashboards, and alerting |
 | [STYLE_GUIDE.md](docs/STYLE_GUIDE.md) | Coding standards for developing Paid |
+| [RDRs](docs/rdrs/README.md) | Recommendation Decision Records for all major architectural decisions |
 
 ## Inspiration
 
