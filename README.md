@@ -6,7 +6,7 @@ Paid is a Rails application that orchestrates AI agents to build software. Users
 
 > "Configuration is ephemeral, but data endures."
 
-Paid is built on the [Bitter Lesson](http://www.incompleteideas.net/IncssIdeas/BitterLesson.html): general methods that leverage computation are ultimately the most effective. Every decision point that could be hardcoded is instead stored as data—prompts, model preferences, workflow patterns. This positions Paid to benefit from increased computing power over time.
+Paid is built on the [Bitter Lesson](https://www.cs.utexas.edu/~eunsol/courses/data/bitter_lesson.pdf): general methods that leverage computation are ultimately the most effective. Every decision point that could be hardcoded is instead stored as data—prompts, model preferences, workflow patterns. This positions Paid to benefit from increased computing power over time.
 
 ## Key Features
 
