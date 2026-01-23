@@ -24,10 +24,11 @@ Paid is built on the [Bitter Lesson](http://www.incompleteideas.net/IncssIdeas/B
 | [VISION.md](docs/VISION.md) | Philosophy, principles, and goals |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and technology stack |
 | [ROADMAP.md](docs/ROADMAP.md) | Phased implementation plan |
-| [DATA_MODEL.md](docs/DATA_MODEL.md) | Database schema design |
+| [DATA_MODEL.md](docs/DATA_MODEL.md) | Database schema, accounts, and RBAC |
 | [AGENT_SYSTEM.md](docs/AGENT_SYSTEM.md) | Agent execution and Temporal workflows |
 | [PROMPT_EVOLUTION.md](docs/PROMPT_EVOLUTION.md) | Prompt versioning and A/B testing |
 | [SECURITY.md](docs/SECURITY.md) | Security model and container isolation |
+| [OBSERVABILITY.md](docs/OBSERVABILITY.md) | Metrics, logging, dashboards, and alerting |
 | [STYLE_GUIDE.md](docs/STYLE_GUIDE.md) | Coding standards for developing Paid |
 
 ## Inspiration

@@ -9,15 +9,21 @@ This document describes the database schema for Paid. The schema is designed aro
 │                           CORE ENTITIES                                      │
 │                                                                              │
 │  ┌──────────┐      ┌──────────┐      ┌──────────┐      ┌──────────┐        │
-│  │   User   │──────│  Project │──────│  Issue   │──────│ AgentRun │        │
+│  │ Account  │──────│   User   │      │  Project │──────│  Issue   │        │
 │  └──────────┘      └──────────┘      └──────────┘      └──────────┘        │
-│       │                 │                                    │              │
-│       │                 │                                    │              │
-│       ▼                 ▼                                    ▼              │
-│  ┌──────────┐      ┌──────────┐                        ┌──────────┐        │
-│  │  GitHub  │      │  Style   │                        │  Token   │        │
-│  │  Token   │      │  Guide   │                        │  Usage   │        │
-│  └──────────┘      └──────────┘                        └──────────┘        │
+│       │                 │                 │                  │              │
+│       │                 │                 │                  │              │
+│       │                 ▼                 ▼                  ▼              │
+│       │           ┌──────────┐      ┌──────────┐      ┌──────────┐        │
+│       │           │  Role    │      │  Style   │      │ AgentRun │        │
+│       │           │ (rolify) │      │  Guide   │      │          │        │
+│       │           └──────────┘      └──────────┘      └──────────┘        │
+│       │                                                      │              │
+│       ▼                                                      ▼              │
+│  ┌──────────┐                                          ┌──────────┐        │
+│  │  GitHub  │                                          │  Token   │        │
+│  │  Token   │                                          │  Usage   │        │
+│  └──────────┘                                          └──────────┘        │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -49,52 +55,309 @@ This document describes the database schema for Paid. The schema is designed aro
 
 ## Core Entities
 
-### users
+### accounts
 
-The authenticated users of Paid.
+Organizations or teams that own projects. All resources belong to an account, enabling future multi-tenancy.
 
 ```sql
-CREATE TABLE users (
+CREATE TABLE accounts (
   id            BIGSERIAL PRIMARY KEY,
-  email         VARCHAR(255) NOT NULL UNIQUE,
-  password_hash VARCHAR(255) NOT NULL,
-  name          VARCHAR(255),
+
+  -- Identification
+  name          VARCHAR(255) NOT NULL,
+  slug          VARCHAR(100) NOT NULL UNIQUE,  -- URL-friendly identifier
+
+  -- Settings (JSONB for flexibility)
+  settings      JSONB DEFAULT '{}',
+  -- Example settings:
+  -- {
+  --   "default_agent_type": "claude_code",
+  --   "max_concurrent_agents": 5,
+  --   "notification_email": "team@example.com"
+  -- }
+
+  -- Billing (for future use)
+  plan          VARCHAR(50) DEFAULT 'free',    -- free, pro, enterprise
+  billing_email VARCHAR(255),
+
   created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_users_email ON users(email);
+CREATE UNIQUE INDEX idx_accounts_slug ON accounts(slug);
+```
+
+**Rails Model:**
+
+```ruby
+# app/models/account.rb
+class Account < ApplicationRecord
+  resourcify  # rolify: allows roles to be scoped to accounts
+
+  has_many :users, dependent: :destroy
+  has_many :projects, dependent: :destroy
+  has_many :github_tokens, dependent: :destroy
+  has_many :prompts, -> { where(project_id: nil) }  # Account-level prompts
+  has_many :style_guides, -> { where(project_id: nil) }  # Account-level guides
+
+  validates :name, presence: true
+  validates :slug, presence: true, uniqueness: true,
+            format: { with: /\A[a-z0-9-]+\z/, message: "only lowercase letters, numbers, and hyphens" }
+
+  before_validation :generate_slug, on: :create
+
+  private
+
+  def generate_slug
+    self.slug ||= name.parameterize
+  end
+end
+```
+
+### users
+
+Authenticated users belonging to an account.
+
+```sql
+CREATE TABLE users (
+  id            BIGSERIAL PRIMARY KEY,
+  account_id    BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+
+  -- Authentication
+  email         VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+
+  -- Profile
+  name          VARCHAR(255),
+  avatar_url    VARCHAR(500),
+
+  -- Status
+  active        BOOLEAN DEFAULT TRUE,
+  confirmed_at  TIMESTAMP,
+  last_sign_in_at TIMESTAMP,
+
+  created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_account ON users(account_id);
+CREATE INDEX idx_users_active ON users(account_id, active) WHERE active = TRUE;
+```
+
+**Rails Model:**
+
+```ruby
+# app/models/user.rb
+class User < ApplicationRecord
+  rolify  # Enable role management
+
+  belongs_to :account
+  has_many :github_tokens
+
+  validates :email, presence: true, uniqueness: true
+  validates :account, presence: true
+
+  # Devise or similar for authentication
+  # devise :database_authenticatable, :registerable, :recoverable, :rememberable, :validatable
+end
+```
+
+---
+
+## Authorization (RBAC)
+
+Paid uses [Rolify](https://github.com/RolifyCommunity/rolify) for role management and [Pundit](https://github.com/varvet/pundit) for authorization policies.
+
+### roles (Rolify)
+
+Rolify creates this table automatically.
+
+```sql
+CREATE TABLE roles (
+  id            BIGSERIAL PRIMARY KEY,
+  name          VARCHAR(255) NOT NULL,
+  resource_type VARCHAR(255),          -- Polymorphic: 'Account', 'Project', etc.
+  resource_id   BIGINT,                -- ID of the resource (NULL = global role)
+  created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_roles_unique ON roles(name, resource_type, resource_id);
+CREATE INDEX idx_roles_name ON roles(name);
+CREATE INDEX idx_roles_resource ON roles(resource_type, resource_id);
+```
+
+### users_roles (Rolify Join Table)
+
+```sql
+CREATE TABLE users_roles (
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role_id BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, role_id)
+);
+
+CREATE INDEX idx_users_roles_user ON users_roles(user_id);
+CREATE INDEX idx_users_roles_role ON users_roles(role_id);
+```
+
+### Defined Roles
+
+| Role | Scope | Permissions |
+|------|-------|-------------|
+| `owner` | Account | Full access, can delete account, manage billing |
+| `admin` | Account | Manage users, projects, settings; cannot delete account |
+| `member` | Account | Add projects, run agents, view all account data |
+| `viewer` | Account | Read-only access to projects and runs |
+| `project_admin` | Project | Full control over specific project |
+| `project_member` | Project | Run agents, view project data |
+
+### Role Assignment Examples
+
+```ruby
+# Account-level roles
+user.add_role(:owner, account)
+user.add_role(:admin, account)
+user.add_role(:member, account)
+
+# Project-level roles (more granular)
+user.add_role(:project_admin, project)
+user.add_role(:project_member, project)
+
+# Check roles
+user.has_role?(:admin, account)
+user.has_any_role?(:owner, :admin, account)
+```
+
+### Pundit Policies
+
+```ruby
+# app/policies/project_policy.rb
+class ProjectPolicy < ApplicationPolicy
+  def index?
+    user_in_account?
+  end
+
+  def show?
+    user_in_account? || user_has_project_role?
+  end
+
+  def create?
+    user.has_any_role?(:owner, :admin, :member, record.account)
+  end
+
+  def update?
+    user.has_any_role?(:owner, :admin, record.account) ||
+      user.has_role?(:project_admin, record)
+  end
+
+  def destroy?
+    user.has_any_role?(:owner, :admin, record.account)
+  end
+
+  def run_agent?
+    user.has_any_role?(:owner, :admin, :member, record.account) ||
+      user.has_any_role?(:project_admin, :project_member, record)
+  end
+
+  def interrupt_agent?
+    run_agent?
+  end
+
+  private
+
+  def user_in_account?
+    user.account_id == record.account_id
+  end
+
+  def user_has_project_role?
+    user.has_any_role?(:project_admin, :project_member, record)
+  end
+end
+
+# app/policies/prompt_policy.rb
+class PromptPolicy < ApplicationPolicy
+  def update?
+    # Only admins can modify prompts (they affect all agent runs)
+    user.has_any_role?(:owner, :admin, account_for_record)
+  end
+
+  def create_ab_test?
+    update?
+  end
+
+  private
+
+  def account_for_record
+    record.project&.account || record.account
+  end
+end
+```
+
+### Controller Integration
+
+```ruby
+# app/controllers/projects_controller.rb
+class ProjectsController < ApplicationController
+  before_action :set_project, only: [:show, :update, :destroy]
+
+  def show
+    authorize @project
+    # ...
+  end
+
+  def create
+    @project = current_account.projects.build(project_params)
+    authorize @project
+    # ...
+  end
+
+  private
+
+  def set_project
+    @project = current_account.projects.find(params[:id])
+  end
+end
 ```
 
 ### github_tokens
 
-Encrypted storage for GitHub Personal Access Tokens.
+Encrypted storage for GitHub Personal Access Tokens. Tokens belong to the account (shared across team) but track who created them.
 
 ```sql
 CREATE TABLE github_tokens (
   id              BIGSERIAL PRIMARY KEY,
-  user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  account_id      BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  created_by_id   BIGINT REFERENCES users(id) ON DELETE SET NULL,
+
   name            VARCHAR(255) NOT NULL,  -- User-friendly name
   encrypted_token TEXT NOT NULL,          -- Rails encrypted attribute
   scopes          JSONB NOT NULL,         -- Detected/claimed scopes
   expires_at      TIMESTAMP,              -- For fine-grained PATs
   last_used_at    TIMESTAMP,
+
+  -- Status
+  active          BOOLEAN DEFAULT TRUE,
+  rotation_reminder_sent_at TIMESTAMP,
+
   created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_github_tokens_user_id ON github_tokens(user_id);
+CREATE INDEX idx_github_tokens_account ON github_tokens(account_id);
+CREATE INDEX idx_github_tokens_active ON github_tokens(account_id, active) WHERE active = TRUE;
 ```
 
 ### projects
 
-GitHub repositories added to Paid.
+GitHub repositories added to Paid. Projects belong to an account and are visible to all account members.
 
 ```sql
 CREATE TABLE projects (
   id                    BIGSERIAL PRIMARY KEY,
-  user_id               BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  account_id            BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   github_token_id       BIGINT NOT NULL REFERENCES github_tokens(id),
+  created_by_id         BIGINT REFERENCES users(id) ON DELETE SET NULL,
 
   -- GitHub identifiers
   github_repo_id        BIGINT NOT NULL,          -- GitHub's repo ID
@@ -127,9 +390,9 @@ CREATE TABLE projects (
   updated_at            TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_projects_github_repo ON projects(github_repo_id);
-CREATE INDEX idx_projects_user_id ON projects(user_id);
-CREATE INDEX idx_projects_active ON projects(active) WHERE active = TRUE;
+CREATE UNIQUE INDEX idx_projects_github_repo ON projects(account_id, github_repo_id);
+CREATE INDEX idx_projects_account ON projects(account_id);
+CREATE INDEX idx_projects_active ON projects(account_id, active) WHERE active = TRUE;
 ```
 
 ### issues
@@ -688,24 +951,76 @@ CREATE INDEX idx_workflow_states_status ON workflow_states(status);
 
 ---
 
-## Multi-Tenancy Preparation
+## Multi-Tenancy Architecture
 
-These fields are included but not used in Phase 1:
+Paid uses an **Account-based multi-tenancy** model where all resources belong to an account. This is implemented from day one to ensure clean data separation.
 
-```sql
--- Add to all relevant tables when implementing multi-tenancy:
--- tenant_id BIGINT REFERENCES tenants(id)
+### Data Isolation Strategy
 
--- Future tenants table:
--- CREATE TABLE tenants (
---   id            BIGSERIAL PRIMARY KEY,
---   name          VARCHAR(255) NOT NULL,
---   slug          VARCHAR(100) NOT NULL UNIQUE,
---   settings      JSONB DEFAULT '{}',
---   created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
---   updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
--- );
+All tenant-scoped queries go through the account:
+
+```ruby
+# app/controllers/application_controller.rb
+class ApplicationController < ActionController::Base
+  before_action :set_current_account
+
+  def current_account
+    Current.account
+  end
+
+  private
+
+  def set_current_account
+    Current.account = current_user&.account
+  end
+end
+
+# app/models/current.rb
+class Current < ActiveSupport::CurrentAttributes
+  attribute :account, :user, :trace_id
+end
 ```
+
+### Scoped Queries
+
+Always scope queries to the current account:
+
+```ruby
+# GOOD: Scoped to account
+current_account.projects.find(params[:id])
+current_account.github_tokens.active
+
+# BAD: Global query (security risk)
+Project.find(params[:id])
+```
+
+### Account Hierarchy
+
+```
+Account
+├── Users (with roles via Rolify)
+├── GitHub Tokens
+├── Projects
+│   ├── Issues
+│   ├── Agent Runs
+│   ├── Style Guides (project-specific)
+│   └── Prompts (project-specific)
+├── Style Guides (account-wide)
+├── Prompts (account-wide)
+└── Cost Budgets
+```
+
+### Future: Full Multi-Tenancy
+
+For SaaS deployment, additional considerations:
+
+| Concern | Current (Single-Team) | Future (Multi-Tenant) |
+|---------|----------------------|----------------------|
+| Data isolation | Account scoping | Row-level security or schema per account |
+| Secrets | Shared encryption key | Per-account encryption keys |
+| Temporal | Shared namespace | Per-account namespaces |
+| Containers | Shared Docker host | Account-specific resource quotas |
+| Billing | Per-project tracking | Per-account billing integration |
 
 ---
 
@@ -747,13 +1062,24 @@ Implement via `pg_partman` or application-level cleanup jobs.
 
 Rails migrations should be created in order:
 
-1. Users, GithubTokens (authentication)
-2. Projects, Issues (GitHub integration)
-3. Prompts, PromptVersions (prompt system foundation)
-4. Models, StyleGuides (configuration)
-5. AgentRuns, AgentRunLogs (execution)
-6. TokenUsages, CostBudgets (cost tracking)
-7. QualityMetrics (quality tracking)
-8. ABTests, ABTestVariants, ABTestAssignments (A/B testing)
-9. ModelSelections, ModelOverrides (model system)
-10. WorkflowStates (Temporal integration)
+1. Accounts (tenant foundation)
+2. Users (authentication, belongs to account)
+3. Roles, UsersRoles (Rolify setup)
+4. GithubTokens (belongs to account)
+5. Projects, Issues (GitHub integration)
+6. Prompts, PromptVersions (prompt system foundation)
+7. Models, StyleGuides (configuration)
+8. AgentRuns, AgentRunLogs (execution)
+9. TokenUsages, CostBudgets (cost tracking)
+10. QualityMetrics (quality tracking)
+11. ABTests, ABTestVariants, ABTestAssignments (A/B testing)
+12. ModelSelections, ModelOverrides (model system)
+13. WorkflowStates (Temporal integration)
+
+### Rolify Setup
+
+```bash
+rails generate rolify Role User
+```
+
+This generates the roles and users_roles tables automatically.
