@@ -161,7 +161,7 @@ client.start_workflow(
   AgentExecutionWorkflow,
   123,  # issue_id
   id: "agent-exec-issue-123",
-  task_queue: "paid-agents"
+  task_queue: "agent-harness"
 )
 ```
 
@@ -371,7 +371,7 @@ class AgentActivities
     container = Container.find(container_id)
     issue = Issue.find(issue_id)
 
-    agent = PaidAgents.adapter_for(container.agent_type)
+    agent = AgentHarness.adapter_for(container.agent_type)
 
     agent.execute(
       container: container,
@@ -534,7 +534,7 @@ Rails.application.config.to_prepare do
   Paid::TemporalClient.configure do |config|
     config.address = ENV.fetch('TEMPORAL_ADDRESS', 'localhost:7233')
     config.namespace = ENV.fetch('TEMPORAL_NAMESPACE', 'default')
-    config.task_queue = ENV.fetch('TEMPORAL_TASK_QUEUE', 'paid-agents')
+    config.task_queue = ENV.fetch('TEMPORAL_TASK_QUEUE', 'agent-harness')
   end
 end
 
