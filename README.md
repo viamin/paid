@@ -28,6 +28,7 @@ Paid is built on the [Bitter Lesson](http://www.incompleteideas.net/IncssIdeas/B
 | [AGENT_SYSTEM.md](docs/AGENT_SYSTEM.md) | Agent execution and Temporal workflows |
 | [PROMPT_EVOLUTION.md](docs/PROMPT_EVOLUTION.md) | Prompt versioning and A/B testing |
 | [SECURITY.md](docs/SECURITY.md) | Security model and container isolation |
+| [STYLE_GUIDE.md](docs/STYLE_GUIDE.md) | Coding standards for developing Paid |
 
 ## Inspiration
 
