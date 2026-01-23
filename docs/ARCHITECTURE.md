@@ -246,7 +246,7 @@ Graceful degradation:
 #### LLM Integration
 Two modes of agent execution:
 
-**CLI Mode** (via paid-agents gem):
+**CLI Mode** (via agent-harness gem):
 - Claude Code, Cursor, Codex, GitHub Copilot
 - Runs in container with proxied API access
 - Output captured for metrics

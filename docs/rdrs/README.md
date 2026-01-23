@@ -42,7 +42,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-007](RDR-007-agent-cli-abstraction.md) | Agent CLI Abstraction (paid-agents gem) | Final | High |
+| [RDR-007](RDR-007-agent-cli-abstraction.md) | Agent CLI Abstraction (agent-harness gem) | Final | High |
 | [RDR-008](RDR-008-model-selection.md) | Model Selection Strategy | Final | Medium |
 
 ### Intelligence
@@ -79,7 +79,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 - **Authorization**: Rolify + Pundit for RBAC
 
 ### Agent Execution
-- **CLI Abstraction**: paid-agents gem with adapters for Claude Code, Cursor, Codex, Copilot
+- **CLI Abstraction**: agent-harness gem with adapters for Claude Code, Cursor, Codex, Copilot
 - **Model Selection**: LLM-based meta-agent with rules fallback
 - **Prompts**: Database-stored with A/B testing and automated evolution
 

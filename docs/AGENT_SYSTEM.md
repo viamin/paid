@@ -29,7 +29,7 @@ The agent system has four layers:
 │                                    │                                         │
 │                                    ▼                                         │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │ 4. AGENT LAYER (paid-agents gem)                                       │ │
+│  │ 4. AGENT LAYER (agent-harness gem)                                       │ │
 │  │    Unified interface to Claude Code, Cursor, Codex, Copilot, API calls │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -360,7 +360,7 @@ class RunAgentActivity < Paid::Activity
     )
 
     # Get the agent adapter
-    agent = PaidAgents.adapter_for(agent_type)
+    agent = AgentHarness.adapter_for(agent_type)
 
     # Run with monitoring
     result = monitor.run do |checkpoint|
@@ -564,7 +564,7 @@ end
 
 ---
 
-## The paid-agents Gem
+## The agent-harness Gem
 
 Extracted from aidp concepts, this gem provides a unified interface for agent execution.
 
@@ -572,10 +572,10 @@ Extracted from aidp concepts, this gem provides a unified interface for agent ex
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          paid-agents GEM                                     │
+│                          agent-harness GEM                                     │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                         PaidAgents::Runner                               ││
+│  │                         AgentHarness::Runner                               ││
 │  │                    (orchestrates agent execution)                        ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 │                                    │                                         │
@@ -588,7 +588,7 @@ Extracted from aidp concepts, this gem provides a unified interface for agent ex
 │           │                        │                        │               │
 │           ▼                        ▼                        ▼               │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                      PaidAgents::Output                                  ││
+│  │                      AgentHarness::Output                                  ││
 │  │              (standardized result format)                                ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -597,7 +597,7 @@ Extracted from aidp concepts, this gem provides a unified interface for agent ex
 ### Adapter Interface
 
 ```ruby
-module PaidAgents
+module AgentHarness
   class BaseAdapter
     # Run the agent with given prompt and context
     def execute(prompt:, model:, worktree:, **options)
@@ -690,7 +690,7 @@ end
 For simpler tasks or when CLI isn't needed:
 
 ```ruby
-module PaidAgents
+module AgentHarness
   class APIAdapter < BaseAdapter
     def initialize(client: RubyLLM.client)
       @client = client
@@ -943,8 +943,8 @@ end
 | Workflow duration | Temporal | Performance |
 | Activity duration | Temporal | Bottleneck identification |
 | Container startup time | Docker | Optimization target |
-| Agent iterations | paid-agents | Quality signal |
-| Token usage | paid-agents | Cost tracking |
+| Agent iterations | agent-harness | Quality signal |
+| Token usage | agent-harness | Cost tracking |
 | PR merge rate | GitHub | Success metric |
 | Error rate by type | All | Reliability |
 

@@ -120,12 +120,12 @@ Deliverables:
 - Errors logged and visible
 - Manual trigger option in UI
 
-### 1.6 paid-agents Gem (Extracted)
+### 1.6 agent-harness Gem (Extracted)
 
 **Objective**: Extract agent CLI integration into reusable gem.
 
 Tasks:
-- [ ] Create paid-agents gem structure
+- [ ] Create agent-harness gem structure
 - [ ] Extract provider abstraction from aidp concepts
 - [ ] Implement adapters: ClaudeCode, Cursor, Codex, Copilot
 - [ ] Unified interface for running agents
@@ -133,7 +133,7 @@ Tasks:
 - [ ] Publish gem (private initially)
 
 Deliverables:
-- `paid-agents` gem installable
+- `agent-harness` gem installable
 - Consistent interface across all supported agents
 - Easy to add new agent types
 

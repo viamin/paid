@@ -1,4 +1,4 @@
-# RDR-007: Agent CLI Abstraction (paid-agents gem)
+# RDR-007: Agent CLI Abstraction (agent-harness gem)
 
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
@@ -116,7 +116,7 @@ This is useful for:
 
 ### Approach
 
-Create the **`paid-agents` gem** with:
+Create the **`agent-harness` gem** with:
 
 1. **Unified adapter interface**: Common contract for all agents
 2. **CLI adapters**: Per-agent implementations for CLI tools
@@ -129,10 +129,10 @@ Create the **`paid-agents` gem** with:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        paid-agents GEM ARCHITECTURE                          │
+│                        agent-harness GEM ARCHITECTURE                          │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                         PaidAgents::Runner                               ││
+│  │                         AgentHarness::Runner                               ││
 │  │                                                                          ││
 │  │  • Receives execution request (agent_type, prompt, options)             ││
 │  │  • Selects appropriate adapter                                          ││
@@ -157,7 +157,7 @@ Create the **`paid-agents` gem** with:
 │                                     │                                        │
 │                                     ▼                                        │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                       PaidAgents::Output                                 ││
+│  │                       AgentHarness::Output                                 ││
 │  │                                                                          ││
 │  │  • success: boolean                                                     ││
 │  │  • output: string (raw output)                                         ││
@@ -183,7 +183,7 @@ Create the **`paid-agents` gem** with:
 
 ```ruby
 # lib/paid_agents.rb
-module PaidAgents
+module AgentHarness
   ADAPTERS = {
     "claude_code" => ClaudeCodeAdapter,
     "cursor" => CursorAdapter,
@@ -205,7 +205,7 @@ module PaidAgents
 end
 
 # lib/paid_agents/base_adapter.rb
-module PaidAgents
+module AgentHarness
   class BaseAdapter
     def execute(prompt:, model:, worktree_path:, **options)
       raise NotImplementedError
@@ -236,7 +236,7 @@ module PaidAgents
 end
 
 # lib/paid_agents/claude_code_adapter.rb
-module PaidAgents
+module AgentHarness
   class ClaudeCodeAdapter < BaseAdapter
     ITERATION_PATTERN = /Iteration (\d+)/
     TOKEN_PATTERN = /Tokens: (\d+) in, (\d+) out/
@@ -339,7 +339,7 @@ module PaidAgents
 end
 
 # lib/paid_agents/api_adapter.rb
-module PaidAgents
+module AgentHarness
   class APIAdapter < BaseAdapter
     def initialize(client: nil)
       @client = client || RubyLLM.client
@@ -395,7 +395,7 @@ module PaidAgents
 end
 
 # lib/paid_agents/output.rb
-module PaidAgents
+module AgentHarness
   class Output
     attr_reader :success, :output, :iterations, :token_usage,
                 :files_changed, :error, :duration_seconds
@@ -566,8 +566,8 @@ end
 #### Step 1: Create Gem Structure
 
 ```bash
-bundle gem paid-agents
-cd paid-agents
+bundle gem agent-harness
+cd agent-harness
 ```
 
 #### Step 2: Implement Core Classes
@@ -585,7 +585,7 @@ cd paid-agents
 
 ```ruby
 # spec/paid_agents/claude_code_adapter_spec.rb
-RSpec.describe PaidAgents::ClaudeCodeAdapter do
+RSpec.describe AgentHarness::ClaudeCodeAdapter do
   describe "#execute" do
     it "parses iterations from output" do
       # Mock Open3.popen3 and verify parsing
@@ -606,12 +606,12 @@ end
 
 ```ruby
 # Gemfile
-gem "paid-agents", path: "../paid-agents"  # Or git URL
+gem "agent-harness", path: "../agent-harness"  # Or git URL
 
 # app/activities/agent_activities.rb
 class AgentActivities
   def run_agent(agent_type:, prompt:, model:, worktree_path:, **options)
-    result = PaidAgents.execute(
+    result = AgentHarness.execute(
       agent_type: agent_type,
       prompt: prompt,
       model: model,
@@ -627,7 +627,7 @@ end
 
 ### Files to Create
 
-- `paid-agents/` - Gem directory
+- `agent-harness/` - Gem directory
   - `lib/paid_agents.rb`
   - `lib/paid_agents/base_adapter.rb`
   - `lib/paid_agents/output.rb`
@@ -637,7 +637,7 @@ end
   - `lib/paid_agents/copilot_adapter.rb`
   - `lib/paid_agents/api_adapter.rb`
   - `spec/` - Test files
-  - `paid-agents.gemspec`
+  - `agent-harness.gemspec`
 
 ### Dependencies
 
