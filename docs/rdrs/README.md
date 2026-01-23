@@ -64,6 +64,12 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-012](RDR-012-github-integration.md) | GitHub Integration Strategy | Final | High |
 
+### Quality & Automation
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-013](RDR-013-code-quality-backpressure.md) | Code Quality and Backpressure System | Draft | High |
+
 ## Decision Summary
 
 ### Core Stack
@@ -87,6 +93,12 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 - **Observability**: Prometheus + Grafana stack
 - **Multi-tenancy**: Account-based isolation from day one
 - **GitHub**: PAT-based polling with graceful degradation
+
+### Quality & Automation
+- **Backpressure**: Immediate feedback loops for agent self-correction
+- **Git Hooks**: Pre-commit/pre-push guardrails (RuboCop, Brakeman, etc.)
+- **CI Pipeline**: Comprehensive quality and security checks
+- **Project Configuration**: Auto-detect language and configure appropriate tools
 
 ## RDR Lifecycle
 
