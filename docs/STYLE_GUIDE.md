@@ -375,13 +375,6 @@ end
 
 ## Quality & Performance
 
-### Concurrency
-
-- Always clean up threads/fibers in `ensure` blocks
-- Avoid global mutable state without synchronization
-- Make intervals and timeouts configurable for testing
-- Use connection pooling for database and HTTP clients
-
 ### Performance Guidelines
 
 - Avoid O(n²) complexity over large datasets
