@@ -21,13 +21,12 @@ Organize code by capability rather than workflow. Favor small, focused classes t
 app/
 ├── controllers/          # Thin controllers, one object per action
 ├── models/               # ActiveRecord models, validations, scopes
-├── services/             # Business logic (verb-named: CreateProject, RunAgent)
-├── jobs/                 # Background jobs (Solid Queue)
+├── services/             # Business logic via Servo service objects
 ├── workflows/            # Temporal workflow definitions
 ├── activities/           # Temporal activity implementations
 ├── adapters/             # External service adapters (GitHub, LLM providers)
-├── presenters/           # View logic extraction
-└── components/           # ViewComponents for reusable UI
+├── views/                # Phlex view components and templates
+└── jobs/                 # Background jobs (when Temporal isn't appropriate)
 ```
 
 ### Sandi Metz's Rules
@@ -41,26 +40,38 @@ Use these as guidelines for maintainability:
 
 These are guidelines, not absolute rules. Document legitimate exceptions with reasoning.
 
-### Service Object Pattern
+### Service Objects with Servo
 
-Business logic lives in service objects, not models or controllers:
+Business logic lives in service objects using [Servo](https://github.com/martinstreicher/servo). Servo provides a clean DSL for inputs/outputs, built-in validation, type checking, and callback support.
+
+**Why Servo over vanilla service objects:**
+- Declarative input/output definitions with type safety
+- Built-in ActiveModel validations
+- Consistent result interface (`.success?`, `.failure?`, `.errors`)
+- Before/after/around callbacks via ActiveSupport
+- Optional background job support
 
 ```ruby
 # app/services/agent_runs/create.rb
 module AgentRuns
-  class Create
-    def initialize(project:, issue:, agent_type: nil)
-      @project = project
-      @issue = issue
-      @agent_type = agent_type
-    end
+  class Create < Servo::Base
+    # Declare inputs with types
+    input :project, type: Project
+    input :issue, type: Issue
+    input :agent_type, type: Types::String.optional
+
+    # Declare outputs
+    output :agent_run, type: AgentRun
+
+    # Validations run before call
+    validates :project, presence: true
+    validates :issue, presence: true
 
     def call
-      # Business logic here
-      AgentRun.create!(
-        project: @project,
-        issue: @issue,
-        agent_type: @agent_type || select_agent_type,
+      context.agent_run = AgentRun.create!(
+        project: context.project,
+        issue: context.issue,
+        agent_type: context.agent_type || select_agent_type,
         status: :pending
       )
     end
@@ -68,13 +79,52 @@ module AgentRuns
     private
 
     def select_agent_type
-      # Selection logic
+      # Selection logic delegated to meta-agent
+      ModelSelector.new.select_agent(context.issue)
     end
   end
 end
 
 # Usage
-AgentRuns::Create.new(project: project, issue: issue).call
+result = AgentRuns::Create.call(project: project, issue: issue)
+
+if result.success?
+  result.agent_run  # Access output
+else
+  result.errors     # ActiveModel::Errors
+  result.error_messages  # Array of strings
+end
+```
+
+**Controller Integration:**
+
+```ruby
+class AgentRunsController < ApplicationController
+  include Servo::RailsConcern
+
+  def create
+    render_servo AgentRuns::Create.call(
+      project: current_account.projects.find(params[:project_id]),
+      issue: Issue.find(params[:issue_id])
+    )
+  end
+end
+```
+
+**Organizing Services:**
+
+```ruby
+# Namespace by domain
+AgentRuns::Create
+AgentRuns::Cancel
+AgentRuns::Retry
+
+Projects::Import
+Projects::Sync
+Projects::Archive
+
+Prompts::Evolve
+Prompts::CreateABTest
 ```
 
 ---
@@ -119,8 +169,8 @@ RunAgentActivity, CreatePullRequestActivity
 - Use UUIDs for external-facing IDs, bigints for internal references
 - Always add foreign key constraints
 - Index foreign keys and frequently queried columns
-- Use `jsonb` for flexible schema fields (with appropriate indexes)
 - Prefer `timestamp` over `datetime`
+- Prefer explicit columns over JSON blobs for queryable data
 
 ---
 
@@ -189,41 +239,92 @@ This complements ZFC by front-loading AI work for high-frequency operations.
 
 ## Structured Logging
 
-Logging is critical for debugging agent workflows. Use Rails logger with consistent structure.
+Logging is critical for debugging agent workflows and creating readable execution traces. Use structured logging with consistent component names and metadata.
 
 ### Log Levels
 
-- **Debug**: Method calls, internal state changes, detailed flow
-- **Info**: Significant events, workflow completions, user actions
-- **Warn**: Recoverable errors, retries, degraded operation
-- **Error**: Failures requiring attention, unrecoverable errors
+Each level serves a distinct purpose:
+
+**`debug`** — Method calls, internal state changes, detailed execution flow
+- Use for tracing code paths during development
+- Log method entries with key parameters
+- Log internal variable states when debugging complex logic
+- These logs help answer "what code path did we take?"
+
+**`info`** — Significant events, operation completions, user-initiated actions
+- Workflow started/completed
+- Agent run status changes
+- User actions (project created, agent triggered)
+- These logs tell the story of what happened at a business level
+
+**`warn`** — Recoverable errors, degraded functionality, retry attempts
+- API rate limits hit (with retry)
+- Fallback to secondary provider
+- Deprecated feature usage
+- These indicate potential problems that didn't stop execution
+
+**`error`** — Failures, exceptions, issues requiring attention
+- Unrecoverable failures
+- External service errors
+- Validation failures that shouldn't happen
+- These demand investigation
+
+### When to Log
+
+Log at these critical junctures to create readable execution traces:
+
+- **Method entries**: Log entering important methods with key parameters (debug level)
+- **State transitions**: Log mode/state/workflow changes (info level)
+- **External interactions**: Log API calls, HTTP requests, provider interactions (info level)
+- **File operations**: Log reads, writes, deletes with filenames (debug level)
+- **Decision points**: Log branching logic explaining path selection (debug level)
+- **Loop iterations**: Log progress with counts/identifiers, not every iteration (debug level)
+- **Completions**: Log when multi-step operations finish with metrics (info level)
 
 ### Logging Pattern
 
 ```ruby
 class AgentExecutionService
+  COMPONENT = "agent_execution"
+
   def execute(agent_run)
     Rails.logger.info(
-      "agent_execution.started",
+      message: "#{COMPONENT}.started",
       agent_run_id: agent_run.id,
       project_id: agent_run.project_id,
       agent_type: agent_run.agent_type
     )
 
-    result = run_agent(agent_run)
+    Rails.logger.debug(
+      message: "#{COMPONENT}.selecting_model",
+      agent_run_id: agent_run.id,
+      task_complexity: estimate_complexity(agent_run)
+    )
+
+    model = select_model(agent_run)
+
+    Rails.logger.debug(
+      message: "#{COMPONENT}.model_selected",
+      agent_run_id: agent_run.id,
+      model: model.id,
+      reasoning: model.selection_reasoning
+    )
+
+    result = run_agent(agent_run, model)
 
     Rails.logger.info(
-      "agent_execution.completed",
+      message: "#{COMPONENT}.completed",
       agent_run_id: agent_run.id,
       iterations: result.iterations,
       tokens_used: result.token_usage.total,
-      duration_ms: result.duration_ms
+      duration_ms: result.duration_ms,
+      success: result.success?
     )
 
     result
   rescue => e
     Rails.logger.error(
-      "agent_execution.failed",
+      message: "#{COMPONENT}.failed",
       agent_run_id: agent_run.id,
       error_class: e.class.name,
       error_message: e.message
@@ -233,22 +334,27 @@ class AgentExecutionService
 end
 ```
 
-### What to Log
+### Metadata Guidelines
 
-- Method entries (with key parameters)
-- State transitions
-- External interactions (API calls, container operations)
-- File and git operations
-- Decision points
-- Loop iteration progress (for long operations)
-- Operation completions with metrics
+**Include as metadata:**
+- Identifiers (agent_run_id, project_id, workflow_id)
+- Counts and sizes (iteration_count, token_count, file_count)
+- Status codes and result types
+- Timing information (elapsed_ms, duration_seconds)
+- Filenames and paths (if not sensitive)
 
-### What NOT to Log
+**Don't log:**
+- Secrets, tokens, passwords, API keys (redaction is a safety net, not primary defense)
+- Full request/response payloads (log summaries or sizes instead)
+- Inside tight loops without throttling
+- Redundant information already in the message
 
-- Secrets (API keys, tokens) — use redaction as safety net, not primary defense
-- Full request/response payloads (log summary instead)
-- Redundant information already in context
-- High-frequency operations without aggregation
+### Message Style
+
+- **Use consistent component names**: `agent_execution`, `github_sync`, `prompt_evolution`, `container_manager`
+- **Use dot notation**: `component.action` (e.g., `agent_execution.started`)
+- **Present tense verbs**: "starting", "processing", "completing"
+- **Put dynamic data in metadata hash**, not interpolated in message
 
 ---
 
@@ -454,61 +560,191 @@ Reviews should examine:
 
 ### Controllers
 
-Keep controllers thin — one object per action:
+Keep controllers thin — delegate to Servo services and use `render_servo`:
 
 ```ruby
 class ProjectsController < ApplicationController
+  include Servo::RailsConcern
+
   def create
-    @project = Projects::Create.new(
+    render_servo Projects::Create.call(
+      account: current_account,
       user: current_user,
       params: project_params
-    ).call
+    )
+  end
 
-    respond_to do |format|
-      format.html { redirect_to @project }
-      format.turbo_stream
+  def show
+    @project = current_account.projects.find(params[:id])
+    authorize @project
+  end
+end
+```
+
+### Views with Phlex
+
+Use [Phlex](https://www.phlex.fun/) for view components instead of ERB or ViewComponent. Phlex provides:
+- Pure Ruby views (no template language)
+- Better performance than ERB
+- Easy composition and inheritance
+- Type safety with Ruby
+
+```ruby
+# app/views/components/agent_run_status.rb
+class Components::AgentRunStatus < Phlex::HTML
+  def initialize(agent_run:)
+    @agent_run = agent_run
+  end
+
+  def view_template
+    div(class: "agent-run-status", data: { status: @agent_run.status }) do
+      status_badge
+      metrics if @agent_run.completed?
+    end
+  end
+
+  private
+
+  def status_badge
+    span(class: "badge badge-#{status_color}") { @agent_run.status.humanize }
+  end
+
+  def status_color
+    case @agent_run.status.to_sym
+    when :completed then "success"
+    when :failed then "danger"
+    when :running then "warning"
+    else "secondary"
+    end
+  end
+
+  def metrics
+    dl(class: "metrics") do
+      dt { "Iterations" }
+      dd { @agent_run.iterations.to_s }
+
+      dt { "Tokens" }
+      dd { number_with_delimiter(@agent_run.tokens_input + @agent_run.tokens_output) }
+
+      dt { "Duration" }
+      dd { distance_of_time_in_words(@agent_run.duration_seconds) }
+    end
+  end
+end
+
+# Usage in controller
+def show
+  render Components::AgentRunStatus.new(agent_run: @agent_run)
+end
+```
+
+**Page Layout with Phlex:**
+
+```ruby
+# app/views/layouts/application_layout.rb
+class Layouts::ApplicationLayout < Phlex::HTML
+  include Phlex::Rails::Helpers::CSRFMetaTags
+  include Phlex::Rails::Helpers::ContentFor
+
+  def view_template(&block)
+    doctype
+    html do
+      head do
+        title { "Paid" }
+        csrf_meta_tags
+        stylesheet_link_tag "application"
+        javascript_include_tag "application"
+      end
+      body do
+        render Components::Navbar.new(user: Current.user)
+        main(class: "container", &block)
+        render Components::Footer.new
+      end
     end
   end
 end
 ```
 
-### Hotwire/Turbo Patterns
+### Hotwire/Turbo Integration
 
 - Use Turbo Frames for partial page updates
 - Use Turbo Streams for real-time updates (agent activity)
 - Keep Stimulus controllers focused and small
-- Prefer server-side rendering over client-side JavaScript
+- Phlex components work seamlessly with Turbo
 
 ```ruby
 # Broadcasting agent activity updates
 class AgentRun < ApplicationRecord
-  after_update_commit -> {
-    broadcast_replace_to(
+  after_update_commit :broadcast_status
+
+  private
+
+  def broadcast_status
+    Turbo::StreamsChannel.broadcast_replace_to(
       "agent_run_#{id}",
-      partial: "agent_runs/status",
-      locals: { agent_run: self }
+      target: "agent_run_#{id}_status",
+      html: Components::AgentRunStatus.new(agent_run: self).call
     )
-  }
-end
-```
-
-### Background Jobs
-
-Use Solid Queue for background processing:
-
-```ruby
-class GitHubSyncJob < ApplicationJob
-  queue_as :default
-
-  retry_on Octokit::TooManyRequests, wait: :polynomially_longer, attempts: 5
-  discard_on Octokit::Unauthorized  # Don't retry auth failures
-
-  def perform(project_id)
-    project = Project.find(project_id)
-    GitHubSyncService.new(project).sync
   end
 end
 ```
+
+### Background Processing
+
+**Prefer Temporal workflows** for any work that:
+- May take more than a few seconds
+- Needs retry logic or error handling
+- Involves multiple steps or external services
+- Benefits from observability and durability
+
+**Use GoodJob** (PostgreSQL-backed) only for simple, fire-and-forget tasks that don't fit Temporal:
+- Sending emails
+- Cache warming
+- Simple cleanup tasks
+- Metric aggregation
+
+```ruby
+# PREFER: Temporal workflow for complex operations
+class GitHubSyncWorkflow
+  def execute(project_id)
+    project = activity.fetch_project(project_id)
+    issues = activity.fetch_issues(project)
+    activity.sync_issues(project, issues)
+    activity.update_project_status(project)
+  end
+end
+
+# OK: GoodJob for simple tasks
+class SendNotificationJob < ApplicationJob
+  queue_as :default
+
+  def perform(user_id, message)
+    user = User.find(user_id)
+    UserMailer.notification(user, message).deliver_now
+  end
+end
+```
+
+**GoodJob Configuration:**
+
+```ruby
+# config/application.rb
+config.active_job.queue_adapter = :good_job
+
+# config/initializers/good_job.rb
+Rails.application.configure do
+  config.good_job.execution_mode = :async
+  config.good_job.max_threads = 5
+  config.good_job.poll_interval = 30
+  config.good_job.shutdown_timeout = 25
+end
+```
+
+**Why GoodJob over Sidekiq/Solid Queue:**
+- Uses PostgreSQL (no Redis dependency)
+- Transactional job enqueuing (jobs commit with your data)
+- Built-in dashboard
+- Cron-like scheduling
 
 ### Database Transactions
 
@@ -539,47 +775,3 @@ class AgentRuns::Complete
 end
 ```
 
----
-
-## Knowledge Management
-
-### Project-Specific Documentation
-
-Add architectural decisions and patterns to this style guide rather than external systems. This provides:
-
-- Zero context overhead for AI agents
-- Git versioning and history
-- Automatic integration into development workflow
-- No additional dependencies
-
-When adding new patterns or conventions, update this document with:
-- The pattern name and description
-- When to use it (and when not to)
-- A code example
-- Rationale for the decision
-
-### Persistent Task Tracking
-
-Use GitHub Issues for cross-session work tracking:
-
-- Create issues for discovered sub-tasks during implementation
-- Reference issues in commits and code comments
-- Use labels to categorize (bug, enhancement, tech-debt)
-- Link related issues for context
-
----
-
-## Summary
-
-This style guide emphasizes:
-
-1. **Small, focused components** following Sandi Metz's rules
-2. **Service objects** for business logic, thin controllers
-3. **ZFC compliance** — delegate semantic reasoning to AI
-4. **Structured logging** for debuggability
-5. **Strict testing discipline** with pragmatic coverage targets
-6. **Explicit error handling** with specific error types
-7. **No backward compatibility** during pre-release development
-8. **Rails conventions** with Hotwire for real-time UI
-
-The goal is a maintainable, testable codebase that leverages AI appropriately while keeping orchestration logic simple and mechanical.
