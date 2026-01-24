@@ -57,7 +57,7 @@ Without backpressure, humans spend their review time on trivial issues (missing 
 2. Surveyed Ruby/Rails quality tooling ecosystem
 3. Evaluated CI/CD security scanning tools
 4. Researched multi-language linting approaches
-5. Reviewed pre-commit framework capabilities
+5. Evaluated lefthook for Git hook management
 
 ### Key Discoveries
 
@@ -66,16 +66,15 @@ Without backpressure, humans spend their review time on trivial issues (missing 
 | Category | Tool | Purpose |
 |----------|------|---------|
 | Style | RuboCop | Style enforcement, auto-correction |
-| Style | rubocop-performance | Performance-focused cops |
 | Style | rubocop-rails | Rails-specific cops |
 | Style | rubocop-rspec | RSpec-specific cops |
+| Performance | rubocop-performance | Performance-focused cops |
 | Performance | Fasterer | Suggests faster Ruby idioms |
 | Performance | Derailed Benchmarks | Memory/boot time profiling |
 | N+1 Detection | Bullet | Development N+1 detection |
 | N+1 Detection | Prosopite | Production N+1 detection |
 | Security | Brakeman | Static security analysis for Rails |
 | Security | bundler-audit | Vulnerable dependency detection |
-| Security | ruby_audit | Ruby version vulnerability check |
 
 **CI/CD Security Tools:**
 
@@ -98,14 +97,15 @@ Without backpressure, humans spend their review time on trivial issues (missing 
 | Go | golangci-lint | Built-in |
 | Rust | Clippy | Built-in |
 
-**Pre-commit Framework:**
+**Lefthook Framework:**
 
-The [pre-commit](https://pre-commit.com/) framework provides:
-- Language-agnostic hook management
-- Declarative `.pre-commit-config.yaml`
-- Automatic tool installation
-- Caching for performance
-- CI integration
+[Lefthook](https://lefthook.dev) is a fast, polyglot Git hooks manager:
+- Written in Go, extremely fast (~0.1s overhead)
+- Single binary, no dependencies (unlike pre-commit which requires Python)
+- Parallel hook execution by default
+- Declarative `lefthook.yml` configuration
+- Built-in support for partial file checking (staged files only)
+- Works well in monorepos
 
 **Feedback Quality for LLMs:**
 
@@ -138,13 +138,13 @@ Implement a three-layer quality system:
 │  │                                                                          ││
 │  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐      ││
 │  │  │   Pre-commit     │  │   Pre-push       │  │   CI Pipeline    │      ││
-│  │  │   Hooks          │  │   Hooks          │  │   (GitHub)       │      ││
+│  │  │   (lefthook)     │  │   (lefthook)     │  │   (GitHub)       │      ││
 │  │  │                  │  │                  │  │                  │      ││
 │  │  │ • RuboCop        │  │ • Full test      │  │ • All hooks      │      ││
 │  │  │ • Fasterer       │  │   suite          │  │ • Security scan  │      ││
-│  │  │ • Brakeman quick │  │ • Brakeman full  │  │ • Dependency     │      ││
-│  │  │ • Syntax check   │  │ • bundler-audit  │  │   audit          │      ││
-│  │  │ • Trailing WS    │  │ • Type check     │  │ • Zizmor         │      ││
+│  │  │ • Brakeman quick │  │ • Brakeman full  │  │ • PR Review      │      ││
+│  │  │ • Gitleaks       │  │ • bundler-audit  │  │ • Zizmor         │      ││
+│  │  │ • Trailing WS    │  │                  │  │ • Dependency     │      ││
 │  │  └──────────────────┘  └──────────────────┘  └──────────────────┘      ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 │                                                                              │
@@ -177,7 +177,7 @@ Implement a three-layer quality system:
 │  │  │                                                                   │   ││
 │  │  │  • Detects project language/framework                            │   ││
 │  │  │  • Suggests appropriate tools                                    │   ││
-│  │  │  • Generates config files (.rubocop.yml, .pre-commit-config.yaml)│   ││
+│  │  │  • Generates config files (.rubocop.yml, lefthook.yml)           │   ││
 │  │  │  • Adds CI workflows                                             │   ││
 │  │  │  • Updates dependencies (Gemfile, package.json, etc.)            │   ││
 │  │  └──────────────────────────────────────────────────────────────────┘   ││
@@ -198,72 +198,46 @@ Implement a three-layer quality system:
 #### Layer 1: Paid's Git Hooks
 
 ```yaml
-# .pre-commit-config.yaml (for Paid itself)
-repos:
-  - repo: local
-    hooks:
-      - id: rubocop
-        name: RuboCop
-        entry: bundle exec rubocop --force-exclusion
-        language: system
-        types: [ruby]
+# lefthook.yml (for Paid itself)
+pre-commit:
+  parallel: true
+  commands:
+    rubocop:
+      glob: "*.{rb,rake}"
+      run: bundle exec rubocop --force-exclusion {staged_files}
 
-      - id: fasterer
-        name: Fasterer
-        entry: bundle exec fasterer
-        language: system
-        types: [ruby]
+    fasterer:
+      glob: "*.rb"
+      run: bundle exec fasterer {staged_files}
 
-      - id: brakeman
-        name: Brakeman (quick)
-        entry: bundle exec brakeman -q --no-pager --skip-files spec/
-        language: system
-        pass_filenames: false
-        types: [ruby]
+    brakeman-quick:
+      run: bundle exec brakeman -q --no-pager --skip-files spec/
 
-      - id: erb-lint
-        name: ERB Lint
-        entry: bundle exec erb_lint
-        language: system
-        types: [erb]
+    erb-lint:
+      glob: "*.erb"
+      run: bundle exec erb_lint {staged_files}
 
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-added-large-files
-      - id: check-merge-conflict
+    trailing-whitespace:
+      run: git diff --check --cached
 
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.18.0
-    hooks:
-      - id: gitleaks
+    yaml-check:
+      glob: "*.{yml,yaml}"
+      run: ruby -e "require 'yaml'; ARGV.each { |f| YAML.load_file(f) }" {staged_files}
 
-# Pre-push hooks (slower, more thorough)
-  - repo: local
-    hooks:
-      - id: rspec
-        name: RSpec
-        entry: bundle exec rspec --fail-fast
-        language: system
-        pass_filenames: false
-        stages: [pre-push]
+    gitleaks:
+      run: gitleaks protect --staged --no-banner
 
-      - id: brakeman-full
-        name: Brakeman (full)
-        entry: bundle exec brakeman --no-pager
-        language: system
-        pass_filenames: false
-        stages: [pre-push]
+pre-push:
+  parallel: false
+  commands:
+    rspec:
+      run: bundle exec rspec --fail-fast
 
-      - id: bundler-audit
-        name: Bundler Audit
-        entry: bundle exec bundler-audit check --update
-        language: system
-        pass_filenames: false
-        stages: [pre-push]
+    brakeman-full:
+      run: bundle exec brakeman --no-pager
+
+    bundler-audit:
+      run: bundle exec bundler-audit check --update
 ```
 
 #### Layer 1: Paid's CI Pipeline
@@ -320,9 +294,6 @@ jobs:
 
       - name: Bundler Audit
         run: bundle exec bundler-audit check --update
-
-      - name: Ruby Audit
-        run: bundle exec ruby-audit check
 
   zizmor:
     runs-on: ubuntu-latest
@@ -395,7 +366,124 @@ jobs:
 
       - name: Boot time benchmark
         run: time bundle exec rails runner "puts 'Boot complete'"
+
+  pr-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: AI PR Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          bundle exec rails runner "PrReviewService.new.review_pr(
+            repo: '${{ github.repository }}',
+            pr_number: ${{ github.event.pull_request.number }}
+          )"
 ```
+
+#### Layer 1: PR Review Workflow
+
+Paid reviews its own PRs using an AI-powered review workflow:
+
+```ruby
+# app/services/pr_review_service.rb
+class PrReviewService
+  REVIEW_PROMPT = <<~PROMPT
+    Review this pull request for:
+    1. **Security Issues**: SQL injection, XSS, CSRF, secrets exposure, unsafe deserialization
+    2. **Performance**: N+1 queries, missing indexes, inefficient algorithms, memory leaks
+    3. **Rails Best Practices**: Convention violations, antipatterns, missing validations
+    4. **Code Quality**: Complexity, duplication, unclear naming, missing error handling
+    5. **Test Coverage**: Missing tests, edge cases not covered, brittle tests
+
+    Be specific. Reference file:line for each issue.
+    Only comment on actual problems, not style preferences.
+    If the code looks good, say so briefly.
+  PROMPT
+
+  def initialize(client: nil)
+    @client = client || Anthropic::Client.new
+    @github = Octokit::Client.new(access_token: ENV["GITHUB_TOKEN"])
+  end
+
+  def review_pr(repo:, pr_number:)
+    pr = @github.pull_request(repo, pr_number)
+    diff = @github.pull_request_files(repo, pr_number)
+
+    # Build context for review
+    context = build_review_context(pr, diff)
+
+    # Get AI review
+    response = @client.messages.create(
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4096,
+      system: REVIEW_PROMPT,
+      messages: [{ role: "user", content: context }]
+    )
+
+    review_body = response.content.first.text
+
+    # Post review as PR comment
+    @github.create_pull_request_review(
+      repo,
+      pr_number,
+      body: review_body,
+      event: determine_review_event(review_body)
+    )
+  end
+
+  private
+
+  def build_review_context(pr, diff)
+    <<~CONTEXT
+      ## Pull Request: #{pr.title}
+
+      #{pr.body}
+
+      ## Changed Files:
+
+      #{diff.map { |f| format_file_diff(f) }.join("\n\n")}
+    CONTEXT
+  end
+
+  def format_file_diff(file)
+    <<~FILE
+      ### #{file.filename} (+#{file.additions}/-#{file.deletions})
+
+      ```diff
+      #{file.patch}
+      ```
+    FILE
+  end
+
+  def determine_review_event(review_body)
+    # If review mentions critical issues, request changes
+    if review_body.match?(/security|vulnerability|critical|must fix/i)
+      "REQUEST_CHANGES"
+    else
+      "COMMENT"
+    end
+  end
+end
+```
+
+This self-review catches issues before human reviewers spend time on them:
+- Security vulnerabilities flagged immediately
+- Performance antipatterns identified
+- Convention violations highlighted
+- Reduces cognitive load on human reviewers
 
 #### Layer 2: Agent Feedback Service
 
@@ -767,26 +855,15 @@ class QualityConfiguratorService
             - 'spec/**/*'
             - 'config/routes.rb'
       YAML
-      pre_commit_config: <<~YAML
-        repos:
-          - repo: local
-            hooks:
-              - id: rubocop
-                name: RuboCop
-                entry: bundle exec rubocop --force-exclusion
-                language: system
-                types: [ruby]
-              - id: brakeman
-                name: Brakeman
-                entry: bundle exec brakeman -q --no-pager
-                language: system
-                pass_filenames: false
-                types: [ruby]
-          - repo: https://github.com/pre-commit/pre-commit-hooks
-            rev: v4.5.0
-            hooks:
-              - id: trailing-whitespace
-              - id: end-of-file-fixer
+      lefthook_config: <<~YAML
+        pre-commit:
+          parallel: true
+          commands:
+            rubocop:
+              glob: "*.{rb,rake}"
+              run: bundle exec rubocop --force-exclusion {staged_files}
+            brakeman:
+              run: bundle exec brakeman -q --no-pager
       YAML
     },
     python: {
@@ -799,23 +876,19 @@ class QualityConfiguratorService
         strict = true
         ignore_missing_imports = true
       TOML
-      pre_commit_config: <<~YAML
-        repos:
-          - repo: https://github.com/astral-sh/ruff-pre-commit
-            rev: v0.1.0
-            hooks:
-              - id: ruff
-                args: [--fix]
-              - id: ruff-format
-          - repo: https://github.com/pre-commit/mirrors-mypy
-            rev: v1.7.0
-            hooks:
-              - id: mypy
-          - repo: https://github.com/pre-commit/pre-commit-hooks
-            rev: v4.5.0
-            hooks:
-              - id: trailing-whitespace
-              - id: end-of-file-fixer
+      lefthook_config: <<~YAML
+        pre-commit:
+          parallel: true
+          commands:
+            ruff:
+              glob: "*.py"
+              run: ruff check --fix {staged_files}
+            ruff-format:
+              glob: "*.py"
+              run: ruff format {staged_files}
+            mypy:
+              glob: "*.py"
+              run: mypy {staged_files}
       YAML
     },
     typescript: {
@@ -824,7 +897,8 @@ class QualityConfiguratorService
           "eslint" => "^8.0.0",
           "@typescript-eslint/parser" => "^6.0.0",
           "@typescript-eslint/eslint-plugin" => "^6.0.0",
-          "prettier" => "^3.0.0"
+          "prettier" => "^3.0.0",
+          "lefthook" => "^1.6.0"
         }
       },
       eslint_config: <<~JSON,
@@ -841,25 +915,15 @@ class QualityConfiguratorService
           }
         }
       JSON
-      pre_commit_config: <<~YAML
-        repos:
-          - repo: local
-            hooks:
-              - id: eslint
-                name: ESLint
-                entry: npx eslint --fix
-                language: system
-                types: [typescript]
-              - id: typecheck
-                name: TypeScript
-                entry: npx tsc --noEmit
-                language: system
-                pass_filenames: false
-          - repo: https://github.com/pre-commit/pre-commit-hooks
-            rev: v4.5.0
-            hooks:
-              - id: trailing-whitespace
-              - id: end-of-file-fixer
+      lefthook_config: <<~YAML
+        pre-commit:
+          parallel: true
+          commands:
+            eslint:
+              glob: "*.{ts,tsx}"
+              run: npx eslint --fix {staged_files}
+            typecheck:
+              run: npx tsc --noEmit
       YAML
     }
   }.freeze
@@ -919,10 +983,10 @@ class QualityConfiguratorService
       changes << { action: :create, file: ".github/workflows/ci.yml" }
     end
 
-    # Create pre-commit config
-    pre_commit_path = File.join(@project_path, ".pre-commit-config.yaml")
-    File.write(pre_commit_path, generate_pre_commit_config)
-    changes << { action: :create, file: ".pre-commit-config.yaml" }
+    # Create lefthook config
+    lefthook_path = File.join(@project_path, "lefthook.yml")
+    File.write(lefthook_path, generate_lefthook_config)
+    changes << { action: :create, file: "lefthook.yml" }
 
     changes
   end
@@ -963,9 +1027,21 @@ class QualityConfiguratorService
     end
   end
 
-  def generate_pre_commit_config
-    # Combine pre-commit configs from all detected languages
-    # ... implementation
+  def generate_lefthook_config
+    # Combine lefthook configs from all detected languages
+    config = { "pre-commit" => { "parallel" => true, "commands" => {} } }
+
+    @detected_languages.each do |lang|
+      template = TOOL_TEMPLATES[lang]
+      next unless template&.dig(:lefthook_config)
+
+      lang_config = YAML.safe_load(template[:lefthook_config])
+      config["pre-commit"]["commands"].merge!(
+        lang_config.dig("pre-commit", "commands") || {}
+      )
+    end
+
+    config.to_yaml
   end
 
   def generate_ci_workflow
@@ -1053,7 +1129,7 @@ end
 
 ### Negative Consequences
 
-- **Setup complexity**: Pre-commit hooks require installation
+- **Setup complexity**: Lefthook requires installation (though it's a single binary)
 - **Slower commits**: Hooks add time to commit process
 - **False positives**: Some linter rules may be too strict
 - **Tool maintenance**: Must keep tools updated
@@ -1073,16 +1149,16 @@ end
 
 ### Prerequisites
 
-- [ ] Pre-commit framework understanding
+- [ ] Lefthook installation and configuration
 - [ ] RuboCop configuration expertise
 - [ ] CI/CD pipeline experience
 - [ ] Docker container tool installation
 
 ### Step-by-Step Implementation
 
-#### Phase 1: Paid Self-Quality (Week 1-2)
+#### Phase 1: Paid Self-Quality
 
-1. Create `.pre-commit-config.yaml` for Paid
+1. Create `lefthook.yml` for Paid
 2. Add quality gems to Gemfile
 3. Configure RuboCop with appropriate rules
 4. Set up Brakeman for security scanning
@@ -1108,7 +1184,7 @@ end
 ### Files to Create
 
 **For Paid itself:**
-- `.pre-commit-config.yaml`
+- `lefthook.yml`
 - `.rubocop.yml`
 - `.github/workflows/ci.yml`
 - `.github/workflows/security.yml`
@@ -1131,7 +1207,6 @@ group :development, :test do
   gem "fasterer", require: false
   gem "brakeman", require: false
   gem "bundler-audit", require: false
-  gem "ruby_audit", require: false
 end
 
 group :development do
@@ -1142,6 +1217,18 @@ end
 group :development, :production do
   gem "prosopite"  # Production N+1 detection
 end
+```
+
+**Lefthook installation:**
+```bash
+# macOS
+brew install lefthook
+
+# Or via npm (for CI/cross-platform)
+npm install -g lefthook
+
+# Initialize in repo
+lefthook install
 ```
 
 ## Validation
@@ -1156,10 +1243,10 @@ end
 ### Test Scenarios
 
 1. **Scenario**: Commit with RuboCop violations
-   **Expected Result**: Pre-commit hook blocks commit, shows violations
+   **Expected Result**: Lefthook pre-commit blocks commit, shows violations
 
 2. **Scenario**: Push with security vulnerability
-   **Expected Result**: Pre-push hook blocks push, shows Brakeman warning
+   **Expected Result**: Lefthook pre-push blocks push, shows Brakeman warning
 
 3. **Scenario**: Agent produces code with type errors
    **Expected Result**: Feedback loop provides structured error, agent fixes
@@ -1189,7 +1276,7 @@ end
 
 ### Dependencies
 
-- [pre-commit](https://pre-commit.com/) - Hook framework
+- [Lefthook](https://lefthook.dev/) - Fast Git hooks manager
 - [RuboCop](https://rubocop.org/) - Ruby linter
 - [Brakeman](https://brakemanscanner.org/) - Rails security
 - [Zizmor](https://github.com/woodruffw/zizmor) - GitHub Actions security
@@ -1203,8 +1290,10 @@ end
 
 ## Notes
 
-- Consider adding lefthook as pre-commit alternative for speed
+- Lefthook chosen over pre-commit for speed (Go binary vs Python) and simpler setup
 - Prosopite for production N+1 detection vs Bullet for development
 - Some tools (Sorbet, Steep) may be too strict for initial setup
 - GitHub Advanced Security provides additional SARIF integration
 - Agent container image should include all language tools, not just Ruby
+- PR review workflow can be adjusted to use different models based on cost/quality needs
+- Consider caching PR review results to avoid re-reviewing unchanged files
