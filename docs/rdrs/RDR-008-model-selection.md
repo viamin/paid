@@ -55,15 +55,16 @@ Today's expensive model is tomorrow's commodity. Selection logic must evolve wit
 
 **Model Registry (ruby-llm):**
 
-ruby-llm provides model metadata:
+ruby-llm provides model metadata for any configured provider:
 
 ```ruby
-model = RubyLLM.models.find("claude-3-5-sonnet")
-model.context_window    # 200_000
-model.max_output_tokens # 8192
-model.supports_vision?  # true
-model.supports_tools?   # true
-model.input_cost_per_1k # 0.003
+# Query any model from any provider
+model = RubyLLM.models.find("some-model-id")
+model.context_window    # e.g., 200_000
+model.max_output_tokens # e.g., 8192
+model.supports_vision?  # true/false
+model.supports_tools?   # true/false
+model.input_cost_per_1k # cost per 1k tokens
 model.output_cost_per_1k # 0.015
 ```
 
@@ -297,8 +298,14 @@ class ModelSelectionService
   def meta_agent_select(task, available, budget)
     prompt = build_selection_prompt(task, available, budget)
 
+    # Meta-agent model is configurable (default to fast/cheap tier)
+    # Use a model that supports JSON output and is cost-effective
+    meta_model = Rails.application.config.paid[:meta_agent_model] ||
+                 Model.default_for_task(:meta_agent)&.model_id ||
+                 available.min_by(&:cost_per_1k_tokens)&.model_id
+
     response = RubyLLM.client.chat(
-      model: "claude-3-5-haiku",  # Fast, cheap model for meta-agent
+      model: meta_model,
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" }
     )

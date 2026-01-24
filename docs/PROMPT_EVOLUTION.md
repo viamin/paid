@@ -487,8 +487,14 @@ class PromptEvolutionAgent
       { prompt: prompt.current_version, analysis: analysis }
     )
 
+    # Select model for prompt evolution (creative task, medium complexity)
+    model = ModelSelectionService.select(
+      task_type: :prompt_evolution,
+      complexity: :medium
+    )
+
     response = RubyLLM.client.chat(
-      model: "claude-3-5-sonnet",  # Good balance of capability and cost
+      model: model,
       messages: [{ role: "user", content: resolved_prompt }],
       response_format: { type: "json_object" }
     )

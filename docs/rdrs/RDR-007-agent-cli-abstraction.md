@@ -99,8 +99,11 @@ Each agent reports progress differently:
 For simpler tasks, direct API calls via ruby-llm can replace CLI execution:
 
 ```ruby
+# Model selected via Paid's model selection system
+model = ModelSelectionService.select(task_type: :planning, complexity: :low)
+
 response = RubyLLM.client.chat(
-  model: "claude-3-5-sonnet",
+  model: model,
   messages: [{ role: "user", content: prompt }],
   system: system_prompt
 )
