@@ -34,8 +34,21 @@ This document outlines the phased implementation plan for Paid. Each phase build
 **Objective**: Basic Rails 8 app with authentication and core models.
 
 Tasks:
-- [ ] Initialize Rails 8 app with PostgreSQL
-- [ ] Set up Hotwire (Turbo + Stimulus)
+- [ ] Initialize Rails 8 app with PostgreSQL:
+  ```bash
+  rails new paid \
+    --database=postgresql \
+    --css=tailwind \
+    --javascript=esbuild \
+    --skip-jbuilder \
+    --skip-action-mailbox \
+    --skip-action-text \
+    --skip-active-storage \
+    --skip-test \
+    --devcontainer
+  ```
+  Then add RSpec, FactoryBot, and other testing gems manually.
+- [ ] Set up Hotwire (Turbo + Stimulus) - included by default in Rails 8
 - [ ] Add authentication (Devise or Rails 8 built-in)
 - [ ] Create core models: User, Project, AgentRun
 - [ ] Basic UI: Projects list, add project form

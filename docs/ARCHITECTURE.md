@@ -77,7 +77,7 @@ Paid is composed of four main subsystems that work together to orchestrate AI-dr
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
 | Source Control | GitHub (PAT) | Projects V2 integration, issue tracking |
-| LLM Providers | Anthropic, OpenAI, Google, etc. | Via ruby-llm abstraction |
+| LLM Providers | Anthropic, OpenAI, Google, OpenRouter, etc. | Via ruby-llm abstraction |
 
 ## Component Details
 
