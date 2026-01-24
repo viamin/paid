@@ -385,7 +385,6 @@ jobs:
       - name: AI PR Review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           bundle exec rails runner "PrReviewService.new.review_pr(
             repo: '${{ github.repository }}',
@@ -413,9 +412,9 @@ class PrReviewService
     If the code looks good, say so briefly.
   PROMPT
 
-  def initialize(client: nil)
-    @client = client || Anthropic::Client.new
-    @github = Octokit::Client.new(access_token: ENV["GITHUB_TOKEN"])
+  def initialize(llm_client: nil, github_client: nil)
+    @llm = llm_client || RubyLLM.client
+    @github = github_client || Octokit::Client.new(access_token: ENV["GITHUB_TOKEN"])
   end
 
   def review_pr(repo:, pr_number:)
@@ -425,15 +424,17 @@ class PrReviewService
     # Build context for review
     context = build_review_context(pr, diff)
 
-    # Get AI review
-    response = @client.messages.create(
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      system: REVIEW_PROMPT,
-      messages: [{ role: "user", content: context }]
+    # Select appropriate model for code review task
+    model = select_model_for_review(diff)
+
+    # Get AI review using ruby-llm (provider-agnostic)
+    response = @llm.chat(
+      model: model,
+      messages: [{ role: "user", content: context }],
+      system: REVIEW_PROMPT
     )
 
-    review_body = response.content.first.text
+    review_body = response.content
 
     # Post review as PR comment
     @github.create_pull_request_review(
@@ -445,6 +446,20 @@ class PrReviewService
   end
 
   private
+
+  def select_model_for_review(diff)
+    # Use Paid's model selection system
+    # For PR review: balance capability with cost
+    total_changes = diff.sum { |f| f.additions + f.deletions }
+
+    if total_changes > 500
+      # Large PR: use more capable model
+      ModelSelectionService.select(task_type: :code_review, complexity: :high)
+    else
+      # Small PR: use faster/cheaper model
+      ModelSelectionService.select(task_type: :code_review, complexity: :low)
+    end
+  end
 
   def build_review_context(pr, diff)
     <<~CONTEXT

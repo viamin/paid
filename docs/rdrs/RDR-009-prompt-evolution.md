@@ -348,8 +348,14 @@ class EvolutionActivities
   def generate_mutations(prompt:, analysis:, count:)
     evolution_prompt = resolve_evolution_prompt(prompt, analysis)
 
+    # Select model for prompt evolution task (creative, medium complexity)
+    model = ModelSelectionService.select(
+      task_type: :prompt_evolution,
+      complexity: :medium
+    )
+
     response = RubyLLM.client.chat(
-      model: "claude-3-5-sonnet",
+      model: model,
       messages: [{ role: "user", content: evolution_prompt }],
       response_format: { type: "json_object" }
     )

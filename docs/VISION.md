@@ -9,7 +9,7 @@ Paid is built on a fundamental insight: **configuration is ephemeral, but data e
 ### Core Principle: Data Over Configuration
 
 Traditional tools encode human expertise as rules:
-- "Use GPT-4 for complex reasoning tasks"
+- "Use model X for complex reasoning tasks"
 - "Limit context to 8K tokens for cost efficiency"
 - "Always include a system prompt about code style"
 
