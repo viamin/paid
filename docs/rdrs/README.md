@@ -70,6 +70,15 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-013](RDR-013-code-quality-backpressure.md) | Code Quality and Backpressure System | Draft | High |
 
+### AI-Native Evolution (Phase 4)
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-014](RDR-014-learned-orchestration.md) | Learned Orchestration Strategies | Draft | Medium |
+| [RDR-015](RDR-015-end-to-end-optimization.md) | End-to-End Outcome Optimization | Draft | Medium |
+| [RDR-016](RDR-016-self-improving-coordination.md) | Self-Improving Agent Coordination | Draft | Medium |
+| [RDR-017](RDR-017-orchestration-scaling-laws.md) | Orchestration Scaling Laws | Draft | Low |
+
 ## Decision Summary
 
 ### Core Stack
@@ -99,6 +108,12 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 - **Git Hooks**: Pre-commit/pre-push guardrails (RuboCop, Brakeman, etc.)
 - **CI Pipeline**: Comprehensive quality and security checks
 - **Project Configuration**: Auto-detect language and configure appropriate tools
+
+### AI-Native Evolution
+- **Learned Orchestration**: Orchestration strategies as data, evolved via A/B testing
+- **End-to-End Optimization**: Bayesian optimization of full configuration bundles
+- **Self-Improving Coordination**: Decomposition, retry, escalation policies evolve from outcomes
+- **Scaling Laws**: Empirical discovery of orchestration scaling behaviors
 
 ## RDR Lifecycle
 

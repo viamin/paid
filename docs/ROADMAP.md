@@ -8,18 +8,23 @@ This document outlines the phased implementation plan for Paid. Each phase build
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           PAID IMPLEMENTATION PHASES                         │
 │                                                                              │
-│  Phase 1: Foundation          Phase 2: Intelligence       Phase 3: Scale    │
-│  ──────────────────────       ───────────────────────     ───────────────   │
-│  • Rails app skeleton         • Prompt versioning         • Multi-agent     │
-│  • GitHub integration         • A/B testing framework     • Auto-scaling    │
-│  • Single agent execution     • Model meta-agent          • Quality gates   │
-│  • Basic Temporal setup       • Quality metrics           • Prompt evolution│
-│  • Container isolation        • Cost tracking             • Performance     │
-│  • Manual PR creation         • Live dashboard            • Multi-tenancy   │
-│                                                             preparation     │
+│  Phase 1: Foundation    Phase 2: Intelligence   Phase 3: Scale              │
+│  ──────────────────     ─────────────────────   ─────────────               │
+│  • Rails app skeleton   • Prompt versioning     • Multi-agent               │
+│  • GitHub integration   • A/B testing           • Auto-scaling              │
+│  • Single agent         • Model meta-agent      • Quality gates             │
+│  • Temporal setup       • Quality metrics       • Prompt evolution          │
+│  • Container isolation  • Cost tracking         • Performance               │
+│  • Manual PR creation   • Live dashboard        • Multi-tenancy prep        │
+│                                                                              │
+│  Phase 4: AI-Native Evolution                                               │
+│  ────────────────────────────                                               │
+│  • Learned orchestration strategies    • End-to-end optimization            │
+│  • Self-improving coordination         • Orchestration scaling laws         │
+│  • Decision logging & analysis         • Dynamic resource allocation        │
 │                                                                              │
 │  ─────────────────────────────────────────────────────────────────────────► │
-│  MVP: "It works"              Growth: "It learns"         Scale: "It flies" │
+│  MVP: "It works"    Growth: "It learns"    Scale: "It flies"    "It evolves"│
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -445,7 +450,119 @@ Deliverables:
 
 ---
 
-## Future Considerations (Beyond Phase 3)
+## Phase 4: AI-Native Evolution
+
+**Goal**: The system learns and improves its own orchestration through data, applying the Bitter Lesson to agent coordination itself.
+
+This phase represents Paid's evolution from a well-engineered orchestration platform to a genuinely self-improving system. The core insight: if general methods that leverage computation beat hand-crafted approaches for LLMs, the same may be true for LLM orchestration.
+
+### 4.1 Orchestration Decision Logging
+
+**Objective**: Capture all orchestration decisions with full context for later learning.
+
+Tasks:
+- [ ] Create `orchestration_decisions` table
+- [ ] Instrument workflows to log decomposition decisions
+- [ ] Log agent selection decisions with context
+- [ ] Log retry and escalation decisions
+- [ ] Build analysis queries for decision patterns
+- [ ] Dashboard showing orchestration metrics by context
+
+Deliverables:
+- 100% of orchestration decisions logged with context
+- Analysis dashboard for decision patterns
+- Foundation for all Phase 4 learning systems
+
+Related: [RDR-014](rdrs/RDR-014-learned-orchestration.md)
+
+### 4.2 Learned Orchestration Strategies
+
+**Objective**: Orchestration strategies stored as data and evolved based on outcomes.
+
+Tasks:
+- [ ] Create `strategies` and `strategy_versions` tables
+- [ ] Extract current hardcoded workflows into database strategies
+- [ ] Implement context-aware strategy selection
+- [ ] Create strategy evolution workflow (LLM-based mutation)
+- [ ] A/B test evolved strategies against baseline
+- [ ] Human review gate for strategy changes
+
+Deliverables:
+- Orchestration strategies as database entities
+- Context-based strategy selection working
+- First evolved strategy promoted via A/B test
+
+Related: [RDR-014](rdrs/RDR-014-learned-orchestration.md)
+
+### 4.3 End-to-End Outcome Optimization
+
+**Objective**: Optimize entire configuration bundles (prompts + models + strategies) based on final outcomes.
+
+Tasks:
+- [ ] Create `configuration_bundles` and `bundle_outcomes` tables
+- [ ] Implement configuration bundle tracking per agent run
+- [ ] Build surrogate model (Random Forest initially, GP later)
+- [ ] Implement Bayesian optimization for bundle selection
+- [ ] Exploration/exploitation balance with context awareness
+- [ ] Dashboard for bundle performance analysis
+
+Deliverables:
+- Configuration bundles versioned and tracked
+- Bayesian optimizer selecting bundles for new tasks
+- Measurable improvement in outcome/cost ratio
+
+Related: [RDR-015](rdrs/RDR-015-end-to-end-optimization.md)
+
+### 4.4 Self-Improving Agent Coordination
+
+**Objective**: Coordination policies (decomposition, assignment, retry, escalation) evolve from outcomes.
+
+Tasks:
+- [ ] Create coordination policy data model
+- [ ] Implement `DecompositionService` with policy-based rules
+- [ ] Implement `FailureRecoveryService` with learned failure classification
+- [ ] Implement `EscalationService` with human-value prediction
+- [ ] Create policy evolution workflow
+- [ ] A/B test evolved policies
+
+Deliverables:
+- All coordination decisions driven by evolvable policies
+- Failure classification improves from data
+- Escalation predictions validated against actual human value
+
+Related: [RDR-016](rdrs/RDR-016-self-improving-coordination.md)
+
+### 4.5 Orchestration Scaling Laws
+
+**Objective**: Discover and apply scaling laws for agent orchestration.
+
+Tasks:
+- [ ] Create scaling observation instrumentation
+- [ ] Design controlled experiments for scaling dimensions
+- [ ] Run agent count scaling experiment
+- [ ] Run iteration count scaling experiment
+- [ ] Analyze parallelism effects
+- [ ] Implement scaling-based resource allocator
+
+Deliverables:
+- Scaling exponents estimated for key dimensions
+- Diminishing returns thresholds identified
+- Dynamic allocation improves efficiency by 10%+
+
+Related: [RDR-017](rdrs/RDR-017-orchestration-scaling-laws.md)
+
+### Phase 4 Completion Criteria
+
+- [ ] All orchestration decisions logged and analyzable
+- [ ] At least one orchestration strategy evolved and promoted via A/B test
+- [ ] End-to-end optimization shows measurable improvement
+- [ ] Coordination policies adapt based on measured outcomes
+- [ ] Scaling laws documented with confidence intervals
+- [ ] System demonstrably improves with more data/compute
+
+---
+
+## Future Considerations (Beyond Phase 4)
 
 These are not committed but worth keeping in mind:
 
@@ -491,6 +608,12 @@ Phase 1.1 (Rails) ────────────────────�
           │         ├── 1.5 (Single Agent) ──────────────────────►
           │         │         │
           │         │         └── 3.1 (Multi-Agent) ────────────►
+          │         │                   │
+          │         │                   └── 4.1 (Decision Logging) ──►
+          │         │                             │
+          │         │                             ├── 4.2 (Learned Orchestration)
+          │         │                             ├── 4.4 (Self-Improving Coord)
+          │         │                             └── 4.5 (Scaling Laws)
           │         │
           │         └── 2.7 (Live Dashboard) ───────────────────►
           │
@@ -502,7 +625,9 @@ Phase 2.1 (Prompts) ────────────────────
           │
           ├── 2.5 (A/B Testing) ─────────────────────────────────►
           │         │
-          │         └── 3.3 (Prompt Evolution) ─────────────────►
+          │         ├── 3.3 (Prompt Evolution) ─────────────────►
+          │         │
+          │         └── 4.3 (End-to-End Optimization) ──────────►
           │
           └── 2.6 (Quality Metrics) ─────────────────────────────►
                     │
@@ -545,6 +670,13 @@ Phase 2.4 (Cost Tracking) ──────────────────
 - Prompt evolution shows measurable improvement
 - Quality gates catch 90% of regressions
 - Performance handles 10 concurrent projects
+
+### Phase 4
+- 100% of orchestration decisions logged and analyzable
+- Learned orchestration strategies outperform hand-designed by 10%+
+- End-to-end optimization improves outcome/cost ratio by 15%+
+- Scaling laws estimated with 95% confidence intervals
+- System shows measurable improvement month-over-month from learning
 
 ---
 
