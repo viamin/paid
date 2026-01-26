@@ -2,7 +2,7 @@
 
 ## The Bitter Lesson Applied
 
-> "The biggest lesson that can be read from 70 years of AI research is that general methods that leverage computation are ultimately the most effective, and by a large margin." — Rich Sutton
+> "The biggest lesson that can be read from 70 years of AI research is that general methods that leverage computation are ultimately the most effective, and by a large margin." — Rich Sutton, [The Bitter Lesson](https://www.cs.utexas.edu/~eunsol/courses/data/bitter_lesson.pdf)
 
 Paid is built on a fundamental insight: **configuration is ephemeral, but data endures**. Every decision point in Paid that could be hardcoded as configuration is instead stored as data—prompts, model preferences, workflow patterns, quality thresholds. This isn't just good engineering; it's a bet that tomorrow's compute will make today's careful optimizations obsolete, while the data we collect will only become more valuable.
 
