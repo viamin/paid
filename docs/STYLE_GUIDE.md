@@ -15,6 +15,7 @@ Zero Framework Cognition is the principle that orchestration code should remain 
 **Rationale**: Hard-coded heuristics become maintenance burdens. They encode assumptions that break as contexts change. Regex patterns for semantic meaning, scoring formulas based on keyword counts, and branching logic based on content analysis all suffer from the same problem: they bake in human judgment that becomes stale.
 
 **ZFC-Compliant Operations** (keep in code):
+
 - Pure orchestration and I/O (reading files, calling APIs, saving results)
 - Structural safety checks (file exists? valid JSON? under size limit?)
 - Policy enforcement (budget limits, rate limiting, authorization)
@@ -22,6 +23,7 @@ Zero Framework Cognition is the principle that orchestration code should remain 
 - State management (workflow status, progress tracking)
 
 **ZFC Violations** (delegate to AI):
+
 - Reasoning about code quality or correctness
 - Plan composition and task decomposition
 - Semantic analysis of issues, PRs, or code
@@ -81,11 +83,13 @@ AI-Generated Determinism complements ZFC by using AI once during configuration t
 **Rationale**: Some operations happen frequently enough that calling an AI model each time is expensive or slow, but the decision logic is complex enough that hand-coding it would violate ZFC. AGD front-loads the AI work.
 
 **Examples in Paid**:
+
 - **Style guide compression**: AI analyzes a codebase once and generates a compressed style guide that agents use in prompts. The analysis happens once; the compressed output is used repeatedly.
 - **Model selection rules**: AI generates rules like "use claude-3-haiku for simple edits, claude-3-opus for architectural changes." The rules execute without AI calls.
 - **Quality thresholds**: AI determines "for this project, 3+ iterations indicates a problem." Code enforces the threshold mechanically.
 
 **When to use AGD vs ZFC**:
+
 - AGD: Input format is stable, decisions can be pre-computed, cost/latency matters
 - ZFC: Each input is unique, fresh context needed, accuracy matters more than speed
 
@@ -94,6 +98,7 @@ AI-Generated Determinism complements ZFC by using AI once during configuration t
 Organize code by what it does (capability) rather than which workflow uses it. This maximizes reusability and prevents duplication.
 
 **Anti-pattern**:
+
 ```
 app/services/
 ├── github_sync/
@@ -105,6 +110,7 @@ app/services/
 ```
 
 **Preferred**:
+
 ```
 app/services/
 ├── parsers/
@@ -122,6 +128,7 @@ app/services/
 **Rationale**: When issue parsing logic changes (say, GitHub updates their API), you fix one file. When a new workflow needs issue parsing, it uses the existing parser. Duplication across workflows means bugs get fixed inconsistently and improvements don't propagate.
 
 **Rails-Specific Organization**:
+
 ```
 app/
 ├── controllers/          # Thin controllers delegating to services
@@ -164,12 +171,14 @@ end
 ### When to Extract
 
 Extract when:
+
 - A method does more than one thing (and, then, also)
 - You're passing the same group of parameters to multiple methods (parameter object)
 - A class has multiple reasons to change (violates single responsibility)
 - You find yourself writing comments explaining what a section does (name it instead)
 
 Don't extract when:
+
 - The extraction would just move complexity, not reduce it
 - The "extracted" code would only ever be called from one place
 - The extraction requires passing many parameters, creating coupling
@@ -185,6 +194,7 @@ Business logic lives in service objects using [Servo](https://github.com/martins
 Vanilla service objects vary wildly in implementation. Some use `call`, others `execute` or `perform`. Some return the result, others the service instance. Error handling is inconsistent. This creates cognitive load: every service requires reading to understand its interface.
 
 Servo provides:
+
 - **Declarative inputs/outputs with type checking**: Catches misuse early, documents expectations
 - **Built-in ActiveModel validations**: Consistent validation that runs before `call`
 - **Consistent result interface**: Always `.success?`, `.failure?`, `.errors`
@@ -341,6 +351,7 @@ GitHub::ParseWebhook
 Follow [StandardRB](https://github.com/standardrb/standard) for formatting. StandardRB is "Ruby's bikeshed-proof linter and formatter"—it makes decisions so you don't have to argue about them.
 
 Additional conventions:
+
 - `frozen_string_literal: true` at the top of all Ruby files
 - `require_relative` over `require` for local files (explicit dependencies)
 - Meaningful names without noise words (`create_project` not `do_create_project_action`)
@@ -400,6 +411,7 @@ Logging is critical for debugging agent workflows and creating readable executio
 ### Philosophy
 
 Logs serve multiple audiences:
+
 - **Developers debugging**: Need detailed flow, variable states, decision points
 - **Operators monitoring**: Need significant events, errors, performance metrics
 - **Auditors reviewing**: Need who did what when, security-relevant events
@@ -413,6 +425,7 @@ Structure logs for machine parsing (JSON) while keeping them human-readable. Inc
 Debug logs answer "what code path did we take?" They're verbose by design and typically disabled in production unless actively debugging.
 
 Use debug for:
+
 - Method entry with key parameters
 - Internal variable states when debugging complex logic
 - Loop iteration details (but throttle—don't log every iteration)
@@ -433,6 +446,7 @@ Rails.logger.debug(
 Info logs tell the story of what happened at a business level. They should be readable as a narrative: "User created project. Agent run started. Agent run completed successfully."
 
 Use info for:
+
 - Workflow and operation start/completion
 - User actions (project created, agent triggered, settings changed)
 - Significant state changes (agent run status transitions)
@@ -456,6 +470,7 @@ Rails.logger.info(
 Warn logs indicate potential problems that didn't stop execution but deserve attention. They're useful for detecting patterns: "We're hitting rate limits often" or "Fallback to secondary provider is happening frequently."
 
 Use warn for:
+
 - Rate limits hit (with retry information)
 - Fallback to secondary provider or strategy
 - Deprecated feature usage
@@ -478,6 +493,7 @@ Rails.logger.warn(
 Error logs demand investigation. They represent things that shouldn't happen or failures that impact users.
 
 Use error for:
+
 - Unrecoverable failures
 - External service errors that weren't handled
 - Validation failures that indicate bugs (not user input errors)
@@ -602,12 +618,14 @@ end
 ### Metadata Guidelines
 
 **Always include**:
+
 - Identifiers that enable correlation (agent_run_id, project_id, workflow_id)
 - Counts and sizes for understanding scale (iteration_count, token_count)
 - Timing information for performance analysis (duration_ms, elapsed_seconds)
 - Status codes and result types for filtering
 
 **Never include**:
+
 - Secrets, tokens, passwords, API keys
 - Full request/response payloads (log sizes or summaries instead)
 - PII beyond what's necessary for debugging
@@ -672,6 +690,7 @@ spec/
 ```
 
 **One spec file per class**, path mirrors class path:
+
 - `app/services/agent_runs/create.rb` → `spec/services/agent_runs/create_spec.rb`
 - `app/models/agent_run.rb` → `spec/models/agent_run_spec.rb`
 
@@ -897,6 +916,7 @@ end
 Use [Phlex](https://www.phlex.fun/) for view components. Phlex provides pure Ruby views with better performance than ERB and natural composition.
 
 **Why Phlex over ERB/ViewComponent**:
+
 - Pure Ruby: No template language to learn, full IDE support
 - Performance: Faster than ERB, especially for component-heavy pages
 - Composition: Components compose naturally as Ruby objects
@@ -1035,6 +1055,7 @@ end
 ### Background Processing
 
 **Prefer Temporal workflows** for anything that:
+
 - Takes more than a few seconds
 - Needs retry logic
 - Involves multiple steps
@@ -1042,12 +1063,14 @@ end
 - Benefits from observability
 
 **Use GoodJob** only for simple, fire-and-forget tasks:
+
 - Sending emails
 - Cache warming
 - Simple cleanup
 - Metric aggregation
 
 **Why GoodJob over Sidekiq**:
+
 - Uses PostgreSQL (no Redis dependency, one less thing to operate)
 - Transactional enqueuing (job commits with your data, no phantom jobs)
 - Built-in dashboard
@@ -1132,6 +1155,7 @@ Rails.logger.info(
 Paid is v0.x.x (pre-release) and **deliberately maintains no backward compatibility**. This keeps the codebase clean and enables rapid iteration.
 
 When refactoring:
+
 - Remove old implementations immediately
 - Delete deprecated methods in the same commit that introduces replacements
 - No legacy wrappers, feature flags for old behavior, or compatibility shims

@@ -82,34 +82,40 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 ## Decision Summary
 
 ### Core Stack
+
 - **Framework**: Rails 8+ with Hotwire for real-time UI
 - **Database**: PostgreSQL with JSONB for flexible configuration
 - **Workflows**: Temporal.io for durable, long-running operations
 - **Background Jobs**: GoodJob for lightweight tasks, Temporal for complex workflows
 
 ### Security Model
+
 - **Container Isolation**: Docker with hardened images, capability dropping
 - **Secrets**: Proxy pattern—agents never see API keys
 - **Git Isolation**: Worktrees for parallel agent work
 - **Authorization**: Rolify + Pundit for RBAC
 
 ### Agent Execution
-- **CLI Abstraction**: agent-harness gem with adapters for Claude Code, Cursor, Codex, Copilot
+
+- **CLI Abstraction**: agent-harness gem with providers for Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode
 - **Model Selection**: LLM-based meta-agent with rules fallback
 - **Prompts**: Database-stored with A/B testing and automated evolution
 
 ### Operations
+
 - **Observability**: Prometheus + Grafana stack
 - **Multi-tenancy**: Account-based isolation from day one
 - **GitHub**: PAT-based polling with graceful degradation
 
 ### Quality & Automation
+
 - **Backpressure**: Immediate feedback loops for agent self-correction
 - **Git Hooks**: Pre-commit/pre-push guardrails (RuboCop, Brakeman, etc.)
 - **CI Pipeline**: Comprehensive quality and security checks
 - **Project Configuration**: Auto-detect language and configure appropriate tools
 
 ### AI-Native Evolution
+
 - **Learned Orchestration**: Orchestration strategies as data, evolved via A/B testing
 - **End-to-End Optimization**: Bayesian optimization of full configuration bundles
 - **Self-Improving Coordination**: Decomposition, retry, escalation policies evolve from outcomes
@@ -130,6 +136,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 Use the template at the [RDR repository](https://github.com/cwensel/rdr/blob/main/TEMPLATE.md) as a starting point.
 
 Key sections:
+
 - **Problem Statement**: What challenge are we addressing?
 - **Context**: Background and technical environment
 - **Research Findings**: Evidence from investigation

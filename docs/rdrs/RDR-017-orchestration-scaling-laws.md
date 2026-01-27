@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-26
 - **Status**: Draft
 - **Type**: Research
@@ -17,6 +18,7 @@ The Bitter Lesson's core insight is that methods which **scale with computation*
 **Question**: Do similar scaling laws exist for AI agent orchestration?
 
 Specifically:
+
 1. Does success rate improve with more agents per task?
 2. Does quality improve with more iterations per agent?
 3. Does parallel execution yield better outcomes than serial?
@@ -29,16 +31,19 @@ Without answers, Paid cannot know whether investing compute in more agents, more
 ### Background
 
 LLM scaling laws (Kaplan et al., Hoffmann et al.) show:
+
 - Performance improves as power law of model size, data, and compute
 - Optimal allocation exists between model size and training data
 - Predictable enough to plan training runs
 
 **Hypothesis**: Agent orchestration may have analogous scaling behaviors:
+
 - More agents → better task coverage → higher success rate
 - More iterations → more refinement → higher quality
 - More parallel exploration → better solutions found
 
 **Counter-hypothesis**: Orchestration may have sharp limits:
+
 - Coordination overhead may dominate beyond some agent count
 - Iteration quality may plateau quickly
 - Parallelism may introduce conflicts that reduce quality
@@ -46,11 +51,13 @@ LLM scaling laws (Kaplan et al., Hoffmann et al.) show:
 ### Why This Matters
 
 If scaling laws exist:
+
 - **Resource allocation becomes predictable**: Know cost/benefit of more agents
 - **Optimization has clear direction**: Scale dimensions that improve outcomes
 - **Architecture decisions are informed**: Design for scalable dimensions
 
 If scaling laws don't exist:
+
 - **Different optimization strategy needed**: Focus on efficiency, not scale
 - **Ceiling exists**: Know limits of improvement from compute
 - **Focus shifts to quality**: Better prompts matter more than more agents
@@ -142,6 +149,7 @@ Hypothesis: Near-linear speedup initially, coordination overhead at scale
 ### Experimental Design Considerations
 
 **Challenge 1: Confounding variables**
+
 - Task difficulty varies
 - Projects differ in complexity
 - Models have different capabilities
@@ -149,12 +157,14 @@ Hypothesis: Near-linear speedup initially, coordination overhead at scale
 **Mitigation**: Controlled experiments with matched tasks, A/B testing
 
 **Challenge 2: Sample size**
+
 - Each "sample" is an expensive agent run
 - Need sufficient data per configuration
 
 **Mitigation**: Phased experiments, start with cheap dimensions
 
 **Challenge 3: Interaction effects**
+
 - Scaling laws may depend on task type
 - Project characteristics affect scaling
 
@@ -479,10 +489,12 @@ end
 **Description**: Assume agent orchestration follows same scaling as LLM training
 
 **Pros**:
+
 - No experiments needed
 - Can use existing research
 
 **Cons**:
+
 - Orchestration is fundamentally different from training
 - No empirical validation
 - May make wrong assumptions
@@ -494,10 +506,12 @@ end
 **Description**: Continue with fixed resource allocation
 
 **Pros**:
+
 - Simple
 - No research overhead
 
 **Cons**:
+
 - May waste compute on wrong dimensions
 - Can't predict cost/benefit tradeoffs
 - Miss optimization opportunities
@@ -509,10 +523,12 @@ end
 **Description**: Let users choose agent count, iterations, etc.
 
 **Pros**:
+
 - Users have domain knowledge
 - No automated optimization needed
 
 **Cons**:
+
 - Most users don't know optimal settings
 - Inconsistent across users
 - No improvement over time

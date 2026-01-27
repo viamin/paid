@@ -49,16 +49,18 @@ Paid is composed of four main subsystems that work together to orchestrate AI-dr
 ## Technology Stack
 
 ### Core Application
+
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
 | Framework | Rails 8+ | Mature, productive, excellent for data-heavy apps |
 | Database | PostgreSQL | JSON support, reliability, Temporal compatibility |
 | Frontend | Hotwire (Turbo + Stimulus) | Real-time UI without SPA complexity |
-| Background Jobs | Solid Queue | Rails-native, database-backed |
+| Background Jobs | GoodJob | PostgreSQL-backed Active Job runner |
 | Caching | Solid Cache | Rails-native, database-backed |
 | WebSockets | Action Cable | Real-time dashboard updates |
 
 ### Orchestration
+
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
 | Workflow Engine | Temporal.io | Durable workflows, built-in retry, observability |
@@ -66,14 +68,16 @@ Paid is composed of four main subsystems that work together to orchestrate AI-dr
 | Worker Pool | Fixed pool (configurable) | Simplicity first, auto-scale later |
 
 ### Agent Execution
+
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
 | Containers | Docker | Industry standard, aidp compatibility |
-| Agent CLIs | Claude Code, Cursor, Codex, GitHub Copilot | Extracted to shared gem |
+| Agent CLIs | Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode | Extracted to shared gem |
 | API Calls | ruby-llm gem | Model registry, unified interface |
 | Isolation | Git worktrees | Parallel work without conflicts |
 
 ### External Services
+
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
 | Source Control | GitHub (PAT) | Projects V2 integration, issue tracking |
@@ -86,6 +90,7 @@ Paid is composed of four main subsystems that work together to orchestrate AI-dr
 The Rails app is the control plane for Paid. It manages:
 
 #### Web UI (Hotwire)
+
 - **Project Management**: Add/remove GitHub repos, configure tokens
 - **Agent Dashboard**: Live view of running agents, ability to interrupt
 - **Prompt Management**: Version history, A/B test configuration
@@ -93,13 +98,15 @@ The Rails app is the control plane for Paid. It manages:
 - **Style Guides**: Global and project-specific LLM style guides
 
 #### Data Layer (PostgreSQL)
+
 - All configuration stored as data (prompts, model preferences, thresholds)
 - Prompt versioning with full history
 - Agent run logs and metrics
 - Cost tracking per project/model
 - Quality feedback (human votes, automated scores)
 
-#### Background Jobs (Solid Queue)
+#### Background Jobs (GoodJob)
+
 - GitHub polling (lightweight, frequent)
 - Metric aggregation
 - Prompt evolution processing
@@ -112,18 +119,21 @@ Temporal handles long-running, stateful workflows. The Rails app schedules workf
 #### Workflows
 
 **GitHubPollWorkflow**
+
 - Runs continuously per project
 - Checks for labeled issues (configurable labels)
 - Triggers planning or execution workflows
 - Handles rate limiting gracefully
 
 **PlanningWorkflow**
+
 - Decomposes feature requests into sub-issues
 - Creates GitHub Project items
 - Assigns issues to appropriate agents
 - Handles user input requests
 
 **AgentExecutionWorkflow**
+
 - Selects model via meta-agent
 - Provisions container and worktree
 - Runs agent activity with monitoring
@@ -131,6 +141,7 @@ Temporal handles long-running, stateful workflows. The Rails app schedules workf
 - Creates PR on completion
 
 **PromptEvolutionWorkflow**
+
 - Samples completed agent runs
 - Evaluates quality metrics
 - Proposes prompt mutations
@@ -171,6 +182,7 @@ Workers run as separate processes, executing activities:
 ```
 
 Configuration (Phase 1):
+
 - Fixed worker count via environment variable
 - Each worker can run one activity at a time
 - Workers are stateless; containers are per-activity
@@ -180,13 +192,16 @@ Configuration (Phase 1):
 Each agent runs in an isolated Docker container with:
 
 #### Container Image
+
 Based on aidp's devcontainer approach:
+
 - Base: Ruby + Node + common dev tools
-- Pre-installed: Agent CLIs (Claude Code, Cursor, Codex, Copilot)
+- Pre-installed: Agent CLIs (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode)
 - Firewall: Allowlist-only network access
 - No secrets: API keys not passed to container
 
 #### Git Worktree Isolation
+
 ```
 /workspaces/
 ├── project-a/
@@ -202,12 +217,14 @@ Based on aidp's devcontainer approach:
 ```
 
 Each agent gets:
+
 - Unique worktree from current main
 - Unique branch name
 - Complete isolation from other agents
 - Cleanup after PR creation
 
 #### Secrets Proxy
+
 Agents need API access but shouldn't have raw keys:
 
 ```
@@ -220,6 +237,7 @@ Agents need API access but shouldn't have raw keys:
 ```
 
 The proxy:
+
 - Runs as part of Paid
 - Receives unauthenticated requests from containers
 - Adds appropriate API keys
@@ -229,29 +247,37 @@ The proxy:
 ### 4. External Integrations
 
 #### GitHub (PAT-based)
+
 Initial implementation uses Personal Access Tokens:
+
 - UI guides users through token creation
 - Shows required permissions for granular tokens
 - Stores tokens encrypted in database
 
 Required permissions:
+
 - `repo`: Full repository access
 - `project`: GitHub Projects V2 access (if available)
 - `read:org`: Organization membership (for org repos)
 
 Graceful degradation:
+
 - If Projects V2 unavailable, use issues-only workflow
 - Track sub-tasks via issue references instead of project items
 
 #### LLM Integration
+
 Two modes of agent execution:
 
 **CLI Mode** (via agent-harness gem):
-- Claude Code, Cursor, Codex, GitHub Copilot
+
+- Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode
 - Runs in container with proxied API access
-- Output captured for metrics
+- Orchestration handles fallbacks, rate limits, and health checks
+- Output and token usage captured via `AgentHarness::Response`/token tracker
 
 **API Mode** (via ruby-llm):
+
 - Direct API calls for simpler tasks
 - Model registry provides capabilities/costs
 - Used by meta-agent for model selection
@@ -288,6 +314,7 @@ The meta-agent chooses models based on:
 ```
 
 Rules-based fallback:
+
 1. If budget constrained → cheapest capable model
 2. If high complexity → most capable model within budget
 3. If similar past task → model that succeeded before
@@ -361,16 +388,20 @@ Rules-based fallback:
 ## Deployment Architecture
 
 ### Development
+
 ```
 docker-compose up
 ```
+
 Starts:
+
 - Rails app
 - PostgreSQL
 - Temporal (server, UI, admin-tools)
-- Redis (Action Cable)
+- No Redis dependencies (Action Cable uses async adapter in dev)
 
 ### Production (Self-Hosted)
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    PRODUCTION DEPLOYMENT                     │
@@ -402,7 +433,7 @@ Starts:
 
 ## Multi-Tenancy Preparation
 
-While Phase 1 is single-team, the architecture supports future multi-tenancy:
+Phase 1 uses account-scoped data but assumes a single account by default; the architecture supports future multi-tenancy:
 
 | Concern | Current | Multi-Tenant Ready |
 |---------|---------|-------------------|
@@ -437,6 +468,7 @@ The key is that everything is already per-project, and tenants own projects.
 See [SECURITY.md](./SECURITY.md) for detailed security architecture.
 
 Key points:
+
 - Containers are isolated and have no secrets
 - All API access proxied through Paid
 - GitHub tokens encrypted at rest

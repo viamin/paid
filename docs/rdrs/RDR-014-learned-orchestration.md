@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-26
 - **Status**: Draft
 - **Type**: Architecture
@@ -114,22 +115,26 @@ For each agent run:
 Given complexity, implement in phases:
 
 **Phase A: Observability Foundation**
+
 - Log all orchestration decisions with full context
 - Build dataset of (context, decision, outcome) tuples
 - Dashboard for analyzing orchestration patterns
 
 **Phase B: Recommendation System**
+
 - Train models on historical data
 - Recommend orchestration parameters (don't enforce)
 - Human reviews and accepts/rejects recommendations
 - Measure recommendation acceptance rate
 
 **Phase C: Automated A/B Testing**
+
 - Test learned strategies against baseline
 - Promote winners automatically (with guardrails)
 - Continuous improvement loop
 
 **Phase D: Full Adaptive Orchestration**
+
 - System autonomously adapts orchestration
 - Human oversight for anomalies only
 - Scaling laws emerge (more compute → better orchestration)
@@ -332,10 +337,12 @@ end
 **Description**: Train an RL agent to make orchestration decisions
 
 **Pros**:
+
 - Optimal policy in theory
 - Handles sequential decisions naturally
 
 **Cons**:
+
 - High sample complexity (needs many runs to learn)
 - Reward design is tricky (sparse, delayed)
 - Hard to incorporate prior knowledge
@@ -348,11 +355,13 @@ end
 **Description**: Mine association rules from successful executions
 
 **Pros**:
+
 - Interpretable rules
 - No LLM cost
 - Works with existing data
 
 **Cons**:
+
 - Captures correlation, not causation
 - Can't generalize beyond observed patterns
 - Requires careful feature engineering
@@ -364,11 +373,13 @@ end
 **Description**: Humans design multiple strategies, system selects based on context
 
 **Pros**:
+
 - Human expertise captured
 - Fully interpretable
 - No learning complexity
 
 **Cons**:
+
 - Doesn't scale with data
 - Can't discover novel strategies
 - Maintenance burden

@@ -39,7 +39,9 @@ This document outlines the phased implementation plan for Paid. Each phase build
 **Objective**: Basic Rails 8 app with authentication and core models.
 
 Tasks:
+
 - [ ] Initialize Rails 8 app with PostgreSQL:
+
   ```bash
   rails new paid \
     --database=postgresql \
@@ -52,14 +54,16 @@ Tasks:
     --skip-test \
     --devcontainer
   ```
+
   Then add RSpec, FactoryBot, and other testing gems manually.
 - [ ] Set up Hotwire (Turbo + Stimulus) - included by default in Rails 8
-- [ ] Add authentication (Devise or Rails 8 built-in)
-- [ ] Create core models: User, Project, AgentRun
+- [ ] Add authentication with Devise
+- [ ] Create core models: Account, User, Project, AgentRun
 - [ ] Basic UI: Projects list, add project form
-- [ ] Docker Compose for development (Rails + PostgreSQL + Redis)
+- [ ] Docker Compose for development (Rails + PostgreSQL, no Redis)
 
 Deliverables:
+
 - User can sign up/login
 - User can see empty projects list
 - Docker Compose brings up development environment
@@ -69,6 +73,7 @@ Deliverables:
 **Objective**: Connect to GitHub, fetch repo metadata, store PAT securely.
 
 Tasks:
+
 - [ ] Create GithubToken model (encrypted storage)
 - [ ] Add token setup UI with permission guidance
 - [ ] Implement GitHub API client (Octokit)
@@ -77,6 +82,7 @@ Tasks:
 - [ ] Handle Projects V2 gracefully (feature detection)
 
 Deliverables:
+
 - User can add GitHub PAT with guided setup
 - User can add projects (GitHub repos)
 - Project shows repo metadata (name, description, last commit)
@@ -87,6 +93,7 @@ Deliverables:
 **Objective**: Temporal server running, basic workflow execution working.
 
 Tasks:
+
 - [ ] Add Temporal to docker-compose (based on aidp's setup)
 - [ ] Integrate temporalio-ruby gem
 - [ ] Create Temporal client configuration
@@ -96,6 +103,7 @@ Tasks:
 - [ ] Basic workflow monitoring in UI
 
 Deliverables:
+
 - Temporal UI accessible at localhost:8080
 - GitHubPollWorkflow runs on schedule
 - Worker executes activities
@@ -106,14 +114,16 @@ Deliverables:
 **Objective**: Agents run in isolated Docker containers.
 
 Tasks:
+
 - [ ] Create base agent container image (from aidp devcontainer)
-- [ ] Install agent CLIs: Claude Code, Cursor, Codex, Copilot
+- [ ] Install agent CLIs supported by agent-harness (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode)
 - [ ] Implement container provisioning service
 - [ ] Set up git worktree management
 - [ ] Implement network allowlist (firewall)
 - [ ] Create secrets proxy service (basic)
 
 Deliverables:
+
 - Container image builds successfully
 - Container can be provisioned for a project
 - Worktree isolation works
@@ -124,6 +134,7 @@ Deliverables:
 **Objective**: End-to-end flow from labeled issue to PR.
 
 Tasks:
+
 - [ ] Implement label detection in GitHubPollWorkflow
 - [ ] Create AgentExecutionWorkflow
 - [ ] Implement RunAgentActivity (single agent: Claude Code)
@@ -133,6 +144,7 @@ Tasks:
 - [ ] Basic error handling and retries
 
 Deliverables:
+
 - Label issue with `paid-build` → agent runs → PR created
 - Agent output visible in Paid UI
 - Errors logged and visible
@@ -140,24 +152,27 @@ Deliverables:
 
 ### 1.6 agent-harness Gem (Extracted)
 
-**Objective**: Extract agent CLI integration into reusable gem.
+**Objective**: Integrate the extracted agent CLI abstraction via the agent-harness gem.
 
 Tasks:
-- [ ] Create agent-harness gem structure
-- [ ] Extract provider abstraction from aidp concepts
-- [ ] Implement adapters: ClaudeCode, Cursor, Codex, Copilot
-- [ ] Unified interface for running agents
-- [ ] Output parsing and structured results
+
+- [ ] Adopt the extracted agent-harness gem and wire it into Paid
+- [ ] Align provider registry with installed CLIs (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode)
+- [ ] Use agent-harness orchestration hooks (provider switching, rate limits, health checks)
+- [ ] Map agent-harness token tracking into Paid cost tracking
 - [ ] Publish gem (private initially)
 
 Deliverables:
+
 - `agent-harness` gem installable
 - Consistent interface across all supported agents
+- Orchestration signals available (rate limits, health, errors, tokens)
 - Easy to add new agent types
 
 ### Phase 1 Completion Criteria
 
 - [ ] User can add a GitHub project with PAT
+- [ ] Accounts exist and scope users/projects (Devise-backed auth)
 - [ ] User can manually trigger an agent on an issue
 - [ ] Agent runs in isolated container
 - [ ] PR is created with agent's changes
@@ -175,6 +190,7 @@ Deliverables:
 **Objective**: All prompts are data with full version history.
 
 Tasks:
+
 - [ ] Create Prompt model with versioning
 - [ ] Store prompts as structured data (template + variables)
 - [ ] Create PromptVersion model (immutable)
@@ -183,6 +199,7 @@ Tasks:
 - [ ] Prompt categories (planning, coding, review, etc.)
 
 Deliverables:
+
 - All agent prompts stored in database
 - Full history of prompt changes
 - UI to browse and edit prompts
@@ -193,6 +210,7 @@ Deliverables:
 **Objective**: LLM-friendly style guides, global and per-project.
 
 Tasks:
+
 - [ ] Create StyleGuide model
 - [ ] Implement style guide compression (from aidp concepts)
 - [ ] UI for editing style guides
@@ -201,6 +219,7 @@ Tasks:
 - [ ] Tree-sitter integration for code analysis
 
 Deliverables:
+
 - Global style guide configurable
 - Per-project style guide overrides
 - Style guides automatically compressed for LLM context
@@ -211,6 +230,7 @@ Deliverables:
 **Objective**: Intelligent model selection based on task and budget.
 
 Tasks:
+
 - [ ] Integrate ruby-llm model registry
 - [ ] Create ModelCapability tracking
 - [ ] Implement meta-agent for model selection
@@ -219,6 +239,7 @@ Tasks:
 - [ ] Per-project model preferences/restrictions
 
 Deliverables:
+
 - Model registry auto-updates from ruby-llm
 - Meta-agent chooses model for each task
 - Selection rationale logged
@@ -229,6 +250,7 @@ Deliverables:
 **Objective**: Know exactly what each project costs.
 
 Tasks:
+
 - [ ] Create TokenUsage model
 - [ ] Track usage per request (model, tokens, cost)
 - [ ] Aggregate by project, time period
@@ -237,6 +259,7 @@ Tasks:
 - [ ] Cost dashboard in UI
 
 Deliverables:
+
 - Per-project cost visible in UI
 - Historical cost trends
 - Budget warning system
@@ -247,6 +270,7 @@ Deliverables:
 **Objective**: Test prompt variants to find what works.
 
 Tasks:
+
 - [ ] Create ABTest model
 - [ ] Implement test assignment logic
 - [ ] Track metrics per variant
@@ -255,6 +279,7 @@ Tasks:
 - [ ] UI for creating and monitoring tests
 
 Deliverables:
+
 - Create A/B test for any prompt
 - Automatic traffic splitting
 - Metrics dashboard per test
@@ -265,6 +290,7 @@ Deliverables:
 **Objective**: Measure agent output quality automatically and via human feedback.
 
 Tasks:
+
 - [ ] Define quality metrics schema
 - [ ] Implement automated metrics:
   - Iteration count to completion
@@ -277,6 +303,7 @@ Tasks:
 - [ ] Quality dashboard
 
 Deliverables:
+
 - Automated quality scores per agent run
 - Human feedback flows into Paid
 - Quality trends visible over time
@@ -287,6 +314,7 @@ Deliverables:
 **Objective**: Real-time visibility into agent activity.
 
 Tasks:
+
 - [ ] Action Cable setup for real-time updates
 - [ ] Dashboard showing running workflows
 - [ ] Agent activity stream (live logs)
@@ -295,6 +323,7 @@ Tasks:
 - [ ] Alerts for anomalies
 
 Deliverables:
+
 - Real-time agent activity visible
 - User can stop running agents
 - Resource usage at a glance
@@ -321,6 +350,7 @@ Deliverables:
 **Objective**: Multiple agents work on different parts of a feature simultaneously.
 
 Tasks:
+
 - [ ] Implement PlanningWorkflow for feature decomposition
 - [ ] Create sub-issues in GitHub Projects
 - [ ] Parallel AgentExecutionWorkflow invocation
@@ -329,6 +359,7 @@ Tasks:
 - [ ] Aggregated PR creation option
 
 Deliverables:
+
 - Feature request decomposes into sub-tasks
 - Multiple agents run in parallel
 - No conflicts between agents' work
@@ -339,6 +370,7 @@ Deliverables:
 **Objective**: Prevent runaway agents and control costs.
 
 Tasks:
+
 - [ ] Implement infinite loop detection
 - [ ] Token usage limits per run
 - [ ] Cost limits per project (hard stop)
@@ -347,6 +379,7 @@ Tasks:
 - [ ] Automatic pause and alert
 
 Deliverables:
+
 - Agents automatically stopped when limits hit
 - Alerts for anomalous behavior
 - No surprise costs
@@ -357,6 +390,7 @@ Deliverables:
 **Objective**: Prompts automatically improve based on performance.
 
 Tasks:
+
 - [ ] Implement PromptEvolutionWorkflow
 - [ ] Random sampling of completed runs
 - [ ] Prompt mutation agent
@@ -365,6 +399,7 @@ Tasks:
 - [ ] Human review of evolved prompts (optional gate)
 
 Deliverables:
+
 - Prompts evolve without manual intervention
 - Evolution history trackable
 - Quality improves over time (measurable)
@@ -375,6 +410,7 @@ Deliverables:
 **Objective**: Automatically pause work when quality drops.
 
 Tasks:
+
 - [ ] Define quality thresholds (configurable)
 - [ ] Implement quality gate checks in workflows
 - [ ] Automatic pause on threshold breach
@@ -383,6 +419,7 @@ Tasks:
 - [ ] Quality trend analysis
 
 Deliverables:
+
 - Workflows pause when quality drops
 - User alerted with context
 - Clear path to resume
@@ -393,6 +430,7 @@ Deliverables:
 **Objective**: Handle more projects and agents efficiently.
 
 Tasks:
+
 - [ ] Container pool warming
 - [ ] Workflow batching optimizations
 - [ ] Database query optimization
@@ -401,6 +439,7 @@ Tasks:
 - [ ] Performance benchmarking
 
 Deliverables:
+
 - Faster container startup
 - Higher throughput
 - Clear performance metrics
@@ -411,6 +450,7 @@ Deliverables:
 **Objective**: Lay groundwork for automatic worker scaling.
 
 Tasks:
+
 - [ ] Worker metrics export
 - [ ] Queue depth monitoring
 - [ ] Scaling algorithm design
@@ -418,6 +458,7 @@ Tasks:
 - [ ] Documentation for scaling
 
 Deliverables:
+
 - Metrics available for scaling decisions
 - Clear scaling recommendations
 - Ready for auto-scaling implementation
@@ -427,6 +468,7 @@ Deliverables:
 **Objective**: Architecture ready for multiple teams/organizations.
 
 Tasks:
+
 - [ ] Tenant model design
 - [ ] Data isolation patterns (schema or RLS)
 - [ ] Per-tenant configuration
@@ -434,6 +476,7 @@ Tasks:
 - [ ] Tenant onboarding flow design
 
 Deliverables:
+
 - Clear multi-tenancy architecture
 - Data isolation strategy documented
 - Migration path defined
@@ -461,6 +504,7 @@ This phase represents Paid's evolution from a well-engineered orchestration plat
 **Objective**: Capture all orchestration decisions with full context for later learning.
 
 Tasks:
+
 - [ ] Create `orchestration_decisions` table
 - [ ] Instrument workflows to log decomposition decisions
 - [ ] Log agent selection decisions with context
@@ -469,6 +513,7 @@ Tasks:
 - [ ] Dashboard showing orchestration metrics by context
 
 Deliverables:
+
 - 100% of orchestration decisions logged with context
 - Analysis dashboard for decision patterns
 - Foundation for all Phase 4 learning systems
@@ -480,6 +525,7 @@ Related: [RDR-014](rdrs/RDR-014-learned-orchestration.md)
 **Objective**: Orchestration strategies stored as data and evolved based on outcomes.
 
 Tasks:
+
 - [ ] Create `strategies` and `strategy_versions` tables
 - [ ] Extract current hardcoded workflows into database strategies
 - [ ] Implement context-aware strategy selection
@@ -488,6 +534,7 @@ Tasks:
 - [ ] Human review gate for strategy changes
 
 Deliverables:
+
 - Orchestration strategies as database entities
 - Context-based strategy selection working
 - First evolved strategy promoted via A/B test
@@ -499,6 +546,7 @@ Related: [RDR-014](rdrs/RDR-014-learned-orchestration.md)
 **Objective**: Optimize entire configuration bundles (prompts + models + strategies) based on final outcomes.
 
 Tasks:
+
 - [ ] Create `configuration_bundles` and `bundle_outcomes` tables
 - [ ] Implement configuration bundle tracking per agent run
 - [ ] Build surrogate model (Random Forest initially, GP later)
@@ -507,6 +555,7 @@ Tasks:
 - [ ] Dashboard for bundle performance analysis
 
 Deliverables:
+
 - Configuration bundles versioned and tracked
 - Bayesian optimizer selecting bundles for new tasks
 - Measurable improvement in outcome/cost ratio
@@ -518,6 +567,7 @@ Related: [RDR-015](rdrs/RDR-015-end-to-end-optimization.md)
 **Objective**: Coordination policies (decomposition, assignment, retry, escalation) evolve from outcomes.
 
 Tasks:
+
 - [ ] Create coordination policy data model
 - [ ] Implement `DecompositionService` with policy-based rules
 - [ ] Implement `FailureRecoveryService` with learned failure classification
@@ -526,6 +576,7 @@ Tasks:
 - [ ] A/B test evolved policies
 
 Deliverables:
+
 - All coordination decisions driven by evolvable policies
 - Failure classification improves from data
 - Escalation predictions validated against actual human value
@@ -537,6 +588,7 @@ Related: [RDR-016](rdrs/RDR-016-self-improving-coordination.md)
 **Objective**: Discover and apply scaling laws for agent orchestration.
 
 Tasks:
+
 - [ ] Create scaling observation instrumentation
 - [ ] Design controlled experiments for scaling dimensions
 - [ ] Run agent count scaling experiment
@@ -545,6 +597,7 @@ Tasks:
 - [ ] Implement scaling-based resource allocator
 
 Deliverables:
+
 - Scaling exponents estimated for key dimensions
 - Diminishing returns thresholds identified
 - Dynamic allocation improves efficiency by 10%+
@@ -567,27 +620,32 @@ Related: [RDR-017](rdrs/RDR-017-orchestration-scaling-laws.md)
 These are not committed but worth keeping in mind:
 
 ### GitHub App Migration
+
 - Move from PAT to GitHub App for better security and org support
 - App marketplace listing
 
 ### Additional Integrations
+
 - GitLab support
 - Bitbucket support
 - Jira integration
 - Linear integration
 
 ### Advanced Agent Capabilities
+
 - Agent collaboration (agents reviewing each other's work)
 - Specialized agents (security review, performance optimization)
 - Custom agent development framework
 
 ### Enterprise Features
+
 - SSO/SAML authentication
 - Audit logging
 - Compliance reports
 - On-premise deployment guide
 
 ### AI Capabilities
+
 - Natural language project setup ("Add my Rails project and watch for bugs")
 - Conversational interface for feature requests
 - Predictive cost estimation
@@ -655,23 +713,27 @@ Phase 2.4 (Cost Tracking) ──────────────────
 ## Success Metrics by Phase
 
 ### Phase 1
+
 - Time from labeled issue to PR < 10 minutes
 - Agent success rate > 70% (PR created)
 - Zero secrets exposed
 
 ### Phase 2
+
 - Model selection improves cost efficiency by 20%
 - A/B tests identify winning prompts
 - Quality metrics correlate with human feedback
 - Dashboard latency < 1 second
 
 ### Phase 3
+
 - 5+ agents running in parallel
 - Prompt evolution shows measurable improvement
 - Quality gates catch 90% of regressions
 - Performance handles 10 concurrent projects
 
 ### Phase 4
+
 - 100% of orchestration decisions logged and analyzable
 - Learned orchestration strategies outperform hand-designed by 10%+
 - End-to-end optimization improves outcome/cost ratio by 15%+

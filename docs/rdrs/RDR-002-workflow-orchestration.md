@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Final
 - **Type**: Architecture
@@ -28,18 +29,20 @@ These workflows have specific requirements:
 - **Cancellation**: Users must be able to interrupt running agents
 - **Parallelism**: Multiple agents can work on different issues simultaneously
 
-Standard background jobs (Sidekiq, Solid Queue) can handle simple tasks but lack the durability and state management needed for complex, long-running workflows.
+Standard background jobs (Sidekiq, GoodJob) can handle simple tasks but lack the durability and state management needed for complex, long-running workflows.
 
 ## Context
 
 ### Background
 
 Paid's workflows can run for extended periods:
+
 - Agent execution: 1-60 minutes
 - GitHub polling: Runs continuously
 - Prompt evolution: Days (waiting for A/B test data)
 
 The system must handle:
+
 - Process crashes mid-workflow
 - Deployments during execution
 - Network partitions
@@ -181,6 +184,7 @@ client.start_workflow(
 **Temporal vs. GoodJob:**
 
 GoodJob is excellent for simple background jobs but lacks:
+
 - Workflow composition (workflows calling other workflows)
 - Activity-level timeouts within a job
 - Built-in cancellation propagation
@@ -231,6 +235,7 @@ Use **Temporal.io** with the official Ruby SDK for all long-running, stateful wo
 4. **PromptEvolutionWorkflow**: Quality analysis and prompt mutation
 
 Use **GoodJob** (PostgreSQL-backed) for lightweight, non-critical background jobs:
+
 - Metric aggregation
 - Email notifications
 - Cache warming
@@ -371,14 +376,12 @@ class AgentActivities
     container = Container.find(container_id)
     issue = Issue.find(issue_id)
 
-    agent = AgentHarness.adapter_for(container.agent_type)
+    provider = AgentHarness.provider(container.agent_type)
 
-    agent.execute(
-      container: container,
-      worktree_path: worktree_path,
-      issue: issue,
-      max_iterations: max_iterations,
-      on_heartbeat: -> { Temporalio::Activity.heartbeat }
+    provider.send_message(
+      prompt: build_prompt(issue),
+      model: issue.model,
+      timeout: 45.minutes.to_i
     )
   end
 end
@@ -391,11 +394,13 @@ end
 **Description**: Use GoodJob (PostgreSQL-backed) for all background work including long-running agent execution
 
 **Pros**:
+
 - Single technology, simpler deployment
 - Native Rails/Active Job integration
 - Good PostgreSQL integration
 
 **Cons**:
+
 - Not designed for 30+ minute jobs
 - No workflow composition
 - Manual state machine for multi-step workflows
@@ -409,11 +414,13 @@ end
 **Description**: Use Sidekiq Pro's batch feature for workflow composition
 
 **Pros**:
+
 - Mature, battle-tested
 - Good performance
 - Batch support for dependencies
 
 **Cons**:
+
 - Redis dependency
 - Batches are simpler than Temporal workflows
 - Still requires custom state management
@@ -427,11 +434,13 @@ end
 **Description**: Build custom workflow engine using database-backed state machine
 
 **Pros**:
+
 - Full control
 - No external dependencies
 - Can optimize for specific needs
 
 **Cons**:
+
 - Significant development effort
 - Must solve durability, retries, timeouts, cancellation
 - Testing complexity
@@ -444,11 +453,13 @@ end
 **Description**: Use AWS Step Functions for workflow orchestration
 
 **Pros**:
+
 - Managed service
 - Good durability
 - Visual workflow builder
 
 **Cons**:
+
 - AWS lock-in
 - State machine definition separate from code
 - Limited Ruby integration

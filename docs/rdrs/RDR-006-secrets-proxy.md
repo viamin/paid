@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Final
 - **Type**: Architecture
@@ -20,6 +21,7 @@ AI agents in Paid need to make authenticated API calls to LLM providers (Anthrop
 4. **Manipulation**: Adversarial prompts could trick agents into revealing keys
 
 Requirements:
+
 - Agents must be able to call LLM APIs
 - Agents must never see or handle API keys
 - All API usage must be logged for cost tracking
@@ -31,6 +33,7 @@ Requirements:
 ### Background
 
 Traditional approach: Set API keys as environment variables in agent containers. This is insecure because:
+
 - Keys visible via `/proc/*/environ`
 - Keys could be logged by agent CLI tools
 - Keys could be exfiltrated via allowed network destinations
@@ -118,6 +121,7 @@ curl http://proxy:3001/v1/messages \
 **Rate Limiting Considerations:**
 
 Provider rate limits apply to the API key, not the proxy. The proxy must:
+
 1. Handle 429 responses gracefully
 2. Optionally implement internal rate limiting per project
 3. Log rate limit events for visibility
@@ -443,11 +447,13 @@ end
 **Description**: Pass API keys as environment variables to containers
 
 **Pros**:
+
 - Simple implementation
 - Standard approach
 - No proxy complexity
 
 **Cons**:
+
 - Keys visible in container environment
 - Keys could be logged or exfiltrated
 - No centralized quota enforcement
@@ -460,11 +466,13 @@ end
 **Description**: Use HashiCorp Vault or cloud secret managers, with containers fetching keys at runtime
 
 **Pros**:
+
 - Industry-standard secret management
 - Key rotation support
 - Audit logging
 
 **Cons**:
+
 - Still gives keys to containers
 - Additional infrastructure
 - Doesn't prevent exfiltration once key is fetched
@@ -476,10 +484,12 @@ end
 **Description**: Use mutual TLS with certificates that encode project context
 
 **Pros**:
+
 - Strong authentication
 - No API keys in requests
 
 **Cons**:
+
 - Certificate management complexity
 - Providers don't support mTLS auth
 - Would still need a proxy for translation
@@ -491,10 +501,12 @@ end
 **Description**: Run proxy as sidecar container in same pod
 
 **Pros**:
+
 - Isolated per-container
 - Kubernetes-native pattern
 
 **Cons**:
+
 - More complex deployment
 - Requires orchestration (K8s)
 - Resource overhead per container
