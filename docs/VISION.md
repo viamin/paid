@@ -2,7 +2,7 @@
 
 ## The Bitter Lesson Applied
 
-> "The biggest lesson that can be read from 70 years of AI research is that general methods that leverage computation are ultimately the most effective, and by a large margin." — Rich Sutton
+> "The biggest lesson that can be read from 70 years of AI research is that general methods that leverage computation are ultimately the most effective, and by a large margin." — Rich Sutton, [The Bitter Lesson](https://www.cs.utexas.edu/~eunsol/courses/data/bitter_lesson.pdf)
 
 Paid is built on a fundamental insight: **configuration is ephemeral, but data endures**. Every decision point in Paid that could be hardcoded as configuration is instead stored as data—prompts, model preferences, workflow patterns, quality thresholds. This isn't just good engineering; it's a bet that tomorrow's compute will make today's careful optimizations obsolete, while the data we collect will only become more valuable.
 
@@ -163,8 +163,38 @@ The AI landscape changes monthly. Models get better and cheaper. New agents emer
 
 The goal isn't to build the perfect system for today. It's to build infrastructure that gets better with time—and that leverages every increase in available compute to deliver better results.
 
+## Toward Genuine AI-Native Evolution
+
+The Bitter Lesson argues that methods which scale with computation ultimately win. Paid currently applies this principle to prompts (A/B testing, LLM-based evolution) and model selection (meta-agent with data-driven rules). But the orchestration layer itself—how we decompose tasks, coordinate agents, handle failures—remains largely hand-designed.
+
+The next evolution of Paid aims to change this. Four research directions will make the orchestration layer itself learnable:
+
+### Learned Orchestration Strategies
+
+Instead of hardcoding workflows (poll → plan → execute → PR), store orchestration strategies as data that can evolve. Different projects and task types may have different optimal patterns—let the system discover them.
+
+See: [RDR-014](rdrs/RDR-014-learned-orchestration.md)
+
+### End-to-End Outcome Optimization
+
+Currently we optimize individual components (prompts, model selection). But the ultimate outcome—a merged PR—depends on the entire configuration working together. End-to-end optimization treats the full pipeline as the unit of optimization, using Bayesian optimization to find configurations that maximize final outcomes.
+
+See: [RDR-015](rdrs/RDR-015-end-to-end-optimization.md)
+
+### Self-Improving Agent Coordination
+
+Coordination decisions (when to decompose, how many agents, when to retry, when to escalate) are currently rule-based. These decisions should be policies that evolve from outcomes—the system learns which decomposition patterns work, which failures are recoverable, and when humans actually add value.
+
+See: [RDR-016](rdrs/RDR-016-self-improving-coordination.md)
+
+### Orchestration Scaling Laws
+
+The Bitter Lesson's power comes from predictable scaling. Do similar laws exist for orchestration? Does success improve with more agents? More iterations? At what point do returns diminish? Empirical answers would inform resource allocation and reveal where computation investment pays off.
+
+See: [RDR-017](rdrs/RDR-017-orchestration-scaling-laws.md)
+
 ---
 
 *"The bitter lesson is that the general methods that leverage computation are ultimately the most effective."*
 
-*Paid is our bet on that lesson.*
+*Paid is our bet on that lesson—not just for prompts, but for the orchestration layer itself.*
