@@ -618,10 +618,16 @@ class PromptEvolutionJob < ApplicationJob
   end
 end
 
-# config/recurring.yml
-evolution_check:
-  class: PromptEvolutionJob
-  schedule: every day at 2am
+# config/initializers/good_job.rb
+Rails.application.configure do
+  config.good_job.enable_cron = true
+  config.good_job.cron = {
+    evolution_check: {
+      cron: "0 2 * * *",
+      class: "PromptEvolutionJob"
+    }
+  }
+end
 ```
 
 ---
