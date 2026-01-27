@@ -30,7 +30,8 @@ The agent system has four layers:
 │                                    ▼                                         │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │ 4. AGENT LAYER (agent-harness gem)                                       │ │
-│  │    Unified interface to Claude Code, Cursor, Codex, Copilot, API calls │ │
+│  │    Unified interface to CLI agents (Claude Code, Cursor, Gemini CLI,   │ │
+│  │    GitHub Copilot, Codex, Aider, OpenCode, Kilocode)                   │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -72,6 +73,7 @@ end
 ```
 
 **Characteristics:**
+
 - Long-running (runs continuously while project is active)
 - Cancellable via UI
 - Handles rate limiting gracefully
@@ -127,6 +129,7 @@ end
 ```
 
 **Characteristics:**
+
 - Relatively quick (minutes, not hours)
 - Uses API mode for LLM calls
 - Creates audit trail in GitHub
@@ -214,6 +217,7 @@ end
 ```
 
 **Characteristics:**
+
 - Medium duration (minutes to an hour)
 - Heavy resource usage (container, API calls)
 - Monitored for runaway behavior
@@ -275,6 +279,7 @@ end
 ```
 
 **Characteristics:**
+
 - Runs periodically (daily or weekly)
 - Uses API mode for analysis and mutation
 - Creates audit trail of evolution decisions
@@ -308,6 +313,7 @@ When multiple agents work on related issues:
 ## Temporal Activities
 
 Activities are the building blocks that workflows compose. Each activity is:
+
 - Idempotent (safe to retry)
 - Bounded in time (has timeout)
 - Monitored (logs, metrics)
@@ -359,24 +365,20 @@ class RunAgentActivity < Paid::Activity
       timeout: params[:timeout_minutes].minutes
     )
 
-    # Get the agent adapter
-    agent = AgentHarness.adapter_for(agent_type)
+    # Get the provider
+    provider = AgentHarness.provider(agent_type)
 
     # Run with monitoring
-    result = monitor.run do |checkpoint|
-      agent.execute(
-        container: container,
-        worktree: params[:worktree],
+    response = monitor.run do
+      provider.send_message(
         prompt: prompt,
-        model: params[:model],
-        on_iteration: ->(iter) { checkpoint.record_iteration(iter) },
-        on_token_usage: ->(usage) { checkpoint.record_usage(usage) }
+        model: params[:model]
       )
     end
 
     # Record metrics
-    record_token_usage(result.token_usage)
-    record_quality_metrics(result)
+    record_token_usage(response.tokens)
+    record_quality_metrics(response)
 
     result
   rescue AgentMonitor::LimitExceeded => e
@@ -566,7 +568,7 @@ end
 
 ## The agent-harness Gem
 
-Extracted from aidp concepts, this gem provides a unified interface for agent execution.
+Paid adopts the existing `agent-harness` gem for CLI agent orchestration and provider abstraction (see RDR-007).
 
 ### Architecture
 
@@ -575,151 +577,56 @@ Extracted from aidp concepts, this gem provides a unified interface for agent ex
 │                          agent-harness GEM                                     │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                         AgentHarness::Runner                               ││
-│  │                    (orchestrates agent execution)                        ││
-│  └─────────────────────────────────────────────────────────────────────────┘│
-│                                    │                                         │
-│           ┌────────────────────────┼────────────────────────┐               │
-│           ▼                        ▼                        ▼               │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐         │
-│  │ ClaudeCode      │    │ Cursor          │    │ Codex           │   ...   │
-│  │ Adapter         │    │ Adapter         │    │ Adapter         │         │
-│  └─────────────────┘    └─────────────────┘    └─────────────────┘         │
-│           │                        │                        │               │
-│           ▼                        ▼                        ▼               │
+│  │                         AgentHarness (public API)                         ││
+│  └──────────────────────────────────┬──────────────────────────────────────┘│
+│                                     ▼                                        │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                      AgentHarness::Output                                  ││
-│  │              (standardized result format)                                ││
+│  │                     Orchestration::Conductor                             ││
+│  └──────────────────────────────────┬──────────────────────────────────────┘│
+│                                     ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                         Providers::Registry                              ││
+│  └──────────────────────────────────┬──────────────────────────────────────┘│
+│                                     ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │        Providers::Base (Claude, Cursor, Gemini, etc.)                    ││
+│  └──────────────────────────────────┬──────────────────────────────────────┘│
+│                                     ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │               AgentHarness::Response + TokenTracker                       ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Adapter Interface
+### Provider Registry
+
+Built-in providers include Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, and Kilocode. Providers expose capabilities (streaming, file_upload, vision, tool_use, json_mode, mcp, dangerous_mode), firewall requirements, and instruction file paths. The registry also supports aliases (e.g., `:anthropic` → `:claude`, `:copilot` → `:github_copilot`).
+
+### Response Shape
+
+`AgentHarness::Response` captures output, exit status, duration, provider, model, optional token usage (`tokens` hash), and error details, with `success?`/`failed?` helpers. Runtime failures are raised as typed exceptions (e.g., `RateLimitError`, `TimeoutError`, `NoProvidersAvailableError`).
+
+### Usage
 
 ```ruby
-module AgentHarness
-  class BaseAdapter
-    # Run the agent with given prompt and context
-    def execute(prompt:, model:, worktree:, **options)
-      raise NotImplementedError
-    end
+AgentHarness.configure do |config|
+  config.default_provider = :claude
+  config.fallback_providers = [:cursor, :gemini]
+end
 
-    # Check if agent CLI is available
-    def available?
-      raise NotImplementedError
-    end
+response = AgentHarness.send_message("Implement the requested change", provider: :claude)
+puts response.output if response.success?
+```
 
-    # Agent-specific capabilities
-    def capabilities
-      {
-        supports_streaming: false,
-        supports_tools: false,
-        supports_vision: false
-      }
-    end
-  end
-
-  class ClaudeCodeAdapter < BaseAdapter
-    def execute(prompt:, model:, worktree:, **options)
-      cmd = build_command(prompt, model, options)
-
-      output = ""
-      iterations = 0
-      token_usage = TokenUsage.new
-
-      Open3.popen3(cmd, chdir: worktree) do |stdin, stdout, stderr, wait_thr|
-        stdin.close
-
-        stdout.each_line do |line|
-          output += line
-
-          # Parse Claude Code's output format
-          if line.include?("Iteration")
-            iterations += 1
-            options[:on_iteration]&.call(iterations)
-          end
-
-          if match = line.match(/Tokens: (\d+) in, (\d+) out/)
-            token_usage.add(match[1].to_i, match[2].to_i)
-            options[:on_token_usage]&.call(token_usage)
-          end
-        end
-
-        exit_status = wait_thr.value
-        success = exit_status.success?
-      end
-
-      Output.new(
-        success: success,
-        output: output,
-        iterations: iterations,
-        token_usage: token_usage,
-        files_changed: detect_changes(worktree)
-      )
-    end
-
-    def available?
-      system("which claude-code > /dev/null 2>&1")
-    end
-
-    def capabilities
-      {
-        supports_streaming: true,
-        supports_tools: true,
-        supports_vision: true
-      }
-    end
-
-    private
-
-    def build_command(prompt, model, options)
-      [
-        "claude-code",
-        "--model", model,
-        "--prompt", prompt,
-        "--non-interactive",
-        options[:max_iterations] ? "--max-iterations #{options[:max_iterations]}" : nil
-      ].compact.join(" ")
-    end
-  end
+```ruby
+AgentHarness.token_tracker.on_tokens_used do |event|
+  # event.provider, event.model, event.total_tokens
 end
 ```
 
-### API Mode
+### API Mode (Outside agent-harness)
 
-For simpler tasks or when CLI isn't needed:
-
-```ruby
-module AgentHarness
-  class APIAdapter < BaseAdapter
-    def initialize(client: RubyLLM.client)
-      @client = client
-    end
-
-    def execute(prompt:, model:, **options)
-      response = @client.chat(
-        model: model,
-        messages: [{ role: "user", content: prompt }],
-        system: options[:system_prompt]
-      )
-
-      Output.new(
-        success: true,
-        output: response.content,
-        iterations: 1,
-        token_usage: TokenUsage.new(
-          response.usage.input_tokens,
-          response.usage.output_tokens
-        )
-      )
-    end
-
-    def available?
-      true  # Always available if API keys configured
-    end
-  end
-end
-```
+Paid uses ruby-llm directly for planning, quality evaluation, and other non-CLI tasks.
 
 ---
 
@@ -943,7 +850,7 @@ end
 | Workflow duration | Temporal | Performance |
 | Activity duration | Temporal | Bottleneck identification |
 | Container startup time | Docker | Optimization target |
-| Agent iterations | agent-harness | Quality signal |
+| Provider errors (categorized) | agent-harness | Reliability |
 | Token usage | agent-harness | Cost tracking |
 | PR merge rate | GitHub | Success metric |
 | Error rate by type | All | Reliability |
@@ -963,7 +870,8 @@ class AgentRunBroadcaster
     ActionCable.server.broadcast(@channel, {
       agent_run_id: @agent_run.id,
       status: @agent_run.status,
-      iterations: data[:iterations],
+      provider: data[:provider],
+      duration_seconds: data[:duration_seconds],
       tokens_used: data[:tokens_used],
       current_output: data[:output]&.last(500),  # Last 500 chars
       timestamp: Time.current.iso8601
@@ -975,6 +883,7 @@ end
 ### Temporal UI
 
 The Temporal UI (port 8080) provides:
+
 - Workflow execution history
 - Activity timing breakdown
 - Error details and stack traces

@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Final
 - **Type**: Architecture
@@ -27,12 +28,14 @@ The goal is to apply the "Bitter Lesson"—let data and compute improve prompts 
 ### Background
 
 Prompt engineering is often ad-hoc:
+
 - Developer changes prompt in code
 - Deploy and hope for the best
 - No systematic measurement
 - Knowledge lost when developers leave
 
 Paid treats prompts as data:
+
 - Stored in database with full history
 - Every use logged with prompt version
 - Quality metrics tied to specific versions
@@ -121,6 +124,7 @@ end
 ```
 
 Minimum sample size for 80% power, α=0.05:
+
 - Small effect (d=0.2): ~400 per group
 - Medium effect (d=0.5): ~65 per group
 - Large effect (d=0.8): ~25 per group
@@ -130,6 +134,7 @@ For practical purposes, start with 30 samples per variant.
 **Evolution Agent Patterns:**
 
 Effective mutations include:
+
 - Adding specificity to vague instructions
 - Including examples of desired output
 - Clarifying constraints
@@ -465,11 +470,13 @@ end
 **Description**: No automated evolution; humans edit prompts based on observation
 
 **Pros**:
+
 - Simple implementation
 - Human judgment for changes
 - No LLM cost for evolution
 
 **Cons**:
+
 - No systematic measurement
 - Changes untested before deployment
 - Knowledge lost when people leave
@@ -482,10 +489,12 @@ end
 **Description**: Train a model to optimize prompts directly
 
 **Pros**:
+
 - Potentially optimal prompts
 - Learns from all data
 
 **Cons**:
+
 - Requires significant data
 - Complex to implement
 - Hard to interpret
@@ -498,10 +507,12 @@ end
 **Description**: Use genetic programming to evolve prompts
 
 **Pros**:
+
 - Explores large space
 - No LLM cost for mutation
 
 **Cons**:
+
 - Random mutations often nonsensical
 - Requires many generations
 - Hard to incorporate semantic understanding
@@ -513,10 +524,12 @@ end
 **Description**: Use Bayesian optimization to tune prompt parameters
 
 **Pros**:
+
 - Sample-efficient optimization
 - Handles continuous parameters
 
 **Cons**:
+
 - Prompts aren't continuous parameters
 - Requires careful parameterization
 - Complex implementation

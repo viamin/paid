@@ -50,6 +50,7 @@ Agents receive only the permissions they need:
 ### 3. No Implicit Trust
 
 Agents are treated as potentially compromised:
+
 - Agent output is logged and auditable
 - Code changes go through PR review
 - Agents cannot self-approve or merge
@@ -160,10 +161,30 @@ class FirewallService
     "registry.npmjs.org",
     "rubygems.org",
 
-    # Agent-specific endpoints
-    "api.anthropic.com",      # Claude Code
-    "api.openai.com",         # Codex/Copilot
-    "api.cursor.sh"           # Cursor
+    # Agent-specific endpoints (keep in sync with agent-harness provider firewall_requirements)
+    "api.anthropic.com",                 # Claude Code, Aider
+    "claude.ai",
+    "console.anthropic.com",
+    "api.openai.com",                    # Codex, Aider, OpenCode
+    "openai.com",
+    "api.cursor.sh",                     # Cursor
+    "cursor.com",
+    "www.cursor.com",
+    "downloads.cursor.com",
+    "cursor.sh",
+    "app.cursor.sh",
+    "www.cursor.sh",
+    "auth.cursor.sh",
+    "auth0.com",
+    "generativelanguage.googleapis.com", # Gemini
+    "oauth2.googleapis.com",
+    "accounts.google.com",
+    "www.googleapis.com",
+    "api.githubcopilot.com",             # GitHub Copilot
+    "copilot-proxy.githubusercontent.com",
+    "copilot-completions.githubusercontent.com",
+    "copilot-telemetry.githubusercontent.com",
+    "default.exp-tas.com"
   ].freeze
 
   def apply(container)

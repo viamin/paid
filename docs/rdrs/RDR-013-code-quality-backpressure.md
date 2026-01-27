@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Draft
 - **Type**: Architecture
@@ -22,10 +23,12 @@ AI agents produce better code when they receive immediate feedback about their m
 6. Failing tests
 
 This creates two problems:
+
 1. **For agents working on Paid**: Changes that break builds or introduce vulnerabilities can reach the repository
 2. **For agents working on user projects**: Without appropriate tooling, agents produce lower-quality code and require more human intervention
 
 Requirements:
+
 - Git hooks prevent low-quality commits/pushes from reaching Paid's repository
 - CI workflows maintain Paid's quality and security
 - Agents receive immediate feedback from linters, type checkers, and tests
@@ -100,6 +103,7 @@ Without backpressure, humans spend their review time on trivial issues (missing 
 **Lefthook Framework:**
 
 [Lefthook](https://lefthook.dev) is a fast, polyglot Git hooks manager:
+
 - Written in Go, extremely fast (~0.1s overhead)
 - Single binary, no dependencies (unlike pre-commit which requires Python)
 - Parallel hook execution by default
@@ -110,6 +114,7 @@ Without backpressure, humans spend their review time on trivial issues (missing 
 **Feedback Quality for LLMs:**
 
 Languages with excellent error messages (Rust, Elm, Python) provide better backpressure because errors include:
+
 - Clear problem description
 - Location (file, line, column)
 - Suggested fixes
@@ -495,6 +500,7 @@ end
 ```
 
 This self-review catches issues before human reviewers spend time on them:
+
 - Security vulnerabilities flagged immediately
 - Performance antipatterns identified
 - Convention violations highlighted
@@ -1073,11 +1079,13 @@ end
 **Description**: Only run quality checks in CI, not locally via hooks
 
 **Pros**:
+
 - Simpler setup (no local hooks)
 - Faster local development
 - Centralized enforcement
 
 **Cons**:
+
 - Slow feedback loop (wait for CI)
 - Wasted CI resources on trivial issues
 - PRs opened with obvious problems
@@ -1089,11 +1097,13 @@ end
 **Description**: Use MegaLinter as the single tool for all quality checks
 
 **Pros**:
+
 - Single tool to configure
 - Supports many languages
 - Docker-based, consistent
 
 **Cons**:
+
 - Slower than native tools
 - Less flexible configuration
 - Overkill for simple projects
@@ -1105,11 +1115,13 @@ end
 **Description**: Use LSP servers for real-time feedback instead of batch linting
 
 **Pros**:
+
 - Real-time feedback
 - Rich editor integration
 - Same logic as IDE
 
 **Cons**:
+
 - Complex to integrate with agents
 - Memory intensive
 - Not all tools have LSP
@@ -1121,11 +1133,13 @@ end
 **Description**: Build a custom quality framework instead of using existing tools
 
 **Pros**:
+
 - Perfectly tailored
 - Unified output format
 - Full control
 
 **Cons**:
+
 - Massive development effort
 - Maintenance burden
 - Miss community improvements
@@ -1199,12 +1213,14 @@ end
 ### Files to Create
 
 **For Paid itself:**
+
 - `lefthook.yml`
 - `.rubocop.yml`
 - `.github/workflows/ci.yml`
 - `.github/workflows/security.yml`
 
 **For quality system:**
+
 - `app/services/quality_feedback_service.rb`
 - `app/services/quality_configurator_service.rb`
 - `app/activities/run_quality_checks_activity.rb`
@@ -1213,6 +1229,7 @@ end
 ### Dependencies
 
 **Gemfile additions:**
+
 ```ruby
 group :development, :test do
   gem "rubocop", "~> 1.60", require: false
@@ -1235,6 +1252,7 @@ end
 ```
 
 **Lefthook installation:**
+
 ```bash
 # macOS
 brew install lefthook

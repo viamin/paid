@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Final
 - **Type**: Architecture
@@ -20,6 +21,7 @@ Paid needs to support multiple users with different permission levels:
 4. **Future SaaS**: Architecture should support multi-tenant SaaS later
 
 Requirements:
+
 - Account-based data isolation
 - Flexible role system (account and resource level)
 - Policy-based authorization
@@ -77,6 +79,7 @@ user.has_role?(:owner, account)
 ```
 
 Database schema (auto-generated):
+
 ```sql
 CREATE TABLE roles (
   id BIGSERIAL PRIMARY KEY,
@@ -226,7 +229,7 @@ Implement **account-based multi-tenancy** with **Rolify** for role management an
 │  │     │                                                                   ││
 │  │     ▼                                                                   ││
 │  │  ┌─────────────┐                                                        ││
-│  │  │ Authenticate│  Devise / custom auth                                 ││
+│  │  │ Authenticate│  Devise                                                ││
 │  │  │ User        │                                                        ││
 │  │  └──────┬──────┘                                                        ││
 │  │         │                                                               ││
@@ -481,11 +484,13 @@ end
 **Description**: Use CanCanCan instead of Pundit for authorization
 
 **Pros**:
+
 - Single Ability class
 - Well-known in Rails community
 - Good documentation
 
 **Cons**:
+
 - Single file can become unwieldy
 - Less explicit than Pundit policies
 - Harder to test in isolation
@@ -497,11 +502,13 @@ end
 **Description**: Build role management from scratch
 
 **Pros**:
+
 - Full control
 - No gem dependencies
 - Tailored to needs
 
 **Cons**:
+
 - Development time
 - Maintenance burden
 - Rolify solves this well
@@ -513,11 +520,13 @@ end
 **Description**: Use ActionPolicy gem instead of Pundit
 
 **Pros**:
+
 - More features (caching, scoping)
 - Good performance
 - Active development
 
 **Cons**:
+
 - Smaller community
 - More complex
 - Less documentation
@@ -529,11 +538,13 @@ end
 **Description**: Use PostgreSQL schemas for tenant isolation
 
 **Pros**:
+
 - Database-level isolation
 - Clear separation
 - Can have different schemas per tenant
 
 **Cons**:
+
 - Migration complexity (must run per-schema)
 - Connection management complexity
 - Harder to query across tenants
@@ -572,7 +583,7 @@ end
 ### Prerequisites
 
 - [ ] Rolify and Pundit gems added
-- [ ] Devise or authentication system in place
+- [ ] Devise authentication in place
 - [ ] Account model created
 
 ### Step-by-Step Implementation

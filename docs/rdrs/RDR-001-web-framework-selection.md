@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Final
 - **Type**: Architecture
@@ -54,19 +55,11 @@ The team has Ruby expertise and values developer productivity. The application i
 
 **Rails 8 Advantages:**
 
-1. **Solid Queue & Solid Cache**: Native background jobs and caching backed by PostgreSQL. Reduces infrastructure complexity by avoiding Redis for basic needs.
+1. **GoodJob & Solid Cache**: PostgreSQL-backed background jobs and caching. Reduces infrastructure complexity by avoiding Redis for basic needs.
 
    ```ruby
-   # config/database.yml
-   production:
-     primary:
-       <<: *default
-     queue:
-       <<: *default
-       migrations_paths: db/queue_migrate
-     cache:
-       <<: *default
-       migrations_paths: db/cache_migrate
+   # config/application.rb
+   config.active_job.queue_adapter = :good_job
    ```
 
 2. **Hotwire (Turbo + Stimulus)**: Server-rendered HTML with SPA-like interactivity. Perfect for the live dashboard without JavaScript framework complexity.
@@ -100,7 +93,7 @@ The team has Ruby expertise and values developer productivity. The application i
 | Feature | Rails 8 | Phoenix/Elixir | Django | Next.js |
 |---------|---------|----------------|--------|---------|
 | Real-time | Hotwire + Action Cable | LiveView (excellent) | Channels (add-on) | Requires separate solution |
-| Background jobs | Solid Queue (native) | Oban (excellent) | Celery (add-on) | External service |
+| Background jobs | GoodJob (PostgreSQL-backed) | Oban (excellent) | Celery (add-on) | External service |
 | ORM | Active Record | Ecto | Django ORM | Prisma (separate) |
 | Temporal SDK | Official Ruby SDK | No official SDK | Official Python SDK | Official TypeScript SDK |
 | Team expertise | High | Low | Medium | Medium |
@@ -131,6 +124,7 @@ end
 **Phoenix/Elixir Consideration:**
 
 Phoenix with LiveView offers superior real-time capabilities, but:
+
 - No official Temporal SDK (would need gRPC bindings or sidecar pattern)
 - Team lacks Elixir expertise
 - Migration cost outweighs benefits for this use case
@@ -140,9 +134,10 @@ Phoenix with LiveView offers superior real-time capabilities, but:
 ### Approach
 
 Use **Rails 8+** with:
+
 - **Hotwire** (Turbo + Stimulus) for real-time UI
 - **Action Cable** for WebSocket connections
-- **Solid Queue** for lightweight background jobs (GitHub polling, metric aggregation)
+- **GoodJob** for lightweight background jobs (GitHub polling, metric aggregation)
 - **Temporal** for durable workflows (agent execution, prompt evolution)
 - **Phlex** for view components
 - **PostgreSQL** as the single datastore
@@ -172,7 +167,7 @@ Use **Rails 8+** with:
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
 │  │                            DATA LAYER                                    ││
 │  │  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐                 ││
-│  │  │ Active Record │ │ Solid Queue   │ │ Solid Cache   │                 ││
+│  │  │ Active Record │ │ GoodJob       │ │ Solid Cache   │                 ││
 │  │  │ Models        │ │ Jobs          │ │               │                 ││
 │  │  └───────────────┘ └───────────────┘ └───────────────┘                 ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
@@ -187,7 +182,7 @@ Use **Rails 8+** with:
 2. **Ecosystem**: All required integrations have mature gems
 3. **Real-time**: Hotwire + Action Cable provides excellent real-time without SPA complexity
 4. **Temporal**: Official Ruby SDK enables writing workflows in Ruby
-5. **Simplicity**: Solid Queue/Cache reduce infrastructure (no Redis required for basic cases)
+5. **Simplicity**: GoodJob/Solid Cache reduce infrastructure (no Redis required for basic cases)
 6. **Convention over configuration**: Rails conventions accelerate development
 
 ### Implementation Example
@@ -226,11 +221,13 @@ end
 **Description**: Use Phoenix framework with LiveView for real-time UI
 
 **Pros**:
+
 - Superior real-time capabilities with LiveView
 - Excellent concurrency model (BEAM VM)
 - Growing ecosystem
 
 **Cons**:
+
 - No official Temporal SDK
 - Team lacks Elixir expertise
 - Smaller ecosystem for required integrations
@@ -243,11 +240,13 @@ end
 **Description**: Use Django with HTMX for interactive UI
 
 **Pros**:
+
 - Official Temporal Python SDK
 - Strong ORM, good admin interface
 - HTMX provides similar benefits to Hotwire
 
 **Cons**:
+
 - Team has less Python expertise than Ruby
 - Django Channels (WebSocket) is more complex than Action Cable
 - Less convention-driven than Rails
@@ -259,11 +258,13 @@ end
 **Description**: Full-stack TypeScript with Next.js
 
 **Pros**:
+
 - Official Temporal TypeScript SDK
 - Modern frontend tooling
 - Strong typing throughout
 
 **Cons**:
+
 - Requires separate backend or API routes for complex logic
 - Real-time requires additional setup (Socket.io or similar)
 - More infrastructure complexity
@@ -278,7 +279,7 @@ end
 - **Fast development**: Rails conventions and team expertise enable rapid iteration
 - **Unified codebase**: Workflows, web UI, and background jobs all in Ruby
 - **Mature ecosystem**: Battle-tested gems for all integrations
-- **Reduced infrastructure**: Solid Queue/Cache mean no Redis dependency initially
+- **Reduced infrastructure**: GoodJob/Solid Cache mean no Redis dependency initially
 - **Real-time built-in**: Hotwire + Action Cable work out of the box
 
 ### Negative Consequences
@@ -296,7 +297,7 @@ end
   **Mitigation**: Heavy compute (agent execution) happens in containers, not Rails. Rails is just the control plane.
 
 - **Risk**: Real-time features don't scale
-  **Mitigation**: Action Cable can be backed by Redis for horizontal scaling when needed
+  **Mitigation**: Use AnyCable or a dedicated WebSocket service for horizontal scaling when needed
 
 ## Implementation Plan
 
@@ -319,6 +320,7 @@ rails new paid \
 
 cd paid
 bundle add phlex-rails
+bundle add good_job
 bundle add servo
 bundle add temporalio
 bundle add octokit
@@ -326,11 +328,11 @@ bundle add ruby-llm
 bundle add rolify pundit
 ```
 
-#### Step 2: Configure Solid Queue
+#### Step 2: Configure GoodJob
 
 ```ruby
 # config/application.rb
-config.active_job.queue_adapter = :solid_queue
+config.active_job.queue_adapter = :good_job
 ```
 
 #### Step 3: Set Up Action Cable
@@ -352,13 +354,15 @@ Already included in Rails 8. Ensure Turbo and Stimulus are properly imported in 
 
 - `Gemfile` - Add required gems
 - `config/application.rb` - Configure Active Job adapter
-- `config/database.yml` - Configure multiple databases for Solid Queue
+- `config/initializers/good_job.rb` - GoodJob configuration
 - `config/cable.yml` - Configure Action Cable
 - `app/javascript/application.js` - Import Turbo and Stimulus
 
 ### Dependencies
 
 New gem dependencies:
+
+- `good_job` (~> 4.0)
 - `phlex-rails` (~> 2.0)
 - `servo` (~> 0.1)
 - `temporalio` (~> 0.2)
@@ -410,7 +414,7 @@ New gem dependencies:
 
 - [Rails 8 Release Notes](https://guides.rubyonrails.org/8_0_release_notes.html)
 - [Hotwire Documentation](https://hotwired.dev/)
-- [Solid Queue Repository](https://github.com/rails/solid_queue)
+- [GoodJob Repository](https://github.com/bensheldon/good_job)
 - [temporalio-ruby SDK](https://github.com/temporalio/sdk-ruby)
 - [Phlex Documentation](https://www.phlex.fun/)
 
@@ -422,6 +426,6 @@ New gem dependencies:
 
 ## Notes
 
-- Consider adding Redis later if Action Cable scaling becomes an issue
+- Consider AnyCable or a dedicated WebSocket service if Action Cable scaling becomes an issue
 - The Temporal worker processes run separately from Rails but share the Ruby codebase
 - Evaluate Kamal for deployment (Rails 8's recommended deployment tool)
