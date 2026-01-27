@@ -1,8 +1,8 @@
 # Omakase Ruby styling for Rails
 inherit_gem: { rubocop-rails-omakase: rubocop.yml }
 
-# Require additional extensions
-require:
+# Load additional extensions as plugins
+plugins:
   - rubocop-rspec
   - rubocop-performance
 
