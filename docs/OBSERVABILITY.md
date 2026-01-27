@@ -796,23 +796,29 @@ end
 
 ### Scheduled Cleanup Jobs
 
-```yaml
-# config/recurring.yml
-disk_cleanup:
-  class: DiskCleanupJob
-  schedule: every 1 hour
-
-worktree_cleanup:
-  class: WorktreeOrphanCleanupJob
-  schedule: every 6 hours
-
-container_cleanup:
-  class: ContainerCleanupJob
-  schedule: every 30 minutes
-
-log_retention:
-  class: LogRetentionJob
-  schedule: every day at 3am
+```ruby
+# config/initializers/good_job.rb
+Rails.application.configure do
+  config.good_job.enable_cron = true
+  config.good_job.cron = {
+    disk_cleanup: {
+      cron: "0 * * * *",
+      class: "DiskCleanupJob"
+    },
+    worktree_cleanup: {
+      cron: "0 */6 * * *",
+      class: "WorktreeOrphanCleanupJob"
+    },
+    container_cleanup: {
+      cron: "*/30 * * * *",
+      class: "ContainerCleanupJob"
+    },
+    log_retention: {
+      cron: "0 3 * * *",
+      class: "LogRetentionJob"
+    }
+  }
+end
 ```
 
 ---

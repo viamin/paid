@@ -38,5 +38,8 @@ module Paid
 
     # Don't generate system test files.
     config.generators.system_tests = nil
+
+    # Use GoodJob for background jobs across environments.
+    config.active_job.queue_adapter = :good_job
   end
 end
