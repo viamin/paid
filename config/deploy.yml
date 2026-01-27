@@ -45,8 +45,8 @@ env:
     # When you start using multiple servers, split job processing to a dedicated worker (see the job server block above).
     # GOOD_JOB_EXECUTION_MODE: async
 
-    # Set number of processes dedicated to Solid Queue (default: 1)
-    # JOB_CONCURRENCY: 3
+    # Set number of job worker threads for GoodJob (default: 5)
+    # GOOD_JOB_MAX_THREADS: 5
 
     # Set number of cores available to the application on each server (default: 1).
     # WEB_CONCURRENCY: 2

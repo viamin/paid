@@ -39,10 +39,12 @@ RUN apt-get update -qq && \
 ARG NODE_VERSION=22.12.0
 ARG YARN_VERSION=1.22.22
 ENV PATH=/usr/local/node/bin:$PATH
-RUN curl -sL https://github.com/nodenv/node-build/archive/master.tar.gz | tar xz -C /tmp/ && \
-    /tmp/node-build-master/bin/node-build "${NODE_VERSION}" /usr/local/node && \
+# Pin node-build to a specific release for supply chain security
+ARG NODE_BUILD_VERSION=v5.4.24
+RUN curl -sL https://github.com/nodenv/node-build/archive/refs/tags/${NODE_BUILD_VERSION}.tar.gz | tar xz -C /tmp/ && \
+    /tmp/node-build-${NODE_BUILD_VERSION#v}/bin/node-build "${NODE_VERSION}" /usr/local/node && \
     npm install -g yarn@$YARN_VERSION && \
-    rm -rf /tmp/node-build-master
+    rm -rf /tmp/node-build-${NODE_BUILD_VERSION#v}
 
 # Install application gems
 COPY vendor/* ./vendor/

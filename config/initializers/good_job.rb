@@ -1,4 +1,7 @@
 # Configure GoodJob cron schedule. Enable cron with GOOD_JOB_ENABLE_CRON=true.
+# Note: Cron is disabled by default. The job classes referenced below will be
+# implemented as the system is built out. Enable cron only after implementing
+# the corresponding job classes.
 Rails.application.configure do
   config.good_job.enable_cron = ActiveModel::Type::Boolean.new.cast(
     ENV.fetch("GOOD_JOB_ENABLE_CRON", "false")
