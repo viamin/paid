@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Final
 - **Type**: Architecture
@@ -20,6 +21,7 @@ Paid runs multiple AI agents in parallel, potentially on the same project. Each 
 4. Must have changes isolated until PR creation
 
 Challenges:
+
 - Multiple agents working on same repo simultaneously
 - Each agent needs an independent working directory
 - Storage efficiency (avoid full clones per agent)
@@ -42,11 +44,13 @@ Git worktrees allow multiple working directories backed by a single repository. 
 ```
 
 Each worktree has its own:
+
 - Working directory with files
 - Index (staging area)
 - HEAD reference
 
 But shares the same:
+
 - Object database (.git/objects)
 - Remote configuration
 - Hooks
@@ -96,6 +100,7 @@ git worktree prune
 **Branch Naming Strategy:**
 
 To avoid conflicts and enable tracking:
+
 ```
 paid-agent-{issue_id}-{timestamp}-{short_hash}
 ```
@@ -105,11 +110,13 @@ Example: `paid-agent-123-20250123-a1b2c3`
 **Storage Efficiency:**
 
 Worktrees share the object database:
+
 - Initial clone: ~100MB-1GB depending on repo
 - Each worktree: ~50-200MB (working directory only)
 - vs. full clone per agent: ~100MB-1GB each
 
 For 10 parallel agents on a 500MB repo:
+
 - With worktrees: 500MB + (10 × 100MB) = 1.5GB
 - Without worktrees: 10 × 500MB = 5GB
 
@@ -130,11 +137,13 @@ For 10 parallel agents on a 500MB repo:
 **Orphan Detection:**
 
 Worktrees can become orphaned if:
+
 - Container crashes during agent run
 - Agent is interrupted without cleanup
 - Worker process dies unexpectedly
 
 Detection query:
+
 ```sql
 SELECT w.path, w.branch_name, ar.status
 FROM worktrees w
@@ -394,11 +403,13 @@ end
 **Description**: Clone the entire repository for each agent run
 
 **Pros**:
+
 - Complete isolation
 - No worktree complexity
 - Simpler mental model
 
 **Cons**:
+
 - Storage inefficient (full repo per agent)
 - Slow (clone time for each run)
 - Network bandwidth intensive
@@ -410,11 +421,13 @@ end
 **Description**: Use `git clone --depth 1` for each agent
 
 **Pros**:
+
 - Faster than full clones
 - Less storage than full clones
 - Simple isolation
 
 **Cons**:
+
 - Still slower than worktrees
 - Can't reference older commits easily
 - Still duplicates files across agents
@@ -426,10 +439,12 @@ end
 **Description**: Single checkout with file-level locking
 
 **Pros**:
+
 - Minimal storage
 - Simplest approach
 
 **Cons**:
+
 - Agents would conflict on same files
 - Locking complexity
 - Serial execution only (defeats parallel agents)
@@ -441,11 +456,13 @@ end
 **Description**: Use filesystem-level CoW (btrfs, zfs) for efficient clones
 
 **Pros**:
+
 - Instant copies
 - Automatic deduplication
 - No git worktree complexity
 
 **Cons**:
+
 - Requires specific filesystem
 - Host dependency
 - Not available in all environments

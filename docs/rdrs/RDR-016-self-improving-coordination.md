@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-26
 - **Status**: Draft
 - **Type**: Architecture
@@ -13,6 +14,7 @@
 ## Problem Statement
 
 Current multi-agent coordination in Paid follows fixed patterns:
+
 - Task decomposition uses a planning prompt with hardcoded structure
 - Agent assignment uses rules or a meta-agent with fixed criteria
 - Retry decisions use exponential backoff with fixed parameters
@@ -47,6 +49,7 @@ Multi-agent coordination involves several decision types:
 Consider a feature request: "Add user authentication with OAuth2 support"
 
 **Current approach** (fixed):
+
 1. Planning agent decomposes into sub-tasks
 2. Each sub-task assigned to coding agent
 3. Agents run in parallel (fixed: 3 at a time)
@@ -54,6 +57,7 @@ Consider a feature request: "Add user authentication with OAuth2 support"
 5. If still failing, escalate to human
 
 **Learned approach** (adaptive):
+
 1. System recognizes "authentication" tasks have specific patterns
 2. Decomposition follows patterns successful for similar tasks
 3. Parallelism adjusted: auth tasks need more coordination, use 2 agents
@@ -63,11 +67,13 @@ Consider a feature request: "Add user authentication with OAuth2 support"
 ### Why Self-Improvement Matters
 
 **Static coordination is fragile**:
+
 - Optimal coordination depends on project, team, task type
 - What works for one codebase may fail for another
 - As LLMs improve, optimal coordination patterns change
 
 **Data reveals patterns**:
+
 - "Tasks with >5 sub-tasks have lower success rate" → decompose less
 - "Python projects benefit from parallel agents; Ruby projects don't" → adapt parallelism
 - "Timeout errors are always recoverable; logic errors rarely are" → smart retry
@@ -122,6 +128,7 @@ Task Arrives
 **Learnable Patterns:**
 
 1. **Decomposition patterns**: What sub-task structures succeed for which task types?
+
    ```
    Pattern A: Linear (task1 → task2 → task3) - good for refactoring
    Pattern B: Parallel (task1 || task2 || task3) - good for independent features
@@ -129,6 +136,7 @@ Task Arrives
    ```
 
 2. **Agent affinity**: Which agents perform best on which tasks?
+
    ```
    Claude Code: Strong on complex refactoring, weak on UI tasks
    Cursor: Strong on full-file changes, weak on surgical edits
@@ -136,6 +144,7 @@ Task Arrives
    ```
 
 3. **Failure classification**: Which failures are recoverable?
+
    ```
    Recoverable: Timeout, rate limit, syntax error, missing import
    Maybe recoverable: Test failure, lint error, type error
@@ -143,6 +152,7 @@ Task Arrives
    ```
 
 4. **Escalation signals**: When do humans actually help?
+
    ```
    Humans help: Ambiguous requirements, architectural decisions, security review
    Humans don't help: Mechanical errors, well-specified tasks, routine changes
@@ -151,14 +161,17 @@ Task Arrives
 ### Learning Approaches
 
 **For discrete decisions** (decompose yes/no, which agent):
+
 - Contextual bandits with context = task features
 - Learn policy mapping context → action
 
 **For structured outputs** (decomposition plan):
+
 - LLM-based generation with learned prompts
 - Imitation learning from successful decompositions
 
 **For sequential decisions** (retry, escalate):
+
 - Finite-state learner based on failure patterns
 - Decision tree learned from outcome data
 
@@ -528,10 +541,12 @@ end
 **Description**: Keep current hardcoded coordination logic
 
 **Pros**:
+
 - Simple, predictable
 - Easy to understand and debug
 
 **Cons**:
+
 - Cannot adapt to different contexts
 - Suboptimal for many situations
 - Requires manual tuning
@@ -543,10 +558,12 @@ end
 **Description**: Train RL agent to make all coordination decisions
 
 **Pros**:
+
 - Optimal policy in theory
 - Handles sequential decisions naturally
 
 **Cons**:
+
 - Very high sample complexity
 - Hard to incorporate prior knowledge
 - Black box decisions
@@ -558,10 +575,12 @@ end
 **Description**: Always escalate uncertain decisions to humans
 
 **Pros**:
+
 - Human judgment on hard decisions
 - Safe by default
 
 **Cons**:
+
 - Doesn't scale
 - Humans become bottleneck
 - No learning over time

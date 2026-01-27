@@ -158,7 +158,7 @@ class User < ApplicationRecord
   validates :email, presence: true, uniqueness: true
   validates :account, presence: true
 
-  # Devise or similar for authentication
+  # Devise for authentication
   # devise :database_authenticatable, :registerable, :recoverable, :rememberable, :validatable
 end
 ```

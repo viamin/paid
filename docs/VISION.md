@@ -9,6 +9,7 @@ Paid is built on a fundamental insight: **configuration is ephemeral, but data e
 ### Core Principle: Data Over Configuration
 
 Traditional tools encode human expertise as rules:
+
 - "Use model X for complex reasoning tasks"
 - "Limit context to 8K tokens for cost efficiency"
 - "Always include a system prompt about code style"
@@ -44,6 +45,7 @@ Agents run in containers. They don't have access to secrets. They work on copies
 ### 3. Observable Everything
 
 You can't improve what you can't measure. Paid tracks:
+
 - Token usage and costs per project, per model, per agent
 - Iteration counts and success rates
 - Code quality metrics
@@ -53,6 +55,7 @@ You can't improve what you can't measure. Paid tracks:
 ### 4. Prompts Are Data
 
 Prompts are not hardcoded strings. They are versioned entities with:
+
 - A/B test assignments
 - Performance metrics
 - Human feedback scores
@@ -64,6 +67,7 @@ A prompt that works well gets used more. A prompt that fails gets evolved or ret
 ### 5. Models Are Commodities
 
 Today's best model is tomorrow's baseline. Paid doesn't bet on any single provider:
+
 - Model capabilities are tracked in a registry (via ruby-llm)
 - A meta-agent (with rules-based fallback) selects models for tasks
 - Per-project cost tracking enables informed tradeoffs
@@ -72,10 +76,12 @@ Today's best model is tomorrow's baseline. Paid doesn't bet on any single provid
 ### 6. Progressive Complexity
 
 Paid should be useful on day one:
+
 - Add a repo, add a token, label an issue
 - An agent plans the work and opens a PR
 
 But Paid should also support sophisticated workflows:
+
 - Multiple agents collaborating on complex features
 - Custom style guides compressed into LLM-friendly formats
 - Workflow templates for different project types
@@ -146,6 +152,7 @@ Paid is directly inspired by [aidp](https://github.com/viamin/aidp), a CLI tool 
 - **Work loops**: Iterative agent execution with test/lint feedback
 
 Paid adds:
+
 - **Web UI**: Visual management and live dashboards
 - **Temporal workflows**: Durable, observable orchestration
 - **Container isolation**: Security through sandboxing

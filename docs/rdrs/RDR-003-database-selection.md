@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Final
 - **Type**: Architecture
@@ -21,13 +22,14 @@ Paid requires a database to store:
 5. **Encrypted secrets**: GitHub tokens (encrypted at rest)
 
 Requirements:
+
 - Strong consistency (financial-grade for cost tracking)
 - JSON support for flexible schema (labels, settings, metadata)
 - Full-text search capability (for prompt content, logs)
 - Encryption at rest
 - Mature Rails integration
 - Compatibility with Temporal.io (can share or separate)
-- Support for Solid Queue and GoodJob (database-backed job queues)
+- Support for GoodJob (PostgreSQL-backed job queues)
 
 ## Context
 
@@ -36,6 +38,7 @@ Requirements:
 Paid follows the "Bitter Lesson" principle: configuration is data, not code. This means the database is central to how Paid operates—prompts, model selections, and quality metrics all live in the database and evolve over time.
 
 The database must handle:
+
 - Write-heavy workloads (agent run logs, token usage)
 - Read-heavy workloads (dashboard queries, prompt resolution)
 - Complex queries (A/B test analytics, quality aggregations)
@@ -63,6 +66,7 @@ The database must handle:
 **PostgreSQL Advantages for Paid:**
 
 1. **JSONB Support**: First-class JSON with indexing
+
    ```sql
    -- Store flexible settings
    CREATE TABLE projects (
@@ -79,6 +83,7 @@ The database must handle:
    ```
 
 2. **Array Types**: Native arrays for tags, scopes
+
    ```sql
    CREATE TABLE github_tokens (
      id BIGSERIAL PRIMARY KEY,
@@ -90,6 +95,7 @@ The database must handle:
    ```
 
 3. **Full-Text Search**: Built-in search without external service
+
    ```sql
    -- Search prompt templates
    SELECT * FROM prompt_versions
@@ -97,6 +103,7 @@ The database must handle:
    ```
 
 4. **Window Functions**: Complex analytics for A/B testing
+
    ```sql
    -- Calculate running averages for A/B test
    SELECT
@@ -111,6 +118,7 @@ The database must handle:
    ```
 
 5. **Temporal Compatibility**: Temporal supports PostgreSQL as persistence store
+
    ```yaml
    # Temporal configuration
    persistence:
@@ -122,6 +130,7 @@ The database must handle:
    ```
 
 6. **Rails 8 Integration**: Native support for multiple databases
+
    ```ruby
    # config/database.yml
    production:
@@ -145,7 +154,7 @@ The database must handle:
 | Temporal support | Yes | Yes | No | No |
 | Rails integration | Excellent | Excellent | Good | Via Mongoid |
 | Encryption at rest | Yes | Yes | Limited | Yes |
-| Solid Queue support | Yes | Yes | Yes | No |
+| GoodJob support | Yes | Yes | Yes | No |
 
 **Temporal Database Sharing:**
 
@@ -164,6 +173,7 @@ This simplifies infrastructure while maintaining isolation.
 **Encryption at Rest:**
 
 Rails 8 provides application-level encryption:
+
 ```ruby
 class GithubToken < ApplicationRecord
   encrypts :token, deterministic: false
@@ -177,8 +187,9 @@ PostgreSQL also supports disk-level encryption via TDE or filesystem encryption.
 ### Approach
 
 Use **PostgreSQL 15+** as the single database technology for:
+
 - Rails application data
-- Solid Queue/GoodJob job queues
+- GoodJob job queues
 - Temporal persistence (separate database on same instance)
 
 ### Technical Design
@@ -209,7 +220,7 @@ Use **PostgreSQL 15+** as the single database technology for:
 │  │    Rails App        │                    │   Temporal Server   │        │
 │  │                     │                    │                     │        │
 │  │ • Active Record     │                    │ • Workflow history  │        │
-│  │ • Solid Queue       │                    │ • Activity tasks    │        │
+│  │ • GoodJob           │                    │ • Activity tasks    │        │
 │  │ • Solid Cache       │                    │ • Timer schedules   │        │
 │  └─────────────────────┘                    └─────────────────────┘        │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -287,12 +298,14 @@ end
 **Description**: Use MySQL as the primary database
 
 **Pros**:
+
 - Excellent Rails integration
 - Temporal support
 - Wide hosting availability
 - Good performance
 
 **Cons**:
+
 - JSON support less mature than PostgreSQL JSONB
 - No native array types
 - Full-text search less powerful
@@ -305,11 +318,13 @@ end
 **Description**: Use MongoDB for flexible schema storage
 
 **Pros**:
+
 - Native JSON/BSON
 - Flexible schema
 - Horizontal scaling
 
 **Cons**:
+
 - No Temporal support
 - Different data model (requires Mongoid instead of Active Record)
 - Weaker ACID guarantees by default
@@ -322,11 +337,13 @@ end
 **Description**: Use SQLite for simplicity
 
 **Pros**:
+
 - Zero configuration
 - File-based (easy backup)
-- Good Rails support via Solid Queue
+- Good Rails support via GoodJob
 
 **Cons**:
+
 - No Temporal support
 - Limited concurrent writes
 - No JSON indexing
@@ -339,10 +356,12 @@ end
 **Description**: Use PostgreSQL for Rails and a separate datastore for time-series/analytics
 
 **Pros**:
+
 - Optimized storage per use case
 - Could use TimescaleDB for metrics
 
 **Cons**:
+
 - Operational complexity
 - Data consistency challenges
 - More infrastructure to manage

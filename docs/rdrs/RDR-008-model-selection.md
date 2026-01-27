@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Final
 - **Type**: Architecture
@@ -20,6 +21,7 @@ Paid must select appropriate LLM models for each task. Different tasks benefit f
 - **Specialized tasks** (code review, security): May need specific models
 
 Requirements:
+
 - Intelligent model selection based on task characteristics
 - Respect project budget constraints
 - Fall back gracefully when primary selection fails
@@ -71,6 +73,7 @@ model.output_cost_per_1k # 0.015
 **Task Complexity Signals:**
 
 Indicators that suggest model capability needed:
+
 - Issue description length and complexity
 - Number of files likely involved (from repo analysis)
 - Keywords suggesting architecture/planning
@@ -418,11 +421,13 @@ end
 **Description**: Hardcode model per task category (e.g., always use Claude for planning)
 
 **Pros**:
+
 - Simple implementation
 - Predictable costs
 - No meta-agent overhead
 
 **Cons**:
+
 - Doesn't adapt to task nuances
 - Misses optimization opportunities
 - Requires code changes to adjust
@@ -434,11 +439,13 @@ end
 **Description**: Only use rules, no meta-agent
 
 **Pros**:
+
 - Deterministic
 - No LLM cost for selection
 - Easier to debug
 
 **Cons**:
+
 - Rules are limited in nuance
 - Hard to capture complex tradeoffs
 - Requires manual rule updates
@@ -450,10 +457,12 @@ end
 **Description**: Always use meta-agent, no rules fallback
 
 **Pros**:
+
 - Most intelligent selection
 - Adapts to any situation
 
 **Cons**:
+
 - Single point of failure
 - Adds latency and cost to every run
 - Can make surprising decisions
@@ -465,10 +474,12 @@ end
 **Description**: Always ask user to select model per task
 
 **Pros**:
+
 - User has full control
 - No selection logic needed
 
 **Cons**:
+
 - Friction in automation workflow
 - Users may not know optimal model
 - Defeats purpose of autonomous agents
