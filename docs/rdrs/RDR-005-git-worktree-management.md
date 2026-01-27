@@ -590,10 +590,16 @@ end
 #### Step 4: Configure Cleanup Job
 
 ```ruby
-# config/recurring.yml
-orphan_cleanup:
-  class: OrphanWorktreeCleanupJob
-  schedule: every 1 hour
+# config/initializers/good_job.rb
+Rails.application.configure do
+  config.good_job.enable_cron = true
+  config.good_job.cron = {
+    orphan_cleanup: {
+      cron: "0 * * * *",
+      class: "OrphanWorktreeCleanupJob"
+    }
+  }
+end
 ```
 
 ### Files to Modify
@@ -603,7 +609,7 @@ orphan_cleanup:
 - `app/services/worktree_service.rb` - Create/cleanup services
 - `app/services/project_clone_service.rb` - Initial clone management
 - `app/jobs/orphan_worktree_cleanup_job.rb` - Orphan cleanup
-- `config/recurring.yml` - Schedule cleanup job
+- `config/initializers/good_job.rb` - Schedule cleanup job
 
 ### Dependencies
 

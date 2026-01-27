@@ -137,10 +137,14 @@ The database must handle:
      primary:
        adapter: postgresql
        database: paid_production
-     queue:
+     cache:
        adapter: postgresql
-       database: paid_production
-       migrations_paths: db/queue_migrate
+       database: paid_production_cache
+       migrations_paths: db/cache_migrate
+     cable:
+       adapter: postgresql
+       database: paid_production_cable
+       migrations_paths: db/cable_migrate
    ```
 
 **PostgreSQL vs. Alternatives:**
@@ -209,7 +213,7 @@ Use **PostgreSQL 15+** as the single database technology for:
 │  │  │ • projects      │ │ • timers        │ │                 │           ││
 │  │  │ • prompts       │ │ • visibility    │ │                 │           ││
 │  │  │ • agent_runs    │ │                 │ │                 │           ││
-│  │  │ • solid_queue_* │ │                 │ │                 │           ││
+│  │  │ • good_job_*    │ │                 │ │                 │           ││
 │  │  └─────────────────┘ └─────────────────┘ └─────────────────┘           ││
 │  │                                                                          ││
 │  └─────────────────────────────────────────────────────────────────────────┘│

@@ -655,10 +655,16 @@ Create files as shown in implementation example.
 #### Step 4: Schedule Evolution Job
 
 ```ruby
-# config/recurring.yml
-prompt_evolution:
-  class: PromptEvolutionJob
-  schedule: every day at 2am
+# config/initializers/good_job.rb
+Rails.application.configure do
+  config.good_job.enable_cron = true
+  config.good_job.cron = {
+    prompt_evolution: {
+      cron: "0 2 * * *",
+      class: "PromptEvolutionJob"
+    }
+  }
+end
 ```
 
 ### Files to Create
