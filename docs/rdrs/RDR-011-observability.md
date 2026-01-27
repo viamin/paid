@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Final
 - **Type**: Architecture
@@ -22,6 +23,7 @@ Paid orchestrates AI agents, containers, and workflows. Operators need visibilit
 6. **Alerting**: When should operators be notified?
 
 Requirements:
+
 - Real-time metrics for operations
 - Historical data for trends
 - Dashboards for visibility
@@ -33,6 +35,7 @@ Requirements:
 ### Background
 
 Paid has multiple components that need monitoring:
+
 - Rails application (web, API)
 - Temporal server and workers
 - PostgreSQL database
@@ -145,6 +148,7 @@ Temporal server exposes Prometheus metrics at `/metrics`:
 **Alert Rules:**
 
 Critical alerts:
+
 - Agent success rate < 50% (15 min window)
 - Workflow failure rate > 10%
 - Token spend > daily budget
@@ -152,6 +156,7 @@ Critical alerts:
 - Container OOM kills
 
 Warning alerts:
+
 - Agent run duration > 30 min (p95)
 - Workflow queue depth > 100
 - API error rate > 5%
@@ -468,12 +473,14 @@ groups:
 **Description**: Use DataDog for observability
 
 **Pros**:
+
 - All-in-one solution
 - Excellent UI
 - APM built-in
 - Managed service
 
 **Cons**:
+
 - Expensive at scale
 - External dependency
 - Data leaves infrastructure
@@ -485,11 +492,13 @@ groups:
 **Description**: Elasticsearch, Logstash, Kibana for logs and metrics
 
 **Pros**:
+
 - Powerful log analysis
 - Good search capabilities
 - Single stack
 
 **Cons**:
+
 - Resource-heavy (Elasticsearch)
 - Complex to operate
 - Logs focus (metrics less native)
@@ -501,10 +510,12 @@ groups:
 **Description**: Rely on application logs for observability
 
 **Pros**:
+
 - Simplest approach
 - No additional infrastructure
 
 **Cons**:
+
 - No visualization
 - Hard to spot trends
 - No alerting
@@ -517,11 +528,13 @@ groups:
 **Description**: Use AWS CloudWatch, GCP Monitoring, etc.
 
 **Pros**:
+
 - Integrated with infrastructure
 - Managed service
 - Auto-discovery
 
 **Cons**:
+
 - Cloud lock-in
 - May not support self-hosted deployment
 - Cost at scale

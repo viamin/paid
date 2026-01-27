@@ -160,6 +160,7 @@ v1 (human) ──► v2 (human) ──► v3 (evolution)
 ```
 
 This lineage helps understand:
+
 - Which evolutionary paths lead to improvements
 - What human edits were made and why
 - How prompts diverge and converge
@@ -601,7 +602,7 @@ end
 Evolution runs periodically for all prompts:
 
 ```ruby
-# Scheduled via Solid Queue
+# Scheduled via GoodJob
 class PromptEvolutionJob < ApplicationJob
   queue_as :evolution
 

@@ -402,6 +402,7 @@ Paid Dashboards/
 ### Overview Dashboard
 
 Panels:
+
 - **Active Workflows** (gauge): Current running workflows by type
 - **Agent Runs (24h)** (stat): Total runs, success rate, avg duration
 - **Token Usage (24h)** (stat): Total tokens, cost
@@ -411,6 +412,7 @@ Panels:
 ### Agent Runs Dashboard
 
 Panels:
+
 - **Runs Over Time** (time series): Runs by status (success/fail/timeout)
 - **Duration Distribution** (heatmap): Run duration by agent type
 - **Iterations Distribution** (histogram): Iterations to complete
@@ -420,6 +422,7 @@ Panels:
 ### Costs Dashboard
 
 Panels:
+
 - **Daily Cost** (time series): Cost trend over time
 - **Cost by Project** (pie chart): Cost distribution
 - **Cost by Model** (bar chart): Model cost comparison
@@ -429,6 +432,7 @@ Panels:
 ### Quality Dashboard
 
 Panels:
+
 - **Quality Score Trend** (time series): Average quality over time
 - **Quality by Prompt** (table): Per-prompt quality scores
 - **A/B Test Results** (table): Active tests with variant performance
@@ -438,6 +442,7 @@ Panels:
 ### Infrastructure Dashboard
 
 Panels:
+
 - **Container Metrics** (time series): CPU, memory per container
 - **Disk Usage** (gauge): Repos, worktrees, logs, images
 - **GitHub Rate Limits** (gauge): Remaining calls per token

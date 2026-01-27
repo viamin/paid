@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Final
 - **Type**: Architecture
@@ -21,6 +22,7 @@ Paid needs to integrate with GitHub to:
 5. **Collect feedback**: Detect PR comments, merges, closes
 
 Key decisions:
+
 - Polling vs. webhooks for event detection
 - PAT vs. GitHub App for authentication
 - How to handle rate limiting
@@ -74,6 +76,7 @@ For Phase 1 (self-hosted), **polling is simpler and more reliable**.
 | GraphQL | 5,000 points | per hour |
 
 Polling strategies:
+
 - Use conditional requests (If-Modified-Since, ETag)
 - Cache issue data locally
 - Exponential backoff on rate limit
@@ -127,6 +130,7 @@ mutation {
 **Graceful Degradation:**
 
 If GitHub Projects unavailable:
+
 - Track sub-issues via parent issue references
 - Use issue labels for status instead of project columns
 - Link issues in descriptions
@@ -476,11 +480,13 @@ end
 **Description**: Use GitHub webhooks as primary event source
 
 **Pros**:
+
 - Real-time updates
 - Lower API usage
 - Industry standard
 
 **Cons**:
+
 - Requires public endpoint
 - Can miss events if endpoint down
 - More complex setup
@@ -493,12 +499,14 @@ end
 **Description**: Create a GitHub App instead of using PATs
 
 **Pros**:
+
 - Higher rate limits
 - Fine-grained permissions per install
 - Better for multi-tenant
 - Can use webhooks easily
 
 **Cons**:
+
 - More complex setup
 - Requires hosting callback endpoint
 - Users must install app
@@ -511,11 +519,13 @@ end
 **Description**: Use GitHub Actions workflow to call Paid API on events
 
 **Pros**:
+
 - Real-time
 - Runs in GitHub's infrastructure
 - No public endpoint needed from Paid
 
 **Cons**:
+
 - Requires workflow in each repo
 - User must set up Actions
 - Adds complexity to repo
@@ -528,11 +538,13 @@ end
 **Description**: Skip GitHub Projects, use issues only
 
 **Pros**:
+
 - Simpler implementation
 - Works with all GitHub plans
 - Fewer API calls
 
 **Cons**:
+
 - Less visual organization
 - Harder to track multi-issue features
 - Users may expect project boards
@@ -587,6 +599,7 @@ gem "octokit"
 #### Step 2: Token Setup UI
 
 Create UI that guides users through:
+
 1. Creating fine-grained PAT
 2. Selecting required scopes
 3. Validating token works

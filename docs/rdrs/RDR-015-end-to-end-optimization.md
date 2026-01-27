@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-26
 - **Status**: Draft
 - **Type**: Architecture
@@ -13,6 +14,7 @@
 ## Problem Statement
 
 Paid currently optimizes individual components:
+
 - Prompts are A/B tested and evolved (RDR-009)
 - Model selection adapts to task context (RDR-008)
 
@@ -47,6 +49,7 @@ Issue → [Configuration Bundle] → PR → Outcome
 ```
 
 A "configuration bundle" includes:
+
 - Prompt versions for each stage (planning, coding, review)
 - Model selections
 - Orchestration strategy
@@ -56,11 +59,13 @@ A "configuration bundle" includes:
 ### Why This Matters
 
 **Interaction effects**: Components interact in non-obvious ways:
+
 - A more detailed planning prompt + a concise coding prompt might work better than both being detailed
 - Certain model combinations outperform either model alone
 - Parallelism benefits depend on task decomposition quality
 
 **Credit assignment**: When a PR fails, what caused it?
+
 - Was the prompt bad?
 - Was the model choice wrong?
 - Was the orchestration flawed?
@@ -118,6 +123,7 @@ configuration_bundle:
 **Dimensionality Reduction:**
 
 Not all combinations need testing:
+
 - **Factored optimization**: Some components are independent
 - **Transfer learning**: Similar projects share optimal configs
 - **Warm starting**: Start from known-good configurations
@@ -433,10 +439,12 @@ end
 **Description**: Keep current approach of optimizing prompts, models, strategies separately
 
 **Pros**:
+
 - Simpler to implement and reason about
 - Clear ownership of each component
 
 **Cons**:
+
 - Misses interaction effects
 - Local optima may not be global optima
 - Credit assignment is ambiguous
@@ -448,10 +456,12 @@ end
 **Description**: Train RL agent to select configurations sequentially
 
 **Pros**:
+
 - Can handle sequential dependencies
 - Learns complex policies
 
 **Cons**:
+
 - Very high sample complexity
 - Requires careful reward shaping
 - Hard to incorporate prior knowledge
@@ -463,10 +473,12 @@ end
 **Description**: Test all combinations of component versions
 
 **Pros**:
+
 - Exhaustive coverage
 - No modeling assumptions
 
 **Cons**:
+
 - Combinatorial explosion (e.g., 10 prompts × 5 models × 3 strategies = 150 configs)
 - Ignores context
 - Wastes samples on bad regions

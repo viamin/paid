@@ -3,6 +3,7 @@
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
+
 - **Date**: 2025-01-23
 - **Status**: Final
 - **Type**: Architecture
@@ -12,7 +13,7 @@
 
 ## Problem Statement
 
-Paid executes AI agents (Claude Code, Cursor, Codex, GitHub Copilot) that generate and execute code. These agents:
+Paid executes AI agents (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode) that generate and execute code. These agents:
 
 1. Need access to source code repositories
 2. Make API calls to LLM providers
@@ -21,6 +22,7 @@ Paid executes AI agents (Claude Code, Cursor, Codex, GitHub Copilot) that genera
 5. Must be isolated from each other to prevent interference
 
 Security requirements:
+
 - Agents must not access API keys directly
 - Agents must not access other projects' code
 - Agents must not exfiltrate data to unauthorized destinations
@@ -34,6 +36,7 @@ Security requirements:
 Paid is inspired by [aidp](https://github.com/viamin/aidp), which uses devcontainers for agent isolation. The key insight is that AI agents are powerful but potentially dangerous—they can write and execute arbitrary code.
 
 The threat model assumes agents could be:
+
 - Manipulated by adversarial prompts
 - Exploited via vulnerabilities in generated code
 - Tricked into exfiltrating data
@@ -41,7 +44,7 @@ The threat model assumes agents could be:
 ### Technical Environment
 
 - Host: Linux server with Docker
-- Agents: Claude Code, Cursor, Codex, GitHub Copilot CLI tools
+- Agents: Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode
 - Network: Must reach LLM APIs and GitHub
 - Storage: Need persistent project clones, ephemeral worktrees
 
@@ -60,6 +63,7 @@ The threat model assumes agents could be:
 **Docker Security Features:**
 
 1. **Capability Dropping**: Remove unnecessary Linux capabilities
+
    ```ruby
    container = docker.containers.create(
      cap_drop: ["ALL"],
@@ -68,6 +72,7 @@ The threat model assumes agents could be:
    ```
 
 2. **Read-Only Root Filesystem**: Prevent modifications to system files
+
    ```ruby
    container = docker.containers.create(
      read_only: true,
@@ -79,6 +84,7 @@ The threat model assumes agents could be:
    ```
 
 3. **Resource Limits**: Prevent resource exhaustion
+
    ```ruby
    container = docker.containers.create(
      memory: 4.gigabytes,
@@ -89,6 +95,7 @@ The threat model assumes agents could be:
    ```
 
 4. **User Namespaces**: Run as non-root
+
    ```dockerfile
    FROM ruby:3.4-slim
    RUN useradd -m -u 1000 agent
@@ -96,6 +103,7 @@ The threat model assumes agents could be:
    ```
 
 5. **Network Isolation**: Dedicated network with egress filtering
+
    ```bash
    # Create isolated network
    docker network create --internal paid-agent-network
@@ -106,6 +114,7 @@ The threat model assumes agents could be:
 **Network Allowlisting:**
 
 Containers need to reach specific services:
+
 - LLM APIs (via secrets proxy)
 - GitHub (for git operations)
 - Package registries (npm, RubyGems)
@@ -137,6 +146,7 @@ Agents must not have direct access to API keys. Instead:
 ```
 
 The proxy:
+
 1. Runs as part of Paid infrastructure (not in container)
 2. Receives requests without auth headers
 3. Looks up API key based on project context
@@ -359,11 +369,13 @@ iptables -A OUTPUT -j LOG --log-prefix "PAID_DROPPED: " --log-level 4
 **Description**: Use gVisor container runtime for stronger isolation
 
 **Pros**:
+
 - Syscall filtering provides better isolation than standard Docker
 - Intercepts dangerous syscalls
 - Defense against kernel exploits
 
 **Cons**:
+
 - Performance overhead (10-30% for I/O-heavy workloads)
 - Compatibility issues with some applications
 - Additional complexity
@@ -376,11 +388,13 @@ iptables -A OUTPUT -j LOG --log-prefix "PAID_DROPPED: " --log-level 4
 **Description**: Use Kata Containers for VM-level isolation
 
 **Pros**:
+
 - VM-level isolation (strongest)
 - Each container is a lightweight VM
 - Protection against container escapes
 
 **Cons**:
+
 - Significant performance overhead
 - Higher resource usage (each container needs VM resources)
 - More complex deployment
@@ -393,11 +407,13 @@ iptables -A OUTPUT -j LOG --log-prefix "PAID_DROPPED: " --log-level 4
 **Description**: Run agents as separate processes with Unix user isolation
 
 **Pros**:
+
 - Simpler deployment
 - Lower overhead
 - Faster startup
 
 **Cons**:
+
 - Weaker isolation than containers
 - Shared filesystem (harder to isolate projects)
 - No network namespace isolation
@@ -410,11 +426,13 @@ iptables -A OUTPUT -j LOG --log-prefix "PAID_DROPPED: " --log-level 4
 **Description**: Use Firecracker for lightweight VM isolation
 
 **Pros**:
+
 - VM-level isolation with sub-second startup
 - Lower overhead than Kata
 - Used by AWS Lambda
 
 **Cons**:
+
 - Requires KVM support
 - Limited container tooling integration
 - Smaller ecosystem than Docker
