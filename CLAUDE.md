@@ -11,6 +11,12 @@ Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI
 
 **Status**: Planning phase - the codebase is a fresh Rails 8 scaffold with documentation. Implementation follows the documented architecture in `docs/`.
 
+## GitHub Issues
+
+When working on a GitHub issue:
+
+- **Read all comments** - Always read the entire comment thread on an issue before starting work. Important context, clarifications, and decisions are often in the comments.
+
 ## Development Commands
 
 ```bash
@@ -84,6 +90,11 @@ app/
 ```
 
 ## Code Style
+
+### General Principles
+
+- **Reuse existing code** - Before writing new code, search the codebase for existing implementations. Prefer extending or reusing existing patterns, utilities, and components over creating new ones.
+- **Write concisely** - Strive for concise code while maintaining clarity and readability. Avoid unnecessary verbosity, but never sacrifice readability for brevity.
 
 ### Zero Framework Cognition (ZFC)
 
