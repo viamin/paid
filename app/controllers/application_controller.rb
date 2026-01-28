@@ -8,6 +8,8 @@ class ApplicationController < ActionController::Base
 
   before_action :authenticate_user!
   before_action :set_current_attributes
+  after_action :verify_authorized, unless: :skip_pundit?
+  after_action :verify_policy_scoped, only: :index, unless: :skip_pundit?
 
   rescue_from Pundit::NotAuthorizedError, with: :user_not_authorized
 
@@ -27,5 +29,9 @@ class ApplicationController < ActionController::Base
   def user_not_authorized
     flash[:alert] = "You are not authorized to perform this action."
     redirect_back(fallback_location: root_path)
+  end
+
+  def skip_pundit?
+    devise_controller? || self.class == HomeController
   end
 end

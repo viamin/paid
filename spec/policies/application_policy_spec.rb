@@ -134,12 +134,12 @@ RSpec.describe ApplicationPolicy do
         expect(described_class.new(owner, account)).to be_destroy
       end
 
-      it "permits admin" do
+      it "does not permit admin" do
         account = create(:account)
         create(:user, account: account) # absorb owner role
         admin = create(:user, :admin, account: account)
 
-        expect(described_class.new(admin, account)).to be_destroy
+        expect(described_class.new(admin, account)).not_to be_destroy
       end
 
       it "does not permit member" do

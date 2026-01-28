@@ -33,12 +33,14 @@ class ApplicationPolicy
   end
 
   def destroy?
-    has_any_account_role?(:owner, :admin)
+    has_account_role?(:owner)
   end
 
   private
 
   def user_in_account?
+    return false unless user&.account_id
+
     user.account_id == account_for_record&.id
   end
 
@@ -46,7 +48,15 @@ class ApplicationPolicy
     record.respond_to?(:account) ? record.account : record
   end
 
+  def has_account_role?(role)
+    return false unless user
+
+    user.has_role?(role, account_for_record)
+  end
+
   def has_any_account_role?(*roles)
+    return false unless user
+
     account = account_for_record
     roles.any? { |role| user.has_role?(role, account) }
   end
@@ -58,6 +68,8 @@ class ApplicationPolicy
     end
 
     def resolve
+      raise Pundit::NotAuthorizedError, "must be logged in" unless user
+
       scope.where(account: user.account)
     end
 
