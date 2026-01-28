@@ -12,9 +12,9 @@
 
         <div class="space-y-6">
           <div>
-            <%= f.label :account_name, "Account name", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <%= label_tag "user_account_name", "Account name", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
-              <%= f.text_field :account_name, autofocus: true, autocomplete: "organization", placeholder: "Your company or team name", class: "block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              <%= text_field_tag "user[account_name]", params.dig(:user, :account_name), autofocus: true, autocomplete: "organization", placeholder: "Your company or team name", class: "block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
             </div>
             <p class="mt-1 text-sm text-gray-500">This will be used to create your workspace.</p>
           </div>

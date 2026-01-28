@@ -56,45 +56,54 @@ RSpec.describe "User Registrations" do
 
     context "with invalid parameters" do
       it "does not create a user or account without an account name" do
-        expect {
-          post user_registration_path, params: {
-            user: {
-              account_name: "",
-              email: "john@example.com",
-              password: "password123",
-              password_confirmation: "password123"
-            }
+        user_count = User.count
+        account_count = Account.count
+
+        post user_registration_path, params: {
+          user: {
+            account_name: "",
+            email: "john@example.com",
+            password: "password123",
+            password_confirmation: "password123"
           }
-        }.to not_change(User, :count)
-          .and not_change(Account, :count)
+        }
+
+        expect(User.count).to eq(user_count)
+        expect(Account.count).to eq(account_count)
       end
 
       it "does not create a user or account with mismatched passwords" do
-        expect {
-          post user_registration_path, params: {
-            user: {
-              account_name: "My Company",
-              email: "john@example.com",
-              password: "password123",
-              password_confirmation: "different"
-            }
+        user_count = User.count
+        account_count = Account.count
+
+        post user_registration_path, params: {
+          user: {
+            account_name: "My Company",
+            email: "john@example.com",
+            password: "password123",
+            password_confirmation: "different"
           }
-        }.to not_change(User, :count)
-          .and not_change(Account, :count)
+        }
+
+        expect(User.count).to eq(user_count)
+        expect(Account.count).to eq(account_count)
       end
 
       it "does not create a user or account with an invalid email" do
-        expect {
-          post user_registration_path, params: {
-            user: {
-              account_name: "My Company",
-              email: "invalid-email",
-              password: "password123",
-              password_confirmation: "password123"
-            }
+        user_count = User.count
+        account_count = Account.count
+
+        post user_registration_path, params: {
+          user: {
+            account_name: "My Company",
+            email: "invalid-email",
+            password: "password123",
+            password_confirmation: "password123"
           }
-        }.to not_change(User, :count)
-          .and not_change(Account, :count)
+        }
+
+        expect(User.count).to eq(user_count)
+        expect(Account.count).to eq(account_count)
       end
     end
   end
