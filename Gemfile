@@ -53,7 +53,6 @@ group :development, :test do
 
   # Additional RuboCop extensions
   gem "rubocop-rspec", require: false
-  gem "rubocop-performance", require: false
 
   # Testing framework
   gem "rspec-rails"
