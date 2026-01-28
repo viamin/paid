@@ -25,6 +25,12 @@ gem "cssbundling-rails"
 # Authentication [https://github.com/heartcombo/devise]
 gem "devise"
 
+# Authorization [https://github.com/varvet/pundit]
+gem "pundit"
+
+# Role management [https://github.com/RolifyCommunity/rolify]
+gem "rolify"
+
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[windows jruby]
 
