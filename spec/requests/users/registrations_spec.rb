@@ -55,7 +55,7 @@ RSpec.describe "User Registrations" do
     end
 
     context "with invalid parameters" do
-      it "does not create a user without an account name" do
+      it "does not create a user or account without an account name" do
         expect {
           post user_registration_path, params: {
             user: {
@@ -65,10 +65,11 @@ RSpec.describe "User Registrations" do
               password_confirmation: "password123"
             }
           }
-        }.not_to change(User, :count)
+        }.to not_change(User, :count)
+          .and not_change(Account, :count)
       end
 
-      it "does not create a user with mismatched passwords" do
+      it "does not create a user or account with mismatched passwords" do
         expect {
           post user_registration_path, params: {
             user: {
@@ -78,10 +79,11 @@ RSpec.describe "User Registrations" do
               password_confirmation: "different"
             }
           }
-        }.not_to change(User, :count)
+        }.to not_change(User, :count)
+          .and not_change(Account, :count)
       end
 
-      it "does not create a user with an invalid email" do
+      it "does not create a user or account with an invalid email" do
         expect {
           post user_registration_path, params: {
             user: {
@@ -91,7 +93,8 @@ RSpec.describe "User Registrations" do
               password_confirmation: "password123"
             }
           }
-        }.not_to change(User, :count)
+        }.to not_change(User, :count)
+          .and not_change(Account, :count)
       end
     end
   end
