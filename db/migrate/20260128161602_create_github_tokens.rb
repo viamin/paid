@@ -14,7 +14,8 @@ class CreateGithubTokens < ActiveRecord::Migration[8.1]
       t.string :name, null: false
 
       ## Encrypted token storage (Rails 7+ encryption)
-      t.string :encrypted_token, null: false
+      ## Rails encrypts :token stores encrypted value in 'token' column
+      t.string :token, null: false
 
       ## Token metadata
       t.jsonb :scopes, default: [], null: false
