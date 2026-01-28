@@ -173,9 +173,17 @@ RSpec.describe ApplicationPolicy do
     it "scopes records to the user's account" do
       account = create(:account)
       user = create(:user, account: account)
+      scope = described_class.new(user, User)
+
+      expect(scope.resolve.to_sql).to include("account_id")
+    end
+
+    it "raises NotImplementedError for models without account association" do
+      account = create(:account)
+      user = create(:user, account: account)
       scope = described_class.new(user, Account)
 
-      expect(scope.resolve.to_sql).to include("account")
+      expect { scope.resolve }.to raise_error(NotImplementedError)
     end
   end
 end
