@@ -1,6 +1,9 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI coding assistants when working with code in this repository.
+
+> **Note**: `AGENTS.md` and `.github/copilot-instructions.md` are symlinks to this file.
+> Edit only this file to keep all AI assistant instructions synchronized.
 
 ## Project Overview
 
@@ -38,8 +41,21 @@ bin/rails db:prepare         # Create and migrate
 bin/rails db:migrate         # Run migrations
 bin/rails db:seed            # Seed data
 
-# Testing (not yet configured)
-bin/rails test               # Run tests
+# Testing
+bin/rspec                    # Run RSpec tests
+```
+
+### Bundler Version
+
+The `Gemfile.lock` specifies a bundler version. If you encounter bundler version mismatches, install the correct version first:
+
+```bash
+# Check required version in Gemfile.lock (look for BUNDLED WITH at the end)
+tail -3 Gemfile.lock
+
+# Install and use the specific bundler version
+gem install bundler:2.7.2
+bundle _2.7.2_ install
 ```
 
 ## Architecture
