@@ -5,148 +5,174 @@ require "rails_helper"
 RSpec.describe ApplicationPolicy do
   subject { described_class }
 
-  let(:account) { create(:account) }
-  let(:other_account) { create(:account) }
-
   describe "permissions" do
-    context "when user is in the same account" do
-      # First user gets owner role automatically, subsequent users don't
-      let!(:account_owner) { create(:user, account: account) }
-      let(:owner) { account_owner }
-      let(:admin) { create(:user, :admin, account: account) }
-      let(:member) { create(:user, :member, account: account) }
-      let(:viewer) { create(:user, :viewer, account: account) }
+    describe "#index?" do
+      it "permits users in same account" do
+        account = create(:account)
+        user = create(:user, account: account)
 
-      describe "#index?" do
-        it "permits owner" do
-          expect(described_class.new(owner, account)).to be_index
-        end
-
-        it "permits admin" do
-          expect(described_class.new(admin, account)).to be_index
-        end
-
-        it "permits member" do
-          expect(described_class.new(member, account)).to be_index
-        end
-
-        it "permits viewer" do
-          expect(described_class.new(viewer, account)).to be_index
-        end
+        expect(described_class.new(user, account)).to be_index
       end
 
-      describe "#show?" do
-        it "permits owner" do
-          expect(described_class.new(owner, account)).to be_show
-        end
+      it "does not permit users from different account" do
+        account = create(:account)
+        create(:user, account: account)
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
 
-        it "permits admin" do
-          expect(described_class.new(admin, account)).to be_show
-        end
-
-        it "permits member" do
-          expect(described_class.new(member, account)).to be_show
-        end
-
-        it "permits viewer" do
-          expect(described_class.new(viewer, account)).to be_show
-        end
-      end
-
-      describe "#create?" do
-        it "permits owner" do
-          expect(described_class.new(owner, account)).to be_create
-        end
-
-        it "permits admin" do
-          expect(described_class.new(admin, account)).to be_create
-        end
-
-        it "permits member" do
-          expect(described_class.new(member, account)).to be_create
-        end
-
-        it "does not permit viewer" do
-          expect(described_class.new(viewer, account)).not_to be_create
-        end
-      end
-
-      describe "#update?" do
-        it "permits owner" do
-          expect(described_class.new(owner, account)).to be_update
-        end
-
-        it "permits admin" do
-          expect(described_class.new(admin, account)).to be_update
-        end
-
-        it "does not permit member" do
-          expect(described_class.new(member, account)).not_to be_update
-        end
-
-        it "does not permit viewer" do
-          expect(described_class.new(viewer, account)).not_to be_update
-        end
-      end
-
-      describe "#destroy?" do
-        it "permits owner" do
-          expect(described_class.new(owner, account)).to be_destroy
-        end
-
-        it "permits admin" do
-          expect(described_class.new(admin, account)).to be_destroy
-        end
-
-        it "does not permit member" do
-          expect(described_class.new(member, account)).not_to be_destroy
-        end
-
-        it "does not permit viewer" do
-          expect(described_class.new(viewer, account)).not_to be_destroy
-        end
+        expect(described_class.new(other_user, account)).not_to be_index
       end
     end
 
-    context "when user is from different account" do
-      let(:other_user) { create(:user, :owner, account: other_account) }
+    describe "#show?" do
+      it "permits users in same account" do
+        account = create(:account)
+        user = create(:user, account: account)
 
-      describe "#index?" do
-        it "does not permit user from different account" do
-          expect(described_class.new(other_user, account)).not_to be_index
-        end
+        expect(described_class.new(user, account)).to be_show
       end
 
-      describe "#show?" do
-        it "does not permit user from different account" do
-          expect(described_class.new(other_user, account)).not_to be_show
-        end
+      it "does not permit users from different account" do
+        account = create(:account)
+        create(:user, account: account)
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
+
+        expect(described_class.new(other_user, account)).not_to be_show
+      end
+    end
+
+    describe "#create?" do
+      it "permits owner" do
+        account = create(:account)
+        owner = create(:user, account: account)
+
+        expect(described_class.new(owner, account)).to be_create
       end
 
-      describe "#create?" do
-        it "does not permit user from different account" do
-          expect(described_class.new(other_user, account)).not_to be_create
-        end
+      it "permits admin" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        admin = create(:user, :admin, account: account)
+
+        expect(described_class.new(admin, account)).to be_create
       end
 
-      describe "#update?" do
-        it "does not permit user from different account" do
-          expect(described_class.new(other_user, account)).not_to be_update
-        end
+      it "permits member" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        member = create(:user, :member, account: account)
+
+        expect(described_class.new(member, account)).to be_create
       end
 
-      describe "#destroy?" do
-        it "does not permit user from different account" do
-          expect(described_class.new(other_user, account)).not_to be_destroy
-        end
+      it "does not permit viewer" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        viewer = create(:user, :viewer, account: account)
+
+        expect(described_class.new(viewer, account)).not_to be_create
+      end
+
+      it "does not permit users from different account" do
+        account = create(:account)
+        create(:user, account: account)
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
+
+        expect(described_class.new(other_user, account)).not_to be_create
+      end
+    end
+
+    describe "#update?" do
+      it "permits owner" do
+        account = create(:account)
+        owner = create(:user, account: account)
+
+        expect(described_class.new(owner, account)).to be_update
+      end
+
+      it "permits admin" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        admin = create(:user, :admin, account: account)
+
+        expect(described_class.new(admin, account)).to be_update
+      end
+
+      it "does not permit member" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        member = create(:user, :member, account: account)
+
+        expect(described_class.new(member, account)).not_to be_update
+      end
+
+      it "does not permit viewer" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        viewer = create(:user, :viewer, account: account)
+
+        expect(described_class.new(viewer, account)).not_to be_update
+      end
+
+      it "does not permit users from different account" do
+        account = create(:account)
+        create(:user, account: account)
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
+
+        expect(described_class.new(other_user, account)).not_to be_update
+      end
+    end
+
+    describe "#destroy?" do
+      it "permits owner" do
+        account = create(:account)
+        owner = create(:user, account: account)
+
+        expect(described_class.new(owner, account)).to be_destroy
+      end
+
+      it "permits admin" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        admin = create(:user, :admin, account: account)
+
+        expect(described_class.new(admin, account)).to be_destroy
+      end
+
+      it "does not permit member" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        member = create(:user, :member, account: account)
+
+        expect(described_class.new(member, account)).not_to be_destroy
+      end
+
+      it "does not permit viewer" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        viewer = create(:user, :viewer, account: account)
+
+        expect(described_class.new(viewer, account)).not_to be_destroy
+      end
+
+      it "does not permit users from different account" do
+        account = create(:account)
+        create(:user, account: account)
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
+
+        expect(described_class.new(other_user, account)).not_to be_destroy
       end
     end
   end
 
   describe ApplicationPolicy::Scope do
-    let(:user) { create(:user, account: account) }
-
     it "scopes records to the user's account" do
+      account = create(:account)
+      user = create(:user, account: account)
       scope = described_class.new(user, Account)
 
       expect(scope.resolve.to_sql).to include("account")
