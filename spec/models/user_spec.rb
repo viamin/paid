@@ -48,4 +48,62 @@ RSpec.describe User do
       expect(described_class.devise_modules).to include(:validatable)
     end
   end
+
+  describe "role management" do
+    describe "#assign_owner_role_if_first_user" do
+      it "assigns owner role to first user in account" do
+        account = create(:account)
+        user = create(:user, account: account)
+
+        expect(user.has_role?(:owner, account)).to be true
+      end
+
+      it "does not assign owner role to subsequent users" do
+        account = create(:account)
+        first_user = create(:user, account: account)
+        second_user = create(:user, account: account)
+
+        expect(first_user.has_role?(:owner, account)).to be true
+        expect(second_user.has_role?(:owner, account)).to be false
+      end
+    end
+
+    describe "#has_role?" do
+      it "returns true when user has the specified role" do
+        user = create(:user, :admin)
+
+        expect(user.has_role?(:admin, user.account)).to be true
+      end
+
+      it "returns false when user does not have the specified role" do
+        account = create(:account)
+        create(:user, account: account) # first user gets owner role
+        user = create(:user, account: account)
+
+        expect(user.has_role?(:admin, account)).to be false
+      end
+    end
+
+    describe "role checking" do
+      it "returns true when user has one of the specified scoped roles" do
+        account = create(:account)
+        create(:user, account: account) # first user gets owner role
+        user = create(:user, :member, account: account)
+
+        # Check scoped roles by checking each role individually
+        has_role = [ :owner, :admin, :member ].any? { |role| user.has_role?(role, account) }
+        expect(has_role).to be true
+      end
+
+      it "returns false when user has none of the specified scoped roles" do
+        account = create(:account)
+        create(:user, account: account) # first user gets owner role
+        user = create(:user, account: account)
+
+        # Check scoped roles by checking each role individually
+        has_role = [ :admin, :member ].any? { |role| user.has_role?(role, account) }
+        expect(has_role).to be false
+      end
+    end
+  end
 end

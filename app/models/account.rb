@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Account < ApplicationRecord
+  resourcify
+
   MAX_SLUG_GENERATION_ATTEMPTS = 10
 
   has_many :users, dependent: :destroy
