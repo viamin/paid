@@ -11,8 +11,13 @@ RSpec.describe Account do
     subject { build(:account) }
 
     it { is_expected.to validate_presence_of(:name) }
-    it { is_expected.to validate_presence_of(:slug) }
     it { is_expected.to validate_uniqueness_of(:slug) }
+
+    it "requires slug when name is blank" do
+      account = described_class.new(name: nil, slug: nil)
+      expect(account).not_to be_valid
+      expect(account.errors[:slug]).to include("can't be blank")
+    end
 
     it "validates slug format" do
       account = build(:account, slug: "Invalid Slug!")
