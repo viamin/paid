@@ -1,0 +1,27 @@
+<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
+  <div class="sm:flex sm:items-center">
+    <div class="sm:flex-auto">
+      <h1 class="text-2xl font-semibold leading-6 text-gray-900">Dashboard</h1>
+      <p class="mt-2 text-sm text-gray-700">
+        Welcome to Paid, <%= current_user.name.presence || current_user.email %>!
+        You're part of the <strong><%= current_user.account.name %></strong> account.
+      </p>
+    </div>
+  </div>
+
+  <div class="mt-8 bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:p-6">
+      <h3 class="text-base font-semibold leading-6 text-gray-900">Getting Started</h3>
+      <div class="mt-2 max-w-xl text-sm text-gray-500">
+        <p>Your account is set up and ready. Here's what you can do next:</p>
+      </div>
+      <div class="mt-5">
+        <ul class="list-disc pl-5 text-sm text-gray-600 space-y-2">
+          <li>Connect your GitHub repositories</li>
+          <li>Configure AI agents for your projects</li>
+          <li>Label issues to trigger automated development</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
