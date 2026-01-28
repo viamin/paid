@@ -70,9 +70,10 @@ RSpec.describe GithubToken do
     it "encrypts the token field" do
       token = create(:github_token, token: "ghp_#{SecureRandom.alphanumeric(36)}")
       raw_token_in_db = described_class.connection.select_value(
-        "SELECT encrypted_token FROM github_tokens WHERE id = #{token.id}"
+        "SELECT token FROM github_tokens WHERE id = #{token.id}"
       )
 
+      # Rails encryption stores an encrypted JSON payload, not the plain text
       expect(raw_token_in_db).not_to include("ghp_")
     end
 
