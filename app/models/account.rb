@@ -6,6 +6,7 @@ class Account < ApplicationRecord
   MAX_SLUG_GENERATION_ATTEMPTS = 10
 
   has_many :users, dependent: :destroy
+  has_many :github_tokens, dependent: :destroy
 
   validates :name, presence: true
   validates :slug, presence: true, uniqueness: true,
