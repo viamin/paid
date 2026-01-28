@@ -70,7 +70,11 @@ class ApplicationPolicy
     def resolve
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
 
-      scope.where(account: user.account)
+      if scope.column_names.include?("account_id")
+        scope.where(account: user.account)
+      else
+        raise NotImplementedError, "#{self.class} must implement #resolve for models without account association"
+      end
     end
 
     private

@@ -10,20 +10,16 @@ class AccountPolicy < ApplicationPolicy
   end
 
   def destroy?
-    user.has_role?(:owner, record)
+    has_account_role?(:owner)
   end
 
   def manage_billing?
-    user.has_role?(:owner, record)
+    has_account_role?(:owner)
   end
 
   private
 
   def user_in_account?
-    user.account_id == record.id
-  end
-
-  def account_for_record
-    record
+    user&.account_id == record.id
   end
 end
