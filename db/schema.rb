@@ -26,7 +26,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_28_161602) do
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
-    t.string "encrypted_token", null: false
+    t.string "token", null: false
     t.datetime "expires_at"
     t.datetime "last_used_at"
     t.string "name", null: false
