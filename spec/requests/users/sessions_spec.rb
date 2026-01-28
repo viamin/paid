@@ -22,6 +22,9 @@ RSpec.describe "User Sessions" do
         }
         expect(response).to redirect_to(root_path)
         follow_redirect!
+        # Root redirects to dashboard for authenticated users
+        expect(response).to redirect_to(dashboard_path)
+        follow_redirect!
         expect(response.body).to include(user.email)
       end
     end
@@ -32,7 +35,7 @@ RSpec.describe "User Sessions" do
           user: { email: user.email, password: "wrongpassword" }
         }
         expect(response).to have_http_status(:unprocessable_content)
-        expect(response.body).to include("Invalid Email or password")
+        expect(response.body).to include("Invalid email or password")
       end
     end
   end
