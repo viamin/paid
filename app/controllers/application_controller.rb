@@ -32,7 +32,7 @@ class ApplicationController < ActionController::Base
   end
 
   def skip_pundit?
-    devise_controller? || self.class == HomeController
+    devise_controller? || self.class == HomeController || self.class == DashboardController
   end
 
   def verify_policy_scoped?
