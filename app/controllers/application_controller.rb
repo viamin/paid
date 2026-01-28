@@ -9,7 +9,7 @@ class ApplicationController < ActionController::Base
   before_action :authenticate_user!
   before_action :set_current_attributes
   after_action :verify_authorized, unless: :skip_pundit?
-  after_action :verify_policy_scoped, only: :index, unless: :skip_pundit?
+  after_action :verify_policy_scoped, if: :verify_policy_scoped?
 
   rescue_from Pundit::NotAuthorizedError, with: :user_not_authorized
 
@@ -33,5 +33,9 @@ class ApplicationController < ActionController::Base
 
   def skip_pundit?
     devise_controller? || self.class == HomeController
+  end
+
+  def verify_policy_scoped?
+    action_name == "index" && !skip_pundit?
   end
 end
