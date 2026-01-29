@@ -256,8 +256,9 @@ RSpec.describe AgentRun do
     end
 
     describe "#complete!" do
-      it "sets status to completed with results" do
-        agent_run = create(:agent_run, :running)
+      it "sets status to completed with results and duration", :aggregate_failures do
+        started_time = 10.minutes.ago
+        agent_run = create(:agent_run, status: "running", started_at: started_time)
 
         freeze_time do
           agent_run.complete!(
@@ -271,13 +272,15 @@ RSpec.describe AgentRun do
           expect(agent_run.result_commit_sha).to eq("abc123")
           expect(agent_run.pull_request_url).to eq("https://github.com/example/repo/pull/42")
           expect(agent_run.pull_request_number).to eq(42)
+          expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
         end
       end
     end
 
     describe "#fail!" do
-      it "sets status to failed with error message" do
-        agent_run = create(:agent_run, :running)
+      it "sets status to failed with error message and duration" do
+        started_time = 10.minutes.ago
+        agent_run = create(:agent_run, status: "running", started_at: started_time)
 
         freeze_time do
           agent_run.fail!(error: "Something went wrong")
@@ -285,32 +288,37 @@ RSpec.describe AgentRun do
           expect(agent_run.status).to eq("failed")
           expect(agent_run.completed_at).to eq(Time.current)
           expect(agent_run.error_message).to eq("Something went wrong")
+          expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
         end
       end
     end
 
     describe "#cancel!" do
-      it "sets status to cancelled" do
-        agent_run = create(:agent_run, :running)
+      it "sets status to cancelled with duration" do
+        started_time = 5.minutes.ago
+        agent_run = create(:agent_run, status: "running", started_at: started_time)
 
         freeze_time do
           agent_run.cancel!
 
           expect(agent_run.status).to eq("cancelled")
           expect(agent_run.completed_at).to eq(Time.current)
+          expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
         end
       end
     end
 
     describe "#timeout!" do
-      it "sets status to timeout" do
-        agent_run = create(:agent_run, :running)
+      it "sets status to timeout with duration" do
+        started_time = 1.hour.ago
+        agent_run = create(:agent_run, status: "running", started_at: started_time)
 
         freeze_time do
           agent_run.timeout!
 
           expect(agent_run.status).to eq("timeout")
           expect(agent_run.completed_at).to eq(Time.current)
+          expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
         end
       end
     end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_29_214933) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_29_222211) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -186,7 +186,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_214933) do
     t.bigint "project_id", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
-    t.index ["paid_state"], name: "index_issues_on_paid_state"
+    t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id"], name: "index_issues_on_project_id"
