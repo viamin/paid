@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_29_022148) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_29_031603) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -141,7 +141,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_022148) do
     t.jsonb "label_mappings", default: {}, null: false
     t.string "name", null: false
     t.string "owner", null: false
-    t.integer "poll_interval_seconds", default: 300, null: false
+    t.integer "poll_interval_seconds", default: 60, null: false
     t.string "repo", null: false
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false
