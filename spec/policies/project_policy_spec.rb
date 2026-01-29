@@ -277,22 +277,22 @@ RSpec.describe ProjectPolicy do
         expect(described_class.new(viewer, project)).not_to be_run_agent
       end
 
-      it "permits viewer with project admin role" do
+      it "permits viewer with project_admin role" do
         account = create(:account)
         create(:user, account: account) # absorb owner role
         viewer = create(:user, :viewer, account: account)
         project = create(:project, account: account)
-        viewer.add_role(:admin, project)
+        viewer.add_role(:project_admin, project)
 
         expect(described_class.new(viewer, project)).to be_run_agent
       end
 
-      it "permits viewer with project member role" do
+      it "permits viewer with project_member role" do
         account = create(:account)
         create(:user, account: account) # absorb owner role
         viewer = create(:user, :viewer, account: account)
         project = create(:project, account: account)
-        viewer.add_role(:member, project)
+        viewer.add_role(:project_member, project)
 
         expect(described_class.new(viewer, project)).to be_run_agent
       end
@@ -313,7 +313,7 @@ RSpec.describe ProjectPolicy do
         project = create(:project, account: account)
         other_account = create(:account)
         other_user = create(:user, account: other_account)
-        other_user.add_role(:member, project)
+        other_user.add_role(:project_member, project)
 
         expect(described_class.new(other_user, project)).not_to be_run_agent
       end
