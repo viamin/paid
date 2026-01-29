@@ -186,9 +186,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_222211) do
     t.bigint "project_id", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
-    t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
+    t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id"], name: "index_issues_on_project_id"
   end
 
