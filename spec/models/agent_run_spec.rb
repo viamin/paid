@@ -1,0 +1,393 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe AgentRun do
+  describe "associations" do
+    it { is_expected.to belong_to(:project) }
+    it { is_expected.to belong_to(:issue).optional }
+    it { is_expected.to have_many(:agent_run_logs).dependent(:destroy) }
+  end
+
+  describe "validations" do
+    subject { build(:agent_run) }
+
+    it { is_expected.to validate_presence_of(:agent_type) }
+    it { is_expected.to validate_inclusion_of(:agent_type).in_array(described_class::AGENT_TYPES) }
+    it { is_expected.to validate_presence_of(:status) }
+    it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
+    it { is_expected.to validate_length_of(:worktree_path).is_at_most(500) }
+    it { is_expected.to validate_length_of(:branch_name).is_at_most(255) }
+    it { is_expected.to validate_length_of(:base_commit_sha).is_at_most(40) }
+    it { is_expected.to validate_length_of(:result_commit_sha).is_at_most(40) }
+    it { is_expected.to validate_length_of(:pull_request_url).is_at_most(500) }
+    it { is_expected.to validate_length_of(:temporal_workflow_id).is_at_most(255) }
+    it { is_expected.to validate_length_of(:temporal_run_id).is_at_most(255) }
+
+    describe "issue project validation" do
+      it "allows issue from the same project" do
+        project = create(:project)
+        issue = create(:issue, project: project)
+        agent_run = build(:agent_run, project: project, issue: issue)
+
+        expect(agent_run).to be_valid
+      end
+
+      it "rejects issue from a different project" do
+        project = create(:project)
+        other_project = create(:project)
+        issue = create(:issue, project: other_project)
+        agent_run = build(:agent_run, project: project, issue: issue)
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:issue]).to include("must belong to the same project")
+      end
+
+      it "allows nil issue" do
+        agent_run = build(:agent_run, issue: nil)
+
+        expect(agent_run).to be_valid
+      end
+    end
+  end
+
+  describe "scopes" do
+    describe ".by_status" do
+      it "returns agent runs with the specified status" do
+        running_run = create(:agent_run, :running)
+        create(:agent_run, :completed)
+
+        expect(described_class.by_status("running")).to include(running_run)
+        expect(described_class.by_status("running").count).to eq(1)
+      end
+    end
+
+    describe ".pending" do
+      it "returns only pending runs" do
+        pending_run = create(:agent_run)
+        create(:agent_run, :running)
+
+        expect(described_class.pending).to include(pending_run)
+        expect(described_class.pending.count).to eq(1)
+      end
+    end
+
+    describe ".running" do
+      it "returns only running runs" do
+        running_run = create(:agent_run, :running)
+        create(:agent_run)
+
+        expect(described_class.running).to include(running_run)
+        expect(described_class.running.count).to eq(1)
+      end
+    end
+
+    describe ".completed" do
+      it "returns only completed runs" do
+        completed_run = create(:agent_run, :completed)
+        create(:agent_run)
+
+        expect(described_class.completed).to include(completed_run)
+        expect(described_class.completed.count).to eq(1)
+      end
+    end
+
+    describe ".failed" do
+      it "returns only failed runs" do
+        failed_run = create(:agent_run, :failed)
+        create(:agent_run)
+
+        expect(described_class.failed).to include(failed_run)
+        expect(described_class.failed.count).to eq(1)
+      end
+    end
+
+    describe ".cancelled" do
+      it "returns only cancelled runs" do
+        cancelled_run = create(:agent_run, :cancelled)
+        create(:agent_run)
+
+        expect(described_class.cancelled).to include(cancelled_run)
+        expect(described_class.cancelled.count).to eq(1)
+      end
+    end
+
+    describe ".timeout" do
+      it "returns only timeout runs" do
+        timeout_run = create(:agent_run, :timeout)
+        create(:agent_run)
+
+        expect(described_class.timeout).to include(timeout_run)
+        expect(described_class.timeout.count).to eq(1)
+      end
+    end
+
+    describe ".active" do
+      it "includes pending and running runs" do
+        pending_run = create(:agent_run)
+        running_run = create(:agent_run, :running)
+        create(:agent_run, :completed)
+
+        active = described_class.active
+        expect(active).to include(pending_run, running_run)
+        expect(active.count).to eq(2)
+      end
+    end
+
+    describe ".finished" do
+      it "includes completed, failed, cancelled, and timeout runs" do
+        completed_run = create(:agent_run, :completed)
+        failed_run = create(:agent_run, :failed)
+        cancelled_run = create(:agent_run, :cancelled)
+        timeout_run = create(:agent_run, :timeout)
+        create(:agent_run)
+
+        finished = described_class.finished
+        expect(finished).to include(completed_run, failed_run, cancelled_run, timeout_run)
+        expect(finished.count).to eq(4)
+      end
+    end
+
+    describe ".recent" do
+      it "orders by created_at descending" do
+        older_run = create(:agent_run, created_at: 1.hour.ago)
+        newer_run = create(:agent_run, created_at: 1.minute.ago)
+
+        expect(described_class.recent.first).to eq(newer_run)
+        expect(described_class.recent.last).to eq(older_run)
+      end
+    end
+  end
+
+  describe "instance methods" do
+    describe "#duration" do
+      it "returns nil when started_at is nil" do
+        agent_run = build(:agent_run, started_at: nil)
+
+        expect(agent_run.duration).to be_nil
+      end
+
+      it "returns seconds between started_at and completed_at" do
+        agent_run = build(:agent_run, started_at: 10.minutes.ago, completed_at: 5.minutes.ago)
+
+        expect(agent_run.duration).to be_within(1).of(300)
+      end
+
+      it "returns seconds from started_at to now when not completed" do
+        agent_run = build(:agent_run, started_at: 5.minutes.ago, completed_at: nil)
+
+        expect(agent_run.duration).to be_within(1).of(300)
+      end
+    end
+
+    describe "#running?" do
+      it "returns true when status is running" do
+        agent_run = build(:agent_run, :running)
+
+        expect(agent_run.running?).to be true
+      end
+
+      it "returns false when status is not running" do
+        agent_run = build(:agent_run)
+
+        expect(agent_run.running?).to be false
+      end
+    end
+
+    describe "#finished?" do
+      it "returns true for completed status" do
+        expect(build(:agent_run, :completed).finished?).to be true
+      end
+
+      it "returns true for failed status" do
+        expect(build(:agent_run, :failed).finished?).to be true
+      end
+
+      it "returns true for cancelled status" do
+        expect(build(:agent_run, :cancelled).finished?).to be true
+      end
+
+      it "returns true for timeout status" do
+        expect(build(:agent_run, :timeout).finished?).to be true
+      end
+
+      it "returns false for pending status" do
+        expect(build(:agent_run).finished?).to be false
+      end
+
+      it "returns false for running status" do
+        expect(build(:agent_run, :running).finished?).to be false
+      end
+    end
+
+    describe "#successful?" do
+      it "returns true when status is completed" do
+        agent_run = build(:agent_run, :completed)
+
+        expect(agent_run.successful?).to be true
+      end
+
+      it "returns false when status is not completed" do
+        agent_run = build(:agent_run, :failed)
+
+        expect(agent_run.successful?).to be false
+      end
+    end
+
+    describe "#total_tokens" do
+      it "returns sum of input and output tokens" do
+        agent_run = build(:agent_run, tokens_input: 1000, tokens_output: 500)
+
+        expect(agent_run.total_tokens).to eq(1500)
+      end
+    end
+
+    describe "#start!" do
+      it "sets status to running and sets started_at" do
+        agent_run = create(:agent_run)
+
+        freeze_time do
+          agent_run.start!
+
+          expect(agent_run.status).to eq("running")
+          expect(agent_run.started_at).to eq(Time.current)
+        end
+      end
+    end
+
+    describe "#complete!" do
+      it "sets status to completed with results" do
+        agent_run = create(:agent_run, :running)
+
+        freeze_time do
+          agent_run.complete!(
+            result_commit: "abc123",
+            pr_url: "https://github.com/example/repo/pull/42",
+            pr_number: 42
+          )
+
+          expect(agent_run.status).to eq("completed")
+          expect(agent_run.completed_at).to eq(Time.current)
+          expect(agent_run.result_commit_sha).to eq("abc123")
+          expect(agent_run.pull_request_url).to eq("https://github.com/example/repo/pull/42")
+          expect(agent_run.pull_request_number).to eq(42)
+        end
+      end
+    end
+
+    describe "#fail!" do
+      it "sets status to failed with error message" do
+        agent_run = create(:agent_run, :running)
+
+        freeze_time do
+          agent_run.fail!(error: "Something went wrong")
+
+          expect(agent_run.status).to eq("failed")
+          expect(agent_run.completed_at).to eq(Time.current)
+          expect(agent_run.error_message).to eq("Something went wrong")
+        end
+      end
+    end
+
+    describe "#cancel!" do
+      it "sets status to cancelled" do
+        agent_run = create(:agent_run, :running)
+
+        freeze_time do
+          agent_run.cancel!
+
+          expect(agent_run.status).to eq("cancelled")
+          expect(agent_run.completed_at).to eq(Time.current)
+        end
+      end
+    end
+
+    describe "#timeout!" do
+      it "sets status to timeout" do
+        agent_run = create(:agent_run, :running)
+
+        freeze_time do
+          agent_run.timeout!
+
+          expect(agent_run.status).to eq("timeout")
+          expect(agent_run.completed_at).to eq(Time.current)
+        end
+      end
+    end
+  end
+
+  describe "constants" do
+    it "defines valid STATUSES" do
+      expect(described_class::STATUSES).to eq(%w[pending running completed failed cancelled timeout])
+    end
+
+    it "defines valid AGENT_TYPES" do
+      expect(described_class::AGENT_TYPES).to eq(%w[claude_code cursor codex copilot api])
+    end
+  end
+
+  describe "defaults" do
+    it "defaults status to pending" do
+      agent_run = create(:agent_run)
+      expect(agent_run.status).to eq("pending")
+    end
+
+    it "defaults iterations to 0" do
+      agent_run = create(:agent_run)
+      expect(agent_run.iterations).to eq(0)
+    end
+
+    it "defaults tokens_input to 0" do
+      agent_run = create(:agent_run)
+      expect(agent_run.tokens_input).to eq(0)
+    end
+
+    it "defaults tokens_output to 0" do
+      agent_run = create(:agent_run)
+      expect(agent_run.tokens_output).to eq(0)
+    end
+
+    it "defaults cost_cents to 0" do
+      agent_run = create(:agent_run)
+      expect(agent_run.cost_cents).to eq(0)
+    end
+  end
+
+  describe "project association" do
+    it "is destroyed when project is destroyed" do
+      project = create(:project)
+      agent_run = create(:agent_run, project: project)
+
+      expect { project.destroy }.to change(described_class, :count).by(-1)
+      expect { agent_run.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+  end
+
+  describe "issue association" do
+    it "allows agent_run to exist without issue" do
+      agent_run = create(:agent_run, issue: nil)
+      expect(agent_run.issue).to be_nil
+      expect(agent_run).to be_valid
+    end
+
+    it "sets issue to nil when issue is destroyed" do
+      issue = create(:issue)
+      agent_run = create(:agent_run, project: issue.project, issue: issue)
+
+      issue.destroy
+      agent_run.reload
+
+      expect(agent_run.issue_id).to be_nil
+    end
+  end
+
+  describe "agent_run_logs association" do
+    it "destroys logs when agent_run is destroyed" do
+      agent_run = create(:agent_run)
+      create(:agent_run_log, agent_run: agent_run)
+      create(:agent_run_log, agent_run: agent_run)
+
+      expect { agent_run.destroy }.to change(AgentRunLog, :count).by(-2)
+    end
+  end
+end

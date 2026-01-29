@@ -8,6 +8,7 @@ class Issue < ApplicationRecord
 
   has_many :sub_issues, class_name: "Issue", foreign_key: :parent_issue_id,
                         inverse_of: :parent_issue, dependent: :nullify
+  has_many :agent_runs, dependent: :nullify
 
   validates :github_issue_id, presence: true, uniqueness: { scope: :project_id }
   validates :github_number, presence: true
