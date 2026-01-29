@@ -31,7 +31,7 @@ class Issue < ApplicationRecord
   end
 
   def sub_issue?
-    parent_issue_id.present?
+    parent_issue_id.present? || parent_issue.present?
   end
 
   private
