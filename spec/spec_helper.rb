@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 # Filter out known circular require warnings from gems (Ruby 3.4+ compatibility)
-Warning[:deprecated] = false if Warning.respond_to?(:[]=)
 module WarningFilter
   def warn(message, ...)
     return if message.include?("circular require considered harmful") && message.include?("rolify")

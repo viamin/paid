@@ -64,6 +64,33 @@ RSpec.describe GithubToken do
         expect(token.errors[:token]).to include("can't be blank")
       end
     end
+
+    describe "created_by account validation" do
+      it "allows created_by from the same account" do
+        account = create(:account)
+        user = create(:user, account: account)
+        token = build(:github_token, account: account, created_by: user)
+
+        expect(token).to be_valid
+      end
+
+      it "rejects created_by from a different account" do
+        account = create(:account)
+        other_account = create(:account)
+        user = create(:user, account: other_account)
+        token = build(:github_token, account: account, created_by: user)
+
+        expect(token).not_to be_valid
+        expect(token.errors[:created_by]).to include("must belong to the same account")
+      end
+
+      it "allows nil created_by" do
+        account = create(:account)
+        token = build(:github_token, account: account, created_by: nil)
+
+        expect(token).to be_valid
+      end
+    end
   end
 
   describe "encryption" do
