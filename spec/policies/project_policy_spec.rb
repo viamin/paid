@@ -118,13 +118,13 @@ RSpec.describe ProjectPolicy do
         expect(described_class.new(admin, project)).to be_create
       end
 
-      it "does not permit member" do
+      it "permits member" do
         account = create(:account)
         create(:user, account: account) # absorb owner role
         member = create(:user, :member, account: account)
         project = create(:project, account: account)
 
-        expect(described_class.new(member, project)).not_to be_create
+        expect(described_class.new(member, project)).to be_create
       end
 
       it "does not permit viewer" do

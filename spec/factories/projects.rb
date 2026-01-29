@@ -12,7 +12,7 @@ FactoryBot.define do
     sequence(:repo) { |n| "repo-#{n}" }
     default_branch { "main" }
     active { true }
-    poll_interval_seconds { 300 }
+    poll_interval_seconds { 60 }
     label_mappings { {} }
 
     trait :inactive do

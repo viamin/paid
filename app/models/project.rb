@@ -43,8 +43,12 @@ class Project < ApplicationRecord
   end
 
   def increment_metrics!(cost_cents:, tokens_used:)
-    increment!(:total_cost_cents, cost_cents)
-    increment!(:total_tokens_used, tokens_used)
+    with_lock do
+      update!(
+        total_cost_cents: total_cost_cents + cost_cents,
+        total_tokens_used: total_tokens_used + tokens_used
+      )
+    end
   end
 
   private
