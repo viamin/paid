@@ -47,4 +47,7 @@ RSpec.configure do |config|
 
   # Include Devise test helpers
   config.include Devise::Test::IntegrationHelpers, type: :request
+
+  # Include ActiveSupport time helpers (freeze_time, travel_to, etc.)
+  config.include ActiveSupport::Testing::TimeHelpers
 end
