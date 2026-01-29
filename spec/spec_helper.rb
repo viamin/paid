@@ -1,5 +1,15 @@
 # frozen_string_literal: true
 
+# Filter out known circular require warnings from gems (Ruby 3.4+ compatibility)
+module WarningFilter
+  def warn(message, ...)
+    return if message.include?("circular require considered harmful") && message.include?("rolify")
+
+    super
+  end
+end
+Warning.extend(WarningFilter)
+
 require "simplecov"
 SimpleCov.start "rails" do
   minimum_coverage 80
