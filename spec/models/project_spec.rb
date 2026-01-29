@@ -7,6 +7,7 @@ RSpec.describe Project do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:github_token) }
     it { is_expected.to belong_to(:created_by).class_name("User").optional }
+    it { is_expected.to have_many(:issues).dependent(:destroy) }
   end
 
   describe "validations" do

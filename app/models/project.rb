@@ -7,6 +7,8 @@ class Project < ApplicationRecord
   belongs_to :github_token
   belongs_to :created_by, class_name: "User", optional: true
 
+  has_many :issues, dependent: :destroy
+
   validates :name, presence: true
   validates :owner, presence: true
   validates :repo, presence: true
