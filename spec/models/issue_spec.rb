@@ -17,7 +17,7 @@ RSpec.describe Issue do
     it { is_expected.to validate_presence_of(:github_number) }
     it { is_expected.to validate_presence_of(:title) }
     it { is_expected.to validate_length_of(:title).is_at_most(1000) }
-    it { is_expected.to validate_presence_of(:github_state) }
+    it { is_expected.to validate_presence_of(:state) }
     it { is_expected.to validate_presence_of(:github_created_at) }
     it { is_expected.to validate_presence_of(:github_updated_at) }
     it { is_expected.to validate_presence_of(:paid_state) }
@@ -141,7 +141,8 @@ RSpec.describe Issue do
     end
 
     it "defaults to empty array" do
-      issue = create(:issue, labels: [])
+      issue = create(:issue)
+      issue.reload
       expect(issue.labels).to eq([])
     end
   end

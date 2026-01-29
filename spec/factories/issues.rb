@@ -8,14 +8,13 @@ FactoryBot.define do
     sequence(:github_number) { |n| n }
     sequence(:title) { |n| "Issue #{n}" }
     body { "This is the issue body" }
-    github_state { "open" }
-    labels { [] }
+    state { "open" }
     paid_state { "new" }
     github_created_at { 1.day.ago }
     github_updated_at { Time.current }
 
     trait :closed do
-      github_state { "closed" }
+      state { "closed" }
     end
 
     trait :planning do

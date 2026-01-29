@@ -12,7 +12,7 @@ class Issue < ApplicationRecord
   validates :github_issue_id, presence: true, uniqueness: { scope: :project_id }
   validates :github_number, presence: true
   validates :title, presence: true, length: { maximum: 1000 }
-  validates :github_state, presence: true
+  validates :state, presence: true
   validates :github_created_at, presence: true
   validates :github_updated_at, presence: true
   validates :paid_state, presence: true, inclusion: { in: PAID_STATES }
