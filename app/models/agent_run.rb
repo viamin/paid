@@ -18,6 +18,11 @@ class AgentRun < ApplicationRecord
   validates :pull_request_url, length: { maximum: 500 }
   validates :temporal_workflow_id, length: { maximum: 255 }
   validates :temporal_run_id, length: { maximum: 255 }
+  validates :iterations, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :tokens_input, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :tokens_output, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
 
   scope :by_status, ->(status) { where(status: status) }

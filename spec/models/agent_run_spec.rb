@@ -23,6 +23,11 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_length_of(:pull_request_url).is_at_most(500) }
     it { is_expected.to validate_length_of(:temporal_workflow_id).is_at_most(255) }
     it { is_expected.to validate_length_of(:temporal_run_id).is_at_most(255) }
+    it { is_expected.to validate_numericality_of(:iterations).is_greater_than_or_equal_to(0).allow_nil }
+    it { is_expected.to validate_numericality_of(:tokens_input).is_greater_than_or_equal_to(0).allow_nil }
+    it { is_expected.to validate_numericality_of(:tokens_output).is_greater_than_or_equal_to(0).allow_nil }
+    it { is_expected.to validate_numericality_of(:cost_cents).is_greater_than_or_equal_to(0).allow_nil }
+    it { is_expected.to validate_numericality_of(:duration_seconds).is_greater_than_or_equal_to(0).allow_nil }
 
     describe "issue project validation" do
       it "allows issue from the same project" do
