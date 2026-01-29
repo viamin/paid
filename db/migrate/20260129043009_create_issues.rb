@@ -31,8 +31,5 @@ class CreateIssues < ActiveRecord::Migration[8.1]
 
     # Index for querying by state
     add_index :issues, :paid_state
-
-    # Index for parent_issue lookups (sub-issues)
-    add_index :issues, :parent_issue_id
   end
 end
