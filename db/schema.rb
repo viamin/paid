@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_29_013551) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_29_022148) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -26,12 +26,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_013551) do
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
-    t.text "token", null: false
     t.datetime "expires_at"
     t.datetime "last_used_at"
     t.string "name", null: false
     t.datetime "revoked_at"
     t.jsonb "scopes", default: [], null: false
+    t.text "token", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "name"], name: "index_github_tokens_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_github_tokens_on_account_id"
@@ -130,6 +130,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_013551) do
     t.index ["scheduled_at"], name: "index_good_jobs_on_scheduled_at", where: "(finished_at IS NULL)"
   end
 
+  create_table "projects", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.string "default_branch", default: "main", null: false
+    t.bigint "github_id", null: false
+    t.bigint "github_token_id", null: false
+    t.jsonb "label_mappings", default: {}, null: false
+    t.string "name", null: false
+    t.string "owner", null: false
+    t.integer "poll_interval_seconds", default: 300, null: false
+    t.string "repo", null: false
+    t.bigint "total_cost_cents", default: 0, null: false
+    t.bigint "total_tokens_used", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "active"], name: "index_projects_on_account_id_and_active"
+    t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true
+    t.index ["account_id"], name: "index_projects_on_account_id"
+    t.index ["created_by_id"], name: "index_projects_on_created_by_id"
+    t.index ["github_token_id"], name: "index_projects_on_github_token_id"
+    t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
+  end
+
   create_table "roles", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "name"
@@ -165,5 +189,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_013551) do
 
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
+  add_foreign_key "projects", "accounts"
+  add_foreign_key "projects", "github_tokens"
+  add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "users", "accounts"
 end
