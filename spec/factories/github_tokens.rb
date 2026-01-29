@@ -3,7 +3,7 @@
 FactoryBot.define do
   factory :github_token do
     account
-    association :created_by, factory: :user
+    created_by { association :user, account: account }
     sequence(:name) { |n| "Token #{n}" }
     token { "ghp_#{SecureRandom.alphanumeric(36)}" }
     scopes { [ "repo", "read:org" ] }

@@ -18,6 +18,7 @@ class GithubToken < ApplicationRecord
   validates :name, presence: true, uniqueness: { scope: :account_id }
   validates :token, presence: true
   validate :token_format_valid, if: -> { token.present? }
+  validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
 
   scope :active, -> { where(revoked_at: nil).where("expires_at IS NULL OR expires_at > ?", Time.current) }
   scope :expired, -> { where.not(expires_at: nil).where("expires_at <= ?", Time.current) }
@@ -40,7 +41,7 @@ class GithubToken < ApplicationRecord
   end
 
   def touch_last_used!
-    update!(last_used_at: Time.current)
+    update_column(:last_used_at, Time.current)
   end
 
   private
@@ -49,5 +50,11 @@ class GithubToken < ApplicationRecord
     return if token.match?(GITHUB_TOKEN_PATTERN)
 
     errors.add(:token, "must be a valid GitHub token format")
+  end
+
+  def created_by_belongs_to_same_account
+    return if created_by.account_id == account_id
+
+    errors.add(:created_by, "must belong to the same account")
   end
 end
