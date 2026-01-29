@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_28_034216) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_29_013551) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -20,6 +20,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_28_034216) do
     t.string "slug", null: false
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+  end
+
+  create_table "github_tokens", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.text "token", null: false
+    t.datetime "expires_at"
+    t.datetime "last_used_at"
+    t.string "name", null: false
+    t.datetime "revoked_at"
+    t.jsonb "scopes", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "name"], name: "index_github_tokens_on_account_id_and_name", unique: true
+    t.index ["account_id"], name: "index_github_tokens_on_account_id"
+    t.index ["created_by_id"], name: "index_github_tokens_on_created_by_id"
+    t.index ["revoked_at"], name: "index_github_tokens_on_revoked_at"
   end
 
   create_table "good_job_batches", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -146,5 +163,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_28_034216) do
     t.index ["user_id"], name: "index_users_roles_on_user_id"
   end
 
+  add_foreign_key "github_tokens", "accounts"
+  add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "users", "accounts"
 end
