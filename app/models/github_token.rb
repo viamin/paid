@@ -13,6 +13,8 @@ class GithubToken < ApplicationRecord
   belongs_to :account
   belongs_to :created_by, class_name: "User", optional: true
 
+  has_many :projects, dependent: :restrict_with_error
+
   encrypts :token
 
   validates :name, presence: true, uniqueness: { scope: :account_id }
