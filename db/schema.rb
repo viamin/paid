@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_29_031603) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_29_043009) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -130,6 +130,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_031603) do
     t.index ["scheduled_at"], name: "index_good_jobs_on_scheduled_at", where: "(finished_at IS NULL)"
   end
 
+  create_table "issues", force: :cascade do |t|
+    t.text "body"
+    t.datetime "created_at", null: false
+    t.datetime "github_created_at", null: false
+    t.bigint "github_issue_id", null: false
+    t.integer "github_number", null: false
+    t.datetime "github_updated_at", null: false
+    t.jsonb "labels", default: [], null: false
+    t.string "paid_state", default: "new", null: false
+    t.bigint "parent_issue_id"
+    t.bigint "project_id", null: false
+    t.string "state", null: false
+    t.string "title", limit: 1000, null: false
+    t.datetime "updated_at", null: false
+    t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
+    t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
+    t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
+    t.index ["project_id"], name: "index_issues_on_project_id"
+  end
+
   create_table "projects", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
@@ -189,6 +209,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_031603) do
 
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
+  add_foreign_key "issues", "issues", column: "parent_issue_id"
+  add_foreign_key "issues", "projects"
   add_foreign_key "projects", "accounts"
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
