@@ -14,7 +14,7 @@ class CreateIssues < ActiveRecord::Migration[8.1]
       # Cached GitHub data
       t.string :title, limit: 1000, null: false
       t.text :body
-      t.string :github_state, null: false
+      t.string :state, null: false
       t.jsonb :labels, default: [], null: false
 
       # Paid-specific state tracking
@@ -29,7 +29,7 @@ class CreateIssues < ActiveRecord::Migration[8.1]
     # Composite unique index on project_id + github_issue_id
     add_index :issues, [ :project_id, :github_issue_id ], unique: true
 
-    # Index for querying by state
-    add_index :issues, :paid_state
+    # Composite index for per-project state queries
+    add_index :issues, [ :project_id, :paid_state ]
   end
 end
