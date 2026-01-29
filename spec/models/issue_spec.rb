@@ -7,6 +7,7 @@ RSpec.describe Issue do
     it { is_expected.to belong_to(:project) }
     it { is_expected.to belong_to(:parent_issue).class_name("Issue").optional }
     it { is_expected.to have_many(:sub_issues).class_name("Issue").with_foreign_key(:parent_issue_id).dependent(:nullify) }
+    it { is_expected.to have_many(:agent_runs).dependent(:nullify) }
   end
 
   describe "validations" do
