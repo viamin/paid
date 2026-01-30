@@ -31,12 +31,8 @@ class GithubTokensController < ApplicationController
 
   def destroy
     authorize @github_token
-
-    if @github_token.revoke!
-      redirect_to github_tokens_path, notice: "Token was successfully deactivated."
-    else
-      redirect_to github_tokens_path, alert: "Failed to deactivate token."
-    end
+    @github_token.revoke!
+    redirect_to github_tokens_path, notice: "Token was successfully deactivated."
   end
 
   private
