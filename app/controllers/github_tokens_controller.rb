@@ -2,6 +2,7 @@
 
 class GithubTokensController < ApplicationController
   before_action :set_github_token, only: [ :show, :destroy ]
+  skip_after_action :verify_authorized, only: :index
 
   def index
     @github_tokens = policy_scope(GithubToken).order(created_at: :desc)

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe "GithubTokens" do
   let(:account) { create(:account) }
@@ -231,9 +232,8 @@ RSpec.describe "GithubTokens" do
       it "does not allow viewing tokens from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)
-        expect {
-          get github_token_path(other_token)
-        }.to raise_error(ActiveRecord::RecordNotFound)
+        get github_token_path(other_token)
+        expect(response).to have_http_status(:not_found)
       end
     end
   end
@@ -271,6 +271,11 @@ RSpec.describe "GithubTokens" do
       end
 
       context "when user does not have permission" do
+        # Create a second user who won't have owner role (first user gets owner automatically)
+        let(:non_owner_user) { create(:user, account: account) }
+
+        before { sign_in non_owner_user }
+
         it "redirects with authorization error" do
           token = create(:github_token, account: account)
           delete github_token_path(token)
