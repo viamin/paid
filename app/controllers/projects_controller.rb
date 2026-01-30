@@ -5,7 +5,7 @@ class ProjectsController < ApplicationController
   skip_after_action :verify_authorized, only: :index
 
   def index
-    @projects = policy_scope(Project).includes(:github_token).order(created_at: :desc)
+    @projects = policy_scope(Project).includes(:github_token, :agent_runs).order(created_at: :desc)
   end
 
   def show

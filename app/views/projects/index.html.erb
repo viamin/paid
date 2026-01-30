@@ -45,7 +45,7 @@
             <div class="flex items-center justify-between text-sm">
               <div class="flex items-center space-x-4">
                 <div class="text-gray-500">
-                  <span class="font-medium text-gray-900"><%= project.agent_runs.count %></span> runs
+                  <span class="font-medium text-gray-900"><%= project.agent_runs.size %></span> runs
                 </div>
                 <div class="text-gray-500">
                   <span class="font-medium text-gray-900">$<%= format("%.2f", project.total_cost_cents / 100.0) %></span> spent

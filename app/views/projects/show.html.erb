@@ -140,32 +140,7 @@
                   <% @recent_agent_runs.each do |run| %>
                     <tr>
                       <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
-                        <% case run.status %>
-                        <% when "pending" %>
-                          <span class="inline-flex items-center rounded-md bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800">
-                            Pending
-                          </span>
-                        <% when "running" %>
-                          <span class="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
-                            Running
-                          </span>
-                        <% when "completed" %>
-                          <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
-                            Completed
-                          </span>
-                        <% when "failed" %>
-                          <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
-                            Failed
-                          </span>
-                        <% when "cancelled" %>
-                          <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">
-                            Cancelled
-                          </span>
-                        <% when "timeout" %>
-                          <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">
-                            Timeout
-                          </span>
-                        <% end %>
+                        <%= agent_run_status_badge(run.status) %>
                       </td>
                       <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                         <%= run.agent_type.titleize %>
