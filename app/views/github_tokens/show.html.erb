@@ -1,0 +1,143 @@
+<% content_for(:title) { "#{@github_token.name} - GitHub Tokens - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to github_tokens_path, class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Tokens
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-semibold text-gray-900"><%= @github_token.name %></h1>
+          <p class="mt-1 text-sm text-gray-500">
+            Added <%= time_ago_in_words(@github_token.created_at) %> ago
+            <% if @github_token.created_by %>
+              by <%= @github_token.created_by.email %>
+            <% end %>
+          </p>
+        </div>
+        <div>
+          <% if @github_token.revoked? %>
+            <span class="inline-flex items-center rounded-md bg-gray-100 px-3 py-1 text-sm font-medium text-gray-600">
+              Revoked
+            </span>
+          <% elsif @github_token.expired? %>
+            <span class="inline-flex items-center rounded-md bg-red-100 px-3 py-1 text-sm font-medium text-red-700">
+              Expired
+            </span>
+          <% elsif @github_token.expires_at.present? && @github_token.expires_at < 7.days.from_now %>
+            <span class="inline-flex items-center rounded-md bg-yellow-100 px-3 py-1 text-sm font-medium text-yellow-800">
+              Expiring Soon
+            </span>
+          <% else %>
+            <span class="inline-flex items-center rounded-md bg-green-100 px-3 py-1 text-sm font-medium text-green-700">
+              Active
+            </span>
+          <% end %>
+        </div>
+      </div>
+    </div>
+
+    <% if @github_token.expires_at.present? && @github_token.expires_at < 7.days.from_now && !@github_token.expired? && !@github_token.revoked? %>
+      <div class="border-t border-gray-200 bg-yellow-50 px-4 py-4 sm:px-6">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <h3 class="text-sm font-medium text-yellow-800">Token Expiring Soon</h3>
+            <p class="mt-1 text-sm text-yellow-700">
+              This token will expire on <%= @github_token.expires_at.strftime("%B %d, %Y at %I:%M %p %Z") %>.
+              Please create a new token before it expires to avoid service interruption.
+            </p>
+          </div>
+        </div>
+      </div>
+    <% end %>
+
+    <div class="border-t border-gray-200">
+      <dl class="divide-y divide-gray-200">
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Token</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <code class="rounded bg-gray-100 px-2 py-1 font-mono text-sm">
+              <%= @github_token.token[0..7] %>****<%= @github_token.token[-4..] %>
+            </code>
+          </dd>
+        </div>
+
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Scopes</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <% if @github_token.scopes.present? && @github_token.scopes.any? %>
+              <div class="flex flex-wrap gap-2">
+                <% @github_token.scopes.each do |scope| %>
+                  <span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
+                    <%= scope %>
+                  </span>
+                <% end %>
+              </div>
+            <% else %>
+              <span class="text-gray-500">No scopes detected (fine-grained tokens show no scopes)</span>
+            <% end %>
+          </dd>
+        </div>
+
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Last Used</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <%= @github_token.last_used_at ? @github_token.last_used_at.strftime("%B %d, %Y at %I:%M %p %Z") : "Never" %>
+          </dd>
+        </div>
+
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Created</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <%= @github_token.created_at.strftime("%B %d, %Y at %I:%M %p %Z") %>
+          </dd>
+        </div>
+
+        <% if @github_token.expires_at.present? %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500">Expires</dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+              <%= @github_token.expires_at.strftime("%B %d, %Y at %I:%M %p %Z") %>
+              <% if @github_token.expired? %>
+                <span class="ml-2 text-red-600">(Expired)</span>
+              <% end %>
+            </dd>
+          </div>
+        <% end %>
+
+        <% if @github_token.revoked_at.present? %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500">Revoked</dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+              <%= @github_token.revoked_at.strftime("%B %d, %Y at %I:%M %p %Z") %>
+            </dd>
+          </div>
+        <% end %>
+      </dl>
+    </div>
+
+    <% if @github_token.active? && policy(@github_token).destroy? %>
+      <div class="border-t border-gray-200 bg-gray-50 px-4 py-4 sm:px-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-medium text-gray-900">Deactivate Token</h3>
+            <p class="text-sm text-gray-500">Once deactivated, this token can no longer be used.</p>
+          </div>
+          <%= button_to "Deactivate", github_token_path(@github_token), method: :delete, class: "rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600", form: { data: { turbo_confirm: "Are you sure you want to deactivate this token? This cannot be undone." } } %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>
