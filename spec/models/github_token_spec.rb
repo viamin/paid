@@ -302,4 +302,73 @@ RSpec.describe GithubToken do
       expect(token.created_by).to be_nil
     end
   end
+
+  describe "#client" do
+    it "returns a GithubClient instance" do
+      github_token = build(:github_token)
+      expect(github_token.client).to be_a(GithubClient)
+    end
+
+    it "caches the client instance" do
+      github_token = build(:github_token)
+      first_call = github_token.client
+      second_call = github_token.client
+      expect(first_call).to be(second_call)
+    end
+  end
+
+  describe "#validate_with_github!" do
+    let(:github_token) { create(:github_token) }
+    let(:api_base) { "https://api.github.com" }
+
+    context "when token is valid" do
+      before do
+        stub_request(:get, "#{api_base}/user")
+          .to_return(
+            status: 200,
+            body: {
+              login: "testuser",
+              id: 12345,
+              name: "Test User",
+              email: "test@example.com"
+            }.to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-OAuth-Scopes" => "repo, user"
+            }
+          )
+      end
+
+      it "returns user information" do
+        result = github_token.validate_with_github!
+
+        expect(result[:login]).to eq("testuser")
+      end
+
+      it "updates scopes" do
+        github_token.validate_with_github!
+        github_token.reload
+
+        expect(github_token.scopes).to eq([ "repo", "user" ])
+      end
+
+      it "touches last_used_at" do
+        freeze_time do
+          github_token.validate_with_github!
+          expect(github_token.last_used_at).to eq(Time.current)
+        end
+      end
+    end
+
+    context "when token is invalid" do
+      before do
+        stub_request(:get, "#{api_base}/user")
+          .to_return(status: 401, body: { message: "Bad credentials" }.to_json)
+      end
+
+      it "raises AuthenticationError" do
+        expect { github_token.validate_with_github! }.to raise_error(GithubClient::AuthenticationError)
+      end
+    end
+  end
 end

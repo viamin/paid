@@ -46,6 +46,26 @@ class GithubToken < ApplicationRecord
     update_column(:last_used_at, Time.current)
   end
 
+  # Returns a GithubClient instance configured with this token.
+  # Caches the client instance for the lifetime of the record.
+  #
+  # @return [GithubClient] GitHub API client
+  def client
+    @client ||= GithubClient.new(token: token)
+  end
+
+  # Validates the token against GitHub API and updates scopes.
+  # Also touches last_used_at on successful validation.
+  #
+  # @return [Hash] User info with :login, :id, :name, :email, :scopes keys
+  # @raise [GithubClient::AuthenticationError] if the token is invalid
+  def validate_with_github!
+    result = client.validate_token
+    update!(scopes: result[:scopes])
+    touch_last_used!
+    result
+  end
+
   private
 
   def token_format_valid
