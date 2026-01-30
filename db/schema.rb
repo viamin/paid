@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_29_043009) do
+ActiveRecord::Schema[8.1].define(version: 2026_01_29_230315) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -20,6 +20,48 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_043009) do
     t.string "slug", null: false
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+  end
+
+  create_table "agent_run_logs", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.text "content", null: false
+    t.datetime "created_at", null: false
+    t.string "log_type", limit: 50, null: false
+    t.jsonb "metadata"
+    t.index ["agent_run_id", "log_type"], name: "index_agent_run_logs_on_agent_run_id_and_log_type"
+    t.index ["agent_run_id"], name: "index_agent_run_logs_on_agent_run_id"
+    t.index ["created_at"], name: "index_agent_run_logs_on_created_at"
+  end
+
+  create_table "agent_runs", force: :cascade do |t|
+    t.string "agent_type", limit: 50, null: false
+    t.string "base_commit_sha", limit: 40
+    t.string "branch_name", limit: 255
+    t.datetime "completed_at"
+    t.integer "cost_cents", default: 0
+    t.datetime "created_at", null: false
+    t.integer "duration_seconds"
+    t.text "error_message"
+    t.bigint "issue_id"
+    t.integer "iterations", default: 0
+    t.bigint "project_id", null: false
+    t.integer "pull_request_number"
+    t.string "pull_request_url", limit: 500
+    t.string "result_commit_sha", limit: 40
+    t.datetime "started_at"
+    t.string "status", limit: 50, default: "pending", null: false
+    t.string "temporal_run_id", limit: 255
+    t.string "temporal_workflow_id", limit: 255
+    t.integer "tokens_input", default: 0
+    t.integer "tokens_output", default: 0
+    t.datetime "updated_at", null: false
+    t.string "worktree_path", limit: 500
+    t.index ["created_at"], name: "index_agent_runs_on_created_at"
+    t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
+    t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
+    t.index ["project_id"], name: "index_agent_runs_on_project_id"
+    t.index ["status"], name: "index_agent_runs_on_status"
+    t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end
 
   create_table "github_tokens", force: :cascade do |t|
@@ -136,12 +178,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_043009) do
     t.datetime "github_created_at", null: false
     t.bigint "github_issue_id", null: false
     t.integer "github_number", null: false
+    t.string "github_state", null: false
     t.datetime "github_updated_at", null: false
     t.jsonb "labels", default: [], null: false
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
     t.bigint "project_id", null: false
-    t.string "state", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
@@ -207,6 +249,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_043009) do
     t.index ["user_id"], name: "index_users_roles_on_user_id"
   end
 
+  add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
+  add_foreign_key "agent_runs", "issues", on_delete: :nullify
+  add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "issues", "issues", column: "parent_issue_id"
