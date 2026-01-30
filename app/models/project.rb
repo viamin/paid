@@ -8,6 +8,7 @@ class Project < ApplicationRecord
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :issues, dependent: :destroy
+  has_many :agent_runs, dependent: :destroy
 
   validates :name, presence: true
   validates :owner, presence: true

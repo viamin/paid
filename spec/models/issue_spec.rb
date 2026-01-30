@@ -7,6 +7,7 @@ RSpec.describe Issue do
     it { is_expected.to belong_to(:project) }
     it { is_expected.to belong_to(:parent_issue).class_name("Issue").optional }
     it { is_expected.to have_many(:sub_issues).class_name("Issue").with_foreign_key(:parent_issue_id).dependent(:nullify) }
+    it { is_expected.to have_many(:agent_runs).dependent(:nullify) }
   end
 
   describe "validations" do
@@ -17,7 +18,7 @@ RSpec.describe Issue do
     it { is_expected.to validate_presence_of(:github_number) }
     it { is_expected.to validate_presence_of(:title) }
     it { is_expected.to validate_length_of(:title).is_at_most(1000) }
-    it { is_expected.to validate_presence_of(:state) }
+    it { is_expected.to validate_presence_of(:github_state) }
     it { is_expected.to validate_presence_of(:github_created_at) }
     it { is_expected.to validate_presence_of(:github_updated_at) }
     it { is_expected.to validate_presence_of(:paid_state) }
