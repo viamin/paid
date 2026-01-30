@@ -55,7 +55,7 @@ RSpec.describe "Projects" do
         project = create(:project, :with_metrics, account: account, github_token: github_token)
         create_list(:agent_run, 3, project: project)
         get projects_path
-        expect(response.body).to include("3 runs")
+        expect(response.body).to include(">3</span> runs")
         expect(response.body).to include("$15.00")
       end
     end
@@ -92,7 +92,7 @@ RSpec.describe "Projects" do
 
       it "does not show revoked tokens in the dropdown" do
         create(:github_token, :revoked, account: account, name: "Revoked Token")
-        active_token = create(:github_token, account: account, name: "Active Token")
+        create(:github_token, account: account, name: "Active Token")
         get new_project_path
         expect(response.body).to include("Active Token")
         expect(response.body).not_to include("Revoked Token")
@@ -181,6 +181,7 @@ RSpec.describe "Projects" do
 
       context "without a github token selected" do
         it "re-renders the form with errors" do
+          github_token # ensure at least one token exists so form renders
           post projects_path, params: {
             project: {
               owner: "octocat",
