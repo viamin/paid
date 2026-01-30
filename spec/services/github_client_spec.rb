@@ -322,17 +322,8 @@ RSpec.describe GithubClient do
   describe "#rate_limit_remaining" do
     context "when rate limit info is available" do
       it "returns remaining requests" do
-        stub_request(:get, "#{api_base}/rate_limit")
-          .to_return(
-            status: 200,
-            body: {
-              resources: {
-                core: { limit: 5000, remaining: 4999, reset: Time.now.to_i + 3600 }
-              },
-              rate: { limit: 5000, remaining: 4999, reset: Time.now.to_i + 3600 }
-            }.to_json,
-            headers: { "Content-Type" => "application/json" }
-          )
+        rate_limit = instance_double(Octokit::RateLimit, remaining: 4999)
+        allow(client.client).to receive(:rate_limit).and_return(rate_limit)
 
         expect(client.rate_limit_remaining).to eq(4999)
       end
@@ -340,8 +331,7 @@ RSpec.describe GithubClient do
 
     context "when rate limit request fails" do
       it "returns 0" do
-        stub_request(:get, "#{api_base}/rate_limit")
-          .to_return(status: 500)
+        allow(client.client).to receive(:rate_limit).and_raise(Octokit::Error)
 
         expect(client.rate_limit_remaining).to eq(0)
       end
@@ -351,17 +341,8 @@ RSpec.describe GithubClient do
   describe "#rate_limit_low?" do
     context "when remaining is below threshold" do
       it "returns true" do
-        stub_request(:get, "#{api_base}/rate_limit")
-          .to_return(
-            status: 200,
-            body: {
-              resources: {
-                core: { limit: 5000, remaining: 5, reset: Time.now.to_i + 3600 }
-              },
-              rate: { limit: 5000, remaining: 5, reset: Time.now.to_i + 3600 }
-            }.to_json,
-            headers: { "Content-Type" => "application/json" }
-          )
+        rate_limit = instance_double(Octokit::RateLimit, remaining: 5)
+        allow(client.client).to receive(:rate_limit).and_return(rate_limit)
 
         expect(client.rate_limit_low?).to be true
       end
@@ -369,17 +350,8 @@ RSpec.describe GithubClient do
 
     context "when remaining is above threshold" do
       it "returns false" do
-        stub_request(:get, "#{api_base}/rate_limit")
-          .to_return(
-            status: 200,
-            body: {
-              resources: {
-                core: { limit: 5000, remaining: 100, reset: Time.now.to_i + 3600 }
-              },
-              rate: { limit: 5000, remaining: 100, reset: Time.now.to_i + 3600 }
-            }.to_json,
-            headers: { "Content-Type" => "application/json" }
-          )
+        rate_limit = instance_double(Octokit::RateLimit, remaining: 100)
+        allow(client.client).to receive(:rate_limit).and_return(rate_limit)
 
         expect(client.rate_limit_low?).to be false
       end
@@ -387,33 +359,15 @@ RSpec.describe GithubClient do
 
     context "with custom threshold" do
       it "returns true when remaining is below custom threshold" do
-        stub_request(:get, "#{api_base}/rate_limit")
-          .to_return(
-            status: 200,
-            body: {
-              resources: {
-                core: { limit: 5000, remaining: 50, reset: Time.now.to_i + 3600 }
-              },
-              rate: { limit: 5000, remaining: 50, reset: Time.now.to_i + 3600 }
-            }.to_json,
-            headers: { "Content-Type" => "application/json" }
-          )
+        rate_limit = instance_double(Octokit::RateLimit, remaining: 50)
+        allow(client.client).to receive(:rate_limit).and_return(rate_limit)
 
         expect(client.rate_limit_low?(threshold: 100)).to be true
       end
 
       it "returns false when remaining is above custom threshold" do
-        stub_request(:get, "#{api_base}/rate_limit")
-          .to_return(
-            status: 200,
-            body: {
-              resources: {
-                core: { limit: 5000, remaining: 50, reset: Time.now.to_i + 3600 }
-              },
-              rate: { limit: 5000, remaining: 50, reset: Time.now.to_i + 3600 }
-            }.to_json,
-            headers: { "Content-Type" => "application/json" }
-          )
+        rate_limit = instance_double(Octokit::RateLimit, remaining: 50)
+        allow(client.client).to receive(:rate_limit).and_return(rate_limit)
 
         expect(client.rate_limit_low?(threshold: 25)).to be false
       end
