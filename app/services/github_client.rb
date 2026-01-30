@@ -72,17 +72,19 @@ class GithubClient
   #
   # @return [Hash] User info with :login, :id, :name, :email, :scopes keys
   # @raise [AuthenticationError] if the token is invalid
+  # @raise [RateLimitError] if rate limit is exceeded
+  # @raise [ApiError] for other API errors
   def validate_token
-    response = client.user
-    {
-      login: response.login,
-      id: response.id,
-      name: response.name,
-      email: response.email,
-      scopes: client.scopes
-    }
-  rescue Octokit::Unauthorized => e
-    raise AuthenticationError, e.message
+    handle_errors do
+      response = client.user
+      {
+        login: response.login,
+        id: response.id,
+        name: response.name,
+        email: response.email,
+        scopes: client.scopes
+      }
+    end
   end
 
   # Fetches repository metadata.

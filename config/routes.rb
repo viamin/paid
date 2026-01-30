@@ -16,6 +16,9 @@ Rails.application.routes.draw do
   # Dashboard for authenticated users
   get "dashboard", to: "dashboard#show"
 
+  # GitHub tokens management
+  resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ]
+
   # Defines the root path route ("/")
   root "home#index"
 end
