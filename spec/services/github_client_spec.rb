@@ -254,7 +254,7 @@ RSpec.describe GithubClient do
     before do
       stub_request(:post, "#{api_base}/repos/#{repo}/labels")
         .with(
-          body: { name: "priority", color: "ff0000", description: "High priority" }.to_json
+          body: hash_including("name" => "priority", "color" => "ff0000", "description" => "High priority")
         )
         .to_return(
           status: 201,
@@ -321,7 +321,7 @@ RSpec.describe GithubClient do
 
   describe "#rate_limit_remaining" do
     context "when rate limit info is available" do
-      before do
+      it "returns remaining requests" do
         stub_request(:get, "#{api_base}/rate_limit")
           .to_return(
             status: 200,
@@ -333,61 +333,88 @@ RSpec.describe GithubClient do
             }.to_json,
             headers: { "Content-Type" => "application/json" }
           )
-      end
 
-      it "returns remaining requests" do
         expect(client.rate_limit_remaining).to eq(4999)
       end
     end
 
     context "when rate limit request fails" do
-      before do
+      it "returns 0" do
         stub_request(:get, "#{api_base}/rate_limit")
           .to_return(status: 500)
-      end
 
-      it "returns 0" do
         expect(client.rate_limit_remaining).to eq(0)
       end
     end
   end
 
   describe "#rate_limit_low?" do
-    before do
-      stub_request(:get, "#{api_base}/rate_limit")
-        .to_return(
-          status: 200,
-          body: {
-            resources: {
-              core: { limit: 5000, remaining: remaining, reset: Time.now.to_i + 3600 }
-            },
-            rate: { limit: 5000, remaining: remaining, reset: Time.now.to_i + 3600 }
-          }.to_json,
-          headers: { "Content-Type" => "application/json" }
-        )
-    end
-
     context "when remaining is below threshold" do
-      let(:remaining) { 5 }
-
       it "returns true" do
+        stub_request(:get, "#{api_base}/rate_limit")
+          .to_return(
+            status: 200,
+            body: {
+              resources: {
+                core: { limit: 5000, remaining: 5, reset: Time.now.to_i + 3600 }
+              },
+              rate: { limit: 5000, remaining: 5, reset: Time.now.to_i + 3600 }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
         expect(client.rate_limit_low?).to be true
       end
     end
 
     context "when remaining is above threshold" do
-      let(:remaining) { 100 }
-
       it "returns false" do
+        stub_request(:get, "#{api_base}/rate_limit")
+          .to_return(
+            status: 200,
+            body: {
+              resources: {
+                core: { limit: 5000, remaining: 100, reset: Time.now.to_i + 3600 }
+              },
+              rate: { limit: 5000, remaining: 100, reset: Time.now.to_i + 3600 }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
         expect(client.rate_limit_low?).to be false
       end
     end
 
     context "with custom threshold" do
-      let(:remaining) { 50 }
+      it "returns true when remaining is below custom threshold" do
+        stub_request(:get, "#{api_base}/rate_limit")
+          .to_return(
+            status: 200,
+            body: {
+              resources: {
+                core: { limit: 5000, remaining: 50, reset: Time.now.to_i + 3600 }
+              },
+              rate: { limit: 5000, remaining: 50, reset: Time.now.to_i + 3600 }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
 
-      it "respects custom threshold" do
         expect(client.rate_limit_low?(threshold: 100)).to be true
+      end
+
+      it "returns false when remaining is above custom threshold" do
+        stub_request(:get, "#{api_base}/rate_limit")
+          .to_return(
+            status: 200,
+            body: {
+              resources: {
+                core: { limit: 5000, remaining: 50, reset: Time.now.to_i + 3600 }
+              },
+              rate: { limit: 5000, remaining: 50, reset: Time.now.to_i + 3600 }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
         expect(client.rate_limit_low?(threshold: 25)).to be false
       end
     end
