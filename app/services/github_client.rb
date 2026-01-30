@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "octokit"
+require "faraday/retry"
 
 # GitHub API client wrapper with error handling and rate limit awareness.
 #
@@ -216,7 +217,7 @@ class GithubClient
     raise AuthenticationError, e.message
   rescue Octokit::NotFound => e
     raise NotFoundError, e.message
-  rescue Octokit::TooManyRequests => e
+  rescue Octokit::TooManyRequests
     reset_at = client.rate_limit.resets_at rescue nil
     raise RateLimitError.new(reset_at)
   rescue Octokit::Forbidden => e
