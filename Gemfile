@@ -31,6 +31,10 @@ gem "pundit"
 # Role management [https://github.com/RolifyCommunity/rolify]
 gem "rolify"
 
+# GitHub API client [https://github.com/octokit/octokit.rb]
+gem "octokit"
+gem "faraday-retry"
+
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[windows jruby]
 
@@ -74,6 +78,7 @@ group :test do
   gem "simplecov", require: false
   gem "capybara"
   gem "selenium-webdriver"
+  gem "webmock"
 end
 
 group :development do
