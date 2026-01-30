@@ -54,17 +54,17 @@ class GithubTokensController < ApplicationController
     redirect_to github_token_path(@github_token),
                 notice: "Token was successfully added and validated. Connected as #{result[:login]}."
   rescue GithubClient::AuthenticationError => e
-    @github_token.destroy
+    @github_token.destroy!
     @github_token = current_account.github_tokens.build(github_token_params)
     @github_token.errors.add(:token, "is invalid or has been revoked: #{e.message}")
     render :new, status: :unprocessable_entity
-  rescue GithubClient::RateLimitError => e
-    @github_token.destroy
+  rescue GithubClient::RateLimitError
+    @github_token.destroy!
     @github_token = current_account.github_tokens.build(github_token_params)
     @github_token.errors.add(:base, "GitHub API rate limit exceeded. Please try again later.")
     render :new, status: :unprocessable_entity
   rescue GithubClient::ApiError => e
-    @github_token.destroy
+    @github_token.destroy!
     @github_token = current_account.github_tokens.build(github_token_params)
     @github_token.errors.add(:base, "GitHub API error: #{e.message}")
     render :new, status: :unprocessable_entity

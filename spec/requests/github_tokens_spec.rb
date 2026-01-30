@@ -25,7 +25,7 @@ RSpec.describe "GithubTokens" do
       end
 
       it "shows the user's tokens" do
-        token = create(:github_token, account: account, name: "My Token")
+        create(:github_token, account: account, name: "My Token")
         get github_tokens_path
         expect(response.body).to include("My Token")
       end
@@ -56,7 +56,7 @@ RSpec.describe "GithubTokens" do
       end
 
       it "shows expiring soon warning for tokens expiring within 7 days" do
-        create(:github_token, :expiring_soon, account: account, name: "Expiring Token")
+        create(:github_token, account: account, name: "Expiring Token", expires_at: 6.days.from_now)
         get github_tokens_path
         expect(response.body).to include("Expiring Soon")
       end
@@ -187,6 +187,55 @@ RSpec.describe "GithubTokens" do
           }.not_to change(GithubToken, :count)
         end
       end
+
+      context "when GitHub API returns rate limit error" do
+        let(:valid_token) { "ghp_#{'a' * 36}" }
+
+        before do
+          octokit_client = instance_double(Octokit::Client)
+          allow(Octokit::Client).to receive(:new).and_return(octokit_client)
+          allow(octokit_client).to receive(:middleware=)
+          allow(octokit_client).to receive(:user).and_raise(Octokit::TooManyRequests.new({}))
+          allow(octokit_client).to receive(:rate_limit).and_return(
+            OpenStruct.new(resets_at: 1.hour.from_now)
+          )
+        end
+
+        it "re-renders the form with rate limit error message" do
+          post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
+          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response.body).to include("rate limit exceeded")
+        end
+
+        it "does not create the token" do
+          expect {
+            post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
+          }.not_to change(GithubToken, :count)
+        end
+      end
+
+      context "when GitHub API returns other error" do
+        let(:valid_token) { "ghp_#{'a' * 36}" }
+
+        before do
+          octokit_client = instance_double(Octokit::Client)
+          allow(Octokit::Client).to receive(:new).and_return(octokit_client)
+          allow(octokit_client).to receive(:middleware=)
+          allow(octokit_client).to receive(:user).and_raise(Octokit::ServerError.new({}))
+        end
+
+        it "re-renders the form with API error message" do
+          post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
+          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response.body).to include("GitHub API error")
+        end
+
+        it "does not create the token" do
+          expect {
+            post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
+          }.not_to change(GithubToken, :count)
+        end
+      end
     end
   end
 
@@ -224,7 +273,7 @@ RSpec.describe "GithubTokens" do
       end
 
       it "shows expiration warning for tokens expiring soon" do
-        token = create(:github_token, :expiring_soon, account: account)
+        token = create(:github_token, account: account, expires_at: 6.days.from_now)
         get github_token_path(token)
         expect(response.body).to include("Token Expiring Soon")
       end
@@ -251,9 +300,7 @@ RSpec.describe "GithubTokens" do
       before { sign_in user }
 
       context "when user has permission" do
-        before do
-          user.add_role(:owner, account)
-        end
+        # First user in account automatically gets owner role via User#assign_owner_role_if_first_user
 
         it "revokes the token" do
           token = create(:github_token, account: account)
