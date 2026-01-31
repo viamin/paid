@@ -97,6 +97,30 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Active Token")
         expect(response.body).not_to include("Revoked Token")
       end
+
+      it "does not allow creating project with another account's token" do
+        other_account = create(:account)
+        other_token = create(:github_token, account: other_account)
+        github_token # ensure current account has at least one token
+
+        # Mock GitHub API since validation happens after the API call
+        octokit_client = instance_double(Octokit::Client)
+        allow(Octokit::Client).to receive(:new).and_return(octokit_client)
+        allow(octokit_client).to receive(:middleware=)
+        allow(octokit_client).to receive(:repository).with("octocat/hello-world").and_return(
+          OpenStruct.new(id: 123456, name: "hello-world", default_branch: "main")
+        )
+
+        post projects_path, params: {
+          project: {
+            github_token_id: other_token.id,
+            owner: "octocat",
+            repo: "hello-world"
+          }
+        }
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.body).to include("must belong to the same account")
+      end
     end
   end
 
@@ -371,6 +395,21 @@ RSpec.describe "Projects" do
         project = create(:project, account: account, github_token: github_token, active: true)
         patch project_path(project), params: { project: { active: false } }
         expect(project.reload.active).to be false
+      end
+
+      it "allows updating github_token to another valid token" do
+        project = create(:project, account: account, github_token: github_token)
+        new_token = create(:github_token, account: account, name: "New Token")
+        patch project_path(project), params: { project: { github_token_id: new_token.id } }
+        expect(project.reload.github_token).to eq(new_token)
+      end
+
+      it "does not allow updating to a revoked token" do
+        project = create(:project, account: account, github_token: github_token)
+        revoked_token = create(:github_token, :revoked, account: account, name: "Revoked Token")
+        patch project_path(project), params: { project: { github_token_id: revoked_token.id } }
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(project.reload.github_token).to eq(github_token)
       end
 
       context "with invalid parameters" do
