@@ -20,14 +20,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22.x (for Claude Code and other JS-based agents)
-# Note: Using NodeSource setup script is standard practice for Node.js installation
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
+# Install Node.js 22.12.0 (pinned version for reproducible builds)
+# Using direct download with checksum verification for supply-chain security
+# Keep version in sync with .node-version
+RUN NODE_VERSION=22.12.0 \
+    && DEB_ARCH="$(dpkg --print-architecture)" \
+    && case "$DEB_ARCH" in \
+        amd64) NODE_ARCH="x64" ;; \
+        arm64) NODE_ARCH="arm64" ;; \
+        *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
+    && curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" \
+    && grep "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" SHASUMS256.txt | sha256sum -c - \
+    && tar -xzf "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" -C /usr/local --strip-components=1 \
+    && rm "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" SHASUMS256.txt
 
 # Install Ruby and Python (for Rails projects and various agents/tools)
-# Combined into single RUN to reduce Docker layers
+# Note: Using Ubuntu package manager versions (Ruby 3.2.x, Python 3.12.x)
+# Exact versions depend on Ubuntu 24.04 package availability
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ruby-full \
     ruby-bundler \
@@ -51,8 +62,9 @@ WORKDIR /workspace
 USER agent
 
 # Configure git for the agent user
+# Note: These are default placeholders; actual user info is set at runtime for commits
 RUN git config --global init.defaultBranch main \
-    && git config --global user.email "agent@paid.dev" \
+    && git config --global user.email "agent@localhost" \
     && git config --global user.name "Paid Agent"
 
 # Default command (overridden at runtime)

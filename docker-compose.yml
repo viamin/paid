@@ -1,9 +1,12 @@
 # Docker Compose configuration for development and testing
 #
 # Usage:
-#   docker-compose up                    # Start main services
+#   docker-compose up                    # Start main services (postgres, temporal, etc.)
 #   docker-compose --profile test up     # Include test services
 #   docker-compose --profile test run agent-test bash   # Interactive shell in agent container
+#
+# Note: Main services (postgres, temporal, temporal-ui) will be added in future PRs.
+# Currently only the agent-test service is defined under the test profile.
 
 services:
   # Agent container for testing the agent image
