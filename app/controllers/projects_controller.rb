@@ -59,7 +59,7 @@ class ProjectsController < ApplicationController
   private
 
   def set_project
-    @project = policy_scope(Project).find(params[:id])
+    @project = policy_scope(Project).includes(:github_token, :created_by).find(params[:id])
   end
 
   def project_params

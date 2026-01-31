@@ -97,30 +97,6 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Active Token")
         expect(response.body).not_to include("Revoked Token")
       end
-
-      it "does not allow creating project with another account's token" do
-        other_account = create(:account)
-        other_token = create(:github_token, account: other_account)
-        github_token # ensure current account has at least one token
-
-        # Mock GitHub API since validation happens after the API call
-        octokit_client = instance_double(Octokit::Client)
-        allow(Octokit::Client).to receive(:new).and_return(octokit_client)
-        allow(octokit_client).to receive(:middleware=)
-        allow(octokit_client).to receive(:repository).with("octocat/hello-world").and_return(
-          OpenStruct.new(id: 123456, name: "hello-world", default_branch: "main")
-        )
-
-        post projects_path, params: {
-          project: {
-            github_token_id: other_token.id,
-            owner: "octocat",
-            repo: "hello-world"
-          }
-        }
-        expect(response).to have_http_status(:unprocessable_entity)
-        expect(response.body).to include("must belong to the same account")
-      end
     end
   end
 
@@ -156,10 +132,9 @@ RSpec.describe "Projects" do
 
       context "with valid parameters" do
         before do
-          octokit_client = instance_double(Octokit::Client)
-          allow(Octokit::Client).to receive(:new).and_return(octokit_client)
-          allow(octokit_client).to receive(:middleware=)
-          allow(octokit_client).to receive(:repository).with("octocat/hello-world").and_return(repo_response)
+          github_client = instance_double(GithubClient)
+          allow(GithubClient).to receive(:new).and_return(github_client)
+          allow(github_client).to receive(:repository).with("octocat/hello-world").and_return(repo_response)
         end
 
         it "creates a new project" do
@@ -219,10 +194,9 @@ RSpec.describe "Projects" do
 
       context "when repository is not found" do
         before do
-          octokit_client = instance_double(Octokit::Client)
-          allow(Octokit::Client).to receive(:new).and_return(octokit_client)
-          allow(octokit_client).to receive(:middleware=)
-          allow(octokit_client).to receive(:repository).and_raise(Octokit::NotFound.new({}))
+          github_client = instance_double(GithubClient)
+          allow(GithubClient).to receive(:new).and_return(github_client)
+          allow(github_client).to receive(:repository).and_raise(GithubClient::NotFoundError.new("Not Found"))
         end
 
         it "re-renders the form with error message" do
@@ -240,10 +214,9 @@ RSpec.describe "Projects" do
 
       context "when GitHub API returns authentication error" do
         before do
-          octokit_client = instance_double(Octokit::Client)
-          allow(Octokit::Client).to receive(:new).and_return(octokit_client)
-          allow(octokit_client).to receive(:middleware=)
-          allow(octokit_client).to receive(:repository).and_raise(Octokit::Unauthorized.new({}))
+          github_client = instance_double(GithubClient)
+          allow(GithubClient).to receive(:new).and_return(github_client)
+          allow(github_client).to receive(:repository).and_raise(GithubClient::AuthenticationError.new("Bad credentials"))
         end
 
         it "re-renders the form with error message" do
@@ -255,19 +228,39 @@ RSpec.describe "Projects" do
 
       context "when GitHub API returns rate limit error" do
         before do
-          octokit_client = instance_double(Octokit::Client)
-          allow(Octokit::Client).to receive(:new).and_return(octokit_client)
-          allow(octokit_client).to receive(:middleware=)
-          allow(octokit_client).to receive(:repository).and_raise(Octokit::TooManyRequests.new({}))
-          allow(octokit_client).to receive(:rate_limit).and_return(
-            OpenStruct.new(resets_at: 1.hour.from_now)
-          )
+          github_client = instance_double(GithubClient)
+          allow(GithubClient).to receive(:new).and_return(github_client)
+          allow(github_client).to receive(:repository).and_raise(GithubClient::RateLimitError.new(1.hour.from_now))
         end
 
         it "re-renders the form with rate limit error message" do
           post projects_path, params: valid_params
           expect(response).to have_http_status(:unprocessable_entity)
           expect(response.body).to include("rate limit exceeded")
+        end
+      end
+
+      context "when using another account's token" do
+        before do
+          github_client = instance_double(GithubClient)
+          allow(GithubClient).to receive(:new).and_return(github_client)
+          allow(github_client).to receive(:repository).with("octocat/hello-world").and_return(repo_response)
+        end
+
+        it "does not allow creating project with another account's token" do
+          other_account = create(:account)
+          other_token = create(:github_token, account: other_account)
+          github_token # ensure current account has at least one token
+
+          post projects_path, params: {
+            project: {
+              github_token_id: other_token.id,
+              owner: "octocat",
+              repo: "hello-world"
+            }
+          }
+          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response.body).to include("must belong to the same account")
         end
       end
     end
