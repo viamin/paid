@@ -16,6 +16,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@90be1154f987f4dc0fe0dd0feedac9e473aa4ba8
         with:
+          ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Scan for common Rails security vulnerabilities using static analysis
@@ -35,12 +36,13 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@90be1154f987f4dc0fe0dd0feedac9e473aa4ba8
         with:
+          ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Prepare RuboCop cache
         uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7
         env:
-          DEPENDENCIES_HASH: ${{ hashFiles('.ruby-version', '**/.rubocop.yml', '**/.rubocop_todo.yml', 'Gemfile.lock') }}
+          DEPENDENCIES_HASH: ${{ hashFiles('.tool-versions', '**/.rubocop.yml', '**/.rubocop_todo.yml', 'Gemfile.lock') }}
         with:
           path: ${{ env.RUBOCOP_CACHE_ROOT }}
           key: rubocop-${{ runner.os }}-${{ env.DEPENDENCIES_HASH }}-${{ github.ref_name == github.event.repository.default_branch && github.run_id || 'default' }}
@@ -78,12 +80,13 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@90be1154f987f4dc0fe0dd0feedac9e473aa4ba8
         with:
+          ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: .tool-versions
           cache: 'yarn'
 
       - name: Install JavaScript dependencies
