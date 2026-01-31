@@ -64,7 +64,7 @@ USER agent
 # Configure git for the agent user
 # Note: These are default placeholders; actual user info is set at runtime for commits
 RUN git config --global init.defaultBranch main \
-    && git config --global user.email "agent@localhost" \
+    && git config --global user.email "agent@paid.dev" \
     && git config --global user.name "Paid Agent"
 
 # Default command (overridden at runtime)
