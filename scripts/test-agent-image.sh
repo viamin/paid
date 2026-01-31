@@ -63,7 +63,12 @@ id
 echo ""
 echo "9. Workspace directory:"
 ls -la /workspace
-[ -w /workspace ] && echo "   /workspace is writable" || echo "   ERROR: /workspace is not writable"
+if [ -w /workspace ]; then
+    echo "   /workspace is writable"
+else
+    echo "   ERROR: /workspace is not writable"
+    exit 1
+fi
 
 echo ""
 echo "All tests passed!"

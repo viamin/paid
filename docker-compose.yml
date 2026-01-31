@@ -3,7 +3,7 @@
 # Usage:
 #   docker-compose up                    # Start main services
 #   docker-compose --profile test up     # Include test services
-#   docker-compose run agent-test bash   # Interactive shell in agent container
+#   docker-compose --profile test run agent-test bash   # Interactive shell in agent container
 
 services:
   # Agent container for testing the agent image
@@ -13,8 +13,6 @@ services:
       dockerfile: Dockerfile
     volumes:
       - agent_workspace:/workspace
-    environment:
-      - HOME=/home/agent
     profiles:
       - test
 
