@@ -53,7 +53,17 @@ python3 --version
 
 echo ""
 echo "7. Claude Code CLI:"
-claude --version 2>/dev/null || echo "   (Claude CLI installed, requires API key to run)"
+if npm list -g @anthropic/claude-code >/dev/null 2>&1; then
+    echo "   @anthropic/claude-code is installed globally"
+    if command -v claude >/dev/null 2>&1; then
+        claude --version 2>/dev/null || echo "   (claude command exists, may require API key to show version)"
+    else
+        echo "   WARNING: @anthropic/claude-code installed but claude command not in PATH"
+    fi
+else
+    echo "   ERROR: @anthropic/claude-code is not installed"
+    exit 1
+fi
 
 echo ""
 echo "8. User check (should be agent, not root):"
