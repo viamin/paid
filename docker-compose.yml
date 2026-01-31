@@ -98,6 +98,8 @@ services:
       dockerfile: Dockerfile
     volumes:
       - agent_workspace:/workspace
+    environment:
+      - HOME=/home/agent
     profiles:
       - test
 
