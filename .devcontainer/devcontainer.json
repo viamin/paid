@@ -53,7 +53,7 @@
 
   // Use 'postStartCommand' to run commands every time the container starts.
   "postStartCommand": {
-    "multiclaude-start": "multiclaude start"
+    "multiclaude-start": "multiclaude start || true"
   },
   "customizations": {
     "vscode": {
