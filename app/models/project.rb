@@ -16,6 +16,7 @@ class Project < ApplicationRecord
   validates :github_id, presence: true, uniqueness: { scope: :account_id }
   validates :poll_interval_seconds, numericality: { greater_than_or_equal_to: 60 }
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
+  validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
 
   scope :active, -> { where(active: true) }
@@ -66,5 +67,11 @@ class Project < ApplicationRecord
     return if created_by.account_id == account_id
 
     errors.add(:created_by, "must belong to the same account")
+  end
+
+  def github_token_is_active
+    return if github_token.active?
+
+    errors.add(:github_token, "must be active (not revoked or expired)")
   end
 end
