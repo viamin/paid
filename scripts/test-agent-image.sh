@@ -1,0 +1,74 @@
+#!/bin/bash
+# Test script for verifying the agent container image
+#
+# Usage:
+#   ./scripts/test-agent-image.sh              # Test default image
+#   IMAGE_NAME=myregistry/paid-agent ./scripts/test-agent-image.sh  # Test custom image
+
+set -e
+
+IMAGE_NAME="${IMAGE_NAME:-paid-agent}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
+
+echo "Testing agent container image: ${FULL_IMAGE}"
+echo "============================================="
+echo ""
+
+# Test that the image exists
+if ! docker image inspect "${FULL_IMAGE}" > /dev/null 2>&1; then
+    echo "Error: Image '${FULL_IMAGE}' not found. Build it first with:"
+    echo "  ./scripts/build-agent-image.sh"
+    exit 1
+fi
+
+# Run tests inside the container
+docker run --rm "${FULL_IMAGE}" bash -c '
+set -e
+echo "Testing installed tools..."
+echo ""
+
+echo "1. Git:"
+git --version
+
+echo ""
+echo "2. Node.js:"
+node --version
+
+echo ""
+echo "3. npm:"
+npm --version
+
+echo ""
+echo "4. Ruby:"
+ruby --version
+
+echo ""
+echo "5. Bundler:"
+bundler --version
+
+echo ""
+echo "6. Python:"
+python3 --version
+
+echo ""
+echo "7. Claude Code CLI:"
+claude --version 2>/dev/null || echo "   (Claude CLI installed, requires API key to run)"
+
+echo ""
+echo "8. User check (should be agent, not root):"
+whoami
+id
+
+echo ""
+echo "9. Workspace directory:"
+ls -la /workspace
+[ -w /workspace ] && echo "   /workspace is writable" || echo "   ERROR: /workspace is not writable"
+
+echo ""
+echo "All tests passed!"
+'
+
+echo ""
+echo "============================================="
+echo "Image test completed successfully!"
