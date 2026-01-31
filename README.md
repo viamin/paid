@@ -19,6 +19,13 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 
 ## Development Setup
 
+There are two ways to run the development environment:
+
+1. **Docker Compose** (standalone): Use `docker compose up` for a complete environment with all services
+2. **Dev Container**: Use VS Code or GitHub Codespaces with the `.devcontainer/` configuration for an integrated development experience
+
+The instructions below are for the standalone Docker Compose approach.
+
 ### Prerequisites
 
 - Docker and Docker Compose
@@ -35,7 +42,7 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 2. Start all services:
 
    ```bash
-   docker-compose up
+   docker compose up
    ```
 
 3. Access the applications:
@@ -57,14 +64,15 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 To access Temporal admin tools:
 
 ```bash
-docker-compose exec temporal-admin-tools bash
-tctl namespace list
+docker compose exec temporal-admin-tools bash
+# Use the temporal CLI (preferred) or tctl (legacy)
+temporal operator namespace list
 ```
 
 ### Cleanup
 
 ```bash
-docker-compose down -v  # Remove containers and volumes
+docker compose down -v  # Remove containers and volumes
 ```
 
 ## Documentation
