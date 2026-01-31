@@ -91,5 +91,8 @@ class ProjectsController < ApplicationController
   rescue GithubClient::ApiError => e
     @project.errors.add(:base, "GitHub API error: #{e.message}")
     render :new, status: :unprocessable_entity
+  rescue GithubClient::Error => e
+    @project.errors.add(:base, "Unexpected GitHub error: #{e.message}")
+    render :new, status: :unprocessable_entity
   end
 end
