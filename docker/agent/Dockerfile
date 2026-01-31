@@ -21,26 +21,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 22.x (for Claude Code and other JS-based agents)
+# Note: Using NodeSource setup script is standard practice for Node.js installation
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g npm@latest \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Ruby (for Rails projects)
+# Install Ruby and Python (for Rails projects and various agents/tools)
+# Combined into single RUN to reduce Docker layers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ruby-full \
     ruby-bundler \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python (for various agents and tools)
-RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code CLI (primary agent for MVP)
-RUN npm install -g @anthropic-ai/claude-code
+RUN npm install -g @anthropic/claude-code
 
 # Create non-root user for security
 RUN useradd -m -s /bin/bash agent \
