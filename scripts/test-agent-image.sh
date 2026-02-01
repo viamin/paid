@@ -53,12 +53,35 @@ python3 --version
 
 echo ""
 echo "7. Claude Code CLI:"
-claude --version 2>/dev/null || echo "   (Claude CLI installed, requires API key to run)"
+if npm list -g @anthropic/claude-code >/dev/null 2>&1; then
+    echo "   @anthropic/claude-code is installed globally"
+    if command -v claude >/dev/null 2>&1; then
+        claude --version 2>/dev/null || echo "   (claude command exists, may require API key to show version)"
+    else
+        echo "   WARNING: @anthropic/claude-code installed but claude command not in PATH"
+    fi
+else
+    echo "   ERROR: @anthropic/claude-code is not installed"
+    exit 1
+fi
 
 echo ""
 echo "8. User check (should be agent, not root):"
-whoami
-id
+CURRENT_USER=$(whoami)
+CURRENT_UID=$(id -u)
+echo "   Current user: $CURRENT_USER (UID: $CURRENT_UID)"
+
+if [ "$CURRENT_UID" -eq 0 ]; then
+    echo "   ERROR: Running as root (UID 0), should be non-root user"
+    exit 1
+fi
+
+if [ "$CURRENT_USER" != "agent" ]; then
+    echo "   ERROR: Running as '$CURRENT_USER', expected 'agent'"
+    exit 1
+fi
+
+echo "   ✓ Running as non-root user 'agent'"
 
 echo ""
 echo "9. Workspace directory:"

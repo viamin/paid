@@ -20,14 +20,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22.x (for Claude Code and other JS-based agents)
-# Note: Using NodeSource setup script is standard practice for Node.js installation
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
+# Install Node.js 22.12.0 (pinned version for reproducible builds)
+# Using direct download with pinned checksum verification for supply-chain security
+# Checksums from official release: https://nodejs.org/download/release/v22.12.0/SHASUMS256.txt
+# Keep version in sync with .node-version
+RUN NODE_VERSION=22.12.0 \
+    && DEB_ARCH="$(dpkg --print-architecture)" \
+    && case "$DEB_ARCH" in \
+        amd64) NODE_ARCH="x64"; EXPECTED_CHECKSUM="e05a4d65232ae2b27b3d77da2e368522fb46b923335b8e0d5f77624c32484044" ;; \
+        arm64) NODE_ARCH="arm64"; EXPECTED_CHECKSUM="9e7905fdee722f9650a03ae644b51c4c6effd3b98ac93c588700072ab35c9ddb" ;; \
+        *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
+    esac \
+    && TARBALL="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
+    && curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/${TARBALL}" \
+    && echo "${EXPECTED_CHECKSUM}  ${TARBALL}" | sha256sum -c - \
+    && tar -xzf "${TARBALL}" -C /usr/local --strip-components=1 \
+    && rm "${TARBALL}"
 
 # Install Ruby and Python (for Rails projects and various agents/tools)
-# Combined into single RUN to reduce Docker layers
+# Note: Using Ubuntu package manager versions (Ruby 3.2.x, Python 3.12.x)
+# Exact versions depend on Ubuntu 24.04 package availability
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ruby-full \
     ruby-bundler \
@@ -37,7 +49,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code CLI (primary agent for MVP)
-RUN npm install -g @anthropic/claude-code
+# Version pinned for reproducible builds - update periodically
+RUN npm install -g @anthropic/claude-code@2.1.29
 
 # Create non-root user for security
 RUN useradd -m -s /bin/bash agent \
@@ -51,6 +64,7 @@ WORKDIR /workspace
 USER agent
 
 # Configure git for the agent user
+# Note: These are default placeholders; actual user info is set at runtime for commits
 RUN git config --global init.defaultBranch main \
     && git config --global user.email "agent@paid.dev" \
     && git config --global user.name "Paid Agent"

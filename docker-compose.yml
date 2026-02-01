@@ -1,20 +1,106 @@
-# Docker Compose configuration for development and testing
+# Docker Compose configuration for Paid development environment
+# Includes Rails, PostgreSQL, and Temporal for workflow orchestration
 #
 # Usage:
-#   docker-compose up                    # Start main services
+#   docker-compose up                    # Start main services (postgres, temporal, etc.)
 #   docker-compose --profile test up     # Include test services
 #   docker-compose --profile test run agent-test bash   # Interactive shell in agent container
 
 services:
+  postgres:
+    image: postgres:16.1
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh
+    environment:
+      POSTGRES_USER: paid
+      POSTGRES_PASSWORD: paid
+      POSTGRES_DB: paid_development
+      POSTGRES_MULTIPLE_DATABASES: temporal,temporal_visibility
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paid"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    command: ./bin/rails server -b 0.0.0.0
+    volumes:
+      - .:/workspaces/paid
+      - bundle-cache:/usr/local/bundle
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://paid:paid@postgres:5432/paid_development
+      RAILS_ENV: development
+      TEMPORAL_HOST: temporal:7233
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+
+  temporal:
+    image: temporalio/auto-setup:1.24
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=paid
+      - POSTGRES_PWD=paid
+      - POSTGRES_SEEDS=postgres
+      - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/config/dynamicconfig/development-sql.yaml
+    ports:
+      - "7233:7233"
+    volumes:
+      - ./config/temporal:/etc/temporal/config/dynamicconfig
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  temporal-ui:
+    image: temporalio/ui:2.26.2
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8080:8080"
+
+  temporal-admin-tools:
+    image: temporalio/admin-tools:1.24
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    stdin_open: true
+    tty: true
+
   # Agent container for testing the agent image
   agent-test:
     build:
       context: ./docker/agent
       dockerfile: Dockerfile
     volumes:
-      - agent_workspace:/workspace
+      - ./agent-workspace:/workspace
     profiles:
       - test
 
 volumes:
-  agent_workspace:
+  postgres-data:
+  bundle-cache:
