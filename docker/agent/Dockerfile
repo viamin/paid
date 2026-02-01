@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Node.js 22.12.0 (pinned version for reproducible builds)
 # Using direct download with pinned checksum verification for supply-chain security
 # Checksums from official release: https://nodejs.org/download/release/v22.12.0/SHASUMS256.txt
-# Keep version in sync with .node-version
+# Keep version in sync with .tool-versions
 RUN NODE_VERSION=22.12.0 \
     && DEB_ARCH="$(dpkg --print-architecture)" \
     && case "$DEB_ARCH" in \
