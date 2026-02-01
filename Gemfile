@@ -35,6 +35,9 @@ gem "rolify"
 gem "octokit"
 gem "faraday-retry"
 
+# Temporal workflow orchestration [https://temporal.io]
+gem "temporalio"
+
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[windows jruby]
 
