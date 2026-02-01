@@ -86,6 +86,16 @@ services:
     stdin_open: true
     tty: true
 
+  # Agent container for testing the agent image
+  agent-test:
+    build:
+      context: ./docker/agent
+      dockerfile: Dockerfile
+    volumes:
+      - ./agent-workspace:/workspace
+    profiles:
+      - test
+
 volumes:
   postgres-data:
   bundle-cache:
