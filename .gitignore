@@ -7,8 +7,9 @@
 # Ignore bundler config.
 /.bundle
 
-# Ignore all environment files.
+# Ignore all environment files except the example.
 /.env*
+!/.env.example
 *.local.json
 
 # Ignore all logfiles and tempfiles.
@@ -42,3 +43,6 @@
 
 # Ignore code coverage reports
 /coverage/
+
+# Ignore agent workspace directory (used for Docker container testing)
+/agent-workspace/
