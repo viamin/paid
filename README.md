@@ -17,6 +17,64 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 - **Prompt Evolution**: A/B testing and automatic prompt improvement
 - **Human-in-the-Loop**: All changes go through PRs; humans approve merges
 
+## Development Setup
+
+There are two ways to run the development environment:
+
+1. **Docker Compose** (standalone): Use `docker compose up` for a complete environment with all services
+2. **Dev Container**: Use VS Code or GitHub Codespaces with the `.devcontainer/` configuration for an integrated development experience
+
+The instructions below are for the standalone Docker Compose approach.
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Ruby 3.x (for local development outside Docker)
+
+### Quick Start
+
+1. Clone the repository and copy environment variables:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Start all services:
+
+   ```bash
+   docker compose up
+   ```
+
+3. Access the applications:
+   - **Rails app**: http://localhost:3000
+   - **Temporal UI**: http://localhost:8080
+
+### Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| web | 3000 | Rails application |
+| postgres | 5432 | PostgreSQL database |
+| temporal | 7233 | Temporal server (gRPC) |
+| temporal-ui | 8080 | Temporal web interface |
+| temporal-admin-tools | - | CLI tools for Temporal administration |
+
+### Temporal CLI Access
+
+To access Temporal admin tools:
+
+```bash
+docker compose exec temporal-admin-tools bash
+# Use the temporal CLI (preferred) or tctl (legacy)
+temporal operator namespace list
+```
+
+### Cleanup
+
+```bash
+docker compose down -v  # Remove containers and volumes
+```
+
 ## Documentation
 
 | Document | Description |
