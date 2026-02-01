@@ -222,7 +222,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_230315) do
     t.bigint "resource_id"
     t.string "resource_type"
     t.datetime "updated_at", null: false
-    t.index ["name", "resource_type", "resource_id"], name: "index_roles_on_name_and_resource_type_and_resource_id"
+    t.index ["name", "resource_type", "resource_id"], name: "index_roles_on_name_and_resource_type_and_resource_id", unique: true
     t.index ["resource_type", "resource_id"], name: "index_roles_on_resource"
   end
 
@@ -242,10 +242,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_230315) do
   end
 
   create_table "users_roles", id: false, force: :cascade do |t|
-    t.bigint "role_id"
-    t.bigint "user_id"
+    t.bigint "role_id", null: false
+    t.bigint "user_id", null: false
     t.index ["role_id"], name: "index_users_roles_on_role_id"
-    t.index ["user_id", "role_id"], name: "index_users_roles_on_user_id_and_role_id"
+    t.index ["user_id", "role_id"], name: "index_users_roles_on_user_id_and_role_id", unique: true
     t.index ["user_id"], name: "index_users_roles_on_user_id"
   end
 
@@ -260,4 +260,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_230315) do
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "users", "accounts"
+  add_foreign_key "users_roles", "roles"
+  add_foreign_key "users_roles", "users"
 end
