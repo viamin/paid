@@ -97,11 +97,10 @@ services:
       context: ./docker/agent
       dockerfile: Dockerfile
     volumes:
-      - agent_workspace:/workspace
+      - ./agent-workspace:/workspace
     profiles:
       - test
 
 volumes:
   postgres-data:
   bundle-cache:
-  agent_workspace:

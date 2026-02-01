@@ -43,3 +43,6 @@
 
 # Ignore code coverage reports
 /coverage/
+
+# Ignore agent workspace directory (used for Docker container testing)
+/agent-workspace/
