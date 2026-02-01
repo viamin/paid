@@ -10,6 +10,7 @@
 # Ignore all environment files except the example.
 /.env*
 !/.env.example
+*.local.json
 
 # Ignore all logfiles and tempfiles.
 /log/*
