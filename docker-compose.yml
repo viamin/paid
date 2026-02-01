@@ -1,10 +1,5 @@
 # Docker Compose configuration for Paid development environment
 # Includes Rails, PostgreSQL, and Temporal for workflow orchestration
-#
-# Usage:
-#   docker-compose up                    # Start main services (postgres, temporal, etc.)
-#   docker-compose --profile test up     # Include test services
-#   docker-compose --profile test run agent-test bash   # Interactive shell in agent container
 
 services:
   postgres:
