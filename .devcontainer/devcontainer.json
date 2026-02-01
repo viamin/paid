@@ -10,6 +10,7 @@
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/devcontainers/features/go:1": {},
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {"moby":false},
     "ghcr.io/rails/devcontainer/features/postgres-client": {}
   },
@@ -19,6 +20,16 @@
     "DB_HOST": "postgres"
   },
 
+  "mounts": [
+    "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached"
+  ],
+
+  "remoteEnv": {
+    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin"
+  },
+
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
   "forwardPorts": [3000, 5432],
 
@@ -26,9 +37,29 @@
   // "customizations": {},
 
   // Uncomment to connect as root instead. More info: https://containers.dev/implementors/json_reference/#remoteUser.
-  // "remoteUser": "root",
+  "remoteUser": "vscode",
+  "containerUser": "vscode",
 
 
   // Use 'postCreateCommand' to run commands after the container is created.
-  "postCreateCommand": "bin/setup --skip-server"
+  "postCreateCommand": {
+    "bundler": "gem install bundler:2.7.2",
+    "corepack": "corepack enable && corepack prepare yarn@1.22.22 --activate",
+    "claude-code": "npm install -g @anthropic-ai/claude-code",
+    "multiclaude": "go install github.com/dlorenc/multiclaude/cmd/multiclaude@latest",
+    "markdownlint": "npm install -g markdownlint-cli",
+    "setup": "until pg_isready -h postgres -U postgres -q; do sleep 1; done && bin/setup --skip-server"
+  },
+
+  // Use 'postStartCommand' to run commands every time the container starts.
+  "postStartCommand": {
+    "multiclaude-start": "multiclaude start || true"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Anthropic.claude-code"
+      ]
+    }
+  }
 }
