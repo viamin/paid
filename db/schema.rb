@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_01_29_230315) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_01_042103) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -249,6 +249,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_230315) do
     t.index ["user_id"], name: "index_users_roles_on_user_id"
   end
 
+  create_table "workflow_states", force: :cascade do |t|
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.text "error_message"
+    t.jsonb "input_data"
+    t.bigint "project_id"
+    t.jsonb "result_data"
+    t.datetime "started_at"
+    t.string "status", limit: 50, default: "running", null: false
+    t.string "temporal_run_id"
+    t.string "temporal_workflow_id", null: false
+    t.datetime "updated_at", null: false
+    t.string "workflow_type", limit: 100, null: false
+    t.index ["project_id"], name: "index_workflow_states_on_project_id"
+    t.index ["status"], name: "index_workflow_states_on_status"
+    t.index ["temporal_workflow_id"], name: "index_workflow_states_on_temporal_workflow_id", unique: true
+  end
+
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
@@ -262,4 +280,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_01_29_230315) do
   add_foreign_key "users", "accounts"
   add_foreign_key "users_roles", "roles"
   add_foreign_key "users_roles", "users"
+  add_foreign_key "workflow_states", "projects"
 end
