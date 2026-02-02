@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "temporalio"
+
 module Activities
   class BaseActivity
     extend Temporalio::Activity::Definition
