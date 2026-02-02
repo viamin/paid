@@ -327,6 +327,47 @@ RSpec.describe AgentRun do
         end
       end
     end
+
+    describe "#log!" do
+      it "creates an agent_run_log with the given type and content" do
+        agent_run = create(:agent_run)
+
+        expect {
+          agent_run.log!("stdout", "Hello world")
+        }.to change(AgentRunLog, :count).by(1)
+
+        log = agent_run.agent_run_logs.last
+        expect(log.log_type).to eq("stdout")
+        expect(log.content).to eq("Hello world")
+        expect(log.metadata).to be_nil
+      end
+
+      it "stores optional metadata as JSON" do
+        agent_run = create(:agent_run)
+
+        agent_run.log!("system", "container.started", metadata: { container_id: "abc123", image: "paid-agent:latest" })
+
+        log = agent_run.agent_run_logs.last
+        expect(log.metadata).to eq({ "container_id" => "abc123", "image" => "paid-agent:latest" })
+      end
+
+      it "returns the created log entry" do
+        agent_run = create(:agent_run)
+
+        log = agent_run.log!("stderr", "Error message")
+
+        expect(log).to be_a(AgentRunLog)
+        expect(log).to be_persisted
+      end
+
+      it "raises error for invalid log type" do
+        agent_run = create(:agent_run)
+
+        expect {
+          agent_run.log!("invalid_type", "content")
+        }.to raise_error(ActiveRecord::RecordInvalid)
+      end
+    end
   end
 
   describe "constants" do

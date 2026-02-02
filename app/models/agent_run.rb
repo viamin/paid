@@ -99,6 +99,20 @@ class AgentRun < ApplicationRecord
     )
   end
 
+  # Creates a log entry for this agent run.
+  #
+  # @param type [String] Log type: stdout, stderr, system, or metric
+  # @param content [String] The log content
+  # @param metadata [Hash] Optional metadata to store as JSON
+  # @return [AgentRunLog] The created log entry
+  def log!(type, content, metadata: nil)
+    agent_run_logs.create!(
+      log_type: type,
+      content: content,
+      metadata: metadata
+    )
+  end
+
   private
 
   def issue_belongs_to_same_project
