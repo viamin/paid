@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "temporalio"
+
 module Workflows
   class BaseWorkflow
     extend Temporalio::Workflow::Definition

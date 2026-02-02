@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class CreateWorkflowStates < ActiveRecord::Migration[8.0]
+class CreateWorkflowStates < ActiveRecord::Migration[8.1]
   def change
     create_table :workflow_states do |t|
       t.string :temporal_workflow_id, null: false
