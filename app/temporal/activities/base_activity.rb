@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "temporalio"
+require "temporalio/activity"
 
 module Activities
   class BaseActivity
