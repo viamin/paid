@@ -113,6 +113,7 @@ RSpec.describe Containers::Provision do
           host_config = config["HostConfig"]
           expect(host_config["Memory"]).to eq(2 * 1024 * 1024 * 1024)
           expect(host_config["MemorySwap"]).to eq(2 * 1024 * 1024 * 1024)
+          expect(host_config["CpuPeriod"]).to eq(100_000)
           expect(host_config["CpuQuota"]).to eq(200_000)
           expect(host_config["PidsLimit"]).to eq(500)
           mock_container
@@ -158,6 +159,17 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "adds labels for tracking" do
+        expect(Docker::Container).to receive(:create) do |config|
+          labels = config["Labels"]
+          expect(labels["paid.agent_run_id"]).to eq(agent_run.id.to_s)
+          expect(labels["paid.project_id"]).to eq(project.id.to_s)
+          mock_container
+        end
+
+        service.provision
+      end
+
       it "stores container reference" do
         service.provision
 
@@ -189,7 +201,8 @@ RSpec.describe Containers::Provision do
       end
 
       it "logs the failure" do
-        expect(agent_run).to receive(:log!).with("system", "container.provision.start", anything)
+        expect(agent_run).to receive(:log!).with("system", "container.provision.start",
+          metadata: hash_including(image: anything))
         expect(agent_run).to receive(:log!).with("system", "container.provision.failed",
           metadata: hash_including(error: anything))
 
@@ -236,9 +249,11 @@ RSpec.describe Containers::Provision do
       end
 
       it "logs command execution" do
-        expect(agent_run).to receive(:log!).with("system", "container.execute.start", anything)
+        expect(agent_run).to receive(:log!).with("system", "container.execute.start",
+          metadata: hash_including(command: anything))
         expect(agent_run).to receive(:log!).with("stdout", "command output\n")
-        expect(agent_run).to receive(:log!).with("system", "container.execute.complete", anything)
+        expect(agent_run).to receive(:log!).with("system", "container.execute.complete",
+          metadata: hash_including(exit_code: 0, duration_ms: a_kind_of(Integer)))
 
         service.execute("echo 'hello'")
       end
@@ -370,8 +385,10 @@ RSpec.describe Containers::Provision do
     end
 
     it "logs cleanup operations" do
-      expect(agent_run).to receive(:log!).with("system", "container.cleanup.start", anything)
-      expect(agent_run).to receive(:log!).with("system", "container.cleanup.success", anything)
+      expect(agent_run).to receive(:log!).with("system", "container.cleanup.start",
+        metadata: hash_including(container_id: "abc123container"))
+      expect(agent_run).to receive(:log!).with("system", "container.cleanup.success",
+        metadata: anything)
 
       service.cleanup
     end
