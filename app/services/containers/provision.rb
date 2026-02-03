@@ -93,7 +93,7 @@ module Containers
 
       log_system("container.provision.success", container_id: container.id)
       Result.success(container_id: container.id)
-    rescue Docker::Error::Error => e
+    rescue Docker::Error::DockerError => e
       log_system("container.provision.failed", error: e.message)
       raise ProvisionError, "Docker error: #{e.message}"
     rescue StandardError => e
@@ -154,7 +154,7 @@ module Containers
       rescue Timeout::Error
         log_system("container.execute.timeout", timeout: timeout)
         raise TimeoutError, "Command timed out after #{timeout} seconds"
-      rescue Docker::Error::Error => e
+      rescue Docker::Error::DockerError => e
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
       end
@@ -175,12 +175,12 @@ module Containers
         end
         container.delete(force: force)
         log_system("container.cleanup.success")
-      rescue Docker::Error::Error => e
+      rescue Docker::Error::DockerError => e
         log_system("container.cleanup.failed", error: e.message)
         # Try force cleanup if graceful cleanup failed
         begin
           container.delete(force: true)
-        rescue Docker::Error::Error
+        rescue Docker::Error::DockerError
           # Container may already be gone
         end
       ensure
@@ -196,7 +196,7 @@ module Containers
 
       container.refresh!
       container.info["State"]["Running"] == true
-    rescue Docker::Error::Error
+    rescue Docker::Error::DockerError
       false
     end
 
@@ -293,7 +293,7 @@ module Containers
     def fetch_exit_code
       container.refresh!
       container.info.dig("State", "ExitCode") || 0
-    rescue Docker::Error::Error
+    rescue Docker::Error::DockerError
       -1
     end
 

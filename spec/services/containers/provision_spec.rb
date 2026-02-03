@@ -87,8 +87,10 @@ RSpec.describe Containers::Provision do
       end
 
       it "logs the provision start and success" do
-        expect(agent_run).to receive(:log!).with("system", "container.provision.start", hash_including(:image))
-        expect(agent_run).to receive(:log!).with("system", "container.provision.success", hash_including(:container_id))
+        expect(agent_run).to receive(:log!).with("system", "container.provision.start",
+          metadata: hash_including(image: "paid-agent:latest"))
+        expect(agent_run).to receive(:log!).with("system", "container.provision.success",
+          metadata: hash_including(container_id: "abc123container"))
 
         service.provision
       end
@@ -188,7 +190,8 @@ RSpec.describe Containers::Provision do
 
       it "logs the failure" do
         expect(agent_run).to receive(:log!).with("system", "container.provision.start", anything)
-        expect(agent_run).to receive(:log!).with("system", "container.provision.failed", hash_including(:error))
+        expect(agent_run).to receive(:log!).with("system", "container.provision.failed",
+          metadata: hash_including(error: anything))
 
         expect { service.provision }.to raise_error(described_class::ProvisionError)
       end
@@ -261,7 +264,7 @@ RSpec.describe Containers::Provision do
         expect(result).to be_failure
         expect(result[:stderr]).to eq("error message\n")
         expect(result[:exit_code]).to eq(1)
-        expect(result.error).to include("exit code 1")
+        expect(result.error).to include("exited with code 1")
       end
     end
 
@@ -431,10 +434,10 @@ RSpec.describe Containers::Provision do
     end
   end
 
-  describe described_class::Result do
+  describe "Result" do
     describe ".success" do
       it "creates a success result with data" do
-        result = described_class::Result.success(foo: "bar", count: 42)
+        result = Containers::Provision::Result.success(foo: "bar", count: 42)
 
         expect(result).to be_success
         expect(result).not_to be_failure
@@ -446,7 +449,7 @@ RSpec.describe Containers::Provision do
 
     describe ".failure" do
       it "creates a failure result with error and data" do
-        result = described_class::Result.failure(error: "Something went wrong", foo: "bar")
+        result = Containers::Provision::Result.failure(error: "Something went wrong", foo: "bar")
 
         expect(result).to be_failure
         expect(result).not_to be_success
@@ -457,16 +460,18 @@ RSpec.describe Containers::Provision do
   end
 
   describe "error classes" do
-    describe described_class::ProvisionError do
+    describe "ProvisionError" do
       it "has a default message" do
-        error = described_class::ProvisionError.new
+        error = Containers::Provision::ProvisionError.new
         expect(error.message).to eq("Failed to provision container")
       end
     end
 
-    describe described_class::ExecutionError do
+    describe "ExecutionError" do
       it "stores exit_code, stdout, and stderr" do
-        error = described_class::ExecutionError.new("Command failed", exit_code: 1, stdout: "out", stderr: "err")
+        error = Containers::Provision::ExecutionError.new(
+          "Command failed", exit_code: 1, stdout: "out", stderr: "err"
+        )
 
         expect(error.message).to eq("Command failed")
         expect(error.exit_code).to eq(1)
@@ -475,9 +480,9 @@ RSpec.describe Containers::Provision do
       end
     end
 
-    describe described_class::TimeoutError do
+    describe "TimeoutError" do
       it "has a default message" do
-        error = described_class::TimeoutError.new
+        error = Containers::Provision::TimeoutError.new
         expect(error.message).to eq("Operation timed out")
       end
     end
