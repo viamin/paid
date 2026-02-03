@@ -122,11 +122,11 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "configures tmpfs mounts" do
+      it "configures tmpfs mounts using DEFAULTS sizes" do
         expect(Docker::Container).to receive(:create) do |config|
           tmpfs = config["HostConfig"]["Tmpfs"]
-          expect(tmpfs["/tmp"]).to eq("size=1073741824,mode=1777")
-          expect(tmpfs["/home/agent/.cache"]).to eq("size=536870912,mode=0755")
+          expect(tmpfs["/tmp"]).to eq("size=#{1024 * 1024 * 1024},mode=1777")
+          expect(tmpfs["/home/agent/.cache"]).to eq("size=#{512 * 1024 * 1024},mode=0755")
           mock_container
         end
 
@@ -259,7 +259,7 @@ RSpec.describe Containers::Provision do
       end
 
       it "accepts array command format" do
-        expect(mock_container).to receive(:exec).with([ "ls", "-la" ], anything)
+        expect(mock_container).to receive(:exec).with([ "ls", "-la" ])
 
         service.execute([ "ls", "-la" ])
       end
