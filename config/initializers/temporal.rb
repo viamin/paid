@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "temporalio"
+require "temporalio/client"
 
 module Paid
   class << self

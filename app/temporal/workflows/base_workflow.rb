@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-require "temporalio"
+require "temporalio/workflow"
+require "temporalio/retry_policy"
 
 module Workflows
   class BaseWorkflow
