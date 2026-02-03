@@ -95,6 +95,7 @@ module Containers
       Result.success(container_id: container.id)
     rescue Docker::Error::DockerError => e
       log_system("container.provision.failed", error: e.message)
+      cleanup
       raise ProvisionError, "Docker error: #{e.message}"
     rescue StandardError => e
       log_system("container.provision.failed", error: e.message)
@@ -118,6 +119,7 @@ module Containers
 
       stdout_buffer = []
       stderr_buffer = []
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       begin
         Timeout.timeout(timeout) do
@@ -139,7 +141,9 @@ module Containers
         stdout = stdout_buffer.join
         stderr = stderr_buffer.join
 
-        log_system("container.execute.complete", exit_code: exit_code, duration_ms: 0)
+        elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+
+        log_system("container.execute.complete", exit_code: exit_code, duration_ms: elapsed_ms)
 
         if exit_code == 0
           Result.success(stdout: stdout, stderr: stderr, exit_code: exit_code)
@@ -242,6 +246,10 @@ module Containers
         "HostConfig" => host_config,
         "Env" => environment_variables,
         "WorkingDir" => options[:workspace_mount],
+        "Labels" => {
+          "paid.agent_run_id" => agent_run.id.to_s,
+          "paid.project_id" => agent_run.project_id.to_s
+        },
         "Tty" => false,
         "OpenStdin" => false
       }
@@ -251,6 +259,7 @@ module Containers
       config = {
         "Memory" => options[:memory_bytes],
         "MemorySwap" => options[:memory_bytes],
+        "CpuPeriod" => 100_000,
         "CpuQuota" => options[:cpu_quota],
         "PidsLimit" => options[:pids_limit],
         "Tmpfs" => {
