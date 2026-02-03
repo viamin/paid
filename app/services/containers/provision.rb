@@ -57,6 +57,8 @@ module Containers
       cpu_quota: 200_000,                        # 2 CPUs (100_000 per CPU)
       pids_limit: 500,                           # 500 process limit
       timeout_seconds: 600,                      # 10 minutes default timeout
+      tmpfs_tmp_size: 1024 * 1024 * 1024,        # 1GB for /tmp
+      tmpfs_cache_size: 512 * 1024 * 1024,       # 512MB for /home/agent/.cache
       image: "paid-agent:latest",
       network: "paid_agent_network",
       user: "agent",
@@ -115,7 +117,7 @@ module Containers
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
 
-      log_system("container.execute.start", command: command.to_s.truncate(200))
+      log_system("container.execute.start", command: command.to_s.encode("UTF-8", invalid: :replace).truncate(200))
 
       stdout_buffer = []
       stderr_buffer = []
@@ -123,7 +125,7 @@ module Containers
 
       begin
         Timeout.timeout(timeout) do
-          container.exec(cmd_array, wait: timeout) do |stream_type, chunk|
+          container.exec(cmd_array) do |stream_type, chunk|
             case stream_type
             when :stdout
               stdout_buffer << chunk
@@ -174,14 +176,11 @@ module Containers
       log_system("container.cleanup.start", container_id: container.id)
 
       begin
-        if container_running?
-          container.stop(timeout: force ? 0 : 10)
-        end
+        stop_container(force: force)
         container.delete(force: force)
         log_system("container.cleanup.success")
       rescue Docker::Error::DockerError => e
         log_system("container.cleanup.failed", error: e.message)
-        # Try force cleanup if graceful cleanup failed
         begin
           container.delete(force: true)
         rescue Docker::Error::DockerError
@@ -220,6 +219,14 @@ module Containers
     end
 
     private
+
+    def stop_container(force: false)
+      return unless container_running?
+
+      container.stop(timeout: force ? 0 : 10)
+    rescue Docker::Error::NotFoundError
+      # Container was already removed between running? check and stop
+    end
 
     def validate_worktree_path!
       raise ProvisionError, "Worktree path is required" if worktree_path.blank?
@@ -263,8 +270,8 @@ module Containers
         "CpuQuota" => options[:cpu_quota],
         "PidsLimit" => options[:pids_limit],
         "Tmpfs" => {
-          "/tmp" => "size=1073741824,mode=1777",
-          "/home/agent/.cache" => "size=536870912,mode=0755"
+          "/tmp" => "size=#{options[:tmpfs_tmp_size]},mode=1777",
+          "/home/agent/.cache" => "size=#{options[:tmpfs_cache_size]},mode=0755"
         },
         "Binds" => [ "#{worktree_path}:#{options[:workspace_mount]}:rw" ]
       }
@@ -301,14 +308,12 @@ module Containers
 
     def fetch_exit_code
       container.refresh!
-      container.info.dig("State", "ExitCode") || 0
+      container.info.dig("State", "ExitCode") || -1
     rescue Docker::Error::DockerError
       -1
     end
 
     def log_system(message, **metadata)
-      return unless agent_run
-
       Rails.logger.info(
         message: "container_manager.#{message}",
         agent_run_id: agent_run.id,
@@ -319,7 +324,6 @@ module Containers
     end
 
     def log_output(type, content)
-      return unless agent_run
       return if content.blank?
 
       agent_run.log!(type.to_s, content)
