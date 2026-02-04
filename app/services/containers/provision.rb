@@ -215,7 +215,11 @@ module Containers
       service.provision
       yield service
     ensure
-      service&.cleanup
+      begin
+        service&.cleanup
+      rescue StandardError
+        # Swallow cleanup errors to avoid masking the original exception
+      end
     end
 
     private
@@ -241,6 +245,11 @@ module Containers
       container.start
     end
 
+    # Writable directories inside the container:
+    #   /workspace  - bind mount of the worktree (rw, required for code changes)
+    #   /tmp        - tmpfs (1GB, for scratch files)
+    #   /home/agent/.cache - tmpfs (512MB, for tool caches)
+    # All other paths are read-only via ReadonlyRootfs.
     def container_config
       {
         "Image" => options[:image],
@@ -265,6 +274,8 @@ module Containers
     def host_config
       config = {
         "Memory" => options[:memory_bytes],
+        # MemorySwap == Memory disables swap. Containers exceeding the memory
+        # limit are OOM-killed immediately rather than swapping to disk.
         "MemorySwap" => options[:memory_bytes],
         "CpuPeriod" => 100_000,
         "CpuQuota" => options[:cpu_quota],
@@ -273,6 +284,8 @@ module Containers
           "/tmp" => "size=#{options[:tmpfs_tmp_size]},mode=1777",
           "/home/agent/.cache" => "size=#{options[:tmpfs_cache_size]},mode=0755"
         },
+        # Worktree is mounted read-write so agents can commit code changes.
+        # Security is enforced at the git/branch level, not filesystem permissions.
         "Binds" => [ "#{worktree_path}:#{options[:workspace_mount]}:rw" ]
       }
 
