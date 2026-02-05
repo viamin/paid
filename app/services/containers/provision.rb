@@ -158,9 +158,15 @@ module Containers
           )
         end
       rescue Timeout::Error
+        # Log any accumulated output before raising so partial results aren't lost
+        log_output(:stdout, stdout_buffer.join) if stdout_buffer.any?
+        log_output(:stderr, stderr_buffer.join) if stderr_buffer.any?
         log_system("container.execute.timeout", timeout: timeout)
         raise TimeoutError, "Command timed out after #{timeout} seconds"
       rescue Docker::Error::DockerError => e
+        # Log any accumulated output before raising so partial results aren't lost
+        log_output(:stdout, stdout_buffer.join) if stdout_buffer.any?
+        log_output(:stderr, stderr_buffer.join) if stderr_buffer.any?
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
       end
@@ -267,7 +273,10 @@ module Containers
           "paid.project_id" => agent_run.project_id.to_s
         },
         "Tty" => false,
-        "OpenStdin" => false
+        "OpenStdin" => false,
+        # Keep container running so we can exec commands into it.
+        # Without a long-running process, the container exits immediately after start.
+        "Cmd" => [ "tail", "-f", "/dev/null" ]
       }
     end
 
