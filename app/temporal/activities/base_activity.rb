@@ -3,8 +3,7 @@
 require "temporalio/activity"
 
 module Activities
-  class BaseActivity
-    extend Temporalio::Activity::Definition
+  class BaseActivity < Temporalio::Activity::Definition
 
     protected
 
