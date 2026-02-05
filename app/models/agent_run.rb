@@ -99,6 +99,84 @@ class AgentRun < ApplicationRecord
     )
   end
 
+  # Creates a log entry for this agent run.
+  #
+  # @param type [String] Log type: stdout, stderr, system, or metric
+  # @param content [String] The log content
+  # @param metadata [Hash] Optional metadata to store as JSON
+  # @return [AgentRunLog] The created log entry
+  def log!(type, content, metadata: nil)
+    agent_run_logs.create!(
+      log_type: type,
+      content: content,
+      metadata: metadata
+    )
+  end
+
+  # Container management integration methods.
+  # These delegate to Containers::Provision for actual implementation.
+
+  # Provisions a Docker container for this agent run.
+  #
+  # @param options [Hash] Override default container options
+  # @return [Containers::Provision::Result] Result with container_id on success
+  # @raise [Containers::Provision::ProvisionError] When container creation fails
+  def provision_container(**options)
+    raise ArgumentError, "worktree_path is required" if worktree_path.blank?
+
+    @container_service = Containers::Provision.new(
+      agent_run: self,
+      worktree_path: worktree_path,
+      **options
+    )
+    @container_service.provision
+  end
+
+  # Executes a command in the provisioned container.
+  #
+  # @param command [String, Array<String>] Command to execute
+  # @param timeout [Integer] Timeout in seconds (default from container options)
+  # @param stream [Boolean] Whether to stream output to agent logs
+  # @return [Containers::Provision::Result] Result with stdout, stderr, exit_code
+  # @raise [Containers::Provision::ProvisionError] When container not provisioned
+  # @raise [Containers::Provision::TimeoutError] When command times out
+  def execute_in_container(command, timeout: nil, stream: true)
+    raise Containers::Provision::ProvisionError, "Container not provisioned" unless @container_service
+
+    @container_service.execute(command, timeout: timeout, stream: stream)
+  end
+
+  # Cleans up the provisioned container.
+  #
+  # @param force [Boolean] Force kill if container doesn't stop gracefully
+  # @return [void]
+  def cleanup_container(force: false)
+    return unless @container_service
+
+    @container_service.cleanup(force: force)
+    @container_service = nil
+  end
+
+  # Executes a block with a provisioned container, ensuring cleanup.
+  #
+  # @param options [Hash] Override default container options
+  # @yield [self] The agent run with provisioned container
+  # @return [Object] The return value of the block
+  def with_container(**options, &block)
+    raise ArgumentError, "worktree_path is required" if worktree_path.blank?
+
+    Containers::Provision.with_container(
+      agent_run: self,
+      worktree_path: worktree_path,
+      **options
+    ) do |service|
+      @container_service = service
+      block.call(self)
+    ensure
+      @container_service = nil
+    end
+  end
+
   private
 
   def issue_belongs_to_same_project

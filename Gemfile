@@ -35,6 +35,9 @@ gem "rolify"
 gem "octokit"
 gem "faraday-retry"
 
+# Docker API client [https://github.com/upserve/docker-api]
+gem "docker-api"
+
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[windows jruby]
 

@@ -1,0 +1,507 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Containers::Provision do
+  let(:project) { create(:project) }
+  let(:agent_run) { create(:agent_run, project: project) }
+  let(:worktree_path) { Dir.mktmpdir("worktree") }
+  let(:service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }
+
+  let(:mock_container) do
+    instance_double(
+      Docker::Container,
+      id: "abc123container",
+      start: true,
+      stop: true,
+      delete: true,
+      refresh!: true,
+      info: { "State" => { "Running" => true, "ExitCode" => 0 } },
+      exec: nil
+    )
+  end
+
+  before do
+    allow(Docker::Container).to receive(:create).and_return(mock_container)
+    allow(Docker::Network).to receive(:get).and_raise(Docker::Error::NotFoundError)
+  end
+
+  after do
+    FileUtils.rm_rf(worktree_path) if worktree_path && Dir.exist?(worktree_path)
+  end
+
+  describe "constants" do
+    it "defines default memory limit of 2GB" do
+      expect(described_class::DEFAULTS[:memory_bytes]).to eq(2 * 1024 * 1024 * 1024)
+    end
+
+    it "defines default CPU quota for 2 CPUs" do
+      expect(described_class::DEFAULTS[:cpu_quota]).to eq(200_000)
+    end
+
+    it "defines default PID limit of 500" do
+      expect(described_class::DEFAULTS[:pids_limit]).to eq(500)
+    end
+
+    it "defines default timeout of 10 minutes" do
+      expect(described_class::DEFAULTS[:timeout_seconds]).to eq(600)
+    end
+
+    it "defines default image name" do
+      expect(described_class::DEFAULTS[:image]).to eq("paid-agent:latest")
+    end
+
+    it "defines default network name" do
+      expect(described_class::DEFAULTS[:network]).to eq("paid_agent_network")
+    end
+  end
+
+  describe "#initialize" do
+    it "stores agent_run and worktree_path" do
+      expect(service.agent_run).to eq(agent_run)
+      expect(service.worktree_path).to eq(worktree_path)
+    end
+
+    it "merges default options with provided options" do
+      custom_service = described_class.new(
+        agent_run: agent_run,
+        worktree_path: worktree_path,
+        memory_bytes: 1024 * 1024 * 1024
+      )
+
+      expect(custom_service.options[:memory_bytes]).to eq(1024 * 1024 * 1024)
+      expect(custom_service.options[:cpu_quota]).to eq(200_000)
+    end
+  end
+
+  describe "#provision" do
+    context "when successful" do
+      it "creates and starts a container" do
+        expect(Docker::Container).to receive(:create).and_return(mock_container)
+        expect(mock_container).to receive(:start)
+
+        result = service.provision
+
+        expect(result).to be_success
+        expect(result[:container_id]).to eq("abc123container")
+      end
+
+      it "logs the provision start and success" do
+        expect(agent_run).to receive(:log!).with("system", "container.provision.start",
+          metadata: hash_including(image: "paid-agent:latest"))
+        expect(agent_run).to receive(:log!).with("system", "container.provision.success",
+          metadata: hash_including(container_id: "abc123container"))
+
+        service.provision
+      end
+
+      it "configures container with security hardening" do
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["ReadonlyRootfs"]).to be true
+          expect(config["CapDrop"]).to eq([ "ALL" ])
+          expect(config["CapAdd"]).to eq([ "NET_RAW" ])
+          expect(config["SecurityOpt"]).to eq([ "no-new-privileges:true" ])
+          expect(config["User"]).to eq("agent")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "configures resource limits" do
+        expect(Docker::Container).to receive(:create) do |config|
+          host_config = config["HostConfig"]
+          expect(host_config["Memory"]).to eq(2 * 1024 * 1024 * 1024)
+          expect(host_config["MemorySwap"]).to eq(2 * 1024 * 1024 * 1024)
+          expect(host_config["CpuPeriod"]).to eq(100_000)
+          expect(host_config["CpuQuota"]).to eq(200_000)
+          expect(host_config["PidsLimit"]).to eq(500)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "configures tmpfs mounts using DEFAULTS sizes" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs["/tmp"]).to eq("size=#{1024 * 1024 * 1024},mode=1777")
+          expect(tmpfs["/home/agent/.cache"]).to eq("size=#{512 * 1024 * 1024},mode=0755")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "configures worktree volume mount" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds).to include("#{worktree_path}:/workspace:rw")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "configures environment variables without API keys" do
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          expect(env).to include("PAID_PROXY_URL=http://paid-proxy:3001")
+          expect(env).to include("PROJECT_ID=#{project.id}")
+          expect(env).to include("AGENT_RUN_ID=#{agent_run.id}")
+          expect(env).to include("ANTHROPIC_BASE_URL=http://paid-proxy:3001/proxy/api.anthropic.com")
+          expect(env).to include("OPENAI_BASE_URL=http://paid-proxy:3001/proxy/api.openai.com")
+          # Ensure no API keys are present
+          expect(env.none? { |e| e.include?("API_KEY") }).to be true
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "adds labels for tracking" do
+        expect(Docker::Container).to receive(:create) do |config|
+          labels = config["Labels"]
+          expect(labels["paid.agent_run_id"]).to eq(agent_run.id.to_s)
+          expect(labels["paid.project_id"]).to eq(project.id.to_s)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "stores container reference" do
+        service.provision
+
+        expect(service.container).to eq(mock_container)
+      end
+    end
+
+    context "when worktree path is invalid" do
+      it "raises ProvisionError for blank path" do
+        service = described_class.new(agent_run: agent_run, worktree_path: "")
+
+        expect { service.provision }.to raise_error(described_class::ProvisionError, /Worktree path is required/)
+      end
+
+      it "raises ProvisionError for non-existent path" do
+        service = described_class.new(agent_run: agent_run, worktree_path: "/nonexistent/path")
+
+        expect { service.provision }.to raise_error(described_class::ProvisionError, /does not exist/)
+      end
+    end
+
+    context "when Docker fails" do
+      before do
+        allow(Docker::Container).to receive(:create).and_raise(Docker::Error::ServerError.new("Docker daemon error"))
+      end
+
+      it "raises ProvisionError" do
+        expect { service.provision }.to raise_error(described_class::ProvisionError, /Docker error/)
+      end
+
+      it "logs the failure" do
+        expect(agent_run).to receive(:log!).with("system", "container.provision.start",
+          metadata: hash_including(image: anything))
+        expect(agent_run).to receive(:log!).with("system", "container.provision.failed",
+          metadata: hash_including(error: anything))
+
+        expect { service.provision }.to raise_error(described_class::ProvisionError)
+      end
+    end
+
+    context "when network exists" do
+      before do
+        mock_network = instance_double(Docker::Network)
+        allow(Docker::Network).to receive(:get).with("paid_agent_network").and_return(mock_network)
+      end
+
+      it "configures network mode" do
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq("paid_agent_network")
+          mock_container
+        end
+
+        service.provision
+      end
+    end
+  end
+
+  describe "#execute" do
+    before do
+      service.provision
+    end
+
+    context "when command succeeds" do
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "command output\n") if block
+        end
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+      end
+
+      it "returns success result with stdout" do
+        result = service.execute("echo 'hello'")
+
+        expect(result).to be_success
+        expect(result[:stdout]).to eq("command output\n")
+        expect(result[:exit_code]).to eq(0)
+      end
+
+      it "logs command execution" do
+        expect(agent_run).to receive(:log!).with("system", "container.execute.start",
+          metadata: hash_including(command: anything))
+        expect(agent_run).to receive(:log!).with("stdout", "command output\n")
+        expect(agent_run).to receive(:log!).with("system", "container.execute.complete",
+          metadata: hash_including(exit_code: 0, duration_ms: a_kind_of(Integer)))
+
+        service.execute("echo 'hello'")
+      end
+
+      it "accepts array command format" do
+        expect(mock_container).to receive(:exec).with([ "ls", "-la" ])
+
+        service.execute([ "ls", "-la" ])
+      end
+    end
+
+    context "when command fails" do
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stderr, "error message\n") if block
+        end
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 1 } })
+      end
+
+      it "returns failure result with stderr and exit code" do
+        result = service.execute("false")
+
+        expect(result).to be_failure
+        expect(result[:stderr]).to eq("error message\n")
+        expect(result[:exit_code]).to eq(1)
+        expect(result.error).to include("exited with code 1")
+      end
+    end
+
+    context "when command times out" do
+      before do
+        allow(mock_container).to receive(:exec) do
+          sleep 0.2
+        end
+      end
+
+      it "raises TimeoutError" do
+        expect { service.execute("sleep 10", timeout: 0.1) }.to raise_error(described_class::TimeoutError)
+      end
+    end
+
+    context "when container is not provisioned" do
+      let(:unprovisioned_service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }
+
+      it "raises ProvisionError" do
+        expect { unprovisioned_service.execute("echo 'hello'") }
+          .to raise_error(described_class::ProvisionError, /not provisioned/)
+      end
+    end
+
+    context "when streaming is disabled" do
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "output\n") if block
+        end
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+      end
+
+      it "does not log output" do
+        expect(agent_run).not_to receive(:log!).with("stdout", anything)
+
+        service.execute("echo 'hello'", stream: false)
+      end
+    end
+  end
+
+  describe "#cleanup" do
+    before do
+      service.provision
+    end
+
+    context "when container is running" do
+      before do
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true } })
+      end
+
+      it "stops and deletes the container" do
+        expect(mock_container).to receive(:stop).with(timeout: 10)
+        expect(mock_container).to receive(:delete).with(force: false)
+
+        service.cleanup
+      end
+    end
+
+    context "when container is already stopped" do
+      before do
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => false } })
+      end
+
+      it "only deletes the container" do
+        expect(mock_container).not_to receive(:stop)
+        expect(mock_container).to receive(:delete).with(force: false)
+
+        service.cleanup
+      end
+    end
+
+    context "when force cleanup is requested" do
+      before do
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true } })
+      end
+
+      it "force stops and deletes the container" do
+        expect(mock_container).to receive(:stop).with(timeout: 0)
+        expect(mock_container).to receive(:delete).with(force: true)
+
+        service.cleanup(force: true)
+      end
+    end
+
+    context "when cleanup fails" do
+      before do
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => false } })
+        allow(mock_container).to receive(:delete).and_raise(Docker::Error::ServerError.new("Docker error"))
+      end
+
+      it "attempts force cleanup" do
+        expect(mock_container).to receive(:delete).with(force: false).and_raise(Docker::Error::ServerError)
+        expect(mock_container).to receive(:delete).with(force: true)
+
+        service.cleanup
+      end
+    end
+
+    it "clears the container reference" do
+      service.cleanup
+
+      expect(service.container).to be_nil
+    end
+
+    it "logs cleanup operations" do
+      expect(agent_run).to receive(:log!).with("system", "container.cleanup.start",
+        metadata: hash_including(container_id: "abc123container"))
+      expect(agent_run).to receive(:log!).with("system", "container.cleanup.success",
+        metadata: anything)
+
+      service.cleanup
+    end
+  end
+
+  describe "#container_running?" do
+    before do
+      service.provision
+    end
+
+    context "when container is running" do
+      before do
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true } })
+      end
+
+      it "returns true" do
+        expect(service.container_running?).to be true
+      end
+    end
+
+    context "when container is stopped" do
+      before do
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => false } })
+      end
+
+      it "returns false" do
+        expect(service.container_running?).to be false
+      end
+    end
+
+    context "when container is not provisioned" do
+      let(:unprovisioned_service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }
+
+      it "returns false" do
+        expect(unprovisioned_service.container_running?).to be false
+      end
+    end
+  end
+
+  describe ".with_container" do
+    it "provisions container, yields, and cleans up" do
+      yielded_service = nil
+
+      described_class.with_container(agent_run: agent_run, worktree_path: worktree_path) do |svc|
+        yielded_service = svc
+        expect(svc.container).to eq(mock_container)
+      end
+
+      expect(yielded_service.container).to be_nil
+    end
+
+    it "cleans up even when block raises" do
+      expect(mock_container).to receive(:delete)
+
+      expect {
+        described_class.with_container(agent_run: agent_run, worktree_path: worktree_path) do |_svc|
+          raise "Something went wrong"
+        end
+      }.to raise_error("Something went wrong")
+    end
+  end
+
+  describe "Result" do
+    describe ".success" do
+      it "creates a success result with data" do
+        result = Containers::Provision::Result.success(foo: "bar", count: 42)
+
+        expect(result).to be_success
+        expect(result).not_to be_failure
+        expect(result[:foo]).to eq("bar")
+        expect(result[:count]).to eq(42)
+        expect(result.error).to be_nil
+      end
+    end
+
+    describe ".failure" do
+      it "creates a failure result with error and data" do
+        result = Containers::Provision::Result.failure(error: "Something went wrong", foo: "bar")
+
+        expect(result).to be_failure
+        expect(result).not_to be_success
+        expect(result.error).to eq("Something went wrong")
+        expect(result[:foo]).to eq("bar")
+      end
+    end
+  end
+
+  describe "error classes" do
+    describe "ProvisionError" do
+      it "has a default message" do
+        error = Containers::Provision::ProvisionError.new
+        expect(error.message).to eq("Failed to provision container")
+      end
+    end
+
+    describe "ExecutionError" do
+      it "stores exit_code, stdout, and stderr" do
+        error = Containers::Provision::ExecutionError.new(
+          "Command failed", exit_code: 1, stdout: "out", stderr: "err"
+        )
+
+        expect(error.message).to eq("Command failed")
+        expect(error.exit_code).to eq(1)
+        expect(error.stdout).to eq("out")
+        expect(error.stderr).to eq("err")
+      end
+    end
+
+    describe "TimeoutError" do
+      it "has a default message" do
+        error = Containers::Provision::TimeoutError.new
+        expect(error.message).to eq("Operation timed out")
+      end
+    end
+  end
+end
