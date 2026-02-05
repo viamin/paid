@@ -4,9 +4,7 @@ require "temporalio/workflow"
 require "temporalio/retry_policy"
 
 module Workflows
-  class BaseWorkflow
-    extend Temporalio::Workflow::Definition
-
+  class BaseWorkflow < Temporalio::Workflow::Definition
     DEFAULT_RETRY_POLICY = Temporalio::RetryPolicy.new(
       initial_interval: 1,
       maximum_interval: 60,
