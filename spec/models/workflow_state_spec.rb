@@ -19,7 +19,7 @@ RSpec.describe WorkflowState do
   describe "scopes" do
     describe ".active" do
       it "includes running workflows" do
-        running_workflow = create(:workflow_state, status: :running)
+        running_workflow = create(:workflow_state, status: "running")
         expect(described_class.active).to include(running_workflow)
       end
 
@@ -51,25 +51,64 @@ RSpec.describe WorkflowState do
       end
 
       it "excludes running workflows" do
-        running_workflow = create(:workflow_state, status: :running)
+        running_workflow = create(:workflow_state, status: "running")
         expect(described_class.finished).not_to include(running_workflow)
       end
     end
   end
 
-  describe "status enum" do
-    it "defaults to running" do
-      workflow_state = described_class.new(
-        temporal_workflow_id: "test-id",
-        workflow_type: "TestWorkflow"
-      )
-      expect(workflow_state.status).to eq("running")
-    end
-
-    it "accepts all valid statuses" do
-      expect(described_class.statuses.keys).to contain_exactly(
+  describe "status constants" do
+    it "defines all valid statuses" do
+      expect(described_class::STATUSES).to contain_exactly(
         "running", "completed", "failed", "cancelled", "timed_out"
       )
+    end
+
+    it "validates status inclusion" do
+      workflow_state = build(:workflow_state, status: "invalid")
+      expect(workflow_state).not_to be_valid
+      expect(workflow_state.errors[:status]).to include("is not included in the list")
+    end
+  end
+
+  describe "instance methods" do
+    describe "#running?" do
+      it "returns true when status is running" do
+        workflow_state = build(:workflow_state, status: "running")
+        expect(workflow_state.running?).to be true
+      end
+
+      it "returns false when status is not running" do
+        workflow_state = build(:workflow_state, :completed)
+        expect(workflow_state.running?).to be false
+      end
+    end
+
+    describe "#finished?" do
+      it "returns true for completed status" do
+        workflow_state = build(:workflow_state, :completed)
+        expect(workflow_state.finished?).to be true
+      end
+
+      it "returns true for failed status" do
+        workflow_state = build(:workflow_state, :failed)
+        expect(workflow_state.finished?).to be true
+      end
+
+      it "returns true for cancelled status" do
+        workflow_state = build(:workflow_state, :cancelled)
+        expect(workflow_state.finished?).to be true
+      end
+
+      it "returns true for timed_out status" do
+        workflow_state = build(:workflow_state, :timed_out)
+        expect(workflow_state.finished?).to be true
+      end
+
+      it "returns false for running status" do
+        workflow_state = build(:workflow_state, status: "running")
+        expect(workflow_state.finished?).to be false
+      end
     end
   end
 
