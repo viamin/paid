@@ -368,6 +368,129 @@ RSpec.describe AgentRun do
         }.to raise_error(ActiveRecord::RecordInvalid)
       end
     end
+
+    describe "container integration methods" do
+      let(:worktree_path) { Dir.mktmpdir("worktree") }
+      let(:mock_container) do
+        instance_double(
+          Docker::Container,
+          id: "abc123container",
+          start: true,
+          stop: true,
+          delete: true,
+          refresh!: true,
+          info: { "State" => { "Running" => true, "ExitCode" => 0 } },
+          exec: nil
+        )
+      end
+
+      before do
+        allow(Docker::Container).to receive(:create).and_return(mock_container)
+        allow(Docker::Network).to receive(:get).and_raise(Docker::Error::NotFoundError)
+      end
+
+      after do
+        FileUtils.rm_rf(worktree_path) if worktree_path && Dir.exist?(worktree_path)
+      end
+
+      describe "#provision_container" do
+        it "provisions a container using the worktree_path" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+
+          result = agent_run.provision_container
+
+          expect(result).to be_success
+          expect(result[:container_id]).to eq("abc123container")
+        end
+
+        it "raises ArgumentError when worktree_path is blank" do
+          agent_run = create(:agent_run, worktree_path: nil)
+
+          expect { agent_run.provision_container }.to raise_error(ArgumentError, /worktree_path is required/)
+        end
+
+        it "accepts optional container options" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+
+          expect(Containers::Provision).to receive(:new).with(
+            agent_run: agent_run,
+            worktree_path: worktree_path,
+            memory_bytes: 1024 * 1024 * 1024
+          ).and_call_original
+
+          agent_run.provision_container(memory_bytes: 1024 * 1024 * 1024)
+        end
+      end
+
+      describe "#execute_in_container" do
+        it "executes command in the provisioned container" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          agent_run.provision_container
+
+          allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+            block.call(:stdout, "output\n") if block
+          end
+
+          result = agent_run.execute_in_container("echo hello")
+
+          expect(result).to be_success
+          expect(result[:stdout]).to eq("output\n")
+        end
+
+        it "raises ProvisionError when container not provisioned" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+
+          expect { agent_run.execute_in_container("echo hello") }
+            .to raise_error(Containers::Provision::ProvisionError, /not provisioned/)
+        end
+      end
+
+      describe "#cleanup_container" do
+        it "cleans up the provisioned container" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          agent_run.provision_container
+
+          expect(mock_container).to receive(:delete)
+
+          agent_run.cleanup_container
+        end
+
+        it "does nothing when no container is provisioned" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+
+          expect { agent_run.cleanup_container }.not_to raise_error
+        end
+      end
+
+      describe "#with_container" do
+        it "provisions, yields, and cleans up" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          yielded = false
+
+          agent_run.with_container do |ar|
+            expect(ar).to eq(agent_run)
+            yielded = true
+          end
+
+          expect(yielded).to be true
+        end
+
+        it "cleans up even when block raises" do
+          agent_run = create(:agent_run, worktree_path: worktree_path)
+          expect(mock_container).to receive(:delete)
+
+          expect {
+            agent_run.with_container { raise "test error" }
+          }.to raise_error("test error")
+        end
+
+        it "raises ArgumentError when worktree_path is blank" do
+          agent_run = create(:agent_run, worktree_path: nil)
+
+          expect { agent_run.with_container { } }.to raise_error(ArgumentError, /worktree_path is required/)
+        end
+      end
+    end
   end
 
   describe "constants" do
