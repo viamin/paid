@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
+# Suppress circular require warnings from temporalio gem's internal dependencies
+# (temporalio/error.rb <-> temporalio/error/failure.rb)
+original_verbose = $VERBOSE
+$VERBOSE = nil
 require "temporalio/client"
+$VERBOSE = original_verbose
 
 module Paid
   class << self
