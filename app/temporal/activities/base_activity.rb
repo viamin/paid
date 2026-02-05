@@ -4,7 +4,6 @@ require "temporalio/activity"
 
 module Activities
   class BaseActivity < Temporalio::Activity::Definition
-
     protected
 
     def logger
