@@ -2,18 +2,32 @@
 
 # Suppress circular require warnings from temporalio gem's internal dependencies
 # (temporalio/error.rb <-> temporalio/error/failure.rb)
-original_verbose = $VERBOSE
-$VERBOSE = nil
-require "temporalio/client"
-$VERBOSE = original_verbose
+begin
+  original_verbose = $VERBOSE
+  $VERBOSE = nil
+  require "temporalio/client"
+ensure
+  $VERBOSE = original_verbose
+end
 
 module Paid
   class << self
+    # Returns a connected Temporal client. Connection is established lazily
+    # on first call, not during Rails initialization.
+    #
+    # @return [Temporalio::Client] Connected Temporal client
+    # @raise [Temporalio::Error] When connection fails
     def temporal_client
       @temporal_client ||= Temporalio::Client.connect(
         temporal_address,
         namespace: temporal_namespace
       )
+    end
+
+    # Resets the cached Temporal client, allowing reconnection on next access.
+    # Useful for recovering from connection failures or configuration changes.
+    def reset_temporal_client!
+      @temporal_client = nil
     end
 
     def temporal_address
