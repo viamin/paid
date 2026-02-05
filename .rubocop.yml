@@ -38,7 +38,18 @@ RSpec/ExampleLength:
   Max: 20
 
 RSpec/MultipleExpectations:
-  Max: 5
+  Max: 10
 
 RSpec/NestedGroups:
   Max: 4
+
+RSpec/MultipleMemoizedHelpers:
+  Max: 10
+
+# Allow using expect().to receive() pattern for mocking
+RSpec/MessageSpies:
+  Enabled: false
+
+# Allow expect with stubs (common pattern in mocking)
+RSpec/StubbedMock:
+  Enabled: false
