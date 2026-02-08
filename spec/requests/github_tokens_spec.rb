@@ -152,7 +152,7 @@ RSpec.describe "GithubTokens" do
       context "with invalid token format" do
         it "re-renders the form with errors" do
           post github_tokens_path, params: { github_token: { name: "Test Token", token: "invalid" } }
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("must be a valid GitHub token format")
         end
       end
@@ -160,7 +160,7 @@ RSpec.describe "GithubTokens" do
       context "with missing name" do
         it "re-renders the form with errors" do
           post github_tokens_path, params: { github_token: { name: "", token: "ghp_#{'a' * 36}" } }
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("can&#39;t be blank")
         end
       end
@@ -177,7 +177,7 @@ RSpec.describe "GithubTokens" do
 
         it "re-renders the form with error message" do
           post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("invalid or has been revoked")
         end
 
@@ -203,7 +203,7 @@ RSpec.describe "GithubTokens" do
 
         it "re-renders the form with rate limit error message" do
           post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("rate limit exceeded")
         end
 
@@ -226,7 +226,7 @@ RSpec.describe "GithubTokens" do
 
         it "re-renders the form with API error message" do
           post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("GitHub API error")
         end
 

@@ -1,0 +1,29 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../config/environment"
+
+Dir[Rails.root.join("app/temporal/activities/**/*.rb")].each { |f| require f }
+Dir[Rails.root.join("app/temporal/workflows/**/*.rb")].each { |f| require f }
+
+activities = Activities.constants.map { |c| Activities.const_get(c) }
+                       .select { |c| c.is_a?(Class) && c < Activities::BaseActivity }
+
+workflows = Workflows.constants.map { |c| Workflows.const_get(c) }
+                     .select { |c| c.is_a?(Class) && c < Workflows::BaseWorkflow }
+
+puts "Starting Temporal worker..."
+puts "Activities: #{activities.map(&:name).join(", ")}"
+puts "Workflows: #{workflows.map(&:name).join(", ")}"
+
+worker = Temporalio::Worker.new(
+  client: Paid.temporal_client,
+  task_queue: Paid.task_queue,
+  activities: activities.map(&:new),
+  workflows: workflows
+)
+
+trap("INT") { worker.shutdown }
+trap("TERM") { worker.shutdown }
+
+worker.run

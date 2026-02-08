@@ -851,10 +851,10 @@ class RunAgentActivity < Paid::Activity
     retry_policy: {
       initial_interval: 1.second,
       backoff_coefficient: 2.0,
-      maximum_interval: 1.minute,
-      maximum_attempts: 3,
+      max_interval: 1.minute,
+      max_attempts: 3,
       # Don't retry these - they won't succeed on retry
-      non_retryable_errors: [
+      non_retryable_error_types: [
         BudgetExceeded,        # Business rule, not transient
         GitHub::TokenInvalid,   # Auth failure, needs user action
         GuardrailTriggered     # Agent hit limits, needs review

@@ -28,12 +28,13 @@ gem "devise"
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
 
-# Role management [https://github.com/RolifyCommunity/rolify]
-gem "rolify"
-
 # GitHub API client [https://github.com/octokit/octokit.rb]
 gem "octokit"
+
 gem "faraday-retry"
+
+# Temporal workflow orchestration [https://temporal.io]
+gem "temporalio"
 
 # Docker API client [https://github.com/upserve/docker-api]
 gem "docker-api"
