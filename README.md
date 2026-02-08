@@ -46,13 +46,13 @@ The instructions below are for the standalone Docker Compose approach.
    ```
 
 3. Access the applications:
-   - **Rails app**: http://localhost:3000
-   - **Temporal UI**: http://localhost:8080
+   - **Rails app**: <http://localhost:3000>
+   - **Temporal UI**: <http://localhost:8080>
 
 ### Services
 
 | Service | Port | Description |
-|---------|------|-------------|
+| ------- | ---- | ----------- |
 | web | 3000 | Rails application |
 | postgres | 5432 | PostgreSQL database |
 | temporal | 7233 | Temporal server (gRPC) |
@@ -78,7 +78,7 @@ docker compose down -v  # Remove containers and volumes
 ## Documentation
 
 | Document | Description |
-|----------|-------------|
+| -------- | ----------- |
 | [VISION.md](docs/VISION.md) | Philosophy, principles, and goals |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and technology stack |
 | [ROADMAP.md](docs/ROADMAP.md) | Phased implementation plan |

@@ -21,6 +21,6 @@ class ProjectPolicy < ApplicationPolicy
   def has_project_role?
     return false unless user && record.is_a?(Project)
 
-    user.has_any_role?({ name: :project_admin, resource: record }, { name: :project_member, resource: record })
+    user.has_any_role?(:project_admin, :project_member, record)
   end
 end

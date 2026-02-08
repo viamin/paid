@@ -86,6 +86,26 @@ services:
     stdin_open: true
     tty: true
 
+  worker:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    command: bin/temporal_worker
+    depends_on:
+      temporal:
+        condition: service_healthy
+      web:
+        condition: service_started
+    environment:
+      - DATABASE_URL=postgres://paid:paid@postgres:5432/paid_development
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_NAMESPACE=default
+      - TEMPORAL_TASK_QUEUE=paid-tasks
+      - RAILS_ENV=development
+    volumes:
+      - .:/workspaces/paid
+      - bundle-cache:/usr/local/bundle
+
   # Agent container for testing the agent image
   agent-test:
     build:

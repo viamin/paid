@@ -20,7 +20,9 @@ Rails.application.routes.draw do
   resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ]
 
   # Projects management
-  resources :projects
+  resources :projects do
+    resource :workflow_status, only: [ :show ]
+  end
 
   # Defines the root path route ("/")
   root "home#index"
