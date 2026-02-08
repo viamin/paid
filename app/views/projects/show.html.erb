@@ -114,14 +114,16 @@
 
   <div class="mt-8">
     <div class="sm:flex sm:items-center sm:justify-between">
-      <h2 class="text-lg font-medium text-gray-900">Recent Agent Runs</h2>
+      <h2 class="text-lg font-medium text-gray-900">
+        <%= link_to "Recent Agent Runs", project_agent_runs_path(@project), class: "hover:text-indigo-600" %>
+      </h2>
       <% if policy(@project).run_agent? %>
-        <button type="button" disabled class="mt-4 inline-flex items-center rounded-md bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-400 cursor-not-allowed sm:mt-0" title="Agent execution will be enabled in a future update">
+        <%= link_to new_project_agent_run_path(@project), class: "mt-4 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 sm:mt-0" do %>
           <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM9.555 7.168A1 1 0 0 0 8 8v4a1 1 0 0 0 1.555.832l3-2a1 1 0 0 0 0-1.664l-3-2Z" clip-rule="evenodd" />
           </svg>
           Trigger Run
-        </button>
+        <% end %>
       <% end %>
     </div>
 
@@ -192,8 +194,10 @@
                         <% end %>
                       </td>
                       <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                        <%= link_to "View", project_agent_run_path(@project, run), class: "text-indigo-600 hover:text-indigo-900" %>
                         <% if run.pull_request_url.present? %>
-                          <%= link_to "View PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+                          &middot;
+                          <%= link_to "PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
                         <% end %>
                       </td>
                     </tr>

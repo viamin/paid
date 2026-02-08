@@ -1,0 +1,83 @@
+<% content_for(:title) { "Trigger Agent Run - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <h1 class="text-xl font-semibold text-gray-900">Trigger Agent Run</h1>
+      <p class="mt-1 text-sm text-gray-500">Start an agent run for an issue in <%= @project.full_name %>.</p>
+    </div>
+
+    <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+      <%= form_with url: project_agent_runs_path(@project), method: :post, class: "space-y-6" do |f| %>
+
+        <div>
+          <h2 class="text-base font-semibold text-gray-900">Select Issue</h2>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <label for="issue_id" class="block text-sm font-medium text-gray-700">Choose from synced issues:</label>
+            <% if @issues.any? %>
+              <select name="issue_id" id="issue_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                <option value="">-- Select an issue --</option>
+                <% @issues.each do |issue| %>
+                  <option value="<%= issue.id %>">
+                    #<%= issue.github_number %> - <%= truncate(issue.title, length: 60) %>
+                  </option>
+                <% end %>
+              </select>
+            <% else %>
+              <p class="mt-1 text-sm text-gray-500">No actionable open issues found. Sync issues first or enter a URL below.</p>
+            <% end %>
+          </div>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <label for="issue_url" class="block text-sm font-medium text-gray-700">Or enter issue URL directly:</label>
+            <input type="text" name="issue_url" id="issue_url"
+                   placeholder="https://github.com/<%= @project.full_name %>/issues/123"
+                   class="mt-1 block w-full rounded-md border-gray-300 font-mono text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+            <p class="mt-1 text-xs text-gray-500">Paste a GitHub issue URL from this repository. The issue must already be synced.</p>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-base font-semibold text-gray-900">Agent Type</h2>
+          <div class="mt-4 grid grid-cols-2 gap-4">
+            <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-indigo-500 has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
+              <input type="radio" name="agent_type" value="claude_code" checked class="sr-only">
+              <div>
+                <div class="text-sm font-semibold text-gray-900">Claude Code</div>
+                <p class="mt-1 text-xs text-gray-500">Anthropic's Claude-powered coding agent</p>
+              </div>
+            </label>
+
+            <label class="relative flex rounded-lg border border-gray-200 p-4 opacity-50 cursor-not-allowed" title="Coming soon">
+              <input type="radio" name="agent_type" value="aider" disabled class="sr-only">
+              <div>
+                <div class="text-sm font-semibold text-gray-900">Aider</div>
+                <p class="mt-1 text-xs text-gray-500">AI pair programming (coming soon)</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end space-x-4 border-t border-gray-200 pt-4">
+          <%= link_to "Cancel", project_path(@project), class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+          <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+            <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM9.555 7.168A1 1 0 0 0 8 8v4a1 1 0 0 0 1.555.832l3-2a1 1 0 0 0 0-1.664l-3-2Z" clip-rule="evenodd" />
+            </svg>
+            Start Agent Run
+          </button>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>
