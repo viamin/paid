@@ -60,7 +60,6 @@ module Containers
       tmpfs_tmp_size: 1024 * 1024 * 1024,        # 1GB for /tmp
       tmpfs_cache_size: 512 * 1024 * 1024,       # 512MB for /home/agent/.cache
       image: "paid-agent:latest",
-      network: NetworkPolicy::NETWORK_NAME,
       user: "agent",
       workspace_mount: "/workspace"
     }.freeze
@@ -75,8 +74,14 @@ module Containers
     # @option options [Integer] :pids_limit Maximum number of processes
     # @option options [Integer] :timeout_seconds Default command timeout
     # @option options [String] :image Docker image to use
-    # @option options [String] :network Docker network to attach to
     def initialize(agent_run:, worktree_path:, **options)
+      if options.key?(:network)
+        Rails.logger.warn(
+          message: "container_manager.network_option_ignored",
+          hint: "The :network option is ignored; containers always use #{NetworkPolicy::NETWORK_NAME}"
+        )
+        options.delete(:network)
+      end
       @agent_run = agent_run
       @worktree_path = worktree_path
       @options = DEFAULTS.merge(options)
