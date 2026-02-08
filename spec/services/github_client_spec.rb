@@ -296,6 +296,46 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#add_comment" do
+    let(:repo) { "owner/repo" }
+    let(:issue_number) { 1 }
+
+    context "when successful" do
+      before do
+        stub_request(:post, "#{api_base}/repos/#{repo}/issues/#{issue_number}/comments")
+          .with(body: { body: "PR created: https://github.com/owner/repo/pull/42" }.to_json)
+          .to_return(
+            status: 201,
+            body: {
+              id: 1,
+              body: "PR created: https://github.com/owner/repo/pull/42",
+              user: { login: "testuser" }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "creates a comment on the issue" do
+        result = client.add_comment(repo, issue_number, "PR created: https://github.com/owner/repo/pull/42")
+
+        expect(result.body).to eq("PR created: https://github.com/owner/repo/pull/42")
+      end
+    end
+
+    context "when issue does not exist" do
+      before do
+        stub_request(:post, "#{api_base}/repos/#{repo}/issues/#{issue_number}/comments")
+          .to_return(status: 404, body: { message: "Not Found" }.to_json)
+      end
+
+      it "raises NotFoundError" do
+        expect {
+          client.add_comment(repo, issue_number, "comment")
+        }.to raise_error(GithubClient::NotFoundError)
+      end
+    end
+  end
+
   describe "#remove_label_from_issue" do
     let(:repo) { "owner/repo" }
     let(:issue_number) { 1 }
