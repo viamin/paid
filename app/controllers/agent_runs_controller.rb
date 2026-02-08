@@ -11,6 +11,7 @@ class AgentRunsController < ApplicationController
 
   def show
     authorize @agent_run
+    @logs = @agent_run.agent_run_logs.order(created_at: :asc).limit(500)
   end
 
   def new
@@ -62,8 +63,19 @@ class AgentRunsController < ApplicationController
   end
 
   def fetch_issue_from_url(url)
-    match = url.match(%r{github\.com/([^/]+)/([^/]+)/issues/(\d+)})
+    uri = begin
+      URI.parse(url)
+    rescue URI::InvalidURIError
+      nil
+    end
 
+    unless uri&.host&.match?(/\A(www\.)?github\.com\z/)
+      redirect_to new_project_agent_run_path(@project),
+        alert: "Issue URL must be from #{@project.full_name}."
+      return nil
+    end
+
+    match = uri.path.match(%r{\A/([^/]+)/([^/]+)/issues/(\d+)\z})
     unless match && match[1] == @project.owner && match[2] == @project.repo
       redirect_to new_project_agent_run_path(@project),
         alert: "Issue URL must be from #{@project.full_name}."
@@ -91,7 +103,8 @@ class AgentRunsController < ApplicationController
     handle = Paid.temporal_client.start_workflow(
       Workflows::AgentExecutionWorkflow,
       { project_id: @project.id, issue_id: issue.id, agent_type: agent_type },
-      id: "manual-#{@project.id}-#{issue.id}-#{Time.now.to_i}",
+      id: "manual-#{@project.id}-#{issue.id}",
+      id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL,
       task_queue: Paid.task_queue
     )
 
