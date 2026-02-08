@@ -183,10 +183,15 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       it "stops after MAX_PAGES and logs a warning" do
+        allow(Rails.logger).to receive(:warn)
+
         result = activity.execute(project_id: project.id)
 
         expect(result[:issues].size).to eq(described_class::MAX_PAGES * 100)
         expect(github_client).to have_received(:issues).exactly(described_class::MAX_PAGES).times
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(message: "github_sync.fetch_issues_page_limit")
+        )
       end
     end
 

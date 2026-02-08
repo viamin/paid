@@ -175,22 +175,32 @@ RSpec.describe Project do
   end
 
   describe "polling lifecycle hooks" do
+    let(:temporal_client) { instance_double(Temporalio::Client) }
+    let(:workflow_handle) { double("workflow_handle") } # rubocop:disable RSpec/VerifiedDoubles
+
     before do
-      allow(ProjectWorkflowManager).to receive(:start_polling)
-      allow(ProjectWorkflowManager).to receive(:stop_polling)
+      allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
+      allow(temporal_client).to receive(:start_workflow)
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:cancel)
     end
 
     describe "after_create_commit" do
       it "starts polling for active projects" do
         project = create(:project, active: true)
 
-        expect(ProjectWorkflowManager).to have_received(:start_polling).with(project)
+        expect(temporal_client).to have_received(:start_workflow).with(
+          Workflows::GitHubPollWorkflow,
+          { project_id: project.id },
+          id: "github-poll-#{project.id}",
+          task_queue: "paid-tasks"
+        )
       end
 
       it "does not start polling for inactive projects" do
         create(:project, :inactive)
 
-        expect(ProjectWorkflowManager).not_to have_received(:start_polling)
+        expect(temporal_client).not_to have_received(:start_workflow)
       end
     end
 
@@ -200,18 +210,36 @@ RSpec.describe Project do
 
         project.destroy!
 
-        expect(ProjectWorkflowManager).to have_received(:stop_polling).with(project)
+        expect(temporal_client).to have_received(:workflow_handle).with("github-poll-#{project.id}")
+        expect(workflow_handle).to have_received(:cancel)
+      end
+
+      it "does not stop polling when destroy is rolled back" do
+        project = create(:project, active: true)
+
+        expect {
+          ActiveRecord::Base.transaction do
+            project.destroy!
+            raise ActiveRecord::Rollback
+          end
+        }.not_to change(described_class, :count)
+
+        expect(workflow_handle).not_to have_received(:cancel)
       end
     end
 
     describe "after_update_commit on active change" do
       it "starts polling when activated" do
         project = create(:project, :inactive)
-        allow(ProjectWorkflowManager).to receive(:start_polling)
 
         project.activate!
 
-        expect(ProjectWorkflowManager).to have_received(:start_polling).with(project)
+        expect(temporal_client).to have_received(:start_workflow).with(
+          Workflows::GitHubPollWorkflow,
+          { project_id: project.id },
+          id: "github-poll-#{project.id}",
+          task_queue: "paid-tasks"
+        )
       end
 
       it "stops polling when deactivated" do
@@ -219,18 +247,18 @@ RSpec.describe Project do
 
         project.deactivate!
 
-        expect(ProjectWorkflowManager).to have_received(:stop_polling).with(project)
+        expect(temporal_client).to have_received(:workflow_handle).with("github-poll-#{project.id}")
+        expect(workflow_handle).to have_received(:cancel)
       end
 
       it "does not toggle polling when other attributes change" do
         project = create(:project, active: true)
-        allow(ProjectWorkflowManager).to receive(:start_polling)
 
         project.update!(name: "new-name")
 
-        expect(ProjectWorkflowManager).not_to have_received(:stop_polling)
-        # start_polling only called once (on create), not again on name update
-        expect(ProjectWorkflowManager).to have_received(:start_polling).once
+        expect(workflow_handle).not_to have_received(:cancel)
+        # start_workflow only called once (on create), not again on name update
+        expect(temporal_client).to have_received(:start_workflow).once
       end
     end
   end
