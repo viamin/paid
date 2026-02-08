@@ -12,6 +12,8 @@ module Activities
 
       issue.update!(paid_state: "completed")
 
+      post_pr_comment(agent_run, issue, pull_request_url)
+
       logger.info(
         message: "agent_execution.issue_updated",
         agent_run_id: agent_run_id,
@@ -20,6 +22,25 @@ module Activities
       )
 
       { agent_run_id: agent_run_id }
+    end
+
+    private
+
+    def post_pr_comment(agent_run, issue, pull_request_url)
+      return if pull_request_url.blank?
+
+      client = agent_run.project.github_token.client
+      client.add_comment(
+        agent_run.project.full_name,
+        issue.github_number,
+        "Pull request created: #{pull_request_url}"
+      )
+    rescue => e
+      logger.warn(
+        message: "agent_execution.issue_comment_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
     end
   end
 end

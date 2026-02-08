@@ -21,6 +21,7 @@ class AgentRun < ApplicationRecord
   validates :pull_request_url, length: { maximum: 500 }
   validates :temporal_workflow_id, length: { maximum: 255 }
   validates :temporal_run_id, length: { maximum: 255 }
+  validates :container_id, length: { maximum: 128 }
   validates :iterations, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_input, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_output, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
@@ -157,7 +158,9 @@ class AgentRun < ApplicationRecord
       worktree_path: worktree_path,
       **options
     )
-    @container_service.provision
+    result = @container_service.provision
+    update!(container_id: result[:container_id]) if result.success?
+    result
   end
 
   # Executes a command in the provisioned container.
@@ -169,8 +172,7 @@ class AgentRun < ApplicationRecord
   # @raise [Containers::Provision::ProvisionError] When container not provisioned
   # @raise [Containers::Provision::TimeoutError] When command times out
   def execute_in_container(command, timeout: nil, stream: true)
-    raise Containers::Provision::ProvisionError, "Container not provisioned" unless @container_service
-
+    ensure_container_service!
     @container_service.execute(command, timeout: timeout, stream: stream)
   end
 
@@ -179,10 +181,16 @@ class AgentRun < ApplicationRecord
   # @param force [Boolean] Force kill if container doesn't stop gracefully
   # @return [void]
   def cleanup_container(force: false)
-    return unless @container_service
+    return if container_id.blank? && @container_service.nil?
 
+    ensure_container_service!
     @container_service.cleanup(force: force)
     @container_service = nil
+    update!(container_id: nil)
+  rescue Containers::Provision::Error
+    # Container may already be gone; clear the reference anyway
+    @container_service = nil
+    update!(container_id: nil)
   end
 
   # Executes a block with a provisioned container, ensuring cleanup.
@@ -228,6 +236,20 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  # Ensures @container_service is available, reconnecting from persisted
+  # container_id if needed (e.g., when called from a different Temporal activity).
+  def ensure_container_service!
+    return if @container_service
+
+    raise Containers::Provision::ProvisionError, "Container not provisioned" if container_id.blank?
+
+    @container_service = Containers::Provision.reconnect(
+      agent_run: self,
+      container_id: container_id,
+      worktree_path: worktree_path
+    )
+  end
 
   def issue_belongs_to_same_project
     return if issue.project_id == project_id
