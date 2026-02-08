@@ -48,7 +48,7 @@ module Paid
     end
 
     def temporal_ui_url
-      ENV.fetch("TEMPORAL_UI_URL", "http://localhost:8080").sub(%r{/*$}, "")
+      ENV.fetch("TEMPORAL_UI_URL", "http://localhost:8080").sub(%r{/+\z}, "")
     end
 
     def task_queue
