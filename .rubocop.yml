@@ -1,6 +1,10 @@
 # Omakase Ruby styling for Rails
 inherit_gem: { rubocop-rails-omakase: rubocop.yml }
 
+inherit_mode:
+  merge:
+    - Exclude
+
 # Load additional extensions as plugins
 plugins:
   - rubocop-rspec
@@ -12,6 +16,8 @@ AllCops:
   NewCops: enable
   Exclude:
     - 'db/schema.rb'
+    - 'db/cable_schema.rb'
+    - 'db/cache_schema.rb'
     - 'db/migrate/**/*'
     - 'vendor/**/*'
     - 'bin/*'
