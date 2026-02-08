@@ -65,6 +65,7 @@ bin/rspec --tag focus
 ```
 
 The test suite uses:
+
 - **RSpec** for test framework
 - **Factory Bot** for test data
 - **WebMock** for HTTP stubbing
@@ -129,6 +130,7 @@ Rails.logger.info(
 ## Submitting Changes
 
 1. **Create a branch** from `main`:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -138,11 +140,13 @@ Rails.logger.info(
 3. **Write tests** for new functionality
 
 4. **Run checks**:
+
    ```bash
    bin/rspec && bin/rubocop && bin/brakeman
    ```
 
 5. **Commit** with a clear message:
+
    ```bash
    git commit -m "feat: add widget support to projects"
    ```
@@ -152,6 +156,7 @@ Rails.logger.info(
 ### Commit Message Format
 
 Use conventional commit prefixes:
+
 - `feat:` New features
 - `fix:` Bug fixes
 - `docs:` Documentation changes
