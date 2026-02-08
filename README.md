@@ -36,7 +36,6 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 # Clone and configure
 git clone <repo-url> && cd paid
 cp .env.example .env
-# Edit .env to add your ANTHROPIC_API_KEY
 
 # Start all services
 docker compose up
@@ -44,6 +43,8 @@ docker compose up
 # In another terminal, setup the database
 docker compose exec web bin/rails db:prepare
 ```
+
+> **Note**: Docker Compose sets `DATABASE_URL`, `TEMPORAL_HOST`, and `RAILS_ENV` directly in `docker-compose.yml`. Additional variables like `ANTHROPIC_API_KEY` (needed for agent execution) must be added to the `environment` section of the `web` and `worker` services, or loaded via `env_file: .env` in `docker-compose.yml`.
 
 ### Option 2: Dev Container
 
@@ -136,7 +137,7 @@ bin/rails server             # Start Rails server only
 bin/rails console            # Rails console
 
 # Testing
-bin/rspec                    # Run RSpec tests (904 examples, 92%+ coverage)
+bin/rspec                    # Run the full RSpec test suite
 
 # Code Quality
 bin/rubocop                  # Run RuboCop linter

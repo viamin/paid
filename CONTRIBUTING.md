@@ -24,9 +24,11 @@ bundle install
 # Install JavaScript dependencies
 yarn install
 
-# Copy environment configuration
-cp .env.example .env
-# Edit .env to add your API keys (see README.md for details)
+# Review environment configuration
+# NOTE: bin/dev uses Foreman with --env /dev/null, which disables
+# automatic .env loading. Export variables in your shell instead,
+# or use direnv / dotenv to load them before running bin/dev.
+cp .env.example .env  # Use as a reference for required variables
 
 # Prepare the database
 bin/rails db:prepare
@@ -34,7 +36,7 @@ bin/rails db:prepare
 # Build frontend assets
 yarn build && yarn build:css
 
-# Start the development server
+# Export any needed env vars, then start the development server
 bin/dev
 ```
 
