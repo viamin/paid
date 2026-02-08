@@ -10,9 +10,21 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_01_042103) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_08_005438) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "account_memberships", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "role", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["account_id", "role"], name: "index_account_memberships_on_account_id_and_role"
+    t.index ["account_id"], name: "index_account_memberships_on_account_id"
+    t.index ["user_id", "account_id"], name: "index_account_memberships_on_user_id_and_account_id", unique: true
+    t.index ["user_id"], name: "index_account_memberships_on_user_id"
+  end
 
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
@@ -192,6 +204,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_01_042103) do
     t.index ["project_id"], name: "index_issues_on_project_id"
   end
 
+  create_table "project_memberships", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "project_id", null: false
+    t.integer "role", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["project_id", "role"], name: "index_project_memberships_on_project_id_and_role"
+    t.index ["project_id"], name: "index_project_memberships_on_project_id"
+    t.index ["user_id", "project_id"], name: "index_project_memberships_on_user_id_and_project_id", unique: true
+    t.index ["user_id"], name: "index_project_memberships_on_user_id"
+  end
+
   create_table "projects", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
@@ -216,16 +240,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_01_042103) do
     t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
   end
 
-  create_table "roles", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "name"
-    t.bigint "resource_id"
-    t.string "resource_type"
-    t.datetime "updated_at", null: false
-    t.index ["name", "resource_type", "resource_id"], name: "index_roles_on_name_and_resource_type_and_resource_id", unique: true
-    t.index ["resource_type", "resource_id"], name: "index_roles_on_resource"
-  end
-
   create_table "users", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
@@ -239,14 +253,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_01_042103) do
     t.index ["account_id"], name: "index_users_on_account_id"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
-  end
-
-  create_table "users_roles", id: false, force: :cascade do |t|
-    t.bigint "role_id", null: false
-    t.bigint "user_id", null: false
-    t.index ["role_id"], name: "index_users_roles_on_role_id"
-    t.index ["user_id", "role_id"], name: "index_users_roles_on_user_id_and_role_id", unique: true
-    t.index ["user_id"], name: "index_users_roles_on_user_id"
   end
 
   create_table "workflow_states", force: :cascade do |t|
@@ -267,6 +273,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_01_042103) do
     t.index ["temporal_workflow_id"], name: "index_workflow_states_on_temporal_workflow_id", unique: true
   end
 
+  add_foreign_key "account_memberships", "accounts"
+  add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
@@ -274,11 +282,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_01_042103) do
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
+  add_foreign_key "project_memberships", "projects"
+  add_foreign_key "project_memberships", "users"
   add_foreign_key "projects", "accounts"
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "users", "accounts"
-  add_foreign_key "users_roles", "roles"
-  add_foreign_key "users_roles", "users"
   add_foreign_key "workflow_states", "projects"
 end

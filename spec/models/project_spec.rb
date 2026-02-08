@@ -7,6 +7,8 @@ RSpec.describe Project do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:github_token) }
     it { is_expected.to belong_to(:created_by).class_name("User").optional }
+    it { is_expected.to have_many(:project_memberships).dependent(:destroy) }
+    it { is_expected.to have_many(:members).through(:project_memberships).source(:user) }
     it { is_expected.to have_many(:issues).dependent(:destroy) }
     it { is_expected.to have_many(:agent_runs).dependent(:destroy) }
     it { is_expected.to have_many(:workflow_states).dependent(:destroy) }
