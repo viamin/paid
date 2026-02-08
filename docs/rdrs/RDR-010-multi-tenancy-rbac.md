@@ -121,11 +121,8 @@ class ProjectPolicy < ApplicationPolicy
     user.has_any_role?(:owner, :admin, record.account)
   end
 
-  class Scope < Scope
-    def resolve
-      scope.where(account: user.account)
-    end
-  end
+  # Scope is inherited from ApplicationPolicy::Scope, which already
+  # scopes by account_id — no need to redefine it here.
 end
 ```
 
@@ -371,9 +368,11 @@ class User < ApplicationRecord
     # Use a per-account lock to avoid race conditions when deciding the owner
     account.with_lock do
       # Rely on the DB default role (viewer) for all users
+      # Ensure every user has an AccountMembership row so has_role?/has_any_role? work correctly
+      account_memberships.find_or_create_by!(account: account)
 
       # Promote only the very first user in the account to owner, safely under the lock
-      first_user_id = account.users.order(:created_at).limit(1).pluck(:id).first
+      first_user_id = account.users.order(:created_at, :id).limit(1).pluck(:id).first
       add_role(:owner, account) if first_user_id == id
     end
   end
