@@ -1,0 +1,81 @@
+<%= turbo_frame_tag "workflow-status" do %>
+  <div class="space-y-4">
+    <div class="border rounded-lg p-4">
+      <div class="flex justify-between items-center">
+        <div>
+          <h3 class="font-semibold text-gray-900">GitHub Polling</h3>
+          <p class="text-sm text-gray-600">Monitoring for labeled issues</p>
+        </div>
+        <div class="flex items-center space-x-4">
+          <% if @poll_workflow&.running? %>
+            <span class="flex items-center text-green-600">
+              <span class="animate-pulse mr-2">&#9679;</span>
+              Active
+            </span>
+          <% elsif @poll_workflow %>
+            <span class="text-yellow-600"><%= @poll_workflow.status.capitalize %></span>
+          <% else %>
+            <span class="text-gray-500">Not started</span>
+          <% end %>
+
+          <a href="http://localhost:8080/namespaces/default/workflows/github-poll-<%= @project.id %>"
+             target="_blank"
+             rel="noopener noreferrer"
+             class="text-indigo-600 hover:text-indigo-900 text-sm">
+            View in Temporal UI &rarr;
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <% if @recent_workflows.any? %>
+      <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+        <table class="min-w-full divide-y divide-gray-300">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Type</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Started</th>
+              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Duration</th>
+              <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                <span class="sr-only">Details</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% @recent_workflows.each do |workflow| %>
+              <tr>
+                <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm text-gray-900 sm:pl-6"><%= workflow.workflow_type %></td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm">
+                  <span class="<%= workflow_status_class(workflow.status) %> inline-flex items-center rounded-md px-2 py-1 text-xs font-medium">
+                    <%= workflow.status.capitalize %>
+                  </span>
+                </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                  <%= workflow.started_at ? time_ago_in_words(workflow.started_at) + " ago" : "-" %>
+                </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                  <%= workflow_duration(workflow) %>
+                </td>
+                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                  <a href="http://localhost:8080/namespaces/default/workflows/<%= workflow.temporal_workflow_id %>"
+                     target="_blank"
+                     rel="noopener noreferrer"
+                     class="text-indigo-600 hover:text-indigo-900">
+                    Details &rarr;
+                  </a>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <p class="text-gray-600 text-sm">No workflow executions yet.</p>
+    <% end %>
+  </div>
+
+  <% if @poll_workflow&.running? || @recent_workflows.any?(&:running?) %>
+    <meta http-equiv="refresh" content="5">
+  <% end %>
+<% end %>
