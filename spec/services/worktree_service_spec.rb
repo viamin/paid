@@ -202,30 +202,30 @@ RSpec.describe WorktreeService do
     end
 
     context "when worktree directory is missing" do
+      let(:git_success) { instance_double(Process::Status, success?: true) }
+
       before do
         FileUtils.rm_rf(worktree_dir)
+        allow(Open3).to receive(:capture3).and_return([ "", "", git_success ])
       end
 
       it "still marks the worktree as cleaned" do
-        allow(service).to receive(:run_git)
-
         service.remove_worktree(agent_run)
 
         expect(worktree.reload.status).to eq("cleaned")
       end
 
       it "skips git worktree remove but still cleans up branch" do
-        expect(service).not_to receive(:run_git).with(
-          "worktree", "remove", anything, anything,
-          chdir: anything
-        )
-        expect(service).to receive(:run_git).with(
-          "branch", "-D", "paid/test-branch",
-          chdir: repo_path,
-          raise_on_error: false
-        )
-
         service.remove_worktree(agent_run)
+
+        expect(Open3).not_to have_received(:capture3).with(
+          "git", "worktree", "remove", anything, anything,
+          hash_including(:chdir)
+        )
+        expect(Open3).to have_received(:capture3).with(
+          "git", "branch", "-D", "paid/test-branch",
+          chdir: repo_path
+        )
       end
     end
 
