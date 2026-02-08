@@ -51,7 +51,10 @@ module Workflows
         )
 
         unless agent_result[:success]
-          raise "Agent execution failed"
+          raise Temporalio::Error::ApplicationError.new(
+            "Agent execution failed",
+            type: "AgentExecutionFailed"
+          )
         end
 
         if agent_result[:has_changes]
@@ -109,7 +112,10 @@ module Workflows
           )
         rescue => e
           Temporalio::Workflow.logger.warn(
-            "CleanupContainerActivity failed: #{e.message}"
+            message: "agent_execution.cleanup_container_failed",
+            agent_run_id: agent_run_id,
+            error_class: e.class.name,
+            error: e.message
           )
         end
 
@@ -122,7 +128,10 @@ module Workflows
           )
         rescue => e
           Temporalio::Workflow.logger.warn(
-            "CleanupWorktreeActivity failed: #{e.message}"
+            message: "agent_execution.cleanup_worktree_failed",
+            agent_run_id: agent_run_id,
+            error_class: e.class.name,
+            error: e.message
           )
         end
       end

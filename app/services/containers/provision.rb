@@ -219,6 +219,16 @@ module Containers
       false
     end
 
+    # Attaches an existing Docker container to this service instance.
+    # Used by .reconnect to rehydrate container state without reaching into ivars.
+    #
+    # @param container [Docker::Container] The existing container
+    # @return [self]
+    def with_existing_container(container)
+      @container = container
+      self
+    end
+
     # Reconnects to an existing container by its Docker ID.
     # Used to rehydrate container state across Temporal activities.
     #
@@ -228,9 +238,8 @@ module Containers
     # @return [Provision] The reconnected service instance
     # @raise [ProvisionError] When container cannot be found
     def self.reconnect(agent_run:, container_id:, worktree_path:)
-      service = new(agent_run: agent_run, worktree_path: worktree_path || "")
-      service.instance_variable_set(:@container, Docker::Container.get(container_id))
-      service
+      container = Docker::Container.get(container_id)
+      new(agent_run: agent_run, worktree_path: worktree_path || "").with_existing_container(container)
     rescue Docker::Error::NotFoundError
       raise ProvisionError, "Container #{container_id} not found"
     rescue Docker::Error::DockerError => e
