@@ -39,6 +39,9 @@ gem "temporalio"
 # Docker API client [https://github.com/upserve/docker-api]
 gem "docker-api"
 
+# Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
+gem "agent-harness"
+
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[windows jruby]
 
