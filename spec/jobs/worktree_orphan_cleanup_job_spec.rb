@@ -27,9 +27,23 @@ RSpec.describe WorktreeOrphanCleanupJob do
 
       allow(Dir).to receive(:exist?).and_call_original
       allow(Dir).to receive(:exist?).with(repo_path).and_return(true)
-      expect(job).to receive(:system).with("git", "-C", repo_path, "worktree", "prune")
+      expect(job).to receive(:system).with("git", "-C", repo_path, "worktree", "prune", exception: false)
 
       job.perform
+    end
+
+    it "marks cleanup_failed when worktree path exists but repo path is missing" do
+      completed_run = create(:agent_run, :completed, project: project)
+      orphan = create(:worktree, project: project, agent_run: completed_run)
+
+      allow(job).to receive(:worktree_repo_path).and_return("/nonexistent")
+      allow(Dir).to receive(:exist?).and_call_original
+      allow(Dir).to receive(:exist?).with("/nonexistent").and_return(false)
+      allow(Dir).to receive(:exist?).with(orphan.path).and_return(true)
+
+      job.perform
+
+      expect(orphan.reload.status).to eq("cleanup_failed")
     end
 
     it "handles errors for individual worktrees gracefully" do
