@@ -23,6 +23,9 @@ class Project < ApplicationRecord
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
 
+  after_create :start_github_polling
+  before_destroy :stop_github_polling
+
   def full_name
     "#{owner}/#{repo}"
   end
@@ -57,6 +60,20 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def start_github_polling
+    return unless active?
+
+    ProjectWorkflowManager.start_polling(self)
+  rescue => e
+    Rails.logger.error(message: "github_sync.start_polling_failed", project_id: id, error: e.message)
+  end
+
+  def stop_github_polling
+    ProjectWorkflowManager.stop_polling(self)
+  rescue => e
+    Rails.logger.error(message: "github_sync.stop_polling_failed", project_id: id, error: e.message)
+  end
 
   def github_token_belongs_to_same_account
     return if github_token.account_id == account_id
