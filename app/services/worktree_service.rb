@@ -62,7 +62,7 @@ class WorktreeService
       FileUtils.mkdir_p(worktrees_path)
 
       run_git(
-        "worktree add -b #{branch_name} #{worktree_path} origin/#{project.default_branch}",
+        "worktree", "add", "-b", branch_name, worktree_path, "origin/#{project.default_branch}",
         chdir: project_repo_path
       )
     end
@@ -102,13 +102,13 @@ class WorktreeService
 
     @mutex.synchronize do
       run_git(
-        "worktree remove #{agent_run.worktree_path} --force",
+        "worktree", "remove", agent_run.worktree_path, "--force",
         chdir: project_repo_path
       )
 
       unless worktree.pushed?
         run_git(
-          "branch -D #{agent_run.branch_name}",
+          "branch", "-D", agent_run.branch_name,
           chdir: project_repo_path,
           raise_on_error: false
         )
@@ -131,7 +131,7 @@ class WorktreeService
   # @return [String] The 40-character SHA
   def current_commit_sha
     run_git(
-      "rev-parse origin/#{project.default_branch}",
+      "rev-parse", "origin/#{project.default_branch}",
       chdir: project_repo_path
     ).strip
   end
@@ -142,11 +142,11 @@ class WorktreeService
   # @return [String] The result commit SHA
   def push_branch(agent_run)
     run_git(
-      "push origin #{agent_run.branch_name}",
+      "push", "origin", agent_run.branch_name,
       chdir: agent_run.worktree_path
     )
 
-    result_sha = run_git("rev-parse HEAD", chdir: agent_run.worktree_path).strip
+    result_sha = run_git("rev-parse", "HEAD", chdir: agent_run.worktree_path).strip
     agent_run.update!(result_commit_sha: result_sha)
 
     worktree = agent_run.worktree
@@ -167,13 +167,13 @@ class WorktreeService
       next unless File.mtime(path) < older_than.ago
 
       run_git(
-        "worktree remove #{path} --force",
+        "worktree", "remove", path, "--force",
         chdir: project_repo_path,
         raise_on_error: false
       )
     end
 
-    run_git("worktree prune", chdir: project_repo_path, raise_on_error: false)
+    run_git("worktree", "prune", chdir: project_repo_path, raise_on_error: false)
   end
 
   private
@@ -190,7 +190,7 @@ class WorktreeService
     FileUtils.mkdir_p(File.dirname(project_repo_path))
 
     clone_url = authenticated_clone_url
-    run_git("clone --bare #{clone_url} #{project_repo_path}")
+    run_git("clone", "--bare", clone_url, project_repo_path)
 
     project.github_token.touch_last_used!
   rescue Error
@@ -201,8 +201,8 @@ class WorktreeService
 
   def fetch_latest
     remote_url = authenticated_clone_url
-    run_git("remote set-url origin #{remote_url}", chdir: project_repo_path, raise_on_error: false)
-    run_git("fetch --all --prune", chdir: project_repo_path)
+    run_git("remote", "set-url", "origin", remote_url, chdir: project_repo_path, raise_on_error: false)
+    run_git("fetch", "--all", "--prune", chdir: project_repo_path)
 
     project.github_token.touch_last_used!
   end
@@ -211,14 +211,14 @@ class WorktreeService
     "https://x-access-token:#{project.github_token.token}@github.com/#{project.full_name}.git"
   end
 
-  def run_git(command, chdir: nil, raise_on_error: true)
+  def run_git(*args, chdir: nil, raise_on_error: true)
     options = {}
     options[:chdir] = chdir if chdir
 
-    stdout, stderr, status = Open3.capture3("git #{command}", **options)
+    stdout, stderr, status = Open3.capture3("git", *args, **options)
 
     if !status.success? && raise_on_error
-      raise Error, "Git command failed: #{command}\n#{stderr}"
+      raise Error, "Git command failed: git #{args.join(" ")}\n#{stderr}"
     end
 
     stdout

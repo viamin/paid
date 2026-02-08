@@ -7,10 +7,12 @@ RSpec.describe Activities::PushBranchActivity do
   let(:agent_run) { create(:agent_run, :with_git_context, project: project) }
   let(:activity) { described_class.new }
   let(:commit_sha) { "abc123def456789012345678901234567890abcd" }
+  let(:worktree_service) { instance_double(WorktreeService) }
 
   describe "#execute" do
     it "pushes the branch and returns commit SHA" do
-      expect_any_instance_of(WorktreeService).to receive(:push_branch)
+      allow(WorktreeService).to receive(:new).with(project).and_return(worktree_service)
+      expect(worktree_service).to receive(:push_branch)
         .with(agent_run)
         .and_return(commit_sha)
 

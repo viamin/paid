@@ -7,10 +7,12 @@ RSpec.describe Activities::CreateWorktreeActivity do
   let(:agent_run) { create(:agent_run, project: project) }
   let(:activity) { described_class.new }
   let(:worktree_path) { "/var/paid/workspaces/#{project.account_id}/#{project.id}/worktrees/test" }
+  let(:worktree_service) { instance_double(WorktreeService) }
 
   describe "#execute" do
     it "creates a worktree for the agent run" do
-      expect_any_instance_of(WorktreeService).to receive(:create_worktree)
+      allow(WorktreeService).to receive(:new).with(project).and_return(worktree_service)
+      expect(worktree_service).to receive(:create_worktree)
         .with(agent_run)
         .and_return(worktree_path)
 

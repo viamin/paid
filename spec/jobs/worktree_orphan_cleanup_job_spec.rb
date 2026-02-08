@@ -11,7 +11,7 @@ RSpec.describe WorktreeOrphanCleanupJob do
       completed_run = create(:agent_run, :completed, project: project)
       orphan = create(:worktree, project: project, agent_run: completed_run)
 
-      allow_any_instance_of(described_class).to receive(:worktree_repo_path).and_return("/nonexistent")
+      allow(job).to receive(:worktree_repo_path).and_return("/nonexistent")
       allow(Dir).to receive(:exist?).and_call_original
       allow(Dir).to receive(:exist?).with("/nonexistent").and_return(false)
       allow(Dir).to receive(:exist?).with(orphan.path).and_return(false)
@@ -36,7 +36,7 @@ RSpec.describe WorktreeOrphanCleanupJob do
       completed_run = create(:agent_run, :completed, project: project)
       create(:worktree, project: project, agent_run: completed_run)
 
-      allow_any_instance_of(described_class).to receive(:cleanup_worktree).and_raise(StandardError, "cleanup error")
+      allow(job).to receive(:cleanup_worktree).and_raise(StandardError, "cleanup error")
       allow(Dir).to receive(:exist?).and_return(false)
 
       expect { job.perform }.not_to raise_error

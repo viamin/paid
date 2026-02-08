@@ -100,7 +100,10 @@ RSpec.describe WorktreeService do
 
     it "runs git worktree add command" do
       expect(service).to receive(:run_git).with(
-        a_string_matching(/worktree add -b paid\/paid-agent-.*origin\/#{project.default_branch}/),
+        "worktree", "add", "-b",
+        a_string_matching(/\Apaid\/paid-agent-/),
+        a_string_matching(/\A#{Regexp.escape(worktrees_path)}/),
+        "origin/#{project.default_branch}",
         chdir: repo_path
       )
 
@@ -115,7 +118,7 @@ RSpec.describe WorktreeService do
 
     it "raises WorktreeError on git failure" do
       allow(service).to receive(:run_git)
-        .with(a_string_matching(/worktree add/), anything)
+        .with("worktree", "add", "-b", anything, anything, anything, chdir: anything)
         .and_raise(described_class::Error, "git failed")
 
       expect { service.create_worktree(agent_run) }.to raise_error(described_class::Error)
@@ -154,11 +157,11 @@ RSpec.describe WorktreeService do
 
     it "removes the worktree via git" do
       expect(service).to receive(:run_git).with(
-        "worktree remove #{worktree_dir} --force",
+        "worktree", "remove", worktree_dir, "--force",
         chdir: repo_path
       )
       expect(service).to receive(:run_git).with(
-        "branch -D paid/test-branch",
+        "branch", "-D", "paid/test-branch",
         chdir: repo_path,
         raise_on_error: false
       )
@@ -179,11 +182,12 @@ RSpec.describe WorktreeService do
       worktree.mark_pushed!
 
       expect(service).to receive(:run_git).with(
-        "worktree remove #{worktree_dir} --force",
+        "worktree", "remove", worktree_dir, "--force",
         chdir: repo_path
       )
       expect(service).not_to receive(:run_git).with(
-        a_string_matching(/branch -D/), anything
+        "branch", "-D", anything,
+        chdir: anything, raise_on_error: anything
       )
 
       service.remove_worktree(agent_run)
@@ -222,7 +226,7 @@ RSpec.describe WorktreeService do
     it "returns the SHA of the default branch" do
       expected_sha = "abc123def456789012345678901234567890abcd"
       allow(service).to receive(:run_git)
-        .with("rev-parse origin/#{project.default_branch}", chdir: repo_path)
+        .with("rev-parse", "origin/#{project.default_branch}", chdir: repo_path)
         .and_return("#{expected_sha}\n")
 
       expect(service.current_commit_sha).to eq(expected_sha)
@@ -248,9 +252,9 @@ RSpec.describe WorktreeService do
 
     it "pushes the branch to remote" do
       expect(service).to receive(:run_git)
-        .with("push origin paid/test-branch", chdir: worktree_dir)
+        .with("push", "origin", "paid/test-branch", chdir: worktree_dir)
       allow(service).to receive(:run_git)
-        .with("rev-parse HEAD", chdir: worktree_dir)
+        .with("rev-parse", "HEAD", chdir: worktree_dir)
         .and_return("#{result_sha}\n")
 
       service.push_branch(agent_run)
@@ -258,9 +262,9 @@ RSpec.describe WorktreeService do
 
     it "updates agent_run with result commit SHA" do
       allow(service).to receive(:run_git)
-        .with("push origin paid/test-branch", chdir: worktree_dir)
+        .with("push", "origin", "paid/test-branch", chdir: worktree_dir)
       allow(service).to receive(:run_git)
-        .with("rev-parse HEAD", chdir: worktree_dir)
+        .with("rev-parse", "HEAD", chdir: worktree_dir)
         .and_return("#{result_sha}\n")
 
       service.push_branch(agent_run)
@@ -270,9 +274,9 @@ RSpec.describe WorktreeService do
 
     it "marks the worktree as pushed" do
       allow(service).to receive(:run_git)
-        .with("push origin paid/test-branch", chdir: worktree_dir)
+        .with("push", "origin", "paid/test-branch", chdir: worktree_dir)
       allow(service).to receive(:run_git)
-        .with("rev-parse HEAD", chdir: worktree_dir)
+        .with("rev-parse", "HEAD", chdir: worktree_dir)
         .and_return("#{result_sha}\n")
 
       service.push_branch(agent_run)
@@ -282,9 +286,9 @@ RSpec.describe WorktreeService do
 
     it "returns the result SHA" do
       allow(service).to receive(:run_git)
-        .with("push origin paid/test-branch", chdir: worktree_dir)
+        .with("push", "origin", "paid/test-branch", chdir: worktree_dir)
       allow(service).to receive(:run_git)
-        .with("rev-parse HEAD", chdir: worktree_dir)
+        .with("rev-parse", "HEAD", chdir: worktree_dir)
         .and_return("#{result_sha}\n")
 
       expect(service.push_branch(agent_run)).to eq(result_sha)
@@ -314,12 +318,12 @@ RSpec.describe WorktreeService do
 
       it "removes stale worktrees" do
         expect(service).to receive(:run_git).with(
-          "worktree remove #{stale_dir} --force",
+          "worktree", "remove", stale_dir, "--force",
           chdir: repo_path,
           raise_on_error: false
         )
         expect(service).to receive(:run_git).with(
-          "worktree prune",
+          "worktree", "prune",
           chdir: repo_path,
           raise_on_error: false
         )
@@ -331,7 +335,7 @@ RSpec.describe WorktreeService do
         allow(service).to receive(:run_git)
 
         expect(service).not_to receive(:run_git).with(
-          "worktree remove #{fresh_dir} --force",
+          "worktree", "remove", fresh_dir, "--force",
           chdir: repo_path,
           raise_on_error: false
         )
