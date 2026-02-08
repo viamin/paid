@@ -15,8 +15,8 @@ This document describes the database schema for Paid. The schema is designed aro
 │       │                 │                 │                  │              │
 │       │                 ▼                 ▼                  ▼              │
 │       │           ┌──────────┐      ┌──────────┐      ┌──────────┐        │
-│       │           │  Role    │      │  Style   │      │ AgentRun │        │
-│       │           │ (rolify) │      │  Guide   │      │          │        │
+│       │           │ Account  │      │  Style   │      │ AgentRun │        │
+│       │           │Membership│      │  Guide   │      │          │        │
 │       │           └──────────┘      └──────────┘      └──────────┘        │
 │       │                                                      │              │
 │       ▼                                                      ▼              │
@@ -92,9 +92,9 @@ CREATE UNIQUE INDEX idx_accounts_slug ON accounts(slug);
 ```ruby
 # app/models/account.rb
 class Account < ApplicationRecord
-  resourcify  # rolify: allows roles to be scoped to accounts
-
   has_many :users, dependent: :destroy
+  has_many :account_memberships, dependent: :destroy
+  has_many :members, through: :account_memberships, source: :user
   has_many :projects, dependent: :destroy
   has_many :github_tokens, dependent: :destroy
   has_many :prompts, -> { where(project_id: nil) }  # Account-level prompts
@@ -150,16 +150,18 @@ CREATE INDEX idx_users_active ON users(account_id, active) WHERE active = TRUE;
 ```ruby
 # app/models/user.rb
 class User < ApplicationRecord
-  rolify  # Enable role management
-
   belongs_to :account
+  has_many :account_memberships, dependent: :destroy
+  has_many :member_accounts, through: :account_memberships, source: :account
+  has_many :project_memberships, dependent: :destroy
+  has_many :member_projects, through: :project_memberships, source: :project
   has_many :github_tokens
 
   validates :email, presence: true, uniqueness: true
   validates :account, presence: true
 
   # Devise for authentication
-  # devise :database_authenticatable, :registerable, :recoverable, :rememberable, :validatable
+  devise :database_authenticatable, :registerable, :recoverable, :rememberable, :validatable
 end
 ```
 
@@ -167,38 +169,74 @@ end
 
 ## Authorization (RBAC)
 
-Paid uses [Rolify](https://github.com/RolifyCommunity/rolify) for role management and [Pundit](https://github.com/varvet/pundit) for authorization policies.
+Paid uses explicit membership tables for role management and [Pundit](https://github.com/varvet/pundit) for authorization policies. This approach replaces the traditional Rolify gem with simpler, type-safe role management using Rails enums.
 
-### roles (Rolify)
+### Why Membership Tables Instead of Rolify?
 
-Rolify creates this table automatically.
+1. **Type-safe enums** - Role values are validated at the database level
+2. **Simpler queries** - No polymorphic lookups required
+3. **Better compatibility** - No circular require issues with Ruby 3.4+
+4. **Explicit foreign keys** - Referential integrity enforced at database level
+5. **Cleaner API** - Role methods defined directly on User model
+
+### account_memberships
+
+Represents a user's role within an account. Each user can have exactly one role per account.
 
 ```sql
-CREATE TABLE roles (
+CREATE TABLE account_memberships (
   id            BIGSERIAL PRIMARY KEY,
-  name          VARCHAR(255) NOT NULL,
-  resource_type VARCHAR(255),          -- Polymorphic: 'Account', 'Project', etc.
-  resource_id   BIGINT,                -- ID of the resource (NULL = global role)
+  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  account_id    BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  role          INTEGER NOT NULL DEFAULT 0,  -- 0=viewer, 1=member, 2=admin, 3=owner
   created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_roles_unique ON roles(name, resource_type, resource_id);
-CREATE INDEX idx_roles_name ON roles(name);
-CREATE INDEX idx_roles_resource ON roles(resource_type, resource_id);
+CREATE UNIQUE INDEX idx_account_memberships_user_account ON account_memberships(user_id, account_id);
+CREATE INDEX idx_account_memberships_account_role ON account_memberships(account_id, role);
 ```
 
-### users_roles (Rolify Join Table)
+**Rails Model:**
+
+```ruby
+# app/models/account_membership.rb
+class AccountMembership < ApplicationRecord
+  belongs_to :user
+  belongs_to :account
+
+  enum :role, { viewer: 0, member: 1, admin: 2, owner: 3 }, validate: true
+end
+```
+
+### project_memberships
+
+Represents a user's role within a specific project. Allows fine-grained access control independent of account-level roles.
 
 ```sql
-CREATE TABLE users_roles (
-  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role_id BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-  PRIMARY KEY (user_id, role_id)
+CREATE TABLE project_memberships (
+  id            BIGSERIAL PRIMARY KEY,
+  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  project_id    BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  role          INTEGER NOT NULL DEFAULT 0,  -- 0=viewer, 1=member, 2=admin
+  created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_users_roles_user ON users_roles(user_id);
-CREATE INDEX idx_users_roles_role ON users_roles(role_id);
+CREATE UNIQUE INDEX idx_project_memberships_user_project ON project_memberships(user_id, project_id);
+CREATE INDEX idx_project_memberships_project_role ON project_memberships(project_id, role);
+```
+
+**Rails Model:**
+
+```ruby
+# app/models/project_membership.rb
+class ProjectMembership < ApplicationRecord
+  belongs_to :user
+  belongs_to :project
+
+  enum :role, { viewer: 0, member: 1, admin: 2 }, validate: true
+end
 ```
 
 ### Defined Roles
@@ -998,9 +1036,11 @@ Project.find(params[:id])
 
 ```
 Account
-├── Users (with roles via Rolify)
+├── Users
+│   └── AccountMemberships (role: viewer|member|admin|owner)
 ├── GitHub Tokens
 ├── Projects
+│   ├── ProjectMemberships (role: viewer|member|admin)
 │   ├── Issues
 │   ├── Agent Runs
 │   ├── Style Guides (project-specific)
@@ -1064,7 +1104,7 @@ Rails migrations should be created in order:
 
 1. Accounts (tenant foundation)
 2. Users (authentication, belongs to account)
-3. Roles, UsersRoles (Rolify setup)
+3. AccountMemberships, ProjectMemberships (RBAC)
 4. GithubTokens (belongs to account)
 5. Projects, Issues (GitHub integration)
 6. Prompts, PromptVersions (prompt system foundation)
@@ -1076,10 +1116,28 @@ Rails migrations should be created in order:
 12. ModelSelections, ModelOverrides (model system)
 13. WorkflowStates (Temporal integration)
 
-### Rolify Setup
+### Membership Setup
 
-```bash
-rails generate rolify Role User
+The membership tables are created via standard Rails migrations:
+
+```ruby
+# db/migrate/xxx_create_account_memberships.rb
+create_table :account_memberships do |t|
+  t.references :user, null: false, foreign_key: true
+  t.references :account, null: false, foreign_key: true
+  t.integer :role, null: false, default: 0
+  t.timestamps
+end
+add_index :account_memberships, [:user_id, :account_id], unique: true
+
+# db/migrate/xxx_create_project_memberships.rb
+create_table :project_memberships do |t|
+  t.references :user, null: false, foreign_key: true
+  t.references :project, null: false, foreign_key: true
+  t.integer :role, null: false, default: 0
+  t.timestamps
+end
+add_index :project_memberships, [:user_id, :project_id], unique: true
 ```
 
-This generates the roles and users_roles tables automatically.
+The User model provides a compatible API with the same methods (`add_role`, `has_role?`, `has_any_role?`) that work transparently with the new membership tables.

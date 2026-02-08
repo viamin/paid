@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
 class Project < ApplicationRecord
-  resourcify
-
   belongs_to :account
   belongs_to :github_token
   belongs_to :created_by, class_name: "User", optional: true
 
+  has_many :project_memberships, dependent: :destroy
+  has_many :members, through: :project_memberships, source: :user
   has_many :issues, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
   has_many :workflow_states, dependent: :destroy
