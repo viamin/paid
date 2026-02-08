@@ -1,9 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+AUTOFIX=false
+for arg in "$@"; do
+  case "$arg" in
+    -A) AUTOFIX=true ;;
+    *)
+      echo "Usage: bin/lint [-A]"
+      echo "  -A  Auto-fix violations (rubocop -A, markdownlint --fix)"
+      exit 1
+      ;;
+  esac
+done
+
 RUBOCOP_ARGS=""
+MARKDOWNLINT_ARGS=""
+
 if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
   RUBOCOP_ARGS="-f github"
+fi
+
+if [ "$AUTOFIX" = true ]; then
+  RUBOCOP_ARGS="$RUBOCOP_ARGS -A"
+  MARKDOWNLINT_ARGS="--fix"
 fi
 
 echo "== Style: RuboCop =="
@@ -19,6 +38,6 @@ echo "== Security: Yarn audit =="
 yarn audit
 
 echo "== Markdown: markdownlint =="
-npx markdownlint-cli2 '**/*.md' '#node_modules' '#vendor'
+npx markdownlint-cli2 $MARKDOWNLINT_ARGS '**/*.md' '#node_modules' '#vendor'
 
 echo "All checks passed."
