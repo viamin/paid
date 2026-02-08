@@ -15,8 +15,8 @@ module Activities
 
       issue.update!(paid_state: "completed")
 
-      post_pr_comment(client, project, issue, pull_request_url)
-      remove_trigger_labels(client, project, issue)
+      post_pr_comment(client, project, issue, pull_request_url, agent_run_id)
+      remove_trigger_labels(client, project, issue, agent_run_id)
 
       agent_run.log!("system", "Issue ##{issue.github_number} updated with PR link")
 
@@ -32,7 +32,7 @@ module Activities
 
     private
 
-    def post_pr_comment(client, project, issue, pull_request_url)
+    def post_pr_comment(client, project, issue, pull_request_url, agent_run_id)
       return if pull_request_url.blank?
 
       client.add_comment(
@@ -43,12 +43,13 @@ module Activities
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.issue_comment_failed",
+        agent_run_id: agent_run_id,
         issue_number: issue.github_number,
         error: e.message
       )
     end
 
-    def remove_trigger_labels(client, project, issue)
+    def remove_trigger_labels(client, project, issue, agent_run_id)
       %w[build plan].each do |stage|
         label = project.label_for_stage(stage)
         next unless label && issue.has_label?(label)
@@ -58,6 +59,7 @@ module Activities
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.remove_trigger_label_failed",
+        agent_run_id: agent_run_id,
         issue_number: issue.github_number,
         error: e.message
       )
