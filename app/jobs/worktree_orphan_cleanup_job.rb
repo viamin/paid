@@ -44,20 +44,40 @@ class WorktreeOrphanCleanupJob < ApplicationJob
 
   def cleanup_worktree(worktree)
     repo_path = worktree_repo_path(worktree.project)
+    worktree_remove_failed = false
 
-    if worktree.path.present? && Dir.exist?(worktree.path) && Dir.exist?(repo_path)
-      system("git", "-C", repo_path, "worktree", "remove", worktree.path, "--force", exception: false)
+    WorktreeService.mutex_for(repo_path).synchronize do
+      if worktree.path.present? && Dir.exist?(worktree.path) && Dir.exist?(repo_path)
+        unless system("git", "-C", repo_path, "worktree", "remove", worktree.path, "--force", exception: false)
+          Rails.logger.warn(
+            message: "worktree_cleanup.worktree_remove_failed",
+            worktree_id: worktree.id,
+            path: worktree.path
+          )
+          worktree_remove_failed = true
+        end
+      end
+
+      if !worktree.pushed? && worktree.branch_name.present? && Dir.exist?(repo_path)
+        unless system("git", "-C", repo_path, "branch", "-D", worktree.branch_name, exception: false)
+          Rails.logger.warn(
+            message: "worktree_cleanup.branch_delete_failed",
+            worktree_id: worktree.id,
+            branch_name: worktree.branch_name
+          )
+        end
+      end
+
+      if Dir.exist?(repo_path)
+        prune_worktree_refs(worktree.project)
+      end
     end
 
-    if !worktree.pushed? && worktree.branch_name.present? && Dir.exist?(repo_path)
-      system("git", "-C", repo_path, "branch", "-D", worktree.branch_name, exception: false)
+    if worktree_remove_failed
+      worktree.mark_cleanup_failed!
+    else
+      worktree.mark_cleaned!
     end
-
-    if Dir.exist?(repo_path)
-      prune_worktree_refs(worktree.project)
-    end
-
-    worktree.mark_cleaned!
   end
 
   def prune_worktree_refs(project)
@@ -66,7 +86,7 @@ class WorktreeOrphanCleanupJob < ApplicationJob
 
     unless system("git", "-C", repo_path, "worktree", "prune")
       Rails.logger.warn(
-        message: "worktree_cleanup.prune_failed",
+        message: "worktree_cleanup.prune_command_failed",
         project_id: project.id,
         repo_path: repo_path
       )

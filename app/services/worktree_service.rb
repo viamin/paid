@@ -113,7 +113,7 @@ class WorktreeService
   def remove_worktree(agent_run)
     worktree = agent_run.worktree
     return unless worktree&.active?
-    return unless agent_run.worktree_path
+    return if agent_run.worktree_path.blank?
 
     @mutex.synchronize do
       if Dir.exist?(agent_run.worktree_path)
