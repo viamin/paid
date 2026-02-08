@@ -82,7 +82,7 @@ module Prompts
     def detect_language
       return project.detected_language if project.respond_to?(:detected_language) && project.detected_language.present?
 
-      # Infer from project name or repo conventions
+      # Default to Ruby when detected_language is unavailable
       "ruby"
     end
   end

@@ -383,19 +383,18 @@ RSpec.describe AgentRun do
         allow(AgentHarness).to receive(:send_message).and_return(response)
       end
 
-      it "delegates to AgentRuns::Execute" do
+      it "delegates to AgentRuns::Execute without timeout by default" do
         agent_run = create(:agent_run)
 
         expect(AgentRuns::Execute).to receive(:call).with(
           agent_run: agent_run,
-          prompt: "Fix the bug",
-          timeout: 600
+          prompt: "Fix the bug"
         ).and_call_original
 
         agent_run.execute_agent("Fix the bug")
       end
 
-      it "passes custom timeout" do
+      it "passes custom timeout when provided" do
         agent_run = create(:agent_run)
 
         expect(AgentRuns::Execute).to receive(:call).with(
