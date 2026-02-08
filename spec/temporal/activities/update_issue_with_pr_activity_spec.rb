@@ -4,18 +4,16 @@ require "rails_helper"
 
 RSpec.describe Activities::UpdateIssueWithPrActivity do
   let(:activity) { described_class.new }
-  let(:project) { create(:project) }
-  let(:issue) { create(:issue, :in_progress, project: project) }
+  let(:project) { create(:project, label_mappings: { "build" => "paid-build", "plan" => "paid-plan" }) }
+  let(:issue) { create(:issue, :in_progress, project: project, labels: [ "paid-build", "bug" ]) }
   let(:agent_run) { create(:agent_run, :with_issue, project: project, issue: issue) }
   let(:pr_url) { "https://github.com/owner/repo/pull/42" }
-  let(:github_client) { instance_double(Octokit::Client) }
-  let(:github_token) { instance_double(GithubToken, client: github_client) }
+  let(:github_client) { instance_double(GithubClient) }
 
   before do
-    allow(project).to receive(:github_token).and_return(github_token)
-    allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
-    allow(agent_run).to receive(:project).and_return(project)
+    allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:add_comment)
+    allow(github_client).to receive(:remove_label_from_issue)
   end
 
   describe "#execute" do
@@ -35,6 +33,32 @@ RSpec.describe Activities::UpdateIssueWithPrActivity do
       activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
     end
 
+    it "removes the triggering label from the issue" do
+      expect(github_client).to receive(:remove_label_from_issue).with(
+        project.full_name,
+        issue.github_number,
+        "paid-build"
+      )
+
+      activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+    end
+
+    it "does not remove labels that the issue does not have" do
+      expect(github_client).not_to receive(:remove_label_from_issue).with(
+        anything, anything, "paid-plan"
+      )
+
+      activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+    end
+
+    it "logs the issue update to agent run" do
+      activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+
+      log = agent_run.agent_run_logs.last
+      expect(log.log_type).to eq("system")
+      expect(log.content).to include("Issue ##{issue.github_number}")
+    end
+
     it "does not post a comment when pull_request_url is blank" do
       expect(github_client).not_to receive(:add_comment)
 
@@ -49,7 +73,6 @@ RSpec.describe Activities::UpdateIssueWithPrActivity do
 
     it "handles agent runs without an issue" do
       agent_run_no_issue = create(:agent_run, project: project)
-      allow(AgentRun).to receive(:find).with(agent_run_no_issue.id).and_return(agent_run_no_issue)
 
       result = activity.execute(agent_run_id: agent_run_no_issue.id, pull_request_url: pr_url)
 
@@ -57,16 +80,32 @@ RSpec.describe Activities::UpdateIssueWithPrActivity do
     end
 
     it "does not fail when GitHub comment fails" do
-      allow(github_client).to receive(:add_comment).and_raise(Octokit::Error)
+      allow(github_client).to receive(:add_comment)
+        .and_raise(GithubClient::ApiError.new("Comment failed"))
 
       expect {
         activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
       }.not_to raise_error
     end
 
-    it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
-      allow(AgentRun).to receive(:find).and_call_original
+    it "does not fail when label removal fails" do
+      allow(github_client).to receive(:remove_label_from_issue)
+        .and_raise(GithubClient::NotFoundError)
 
+      expect {
+        activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+      }.not_to raise_error
+    end
+
+    it "skips label removal when project has no label mappings" do
+      project.update!(label_mappings: {})
+
+      expect(github_client).not_to receive(:remove_label_from_issue)
+
+      activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+    end
+
+    it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect {
         activity.execute(agent_run_id: -1, pull_request_url: pr_url)
       }.to raise_error(ActiveRecord::RecordNotFound)

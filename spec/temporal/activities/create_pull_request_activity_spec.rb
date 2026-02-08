@@ -6,13 +6,14 @@ RSpec.describe Activities::CreatePullRequestActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
-  let(:agent_run) { create(:agent_run, :with_git_context, :with_issue, project: project, issue: issue) }
+  let(:agent_run) { create(:agent_run, :with_git_context, :with_issue, :with_metrics, project: project, issue: issue) }
   let(:github_client) { instance_double(GithubClient) }
-  let(:pr_response) { OpenStruct.new(html_url: "https://github.com/owner/repo/pull/42", number: 42) }
+  let(:pr_response) { Struct.new(:html_url, :number).new("https://github.com/owner/repo/pull/42", 42) }
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:create_pull_request).and_return(pr_response)
+    allow(github_client).to receive(:add_labels_to_issue)
   end
 
   describe "#execute" do
@@ -38,6 +39,57 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(agent_run.status).to eq("completed")
       expect(agent_run.pull_request_url).to eq("https://github.com/owner/repo/pull/42")
       expect(agent_run.pull_request_number).to eq(42)
+    end
+
+    it "adds the paid-generated label to the PR" do
+      expect(github_client).to receive(:add_labels_to_issue).with(
+        project.full_name, 42, [ "paid-generated" ]
+      )
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "logs the PR creation to agent run" do
+      activity.execute(agent_run_id: agent_run.id)
+
+      log = agent_run.agent_run_logs.last
+      expect(log.log_type).to eq("system")
+      expect(log.content).to include("https://github.com/owner/repo/pull/42")
+    end
+
+    it "includes agent run details in the PR body" do
+      expect(github_client).to receive(:create_pull_request).with(
+        anything,
+        hash_including(
+          body: a_string_including("Agent Run Details")
+            .and(including("claude_code"))
+            .and(including("Metrics"))
+            .and(including("Input tokens"))
+        )
+      ).and_return(pr_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "handles missing issue gracefully" do
+      agent_run_no_issue = create(:agent_run, :with_git_context, project: project)
+
+      expect(github_client).to receive(:create_pull_request).with(
+        anything,
+        hash_including(title: "Agent changes")
+      ).and_return(pr_response)
+
+      result = activity.execute(agent_run_id: agent_run_no_issue.id)
+      expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+    end
+
+    it "does not fail when label addition fails" do
+      allow(github_client).to receive(:add_labels_to_issue)
+        .and_raise(GithubClient::ApiError.new("Label not found"))
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.not_to raise_error
     end
 
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do

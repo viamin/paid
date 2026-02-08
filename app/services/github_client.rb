@@ -152,6 +152,16 @@ class GithubClient
     handle_errors { client.add_labels_to_an_issue(repo, number, labels) }
   end
 
+  # Adds a comment to an issue or pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @param body [String] Comment body (Markdown supported)
+  # @return [Sawyer::Resource] The created comment
+  def add_comment(repo, number, body)
+    handle_errors { client.add_comment(repo, number, body) }
+  end
+
   # Removes a label from an issue or pull request.
   #
   # @param repo [String] Repository in "owner/name" format
