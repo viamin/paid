@@ -10,13 +10,8 @@ module Activities
       project = Project.find(project_id)
       client = project.github_token.client
 
-      labels = project.label_mappings.values.compact
-      github_issues = client.issues(
-        project.full_name,
-        labels: labels,
-        state: "open",
-        per_page: 100
-      )
+      labels = project.label_mappings.values.compact_blank.uniq
+      github_issues = fetch_all_issues(client, project.full_name, labels)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
 
@@ -35,6 +30,30 @@ module Activities
     end
 
     private
+
+    def fetch_all_issues(client, repo_full_name, labels)
+      issues = []
+      page = 1
+
+      loop do
+        page_issues = client.issues(
+          repo_full_name,
+          labels: labels,
+          state: "open",
+          per_page: 100,
+          page: page
+        )
+
+        break if page_issues.empty?
+
+        issues.concat(page_issues)
+        break if page_issues.size < 100
+
+        page += 1
+      end
+
+      issues
+    end
 
     def sync_issue(project, github_issue)
       issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)

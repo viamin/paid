@@ -174,6 +174,57 @@ RSpec.describe Project do
     end
   end
 
+  describe "polling lifecycle hooks" do
+    before do
+      allow(ProjectWorkflowManager).to receive(:start_polling)
+      allow(ProjectWorkflowManager).to receive(:stop_polling)
+    end
+
+    describe "after_create_commit" do
+      it "starts polling for active projects" do
+        project = create(:project, active: true)
+
+        expect(ProjectWorkflowManager).to have_received(:start_polling).with(project)
+      end
+
+      it "does not start polling for inactive projects" do
+        create(:project, :inactive)
+
+        expect(ProjectWorkflowManager).not_to have_received(:start_polling)
+      end
+    end
+
+    describe "after_update_commit on active change" do
+      it "starts polling when activated" do
+        project = create(:project, :inactive)
+        allow(ProjectWorkflowManager).to receive(:start_polling)
+
+        project.activate!
+
+        expect(ProjectWorkflowManager).to have_received(:start_polling).with(project)
+      end
+
+      it "stops polling when deactivated" do
+        project = create(:project, active: true)
+
+        project.deactivate!
+
+        expect(ProjectWorkflowManager).to have_received(:stop_polling).with(project)
+      end
+
+      it "does not toggle polling when other attributes change" do
+        project = create(:project, active: true)
+        allow(ProjectWorkflowManager).to receive(:start_polling)
+
+        project.update!(name: "new-name")
+
+        expect(ProjectWorkflowManager).not_to have_received(:stop_polling)
+        # start_polling only called once (on create), not again on name update
+        expect(ProjectWorkflowManager).to have_received(:start_polling).once
+      end
+    end
+  end
+
   describe "label_mappings JSONB storage" do
     it "stores label mappings as JSONB" do
       mappings = {
