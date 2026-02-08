@@ -205,6 +205,16 @@ class AgentRun < ApplicationRecord
     end
   end
 
+  # Lazily generates and persists a proxy token for runs that were created
+  # before the proxy_token column existed. Returns the token.
+  def ensure_proxy_token!
+    return proxy_token if proxy_token.present?
+
+    token = SecureRandom.hex(32)
+    update_column(:proxy_token, token)
+    self.proxy_token = token
+  end
+
   private
 
   def issue_belongs_to_same_project
