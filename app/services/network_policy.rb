@@ -68,7 +68,7 @@ class NetworkPolicy
     #
     # @param container [Docker::Container] running container to apply rules to
     # @param github_ips [Array<String>] GitHub CIDR ranges to allow
-    # @param proxy_host [String] hostname or IP of the secrets proxy
+    # @param proxy_host [String] hostname or IPv4 address of the secrets proxy
     # @return [void]
     # @raise [Error] if applying rules fails
     def apply_firewall_rules(container, github_ips: nil, proxy_host: nil)
@@ -135,7 +135,7 @@ class NetworkPolicy
       raise Error, "Failed to create agent network: #{e.message}"
     end
 
-    # Validates a CIDR notation string. Returns the normalized string.
+    # Validates a CIDR notation string. Returns the validated string.
     def validate_cidr!(cidr)
       IPAddr.new(cidr)
       cidr
@@ -143,7 +143,7 @@ class NetworkPolicy
       raise Error, "Invalid CIDR: #{cidr.inspect}"
     end
 
-    # Validates a hostname or IP address. Rejects shell metacharacters.
+    # Validates a hostname or IPv4 address. Rejects shell metacharacters.
     def validate_host!(host)
       unless host.match?(/\A[a-zA-Z0-9.\-]+\z/)
         raise Error, "Invalid proxy host: #{host.inspect}"

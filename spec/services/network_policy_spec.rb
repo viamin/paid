@@ -192,6 +192,30 @@ RSpec.describe NetworkPolicy do
           .to raise_error(described_class::Error, /Failed to apply firewall rules/)
       end
     end
+
+    context "with invalid github_ips" do
+      it "raises NetworkPolicy::Error for malformed CIDR" do
+        expect { described_class.apply_firewall_rules(mock_container, github_ips: [ "not-a-cidr" ]) }
+          .to raise_error(described_class::Error, /Invalid CIDR/)
+      end
+
+      it "raises NetworkPolicy::Error for shell injection in CIDR" do
+        expect { described_class.apply_firewall_rules(mock_container, github_ips: [ "10.0.0.0/8; rm -rf /" ]) }
+          .to raise_error(described_class::Error, /Invalid CIDR/)
+      end
+    end
+
+    context "with invalid proxy_host" do
+      it "raises NetworkPolicy::Error for shell metacharacters" do
+        expect { described_class.apply_firewall_rules(mock_container, proxy_host: "host; rm -rf /") }
+          .to raise_error(described_class::Error, /Invalid proxy host/)
+      end
+
+      it "raises NetworkPolicy::Error for backtick injection" do
+        expect { described_class.apply_firewall_rules(mock_container, proxy_host: "`whoami`") }
+          .to raise_error(described_class::Error, /Invalid proxy host/)
+      end
+    end
   end
 
   describe ".fetch_github_ips" do
