@@ -19,6 +19,6 @@ echo "== Security: Yarn audit =="
 yarn audit
 
 echo "== Markdown: markdownlint =="
-markdownlint .
+npx markdownlint-cli2 '**/*.md' '#node_modules' '#vendor'
 
 echo "All checks passed."

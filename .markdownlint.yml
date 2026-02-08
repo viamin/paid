@@ -4,3 +4,6 @@
 
 MD013: false # Line length disabled
 MD024: false # Allow duplicate headings (handled semantically by higher-level sections)
+MD036: false # Emphasis used instead of heading (common in docs)
+MD040: false # Fenced code blocks without language specifier
+MD060: false # Table column style spacing
