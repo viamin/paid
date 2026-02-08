@@ -32,7 +32,7 @@ Rails.application.configure do
     },
     orphan_cleanup: {
       cron: "0 * * * *",
-      class: "OrphanWorktreeCleanupJob"
+      class: "WorktreeOrphanCleanupJob"
     }
   }
 end

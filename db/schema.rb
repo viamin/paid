@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_08_005438) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_08_063656) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -273,6 +273,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_005438) do
     t.index ["temporal_workflow_id"], name: "index_workflow_states_on_temporal_workflow_id", unique: true
   end
 
+  create_table "worktrees", force: :cascade do |t|
+    t.bigint "agent_run_id"
+    t.string "base_commit", limit: 40
+    t.string "branch_name", null: false
+    t.datetime "cleaned_at"
+    t.datetime "created_at", null: false
+    t.string "path", null: false
+    t.bigint "project_id", null: false
+    t.boolean "pushed", default: false, null: false
+    t.string "status", limit: 50, default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_worktrees_on_agent_run_id"
+    t.index ["project_id", "branch_name"], name: "index_worktrees_on_project_id_and_branch_name", unique: true
+    t.index ["project_id"], name: "index_worktrees_on_project_id"
+    t.index ["status"], name: "index_worktrees_on_status"
+  end
+
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
@@ -289,4 +306,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_005438) do
   add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"
+  add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
+  add_foreign_key "worktrees", "projects", on_delete: :cascade
 end

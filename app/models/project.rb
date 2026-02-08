@@ -9,6 +9,7 @@ class Project < ApplicationRecord
   has_many :members, through: :project_memberships, source: :user
   has_many :issues, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
+  has_many :worktrees, dependent: :destroy
   has_many :workflow_states, dependent: :destroy
 
   validates :name, presence: true
@@ -48,6 +49,22 @@ class Project < ApplicationRecord
 
   def set_label_for_stage(stage, label)
     self.label_mappings = label_mappings.merge(stage.to_s => label)
+  end
+
+  def worktree_service
+    @worktree_service ||= WorktreeService.new(self)
+  end
+
+  def create_worktree_for(agent_run)
+    worktree_service.create_worktree(agent_run)
+  end
+
+  def remove_worktree_for(agent_run)
+    worktree_service.remove_worktree(agent_run)
+  end
+
+  def push_branch_for(agent_run)
+    worktree_service.push_branch(agent_run)
   end
 
   def increment_metrics!(cost_cents:, tokens_used:)
