@@ -127,7 +127,7 @@ class AgentRun < ApplicationRecord
   # @return [AgentRuns::Execute::Result] Result with success/failure and response
   def execute_agent(prompt, timeout: nil)
     args = { agent_run: self, prompt: prompt }
-    args[:timeout] = timeout if timeout
+    args[:timeout] = timeout unless timeout.nil?
 
     AgentRuns::Execute.call(**args)
   end

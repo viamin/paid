@@ -64,7 +64,7 @@ module AgentRuns
       provider_name = PROVIDER_MAP[agent_run.agent_type]
 
       options = { provider: provider_name, dangerous_mode: true }
-      options[:timeout] = timeout if timeout
+      options[:timeout] = timeout unless timeout.nil?
 
       AgentHarness.send_message(prompt, **options)
     end
@@ -108,8 +108,9 @@ module AgentRuns
     end
 
     def handle_timeout(error)
+      effective_timeout = timeout || AgentHarness.configuration.default_timeout
       agent_run.timeout!
-      agent_run.update!(error_message: "Agent execution timed out after #{timeout} seconds")
+      agent_run.update!(error_message: "Agent execution timed out after #{effective_timeout} seconds")
       agent_run.log!("system", "Execution timed out")
 
       Result.new(success: false, error: error)
