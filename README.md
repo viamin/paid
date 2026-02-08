@@ -1,6 +1,6 @@
 # Paid - Platform for AI Development
 
-Paid is a Rails application that orchestrates AI agents to build software. Users add GitHub projects, and Paid watches for labeled issues, plans implementations, and runs agents in isolated containers to create pull requests.
+Paid is a Rails 8 application that orchestrates AI agents to build software. Users add GitHub projects, and Paid watches for labeled issues, plans implementations, and runs agents in isolated Docker containers to create pull requests.
 
 ## Philosophy
 
@@ -12,83 +12,194 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 
 - **GitHub Integration**: Add projects via PAT, watch for labeled issues
 - **Temporal Workflows**: Durable, observable orchestration of agent activities
-- **Container Isolation**: Agents run in sandboxed Docker containers without secrets
-- **Multiple Agents**: Support for Claude Code, Cursor, Codex, GitHub Copilot
-- **Prompt Evolution**: A/B testing and automatic prompt improvement
+- **Container Isolation**: Agents run in sandboxed Docker containers with no default internet access
+- **Multiple Agents**: Support for Claude Code, Cursor, Aider (via agent-harness gem)
+- **Secrets Proxy**: API keys never enter agent containers; proxied through authenticated endpoint
 - **Human-in-the-Loop**: All changes go through PRs; humans approve merges
 
-## Development Setup
+## How It Works
 
-There are two ways to run the development environment:
+1. User adds a GitHub project with a Personal Access Token
+2. Paid polls the repo for issues labeled `paid-build`
+3. An `AgentExecutionWorkflow` starts in Temporal, orchestrating:
+   - Git worktree creation for isolated workspace
+   - Docker container provisioning on a restricted network
+   - Agent execution (e.g., Claude Code) with the issue as prompt
+   - Branch push, PR creation, and issue update
+4. User reviews and merges the PR
 
-1. **Docker Compose** (standalone): Use `docker compose up` for a complete environment with all services
-2. **Dev Container**: Use VS Code or GitHub Codespaces with the `.devcontainer/` configuration for an integrated development experience
+## Quick Start
 
-The instructions below are for the standalone Docker Compose approach.
+### Option 1: Docker Compose (recommended)
 
-### Prerequisites
+```bash
+# Clone and configure
+git clone <repo-url> && cd paid
+cp .env.example .env
+# Edit .env to add your ANTHROPIC_API_KEY
 
-- Docker and Docker Compose
-- Ruby 3.x (for local development outside Docker)
+# Start all services
+docker compose up
 
-### Quick Start
+# In another terminal, setup the database
+docker compose exec web bin/rails db:prepare
+```
 
-1. Clone the repository and copy environment variables:
+### Option 2: Dev Container
 
-   ```bash
-   cp .env.example .env
-   ```
+Open in VS Code with the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension, or use GitHub Codespaces. The `.devcontainer/` configuration provides a complete development environment.
 
-2. Start all services:
+### Option 3: Local Development
 
-   ```bash
-   docker compose up
-   ```
+```bash
+# Prerequisites: Ruby 3.4+, PostgreSQL 16+, Node.js 20+, Yarn
+bin/setup               # Install deps, prepare DB
+bin/dev                 # Start dev server (Rails + JS + CSS watchers)
+```
 
-3. Access the applications:
-   - **Rails app**: <http://localhost:3000>
-   - **Temporal UI**: <http://localhost:8080>
+### Access Points
 
-### Services
+| Service | URL | Description |
+| ------- | --- | ----------- |
+| Rails app | <http://localhost:3000> | Main application |
+| Temporal UI | <http://localhost:8080> | Workflow monitoring |
+| PostgreSQL | localhost:5432 | Database (user: paid, password: paid) |
+| Temporal gRPC | localhost:7233 | Temporal server |
+
+### First-Time Setup
+
+1. Sign up at <http://localhost:3000>
+2. Add a GitHub token (Settings > GitHub Tokens) with `repo` scope
+3. Add a project (Projects > New) by entering the GitHub repo URL
+4. Label a GitHub issue with `paid-build` to trigger an agent run, or use the "Trigger Run" button in the UI
+
+## Environment Variables
+
+### Required
+
+| Variable | Description | Default |
+| -------- | ----------- | ------- |
+| `DATABASE_URL` | PostgreSQL connection string | `postgres://paid:paid@localhost:5432/paid_development` |
+| `ANTHROPIC_API_KEY` | Anthropic API key for agent execution | _(none)_ |
+
+### Optional
+
+| Variable | Description | Default |
+| -------- | ----------- | ------- |
+| `RAILS_ENV` | Rails environment | `development` |
+| `TEMPORAL_HOST` | Temporal server address | `localhost:7233` |
+| `TEMPORAL_ADDRESS` | Temporal address (alternative to TEMPORAL_HOST) | _(falls back to TEMPORAL_HOST)_ |
+| `TEMPORAL_NAMESPACE` | Temporal namespace | `default` |
+| `TEMPORAL_TASK_QUEUE` | Temporal task queue name | `paid-tasks` |
+| `TEMPORAL_UI_URL` | Temporal UI base URL for monitoring links | `http://localhost:8080` |
+| `OPENAI_API_KEY` | OpenAI API key (for agents that use OpenAI) | _(none)_ |
+| `AGENT_TIMEOUT` | Agent execution timeout in seconds | `600` |
+| `CURSOR_ENABLED` | Enable Cursor agent provider | `false` |
+| `AIDER_ENABLED` | Enable Aider agent provider | `false` |
+| `PAID_DATABASE_PASSWORD` | Production database password | _(none)_ |
+
+## Docker Compose Services
 
 | Service | Port | Description |
 | ------- | ---- | ----------- |
-| web | 3000 | Rails application |
-| postgres | 5432 | PostgreSQL database |
-| temporal | 7233 | Temporal server (gRPC) |
-| temporal-ui | 8080 | Temporal web interface |
-| temporal-admin-tools | - | CLI tools for Temporal administration |
+| `web` | 3000 | Rails application server |
+| `postgres` | 5432 | PostgreSQL database |
+| `temporal` | 7233 | Temporal server (gRPC) |
+| `temporal-ui` | 8080 | Temporal web interface |
+| `temporal-admin-tools` | - | CLI tools for Temporal administration |
+| `worker` | - | Temporal worker process (executes workflows) |
+| `agent-test` | - | Agent container for testing (test profile only) |
+
+### Networks
+
+- **paid_internal**: Infrastructure services (Rails, Temporal, Postgres)
+- **paid_agent**: Restricted network for agent containers (`internal: true`, no default internet access). Allowed egress enforced via iptables.
 
 ### Temporal CLI Access
 
-To access Temporal admin tools:
-
 ```bash
 docker compose exec temporal-admin-tools bash
-# Use the temporal CLI (preferred) or tctl (legacy)
 temporal operator namespace list
 ```
 
-### Cleanup
+## Development Commands
 
 ```bash
-docker compose down -v  # Remove containers and volumes
+# Setup
+bin/setup                    # Install deps, prepare DB, start server
+bin/setup --skip-server      # Setup without starting server
+bin/setup --reset            # Setup with database reset
+
+# Development
+bin/dev                      # Start dev server with Foreman
+bin/rails server             # Start Rails server only
+bin/rails console            # Rails console
+
+# Testing
+bin/rspec                    # Run RSpec tests (904 examples, 92%+ coverage)
+
+# Code Quality
+bin/rubocop                  # Run RuboCop linter
+bin/rubocop -a               # Auto-fix violations
+bin/lint                     # Run all linters (RuboCop, markdownlint)
+bin/lint -A                  # Run all linters with auto-fix
+
+# Security
+bin/brakeman                 # Static security analysis
+bin/bundler-audit            # Gem vulnerability audit
+
+# CI (runs all checks)
+bin/ci                       # Setup, style, security checks
+```
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Rails App (3000)                        │
+│   Controllers ─── Services ─── Models ─── Views (ERB/Hotwire)  │
+│        │              │            │                            │
+│   Auth (Devise)  GitHub Client  PostgreSQL                     │
+│   Authz (Pundit) Container Mgmt  Encrypted tokens              │
+└────────────┬───────────┬────────────────────────────────────────┘
+             │           │
+┌────────────▼───────────▼────────────────────────────────────────┐
+│                    Temporal (7233)                               │
+│   GitHubPollWorkflow ──► AgentExecutionWorkflow                 │
+│   (long-running)         (per-issue lifecycle)                  │
+│                          1. Create AgentRun                     │
+│                          2. Create Worktree                     │
+│                          3. Provision Container                 │
+│                          4. Run Agent                           │
+│                          5. Push Branch                         │
+│                          6. Create PR                           │
+│                          7. Update Issue                        │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│                  Docker Containers (paid_agent network)          │
+│   Agent CLI (Claude Code, Cursor, Aider)                        │
+│   ── Secrets Proxy ──► Anthropic/OpenAI APIs                    │
+│   ── Git worktree isolation                                     │
+│   ── No default internet access                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Documentation
 
 | Document | Description |
 | -------- | ----------- |
-| [VISION.md](docs/VISION.md) | Philosophy, principles, and goals |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, code style, submitting PRs |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and technology stack |
 | [ROADMAP.md](docs/ROADMAP.md) | Phased implementation plan |
 | [DATA_MODEL.md](docs/DATA_MODEL.md) | Database schema, accounts, and RBAC |
 | [AGENT_SYSTEM.md](docs/AGENT_SYSTEM.md) | Agent execution and Temporal workflows |
-| [PROMPT_EVOLUTION.md](docs/PROMPT_EVOLUTION.md) | Prompt versioning and A/B testing |
 | [SECURITY.md](docs/SECURITY.md) | Security model and container isolation |
-| [OBSERVABILITY.md](docs/OBSERVABILITY.md) | Metrics, logging, dashboards, and alerting |
 | [STYLE_GUIDE.md](docs/STYLE_GUIDE.md) | Coding standards for developing Paid |
-| [RDRs](docs/rdrs/README.md) | Recommendation Decision Records for all major architectural decisions |
+| [RDRs](docs/rdrs/README.md) | Recommendation Decision Records |
+| [VISION.md](docs/VISION.md) | Philosophy, principles, and goals |
+| [PROMPT_EVOLUTION.md](docs/PROMPT_EVOLUTION.md) | Prompt versioning and A/B testing |
+| [OBSERVABILITY.md](docs/OBSERVABILITY.md) | Metrics, logging, dashboards, and alerting |
 
 ## Inspiration
 
@@ -96,7 +207,7 @@ Paid is inspired by [aidp](https://github.com/viamin/aidp), a CLI tool for AI-dr
 
 ## Status
 
-This project is in the planning phase. See [ROADMAP.md](docs/ROADMAP.md) for implementation phases.
+Phase 1 (Foundation) is complete. See [ROADMAP.md](docs/ROADMAP.md) for implementation phases.
 
 ## License
 
