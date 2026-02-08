@@ -157,14 +157,14 @@ RSpec.describe AgentRuns::Execute do
       before do
         allow(AgentHarness).to receive(:send_message)
           .and_raise(AgentHarness::TimeoutError.new("Timed out"))
-        allow(AgentHarness.configuration).to receive(:default_timeout).and_return(600)
+        allow(AgentHarness.configuration).to receive(:default_timeout).and_return(601)
       end
 
       it "uses the configured default timeout in the error message" do
         described_class.call(agent_run: agent_run, prompt: prompt)
 
         agent_run.reload
-        expect(agent_run.error_message).to eq("Agent execution timed out after 600 seconds")
+        expect(agent_run.error_message).to eq("Agent execution timed out after 601 seconds")
       end
     end
 
@@ -174,6 +174,7 @@ RSpec.describe AgentRuns::Execute do
           .and_raise(AgentHarness::TimeoutError.new("Timed out"))
       end
 
+      # 0 is truthy in Ruby so `timeout || default` correctly preserves it
       it "uses 0 in the error message, not the default" do
         described_class.call(agent_run: agent_run, prompt: prompt, timeout: 0)
 
