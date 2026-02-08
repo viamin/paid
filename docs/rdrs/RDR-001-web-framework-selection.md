@@ -39,7 +39,7 @@ The team has Ruby expertise and values developer productivity. The application i
 - Database: PostgreSQL (decided separately in RDR-003)
 - Workflow engine: Temporal.io (decided separately in RDR-002)
 - Real-time requirements: Live agent status, interrupt capability
-- Authentication: Standard user auth with RBAC (rolify/pundit)
+- Authentication: Standard user auth with RBAC (membership tables + Pundit)
 
 ## Research Findings
 
@@ -85,7 +85,7 @@ The team has Ruby expertise and values developer productivity. The application i
    - `temporalio-ruby`: Official Temporal SDK
    - `octokit`: GitHub API
    - `ruby-llm`: LLM provider abstraction
-   - `rolify` + `pundit`: RBAC
+   - `pundit`: RBAC (with explicit membership tables for role management)
    - `phlex-rails`: Modern view components (preferred over ViewComponents)
 
 **Framework Comparison:**
@@ -325,7 +325,7 @@ bundle add servo
 bundle add temporalio
 bundle add octokit
 bundle add ruby-llm
-bundle add rolify pundit
+bundle add pundit
 ```
 
 #### Step 2: Configure GoodJob
@@ -368,7 +368,6 @@ New gem dependencies:
 - `temporalio` (~> 0.2)
 - `octokit` (~> 9.0)
 - `ruby-llm` (~> 1.0)
-- `rolify` (~> 6.0)
 - `pundit` (~> 2.0)
 
 ## Validation

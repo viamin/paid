@@ -47,7 +47,7 @@ Phase 1 of Paid is single-team, but the architecture should support future multi
 
 1. Evaluated multi-tenancy patterns (schema, row-level, application)
 2. Compared authorization gems (Pundit, CanCanCan, ActionPolicy)
-3. Reviewed role management options (Rolify, custom)
+3. Reviewed role management options (Rolify, custom, explicit membership tables)
 4. Designed account hierarchy
 5. Analyzed query scoping approaches
 
@@ -63,38 +63,43 @@ Phase 1 of Paid is single-team, but the architecture should support future multi
 
 For Paid Phase 1, **row-level isolation** with account_id foreign keys is simplest and sufficient.
 
-**Rolify for Role Management:**
+**Explicit Membership Tables for Role Management:**
 
-Rolify provides flexible role scoping:
+Rather than using Rolify's polymorphic role system, Paid uses explicit join tables with Rails enums for type-safe role management:
 
 ```ruby
-# Global roles
-user.add_role(:admin)
-user.has_role?(:admin)
-
-# Resource-scoped roles
+# Account-level roles via AccountMembership
 user.add_role(:owner, account)
-user.add_role(:project_admin, project)
-user.has_role?(:owner, account)
+user.has_role?(:admin, account)
+
+# Project-level roles via ProjectMembership
+user.add_role(:admin, project)       # stored as ProjectMembership role: :admin
+user.add_role(:project_admin, project) # legacy format also supported via normalization
 ```
 
-Database schema (auto-generated):
+Database schema:
 
 ```sql
-CREATE TABLE roles (
+CREATE TABLE account_memberships (
   id BIGSERIAL PRIMARY KEY,
-  name VARCHAR NOT NULL,
-  resource_type VARCHAR,  -- NULL for global, 'Account' for account-scoped
-  resource_id BIGINT,
+  user_id BIGINT NOT NULL REFERENCES users(id),
+  account_id BIGINT NOT NULL REFERENCES accounts(id),
+  role INTEGER NOT NULL DEFAULT 1,  -- enum: viewer(0), member(1), admin(2), owner(3)
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 );
 
-CREATE TABLE users_roles (
-  user_id BIGINT REFERENCES users(id),
-  role_id BIGINT REFERENCES roles(id)
+CREATE TABLE project_memberships (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id),
+  project_id BIGINT NOT NULL REFERENCES projects(id),
+  role INTEGER NOT NULL DEFAULT 1,  -- enum: viewer(0), member(1), admin(2)
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
 );
 ```
+
+This approach provides type-safe enums, simpler queries, and no external gem dependency while maintaining a compatible API (`has_role?`, `add_role`, etc.).
 
 **Pundit for Authorization:**
 
@@ -171,10 +176,10 @@ end
 
 ### Approach
 
-Implement **account-based multi-tenancy** with **Rolify** for role management and **Pundit** for authorization:
+Implement **account-based multi-tenancy** with **explicit membership tables** for role management and **Pundit** for authorization:
 
 1. **Account model**: All resources belong to an account
-2. **Rolify roles**: Flexible role assignment at account and resource level
+2. **Membership tables**: Type-safe role assignment at account and project level via `AccountMembership` and `ProjectMembership`
 3. **Pundit policies**: Authorization logic per resource type
 4. **Scoped queries**: All data access through account context
 5. **CurrentAttributes**: Request-scoped context
@@ -189,7 +194,7 @@ Implement **account-based multi-tenancy** with **Rolify** for role management an
 │  │                         ACCOUNT HIERARCHY                                ││
 │  │                                                                          ││
 │  │  Account                                                                 ││
-│  │  ├── Users (with roles via Rolify)                                      ││
+│  │  ├── Users (with roles via membership tables)                            ││
 │  │  │   └── Roles: owner, admin, member, viewer                           ││
 │  │  ├── GitHub Tokens                                                      ││
 │  │  ├── Projects                                                           ││
@@ -264,7 +269,7 @@ Implement **account-based multi-tenancy** with **Rolify** for role management an
 ### Decision Rationale
 
 1. **Account-based**: Natural grouping for teams, easy to extend to SaaS
-2. **Rolify**: Flexible, well-maintained, handles complex role scoping
+2. **Membership tables**: Type-safe enums, no gem dependency, simpler queries than Rolify's polymorphic approach
 3. **Pundit**: Clean policy classes, integrates well with Rails
 4. **Row-level isolation**: Simple, efficient, widely understood
 5. **CurrentAttributes**: Rails-native request context
@@ -274,33 +279,108 @@ Implement **account-based multi-tenancy** with **Rolify** for role management an
 ```ruby
 # app/models/account.rb
 class Account < ApplicationRecord
-  resourcify  # Rolify: allows roles to be scoped to accounts
-
+  has_many :account_memberships, dependent: :destroy
   has_many :users, dependent: :destroy
   has_many :projects, dependent: :destroy
   has_many :github_tokens, dependent: :destroy
-  has_many :prompts, -> { where(project_id: nil) }  # Account-level prompts
 
   validates :name, presence: true
   validates :slug, presence: true, uniqueness: true
 end
 
+# app/models/account_membership.rb
+class AccountMembership < ApplicationRecord
+  belongs_to :user
+  belongs_to :account
+
+  enum :role, { viewer: 0, member: 1, admin: 2, owner: 3 }, validate: true
+
+  validates :user_id, uniqueness: { scope: :account_id }
+
+  def at_least?(minimum_role)
+    permission_level >= self.class.roles[minimum_role.to_s]
+  end
+
+  def permission_level
+    self.class.roles[role]
+  end
+end
+
+# app/models/project_membership.rb
+class ProjectMembership < ApplicationRecord
+  belongs_to :user
+  belongs_to :project
+
+  enum :role, { viewer: 0, member: 1, admin: 2 }, validate: true
+
+  validates :user_id, uniqueness: { scope: :project_id }
+
+  def at_least?(minimum_role)
+    permission_level >= self.class.roles[minimum_role.to_s]
+  end
+
+  def permission_level
+    self.class.roles[role]
+  end
+end
+
 # app/models/user.rb
 class User < ApplicationRecord
-  rolify
-
   belongs_to :account
-  has_many :github_tokens, foreign_key: :created_by_id
+  has_many :account_memberships, dependent: :destroy
+  has_many :project_memberships, dependent: :destroy
 
-  validates :email, presence: true, uniqueness: true
+  after_create :assign_owner_role_if_first_user
+
+  # Role management API (compatible with previous Rolify interface)
+  def has_role?(role, resource)
+    membership = membership_for(resource)
+    return false unless membership
+    normalize_role(role, resource) == membership.role
+  end
+
+  def has_any_role?(*args)
+    resource = args.pop
+    roles = args
+    membership = membership_for(resource)
+    return false unless membership
+    roles.any? { |role| normalize_role(role, resource) == membership.role }
+  end
+
+  def add_role(role, resource)
+    normalized_role = normalize_role(role, resource)
+    case resource
+    when Account
+      account_memberships.find_or_initialize_by(account: resource).tap { |m| m.update!(role: normalized_role) }
+    when Project
+      project_memberships.find_or_initialize_by(project: resource).tap { |m| m.update!(role: normalized_role) }
+    end
+  end
+
+  private
+
+  def membership_for(resource)
+    case resource
+    when Account then account_memberships.find_by(account: resource)
+    when Project then project_memberships.find_by(project: resource)
+    end
+  end
+
+  def normalize_role(role, resource)
+    role_str = role.to_s
+    resource.is_a?(Project) ? role_str.sub(/^project_/, "") : role_str
+  end
+
+  def assign_owner_role_if_first_user
+    add_role(:owner, account) if account.users.count == 1
+  end
 end
 
 # app/models/project.rb
 class Project < ApplicationRecord
-  resourcify  # Allows project-level roles
-
   belongs_to :account
   belongs_to :github_token
+  has_many :project_memberships, dependent: :destroy
   has_many :issues, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
 
@@ -325,76 +405,52 @@ class ApplicationPolicy
   end
 
   def create?
-    user.has_any_role?(:owner, :admin, :member, account_for_record)
+    has_any_account_role?(:owner, :admin, :member)
   end
 
   def update?
-    user.has_any_role?(:owner, :admin, account_for_record)
+    has_any_account_role?(:owner, :admin)
   end
 
   def destroy?
-    user.has_any_role?(:owner, :admin, account_for_record)
+    has_account_role?(:owner)
   end
 
   private
 
   def user_in_account?
+    return false unless user&.account_id
     user.account_id == account_for_record&.id
   end
 
   def account_for_record
     record.respond_to?(:account) ? record.account : record
   end
+
+  def has_account_role?(role)
+    return false unless user
+    user.has_role?(role, account_for_record)
+  end
+
+  def has_any_account_role?(*roles)
+    return false unless user
+    account = account_for_record
+    roles.any? { |role| user.has_role?(role, account) }
+  end
 end
 
 # app/policies/project_policy.rb
 class ProjectPolicy < ApplicationPolicy
-  def show?
-    user_in_account? || user_has_project_role?
-  end
-
   def run_agent?
-    user.has_any_role?(:owner, :admin, :member, record.account) ||
-      user.has_any_role?(:project_admin, :project_member, record)
-  end
-
-  def interrupt_agent?
-    run_agent?
-  end
-
-  def update?
-    user.has_any_role?(:owner, :admin, record.account) ||
-      user.has_role?(:project_admin, record)
-  end
-
-  class Scope < Scope
-    def resolve
-      scope.where(account: user.account)
-    end
+    return false unless user_in_account?
+    has_any_account_role?(:owner, :admin, :member) || has_project_role?
   end
 
   private
 
-  def user_has_project_role?
+  def has_project_role?
+    return false unless user && record.is_a?(Project)
     user.has_any_role?(:project_admin, :project_member, record)
-  end
-end
-
-# app/policies/prompt_policy.rb
-class PromptPolicy < ApplicationPolicy
-  def update?
-    # Only admins can modify prompts (they affect all agent runs)
-    user.has_any_role?(:owner, :admin, account_for_record)
-  end
-
-  def create_ab_test?
-    update?
-  end
-
-  private
-
-  def account_for_record
-    record.project&.account || record.account
   end
 end
 
@@ -497,23 +553,24 @@ end
 
 **Reason for rejection**: Pundit's policy-per-resource pattern is cleaner for complex authorization rules.
 
-### Alternative 2: Custom Role System
+### Alternative 2: Rolify Gem
 
-**Description**: Build role management from scratch
+**Description**: Use the Rolify gem for polymorphic role management
 
 **Pros**:
 
-- Full control
-- No gem dependencies
-- Tailored to needs
+- Well-maintained, battle-tested gem
+- Flexible polymorphic role scoping
+- Large community
 
 **Cons**:
 
-- Development time
-- Maintenance burden
-- Rolify solves this well
+- Polymorphic `roles` and `users_roles` tables add indirection
+- String-based role names lack type safety
+- Additional gem dependency
+- Queries are more complex than direct enum lookups
 
-**Reason for rejection**: Rolify is battle-tested and handles complex role scoping we need.
+**Reason for rejection**: Explicit membership tables with Rails enums provide type safety, simpler queries, and no external dependency. The compatible API (`has_role?`, `add_role`) preserves the same developer experience.
 
 ### Alternative 3: ActionPolicy
 
@@ -556,7 +613,9 @@ end
 ### Positive Consequences
 
 - **Clean authorization**: Explicit policies per resource
-- **Flexible roles**: Account-level and resource-level roles
+- **Type-safe roles**: Rails enums provide compile-time validation and database-level constraints
+- **Flexible roles**: Account-level and project-level roles via dedicated membership tables
+- **No external dependency**: Role management requires no additional gems
 - **Future-proof**: Architecture supports SaaS migration
 - **Testable**: Policies easily unit tested
 - **Rails-native**: Uses Rails patterns and conventions
@@ -573,7 +632,7 @@ end
   **Mitigation**: Linting rules, code review, integration tests. Consider default scope on models (with care).
 
 - **Risk**: Role hierarchy becomes complex
-  **Mitigation**: Keep roles simple initially. Document role meanings clearly.
+  **Mitigation**: Keep roles simple initially. Enum ordering provides natural hierarchy (higher value = more permissions).
 
 - **Risk**: Cross-account data leak
   **Mitigation**: Test coverage for authorization. Regular security audits.
@@ -582,7 +641,7 @@ end
 
 ### Prerequisites
 
-- [ ] Rolify and Pundit gems added
+- [ ] Pundit gem added
 - [ ] Devise authentication in place
 - [ ] Account model created
 
@@ -592,24 +651,16 @@ end
 
 ```ruby
 # Gemfile
-gem "rolify"
 gem "pundit"
 ```
 
-#### Step 2: Generate Rolify
-
-```bash
-rails generate rolify Role User
-rails db:migrate
-```
-
-#### Step 3: Generate Pundit
+#### Step 2: Generate Pundit
 
 ```bash
 rails generate pundit:install
 ```
 
-#### Step 4: Create Account Model
+#### Step 3: Create Account Model
 
 ```ruby
 # db/migrate/xxx_create_accounts.rb
@@ -629,13 +680,47 @@ class CreateAccounts < ActiveRecord::Migration[8.0]
 end
 ```
 
-#### Step 5: Add Account Reference to Users
+#### Step 4: Add Account Reference to Users
 
 ```ruby
 # db/migrate/xxx_add_account_to_users.rb
 class AddAccountToUsers < ActiveRecord::Migration[8.0]
   def change
     add_reference :users, :account, null: false, foreign_key: true
+  end
+end
+```
+
+#### Step 5: Create Membership Tables
+
+```ruby
+# db/migrate/xxx_create_account_memberships.rb
+class CreateAccountMemberships < ActiveRecord::Migration[8.0]
+  def change
+    create_table :account_memberships do |t|
+      t.references :user, null: false, foreign_key: true
+      t.references :account, null: false, foreign_key: true
+      t.integer :role, null: false, default: 1  # viewer(0), member(1), admin(2), owner(3)
+
+      t.timestamps
+    end
+
+    add_index :account_memberships, [:user_id, :account_id], unique: true
+  end
+end
+
+# db/migrate/xxx_create_project_memberships.rb
+class CreateProjectMemberships < ActiveRecord::Migration[8.0]
+  def change
+    create_table :project_memberships do |t|
+      t.references :user, null: false, foreign_key: true
+      t.references :project, null: false, foreign_key: true
+      t.integer :role, null: false, default: 1  # viewer(0), member(1), admin(2)
+
+      t.timestamps
+    end
+
+    add_index :project_memberships, [:user_id, :project_id], unique: true
   end
 end
 ```
@@ -650,11 +735,15 @@ Add authorization checks to all controllers.
 
 ### Files to Create/Modify
 
-- `Gemfile` - Add rolify, pundit
+- `Gemfile` - Add pundit
 - `db/migrate/xxx_create_accounts.rb`
 - `db/migrate/xxx_add_account_to_users.rb`
+- `db/migrate/xxx_create_account_memberships.rb`
+- `db/migrate/xxx_create_project_memberships.rb`
 - `app/models/account.rb`
-- `app/models/user.rb` - Add rolify
+- `app/models/account_membership.rb`
+- `app/models/project_membership.rb`
+- `app/models/user.rb` - Add role management methods
 - `app/models/current.rb`
 - `app/policies/application_policy.rb`
 - `app/policies/*_policy.rb` - Per-resource policies
@@ -663,7 +752,6 @@ Add authorization checks to all controllers.
 
 ### Dependencies
 
-- `rolify` (~> 6.0)
 - `pundit` (~> 2.0)
 
 ## Validation
@@ -710,7 +798,6 @@ Add authorization checks to all controllers.
 
 ### Dependencies
 
-- [Rolify](https://github.com/RolifyCommunity/rolify)
 - [Pundit](https://github.com/varvet/pundit)
 
 ### Research Resources
