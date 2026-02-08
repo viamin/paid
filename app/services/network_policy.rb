@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "docker-api"
+require "ipaddr"
 require "net/http"
 require "json"
 
@@ -74,7 +75,10 @@ class NetworkPolicy
       github_ips ||= DEFAULT_GITHUB_IPS
       proxy_host ||= default_proxy_host
 
-      script = build_firewall_script(github_ips: github_ips, proxy_host: proxy_host)
+      validated_ips = github_ips.map { |cidr| validate_cidr!(cidr) }
+      validated_host = validate_host!(proxy_host)
+
+      script = build_firewall_script(github_ips: validated_ips, proxy_host: validated_host)
 
       _stdout, stderr, exit_code = container.exec([ "sh", "-c", script ])
 
@@ -89,9 +93,15 @@ class NetworkPolicy
     # @return [Array<String>] CIDR ranges
     def fetch_github_ips
       uri = URI(GITHUB_META_URL)
-      response = Net::HTTP.get(uri)
-      data = JSON.parse(response)
+      response = Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: 5, read_timeout: 5) do |http|
+        http.get(uri.request_uri)
+      end
 
+      unless response.is_a?(Net::HTTPSuccess)
+        raise "HTTP #{response.code}: #{response.message}"
+      end
+
+      data = JSON.parse(response.body)
       %w[hooks git api web].flat_map { |key| data[key] || [] }.uniq
     rescue StandardError => e
       Rails.logger.warn(
@@ -125,14 +135,26 @@ class NetworkPolicy
       raise Error, "Failed to create agent network: #{e.message}"
     end
 
+    # Validates a CIDR notation string. Returns the normalized string.
+    def validate_cidr!(cidr)
+      IPAddr.new(cidr)
+      cidr
+    rescue IPAddr::InvalidAddressError
+      raise Error, "Invalid CIDR: #{cidr.inspect}"
+    end
+
+    # Validates a hostname or IP address. Rejects shell metacharacters.
+    def validate_host!(host)
+      unless host.match?(/\A[a-zA-Z0-9.\-]+\z/)
+        raise Error, "Invalid proxy host: #{host.inspect}"
+      end
+      host
+    end
+
     def default_proxy_host
-      # In Docker, the gateway IP of the agent network routes to the host
-      # where the secrets proxy runs.
-      network = Docker::Network.get(NETWORK_NAME)
-      gateway = network.info.dig("IPAM", "Config", 0, "Gateway")
-      gateway || "172.28.0.1"
-    rescue Docker::Error::NotFoundError
-      "172.28.0.1"
+      # Default to the hostname used by agents to reach the secrets proxy.
+      # This keeps firewall rules aligned with the container environment.
+      "paid-proxy"
     end
 
     def build_firewall_script(github_ips:, proxy_host:)
@@ -151,7 +173,7 @@ class NetworkPolicy
         iptables -A OUTPUT -o lo -j ACCEPT
 
         # Allow established connections (for responses)
-        iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+        iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
         # Allow DNS (for hostname resolution)
         iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
