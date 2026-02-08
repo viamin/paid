@@ -77,6 +77,22 @@ FactoryBot.define do
       agent_type { "copilot" }
     end
 
+    trait :aider do
+      agent_type { "aider" }
+    end
+
+    trait :gemini do
+      agent_type { "gemini" }
+    end
+
+    trait :opencode do
+      agent_type { "opencode" }
+    end
+
+    trait :kilocode do
+      agent_type { "kilocode" }
+    end
+
     trait :api do
       agent_type { "api" }
     end
