@@ -52,8 +52,7 @@ module Workflows
       Temporalio::Workflow.start_child_workflow(
         Workflows::AgentExecutionWorkflow,
         { project_id: project_id, issue_id: issue_id },
-        id: workflow_id,
-        task_queue: Paid.task_queue
+        id: workflow_id
       )
     end
   end

@@ -98,6 +98,70 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when label mappings contain blank strings" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build", "plan" => "", "other" => nil }) }
+
+      before do
+        allow(github_client).to receive(:issues).and_return([])
+      end
+
+      it "filters out blank and nil values" do
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issues).with(
+          project.full_name,
+          labels: [ "paid-build" ],
+          state: "open",
+          per_page: 100,
+          page: 1
+        )
+      end
+    end
+
+    context "when there are multiple pages of issues" do
+      let(:page1_issues) do
+        Array.new(100) do |i|
+          OpenStruct.new(
+            id: 2000 + i,
+            number: i + 1,
+            title: "Issue #{i + 1}",
+            body: "Body",
+            state: "open",
+            labels: [ OpenStruct.new(name: "paid-build") ],
+            created_at: 2.days.ago,
+            updated_at: 1.day.ago
+          )
+        end
+      end
+
+      let(:page2_issues) do
+        [
+          OpenStruct.new(
+            id: 3000,
+            number: 101,
+            title: "Issue 101",
+            body: "Body",
+            state: "open",
+            labels: [ OpenStruct.new(name: "paid-build") ],
+            created_at: 1.day.ago,
+            updated_at: Time.current
+          )
+        ]
+      end
+
+      before do
+        allow(github_client).to receive(:issues).with(anything, hash_including(page: 1)).and_return(page1_issues)
+        allow(github_client).to receive(:issues).with(anything, hash_including(page: 2)).and_return(page2_issues)
+      end
+
+      it "paginates through all pages" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:issues].size).to eq(101)
+        expect(github_client).to have_received(:issues).twice
+      end
+    end
+
     context "when project has no label mappings" do
       let(:project) { create(:project, label_mappings: {}) }
 
@@ -112,7 +176,8 @@ RSpec.describe Activities::FetchIssuesActivity do
           project.full_name,
           labels: [],
           state: "open",
-          per_page: 100
+          per_page: 100,
+          page: 1
         )
       end
     end
