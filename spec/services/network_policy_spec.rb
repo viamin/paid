@@ -112,12 +112,6 @@ RSpec.describe NetworkPolicy do
   end
 
   describe ".apply_firewall_rules" do
-    before do
-      allow(Docker::Network).to receive(:get)
-        .with(described_class::NETWORK_NAME)
-        .and_return(mock_network)
-    end
-
     context "when rules apply successfully" do
       before do
         allow(mock_container).to receive(:exec).and_return([ [], [], 0 ])
@@ -201,18 +195,20 @@ RSpec.describe NetworkPolicy do
   end
 
   describe ".fetch_github_ips" do
-    context "when GitHub API responds successfully" do
-      let(:github_meta_response) do
-        {
-          "hooks" => [ "192.30.252.0/22" ],
-          "git" => [ "140.82.112.0/20" ],
-          "api" => [ "140.82.112.0/20", "185.199.108.0/22" ],
-          "web" => [ "140.82.112.0/20" ]
-        }.to_json
-      end
+    let(:github_meta_body) do
+      {
+        "hooks" => [ "192.30.252.0/22" ],
+        "git" => [ "140.82.112.0/20" ],
+        "api" => [ "140.82.112.0/20", "185.199.108.0/22" ],
+        "web" => [ "140.82.112.0/20" ]
+      }.to_json
+    end
 
+    context "when GitHub API responds successfully" do
       before do
-        allow(Net::HTTP).to receive(:get).and_return(github_meta_response)
+        mock_response = instance_double(Net::HTTPSuccess, body: github_meta_body)
+        allow(mock_response).to receive(:is_a?).with(Net::HTTPSuccess).and_return(true)
+        allow(Net::HTTP).to receive(:start).and_return(mock_response)
       end
 
       it "returns deduplicated IP ranges" do
@@ -227,7 +223,7 @@ RSpec.describe NetworkPolicy do
 
     context "when GitHub API fails" do
       before do
-        allow(Net::HTTP).to receive(:get).and_raise(SocketError, "Connection refused")
+        allow(Net::HTTP).to receive(:start).and_raise(SocketError, "Connection refused")
       end
 
       it "returns default GitHub IPs" do

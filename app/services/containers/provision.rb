@@ -60,7 +60,7 @@ module Containers
       tmpfs_tmp_size: 1024 * 1024 * 1024,        # 1GB for /tmp
       tmpfs_cache_size: 512 * 1024 * 1024,       # 512MB for /home/agent/.cache
       image: "paid-agent:latest",
-      network: "paid_agent_network",
+      network: NetworkPolicy::NETWORK_NAME,
       user: "agent",
       workspace_mount: "/workspace"
     }.freeze
@@ -302,7 +302,7 @@ module Containers
         "Binds" => [ "#{worktree_path}:#{options[:workspace_mount]}:rw" ],
         # Agent containers always use the restricted network.
         # ensure_network! guarantees the network exists before we reach here.
-        "NetworkMode" => options[:network]
+        "NetworkMode" => NetworkPolicy::NETWORK_NAME
       }
 
       config
@@ -329,7 +329,7 @@ module Containers
 
     def ensure_network!
       NetworkPolicy.ensure_network!
-      log_system("container.network.ready", network: options[:network])
+      log_system("container.network.ready", network: NetworkPolicy::NETWORK_NAME)
     rescue NetworkPolicy::Error => e
       raise ProvisionError, "Network setup failed: #{e.message}"
     end
