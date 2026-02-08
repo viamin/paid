@@ -71,12 +71,6 @@ class ReplaceRolifyWithMemberships < ActiveRecord::Migration[8.1]
 
   private
 
-  # Role enum values matching the AccountMembership model
-  ACCOUNT_ROLES = { "viewer" => 0, "member" => 1, "admin" => 2, "owner" => 3 }.freeze
-
-  # Role enum values matching the ProjectMembership model
-  PROJECT_ROLES = { "viewer" => 0, "member" => 1, "admin" => 2 }.freeze
-
   def migrate_existing_roles
     # Migrate account-scoped roles
     execute <<~SQL

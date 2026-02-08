@@ -173,7 +173,7 @@ Paid uses explicit membership tables for role management and [Pundit](https://gi
 
 ### Why Membership Tables Instead of Rolify?
 
-1. **Type-safe enums** - Role values are validated at the database level
+1. **Type-safe enums** - Role values are validated by Rails enum declarations
 2. **Simpler queries** - No polymorphic lookups required
 3. **Better compatibility** - No circular require issues with Ruby 3.4+
 4. **Explicit foreign keys** - Referential integrity enforced at database level

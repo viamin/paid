@@ -15,8 +15,10 @@ module Activities
     end
 
     def update_workflow_state(workflow_id, attributes)
-      WorkflowState.find_or_initialize_by(temporal_workflow_id: workflow_id)
-                   .update!(attributes)
+      WorkflowState.upsert(
+        attributes.merge(temporal_workflow_id: workflow_id),
+        unique_by: :temporal_workflow_id
+      )
     end
   end
 end
