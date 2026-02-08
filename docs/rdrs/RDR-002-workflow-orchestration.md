@@ -368,8 +368,8 @@ class AgentActivities
     start_to_close_timeout: 45.minutes,
     heartbeat_timeout: 1.minute,
     retry_policy: {
-      maximum_attempts: 3,
-      non_retryable_errors: [AgentMonitor::LimitExceeded, BudgetExceeded]
+      max_attempts: 3,
+      non_retryable_error_types: [AgentMonitor::LimitExceeded, BudgetExceeded]
     }
   )
   def run_agent(container_id:, worktree_path:, issue_id:, max_iterations:)
