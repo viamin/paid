@@ -26,7 +26,7 @@ module Activities
         pr_number: pr.number
       )
 
-      add_pr_labels(client, project, pr.number)
+      add_pr_labels(client, project, pr.number, agent_run_id)
 
       agent_run.log!("system", "PR created: #{pr.html_url}")
 
@@ -99,11 +99,12 @@ module Activities
       "$#{"%.2f" % (cents / 100.0)}"
     end
 
-    def add_pr_labels(client, project, pr_number)
+    def add_pr_labels(client, project, pr_number, agent_run_id)
       client.add_labels_to_issue(project.full_name, pr_number, [ PAID_GENERATED_LABEL ])
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.add_pr_labels_failed",
+        agent_run_id: agent_run_id,
         pr_number: pr_number,
         error: e.message
       )
