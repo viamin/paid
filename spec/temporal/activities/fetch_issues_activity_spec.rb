@@ -162,6 +162,34 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when page limit is reached" do
+      let(:full_page) do
+        Array.new(100) do |i|
+          OpenStruct.new(
+            id: 4000 + i,
+            number: i + 1,
+            title: "Issue #{i + 1}",
+            body: "Body",
+            state: "open",
+            labels: [ OpenStruct.new(name: "paid-build") ],
+            created_at: 2.days.ago,
+            updated_at: 1.day.ago
+          )
+        end
+      end
+
+      before do
+        allow(github_client).to receive(:issues).and_return(full_page)
+      end
+
+      it "stops after MAX_PAGES and logs a warning" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:issues].size).to eq(described_class::MAX_PAGES * 100)
+        expect(github_client).to have_received(:issues).exactly(described_class::MAX_PAGES).times
+      end
+    end
+
     context "when project has no label mappings" do
       let(:project) { create(:project, label_mappings: {}) }
 

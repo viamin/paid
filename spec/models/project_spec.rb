@@ -194,6 +194,16 @@ RSpec.describe Project do
       end
     end
 
+    describe "after_destroy_commit" do
+      it "stops polling when project is destroyed" do
+        project = create(:project, active: true)
+
+        project.destroy!
+
+        expect(ProjectWorkflowManager).to have_received(:stop_polling).with(project)
+      end
+    end
+
     describe "after_update_commit on active change" do
       it "starts polling when activated" do
         project = create(:project, :inactive)

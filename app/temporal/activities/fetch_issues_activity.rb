@@ -31,6 +31,8 @@ module Activities
 
     private
 
+    MAX_PAGES = 10
+
     def fetch_all_issues(client, repo_full_name, labels)
       issues = []
       page = 1
@@ -50,6 +52,16 @@ module Activities
         break if page_issues.size < 100
 
         page += 1
+
+        if page > MAX_PAGES
+          logger.warn(
+            message: "github_sync.fetch_issues_page_limit",
+            repo: repo_full_name,
+            fetched_count: issues.size,
+            max_pages: MAX_PAGES
+          )
+          break
+        end
       end
 
       issues

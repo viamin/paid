@@ -26,7 +26,7 @@ class Project < ApplicationRecord
 
   after_create_commit :start_github_polling
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
-  before_destroy :stop_github_polling
+  after_destroy_commit :stop_github_polling
 
   def full_name
     "#{owner}/#{repo}"
