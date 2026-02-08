@@ -4,6 +4,7 @@ module Api
   class SecretsProxyController < ActionController::API
     before_action :validate_container_request
     before_action :set_agent_run
+    before_action :verify_proxy_token
     before_action :check_rate_limit
 
     # Maximum tokens per agent run before rate limiting kicks in
@@ -11,19 +12,25 @@ module Api
 
     # POST /api/proxy/anthropic/*path
     def anthropic
+      api_key = fetch_api_key(:anthropic)
+      return if performed?
+
       proxy_request(
         base_url: "https://api.anthropic.com",
         auth_header: "x-api-key",
-        api_key: fetch_api_key(:anthropic)
+        api_key: api_key
       )
     end
 
     # POST /api/proxy/openai/*path
     def openai
+      api_key = fetch_api_key(:openai)
+      return if performed?
+
       proxy_request(
         base_url: "https://api.openai.com",
         auth_header: "Authorization",
-        api_key: "Bearer #{fetch_api_key(:openai)}"
+        api_key: "Bearer #{api_key}"
       )
     end
 
@@ -45,6 +52,14 @@ module Api
       end
     end
 
+    def verify_proxy_token
+      provided_token = request.headers["X-Proxy-Token"]
+
+      unless provided_token.present? && ActiveSupport::SecurityUtils.secure_compare(provided_token, @agent_run.proxy_token.to_s)
+        render json: { error: "Invalid proxy token" }, status: :forbidden
+      end
+    end
+
     def check_rate_limit
       return unless @agent_run.total_tokens > MAX_TOKENS_PER_RUN
 
@@ -58,7 +73,7 @@ module Api
       response = build_connection.run_request(
         request.method.downcase.to_sym,
         target_url,
-        request.body.read,
+        request.raw_post,
         forwarded_headers.merge(auth_header => api_key)
       )
 
@@ -79,7 +94,8 @@ module Api
     end
 
     def forwarded_headers
-      %w[Content-Type Accept].each_with_object({}) do |header, hash|
+      # Forward essential headers, including Anthropic-specific ones required by the API.
+      %w[Content-Type Accept anthropic-version anthropic-beta].each_with_object({}) do |header, hash|
         value = request.headers[header]
         hash[header] = value if value.present?
       end
@@ -112,7 +128,12 @@ module Api
     def fetch_api_key(provider)
       key = Rails.application.credentials.dig(:llm, :"#{provider}_api_key")
       key ||= ENV["#{provider.to_s.upcase}_API_KEY"]
-      raise "Missing API key for #{provider}" unless key
+
+      unless key
+        log_error("secrets_proxy.missing_api_key", "No API key configured for #{provider}")
+        render json: { error: "API key not configured for #{provider}" }, status: :service_unavailable
+        return nil
+      end
 
       key
     end

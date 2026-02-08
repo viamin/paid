@@ -25,6 +25,14 @@ RSpec.describe "Api::SecretsProxy" do
     }.to_json
   end
 
+  let(:valid_headers) do
+    {
+      "Content-Type" => "application/json",
+      "X-Agent-Run-Id" => agent_run.id.to_s,
+      "X-Proxy-Token" => agent_run.proxy_token
+    }
+  end
+
   before do
     allow(Rails.application.credentials).to receive(:dig).and_call_original
     allow(Rails.application.credentials).to receive(:dig)
@@ -45,10 +53,7 @@ RSpec.describe "Api::SecretsProxy" do
       it "proxies the request to Anthropic and returns the response" do
         post "/api/proxy/anthropic/v1/messages",
           params: { model: "claude-3-5-sonnet-20241022" }.to_json,
-          headers: {
-            "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => agent_run.id.to_s
-          }
+          headers: valid_headers
 
         expect(response).to have_http_status(:ok)
         body = JSON.parse(response.body)
@@ -58,23 +63,35 @@ RSpec.describe "Api::SecretsProxy" do
       it "injects the API key into the forwarded request" do
         post "/api/proxy/anthropic/v1/messages",
           params: { model: "claude-3-5-sonnet-20241022" }.to_json,
-          headers: {
-            "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => agent_run.id.to_s
-          }
+          headers: valid_headers
 
         expect(WebMock).to have_requested(:post, target_url)
           .with(headers: { "x-api-key" => "sk-ant-test-key" })
+      end
+
+      it "forwards anthropic-version header when present" do
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers.merge("anthropic-version" => "2023-06-01")
+
+        expect(WebMock).to have_requested(:post, target_url)
+          .with(headers: { "anthropic-version" => "2023-06-01" })
+      end
+
+      it "forwards anthropic-beta header when present" do
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers.merge("anthropic-beta" => "messages-2024-12-19")
+
+        expect(WebMock).to have_requested(:post, target_url)
+          .with(headers: { "anthropic-beta" => "messages-2024-12-19" })
       end
 
       it "tracks token usage on the agent run" do
         expect {
           post "/api/proxy/anthropic/v1/messages",
             params: {}.to_json,
-            headers: {
-              "Content-Type" => "application/json",
-              "X-Agent-Run-Id" => agent_run.id.to_s
-            }
+            headers: valid_headers
         }.to change { agent_run.reload.tokens_input }.by(100)
           .and change { agent_run.reload.tokens_output }.by(50)
       end
@@ -93,10 +110,7 @@ RSpec.describe "Api::SecretsProxy" do
 
         post "/api/proxy/anthropic/v1/messages",
           params: {}.to_json,
-          headers: {
-            "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => agent_run.id.to_s
-          }
+          headers: valid_headers
 
         agent_run.reload
         expect(agent_run.cost_cents).to be > 0
@@ -106,10 +120,7 @@ RSpec.describe "Api::SecretsProxy" do
         expect {
           post "/api/proxy/anthropic/v1/messages",
             params: {}.to_json,
-            headers: {
-              "Content-Type" => "application/json",
-              "X-Agent-Run-Id" => agent_run.id.to_s
-            }
+            headers: valid_headers
         }.to change { project.reload.total_tokens_used }.by(150)
       end
 
@@ -117,10 +128,7 @@ RSpec.describe "Api::SecretsProxy" do
         expect {
           post "/api/proxy/anthropic/v1/messages",
             params: {}.to_json,
-            headers: {
-              "Content-Type" => "application/json",
-              "X-Agent-Run-Id" => agent_run.id.to_s
-            }
+            headers: valid_headers
         }.to change { agent_run.agent_run_logs.where(log_type: "metric").count }.by(1)
       end
     end
@@ -135,10 +143,7 @@ RSpec.describe "Api::SecretsProxy" do
       it "returns the upstream error status" do
         post "/api/proxy/anthropic/v1/messages",
           params: {}.to_json,
-          headers: {
-            "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => agent_run.id.to_s
-          }
+          headers: valid_headers
 
         expect(response).to have_http_status(:internal_server_error)
       end
@@ -147,10 +152,7 @@ RSpec.describe "Api::SecretsProxy" do
         expect {
           post "/api/proxy/anthropic/v1/messages",
             params: {}.to_json,
-            headers: {
-              "Content-Type" => "application/json",
-              "X-Agent-Run-Id" => agent_run.id.to_s
-            }
+            headers: valid_headers
         }.not_to change { agent_run.reload.tokens_input }
       end
     end
@@ -163,14 +165,30 @@ RSpec.describe "Api::SecretsProxy" do
       it "returns bad gateway" do
         post "/api/proxy/anthropic/v1/messages",
           params: {}.to_json,
-          headers: {
-            "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => agent_run.id.to_s
-          }
+          headers: valid_headers
 
         expect(response).to have_http_status(:bad_gateway)
         body = JSON.parse(response.body)
         expect(body["error"]).to eq("Upstream request failed")
+      end
+    end
+
+    context "when API key is not configured" do
+      before do
+        allow(Rails.application.credentials).to receive(:dig)
+          .with(:llm, :anthropic_api_key).and_return(nil)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("ANTHROPIC_API_KEY").and_return(nil)
+      end
+
+      it "returns service unavailable" do
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:service_unavailable)
+        body = JSON.parse(response.body)
+        expect(body["error"]).to include("not configured")
       end
     end
   end
@@ -186,10 +204,7 @@ RSpec.describe "Api::SecretsProxy" do
     it "proxies the request to OpenAI and returns the response" do
       post "/api/proxy/openai/v1/chat/completions",
         params: { model: "gpt-4o" }.to_json,
-        headers: {
-          "Content-Type" => "application/json",
-          "X-Agent-Run-Id" => agent_run.id.to_s
-        }
+        headers: valid_headers
 
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
@@ -199,10 +214,7 @@ RSpec.describe "Api::SecretsProxy" do
     it "injects the Bearer token into the forwarded request" do
       post "/api/proxy/openai/v1/chat/completions",
         params: {}.to_json,
-        headers: {
-          "Content-Type" => "application/json",
-          "X-Agent-Run-Id" => agent_run.id.to_s
-        }
+        headers: valid_headers
 
       expect(WebMock).to have_requested(:post, target_url)
         .with(headers: { "Authorization" => "Bearer sk-test-key" })
@@ -212,10 +224,7 @@ RSpec.describe "Api::SecretsProxy" do
       expect {
         post "/api/proxy/openai/v1/chat/completions",
           params: {}.to_json,
-          headers: {
-            "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => agent_run.id.to_s
-          }
+          headers: valid_headers
       }.to change { agent_run.reload.tokens_input }.by(100)
         .and change { agent_run.reload.tokens_output }.by(50)
     end
@@ -245,7 +254,8 @@ RSpec.describe "Api::SecretsProxy" do
           params: {}.to_json,
           headers: {
             "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => "999999"
+            "X-Agent-Run-Id" => "999999",
+            "X-Proxy-Token" => "invalid"
           }
 
         expect(response).to have_http_status(:forbidden)
@@ -262,7 +272,8 @@ RSpec.describe "Api::SecretsProxy" do
           params: {}.to_json,
           headers: {
             "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => completed_run.id.to_s
+            "X-Agent-Run-Id" => completed_run.id.to_s,
+            "X-Proxy-Token" => completed_run.proxy_token
           }
 
         expect(response).to have_http_status(:forbidden)
@@ -275,10 +286,42 @@ RSpec.describe "Api::SecretsProxy" do
           params: {}.to_json,
           headers: {
             "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => pending_run.id.to_s
+            "X-Agent-Run-Id" => pending_run.id.to_s,
+            "X-Proxy-Token" => pending_run.proxy_token
           }
 
         expect(response).to have_http_status(:forbidden)
+      end
+    end
+
+    context "with invalid proxy token" do
+      it "returns forbidden" do
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: {
+            "Content-Type" => "application/json",
+            "X-Agent-Run-Id" => agent_run.id.to_s,
+            "X-Proxy-Token" => "invalid-token"
+          }
+
+        expect(response).to have_http_status(:forbidden)
+        body = JSON.parse(response.body)
+        expect(body["error"]).to eq("Invalid proxy token")
+      end
+    end
+
+    context "without proxy token" do
+      it "returns forbidden" do
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: {
+            "Content-Type" => "application/json",
+            "X-Agent-Run-Id" => agent_run.id.to_s
+          }
+
+        expect(response).to have_http_status(:forbidden)
+        body = JSON.parse(response.body)
+        expect(body["error"]).to eq("Invalid proxy token")
       end
     end
   end
@@ -298,10 +341,7 @@ RSpec.describe "Api::SecretsProxy" do
       it "returns too many requests" do
         post "/api/proxy/anthropic/v1/messages",
           params: {}.to_json,
-          headers: {
-            "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => agent_run.id.to_s
-          }
+          headers: valid_headers
 
         expect(response).to have_http_status(:too_many_requests)
         body = JSON.parse(response.body)
@@ -318,10 +358,7 @@ RSpec.describe "Api::SecretsProxy" do
       it "allows the request through" do
         post "/api/proxy/anthropic/v1/messages",
           params: {}.to_json,
-          headers: {
-            "Content-Type" => "application/json",
-            "X-Agent-Run-Id" => agent_run.id.to_s
-          }
+          headers: valid_headers
 
         expect(response).to have_http_status(:ok)
       end
