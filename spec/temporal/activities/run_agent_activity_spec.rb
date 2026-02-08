@@ -7,40 +7,67 @@ RSpec.describe Activities::RunAgentActivity do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
   let(:agent_run) { create(:agent_run, :with_git_context, :with_issue, project: project, issue: issue) }
-  let(:execute_result) { AgentRuns::Execute::Result.new(success: true) }
-  let(:container_result) { Containers::Provision::Result.success(stdout: "file.rb | 5 +\n", stderr: "", exit_code: 0) }
-  let(:empty_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+  let(:success_result) { AgentRuns::Execute::Result.new(success: true) }
+  let(:failure_result) { AgentRuns::Execute::Result.new(success: false, error: "Agent crashed") }
+  let(:success_status) { instance_double(Process::Status, success?: true) }
+  let(:failure_status) { instance_double(Process::Status, success?: false) }
 
   before do
     allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
-    allow(agent_run).to receive(:execute_agent).and_return(execute_result)
   end
 
   describe "#execute" do
-    it "builds a prompt and executes the agent" do
-      allow(agent_run).to receive(:execute_in_container).and_return(empty_result)
+    context "when agent succeeds" do
+      before do
+        allow(agent_run).to receive(:execute_agent).and_return(success_result)
+      end
 
-      expect(agent_run).to receive(:prompt_for_issue).and_call_original
-      expect(agent_run).to receive(:execute_agent)
+      it "builds a prompt and executes the agent" do
+        allow(Open3).to receive(:capture2e).and_return([ "", success_status ])
 
-      activity.execute(agent_run_id: agent_run.id)
+        expect(agent_run).to receive(:prompt_for_issue).and_call_original
+        expect(agent_run).to receive(:execute_agent)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "returns has_changes: true when git diff shows changes" do
+        allow(Open3).to receive(:capture2e).and_return([ "file.rb | 5 +\n", success_status ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(result[:success]).to be true
+      end
+
+      it "returns has_changes: false when git diff is empty" do
+        allow(Open3).to receive(:capture2e).and_return([ "", success_status ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be false
+        expect(result[:success]).to be true
+      end
+
+      it "returns has_changes: false when git diff fails" do
+        allow(Open3).to receive(:capture2e).and_return([ "fatal: not a git repository", failure_status ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be false
+      end
     end
 
-    it "returns has_changes: true when the agent made changes" do
-      allow(agent_run).to receive(:execute_in_container).and_return(container_result)
+    context "when agent fails" do
+      before do
+        allow(agent_run).to receive(:execute_agent).and_return(failure_result)
+      end
 
-      result = activity.execute(agent_run_id: agent_run.id)
-
-      expect(result[:has_changes]).to be true
-      expect(result[:success]).to be true
-    end
-
-    it "returns has_changes: false when the agent made no changes" do
-      allow(agent_run).to receive(:execute_in_container).and_return(empty_result)
-
-      result = activity.execute(agent_run_id: agent_run.id)
-
-      expect(result[:has_changes]).to be false
+      it "raises an ApplicationError" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /Agent execution failed/)
+      end
     end
 
     it "raises an error when no issue is attached" do

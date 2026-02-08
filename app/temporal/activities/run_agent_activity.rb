@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "open3"
+require "shellwords"
+
 module Activities
   class RunAgentActivity < BaseActivity
     activity_name "RunAgent"
@@ -12,11 +15,18 @@ module Activities
 
       result = agent_run.execute_agent(prompt)
 
+      unless result.success?
+        raise Temporalio::Error::ApplicationError.new(
+          "Agent execution failed: #{result.error}",
+          type: "AgentExecutionFailed"
+        )
+      end
+
       has_changes = check_for_changes(agent_run)
 
       {
         agent_run_id: agent_run_id,
-        success: result.success?,
+        success: true,
         has_changes: has_changes
       }
     end
@@ -26,8 +36,8 @@ module Activities
     def check_for_changes(agent_run)
       return false unless agent_run.worktree_path.present?
 
-      result = agent_run.execute_in_container("git diff --stat HEAD", stream: false)
-      result.success? && result[:stdout].present?
+      output, status = Open3.capture2e("git", "-C", agent_run.worktree_path, "diff", "--stat", "HEAD")
+      status.success? && output.present?
     rescue => e
       logger.warn(
         message: "agent_execution.check_changes_failed",
