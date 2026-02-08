@@ -93,7 +93,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 - **Container Isolation**: Docker with hardened images, capability dropping
 - **Secrets**: Proxy pattern—agents never see API keys
 - **Git Isolation**: Worktrees for parallel agent work
-- **Authorization**: Rolify + Pundit for RBAC
+- **Authorization**: Explicit membership tables + Pundit for RBAC
 
 ### Agent Execution
 
