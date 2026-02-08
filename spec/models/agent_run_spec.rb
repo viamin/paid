@@ -23,6 +23,7 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_length_of(:pull_request_url).is_at_most(500) }
     it { is_expected.to validate_length_of(:temporal_workflow_id).is_at_most(255) }
     it { is_expected.to validate_length_of(:temporal_run_id).is_at_most(255) }
+    it { is_expected.to validate_length_of(:container_id).is_at_most(128) }
     it { is_expected.to validate_numericality_of(:iterations).is_greater_than_or_equal_to(0).allow_nil }
     it { is_expected.to validate_numericality_of(:tokens_input).is_greater_than_or_equal_to(0).allow_nil }
     it { is_expected.to validate_numericality_of(:tokens_output).is_greater_than_or_equal_to(0).allow_nil }
@@ -500,13 +501,14 @@ RSpec.describe AgentRun do
       end
 
       describe "#provision_container" do
-        it "provisions a container using the worktree_path" do
+        it "provisions a container and persists container_id" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
 
           result = agent_run.provision_container
 
           expect(result).to be_success
           expect(result[:container_id]).to eq("abc123container")
+          expect(agent_run.reload.container_id).to eq("abc123container")
         end
 
         it "raises ArgumentError when worktree_path is blank" do
@@ -543,7 +545,20 @@ RSpec.describe AgentRun do
           expect(result[:stdout]).to eq("output\n")
         end
 
-        it "raises ProvisionError when container not provisioned" do
+        it "reconnects from persisted container_id when @container_service is nil" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "abc123container")
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+            block.call(:stdout, "reconnected\n") if block
+          end
+
+          result = agent_run.execute_in_container("echo hello")
+
+          expect(result).to be_success
+          expect(result[:stdout]).to eq("reconnected\n")
+        end
+
+        it "raises ProvisionError when no container_id is persisted" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
 
           expect { agent_run.execute_in_container("echo hello") }
@@ -552,16 +567,28 @@ RSpec.describe AgentRun do
       end
 
       describe "#cleanup_container" do
-        it "cleans up the provisioned container" do
+        it "cleans up the provisioned container and clears container_id" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
           agent_run.provision_container
 
           expect(mock_container).to receive(:delete)
 
           agent_run.cleanup_container
+
+          expect(agent_run.reload.container_id).to be_nil
         end
 
-        it "does nothing when no container is provisioned" do
+        it "reconnects from persisted container_id when @container_service is nil" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "abc123container")
+          allow(Docker::Container).to receive(:get).with("abc123container").and_return(mock_container)
+          expect(mock_container).to receive(:delete)
+
+          agent_run.cleanup_container
+
+          expect(agent_run.reload.container_id).to be_nil
+        end
+
+        it "does nothing when no container_id is persisted" do
           agent_run = create(:agent_run, worktree_path: worktree_path)
 
           expect { agent_run.cleanup_container }.not_to raise_error

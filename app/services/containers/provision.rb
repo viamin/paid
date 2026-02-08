@@ -219,6 +219,24 @@ module Containers
       false
     end
 
+    # Reconnects to an existing container by its Docker ID.
+    # Used to rehydrate container state across Temporal activities.
+    #
+    # @param agent_run [AgentRun] The agent run to associate logs with
+    # @param container_id [String] The Docker container ID
+    # @param worktree_path [String] Path to the git worktree
+    # @return [Provision] The reconnected service instance
+    # @raise [ProvisionError] When container cannot be found
+    def self.reconnect(agent_run:, container_id:, worktree_path:)
+      service = new(agent_run: agent_run, worktree_path: worktree_path || "")
+      service.instance_variable_set(:@container, Docker::Container.get(container_id))
+      service
+    rescue Docker::Error::NotFoundError
+      raise ProvisionError, "Container #{container_id} not found"
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, "Failed to reconnect to container: #{e.message}"
+    end
+
     # Provisions a container, yields to block, then ensures cleanup.
     #
     # @param agent_run [AgentRun] The agent run to associate logs with

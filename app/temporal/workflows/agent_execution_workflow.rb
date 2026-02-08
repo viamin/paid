@@ -50,6 +50,10 @@ module Workflows
           retry_policy: NO_RETRY
         )
 
+        unless agent_result[:success]
+          raise "Agent execution failed"
+        end
+
         if agent_result[:has_changes]
           # Step 5: Push branch
           Temporalio::Workflow.execute_activity(
@@ -93,20 +97,34 @@ module Workflows
         raise
 
       ensure
-        # Always cleanup container and worktree
-        Temporalio::Workflow.execute_activity(
-          Activities::CleanupContainerActivity,
-          { agent_run_id: agent_run_id },
-          start_to_close_timeout: 60,
-          retry_policy: NO_RETRY
-        )
+        # Always cleanup container and worktree.
+        # Each cleanup is best-effort: failures are logged but do not
+        # mask the primary workflow outcome.
+        begin
+          Temporalio::Workflow.execute_activity(
+            Activities::CleanupContainerActivity,
+            { agent_run_id: agent_run_id },
+            start_to_close_timeout: 60,
+            retry_policy: NO_RETRY
+          )
+        rescue => e
+          Temporalio::Workflow.logger.warn(
+            "CleanupContainerActivity failed: #{e.message}"
+          )
+        end
 
-        Temporalio::Workflow.execute_activity(
-          Activities::CleanupWorktreeActivity,
-          { agent_run_id: agent_run_id },
-          start_to_close_timeout: 60,
-          retry_policy: NO_RETRY
-        )
+        begin
+          Temporalio::Workflow.execute_activity(
+            Activities::CleanupWorktreeActivity,
+            { agent_run_id: agent_run_id },
+            start_to_close_timeout: 60,
+            retry_policy: NO_RETRY
+          )
+        rescue => e
+          Temporalio::Workflow.logger.warn(
+            "CleanupWorktreeActivity failed: #{e.message}"
+          )
+        end
       end
     end
   end

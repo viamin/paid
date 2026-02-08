@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_08_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -50,6 +50,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.string "base_commit_sha", limit: 40
     t.string "branch_name", limit: 255
     t.datetime "completed_at"
+    t.string "container_id", limit: 128
     t.integer "cost_cents", default: 0
     t.datetime "created_at", null: false
     t.integer "duration_seconds"
