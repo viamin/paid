@@ -54,8 +54,9 @@ module Api
 
     def verify_proxy_token
       provided_token = request.headers["X-Proxy-Token"]
+      stored_token = @agent_run.ensure_proxy_token!
 
-      unless provided_token.present? && ActiveSupport::SecurityUtils.secure_compare(provided_token, @agent_run.proxy_token.to_s)
+      unless provided_token.present? && ActiveSupport::SecurityUtils.secure_compare(provided_token, stored_token)
         render json: { error: "Invalid proxy token" }, status: :forbidden
       end
     end
