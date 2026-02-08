@@ -36,24 +36,29 @@ RSpec.describe WorkflowHelper do
     end
 
     it "returns seconds for short durations" do
-      workflow = build(:workflow_state, started_at: 30.seconds.ago, completed_at: Time.current)
+      current_time = Time.current
+      workflow = build(:workflow_state, started_at: current_time - 30.seconds, completed_at: current_time)
       expect(helper.workflow_duration(workflow)).to eq("30s")
     end
 
     it "returns minutes and seconds for medium durations" do
-      workflow = build(:workflow_state, started_at: 125.seconds.ago, completed_at: Time.current)
+      current_time = Time.current
+      workflow = build(:workflow_state, started_at: current_time - 125.seconds, completed_at: current_time)
       expect(helper.workflow_duration(workflow)).to eq("2m 5s")
     end
 
     it "returns hours and minutes for long durations" do
-      workflow = build(:workflow_state, started_at: 3725.seconds.ago, completed_at: Time.current)
+      current_time = Time.current
+      workflow = build(:workflow_state, started_at: current_time - 3725.seconds, completed_at: current_time)
       expect(helper.workflow_duration(workflow)).to eq("1h 2m")
     end
 
     it "uses current time when completed_at is nil" do
-      workflow = build(:workflow_state, started_at: 10.seconds.ago, completed_at: nil)
-      result = helper.workflow_duration(workflow)
-      expect(result).to match(/\d+s/)
+      freeze_time do
+        workflow = build(:workflow_state, started_at: 10.seconds.ago, completed_at: nil)
+        result = helper.workflow_duration(workflow)
+        expect(result).to eq("10s")
+      end
     end
   end
 end
