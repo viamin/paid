@@ -149,7 +149,7 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "configures environment variables without API keys" do
+      it "configures environment variables for proxy access" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
           expect(env).to include("PAID_PROXY_URL=http://paid-proxy:3001")
@@ -159,7 +159,17 @@ RSpec.describe Containers::Provision do
           expect(env).to include("OPENAI_BASE_URL=http://paid-proxy:3001/api/proxy/openai")
           expect(env).to include("ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
           expect(env).to include("OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
-          # Ensure no API keys are present
+          expect(env).to include("ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}")
+          expect(env).to include("OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "does not include API keys in environment variables" do
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
           expect(env.none? { |e| e.include?("API_KEY") }).to be true
           mock_container
         end

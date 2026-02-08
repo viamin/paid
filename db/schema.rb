@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_08_063656) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_08_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -57,6 +57,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_063656) do
     t.bigint "issue_id"
     t.integer "iterations", default: 0
     t.bigint "project_id", null: false
+    t.string "proxy_token", limit: 64
     t.integer "pull_request_number"
     t.string "pull_request_url", limit: 500
     t.string "result_commit_sha", limit: 40
@@ -72,6 +73,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_063656) do
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
+    t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end

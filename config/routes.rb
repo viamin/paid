@@ -26,8 +26,8 @@ Rails.application.routes.draw do
 
   # API endpoints for agent containers
   namespace :api do
-    match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :all
-    match "proxy/openai/*path", to: "secrets_proxy#openai", via: :all
+    match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :post
+    match "proxy/openai/*path", to: "secrets_proxy#openai", via: :post
   end
 
   # Defines the root path route ("/")
