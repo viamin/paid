@@ -2,7 +2,7 @@
 
 class AgentRun < ApplicationRecord
   STATUSES = %w[pending running completed failed cancelled timeout].freeze
-  AGENT_TYPES = %w[claude_code cursor codex copilot api].freeze
+  AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
 
   belongs_to :project
   belongs_to :issue, optional: true
@@ -112,6 +112,27 @@ class AgentRun < ApplicationRecord
       content: content,
       metadata: metadata
     )
+  end
+
+  # Agent execution integration methods.
+  # These delegate to AgentRuns::Execute and Prompts::BuildForIssue services.
+
+  # Executes the agent for this run using agent-harness.
+  #
+  # @param prompt [String] The prompt to send to the agent
+  # @param timeout [Integer] Timeout in seconds (default 600)
+  # @return [AgentRuns::Execute::Result] Result with success/failure and response
+  def execute_agent(prompt, timeout: AgentRuns::Execute::DEFAULT_TIMEOUT)
+    AgentRuns::Execute.call(agent_run: self, prompt: prompt, timeout: timeout)
+  end
+
+  # Builds a prompt for this run's issue using the PromptBuilder.
+  #
+  # @return [String, nil] The built prompt, or nil if no issue is attached
+  def prompt_for_issue
+    return nil unless issue
+
+    Prompts::BuildForIssue.call(issue: issue, project: project)
   end
 
   # Container management integration methods.

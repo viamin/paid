@@ -369,6 +369,64 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#execute_agent" do
+      let(:response) do
+        AgentHarness::Response.new(
+          output: "Done",
+          exit_code: 0,
+          duration: 10.0,
+          provider: :claude
+        )
+      end
+
+      before do
+        allow(AgentHarness).to receive(:send_message).and_return(response)
+      end
+
+      it "delegates to AgentRuns::Execute" do
+        agent_run = create(:agent_run)
+
+        expect(AgentRuns::Execute).to receive(:call).with(
+          agent_run: agent_run,
+          prompt: "Fix the bug",
+          timeout: 600
+        ).and_call_original
+
+        agent_run.execute_agent("Fix the bug")
+      end
+
+      it "passes custom timeout" do
+        agent_run = create(:agent_run)
+
+        expect(AgentRuns::Execute).to receive(:call).with(
+          agent_run: agent_run,
+          prompt: "Fix it",
+          timeout: 1200
+        ).and_call_original
+
+        agent_run.execute_agent("Fix it", timeout: 1200)
+      end
+    end
+
+    describe "#prompt_for_issue" do
+      it "returns nil when no issue is attached" do
+        agent_run = build(:agent_run, issue: nil)
+
+        expect(agent_run.prompt_for_issue).to be_nil
+      end
+
+      it "builds a prompt when issue is attached" do
+        project = create(:project)
+        issue = create(:issue, project: project, title: "Fix auth", github_number: 5)
+        agent_run = build(:agent_run, project: project, issue: issue)
+
+        prompt = agent_run.prompt_for_issue
+
+        expect(prompt).to include("Fix auth")
+        expect(prompt).to include("#5")
+      end
+    end
+
     describe "container integration methods" do
       let(:worktree_path) { Dir.mktmpdir("worktree") }
       let(:mock_container) do
@@ -499,7 +557,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid AGENT_TYPES" do
-      expect(described_class::AGENT_TYPES).to eq(%w[claude_code cursor codex copilot api])
+      expect(described_class::AGENT_TYPES).to eq(%w[claude_code cursor codex copilot aider gemini opencode kilocode api])
     end
   end
 
