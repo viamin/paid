@@ -123,11 +123,7 @@ class ProjectPolicy < ApplicationPolicy
 
   class Scope < Scope
     def resolve
-      if user.has_any_role?(:owner, :admin, record.account)
-        scope.where(account: record.account)
-      else
-        scope.where(account: user.account)
-      end
+      scope.where(account: user.account)
     end
   end
 end
@@ -372,11 +368,14 @@ class User < ApplicationRecord
   end
 
   def assign_owner_role_if_first_user
-    # Ensure every user has at least a default member role in their account
-    add_role(:member, account)
+    # Use a per-account lock to avoid race conditions when deciding the owner
+    account.with_lock do
+      # Rely on the DB default role (viewer) for all users
 
-    # Promote the very first user in the account to owner
-    add_role(:owner, account) if account.users.count == 1
+      # Promote only the very first user in the account to owner, safely under the lock
+      first_user_id = account.users.order(:created_at).limit(1).pluck(:id).first
+      add_role(:owner, account) if first_user_id == id
+    end
   end
 end
 
