@@ -1,0 +1,133 @@
+<% content_for(:title) { "Agent Run ##{@agent_run.id} - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-semibold text-gray-900">Agent Run #<%= @agent_run.id %></h1>
+          <p class="mt-1 text-sm text-gray-500">
+            <%= @agent_run.agent_type.titleize %>
+            <% if @agent_run.started_at.present? %>
+              &middot; Started <%= time_ago_in_words(@agent_run.started_at) %> ago
+            <% else %>
+              &middot; Created <%= time_ago_in_words(@agent_run.created_at) %> ago
+            <% end %>
+          </p>
+        </div>
+        <%= agent_run_status_badge(@agent_run.status) %>
+      </div>
+    </div>
+
+    <% if @agent_run.issue %>
+      <div class="border-t border-gray-200 px-4 py-4 sm:px-6">
+        <h2 class="text-sm font-semibold text-gray-500">Related Issue</h2>
+        <p class="mt-1">
+          <%= link_to @agent_run.issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" do %>
+            #<%= @agent_run.issue.github_number %> - <%= @agent_run.issue.title %>
+          <% end %>
+        </p>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="mt-6">
+    <dl class="grid grid-cols-1 gap-5 sm:grid-cols-4">
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Iterations</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= @agent_run.iterations || 0 %></dd>
+      </div>
+
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Duration</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <% if @agent_run.duration_seconds.present? %>
+            <%= @agent_run.duration_seconds %>s
+          <% elsif @agent_run.running? && @agent_run.started_at.present? %>
+            <%= (Time.current - @agent_run.started_at).to_i %>s
+          <% else %>
+            -
+          <% end %>
+        </dd>
+      </div>
+
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Tokens</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= number_with_delimiter((@agent_run.tokens_input || 0) + (@agent_run.tokens_output || 0)) %>
+        </dd>
+      </div>
+
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Cost</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          $<%= format("%.2f", (@agent_run.cost_cents || 0) / 100.0) %>
+        </dd>
+      </div>
+    </dl>
+  </div>
+
+  <% if @agent_run.pull_request_url.present? %>
+    <div class="mt-6 rounded-lg border border-green-200 bg-green-50 p-4">
+      <h2 class="text-sm font-semibold text-green-800">Pull Request Created</h2>
+      <p class="mt-1">
+        <%= link_to @agent_run.pull_request_url, @agent_run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-green-700 hover:text-green-900 underline" %>
+      </p>
+    </div>
+  <% end %>
+
+  <% if @agent_run.error_message.present? %>
+    <div class="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
+      <h2 class="text-sm font-semibold text-red-800">Error</h2>
+      <pre class="mt-1 overflow-auto whitespace-pre-wrap text-sm text-red-700"><%= @agent_run.error_message %></pre>
+    </div>
+  <% end %>
+
+  <% if @agent_run.branch_name.present? %>
+    <div class="mt-6 rounded-lg bg-white p-4 shadow">
+      <h2 class="text-sm font-semibold text-gray-500">Git Details</h2>
+      <dl class="mt-2 divide-y divide-gray-200">
+        <div class="flex justify-between py-2">
+          <dt class="text-sm text-gray-500">Branch</dt>
+          <dd class="text-sm text-gray-900"><code class="rounded bg-gray-100 px-1 py-0.5 text-xs"><%= @agent_run.branch_name %></code></dd>
+        </div>
+        <% if @agent_run.base_commit_sha.present? %>
+          <div class="flex justify-between py-2">
+            <dt class="text-sm text-gray-500">Base Commit</dt>
+            <dd class="text-sm font-mono text-gray-900"><%= @agent_run.base_commit_sha[0..7] %></dd>
+          </div>
+        <% end %>
+        <% if @agent_run.result_commit_sha.present? %>
+          <div class="flex justify-between py-2">
+            <dt class="text-sm text-gray-500">Result Commit</dt>
+            <dd class="text-sm font-mono text-gray-900"><%= @agent_run.result_commit_sha[0..7] %></dd>
+          </div>
+        <% end %>
+      </dl>
+    </div>
+  <% end %>
+
+  <% if @agent_run.agent_run_logs.any? %>
+    <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+      <h2 class="border-b border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900">Execution Logs</h2>
+      <div class="max-h-96 overflow-auto">
+        <% @agent_run.agent_run_logs.order(created_at: :asc).each do |log| %>
+          <div class="border-b border-gray-100 px-4 py-2 font-mono text-xs last:border-b-0 <%= log.log_type == 'stderr' ? 'bg-red-50 text-red-800' : '' %> <%= log.log_type == 'system' ? 'bg-blue-50 text-blue-800' : '' %>">
+            <span class="mr-2 text-gray-400"><%= log.created_at.strftime('%H:%M:%S') %></span>
+            <span class="mr-2 rounded bg-gray-200 px-1 text-gray-600"><%= log.log_type %></span>
+            <pre class="inline whitespace-pre-wrap"><%= log.content %></pre>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

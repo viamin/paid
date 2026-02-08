@@ -1,0 +1,114 @@
+<% content_for(:title) { "Agent Runs - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <h1 class="text-xl font-semibold text-gray-900">Agent Runs</h1>
+    <% if policy(@project).run_agent? %>
+      <%= link_to new_project_agent_run_path(@project), class: "mt-4 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 sm:mt-0" do %>
+        <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM9.555 7.168A1 1 0 0 0 8 8v4a1 1 0 0 0 1.555.832l3-2a1 1 0 0 0 0-1.664l-3-2Z" clip-rule="evenodd" />
+        </svg>
+        Trigger Run
+      <% end %>
+    <% end %>
+  </div>
+
+  <% if @agent_runs.any? %>
+    <div class="mt-4 flow-root">
+      <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+          <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+            <table class="min-w-full divide-y divide-gray-300">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Status</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Issue</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Agent</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Duration</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Cost</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Started</th>
+                  <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                    <span class="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 bg-white">
+                <% @agent_runs.each do |run| %>
+                  <tr>
+                    <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
+                      <%= agent_run_status_badge(run.status) %>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <% if run.issue %>
+                        #<%= run.issue.github_number %>
+                      <% else %>
+                        <span class="text-gray-400">-</span>
+                      <% end %>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <%= run.agent_type.titleize %>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <% if run.duration_seconds.present? %>
+                        <%= run.duration_seconds %>s
+                      <% elsif run.running? && run.started_at.present? %>
+                        <%= (Time.current - run.started_at).to_i %>s
+                      <% else %>
+                        <span class="text-gray-400">-</span>
+                      <% end %>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <% if run.cost_cents.present? && run.cost_cents > 0 %>
+                        $<%= format("%.2f", run.cost_cents / 100.0) %>
+                      <% else %>
+                        <span class="text-gray-400">-</span>
+                      <% end %>
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <% if run.started_at.present? %>
+                        <%= time_ago_in_words(run.started_at) %> ago
+                      <% else %>
+                        <%= time_ago_in_words(run.created_at) %> ago
+                      <% end %>
+                    </td>
+                    <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                      <%= link_to "View", project_agent_run_path(@project, run), class: "text-indigo-600 hover:text-indigo-900" %>
+                      <% if run.pull_request_url.present? %>
+                        &middot;
+                        <%= link_to "PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+                      <% end %>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-12">
+      <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+      <h3 class="mt-2 text-sm font-semibold text-gray-900">No agent runs yet</h3>
+      <p class="mt-1 text-sm text-gray-500">Trigger an agent run to get started.</p>
+      <% if policy(@project).run_agent? %>
+        <div class="mt-6">
+          <%= link_to new_project_agent_run_path(@project), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" do %>
+            Trigger Run
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+</div>
