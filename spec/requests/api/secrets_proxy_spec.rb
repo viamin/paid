@@ -332,7 +332,7 @@ RSpec.describe "Api::SecretsProxy" do
     context "with nil proxy_token on agent run" do
       let(:agent_run) { create(:agent_run, :running, project: project) }
 
-      it "lazily generates a token and authenticates successfully" do
+      it "lazily regenerates a proxy token and rejects the old token" do
         # Clear the token to simulate a pre-existing run
         token = agent_run.proxy_token
         agent_run.update_column(:proxy_token, nil)
