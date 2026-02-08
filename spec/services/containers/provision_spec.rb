@@ -53,8 +53,8 @@ RSpec.describe Containers::Provision do
       expect(described_class::DEFAULTS[:image]).to eq("paid-agent:latest")
     end
 
-    it "defines default network name from NetworkPolicy" do
-      expect(described_class::DEFAULTS[:network]).to eq(NetworkPolicy::NETWORK_NAME)
+    it "does not include :network in defaults" do
+      expect(described_class::DEFAULTS).not_to have_key(:network)
     end
   end
 
@@ -246,12 +246,18 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "ignores custom :network option and uses the restricted network" do
+      it "warns and ignores custom :network option" do
+        expect(Rails.logger).to receive(:warn).with(
+          hash_including(message: "container_manager.network_option_ignored")
+        )
+
         custom_service = described_class.new(
           agent_run: agent_run,
           worktree_path: worktree_path,
           network: "custom_network"
         )
+
+        expect(custom_service.options).not_to have_key(:network)
 
         expect(Docker::Container).to receive(:create) do |config|
           expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::NETWORK_NAME)
