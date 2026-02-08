@@ -47,14 +47,24 @@ class WorktreeOrphanCleanupJob < ApplicationJob
     worktree_remove_failed = false
 
     WorktreeService.mutex_for(repo_path).synchronize do
-      if worktree.path.present? && Dir.exist?(worktree.path) && Dir.exist?(repo_path)
-        unless system("git", "-C", repo_path, "worktree", "remove", worktree.path, "--force", exception: false)
+      if worktree.path.present? && Dir.exist?(worktree.path)
+        unless Dir.exist?(repo_path)
           Rails.logger.warn(
-            message: "worktree_cleanup.worktree_remove_failed",
+            message: "worktree_cleanup.repo_path_missing",
             worktree_id: worktree.id,
-            path: worktree.path
+            path: worktree.path,
+            repo_path: repo_path
           )
           worktree_remove_failed = true
+        else
+          unless system("git", "-C", repo_path, "worktree", "remove", worktree.path, "--force", exception: false)
+            Rails.logger.warn(
+              message: "worktree_cleanup.worktree_remove_failed",
+              worktree_id: worktree.id,
+              path: worktree.path
+            )
+            worktree_remove_failed = true
+          end
         end
       end
 
@@ -84,7 +94,7 @@ class WorktreeOrphanCleanupJob < ApplicationJob
     repo_path = worktree_repo_path(project)
     return unless Dir.exist?(repo_path)
 
-    unless system("git", "-C", repo_path, "worktree", "prune")
+    unless system("git", "-C", repo_path, "worktree", "prune", exception: false)
       Rails.logger.warn(
         message: "worktree_cleanup.prune_command_failed",
         project_id: project.id,
