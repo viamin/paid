@@ -106,7 +106,7 @@
   <div class="mt-8">
     <h2 class="text-lg font-medium text-gray-900">Workflow Status</h2>
     <div class="mt-4">
-      <%= turbo_frame_tag "workflow-status", src: project_workflow_status_path(@project) do %>
+      <%= turbo_frame_tag "workflow-status", src: project_workflow_status_path(@project), loading: :lazy do %>
         <div class="animate-pulse bg-gray-100 h-24 rounded-lg"></div>
       <% end %>
     </div>

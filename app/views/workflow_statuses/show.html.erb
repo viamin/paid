@@ -13,12 +13,12 @@
               Active
             </span>
           <% elsif @poll_workflow %>
-            <span class="text-yellow-600"><%= @poll_workflow.status.capitalize %></span>
+            <span class="text-yellow-600"><%= @poll_workflow.status.to_s.humanize %></span>
           <% else %>
             <span class="text-gray-500">Not started</span>
           <% end %>
 
-          <a href="http://localhost:8080/namespaces/default/workflows/github-poll-<%= @project.id %>"
+          <a href="<%= Paid.temporal_ui_url %>/namespaces/<%= Paid.temporal_namespace %>/workflows/github-poll-<%= @project.id %>"
              target="_blank"
              rel="noopener noreferrer"
              class="text-indigo-600 hover:text-indigo-900 text-sm">
@@ -48,7 +48,7 @@
                 <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm text-gray-900 sm:pl-6"><%= workflow.workflow_type %></td>
                 <td class="whitespace-nowrap px-3 py-4 text-sm">
                   <span class="<%= workflow_status_class(workflow.status) %> inline-flex items-center rounded-md px-2 py-1 text-xs font-medium">
-                    <%= workflow.status.capitalize %>
+                    <%= workflow.status.to_s.humanize %>
                   </span>
                 </td>
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
@@ -58,7 +58,7 @@
                   <%= workflow_duration(workflow) %>
                 </td>
                 <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                  <a href="http://localhost:8080/namespaces/default/workflows/<%= workflow.temporal_workflow_id %>"
+                  <a href="<%= Paid.temporal_ui_url %>/namespaces/<%= Paid.temporal_namespace %>/workflows/<%= workflow.temporal_workflow_id %>"
                      target="_blank"
                      rel="noopener noreferrer"
                      class="text-indigo-600 hover:text-indigo-900">
@@ -76,6 +76,17 @@
   </div>
 
   <% if @poll_workflow&.running? || @recent_workflows.any?(&:running?) %>
-    <meta http-equiv="refresh" content="5">
+    <script>
+      (function() {
+        setTimeout(function() {
+          var frame = document.getElementById("workflow-status");
+          if (frame && frame.src) {
+            frame.reload();
+          } else {
+            window.location.reload();
+          }
+        }, 5000);
+      })();
+    </script>
   <% end %>
 <% end %>
