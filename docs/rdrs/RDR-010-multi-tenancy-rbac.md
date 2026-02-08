@@ -84,7 +84,7 @@ CREATE TABLE account_memberships (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id),
   account_id BIGINT NOT NULL REFERENCES accounts(id),
-  role INTEGER NOT NULL DEFAULT 1,  -- enum: viewer(0), member(1), admin(2), owner(3)
+  role INTEGER NOT NULL DEFAULT 0,  -- enum: viewer(0), member(1), admin(2), owner(3)
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 );
@@ -93,7 +93,7 @@ CREATE TABLE project_memberships (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id),
   project_id BIGINT NOT NULL REFERENCES projects(id),
-  role INTEGER NOT NULL DEFAULT 1,  -- enum: viewer(0), member(1), admin(2)
+  role INTEGER NOT NULL DEFAULT 0,  -- enum: viewer(0), member(1), admin(2)
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 );
@@ -123,8 +123,8 @@ class ProjectPolicy < ApplicationPolicy
 
   class Scope < Scope
     def resolve
-      if user.has_role?(:admin)
-        scope.all
+      if user.has_any_role?(:owner, :admin, record.account)
+        scope.where(account: record.account)
       else
         scope.where(account: user.account)
       end
@@ -372,6 +372,10 @@ class User < ApplicationRecord
   end
 
   def assign_owner_role_if_first_user
+    # Ensure every user has at least a default member role in their account
+    add_role(:member, account)
+
+    # Promote the very first user in the account to owner
     add_role(:owner, account) if account.users.count == 1
   end
 end
@@ -419,8 +423,8 @@ class ApplicationPolicy
   private
 
   def user_in_account?
-    return false unless user&.account_id
-    user.account_id == account_for_record&.id
+    return false unless user
+    has_any_account_role?(:owner, :admin, :member, :viewer)
   end
 
   def account_for_record
@@ -613,7 +617,7 @@ end
 ### Positive Consequences
 
 - **Clean authorization**: Explicit policies per resource
-- **Type-safe roles**: Rails enums provide compile-time validation and database-level constraints
+- **Type-safe roles**: Rails enums provide a constrained set of allowed role values with application-level validation
 - **Flexible roles**: Account-level and project-level roles via dedicated membership tables
 - **No external dependency**: Role management requires no additional gems
 - **Future-proof**: Architecture supports SaaS migration
@@ -700,7 +704,7 @@ class CreateAccountMemberships < ActiveRecord::Migration[8.0]
     create_table :account_memberships do |t|
       t.references :user, null: false, foreign_key: true
       t.references :account, null: false, foreign_key: true
-      t.integer :role, null: false, default: 1  # viewer(0), member(1), admin(2), owner(3)
+      t.integer :role, null: false, default: 0  # viewer(0), member(1), admin(2), owner(3)
 
       t.timestamps
     end
@@ -715,7 +719,7 @@ class CreateProjectMemberships < ActiveRecord::Migration[8.0]
     create_table :project_memberships do |t|
       t.references :user, null: false, foreign_key: true
       t.references :project, null: false, foreign_key: true
-      t.integer :role, null: false, default: 1  # viewer(0), member(1), admin(2)
+      t.integer :role, null: false, default: 0  # viewer(0), member(1), admin(2)
 
       t.timestamps
     end
