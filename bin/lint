@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+RUBOCOP_ARGS=""
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  RUBOCOP_ARGS="-f github"
+fi
+
 echo "== Style: RuboCop =="
-bin/rubocop
+bin/rubocop $RUBOCOP_ARGS
 
 echo "== Security: Brakeman =="
 bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error
