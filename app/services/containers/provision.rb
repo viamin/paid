@@ -84,14 +84,18 @@ module Containers
     end
 
     # Provisions a new container with security hardening.
+    # Ensures the agent network exists before creating the container,
+    # and applies firewall rules after start to restrict outbound traffic.
     #
     # @return [Result] Result object with success/failure status
     def provision
       log_system("container.provision.start", image: options[:image])
 
       validate_worktree_path!
+      ensure_network!
       @container = create_container
       start_container
+      apply_network_restrictions!
 
       log_system("container.provision.success", container_id: container.id)
       Result.success(container_id: container.id)
@@ -295,11 +299,11 @@ module Containers
         },
         # Worktree is mounted read-write so agents can commit code changes.
         # Security is enforced at the git/branch level, not filesystem permissions.
-        "Binds" => [ "#{worktree_path}:#{options[:workspace_mount]}:rw" ]
+        "Binds" => [ "#{worktree_path}:#{options[:workspace_mount]}:rw" ],
+        # Agent containers always use the restricted network.
+        # ensure_network! guarantees the network exists before we reach here.
+        "NetworkMode" => options[:network]
       }
-
-      # Only add network mode if network exists
-      config["NetworkMode"] = options[:network] if network_exists?(options[:network])
 
       config
     end
@@ -321,11 +325,21 @@ module Containers
       "paid-#{agent_run.project_id}-#{agent_run.id}-#{SecureRandom.hex(4)}"
     end
 
-    def network_exists?(network_name)
-      Docker::Network.get(network_name)
-      true
-    rescue Docker::Error::NotFoundError
-      false
+    def ensure_network!
+      NetworkPolicy.ensure_network!
+      log_system("container.network.ready", network: options[:network])
+    rescue NetworkPolicy::Error => e
+      raise ProvisionError, "Network setup failed: #{e.message}"
+    end
+
+    def apply_network_restrictions!
+      NetworkPolicy.apply_firewall_rules(container)
+      log_system("container.firewall.applied", container_id: container.id)
+    rescue NetworkPolicy::Error => e
+      log_system("container.firewall.failed", error: e.message)
+      # Firewall failure is not fatal in development but logged as warning.
+      # In production, this should be treated as a hard failure.
+      raise ProvisionError, "Firewall setup failed: #{e.message}" if Rails.env.production?
     end
 
     def fetch_exit_code
