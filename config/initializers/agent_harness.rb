@@ -2,15 +2,24 @@
 
 require "agent_harness"
 
+AGENT_TIMEOUT = begin
+  Integer(ENV.fetch("AGENT_TIMEOUT", 600))
+rescue ArgumentError
+  Rails.logger.warn(message: "agent_harness.invalid_timeout",
+    value: ENV["AGENT_TIMEOUT"],
+    fallback: 600)
+  600
+end
+
 AgentHarness.configure do |config|
   config.default_provider = :claude
   config.fallback_providers = %i[cursor aider]
-  config.default_timeout = ENV.fetch("AGENT_TIMEOUT", 600).to_i
+  config.default_timeout = [ AGENT_TIMEOUT, 1 ].max
 
   config.provider(:claude) do |p|
     p.enabled = true
     p.priority = 10
-    p.timeout = ENV.fetch("AGENT_TIMEOUT", 600).to_i
+    p.timeout = [ AGENT_TIMEOUT, 1 ].max
   end
 
   config.provider(:cursor) do |p|

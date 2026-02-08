@@ -120,10 +120,14 @@ class AgentRun < ApplicationRecord
   # Executes the agent for this run using agent-harness.
   #
   # @param prompt [String] The prompt to send to the agent
-  # @param timeout [Integer] Timeout in seconds (default 600)
+  # @param timeout [Integer, nil] Optional timeout in seconds; when nil, the
+  #   underlying AgentHarness configuration determines the default
   # @return [AgentRuns::Execute::Result] Result with success/failure and response
-  def execute_agent(prompt, timeout: AgentRuns::Execute::DEFAULT_TIMEOUT)
-    AgentRuns::Execute.call(agent_run: self, prompt: prompt, timeout: timeout)
+  def execute_agent(prompt, timeout: nil)
+    args = { agent_run: self, prompt: prompt }
+    args[:timeout] = timeout if timeout
+
+    AgentRuns::Execute.call(**args)
   end
 
   # Builds a prompt for this run's issue using the PromptBuilder.

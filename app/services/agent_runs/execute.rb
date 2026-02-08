@@ -23,11 +23,9 @@ module AgentRuns
       "kilocode" => :kilocode
     }.freeze
 
-    DEFAULT_TIMEOUT = 600
-
     attr_reader :agent_run, :prompt, :timeout
 
-    def initialize(agent_run:, prompt:, timeout: DEFAULT_TIMEOUT)
+    def initialize(agent_run:, prompt:, timeout: nil)
       @agent_run = agent_run
       @prompt = prompt
       @timeout = timeout
@@ -65,12 +63,10 @@ module AgentRuns
     def execute_agent
       provider_name = PROVIDER_MAP[agent_run.agent_type]
 
-      AgentHarness.send_message(
-        prompt,
-        provider: provider_name,
-        timeout: timeout,
-        dangerous_mode: true
-      )
+      options = { provider: provider_name, dangerous_mode: true }
+      options[:timeout] = timeout if timeout
+
+      AgentHarness.send_message(prompt, **options)
     end
 
     def process_response(response)
@@ -104,23 +100,11 @@ module AgentRuns
       input_tokens = response.input_tokens || 0
       output_tokens = response.output_tokens || 0
 
-      agent_run.update!(
+      TokenUsageTracker.track(
+        agent_run: agent_run,
         tokens_input: input_tokens,
         tokens_output: output_tokens
       )
-
-      agent_run.project.increment_metrics!(
-        cost_cents: 0,
-        tokens_used: input_tokens + output_tokens
-      )
-
-      agent_run.log!("metric", "token_usage", metadata: {
-        input_tokens: input_tokens,
-        output_tokens: output_tokens,
-        total_tokens: response.total_tokens,
-        model: response.model,
-        provider: response.provider.to_s
-      })
     end
 
     def handle_timeout(error)
