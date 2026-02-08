@@ -790,9 +790,9 @@ class RunAgentActivity < Paid::Activity
     retry_policy: {
       initial_interval: 1.second,
       backoff_coefficient: 2.0,
-      maximum_interval: 1.minute,
-      maximum_attempts: 3,
-      non_retryable_errors: [
+      max_interval: 1.minute,
+      max_attempts: 3,
+      non_retryable_error_types: [
         AgentMonitor::LimitExceeded,  # Don't retry guardrail violations
         BudgetExceeded,               # Don't retry budget issues
         GitConflict                   # Needs human intervention
