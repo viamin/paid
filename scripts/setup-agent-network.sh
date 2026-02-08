@@ -85,7 +85,7 @@ echo "Creating iptables chain '${CHAIN_NAME}'..."
 run_iptables -N "${CHAIN_NAME}"
 
 # Allow established/related connections (for responses to allowed requests)
-run_iptables -A "${CHAIN_NAME}" -m state --state ESTABLISHED,RELATED -j ACCEPT
+run_iptables -A "${CHAIN_NAME}" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
 # Allow connections to secrets proxy (on gateway/host)
 echo "Allowing secrets proxy (${GATEWAY_IP}:${SECRETS_PROXY_PORT})..."

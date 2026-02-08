@@ -53,8 +53,8 @@ RSpec.describe Containers::Provision do
       expect(described_class::DEFAULTS[:image]).to eq("paid-agent:latest")
     end
 
-    it "defines default network name" do
-      expect(described_class::DEFAULTS[:network]).to eq("paid_agent_network")
+    it "defines default network name from NetworkPolicy" do
+      expect(described_class::DEFAULTS[:network]).to eq(NetworkPolicy::NETWORK_NAME)
     end
   end
 
@@ -92,7 +92,7 @@ RSpec.describe Containers::Provision do
         expect(agent_run).to receive(:log!).with("system", "container.provision.start",
           metadata: hash_including(image: "paid-agent:latest")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.network.ready",
-          metadata: hash_including(network: "paid_agent_network")).ordered
+          metadata: hash_including(network: NetworkPolicy::NETWORK_NAME)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
           metadata: hash_including(container_id: "abc123container")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.provision.success",
@@ -229,7 +229,7 @@ RSpec.describe Containers::Provision do
 
       it "always configures network mode" do
         expect(Docker::Container).to receive(:create) do |config|
-          expect(config["HostConfig"]["NetworkMode"]).to eq("paid_agent_network")
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::NETWORK_NAME)
           mock_container
         end
 
