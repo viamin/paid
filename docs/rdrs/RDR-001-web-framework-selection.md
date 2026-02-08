@@ -39,7 +39,7 @@ The team has Ruby expertise and values developer productivity. The application i
 - Database: PostgreSQL (decided separately in RDR-003)
 - Workflow engine: Temporal.io (decided separately in RDR-002)
 - Real-time requirements: Live agent status, interrupt capability
-- Authentication: Standard user auth with RBAC (membership tables + Pundit)
+- Authentication & authorization: Standard user auth with RBAC (membership tables + Pundit)
 
 ## Research Findings
 
