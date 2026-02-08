@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 # This file is auto-generated from the current state of the database. Instead
 # of editing this file, please use the migrations feature of Active Record to
 # incrementally modify your database, and then regenerate this schema definition.
@@ -22,10 +20,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.integer "role", default: 0, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
-    t.index [ "account_id", "role" ], name: "index_account_memberships_on_account_id_and_role"
-    t.index [ "account_id" ], name: "index_account_memberships_on_account_id"
-    t.index [ "user_id", "account_id" ], name: "index_account_memberships_on_user_id_and_account_id", unique: true
-    t.index [ "user_id" ], name: "index_account_memberships_on_user_id"
+    t.index ["account_id", "role"], name: "index_account_memberships_on_account_id_and_role"
+    t.index ["account_id"], name: "index_account_memberships_on_account_id"
+    t.index ["user_id", "account_id"], name: "index_account_memberships_on_user_id_and_account_id", unique: true
+    t.index ["user_id"], name: "index_account_memberships_on_user_id"
   end
 
   create_table "accounts", force: :cascade do |t|
@@ -33,7 +31,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.string "name", null: false
     t.string "slug", null: false
     t.datetime "updated_at", null: false
-    t.index [ "slug" ], name: "index_accounts_on_slug", unique: true
+    t.index ["slug"], name: "index_accounts_on_slug", unique: true
   end
 
   create_table "agent_run_logs", force: :cascade do |t|
@@ -42,9 +40,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.datetime "created_at", null: false
     t.string "log_type", limit: 50, null: false
     t.jsonb "metadata"
-    t.index [ "agent_run_id", "log_type" ], name: "index_agent_run_logs_on_agent_run_id_and_log_type"
-    t.index [ "agent_run_id" ], name: "index_agent_run_logs_on_agent_run_id"
-    t.index [ "created_at" ], name: "index_agent_run_logs_on_created_at"
+    t.index ["agent_run_id", "log_type"], name: "index_agent_run_logs_on_agent_run_id_and_log_type"
+    t.index ["agent_run_id"], name: "index_agent_run_logs_on_agent_run_id"
+    t.index ["created_at"], name: "index_agent_run_logs_on_created_at"
   end
 
   create_table "agent_runs", force: :cascade do |t|
@@ -71,13 +69,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.integer "tokens_output", default: 0
     t.datetime "updated_at", null: false
     t.string "worktree_path", limit: 500
-    t.index [ "created_at" ], name: "index_agent_runs_on_created_at"
-    t.index [ "issue_id" ], name: "index_agent_runs_on_issue_id"
-    t.index [ "project_id", "status" ], name: "index_agent_runs_on_project_id_and_status"
-    t.index [ "project_id" ], name: "index_agent_runs_on_project_id"
-    t.index [ "proxy_token" ], name: "index_agent_runs_on_proxy_token", unique: true
-    t.index [ "status" ], name: "index_agent_runs_on_status"
-    t.index [ "temporal_workflow_id" ], name: "index_agent_runs_on_temporal_workflow_id"
+    t.index ["created_at"], name: "index_agent_runs_on_created_at"
+    t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
+    t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
+    t.index ["project_id"], name: "index_agent_runs_on_project_id"
+    t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
+    t.index ["status"], name: "index_agent_runs_on_status"
+    t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end
 
   create_table "github_tokens", force: :cascade do |t|
@@ -91,10 +89,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.jsonb "scopes", default: [], null: false
     t.text "token", null: false
     t.datetime "updated_at", null: false
-    t.index [ "account_id", "name" ], name: "index_github_tokens_on_account_id_and_name", unique: true
-    t.index [ "account_id" ], name: "index_github_tokens_on_account_id"
-    t.index [ "created_by_id" ], name: "index_github_tokens_on_created_by_id"
-    t.index [ "revoked_at" ], name: "index_github_tokens_on_revoked_at"
+    t.index ["account_id", "name"], name: "index_github_tokens_on_account_id_and_name", unique: true
+    t.index ["account_id"], name: "index_github_tokens_on_account_id"
+    t.index ["created_by_id"], name: "index_github_tokens_on_created_by_id"
+    t.index ["revoked_at"], name: "index_github_tokens_on_revoked_at"
   end
 
   create_table "good_job_batches", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -127,8 +125,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.datetime "scheduled_at"
     t.jsonb "serialized_params"
     t.datetime "updated_at", null: false
-    t.index [ "active_job_id", "created_at" ], name: "index_good_job_executions_on_active_job_id_and_created_at"
-    t.index [ "process_id", "created_at" ], name: "index_good_job_executions_on_process_id_and_created_at"
+    t.index ["active_job_id", "created_at"], name: "index_good_job_executions_on_active_job_id_and_created_at"
+    t.index ["process_id", "created_at"], name: "index_good_job_executions_on_process_id_and_created_at"
   end
 
   create_table "good_job_processes", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -143,7 +141,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.text "key"
     t.datetime "updated_at", null: false
     t.jsonb "value"
-    t.index [ "key" ], name: "index_good_job_settings_on_key", unique: true
+    t.index ["key"], name: "index_good_job_settings_on_key", unique: true
   end
 
   create_table "good_jobs", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -170,22 +168,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.datetime "scheduled_at"
     t.jsonb "serialized_params"
     t.datetime "updated_at", null: false
-    t.index [ "active_job_id", "created_at" ], name: "index_good_jobs_on_active_job_id_and_created_at"
-    t.index [ "batch_callback_id" ], name: "index_good_jobs_on_batch_callback_id", where: "(batch_callback_id IS NOT NULL)"
-    t.index [ "batch_id" ], name: "index_good_jobs_on_batch_id", where: "(batch_id IS NOT NULL)"
-    t.index [ "concurrency_key", "created_at" ], name: "index_good_jobs_on_concurrency_key_and_created_at"
-    t.index [ "concurrency_key" ], name: "index_good_jobs_on_concurrency_key_when_unfinished", where: "(finished_at IS NULL)"
-    t.index [ "cron_key", "created_at" ], name: "index_good_jobs_on_cron_key_and_created_at_cond", where: "(cron_key IS NOT NULL)"
-    t.index [ "cron_key", "cron_at" ], name: "index_good_jobs_on_cron_key_and_cron_at_cond", unique: true, where: "(cron_key IS NOT NULL)"
-    t.index [ "finished_at" ], name: "index_good_jobs_jobs_on_finished_at_only", where: "(finished_at IS NOT NULL)"
-    t.index [ "job_class" ], name: "index_good_jobs_on_job_class"
-    t.index [ "labels" ], name: "index_good_jobs_on_labels", where: "(labels IS NOT NULL)", using: :gin
-    t.index [ "locked_by_id" ], name: "index_good_jobs_on_locked_by_id", where: "(locked_by_id IS NOT NULL)"
-    t.index [ "priority", "created_at" ], name: "index_good_job_jobs_for_candidate_lookup", where: "(finished_at IS NULL)"
-    t.index [ "priority", "created_at" ], name: "index_good_jobs_jobs_on_priority_created_at_when_unfinished", order: { priority: "DESC NULLS LAST" }, where: "(finished_at IS NULL)"
-    t.index [ "priority", "scheduled_at" ], name: "index_good_jobs_on_priority_scheduled_at_unfinished_unlocked", where: "((finished_at IS NULL) AND (locked_by_id IS NULL))"
-    t.index [ "queue_name", "scheduled_at" ], name: "index_good_jobs_on_queue_name_and_scheduled_at", where: "(finished_at IS NULL)"
-    t.index [ "scheduled_at" ], name: "index_good_jobs_on_scheduled_at", where: "(finished_at IS NULL)"
+    t.index ["active_job_id", "created_at"], name: "index_good_jobs_on_active_job_id_and_created_at"
+    t.index ["batch_callback_id"], name: "index_good_jobs_on_batch_callback_id", where: "(batch_callback_id IS NOT NULL)"
+    t.index ["batch_id"], name: "index_good_jobs_on_batch_id", where: "(batch_id IS NOT NULL)"
+    t.index ["concurrency_key", "created_at"], name: "index_good_jobs_on_concurrency_key_and_created_at"
+    t.index ["concurrency_key"], name: "index_good_jobs_on_concurrency_key_when_unfinished", where: "(finished_at IS NULL)"
+    t.index ["cron_key", "created_at"], name: "index_good_jobs_on_cron_key_and_created_at_cond", where: "(cron_key IS NOT NULL)"
+    t.index ["cron_key", "cron_at"], name: "index_good_jobs_on_cron_key_and_cron_at_cond", unique: true, where: "(cron_key IS NOT NULL)"
+    t.index ["finished_at"], name: "index_good_jobs_jobs_on_finished_at_only", where: "(finished_at IS NOT NULL)"
+    t.index ["job_class"], name: "index_good_jobs_on_job_class"
+    t.index ["labels"], name: "index_good_jobs_on_labels", where: "(labels IS NOT NULL)", using: :gin
+    t.index ["locked_by_id"], name: "index_good_jobs_on_locked_by_id", where: "(locked_by_id IS NOT NULL)"
+    t.index ["priority", "created_at"], name: "index_good_job_jobs_for_candidate_lookup", where: "(finished_at IS NULL)"
+    t.index ["priority", "created_at"], name: "index_good_jobs_jobs_on_priority_created_at_when_unfinished", order: { priority: "DESC NULLS LAST" }, where: "(finished_at IS NULL)"
+    t.index ["priority", "scheduled_at"], name: "index_good_jobs_on_priority_scheduled_at_unfinished_unlocked", where: "((finished_at IS NULL) AND (locked_by_id IS NULL))"
+    t.index ["queue_name", "scheduled_at"], name: "index_good_jobs_on_queue_name_and_scheduled_at", where: "(finished_at IS NULL)"
+    t.index ["scheduled_at"], name: "index_good_jobs_on_scheduled_at", where: "(finished_at IS NULL)"
   end
 
   create_table "issues", force: :cascade do |t|
@@ -202,10 +200,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.bigint "project_id", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
-    t.index [ "parent_issue_id" ], name: "index_issues_on_parent_issue_id"
-    t.index [ "project_id", "github_issue_id" ], name: "index_issues_on_project_id_and_github_issue_id", unique: true
-    t.index [ "project_id", "paid_state" ], name: "index_issues_on_project_id_and_paid_state"
-    t.index [ "project_id" ], name: "index_issues_on_project_id"
+    t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
+    t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
+    t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
+    t.index ["project_id"], name: "index_issues_on_project_id"
   end
 
   create_table "project_memberships", force: :cascade do |t|
@@ -214,10 +212,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.integer "role", default: 0, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
-    t.index [ "project_id", "role" ], name: "index_project_memberships_on_project_id_and_role"
-    t.index [ "project_id" ], name: "index_project_memberships_on_project_id"
-    t.index [ "user_id", "project_id" ], name: "index_project_memberships_on_user_id_and_project_id", unique: true
-    t.index [ "user_id" ], name: "index_project_memberships_on_user_id"
+    t.index ["project_id", "role"], name: "index_project_memberships_on_project_id_and_role"
+    t.index ["project_id"], name: "index_project_memberships_on_project_id"
+    t.index ["user_id", "project_id"], name: "index_project_memberships_on_user_id_and_project_id", unique: true
+    t.index ["user_id"], name: "index_project_memberships_on_user_id"
   end
 
   create_table "projects", force: :cascade do |t|
@@ -236,12 +234,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false
-    t.index [ "account_id", "active" ], name: "index_projects_on_account_id_and_active"
-    t.index [ "account_id", "github_id" ], name: "index_projects_on_account_id_and_github_id", unique: true
-    t.index [ "account_id" ], name: "index_projects_on_account_id"
-    t.index [ "created_by_id" ], name: "index_projects_on_created_by_id"
-    t.index [ "github_token_id" ], name: "index_projects_on_github_token_id"
-    t.index [ "owner", "repo" ], name: "index_projects_on_owner_and_repo"
+    t.index ["account_id", "active"], name: "index_projects_on_account_id_and_active"
+    t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true
+    t.index ["account_id"], name: "index_projects_on_account_id"
+    t.index ["created_by_id"], name: "index_projects_on_created_by_id"
+    t.index ["github_token_id"], name: "index_projects_on_github_token_id"
+    t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
   end
 
   create_table "users", force: :cascade do |t|
@@ -254,9 +252,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.datetime "reset_password_sent_at"
     t.string "reset_password_token"
     t.datetime "updated_at", null: false
-    t.index [ "account_id" ], name: "index_users_on_account_id"
-    t.index [ "email" ], name: "index_users_on_email", unique: true
-    t.index [ "reset_password_token" ], name: "index_users_on_reset_password_token", unique: true
+    t.index ["account_id"], name: "index_users_on_account_id"
+    t.index ["email"], name: "index_users_on_email", unique: true
+    t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
   create_table "workflow_states", force: :cascade do |t|
@@ -272,9 +270,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.string "temporal_workflow_id", null: false
     t.datetime "updated_at", null: false
     t.string "workflow_type", limit: 100, null: false
-    t.index [ "project_id" ], name: "index_workflow_states_on_project_id"
-    t.index [ "status" ], name: "index_workflow_states_on_status"
-    t.index [ "temporal_workflow_id" ], name: "index_workflow_states_on_temporal_workflow_id", unique: true
+    t.index ["project_id"], name: "index_workflow_states_on_project_id"
+    t.index ["status"], name: "index_workflow_states_on_status"
+    t.index ["temporal_workflow_id"], name: "index_workflow_states_on_temporal_workflow_id", unique: true
   end
 
   create_table "worktrees", force: :cascade do |t|
@@ -288,10 +286,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_120000) do
     t.boolean "pushed", default: false, null: false
     t.string "status", limit: 50, default: "active", null: false
     t.datetime "updated_at", null: false
-    t.index [ "agent_run_id" ], name: "index_worktrees_on_agent_run_id"
-    t.index [ "project_id", "branch_name" ], name: "index_worktrees_on_project_id_and_branch_name", unique: true
-    t.index [ "project_id" ], name: "index_worktrees_on_project_id"
-    t.index [ "status" ], name: "index_worktrees_on_status"
+    t.index ["agent_run_id"], name: "index_worktrees_on_agent_run_id"
+    t.index ["project_id", "branch_name"], name: "index_worktrees_on_project_id_and_branch_name", unique: true
+    t.index ["project_id"], name: "index_worktrees_on_project_id"
+    t.index ["status"], name: "index_worktrees_on_status"
   end
 
   add_foreign_key "account_memberships", "accounts"
