@@ -77,7 +77,8 @@ module Containers
     def initialize(agent_run:, worktree_path:, **options)
       if options.key?(:network)
         Rails.logger.warn(
-          message: "container_manager.network_option_ignored",
+          message: "container_manager.container.network_option_ignored",
+          agent_run_id: agent_run.id,
           hint: "The :network option is ignored; containers always use #{NetworkPolicy::NETWORK_NAME}"
         )
         options.delete(:network)

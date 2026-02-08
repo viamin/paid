@@ -248,7 +248,10 @@ RSpec.describe Containers::Provision do
 
       it "warns and ignores custom :network option" do
         expect(Rails.logger).to receive(:warn).with(
-          hash_including(message: "container_manager.network_option_ignored")
+          hash_including(
+            message: "container_manager.container.network_option_ignored",
+            agent_run_id: agent_run.id
+          )
         )
 
         custom_service = described_class.new(
