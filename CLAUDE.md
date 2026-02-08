@@ -31,6 +31,8 @@ bin/rails server             # Start Rails server only
 bin/rails console            # Rails console
 
 # Code Quality
+bin/lint                     # Run all linters (RuboCop, markdownlint)
+bin/lint -A                  # Run all linters with auto-fix
 bin/rubocop                  # Run RuboCop (rubocop-rails-omakase style)
 bin/rubocop -a               # Auto-fix violations
 
