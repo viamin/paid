@@ -187,7 +187,7 @@ RSpec.describe "Projects" do
               repo: "hello-world"
             }
           }
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("must be selected")
         end
       end
@@ -201,7 +201,7 @@ RSpec.describe "Projects" do
 
         it "re-renders the form with error message" do
           post projects_path, params: valid_params
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("Repository not found")
         end
 
@@ -221,7 +221,7 @@ RSpec.describe "Projects" do
 
         it "re-renders the form with error message" do
           post projects_path, params: valid_params
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("authentication failed")
         end
       end
@@ -235,7 +235,7 @@ RSpec.describe "Projects" do
 
         it "re-renders the form with rate limit error message" do
           post projects_path, params: valid_params
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("rate limit exceeded")
         end
       end
@@ -259,7 +259,7 @@ RSpec.describe "Projects" do
               repo: "hello-world"
             }
           }
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("must belong to the same account")
         end
       end
@@ -401,7 +401,7 @@ RSpec.describe "Projects" do
         project = create(:project, account: account, github_token: github_token)
         revoked_token = create(:github_token, :revoked, account: account, name: "Revoked Token")
         patch project_path(project), params: { project: { github_token_id: revoked_token.id } }
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(project.reload.github_token).to eq(github_token)
       end
 
@@ -409,7 +409,7 @@ RSpec.describe "Projects" do
         it "re-renders the form with errors" do
           project = create(:project, account: account, github_token: github_token)
           patch project_path(project), params: { project: { poll_interval_seconds: 30 } }
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("greater than or equal to 60")
         end
       end

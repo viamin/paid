@@ -5,6 +5,10 @@ require "rails_helper"
 RSpec.describe Account do
   describe "associations" do
     it { is_expected.to have_many(:users).dependent(:destroy) }
+    it { is_expected.to have_many(:account_memberships).dependent(:destroy) }
+    it { is_expected.to have_many(:members).through(:account_memberships).source(:user) }
+    it { is_expected.to have_many(:projects).dependent(:destroy) }
+    it { is_expected.to have_many(:github_tokens).dependent(:destroy) }
   end
 
   describe "validations" do
