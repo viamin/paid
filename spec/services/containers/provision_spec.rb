@@ -149,8 +149,10 @@ RSpec.describe Containers::Provision do
           expect(env).to include("PAID_PROXY_URL=http://paid-proxy:3001")
           expect(env).to include("PROJECT_ID=#{project.id}")
           expect(env).to include("AGENT_RUN_ID=#{agent_run.id}")
-          expect(env).to include("ANTHROPIC_BASE_URL=http://paid-proxy:3001/proxy/api.anthropic.com")
-          expect(env).to include("OPENAI_BASE_URL=http://paid-proxy:3001/proxy/api.openai.com")
+          expect(env).to include("ANTHROPIC_BASE_URL=http://paid-proxy:3001/api/proxy/anthropic")
+          expect(env).to include("OPENAI_BASE_URL=http://paid-proxy:3001/api/proxy/openai")
+          expect(env).to include("ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
+          expect(env).to include("OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
           # Ensure no API keys are present
           expect(env.none? { |e| e.include?("API_KEY") }).to be true
           mock_container
