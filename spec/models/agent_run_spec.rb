@@ -426,6 +426,55 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#ensure_proxy_token!" do
+      it "returns the existing token when present" do
+        agent_run = create(:agent_run)
+        original_token = agent_run.proxy_token
+
+        expect(original_token).to be_present
+        expect(agent_run.ensure_proxy_token!).to eq(original_token)
+      end
+
+      it "generates and persists a token when proxy_token is nil" do
+        agent_run = create(:agent_run)
+        agent_run.update_column(:proxy_token, nil)
+        agent_run.reload
+
+        token = agent_run.ensure_proxy_token!
+
+        expect(token).to be_present
+        expect(token.length).to eq(64) # SecureRandom.hex(32)
+        expect(agent_run.reload.proxy_token).to eq(token)
+      end
+
+      it "returns the same token on subsequent calls" do
+        agent_run = create(:agent_run)
+        agent_run.update_column(:proxy_token, nil)
+        agent_run.reload
+
+        first_token = agent_run.ensure_proxy_token!
+        second_token = agent_run.ensure_proxy_token!
+
+        expect(first_token).to eq(second_token)
+      end
+
+      it "uses atomic update to avoid overwriting concurrently-set tokens" do
+        agent_run = create(:agent_run)
+        agent_run.update_column(:proxy_token, nil)
+        agent_run.reload
+
+        # Simulate another process setting the token between the nil check and update
+        concurrent_token = SecureRandom.hex(32)
+        described_class.where(id: agent_run.id).update_all(proxy_token: concurrent_token)
+
+        token = agent_run.ensure_proxy_token!
+
+        # Should get the concurrently-set token since atomic update found 0 rows
+        expect(token).to eq(concurrent_token)
+        expect(agent_run.proxy_token).to eq(concurrent_token)
+      end
+    end
+
     describe "container integration methods" do
       let(:worktree_path) { Dir.mktmpdir("worktree") }
       let(:mock_container) do

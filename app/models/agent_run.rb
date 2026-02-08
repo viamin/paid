@@ -207,12 +207,24 @@ class AgentRun < ApplicationRecord
 
   # Lazily generates and persists a proxy token for runs that were created
   # before the proxy_token column existed. Returns the token.
+  # Uses atomic conditional update to avoid race conditions between
+  # concurrent callers.
   def ensure_proxy_token!
     return proxy_token if proxy_token.present?
 
     token = SecureRandom.hex(32)
-    update_column(:proxy_token, token)
-    self.proxy_token = token
+
+    # Atomically set the token only if it is still NULL in the database to
+    # avoid races between concurrent callers.
+    updated_rows = self.class.where(id: id, proxy_token: nil).update_all(proxy_token: token)
+
+    if updated_rows == 1
+      self.proxy_token = token
+    else
+      reload
+    end
+
+    proxy_token
   end
 
   private
