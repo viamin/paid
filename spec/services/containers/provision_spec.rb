@@ -246,6 +246,21 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "ignores custom :network option and uses the restricted network" do
+        custom_service = described_class.new(
+          agent_run: agent_run,
+          worktree_path: worktree_path,
+          network: "custom_network"
+        )
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::NETWORK_NAME)
+          mock_container
+        end
+
+        custom_service.provision
+      end
+
       it "applies firewall rules after container start" do
         expect(mock_container).to receive(:start).ordered
         expect(NetworkPolicy).to receive(:apply_firewall_rules).with(mock_container).ordered

@@ -302,7 +302,7 @@ module Containers
         "Binds" => [ "#{worktree_path}:#{options[:workspace_mount]}:rw" ],
         # Agent containers always use the restricted network.
         # ensure_network! guarantees the network exists before we reach here.
-        "NetworkMode" => options[:network]
+        "NetworkMode" => NetworkPolicy::NETWORK_NAME
       }
 
       config
