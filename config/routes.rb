@@ -24,6 +24,12 @@ Rails.application.routes.draw do
     resource :workflow_status, only: [ :show ]
   end
 
+  # API endpoints for agent containers
+  namespace :api do
+    match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :all
+    match "proxy/openai/*path", to: "secrets_proxy#openai", via: :all
+  end
+
   # Defines the root path route ("/")
   root "home#index"
 end

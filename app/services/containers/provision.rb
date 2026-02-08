@@ -316,8 +316,10 @@ module Containers
         "PROJECT_ID=#{project.id}",
         "AGENT_RUN_ID=#{agent_run.id}",
         "HOME=/home/agent",
-        "ANTHROPIC_BASE_URL=http://paid-proxy:3001/proxy/api.anthropic.com",
-        "OPENAI_BASE_URL=http://paid-proxy:3001/proxy/api.openai.com"
+        "ANTHROPIC_BASE_URL=http://paid-proxy:3001/api/proxy/anthropic",
+        "OPENAI_BASE_URL=http://paid-proxy:3001/api/proxy/openai",
+        "ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+        "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}"
       ]
     end
 
