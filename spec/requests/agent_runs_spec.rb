@@ -185,7 +185,11 @@ RSpec.describe "AgentRuns" do
         expect(temporal_client).to receive(:start_workflow).with(
           Workflows::AgentExecutionWorkflow,
           hash_including(project_id: project.id, issue_id: issue.id, agent_type: "claude_code"),
-          hash_including(task_queue: "paid-tasks")
+          hash_including(
+            id: "manual-#{project.id}-#{issue.id}",
+            id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL,
+            task_queue: "paid-tasks"
+          )
         ).and_return(workflow_handle)
 
         post project_agent_runs_path(project), params: { issue_id: issue.id, agent_type: "claude_code" }
@@ -228,7 +232,7 @@ RSpec.describe "AgentRuns" do
           }
           expect(response).to redirect_to(new_project_agent_run_path(project))
           follow_redirect!
-          expect(response.body).to include("must be from")
+          expect(response.body).to include("must be a github.com URL")
         end
 
         it "shows error when issue not synced" do

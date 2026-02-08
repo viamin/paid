@@ -11,7 +11,7 @@ class AgentRunsController < ApplicationController
 
   def show
     authorize @agent_run
-    @logs = @agent_run.agent_run_logs.order(created_at: :asc).limit(500)
+    @logs = @agent_run.agent_run_logs.order(created_at: :asc).limit(500).load
   end
 
   def new
@@ -71,7 +71,7 @@ class AgentRunsController < ApplicationController
 
     unless uri&.host&.match?(/\A(www\.)?github\.com\z/)
       redirect_to new_project_agent_run_path(@project),
-        alert: "Issue URL must be from #{@project.full_name}."
+        alert: "Issue URL must be a github.com URL."
       return nil
     end
 
