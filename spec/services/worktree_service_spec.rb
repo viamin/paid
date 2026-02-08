@@ -116,7 +116,7 @@ RSpec.describe WorktreeService do
       service.create_worktree(agent_run)
     end
 
-    it "raises WorktreeError on git failure" do
+    it "raises Error on git failure" do
       allow(service).to receive(:run_git)
         .with("worktree", "add", "-b", anything, anything, anything, chdir: anything)
         .and_raise(described_class::Error, "git failed")
@@ -201,6 +201,34 @@ RSpec.describe WorktreeService do
       service.remove_worktree(agent_run)
     end
 
+    context "when worktree directory is missing" do
+      before do
+        FileUtils.rm_rf(worktree_dir)
+      end
+
+      it "still marks the worktree as cleaned" do
+        allow(service).to receive(:run_git)
+
+        service.remove_worktree(agent_run)
+
+        expect(worktree.reload.status).to eq("cleaned")
+      end
+
+      it "skips git worktree remove but still cleans up branch" do
+        expect(service).not_to receive(:run_git).with(
+          "worktree", "remove", anything, anything,
+          chdir: anything
+        )
+        expect(service).to receive(:run_git).with(
+          "branch", "-D", "paid/test-branch",
+          chdir: repo_path,
+          raise_on_error: false
+        )
+
+        service.remove_worktree(agent_run)
+      end
+    end
+
     it "does nothing when worktree is already cleaned" do
       worktree.mark_cleaned!
 
@@ -282,6 +310,22 @@ RSpec.describe WorktreeService do
       service.push_branch(agent_run)
 
       expect(agent_run.worktree.reload.pushed).to be true
+    end
+
+    it "raises WorktreeError when branch_name is blank" do
+      agent_run.update!(branch_name: nil)
+
+      expect { service.push_branch(agent_run) }.to raise_error(
+        described_class::WorktreeError, /branch_name is blank/
+      )
+    end
+
+    it "raises WorktreeError when worktree_path is blank" do
+      agent_run.update!(worktree_path: nil)
+
+      expect { service.push_branch(agent_run) }.to raise_error(
+        described_class::WorktreeError, /worktree_path is blank/
+      )
     end
 
     it "returns the result SHA" do

@@ -21,11 +21,24 @@ class WorktreeService
 
   WORKSPACE_ROOT = ENV.fetch("WORKSPACE_ROOT", "/var/paid/workspaces")
 
+  # Per-repository mutexes to synchronize git operations across all
+  # WorktreeService instances in this process.
+  @repo_mutexes = {}
+  @repo_mutexes_mutex = Mutex.new
+
+  class << self
+    def mutex_for(repo_path)
+      @repo_mutexes_mutex.synchronize do
+        @repo_mutexes[repo_path] ||= Mutex.new
+      end
+    end
+  end
+
   attr_reader :project
 
   def initialize(project)
     @project = project
-    @mutex = Mutex.new
+    @mutex = self.class.mutex_for(project_repo_path)
   end
 
   # Ensure we have an up-to-date clone of the repository.
@@ -48,6 +61,8 @@ class WorktreeService
   # @param agent_run [AgentRun] The agent run needing a workspace
   # @return [String] Path to the created worktree
   # @raise [WorktreeError] When worktree creation fails
+  # @raise [CloneError] When repository cloning fails
+  # @raise [Error] When a git command fails
   def create_worktree(agent_run)
     ensure_cloned
 
@@ -98,13 +113,15 @@ class WorktreeService
   def remove_worktree(agent_run)
     worktree = agent_run.worktree
     return unless worktree&.active?
-    return unless agent_run.worktree_path && Dir.exist?(agent_run.worktree_path)
+    return unless agent_run.worktree_path
 
     @mutex.synchronize do
-      run_git(
-        "worktree", "remove", agent_run.worktree_path, "--force",
-        chdir: project_repo_path
-      )
+      if Dir.exist?(agent_run.worktree_path)
+        run_git(
+          "worktree", "remove", agent_run.worktree_path, "--force",
+          chdir: project_repo_path
+        )
+      end
 
       unless worktree.pushed?
         run_git(
@@ -141,6 +158,14 @@ class WorktreeService
   # @param agent_run [AgentRun] The agent run whose branch to push
   # @return [String] The result commit SHA
   def push_branch(agent_run)
+    if agent_run.branch_name.blank?
+      raise WorktreeError, "Cannot push branch: branch_name is blank for AgentRun##{agent_run.id}"
+    end
+
+    if agent_run.worktree_path.blank?
+      raise WorktreeError, "Cannot push branch: worktree_path is blank for AgentRun##{agent_run.id}"
+    end
+
     run_git(
       "push", "origin", agent_run.branch_name,
       chdir: agent_run.worktree_path
@@ -218,10 +243,16 @@ class WorktreeService
     stdout, stderr, status = Open3.capture3("git", *args, **options)
 
     if !status.success? && raise_on_error
-      raise Error, "Git command failed: git #{args.join(" ")}\n#{stderr}"
+      redacted_args = args.map { |a| redact_credentials(a) }
+      redacted_stderr = redact_credentials(stderr)
+      raise Error, "Git command failed: git #{redacted_args.join(" ")}\n#{redacted_stderr}"
     end
 
     stdout
+  end
+
+  def redact_credentials(str)
+    str.gsub(%r{https://x-access-token:[^@]+@github\.com}, "https://x-access-token:[REDACTED]@github.com")
   end
 
   def log_to_agent_run(agent_run, message)
