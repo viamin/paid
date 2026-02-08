@@ -47,6 +47,10 @@ module Paid
       ENV.fetch("TEMPORAL_NAMESPACE", "default")
     end
 
+    def temporal_ui_url
+      ENV.fetch("TEMPORAL_UI_URL", "http://localhost:8080")
+    end
+
     def task_queue
       ENV.fetch("TEMPORAL_TASK_QUEUE", "paid-tasks")
     end

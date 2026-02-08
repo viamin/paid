@@ -74,8 +74,8 @@ RSpec.describe "WorkflowStatuses" do
           status: "running")
 
         get project_workflow_status_path(project)
-        # The table should not contain GitHubPoll rows
-        expect(response.body).not_to include("<td class=\"whitespace-nowrap py-4 pl-4 pr-3 text-sm text-gray-900 sm:pl-6\">GitHubPoll</td>")
+        # The page should not display GitHubPoll workflows in the recent list
+        expect(response.body).not_to include("GitHubPoll")
       end
 
       it "shows empty state when no workflows exist" do
@@ -102,14 +102,14 @@ RSpec.describe "WorkflowStatuses" do
         expect(response.body).to include("View in Temporal UI")
       end
 
-      it "includes auto-refresh meta tag when workflows are running" do
+      it "includes auto-refresh script when workflows are running" do
         create(:workflow_state,
           project: project,
           workflow_type: "AgentExecutionWorkflow",
           status: "running")
 
         get project_workflow_status_path(project)
-        expect(response.body).to include('http-equiv="refresh" content="5"')
+        expect(response.body).to include("setTimeout")
       end
 
       it "does not include auto-refresh when no workflows are running" do
@@ -120,7 +120,7 @@ RSpec.describe "WorkflowStatuses" do
           completed_at: Time.current)
 
         get project_workflow_status_path(project)
-        expect(response.body).not_to include('http-equiv="refresh"')
+        expect(response.body).not_to include("setTimeout")
       end
 
       it "does not allow viewing workflow status for other accounts' projects" do
