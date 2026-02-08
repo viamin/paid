@@ -80,8 +80,14 @@
       (function() {
         setTimeout(function() {
           var frame = document.getElementById("workflow-status");
-          if (frame && frame.src) {
-            frame.reload();
+          if (frame) {
+            if (typeof frame.reload === "function") {
+              frame.reload();
+            } else if (frame.src) {
+              frame.src = frame.src;
+            } else {
+              window.location.reload();
+            }
           } else {
             window.location.reload();
           }
