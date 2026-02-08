@@ -7,7 +7,7 @@
 # - A container crashes mid-execution
 # - A worker process dies unexpectedly
 #
-# Scheduled via GoodJob cron (every 6 hours).
+# Scheduled via GoodJob cron.
 class WorktreeOrphanCleanupJob < ApplicationJob
   queue_as :maintenance
 
@@ -43,16 +43,18 @@ class WorktreeOrphanCleanupJob < ApplicationJob
   end
 
   def cleanup_worktree(worktree)
-    if worktree.path.present? && Dir.exist?(worktree.path)
-      service = WorktreeService.new(worktree.project)
-      service.cleanup_stale_worktrees(older_than: 0.seconds)
+    repo_path = worktree_repo_path(worktree.project)
+
+    if worktree.path.present? && Dir.exist?(worktree.path) && Dir.exist?(repo_path)
+      system("git", "-C", repo_path, "worktree", "remove", worktree.path, "--force", exception: false)
     end
 
-    unless worktree.pushed?
-      repo_path = worktree_repo_path(worktree.project)
-      if Dir.exist?(repo_path)
-        system("git", "-C", repo_path, "branch", "-D", worktree.branch_name, exception: false)
-      end
+    if !worktree.pushed? && worktree.branch_name.present? && Dir.exist?(repo_path)
+      system("git", "-C", repo_path, "branch", "-D", worktree.branch_name, exception: false)
+    end
+
+    if Dir.exist?(repo_path)
+      prune_worktree_refs(worktree.project)
     end
 
     worktree.mark_cleaned!
@@ -62,7 +64,13 @@ class WorktreeOrphanCleanupJob < ApplicationJob
     repo_path = worktree_repo_path(project)
     return unless Dir.exist?(repo_path)
 
-    system("git", "-C", repo_path, "worktree", "prune")
+    unless system("git", "-C", repo_path, "worktree", "prune")
+      Rails.logger.warn(
+        message: "worktree_cleanup.prune_failed",
+        project_id: project.id,
+        repo_path: repo_path
+      )
+    end
   end
 
   def worktree_repo_path(project)

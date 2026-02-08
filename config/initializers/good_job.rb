@@ -29,10 +29,6 @@ Rails.application.configure do
     log_retention: {
       cron: "0 3 * * *",
       class: "LogRetentionJob"
-    },
-    orphan_cleanup: {
-      cron: "0 * * * *",
-      class: "WorktreeOrphanCleanupJob"
     }
   }
 end
