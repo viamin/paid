@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "== Style: RuboCop =="
+bin/rubocop
+
+echo "== Security: Brakeman =="
+bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error
+
+echo "== Security: Gem audit =="
+bin/bundler-audit
+
+echo "== Security: Yarn audit =="
+yarn audit
+
+echo "All checks passed."
