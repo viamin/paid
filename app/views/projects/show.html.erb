@@ -104,6 +104,15 @@
   </div>
 
   <div class="mt-8">
+    <h2 class="text-lg font-medium text-gray-900">Workflow Status</h2>
+    <div class="mt-4">
+      <%= turbo_frame_tag "workflow-status", src: project_workflow_status_path(@project) do %>
+        <div class="animate-pulse bg-gray-100 h-24 rounded-lg"></div>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mt-8">
     <div class="sm:flex sm:items-center sm:justify-between">
       <h2 class="text-lg font-medium text-gray-900">Recent Agent Runs</h2>
       <% if policy(@project).run_agent? %>
