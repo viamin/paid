@@ -222,6 +222,15 @@ RSpec.describe "AgentRuns" do
           expect(response).to redirect_to(new_project_agent_run_path(project))
         end
 
+        it "rejects URLs from non-GitHub hosts" do
+          post project_agent_runs_path(project), params: {
+            issue_url: "https://notgithub.com/#{project.owner}/#{project.repo}/issues/42"
+          }
+          expect(response).to redirect_to(new_project_agent_run_path(project))
+          follow_redirect!
+          expect(response.body).to include("must be from")
+        end
+
         it "shows error when issue not synced" do
           post project_agent_runs_path(project), params: {
             issue_url: "https://github.com/#{project.owner}/#{project.repo}/issues/999"
