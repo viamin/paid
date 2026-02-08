@@ -48,36 +48,36 @@ RSpec.describe AgentRuns::Execute do
         expect(agent_run.tokens_output).to eq(800)
       end
 
-      it "increments project metrics" do
-        expect(project).to receive(:increment_metrics!).with(
-          cost_cents: 0,
-          tokens_used: 2300
+      it "delegates token tracking to TokenUsageTracker" do
+        expect(TokenUsageTracker).to receive(:track).with(
+          agent_run: agent_run,
+          tokens_input: 1500,
+          tokens_output: 800
         )
 
         described_class.call(agent_run: agent_run, prompt: prompt)
       end
 
       it "logs agent output" do
+        allow(TokenUsageTracker).to receive(:track)
+
         described_class.call(agent_run: agent_run, prompt: prompt)
 
         logs = agent_run.agent_run_logs
         system_logs = logs.where(log_type: "system")
         stdout_logs = logs.where(log_type: "stdout")
-        metric_logs = logs.where(log_type: "metric")
 
         expect(system_logs.pluck(:content)).to include(
           "Starting claude_code agent",
           match(/Prompt:/)
         )
         expect(stdout_logs.pluck(:content)).to include("Fixed the bug in auth.rb")
-        expect(metric_logs.count).to eq(1)
       end
 
       it "calls AgentHarness.send_message with correct parameters" do
         expect(AgentHarness).to receive(:send_message).with(
           prompt,
           provider: :claude,
-          timeout: 600,
           dangerous_mode: true
         ).and_return(response)
 
@@ -236,13 +236,9 @@ RSpec.describe AgentRuns::Execute do
       end
 
       it "skips token tracking" do
-        expect(project).not_to receive(:increment_metrics!)
+        expect(TokenUsageTracker).not_to receive(:track)
 
         described_class.call(agent_run: agent_run, prompt: prompt)
-
-        agent_run.reload
-        expect(agent_run.tokens_input).to eq(0)
-        expect(agent_run.tokens_output).to eq(0)
       end
     end
   end
