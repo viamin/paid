@@ -10,6 +10,8 @@ class AgentRun < ApplicationRecord
   has_many :agent_run_logs, dependent: :destroy
   has_one :worktree, dependent: :nullify
 
+  before_create :generate_proxy_token
+
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :worktree_path, length: { maximum: 500 }
@@ -205,5 +207,9 @@ class AgentRun < ApplicationRecord
     return if issue.project_id == project_id
 
     errors.add(:issue, "must belong to the same project")
+  end
+
+  def generate_proxy_token
+    self.proxy_token ||= SecureRandom.hex(32)
   end
 end

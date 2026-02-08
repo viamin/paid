@@ -2,8 +2,8 @@
 
 class TokenUsageTracker
   # Default pricing per million tokens (Claude 3.5 Sonnet)
-  DEFAULT_INPUT_COST_PER_MILLION = 3.00
-  DEFAULT_OUTPUT_COST_PER_MILLION = 15.00
+  DEFAULT_INPUT_COST_PER_MILLION = BigDecimal("3.00")
+  DEFAULT_OUTPUT_COST_PER_MILLION = BigDecimal("15.00")
 
   def self.track(agent_run:, tokens_input:, tokens_output:)
     cost_cents = calculate_cost(tokens_input, tokens_output)
@@ -28,8 +28,8 @@ class TokenUsageTracker
   end
 
   def self.calculate_cost(input_tokens, output_tokens)
-    input_cost = (input_tokens / 1_000_000.0) * DEFAULT_INPUT_COST_PER_MILLION
-    output_cost = (output_tokens / 1_000_000.0) * DEFAULT_OUTPUT_COST_PER_MILLION
-    ((input_cost + output_cost) * 100).round
+    input_cost = BigDecimal(input_tokens.to_s) / BigDecimal("1000000") * DEFAULT_INPUT_COST_PER_MILLION
+    output_cost = BigDecimal(output_tokens.to_s) / BigDecimal("1000000") * DEFAULT_OUTPUT_COST_PER_MILLION
+    ((input_cost + output_cost) * 100).round.to_i
   end
 end

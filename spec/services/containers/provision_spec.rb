@@ -159,6 +159,8 @@ RSpec.describe Containers::Provision do
           expect(env).to include("OPENAI_BASE_URL=http://paid-proxy:3001/api/proxy/openai")
           expect(env).to include("ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
           expect(env).to include("OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
+          expect(env).to include("ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}")
+          expect(env).to include("OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}")
           # Ensure no API keys are present
           expect(env.none? { |e| e.include?("API_KEY") }).to be true
           mock_container
