@@ -38,6 +38,6 @@ echo "== Security: Yarn audit =="
 yarn audit
 
 echo "== Markdown: markdownlint =="
-npx markdownlint-cli2 $MARKDOWNLINT_ARGS '**/*.md' '#node_modules' '#vendor'
+npx markdownlint $MARKDOWNLINT_ARGS --ignore node_modules --ignore vendor '**/*.md'
 
 echo "All checks passed."

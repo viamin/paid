@@ -4,7 +4,7 @@
   "packageManager": "yarn@1.22.22",
   "devDependencies": {
     "esbuild": "^0.27.2",
-    "markdownlint-cli2": "^0.20.0"
+    "markdownlint-cli": "^0.47.0"
   },
   "scripts": {
     "build": "esbuild app/javascript/*.* --bundle --sourcemap --format=esm --outdir=app/assets/builds --public-path=/assets",
