@@ -1,15 +1,113 @@
 # frozen_string_literal: true
 
 module Workflows
-  # Placeholder for the agent execution workflow.
+  # Orchestrates the complete agent execution lifecycle:
+  # 1. Create an AgentRun record
+  # 2. Create a git worktree for isolated work
+  # 3. Provision a Docker container
+  # 4. Run the agent to make code changes
+  # 5. Push the branch and create a PR (if changes were made)
+  # 6. Clean up container and worktree
   #
-  # Will be fully implemented in a separate issue. For now, this exists so that
-  # GitHubPollWorkflow can reference it when starting child workflows.
+  # Started as a child workflow from GitHubPollWorkflow when an issue
+  # is labeled for agent execution.
   class AgentExecutionWorkflow < BaseWorkflow
-    def execute(project_id:, issue_id:)
+    NO_RETRY = Temporalio::RetryPolicy.new(max_attempts: 1)
+
+    def execute(project_id:, issue_id:, agent_type: "claude_code")
       Temporalio::Workflow.logger.info(
-        "AgentExecutionWorkflow started for project=#{project_id} issue=#{issue_id} (placeholder)"
+        "AgentExecutionWorkflow started for project=#{project_id} issue=#{issue_id}"
       )
+
+      # Step 1: Create agent run record
+      agent_run_result = Temporalio::Workflow.execute_activity(
+        Activities::CreateAgentRunActivity,
+        { project_id: project_id, issue_id: issue_id, agent_type: agent_type },
+        **activity_options(timeout: 30)
+      )
+      agent_run_id = agent_run_result[:agent_run_id]
+
+      begin
+        # Step 2: Create worktree
+        worktree_result = Temporalio::Workflow.execute_activity(
+          Activities::CreateWorktreeActivity,
+          { agent_run_id: agent_run_id },
+          **activity_options(timeout: 120)
+        )
+
+        # Step 3: Provision container
+        Temporalio::Workflow.execute_activity(
+          Activities::ProvisionContainerActivity,
+          { agent_run_id: agent_run_id, worktree_path: worktree_result[:worktree_path] },
+          **activity_options(timeout: 60)
+        )
+
+        # Step 4: Run the agent (long timeout, no retry)
+        agent_result = Temporalio::Workflow.execute_activity(
+          Activities::RunAgentActivity,
+          { agent_run_id: agent_run_id },
+          start_to_close_timeout: 900,
+          retry_policy: NO_RETRY
+        )
+
+        if agent_result[:has_changes]
+          # Step 5: Push branch
+          Temporalio::Workflow.execute_activity(
+            Activities::PushBranchActivity,
+            { agent_run_id: agent_run_id },
+            **activity_options(timeout: 60)
+          )
+
+          # Step 6: Create PR
+          pr_result = Temporalio::Workflow.execute_activity(
+            Activities::CreatePullRequestActivity,
+            { agent_run_id: agent_run_id },
+            **activity_options(timeout: 60)
+          )
+
+          # Step 7: Update issue with PR link
+          Temporalio::Workflow.execute_activity(
+            Activities::UpdateIssueWithPrActivity,
+            { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] },
+            **activity_options(timeout: 30)
+          )
+        else
+          # No changes - mark as completed without PR
+          Temporalio::Workflow.execute_activity(
+            Activities::MarkAgentRunCompleteActivity,
+            { agent_run_id: agent_run_id, reason: "no_changes" },
+            **activity_options(timeout: 30)
+          )
+        end
+
+        { success: true, agent_run_id: agent_run_id }
+
+      rescue => e
+        # Mark agent run as failed
+        Temporalio::Workflow.execute_activity(
+          Activities::MarkAgentRunFailedActivity,
+          { agent_run_id: agent_run_id, error: e.message },
+          **activity_options(timeout: 30)
+        )
+
+        raise
+
+      ensure
+        # Always cleanup container and worktree
+        Temporalio::Workflow.execute_activity(
+          Activities::CleanupContainerActivity,
+          { agent_run_id: agent_run_id },
+          start_to_close_timeout: 60,
+          retry_policy: NO_RETRY
+        )
+
+        Temporalio::Workflow.execute_activity(
+          Activities::CleanupWorktreeActivity,
+          { agent_run_id: agent_run_id },
+          start_to_close_timeout: 60,
+          retry_policy: NO_RETRY
+        )
+      end
     end
   end
 end
