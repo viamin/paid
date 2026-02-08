@@ -121,8 +121,8 @@ class ProjectPolicy < ApplicationPolicy
     user.has_any_role?(:owner, :admin, record.account)
   end
 
-  # Scope is inherited from ApplicationPolicy::Scope, which already
-  # scopes by account_id — no need to redefine it here.
+  # This example assumes the base policy already scopes records by
+  # account_id, so there is no need to redefine Scope here.
 end
 ```
 
