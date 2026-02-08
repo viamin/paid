@@ -311,7 +311,9 @@ RSpec.describe "Api::SecretsProxy" do
     end
 
     context "without proxy token" do
-      it "returns forbidden" do
+      it "returns forbidden without generating a token" do
+        original_token = agent_run.proxy_token
+
         post "/api/proxy/anthropic/v1/messages",
           params: {}.to_json,
           headers: {
@@ -322,6 +324,34 @@ RSpec.describe "Api::SecretsProxy" do
         expect(response).to have_http_status(:forbidden)
         body = JSON.parse(response.body)
         expect(body["error"]).to eq("Invalid proxy token")
+        # Token should not have been regenerated for an unauthorized request
+        expect(agent_run.reload.proxy_token).to eq(original_token)
+      end
+    end
+
+    context "with nil proxy_token on agent run" do
+      let(:agent_run) { create(:agent_run, :running, project: project) }
+
+      it "lazily generates a token and authenticates successfully" do
+        # Clear the token to simulate a pre-existing run
+        token = agent_run.proxy_token
+        agent_run.update_column(:proxy_token, nil)
+
+        # Request with the old token should fail since a new one gets generated
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: {
+            "Content-Type" => "application/json",
+            "X-Agent-Run-Id" => agent_run.id.to_s,
+            "X-Proxy-Token" => token
+          }
+
+        expect(response).to have_http_status(:forbidden)
+
+        # The agent_run should now have a new proxy token persisted
+        new_token = agent_run.reload.proxy_token
+        expect(new_token).to be_present
+        expect(new_token).not_to eq(token)
       end
     end
   end
