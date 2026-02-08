@@ -21,9 +21,11 @@ RSpec.describe Containers::Provision do
     )
   end
 
+  let(:mock_network) { instance_double(Docker::Network) }
+
   before do
     allow(Docker::Container).to receive(:create).and_return(mock_container)
-    allow(Docker::Network).to receive(:get).and_raise(Docker::Error::NotFoundError)
+    allow(NetworkPolicy).to receive_messages(ensure_network!: mock_network, apply_firewall_rules: nil)
   end
 
   after do
@@ -88,9 +90,13 @@ RSpec.describe Containers::Provision do
 
       it "logs the provision start and success" do
         expect(agent_run).to receive(:log!).with("system", "container.provision.start",
-          metadata: hash_including(image: "paid-agent:latest"))
+          metadata: hash_including(image: "paid-agent:latest")).ordered
+        expect(agent_run).to receive(:log!).with("system", "container.network.ready",
+          metadata: hash_including(network: "paid_agent_network")).ordered
+        expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
+          metadata: hash_including(container_id: "abc123container")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.provision.success",
-          metadata: hash_including(container_id: "abc123container"))
+          metadata: hash_including(container_id: "abc123container")).ordered
 
         service.provision
       end
@@ -201,6 +207,7 @@ RSpec.describe Containers::Provision do
       end
 
       it "logs the failure" do
+        allow(agent_run).to receive(:log!)
         expect(agent_run).to receive(:log!).with("system", "container.provision.start",
           metadata: hash_including(image: anything))
         expect(agent_run).to receive(:log!).with("system", "container.provision.failed",
@@ -210,19 +217,67 @@ RSpec.describe Containers::Provision do
       end
     end
 
-    context "when network exists" do
-      before do
-        mock_network = instance_double(Docker::Network)
-        allow(Docker::Network).to receive(:get).with("paid_agent_network").and_return(mock_network)
+    context "with network integration" do
+      it "ensures the agent network exists before provisioning" do
+        expect(NetworkPolicy).to receive(:ensure_network!).ordered
+        expect(Docker::Container).to receive(:create).ordered.and_return(mock_container)
+
+        service.provision
       end
 
-      it "configures network mode" do
+      it "always configures network mode" do
         expect(Docker::Container).to receive(:create) do |config|
           expect(config["HostConfig"]["NetworkMode"]).to eq("paid_agent_network")
           mock_container
         end
 
         service.provision
+      end
+
+      it "applies firewall rules after container start" do
+        expect(mock_container).to receive(:start).ordered
+        expect(NetworkPolicy).to receive(:apply_firewall_rules).with(mock_container).ordered
+
+        service.provision
+      end
+
+      it "raises ProvisionError when network creation fails" do
+        allow(NetworkPolicy).to receive(:ensure_network!)
+          .and_raise(NetworkPolicy::Error, "Failed to create agent network")
+
+        expect { service.provision }.to raise_error(
+          described_class::ProvisionError, /Network setup failed/
+        )
+      end
+    end
+
+    context "when firewall rules fail in production" do
+      before do
+        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+        allow(NetworkPolicy).to receive(:apply_firewall_rules)
+          .and_raise(NetworkPolicy::Error, "Permission denied")
+      end
+
+      it "raises ProvisionError" do
+        expect { service.provision }.to raise_error(
+          described_class::ProvisionError, /Firewall setup failed/
+        )
+      end
+    end
+
+    context "when firewall rules fail in development" do
+      before do
+        allow(NetworkPolicy).to receive(:apply_firewall_rules)
+          .and_raise(NetworkPolicy::Error, "Permission denied")
+        allow(agent_run).to receive(:log!)
+      end
+
+      it "does not raise and logs the failure" do
+        expect(agent_run).to receive(:log!).with("system", "container.firewall.failed",
+          metadata: hash_including(error: "Permission denied"))
+
+        result = service.provision
+        expect(result).to be_success
       end
     end
   end

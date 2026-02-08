@@ -1,6 +1,14 @@
 # Docker Compose configuration for Paid development environment
 # Includes Rails, PostgreSQL, and Temporal for workflow orchestration
 
+# Networks:
+#   paid_internal - For Paid infrastructure services (Rails, Temporal, Postgres)
+#   paid_agent    - Restricted network for agent containers (no default internet access)
+#
+# Agent containers use paid_agent network with internal: true to prevent
+# default outbound access. Allowed egress (secrets proxy, GitHub) is
+# enforced via iptables rules applied by scripts/setup-agent-network.sh.
+
 services:
   postgres:
     image: postgres:16.1
@@ -15,6 +23,8 @@ services:
       POSTGRES_MULTIPLE_DATABASES: temporal,temporal_visibility
     ports:
       - "5432:5432"
+    networks:
+      - paid_internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U paid"]
       interval: 10s
@@ -32,6 +42,9 @@ services:
       - bundle-cache:/usr/local/bundle
     ports:
       - "3000:3000"
+    networks:
+      - paid_internal
+      - paid_agent
     environment:
       DATABASE_URL: postgres://paid:paid@postgres:5432/paid_development
       RAILS_ENV: development
@@ -56,6 +69,8 @@ services:
       - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/config/dynamicconfig/development-sql.yaml
     ports:
       - "7233:7233"
+    networks:
+      - paid_internal
     volumes:
       - ./config/temporal:/etc/temporal/config/dynamicconfig
     healthcheck:
@@ -75,6 +90,8 @@ services:
       - TEMPORAL_CORS_ORIGINS=http://localhost:3000
     ports:
       - "8080:8080"
+    networks:
+      - paid_internal
 
   temporal-admin-tools:
     image: temporalio/admin-tools:1.24
@@ -83,6 +100,8 @@ services:
         condition: service_healthy
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
+    networks:
+      - paid_internal
     stdin_open: true
     tty: true
 
@@ -102,6 +121,9 @@ services:
       - TEMPORAL_NAMESPACE=default
       - TEMPORAL_TASK_QUEUE=paid-tasks
       - RAILS_ENV=development
+    networks:
+      - paid_internal
+      - paid_agent
     volumes:
       - .:/workspaces/paid
       - bundle-cache:/usr/local/bundle
@@ -113,9 +135,27 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./agent-workspace:/workspace
+    networks:
+      - paid_agent
     profiles:
       - test
 
 volumes:
   postgres-data:
   bundle-cache:
+
+networks:
+  # Internal network for Paid infrastructure services
+  paid_internal:
+    driver: bridge
+
+  # Restricted network for agent containers
+  # internal: true disables default internet access
+  paid_agent:
+    driver: bridge
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
