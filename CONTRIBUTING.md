@@ -27,7 +27,7 @@ yarn install
 # Review environment configuration
 # NOTE: bin/dev uses Foreman with --env /dev/null, which disables
 # automatic .env loading. Export variables in your shell instead,
-# or use direnv / dotenv to load them before running bin/dev.
+# or use direnv or another shell env loader to load them before running bin/dev.
 cp .env.example .env  # Use as a reference for required variables
 
 # Prepare the database

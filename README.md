@@ -35,6 +35,7 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 ```bash
 # Clone and configure
 git clone <repo-url> && cd paid
+# Optional: copy .env.example for local reference or if you add `env_file: .env` to docker-compose.yml
 cp .env.example .env
 
 # Start all services
@@ -44,7 +45,7 @@ docker compose up
 docker compose exec web bin/rails db:prepare
 ```
 
-> **Note**: Docker Compose sets `DATABASE_URL`, `TEMPORAL_HOST`, and `RAILS_ENV` directly in `docker-compose.yml`. Additional variables like `ANTHROPIC_API_KEY` (needed for agent execution) must be added to the `environment` section of the `web` and `worker` services, or loaded via `env_file: .env` in `docker-compose.yml`.
+> **Note**: Docker Compose sets `DATABASE_URL`, the Temporal address (via `TEMPORAL_HOST` on `web`, `TEMPORAL_ADDRESS` on `worker`), and `RAILS_ENV` directly in `docker-compose.yml`. Additional variables like `ANTHROPIC_API_KEY` (needed for agent execution) should be added to the `environment` section of the `web` service (which hosts the secrets proxy), or loaded via `env_file: .env` for whichever services actually require them.
 
 ### Option 2: Dev Container
 
