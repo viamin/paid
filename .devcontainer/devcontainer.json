@@ -27,11 +27,11 @@
   ],
 
   "remoteEnv": {
-    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin"
+    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin"
   },
 
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  "forwardPorts": [3000],
+  "forwardPorts": [3000, 8080],
 
   // Configure tool-specific properties.
   // "customizations": {},
@@ -47,6 +47,7 @@
     "corepack": "corepack enable && corepack prepare yarn@1.22.22 --activate",
     "claude-install-and-configure": "curl -fsSL https://claude.ai/install.sh | bash && bash .devcontainer/configure-claude.sh",
     "multiclaude": "go install github.com/dlorenc/multiclaude/cmd/multiclaude@latest",
+    "playwright": "npx playwright install --with-deps chromium",
     "setup": "until pg_isready -h postgres -U postgres -q; do sleep 1; done && bin/setup --skip-server"
   },
 

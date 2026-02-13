@@ -9,3 +9,18 @@
 #   ["Action", "Comedy", "Drama", "Horror"].each do |genre_name|
 #     MovieGenre.find_or_create_by!(name: genre_name)
 #   end
+
+# Sample account and user for development/testing
+unless User.exists?(email: "test@example.com")
+  account = Account.find_or_create_by!(name: "Test Team", slug: "test-team")
+
+  User.create!(
+    account: account,
+    name: "Test User",
+    email: "test@example.com",
+    password: "password",
+    password_confirmation: "password"
+  )
+
+  Rails.logger.info(message: "seeds.created_test_user", email: "test@example.com")
+end
