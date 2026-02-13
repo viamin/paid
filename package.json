@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "yarn@1.22.22",
   "devDependencies": {
-    "esbuild": "^0.27.2",
+    "esbuild": "^0.27.3",
     "markdownlint-cli": "^0.47.0"
   },
   "scripts": {
@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@hotwired/stimulus": "^3.2.2",
-    "@hotwired/turbo-rails": "^8.0.21",
+    "@hotwired/turbo-rails": "^8.0.23",
     "@tailwindcss/cli": "^4.1.18",
     "tailwindcss": "^4.1.18"
   }
