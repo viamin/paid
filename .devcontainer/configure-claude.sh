@@ -7,24 +7,46 @@ set -e
 
 echo "Configuring Claude Code for devcontainer..."
 
-CLAUDE_BIN="$HOME/.local/bin/claude"
+PLUGIN_DIR="/workspaces/claude-ai-toolkit"
 
-# Create Claude wrapper that adds --dangerously-skip-permissions and --plugin-dir
-if [ -f "$CLAUDE_BIN" ] && [ ! -f "$CLAUDE_BIN.real" ]; then
-  mv "$CLAUDE_BIN" "$CLAUDE_BIN.real"
-  cat << EOF > "$CLAUDE_BIN"
+# Discover the Claude binary location
+CLAUDE_BIN=$(which claude 2>/dev/null || echo "$HOME/.local/bin/claude")
+
+if [ ! -f "$CLAUDE_BIN" ]; then
+  echo "WARNING: Claude binary not found at $CLAUDE_BIN; devcontainer wrapper not configured." >&2
+  exit 1
+fi
+
+if [ -f "$CLAUDE_BIN.real" ]; then
+  echo "Claude devcontainer wrapper already configured; skipping wrapper creation." >&2
+  exit 0
+fi
+
+# Build wrapper arguments
+WRAPPER_ARGS="--dangerously-skip-permissions"
+
+if [ -d "$PLUGIN_DIR" ]; then
+  WRAPPER_ARGS="$WRAPPER_ARGS --plugin-dir $PLUGIN_DIR"
+else
+  echo "WARNING: Plugin directory $PLUGIN_DIR not found; skipping --plugin-dir flag." >&2
+fi
+
+# Create Claude wrapper that adds devcontainer-specific flags
+mv "$CLAUDE_BIN" "$CLAUDE_BIN.real"
+cat << WRAPPER > "$CLAUDE_BIN"
 #!/bin/bash
 # Claude wrapper for devcontainer - dangerous mode + plugin
-exec "$CLAUDE_BIN.real" --dangerously-skip-permissions --plugin-dir /workspaces/claude-ai-toolkit "\$@"
-EOF
-  chmod +x "$CLAUDE_BIN"
-fi
+exec "$CLAUDE_BIN.real" $WRAPPER_ARGS "\$@"
+WRAPPER
+chmod +x "$CLAUDE_BIN"
 
 echo ""
 echo "Claude Code configured for devcontainer!"
 echo ""
 echo "  - Claude: Dangerous mode (--dangerously-skip-permissions)"
-echo "  - Plugin: claude-ai-toolkit loaded from /workspaces/claude-ai-toolkit"
+if [ -d "$PLUGIN_DIR" ]; then
+  echo "  - Plugin: claude-ai-toolkit loaded from $PLUGIN_DIR"
+fi
 echo ""
 echo "WARNING: Claude will auto-approve all operations inside this container."
 echo "  Host configurations remain unchanged and safe."
