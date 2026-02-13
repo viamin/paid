@@ -67,7 +67,7 @@
               <%= form.select :github_token_id,
                   options_from_collection_for_select(@github_tokens, :id, :name, @project.github_token_id),
                   {},
-                  class: "block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
             </div>
             <p class="mt-1 text-xs text-gray-500">Select the token that has access to this repository.</p>
           </div>
@@ -75,7 +75,7 @@
           <div>
             <%= form.label :name, "Display Name", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
-              <%= form.text_field :name, class: "block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", required: true %>
+              <%= form.text_field :name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", required: true %>
             </div>
             <p class="mt-1 text-xs text-gray-500">A friendly name for this project.</p>
           </div>
@@ -83,7 +83,7 @@
           <div>
             <%= form.label :poll_interval_seconds, "Poll Interval (seconds)", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
-              <%= form.number_field :poll_interval_seconds, min: 60, class: "block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              <%= form.number_field :poll_interval_seconds, min: 60, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
             </div>
             <p class="mt-1 text-xs text-gray-500">How often to check for new issues (minimum 60 seconds).</p>
           </div>
