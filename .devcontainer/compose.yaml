@@ -5,6 +5,7 @@ services:
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
+    shm_size: '2gb'
 
     volumes:
     - ../../paid:/workspaces/paid:cached
