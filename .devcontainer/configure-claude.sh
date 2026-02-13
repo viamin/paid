@@ -22,22 +22,22 @@ if [ -f "$CLAUDE_BIN.real" ]; then
   exit 0
 fi
 
-# Build wrapper arguments
-WRAPPER_ARGS="--dangerously-skip-permissions"
-
-if [ -d "$PLUGIN_DIR" ]; then
-  WRAPPER_ARGS="$WRAPPER_ARGS --plugin-dir $PLUGIN_DIR"
-else
-  echo "WARNING: Plugin directory $PLUGIN_DIR not found; skipping --plugin-dir flag." >&2
-fi
-
 # Create Claude wrapper that adds devcontainer-specific flags
 mv "$CLAUDE_BIN" "$CLAUDE_BIN.real"
-cat << WRAPPER > "$CLAUDE_BIN"
+if [ -d "$PLUGIN_DIR" ]; then
+  cat << WRAPPER > "$CLAUDE_BIN"
 #!/bin/bash
 # Claude wrapper for devcontainer - dangerous mode + plugin
-exec "$CLAUDE_BIN.real" $WRAPPER_ARGS "\$@"
+exec "$CLAUDE_BIN.real" --dangerously-skip-permissions --plugin-dir "$PLUGIN_DIR" "\$@"
 WRAPPER
+else
+  echo "WARNING: Plugin directory $PLUGIN_DIR not found; skipping --plugin-dir flag." >&2
+  cat << WRAPPER > "$CLAUDE_BIN"
+#!/bin/bash
+# Claude wrapper for devcontainer - dangerous mode
+exec "$CLAUDE_BIN.real" --dangerously-skip-permissions "\$@"
+WRAPPER
+fi
 chmod +x "$CLAUDE_BIN"
 
 echo ""
