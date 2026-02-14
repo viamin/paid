@@ -49,8 +49,8 @@ class AgentRunsController < ApplicationController
 
     redirect_to project_path(@project), notice: notice
   rescue Temporalio::Error::WorkflowAlreadyStartedError
-    redirect_to new_project_agent_run_path(@project),
-      alert: "An agent run is already in progress for this issue."
+    alert_message = issue ? "An agent run is already in progress for this issue." : "An agent run is already in progress."
+    redirect_to new_project_agent_run_path(@project), alert: alert_message
   rescue Temporalio::Error::RPCError => e
     redirect_to new_project_agent_run_path(@project),
       alert: "Failed to start agent run: #{e.message}"
