@@ -6,7 +6,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
-  let(:agent_run) { create(:agent_run, :with_git_context, :with_issue, :with_metrics, project: project, issue: issue) }
+  let(:agent_run) { create(:agent_run, :with_git_context, :with_metrics, project: project, issue: issue) }
   let(:github_client) { instance_double(GithubClient) }
   let(:pr_response) { Struct.new(:html_url, :number).new("https://github.com/owner/repo/pull/42", 42) }
 
@@ -72,7 +72,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
     end
 
     it "handles missing issue gracefully" do
-      agent_run_no_issue = create(:agent_run, :with_git_context, project: project)
+      agent_run_no_issue = create(:agent_run, :with_custom_prompt, :with_git_context, project: project)
 
       expect(github_client).to receive(:create_pull_request).with(
         anything,

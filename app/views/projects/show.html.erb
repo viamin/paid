@@ -104,6 +104,90 @@
   </div>
 
   <div class="mt-8">
+    <h2 class="text-lg font-medium text-gray-900">Synced Issues</h2>
+
+    <% if @issues.any? %>
+      <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
+        <div class="max-h-96 overflow-y-auto">
+          <ul role="list" class="divide-y divide-gray-200">
+            <% @issues.each do |issue| %>
+              <li class="flex items-center justify-between px-4 py-3">
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center space-x-2">
+                    <%= link_to "##{issue.github_number}",
+                          issue.github_url,
+                          target: "_blank",
+                          rel: "noopener noreferrer",
+                          class: "flex-shrink-0 text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
+                    <span class="truncate text-sm text-gray-900"><%= issue.title %></span>
+                  </div>
+                  <% if issue.labels.any? %>
+                    <div class="mt-1 flex flex-wrap gap-1">
+                      <% issue.labels.each do |label| %>
+                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"><%= label %></span>
+                      <% end %>
+                    </div>
+                  <% end %>
+                </div>
+                <div class="ml-4 flex-shrink-0">
+                  <%= paid_state_badge(issue.paid_state) %>
+                </div>
+              </li>
+            <% end %>
+          </ul>
+        </div>
+      </div>
+    <% else %>
+      <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-8">
+        <h3 class="text-sm font-semibold text-gray-900">No synced issues</h3>
+        <p class="mt-1 text-sm text-gray-500">Issues will appear here once they are synced from GitHub.</p>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="mt-8">
+    <h2 class="text-lg font-medium text-gray-900">Synced Pull Requests</h2>
+
+    <% if @pull_requests.any? %>
+      <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
+        <div class="max-h-96 overflow-y-auto">
+          <ul role="list" class="divide-y divide-gray-200">
+            <% @pull_requests.each do |pr| %>
+              <li class="flex items-center justify-between px-4 py-3">
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center space-x-2">
+                    <%= link_to "##{pr.github_number}",
+                          pr.github_url,
+                          target: "_blank",
+                          rel: "noopener noreferrer",
+                          class: "flex-shrink-0 text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
+                    <span class="truncate text-sm text-gray-900"><%= pr.title %></span>
+                  </div>
+                  <% if pr.labels.any? %>
+                    <div class="mt-1 flex flex-wrap gap-1">
+                      <% pr.labels.each do |label| %>
+                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"><%= label %></span>
+                      <% end %>
+                    </div>
+                  <% end %>
+                </div>
+                <div class="ml-4 flex-shrink-0">
+                  <%= paid_state_badge(pr.paid_state) %>
+                </div>
+              </li>
+            <% end %>
+          </ul>
+        </div>
+      </div>
+    <% else %>
+      <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-8">
+        <h3 class="text-sm font-semibold text-gray-900">No synced pull requests</h3>
+        <p class="mt-1 text-sm text-gray-500">Pull requests will appear here once they are synced from GitHub.</p>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="mt-8">
     <h2 class="text-lg font-medium text-gray-900">Workflow Status</h2>
     <div class="mt-4">
       <%= turbo_frame_tag "workflow-status", src: project_workflow_status_path(@project), loading: :lazy do %>

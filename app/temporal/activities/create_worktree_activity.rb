@@ -4,7 +4,8 @@ module Activities
   class CreateWorktreeActivity < BaseActivity
     activity_name "CreateWorktree"
 
-    def execute(agent_run_id:)
+    def execute(input)
+      agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
       worktree_path = agent_run.project.create_worktree_for(agent_run)
 

@@ -6,8 +6,11 @@ module Activities
   # Returns a list of synced issue summaries for downstream processing.
   # Handles rate limiting by re-raising as a retryable Temporal error.
   class FetchIssuesActivity < BaseActivity
-    def execute(project_id:)
-      project = Project.find(project_id)
+    def execute(input)
+      project_id = input[:project_id]
+      project = Project.find_by(id: project_id)
+      return { issues: [], project_id: project_id, project_missing: true } unless project
+
       client = project.github_token.client
 
       labels = project.label_mappings.values.compact_blank.uniq
@@ -75,6 +78,7 @@ module Activities
         body: github_issue.body,
         github_state: github_issue.state,
         labels: extract_labels(github_issue),
+        is_pull_request: github_issue.pull_request.present?,
         github_created_at: github_issue.created_at,
         github_updated_at: github_issue.updated_at
       )

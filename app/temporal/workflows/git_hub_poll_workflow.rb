@@ -7,29 +7,26 @@ module Workflows
   # Runs as a long-lived workflow, sleeping between poll cycles. Can be
   # cancelled via ProjectWorkflowManager.stop_polling.
   class GitHubPollWorkflow < BaseWorkflow
-    def execute(project_id:)
+    def execute(input)
+      project_id = input[:project_id]
+
       loop do
-        result = Temporalio::Workflow.execute_activity(
-          Activities::FetchIssuesActivity,
-          { project_id: project_id },
-          **activity_options(timeout: 60)
-        )
+        result = run_activity(Activities::FetchIssuesActivity,
+          { project_id: project_id }, timeout: 60)
+
+        break if result[:project_missing]
 
         result[:issues].each do |issue_data|
-          detection = Temporalio::Workflow.execute_activity(
-            Activities::DetectLabelsActivity,
-            { project_id: project_id, issue_id: issue_data[:id] },
-            **activity_options(timeout: 30)
-          )
+          detection = run_activity(Activities::DetectLabelsActivity,
+            { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
 
           handle_detection(detection, project_id)
         end
 
-        poll_config = Temporalio::Workflow.execute_activity(
-          Activities::GetPollIntervalActivity,
-          { project_id: project_id },
-          **activity_options(timeout: 10)
-        )
+        poll_config = run_activity(Activities::GetPollIntervalActivity,
+          { project_id: project_id }, timeout: 10)
+
+        break if poll_config[:project_missing]
 
         Temporalio::Workflow.sleep(poll_config[:poll_interval_seconds])
       end

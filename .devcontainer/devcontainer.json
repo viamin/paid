@@ -17,7 +17,11 @@
 
   "containerEnv": {
     "KAMAL_REGISTRY_PASSWORD": "$KAMAL_REGISTRY_PASSWORD",
-    "DB_HOST": "postgres"
+    "DB_HOST": "postgres",
+    "TEMPORAL_ADDRESS": "temporal:7233",
+    "TEMPORAL_NAMESPACE": "default",
+    "TEMPORAL_TASK_QUEUE": "paid-tasks",
+    "TEMPORAL_UI_URL": "http://localhost:8080"
   },
 
   "mounts": [

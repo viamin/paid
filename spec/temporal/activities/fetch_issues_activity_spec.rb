@@ -23,6 +23,7 @@ RSpec.describe Activities::FetchIssuesActivity do
             body: "Please build it",
             state: "open",
             labels: [ OpenStruct.new(name: "paid-build") ],
+            pull_request: nil,
             created_at: 2.days.ago,
             updated_at: 1.day.ago
           ),
@@ -33,6 +34,7 @@ RSpec.describe Activities::FetchIssuesActivity do
             body: "Please plan it",
             state: "open",
             labels: [ OpenStruct.new(name: "paid-plan"), OpenStruct.new(name: "enhancement") ],
+            pull_request: nil,
             created_at: 1.day.ago,
             updated_at: Time.current
           )
@@ -66,6 +68,57 @@ RSpec.describe Activities::FetchIssuesActivity do
         issue = project.issues.find_by(github_issue_id: 1001)
         expect(issue.title).to eq("Build this feature")
         expect(project.issues.count).to eq(2)
+      end
+
+      it "marks issues as not pull requests" do
+        activity.execute(project_id: project.id)
+
+        project.issues.each do |issue|
+          expect(issue.is_pull_request).to be false
+        end
+      end
+    end
+
+    context "when results include pull requests" do
+      let(:github_items) do
+        [
+          OpenStruct.new(
+            id: 1001,
+            number: 1,
+            title: "A real issue",
+            body: "Issue body",
+            state: "open",
+            labels: [ OpenStruct.new(name: "paid-build") ],
+            pull_request: nil,
+            created_at: 2.days.ago,
+            updated_at: 1.day.ago
+          ),
+          OpenStruct.new(
+            id: 1003,
+            number: 3,
+            title: "A pull request",
+            body: "PR body",
+            state: "open",
+            labels: [ OpenStruct.new(name: "paid-build") ],
+            pull_request: OpenStruct.new(html_url: "https://github.com/owner/repo/pull/3"),
+            created_at: 1.day.ago,
+            updated_at: Time.current
+          )
+        ]
+      end
+
+      before do
+        allow(github_client).to receive(:issues).and_return(github_items)
+      end
+
+      it "correctly identifies pull requests" do
+        activity.execute(project_id: project.id)
+
+        issue = project.issues.find_by(github_issue_id: 1001)
+        pr = project.issues.find_by(github_issue_id: 1003)
+
+        expect(issue.is_pull_request).to be false
+        expect(pr.is_pull_request).to be true
       end
     end
 
@@ -128,6 +181,7 @@ RSpec.describe Activities::FetchIssuesActivity do
             body: "Body",
             state: "open",
             labels: [ OpenStruct.new(name: "paid-build") ],
+            pull_request: nil,
             created_at: 2.days.ago,
             updated_at: 1.day.ago
           )
@@ -143,6 +197,7 @@ RSpec.describe Activities::FetchIssuesActivity do
             body: "Body",
             state: "open",
             labels: [ OpenStruct.new(name: "paid-build") ],
+            pull_request: nil,
             created_at: 1.day.ago,
             updated_at: Time.current
           )
@@ -172,6 +227,7 @@ RSpec.describe Activities::FetchIssuesActivity do
             body: "Body",
             state: "open",
             labels: [ OpenStruct.new(name: "paid-build") ],
+            pull_request: nil,
             created_at: 2.days.ago,
             updated_at: 1.day.ago
           )

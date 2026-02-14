@@ -6,7 +6,8 @@ module Activities
 
     PAID_GENERATED_LABEL = "paid-generated"
 
-    def execute(agent_run_id:)
+    def execute(input)
+      agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
       project = agent_run.project
       issue = agent_run.issue
