@@ -4,7 +4,9 @@ module Activities
   class MarkAgentRunCompleteActivity < BaseActivity
     activity_name "MarkAgentRunComplete"
 
-    def execute(agent_run_id:, reason: "no_changes")
+    def execute(input)
+      agent_run_id = input[:agent_run_id]
+      reason = input.fetch(:reason, "no_changes")
       agent_run = AgentRun.find(agent_run_id)
 
       agent_run.complete!

@@ -14,7 +14,11 @@ module Workflows
   class AgentExecutionWorkflow < BaseWorkflow
     NO_RETRY = Temporalio::RetryPolicy.new(max_attempts: 1)
 
-    def execute(project_id:, issue_id:, agent_type: "claude_code")
+    def execute(input)
+      project_id = input[:project_id]
+      issue_id = input[:issue_id]
+      agent_type = input.fetch(:agent_type, "claude_code")
+
       Temporalio::Workflow.logger.info(
         "AgentExecutionWorkflow started for project=#{project_id} issue=#{issue_id}"
       )

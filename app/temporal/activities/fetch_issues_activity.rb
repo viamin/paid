@@ -6,7 +6,8 @@ module Activities
   # Returns a list of synced issue summaries for downstream processing.
   # Handles rate limiting by re-raising as a retryable Temporal error.
   class FetchIssuesActivity < BaseActivity
-    def execute(project_id:)
+    def execute(input)
+      project_id = input[:project_id]
       project = Project.find(project_id)
       client = project.github_token.client
 

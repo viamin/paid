@@ -16,10 +16,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
   end
 
   describe "#execute" do
-    it "accepts project_id, issue_id, and optional agent_type parameters" do
+    it "accepts a single input parameter" do
       params = workflow.method(:execute).parameters
-      expect(params).to include(%i[keyreq project_id])
-      expect(params).to include(%i[keyreq issue_id])
+      expect(params).to eq([ [ :req, :input ] ])
     end
   end
 
