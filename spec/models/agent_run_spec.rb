@@ -49,10 +49,17 @@ RSpec.describe AgentRun do
         expect(agent_run.errors[:issue]).to include("must belong to the same project")
       end
 
-      it "allows nil issue" do
-        agent_run = build(:agent_run, issue: nil)
+      it "allows nil issue when custom_prompt is present" do
+        agent_run = build(:agent_run, issue: nil, custom_prompt: "Do something")
 
         expect(agent_run).to be_valid
+      end
+
+      it "rejects nil issue and nil custom_prompt" do
+        agent_run = build(:agent_run, issue: nil, custom_prompt: nil)
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:base]).to include("must have either an issue or a custom prompt")
       end
     end
   end
@@ -674,8 +681,8 @@ RSpec.describe AgentRun do
   end
 
   describe "issue association" do
-    it "allows agent_run to exist without issue" do
-      agent_run = create(:agent_run, issue: nil)
+    it "allows agent_run to exist without issue when custom_prompt is present" do
+      agent_run = create(:agent_run, issue: nil, custom_prompt: "Do something")
       expect(agent_run.issue).to be_nil
       expect(agent_run).to be_valid
     end

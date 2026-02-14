@@ -6,7 +6,7 @@ RSpec.describe Activities::RunAgentActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
-  let(:agent_run) { create(:agent_run, :with_git_context, :with_issue, project: project, issue: issue) }
+  let(:agent_run) { create(:agent_run, :with_git_context, project: project, issue: issue) }
   let(:success_result) { AgentRuns::Execute::Result.new(success: true) }
   let(:failure_result) { AgentRuns::Execute::Result.new(success: false, error: "Agent crashed") }
   let(:success_status) { instance_double(Process::Status, success?: true) }
@@ -70,13 +70,14 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
-    it "raises an error when no issue is attached" do
-      agent_run_no_issue = create(:agent_run, project: project)
-      allow(AgentRun).to receive(:find).with(agent_run_no_issue.id).and_return(agent_run_no_issue)
+    it "raises an error when no prompt is available" do
+      agent_run_no_prompt = create(:agent_run, :with_custom_prompt, project: project)
+      allow(agent_run_no_prompt).to receive(:effective_prompt).and_return(nil)
+      allow(AgentRun).to receive(:find).with(agent_run_no_prompt.id).and_return(agent_run_no_prompt)
 
       expect {
-        activity.execute(agent_run_id: agent_run_no_issue.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, /No issue attached/)
+        activity.execute(agent_run_id: agent_run_no_prompt.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, /No prompt available/)
     end
 
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do

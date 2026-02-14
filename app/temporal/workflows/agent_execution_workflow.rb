@@ -18,6 +18,7 @@ module Workflows
       project_id = input[:project_id]
       issue_id = input[:issue_id]
       agent_type = input.fetch(:agent_type, "claude_code")
+      custom_prompt = input[:custom_prompt]
 
       Temporalio::Workflow.logger.info(
         "AgentExecutionWorkflow started for project=#{project_id} issue=#{issue_id}"
@@ -25,7 +26,8 @@ module Workflows
 
       # Step 1: Create agent run record
       agent_run_result = run_activity(Activities::CreateAgentRunActivity,
-        { project_id: project_id, issue_id: issue_id, agent_type: agent_type }, timeout: 30)
+        { project_id: project_id, issue_id: issue_id, agent_type: agent_type,
+          custom_prompt: custom_prompt }.compact, timeout: 30)
       agent_run_id = agent_run_result[:agent_run_id]
 
       begin

@@ -28,6 +28,7 @@ class AgentRun < ApplicationRecord
   validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
+  validate :has_prompt_source
 
   scope :by_status, ->(status) { where(status: status) }
   scope :pending, -> { where(status: "pending") }
@@ -140,6 +141,14 @@ class AgentRun < ApplicationRecord
     return nil unless issue
 
     Prompts::BuildForIssue.call(issue: issue, project: project)
+  end
+
+  # Returns the prompt for this run: custom_prompt if provided,
+  # otherwise delegates to prompt_for_issue.
+  #
+  # @return [String, nil] The prompt to send to the agent
+  def effective_prompt
+    custom_prompt.presence || prompt_for_issue
   end
 
   # Container management integration methods.
@@ -255,6 +264,12 @@ class AgentRun < ApplicationRecord
     return if issue.project_id == project_id
 
     errors.add(:issue, "must belong to the same project")
+  end
+
+  def has_prompt_source
+    return if issue.present? || custom_prompt.present?
+
+    errors.add(:base, "must have either an issue or a custom prompt")
   end
 
   def generate_proxy_token
