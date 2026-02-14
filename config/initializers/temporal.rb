@@ -6,6 +6,7 @@ begin
   original_verbose = $VERBOSE
   $VERBOSE = nil
   require "temporalio/client"
+  require "temporalio/worker"
 ensure
   $VERBOSE = original_verbose
 end
@@ -24,7 +25,7 @@ module Paid
       @temporal_mutex.synchronize do
         @temporal_client ||= Temporalio::Client.connect(
           temporal_address,
-          namespace: temporal_namespace
+          temporal_namespace
         )
       end
     end

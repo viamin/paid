@@ -4,7 +4,9 @@ module Activities
   class UpdateIssueWithPrActivity < BaseActivity
     activity_name "UpdateIssueWithPR"
 
-    def execute(agent_run_id:, pull_request_url:)
+    def execute(input)
+      agent_run_id = input[:agent_run_id]
+      pull_request_url = input[:pull_request_url]
       agent_run = AgentRun.find(agent_run_id)
       issue = agent_run.issue
 

@@ -5,7 +5,8 @@ module Activities
   #
   # Extracted as an activity because workflows cannot perform I/O directly.
   class GetPollIntervalActivity < BaseActivity
-    def execute(project_id:)
+    def execute(input)
+      project_id = input[:project_id]
       project = Project.find(project_id)
       { poll_interval_seconds: project.poll_interval_seconds }
     end

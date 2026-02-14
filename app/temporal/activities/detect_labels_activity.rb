@@ -6,7 +6,9 @@ module Activities
   #
   # Updates the issue's paid_state when an action is triggered.
   class DetectLabelsActivity < BaseActivity
-    def execute(project_id:, issue_id:)
+    def execute(input)
+      project_id = input[:project_id]
+      issue_id = input[:issue_id]
       project = Project.find(project_id)
       issue = project.issues.find(issue_id)
 

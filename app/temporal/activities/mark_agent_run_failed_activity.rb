@@ -4,7 +4,9 @@ module Activities
   class MarkAgentRunFailedActivity < BaseActivity
     activity_name "MarkAgentRunFailed"
 
-    def execute(agent_run_id:, error:)
+    def execute(input)
+      agent_run_id = input[:agent_run_id]
+      error = input[:error]
       agent_run = AgentRun.find(agent_run_id)
 
       agent_run.fail!(error: error)
