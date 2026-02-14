@@ -22,9 +22,12 @@ class Issue < ApplicationRecord
   scope :by_paid_state, ->(state) { where(paid_state: state) }
   scope :root_issues, -> { where(parent_issue_id: nil) }
   scope :sub_issues_only, -> { where.not(parent_issue_id: nil) }
+  scope :issues_only, -> { where(is_pull_request: false) }
+  scope :pull_requests_only, -> { where(is_pull_request: true) }
 
   def github_url
-    "#{project.github_url}/issues/#{github_number}"
+    path = is_pull_request? ? "pull" : "issues"
+    "#{project.github_url}/#{path}/#{github_number}"
   end
 
   def has_label?(label)

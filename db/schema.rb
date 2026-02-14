@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_08_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_14_015307) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -53,6 +53,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_130000) do
     t.string "container_id", limit: 128
     t.integer "cost_cents", default: 0
     t.datetime "created_at", null: false
+    t.text "custom_prompt"
     t.integer "duration_seconds"
     t.text "error_message"
     t.bigint "issue_id"
@@ -195,6 +196,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_08_130000) do
     t.integer "github_number", null: false
     t.string "github_state", null: false
     t.datetime "github_updated_at", null: false
+    t.boolean "is_pull_request", default: false, null: false
     t.jsonb "labels", default: [], null: false
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"

@@ -11,6 +11,9 @@ class ProjectsController < ApplicationController
   def show
     authorize @project
     @recent_agent_runs = @project.agent_runs.recent.limit(10)
+    open_items = @project.issues.where(github_state: "open").order(github_number: :desc)
+    @issues = open_items.issues_only.limit(25)
+    @pull_requests = open_items.pull_requests_only.limit(25)
   end
 
   def new

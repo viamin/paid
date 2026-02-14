@@ -6,7 +6,7 @@ RSpec.describe Activities::UpdateIssueWithPrActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project, label_mappings: { "build" => "paid-build", "plan" => "paid-plan" }) }
   let(:issue) { create(:issue, :in_progress, project: project, labels: [ "paid-build", "bug" ]) }
-  let(:agent_run) { create(:agent_run, :with_issue, project: project, issue: issue) }
+  let(:agent_run) { create(:agent_run, project: project, issue: issue) }
   let(:pr_url) { "https://github.com/owner/repo/pull/42" }
   let(:github_client) { instance_double(GithubClient) }
 
@@ -72,7 +72,7 @@ RSpec.describe Activities::UpdateIssueWithPrActivity do
     end
 
     it "handles agent runs without an issue" do
-      agent_run_no_issue = create(:agent_run, project: project)
+      agent_run_no_issue = create(:agent_run, :with_custom_prompt, project: project)
 
       result = activity.execute(agent_run_id: agent_run_no_issue.id, pull_request_url: pr_url)
 

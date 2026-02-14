@@ -17,6 +17,10 @@ FactoryBot.define do
       github_state { "closed" }
     end
 
+    trait :pull_request do
+      is_pull_request { true }
+    end
+
     trait :planning do
       paid_state { "planning" }
     end
