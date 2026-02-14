@@ -85,15 +85,46 @@ RSpec.describe Issue do
         expect(described_class.sub_issues_only).not_to include(root_issue)
       end
     end
+
+    describe ".issues_only" do
+      it "includes issues" do
+        issue = create(:issue)
+        expect(described_class.issues_only).to include(issue)
+      end
+
+      it "excludes pull requests" do
+        pr = create(:issue, :pull_request)
+        expect(described_class.issues_only).not_to include(pr)
+      end
+    end
+
+    describe ".pull_requests_only" do
+      it "includes pull requests" do
+        pr = create(:issue, :pull_request)
+        expect(described_class.pull_requests_only).to include(pr)
+      end
+
+      it "excludes issues" do
+        issue = create(:issue)
+        expect(described_class.pull_requests_only).not_to include(issue)
+      end
+    end
   end
 
   describe "instance methods" do
     describe "#github_url" do
-      it "returns the GitHub issue URL" do
+      it "returns the GitHub issue URL for issues" do
         project = build(:project, owner: "viamin", repo: "paid")
         issue = build(:issue, project: project, github_number: 42)
 
         expect(issue.github_url).to eq("https://github.com/viamin/paid/issues/42")
+      end
+
+      it "returns the GitHub pull request URL for PRs" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        pr = build(:issue, :pull_request, project: project, github_number: 43)
+
+        expect(pr.github_url).to eq("https://github.com/viamin/paid/pull/43")
       end
     end
 
