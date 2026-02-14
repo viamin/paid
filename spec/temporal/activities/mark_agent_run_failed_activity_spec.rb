@@ -30,7 +30,7 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
 
     it "updates issue paid_state to failed when issue exists" do
       issue = create(:issue, :in_progress, project: project)
-      agent_run = create(:agent_run, :running, :with_issue, project: project, issue: issue)
+      agent_run = create(:agent_run, :running, project: project, issue: issue)
 
       activity.execute(agent_run_id: agent_run.id, error: "Timeout")
 

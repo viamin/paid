@@ -13,7 +13,7 @@
   <div class="bg-white shadow sm:rounded-lg">
     <div class="px-4 py-5 sm:px-6">
       <h1 class="text-xl font-semibold text-gray-900">Trigger Agent Run</h1>
-      <p class="mt-1 text-sm text-gray-500">Start an agent run for an issue in <%= @project.full_name %>.</p>
+      <p class="mt-1 text-sm text-gray-500">Start an agent run for an issue or custom prompt in <%= @project.full_name %>.</p>
     </div>
 
     <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
@@ -44,6 +44,19 @@
                    placeholder="https://github.com/<%= @project.full_name %>/issues/123"
                    class="mt-1 block w-full rounded-md border-gray-300 font-mono text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
             <p class="mt-1 text-xs text-gray-500">Paste a GitHub issue URL from this repository. The issue must already be synced.</p>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-base font-semibold text-gray-900">Or Provide a Custom Prompt</h2>
+          <p class="mt-1 text-sm text-gray-500">Run the agent with a free-form prompt instead of a GitHub issue.</p>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <label for="custom_prompt" class="block text-sm font-medium text-gray-700">Custom prompt:</label>
+            <textarea name="custom_prompt" id="custom_prompt" rows="6"
+                      placeholder="Describe the changes you want the agent to make..."
+                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+            <p class="mt-1 text-xs text-gray-500">If provided, the agent will use this prompt directly without needing a linked issue.</p>
           </div>
         </div>
 

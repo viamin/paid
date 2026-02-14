@@ -10,8 +10,8 @@ module Activities
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
 
-      prompt = agent_run.prompt_for_issue
-      raise Temporalio::Error::ApplicationError.new("No issue attached to agent run", type: "MissingIssue") unless prompt
+      prompt = agent_run.effective_prompt
+      raise Temporalio::Error::ApplicationError.new("No prompt available for agent run", type: "MissingPrompt") unless prompt
 
       result = agent_run.execute_agent(prompt)
 

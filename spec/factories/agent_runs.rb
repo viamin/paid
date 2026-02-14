@@ -3,11 +3,13 @@
 FactoryBot.define do
   factory :agent_run do
     project
+    issue { association :issue, project: project }
     agent_type { "claude_code" }
     status { "pending" }
 
-    trait :with_issue do
-      issue { association :issue, project: project }
+    trait :with_custom_prompt do
+      issue { nil }
+      custom_prompt { "Make the requested changes" }
     end
 
     trait :running do
