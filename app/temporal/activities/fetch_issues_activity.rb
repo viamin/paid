@@ -8,7 +8,9 @@ module Activities
   class FetchIssuesActivity < BaseActivity
     def execute(input)
       project_id = input[:project_id]
-      project = Project.find(project_id)
+      project = Project.find_by(id: project_id)
+      return { issues: [], project_id: project_id, project_missing: true } unless project
+
       client = project.github_token.client
 
       labels = project.label_mappings.values.compact_blank.uniq

@@ -14,6 +14,8 @@ module Workflows
         result = run_activity(Activities::FetchIssuesActivity,
           { project_id: project_id }, timeout: 60)
 
+        break if result[:project_missing]
+
         result[:issues].each do |issue_data|
           detection = run_activity(Activities::DetectLabelsActivity,
             { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
@@ -23,6 +25,8 @@ module Workflows
 
         poll_config = run_activity(Activities::GetPollIntervalActivity,
           { project_id: project_id }, timeout: 10)
+
+        break if poll_config[:project_missing]
 
         Temporalio::Workflow.sleep(poll_config[:poll_interval_seconds])
       end
