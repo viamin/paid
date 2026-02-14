@@ -41,7 +41,9 @@ class AgentRunsController < ApplicationController
 
     workflow_id = start_agent_workflow(issue: issue, custom_prompt: custom_prompt)
 
-    notice = if issue
+    notice = if custom_prompt && issue
+      "Agent run started for issue ##{issue.github_number} with custom prompt. Workflow ID: #{workflow_id}"
+    elsif issue
       "Agent run started for issue ##{issue.github_number}. Workflow ID: #{workflow_id}"
     else
       "Agent run started with custom prompt. Workflow ID: #{workflow_id}"
