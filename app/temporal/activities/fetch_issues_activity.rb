@@ -78,6 +78,7 @@ module Activities
         body: github_issue.body,
         github_state: github_issue.state,
         labels: extract_labels(github_issue),
+        is_pull_request: github_issue.pull_request.present?,
         github_created_at: github_issue.created_at,
         github_updated_at: github_issue.updated_at
       )
