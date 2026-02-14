@@ -28,7 +28,7 @@ class AgentRun < ApplicationRecord
   validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
-  validate :has_prompt_source
+  validate :has_prompt_source, on: :create
 
   scope :by_status, ->(status) { where(status: status) }
   scope :pending, -> { where(status: "pending") }
