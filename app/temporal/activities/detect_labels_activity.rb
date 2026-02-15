@@ -34,6 +34,16 @@ module Activities
     def determine_action(project, issue)
       return "none" unless issue.paid_state == "new"
 
+      unless issue.trusted?
+        logger.warn(
+          message: "github_sync.untrusted_issue_blocked",
+          project_id: project.id,
+          issue_id: issue.id,
+          creator: issue.github_creator_login
+        )
+        return "none"
+      end
+
       build_label = project.label_for_stage(:build)
       plan_label = project.label_for_stage(:plan)
 

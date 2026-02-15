@@ -14,6 +14,7 @@ class Issue < ApplicationRecord
   validates :github_number, presence: true
   validates :title, presence: true, length: { maximum: 1000 }
   validates :github_state, presence: true
+  validates :github_creator_login, presence: true
   validates :github_created_at, presence: true
   validates :github_updated_at, presence: true
   validates :paid_state, presence: true, inclusion: { in: PAID_STATES }
@@ -32,6 +33,14 @@ class Issue < ApplicationRecord
 
   def has_label?(label)
     labels.include?(label)
+  end
+
+  def trusted?
+    project.trusted_github_user?(github_creator_login)
+  end
+
+  def untrusted?
+    !trusted?
   end
 
   def sub_issue?

@@ -55,7 +55,8 @@
           </div>
         </div>
 
-        <%= form_with model: @project, url: projects_path, class: "mt-6" do |form| %>
+        <%= form_with model: @project, url: projects_path, class: "mt-6",
+            data: { controller: "repository-selector" } do |form| %>
           <% if @project.errors.any? %>
             <div class="mb-6 rounded-md bg-red-50 p-4">
               <div class="flex">
@@ -87,27 +88,34 @@
                 <%= form.select :github_token_id,
                     options_from_collection_for_select(@github_tokens, :id, :name, @project.github_token_id),
                     { prompt: "Select a token..." },
-                    class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+                    class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+                    data: { repository_selector_target: "tokenSelect", action: "change->repository-selector#tokenChanged" } %>
               </div>
               <p class="mt-1 text-xs text-gray-500">Select the token that has access to this repository.</p>
             </div>
 
-            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div>
-                <%= form.label :owner, "Repository Owner", class: "block text-sm font-medium leading-6 text-gray-900" %>
-                <div class="mt-2">
-                  <%= form.text_field :owner, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "e.g., octocat", required: true %>
+            <div data-repository-selector-target="repoGroup" class="hidden">
+              <label class="block text-sm font-medium leading-6 text-gray-900">Repository</label>
+              <div class="mt-2 relative">
+                <select name="repository_selection"
+                        class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                        data-repository-selector-target="repoSelect"
+                        data-action="change->repository-selector#repoSelected">
+                  <option value="">Select a token first...</option>
+                </select>
+                <div data-repository-selector-target="loading" class="hidden absolute right-2 top-2">
+                  <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
                 </div>
-                <p class="mt-1 text-xs text-gray-500">GitHub username or organization name.</p>
               </div>
+              <p class="mt-1 text-xs text-gray-500">Repositories already added to this account are filtered out.</p>
 
-              <div>
-                <%= form.label :repo, "Repository Name", class: "block text-sm font-medium leading-6 text-gray-900" %>
-                <div class="mt-2">
-                  <%= form.text_field :repo, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "e.g., hello-world", required: true %>
-                </div>
-                <p class="mt-1 text-xs text-gray-500">The name of the repository.</p>
-              </div>
+              <%= form.hidden_field :owner, data: { repository_selector_target: "owner" } %>
+              <%= form.hidden_field :repo, data: { repository_selector_target: "repo" } %>
+              <input type="hidden" name="project[github_id]" data-repository-selector-target="githubId" />
+              <input type="hidden" name="project[default_branch]" data-repository-selector-target="defaultBranch" />
             </div>
 
             <div>

@@ -25,6 +25,7 @@ class ProjectsController < ApplicationController
   def create
     @project = current_account.projects.build(project_params)
     @project.created_by = current_user
+    @project.allowed_github_usernames = [ @project.owner ] if @project.allowed_github_usernames.blank?
     authorize @project
 
     @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
@@ -34,7 +35,11 @@ class ProjectsController < ApplicationController
       return render :new, status: :unprocessable_content
     end
 
-    fetch_github_metadata
+    if @project.github_id.present? && @project.default_branch.present?
+      save_project_with_cached_data
+    else
+      fetch_github_metadata
+    end
   end
 
   def edit
@@ -46,7 +51,10 @@ class ProjectsController < ApplicationController
     authorize @project
     @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
 
-    if @project.update(project_params)
+    update_params = project_params
+    update_params = update_params.merge(allowed_github_usernames: parse_usernames_csv) if params.dig(:project, :allowed_github_usernames_csv)
+
+    if @project.update(update_params)
       redirect_to @project, notice: "Project was successfully updated."
     else
       render :edit, status: :unprocessable_content
@@ -66,7 +74,22 @@ class ProjectsController < ApplicationController
   end
 
   def project_params
-    params.require(:project).permit(:github_token_id, :owner, :repo, :name, :active, :poll_interval_seconds)
+    params.require(:project).permit(:github_token_id, :owner, :repo, :name, :active,
+      :poll_interval_seconds, :github_id, :default_branch, allowed_github_usernames: [])
+  end
+
+  def parse_usernames_csv
+    params.dig(:project, :allowed_github_usernames_csv).to_s.split(",").map(&:strip).reject(&:blank?)
+  end
+
+  def save_project_with_cached_data
+    @project.name = @project.name.presence || @project.repo
+
+    if @project.save
+      redirect_to @project, notice: "Project was successfully added."
+    else
+      render :new, status: :unprocessable_content
+    end
   end
 
   def fetch_github_metadata

@@ -86,8 +86,8 @@ RSpec.describe "Projects" do
       it "shows the form when tokens are available" do
         github_token # create the token
         get new_project_path
-        expect(response.body).to include("Repository Owner")
-        expect(response.body).to include("Repository Name")
+        expect(response.body).to include("Repository")
+        expect(response.body).to include("Select a token first...")
       end
 
       it "does not show revoked tokens in the dropdown" do

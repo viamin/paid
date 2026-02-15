@@ -17,6 +17,7 @@ class Project < ApplicationRecord
   validates :repo, presence: true
   validates :github_id, presence: true, uniqueness: { scope: :account_id }
   validates :poll_interval_seconds, numericality: { greater_than_or_equal_to: 60 }
+  validate :allowed_github_usernames_not_empty
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
   validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
@@ -68,6 +69,12 @@ class Project < ApplicationRecord
     worktree_service.push_branch(agent_run)
   end
 
+  def trusted_github_user?(login)
+    return false if login.blank?
+
+    allowed_github_usernames.any? { |allowed| allowed.downcase == login.downcase }
+  end
+
   def increment_metrics!(cost_cents:, tokens_used:)
     with_lock do
       update!(
@@ -117,5 +124,11 @@ class Project < ApplicationRecord
     return if github_token.active?
 
     errors.add(:github_token, "must be active (not revoked or expired)")
+  end
+
+  def allowed_github_usernames_not_empty
+    return if allowed_github_usernames.is_a?(Array) && allowed_github_usernames.any?(&:present?)
+
+    errors.add(:allowed_github_usernames, "must include at least one trusted GitHub username")
   end
 end

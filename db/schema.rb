@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_14_015307) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_14_070851) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -81,12 +81,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_14_015307) do
   end
 
   create_table "github_tokens", force: :cascade do |t|
+    t.jsonb "accessible_repositories", default: [], null: false
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.datetime "expires_at"
     t.datetime "last_used_at"
     t.string "name", null: false
+    t.datetime "repositories_synced_at"
     t.datetime "revoked_at"
     t.jsonb "scopes", default: [], null: false
     t.text "token", null: false
@@ -192,6 +194,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_14_015307) do
     t.text "body"
     t.datetime "created_at", null: false
     t.datetime "github_created_at", null: false
+    t.string "github_creator_login"
     t.bigint "github_issue_id", null: false
     t.integer "github_number", null: false
     t.string "github_state", null: false
@@ -203,6 +206,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_14_015307) do
     t.bigint "project_id", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
+    t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
@@ -224,6 +228,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_14_015307) do
   create_table "projects", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
+    t.jsonb "allowed_github_usernames", default: [], null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
