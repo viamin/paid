@@ -303,6 +303,18 @@ RSpec.describe GithubToken do
     end
   end
 
+  describe "#fine_grained?" do
+    it "returns true for fine-grained PATs" do
+      token = build(:github_token, :fine_grained)
+      expect(token.fine_grained?).to be true
+    end
+
+    it "returns false for classic PATs" do
+      token = build(:github_token)
+      expect(token.fine_grained?).to be false
+    end
+  end
+
   describe "#client" do
     it "returns a GithubClient instance" do
       github_token = build(:github_token)
@@ -337,6 +349,12 @@ RSpec.describe GithubToken do
               "X-OAuth-Scopes" => "repo, user"
             }
           )
+        stub_request(:get, %r{api\.github\.com/user/repos})
+          .to_return(
+            status: 200,
+            body: [].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
       end
 
       it "returns user information" do
@@ -368,6 +386,67 @@ RSpec.describe GithubToken do
 
       it "raises AuthenticationError" do
         expect { github_token.validate_with_github! }.to raise_error(GithubClient::AuthenticationError)
+      end
+    end
+  end
+
+  describe "#sync_repositories!" do
+    let(:api_base) { "https://api.github.com" }
+    let(:repo_data) do
+      [
+        { id: 1, full_name: "owner/repo1", name: "repo1", default_branch: "main",
+          private: false, permissions: { admin: true, push: true, pull: true } },
+        { id: 2, full_name: "owner/repo2", name: "repo2", default_branch: "main",
+          private: false, permissions: { admin: true, push: true, pull: true } }
+      ]
+    end
+
+    before do
+      stub_request(:get, %r{api\.github\.com/user/repos})
+        .to_return(
+          status: 200,
+          body: repo_data.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    context "with a classic PAT" do
+      let(:github_token) { create(:github_token) }
+
+      it "stores all repos with push access" do
+        github_token.sync_repositories!
+
+        expect(github_token.accessible_repositories.size).to eq(2)
+      end
+
+      it "does not probe write access" do
+        github_token.sync_repositories!
+
+        expect(WebMock).not_to have_requested(:post, %r{api\.github\.com/repos/.+/git/blobs})
+      end
+    end
+
+    context "with a fine-grained PAT" do
+      let(:github_token) { create(:github_token, :fine_grained) }
+
+      before do
+        # repo1: token has write access
+        stub_request(:post, "#{api_base}/repos/owner/repo1/git/blobs")
+          .to_return(
+            status: 201,
+            body: { sha: "abc123" }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+        # repo2: token does NOT have write access
+        stub_request(:post, "#{api_base}/repos/owner/repo2/git/blobs")
+          .to_return(status: 403, body: { message: "Resource not accessible" }.to_json)
+      end
+
+      it "only stores repos where the token has write access" do
+        github_token.sync_repositories!
+
+        expect(github_token.accessible_repositories.size).to eq(1)
+        expect(github_token.accessible_repositories.first["full_name"]).to eq("owner/repo1")
       end
     end
   end

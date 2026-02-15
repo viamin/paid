@@ -123,6 +123,8 @@ RSpec.describe "GithubTokens" do
           allow(Octokit::Client).to receive(:new).and_return(octokit_client)
           allow(octokit_client).to receive_messages(user: OpenStruct.new(github_user_response), scopes: [ "repo", "read:org" ])
           allow(octokit_client).to receive(:middleware=)
+          allow(octokit_client).to receive_messages(auto_paginate: false, repositories: [])
+          allow(octokit_client).to receive(:auto_paginate=)
         end
 
         it "creates a new token" do

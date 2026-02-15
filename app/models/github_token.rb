@@ -42,6 +42,11 @@ class GithubToken < ApplicationRecord
     update!(revoked_at: Time.current)
   end
 
+  # Whether this token is a fine-grained personal access token.
+  def fine_grained?
+    token.start_with?("github_pat_")
+  end
+
   def touch_last_used!
     update_column(:last_used_at, Time.current)
   end
@@ -63,7 +68,32 @@ class GithubToken < ApplicationRecord
     result = client.validate_token
     update!(scopes: result[:scopes])
     touch_last_used!
+    sync_repositories!
     result
+  end
+
+  # Fetches accessible repositories from GitHub and caches them.
+  # For fine-grained PATs, probes write access to filter down to repos
+  # the token was actually granted access to (GitHub's read APIs report
+  # user permissions, not token permissions).
+  #
+  # @return [Array<Hash>] Cached repository data
+  # @raise [GithubClient::Error] on API failures
+  def sync_repositories!
+    repos = client.repositories
+    repos = repos.select { |r| client.write_accessible?(r.full_name) } if fine_grained?
+    repo_data = repos.map { |r| serialize_repository(r) }
+    update!(accessible_repositories: repo_data, repositories_synced_at: Time.current)
+    touch_last_used!
+    repo_data
+  end
+
+  # Returns cached repositories, syncing if stale.
+  #
+  # @param max_age [ActiveSupport::Duration] Maximum cache age before re-syncing
+  # @return [Array<Hash>] Cached repository data
+  def cached_repositories(max_age: 1.hour)
+    repositories_stale?(max_age) ? sync_repositories! : accessible_repositories
   end
 
   private
@@ -78,5 +108,20 @@ class GithubToken < ApplicationRecord
     return if created_by.account_id == account_id
 
     errors.add(:created_by, "must belong to the same account")
+  end
+
+  def serialize_repository(repo)
+    {
+      "id" => repo.id,
+      "full_name" => repo.full_name,
+      "name" => repo.name,
+      "owner" => repo.full_name.split("/").first,
+      "default_branch" => repo.default_branch,
+      "private" => repo.private
+    }
+  end
+
+  def repositories_stale?(max_age)
+    repositories_synced_at.nil? || repositories_synced_at < max_age.ago
   end
 end

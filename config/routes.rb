@@ -17,7 +17,9 @@ Rails.application.routes.draw do
   get "dashboard", to: "dashboard#show"
 
   # GitHub tokens management
-  resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ]
+  resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ] do
+    get :repositories, on: :member
+  end
 
   # Projects management
   resources :projects do

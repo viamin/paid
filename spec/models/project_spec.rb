@@ -263,6 +263,53 @@ RSpec.describe Project do
     end
   end
 
+  describe "allowed_github_usernames validation" do
+    it "requires at least one trusted username" do
+      project = build(:project, allowed_github_usernames: [])
+
+      expect(project).not_to be_valid
+      expect(project.errors[:allowed_github_usernames]).to include("must include at least one trusted GitHub username")
+    end
+
+    it "rejects array with only blank strings" do
+      project = build(:project, allowed_github_usernames: [ "", " " ])
+
+      expect(project).not_to be_valid
+    end
+
+    it "accepts array with at least one present username" do
+      project = build(:project, allowed_github_usernames: [ "viamin" ])
+
+      expect(project).to be_valid
+    end
+  end
+
+  describe "#trusted_github_user?" do
+    let(:project) { build(:project, allowed_github_usernames: [ "viamin", "OtherUser" ]) }
+
+    it "returns true for an allowlisted user" do
+      expect(project.trusted_github_user?("viamin")).to be true
+    end
+
+    it "is case-insensitive" do
+      expect(project.trusted_github_user?("VIAMIN")).to be true
+      expect(project.trusted_github_user?("otheruser")).to be true
+      expect(project.trusted_github_user?("OtherUser")).to be true
+    end
+
+    it "returns false for a non-allowlisted user" do
+      expect(project.trusted_github_user?("attacker")).to be false
+    end
+
+    it "returns false for nil login" do
+      expect(project.trusted_github_user?(nil)).to be false
+    end
+
+    it "returns false for blank login" do
+      expect(project.trusted_github_user?("")).to be false
+    end
+  end
+
   describe "label_mappings JSONB storage" do
     it "stores label mappings as JSONB" do
       mappings = {

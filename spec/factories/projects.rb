@@ -14,6 +14,7 @@ FactoryBot.define do
     active { true }
     poll_interval_seconds { 60 }
     label_mappings { {} }
+    allowed_github_usernames { [ "viamin" ] }
 
     trait :inactive do
       active { false }
