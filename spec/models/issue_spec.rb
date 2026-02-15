@@ -163,6 +163,39 @@ RSpec.describe Issue do
     end
   end
 
+  describe "#trusted? and #untrusted?" do
+    let(:project) { create(:project, allowed_github_usernames: [ "viamin" ]) }
+
+    it "returns trusted? true for allowlisted creator" do
+      issue = build(:issue, project: project, github_creator_login: "viamin")
+
+      expect(issue.trusted?).to be true
+      expect(issue.untrusted?).to be false
+    end
+
+    it "returns trusted? false for non-allowlisted creator" do
+      issue = build(:issue, project: project, github_creator_login: "attacker")
+
+      expect(issue.trusted?).to be false
+      expect(issue.untrusted?).to be true
+    end
+
+    it "is case-insensitive" do
+      issue = build(:issue, project: project, github_creator_login: "VIAMIN")
+
+      expect(issue.trusted?).to be true
+    end
+  end
+
+  describe "github_creator_login validation" do
+    it "requires github_creator_login" do
+      issue = build(:issue, github_creator_login: nil)
+
+      expect(issue).not_to be_valid
+      expect(issue.errors[:github_creator_login]).to include("can't be blank")
+    end
+  end
+
   describe "labels JSONB storage" do
     it "stores labels as JSONB array" do
       labels = [ "paid:planning", "bug", "priority:high" ]

@@ -71,11 +71,24 @@ module Activities
     end
 
     def sync_issue(project, github_issue)
+      creator_login = github_issue.user&.login
+      trusted = project.trusted_github_user?(creator_login)
+
+      unless trusted
+        logger.warn(
+          message: "github_sync.untrusted_issue_skipped",
+          project_id: project.id,
+          github_number: github_issue.number,
+          creator: creator_login
+        )
+      end
+
       issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)
       issue.update!(
         github_number: github_issue.number,
         title: github_issue.title,
-        body: github_issue.body,
+        body: trusted ? github_issue.body : nil,
+        github_creator_login: creator_login,
         github_state: github_issue.state,
         labels: extract_labels(github_issue),
         is_pull_request: github_issue.pull_request.present?,
@@ -83,7 +96,7 @@ module Activities
         github_updated_at: github_issue.updated_at
       )
 
-      { id: issue.id, github_number: issue.github_number, labels: issue.labels }
+      { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted }
     end
 
     def extract_labels(github_issue)

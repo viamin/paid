@@ -422,15 +422,23 @@ RSpec.describe AgentRun do
         expect(agent_run.prompt_for_issue).to be_nil
       end
 
-      it "builds a prompt when issue is attached" do
-        project = create(:project)
-        issue = create(:issue, project: project, title: "Fix auth", github_number: 5)
+      it "builds a prompt when issue is attached and trusted" do
+        project = create(:project, allowed_github_usernames: [ "viamin" ])
+        issue = create(:issue, project: project, title: "Fix auth", github_number: 5, github_creator_login: "viamin")
         agent_run = build(:agent_run, project: project, issue: issue)
 
         prompt = agent_run.prompt_for_issue
 
         expect(prompt).to include("Fix auth")
         expect(prompt).to include("#5")
+      end
+
+      it "returns nil when issue is from an untrusted user" do
+        project = create(:project, allowed_github_usernames: [ "viamin" ])
+        issue = create(:issue, project: project, title: "Malicious", github_number: 666, github_creator_login: "attacker")
+        agent_run = build(:agent_run, project: project, issue: issue)
+
+        expect(agent_run.prompt_for_issue).to be_nil
       end
     end
 

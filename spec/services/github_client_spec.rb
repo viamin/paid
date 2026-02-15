@@ -99,6 +99,80 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#repositories" do
+    let(:repo_with_push) do
+      { id: 1, full_name: "owner/repo1", name: "repo1", private: false,
+        default_branch: "main", permissions: { admin: true, push: true, pull: true } }
+    end
+    let(:repo_without_push) do
+      { id: 2, full_name: "owner/repo2", name: "repo2", private: false,
+        default_branch: "main", permissions: { admin: false, push: false, pull: true } }
+    end
+
+    before do
+      stub_request(:get, %r{#{api_base}/user/repos})
+        .to_return(
+          status: 200,
+          body: [ repo_with_push, repo_without_push ].to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    it "fetches repos via GET /user/repos" do
+      result = client.repositories
+
+      expect(result.size).to eq(1)
+      expect(result.first.full_name).to eq("owner/repo1")
+    end
+
+    it "filters to repos with push access" do
+      result = client.repositories
+
+      expect(result.map(&:full_name)).to eq([ "owner/repo1" ])
+    end
+  end
+
+  describe "#write_accessible?" do
+    let(:repo) { "owner/repo" }
+
+    context "when the token has write access" do
+      before do
+        stub_request(:post, "#{api_base}/repos/#{repo}/git/blobs")
+          .to_return(
+            status: 201,
+            body: { sha: "abc123", url: "#{api_base}/repos/#{repo}/git/blobs/abc123" }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns true" do
+        expect(client.write_accessible?(repo)).to be true
+      end
+    end
+
+    context "when the token does not have write access" do
+      before do
+        stub_request(:post, "#{api_base}/repos/#{repo}/git/blobs")
+          .to_return(status: 403, body: { message: "Resource not accessible by personal access token" }.to_json)
+      end
+
+      it "returns false" do
+        expect(client.write_accessible?(repo)).to be false
+      end
+    end
+
+    context "when the repo does not exist" do
+      before do
+        stub_request(:post, "#{api_base}/repos/#{repo}/git/blobs")
+          .to_return(status: 404, body: { message: "Not Found" }.to_json)
+      end
+
+      it "returns false" do
+        expect(client.write_accessible?(repo)).to be false
+      end
+    end
+  end
+
   describe "#issues" do
     let(:repo) { "owner/repo" }
 
