@@ -88,6 +88,31 @@
             <p class="mt-1 text-xs text-gray-500">How often to check for new issues (minimum 60 seconds).</p>
           </div>
 
+          <div>
+            <%= form.label :allowed_github_usernames, "Trusted GitHub Usernames", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <input type="text" name="project[allowed_github_usernames_csv]" id="project_allowed_github_usernames_csv"
+                value="<%= @project.allowed_github_usernames.join(', ') %>"
+                class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                placeholder="viamin, other-user" />
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Comma-separated list of GitHub usernames whose issues are trusted. Issues from other users will never be sent to an LLM.</p>
+            <div class="mt-2 rounded-md bg-yellow-50 p-3">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-xs text-yellow-700">
+                    <strong>Security:</strong> Only add usernames you fully trust. Issue content from these users will be sent directly to AI agents. Untrusted users' issue bodies are never stored or sent to any LLM.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="flex items-center">
             <%= form.check_box :active, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
             <%= form.label :active, "Active", class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>

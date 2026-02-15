@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class GithubTokensController < ApplicationController
-  before_action :set_github_token, only: [ :show, :destroy ]
+  before_action :set_github_token, only: [ :show, :destroy, :repositories ]
   skip_after_action :verify_authorized, only: :index
 
   def index
@@ -27,6 +27,16 @@ class GithubTokensController < ApplicationController
     else
       render :new, status: :unprocessable_content
     end
+  end
+
+  def repositories
+    authorize @github_token, :show?
+
+    existing_github_ids = current_account.projects.pluck(:github_id)
+    repos = @github_token.cached_repositories
+    available_repos = repos.reject { |r| existing_github_ids.include?(r["id"]) }
+
+    render json: available_repos
   end
 
   def destroy

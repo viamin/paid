@@ -97,6 +97,28 @@ class GithubClient
     handle_errors { client.repository(repo) }
   end
 
+  # Lists repositories the token has push access to.
+  # Filters by permissions.push to exclude repos where the token only
+  # has metadata access (relevant for fine-grained PATs with selected repos).
+  #
+  # Note: GitHub's API does not expose fine-grained PAT repository scoping
+  # on read operations, so this returns all repos the user has push access to
+  # regardless of token configuration.
+  #
+  # @return [Array<Sawyer::Resource>] List of repositories
+  # @raise [AuthenticationError] if the token is invalid
+  # @raise [RateLimitError] if rate limit is exceeded
+  def repositories
+    handle_errors do
+      original = client.auto_paginate
+      client.auto_paginate = true
+      repos = client.repositories
+      repos.select { |r| r.permissions&.push }
+    ensure
+      client.auto_paginate = original
+    end
+  end
+
   # Lists issues for a repository.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -170,6 +192,25 @@ class GithubClient
   # @return [Array<Sawyer::Resource>] Updated list of labels
   def remove_label_from_issue(repo, number, label)
     handle_errors { client.remove_label(repo, number, label) }
+  end
+
+  # Probes whether the token has write access to a repository by creating
+  # an unreferenced git blob. This is the only reliable way to check
+  # fine-grained PAT repository scoping, since read endpoints report the
+  # user's permissions rather than the token's.
+  #
+  # Creates a small unreferenced blob object per successful probe.
+  # Standard Git GC prunes these after ~2 weeks, but GitHub's backend
+  # GC behavior is not documented. Results should be cached to avoid
+  # repeated probes.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @return [Boolean] true if the token can write to the repo
+  def write_accessible?(repo)
+    client.create_blob(repo, "probe")
+    true
+  rescue Octokit::Forbidden, Octokit::NotFound
+    false
   end
 
   # Gets the remaining rate limit.

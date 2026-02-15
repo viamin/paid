@@ -8,6 +8,7 @@ FactoryBot.define do
     sequence(:github_number) { |n| n }
     sequence(:title) { |n| "Issue #{n}" }
     body { "This is the issue body" }
+    github_creator_login { "viamin" }
     github_state { "open" }
     paid_state { "new" }
     github_created_at { 1.day.ago }

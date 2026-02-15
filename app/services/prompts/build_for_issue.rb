@@ -7,6 +7,8 @@ module Prompts
   #   prompt = Prompts::BuildForIssue.call(issue: issue, project: project)
   #   # => "# Task\n\nYou are working on..."
   class BuildForIssue
+    class UntrustedIssueError < StandardError; end
+
     LANGUAGE_TEST_COMMANDS = {
       "ruby" => "bundle exec rspec",
       "javascript" => "npm test",
@@ -37,6 +39,8 @@ module Prompts
     end
 
     def build
+      raise UntrustedIssueError, "Cannot build prompt for issue from untrusted user: #{issue.github_creator_login}" unless issue.trusted?
+
       <<~PROMPT
         # Task
 
