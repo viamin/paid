@@ -14,7 +14,7 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 - **Temporal Workflows**: Durable, observable orchestration of agent activities
 - **Container Isolation**: Agents run in sandboxed Docker containers with no default internet access
 - **Multiple Agents**: Support for Claude Code, Cursor, Aider (via agent-harness gem)
-- **Secrets Proxy**: API keys never enter agent containers; proxied through authenticated endpoint
+- **Secrets Proxy**: API keys and git credentials never enter agent containers; proxied through authenticated endpoints
 - **Human-in-the-Loop**: All changes go through PRs; humans approve merges
 
 ## How It Works
@@ -22,8 +22,8 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 1. User adds a GitHub project with a Personal Access Token
 2. Paid polls the repo for issues labeled `paid-build`
 3. An `AgentExecutionWorkflow` starts in Temporal, orchestrating:
-   - Git worktree creation for isolated workspace
    - Docker container provisioning on a restricted network
+   - Repository clone and branch creation inside the container
    - Agent execution (e.g., Claude Code) with the issue as prompt
    - Branch push, PR creation, and issue update
 4. User reviews and merges the PR
@@ -98,6 +98,8 @@ bin/dev                 # Start dev server (Rails + JS + CSS watchers)
 | `AGENT_TIMEOUT` | Agent execution timeout in seconds | `600` |
 | `CURSOR_ENABLED` | Enable Cursor agent provider | `false` |
 | `AIDER_ENABLED` | Enable Aider agent provider | `false` |
+| `CLAUDE_CONFIG_DIR` | Host path to `~/.claude/` for Claude Code subscription auth | _(none)_ |
+| `PAID_PROXY_PORT` | Port the secrets proxy listens on (used by agent containers) | `3000` |
 | `PAID_DATABASE_PASSWORD` | Production database password | _(none)_ |
 
 ## Docker Compose Services
@@ -110,6 +112,7 @@ bin/dev                 # Start dev server (Rails + JS + CSS watchers)
 | `temporal-ui` | 8080 | Temporal web interface |
 | `temporal-admin-tools` | - | CLI tools for Temporal administration |
 | `worker` | - | Temporal worker process (executes workflows) |
+| `agent-image` | - | Builds the `paid-agent:latest` image (setup profile, exits immediately) |
 | `agent-test` | - | Agent container for testing (test profile only) |
 
 ### Networks
@@ -170,8 +173,8 @@ bin/ci                       # Setup, style, security checks
 │   GitHubPollWorkflow ──► AgentExecutionWorkflow                 │
 │   (long-running)         (per-issue lifecycle)                  │
 │                          1. Create AgentRun                     │
-│                          2. Create Worktree                     │
-│                          3. Provision Container                 │
+│                          2. Provision Container                 │
+│                          3. Clone Repo & Create Branch          │
 │                          4. Run Agent                           │
 │                          5. Push Branch                         │
 │                          6. Create PR                           │
@@ -182,7 +185,7 @@ bin/ci                       # Setup, style, security checks
 │                  Docker Containers (paid_agent network)          │
 │   Agent CLI (Claude Code, Cursor, Aider)                        │
 │   ── Secrets Proxy ──► Anthropic/OpenAI APIs                    │
-│   ── Git worktree isolation                                     │
+│   ── Git Credential Proxy ──► GitHub                            │
 │   ── No default internet access                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```

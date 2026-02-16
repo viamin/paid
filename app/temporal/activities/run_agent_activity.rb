@@ -4,6 +4,12 @@ module Activities
   class RunAgentActivity < BaseActivity
     activity_name "RunAgent"
 
+    # Maps agent_type to the CLI command used inside the container.
+    # Each entry is an array of command parts; the prompt is appended as the last argument.
+    AGENT_COMMANDS = {
+      "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p]
+    }.freeze
+
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
@@ -11,14 +17,7 @@ module Activities
       prompt = agent_run.effective_prompt
       raise Temporalio::Error::ApplicationError.new("No prompt available for agent run", type: "MissingPrompt") unless prompt
 
-      result = agent_run.execute_agent(prompt)
-
-      unless result.success?
-        raise Temporalio::Error::ApplicationError.new(
-          "Agent execution failed: #{result.error}",
-          type: "AgentExecutionFailed"
-        )
-      end
+      run_agent_in_container(agent_run, prompt)
 
       has_changes = check_for_changes(agent_run)
 
@@ -31,13 +30,44 @@ module Activities
 
     private
 
+    def run_agent_in_container(agent_run, prompt)
+      container_service = reconnect_container(agent_run)
+
+      command_prefix = AGENT_COMMANDS[agent_run.agent_type]
+      unless command_prefix
+        raise Temporalio::Error::ApplicationError.new(
+          "Unsupported agent type for container execution: #{agent_run.agent_type}",
+          type: "UnsupportedAgentType"
+        )
+      end
+
+      command = command_prefix + [ prompt ]
+
+      agent_run.start!
+      agent_run.log!("system", "Starting #{agent_run.agent_type} agent in container")
+      agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
+
+      result = container_service.execute(command, timeout: agent_timeout)
+
+      if result.success?
+        agent_run.complete!
+      else
+        error_msg = "Agent exited with code #{result[:exit_code]}"
+        agent_run.fail!(error: error_msg)
+        raise Temporalio::Error::ApplicationError.new(
+          "Agent execution failed: #{error_msg}",
+          type: "AgentExecutionFailed"
+        )
+      end
+    rescue Containers::Provision::TimeoutError => e
+      agent_run.timeout!
+      raise Temporalio::Error::ApplicationError.new(e.message, type: "AgentTimeout")
+    end
+
     def check_for_changes(agent_run)
       return false unless agent_run.container_id.present?
 
-      container_service = Containers::Provision.reconnect(
-        agent_run: agent_run,
-        container_id: agent_run.container_id
-      )
+      container_service = reconnect_container(agent_run)
 
       git_ops = Containers::GitOperations.new(
         container_service: container_service,
@@ -52,6 +82,22 @@ module Activities
         error: e.message
       )
       false
+    end
+
+    def reconnect_container(agent_run)
+      raise Temporalio::Error::ApplicationError.new(
+        "No container provisioned for agent run #{agent_run.id}",
+        type: "ContainerNotProvisioned"
+      ) if agent_run.container_id.blank?
+
+      Containers::Provision.reconnect(
+        agent_run: agent_run,
+        container_id: agent_run.container_id
+      )
+    end
+
+    def agent_timeout
+      Rails.application.config.x.agent_timeout
     end
   end
 end
