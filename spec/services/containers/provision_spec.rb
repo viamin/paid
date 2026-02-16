@@ -197,6 +197,8 @@ RSpec.describe Containers::Provision do
 
     context "when worktree path is invalid" do
       it "auto-creates workspace directory for blank path" do
+        allow(FileUtils).to receive(:mkdir_p).and_call_original
+        allow(FileUtils).to receive(:mkdir_p).with(a_string_matching(%r{runs/})).and_return(nil)
         service = described_class.new(agent_run: agent_run, worktree_path: "")
 
         result = service.provision
