@@ -29,6 +29,9 @@ RUN groupadd -f docker && usermod -aG docker vscode
 
 USER vscode
 
+# Pre-install bundler version used by the project (cached in image layer)
+RUN gem install bundler:2.7.2
+
 # Add rbenv to PATH
 ENV PATH="/home/vscode/.rbenv/shims:/home/vscode/.rbenv/bin:${PATH}"
 
