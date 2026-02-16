@@ -26,12 +26,22 @@ export default class extends Controller {
         }
       })
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      if (!response.ok) {
+        console.error("Failed to load repositories:", { status: response.status, statusText: response.statusText })
+
+        if (response.status === 401 || response.status === 403) {
+          this.showError("Unable to load repositories: token is invalid or lacks permissions.")
+        } else {
+          this.showError(`Failed to load repositories (HTTP ${response.status}). Please try again.`)
+        }
+        return
+      }
 
       const repos = await response.json()
       this.populateRepoSelect(repos)
-    } catch (_error) {
-      this.showError("Failed to load repositories. Please try again.")
+    } catch (error) {
+      console.error("Unexpected error loading repositories:", error)
+      this.showError("Failed to load repositories. Please check your connection and try again.")
     } finally {
       this.hideLoading()
       this.updateRepoVisibility()

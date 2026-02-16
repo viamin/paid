@@ -3,11 +3,14 @@
 module Workflows
   # Orchestrates the complete agent execution lifecycle:
   # 1. Create an AgentRun record
-  # 2. Create a git worktree for isolated work
-  # 3. Provision a Docker container
+  # 2. Provision a Docker container (with empty workspace)
+  # 3. Clone repo and create branch inside the container
   # 4. Run the agent to make code changes
   # 5. Push the branch and create a PR (if changes were made)
-  # 6. Clean up container and worktree
+  # 6. Clean up container and worktree records
+  #
+  # Git operations (clone, push) run inside the container, authenticated
+  # via the git credential helper proxy. No git credentials touch the host.
   #
   # Started as a child workflow from GitHubPollWorkflow when an issue
   # is labeled for agent execution.
@@ -31,13 +34,13 @@ module Workflows
       agent_run_id = agent_run_result[:agent_run_id]
 
       begin
-        # Step 2: Create worktree
-        worktree_result = run_activity(Activities::CreateWorktreeActivity,
-          { agent_run_id: agent_run_id }, timeout: 120)
-
-        # Step 3: Provision container
+        # Step 2: Provision container (with empty workspace directory)
         run_activity(Activities::ProvisionContainerActivity,
-          { agent_run_id: agent_run_id, worktree_path: worktree_result[:worktree_path] }, timeout: 60)
+          { agent_run_id: agent_run_id }, timeout: 60)
+
+        # Step 3: Clone repo and create branch inside the container
+        run_activity(Activities::CloneRepoActivity,
+          { agent_run_id: agent_run_id }, timeout: 180)
 
         # Step 4: Run the agent (long timeout, no retry)
         agent_result = run_activity(Activities::RunAgentActivity,
@@ -52,7 +55,7 @@ module Workflows
         end
 
         if agent_result[:has_changes]
-          # Step 5: Push branch
+          # Step 5: Push branch (inside container)
           run_activity(Activities::PushBranchActivity,
             { agent_run_id: agent_run_id }, timeout: 60)
 
@@ -79,7 +82,7 @@ module Workflows
         raise
 
       ensure
-        # Always cleanup container and worktree.
+        # Always cleanup container (including workspace directory) and worktree DB records.
         # Each cleanup is best-effort: failures are logged but do not
         # mask the primary workflow outcome.
         begin

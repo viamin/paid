@@ -152,11 +152,11 @@ RSpec.describe Containers::Provision do
       it "configures environment variables for proxy access" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
-          expect(env).to include("PAID_PROXY_URL=http://paid-proxy:3001")
+          expect(env).to include("PAID_PROXY_URL=http://paid-proxy:3000")
           expect(env).to include("PROJECT_ID=#{project.id}")
           expect(env).to include("AGENT_RUN_ID=#{agent_run.id}")
-          expect(env).to include("ANTHROPIC_BASE_URL=http://paid-proxy:3001/api/proxy/anthropic")
-          expect(env).to include("OPENAI_BASE_URL=http://paid-proxy:3001/api/proxy/openai")
+          expect(env).to include("ANTHROPIC_BASE_URL=http://paid-proxy:3000/api/proxy/anthropic")
+          expect(env).to include("OPENAI_BASE_URL=http://paid-proxy:3000/api/proxy/openai")
           expect(env).to include("ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
           expect(env).to include("OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
           expect(env).to include("ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}")
@@ -196,10 +196,13 @@ RSpec.describe Containers::Provision do
     end
 
     context "when worktree path is invalid" do
-      it "raises ProvisionError for blank path" do
+      it "auto-creates workspace directory for blank path" do
         service = described_class.new(agent_run: agent_run, worktree_path: "")
 
-        expect { service.provision }.to raise_error(described_class::ProvisionError, /Worktree path is required/)
+        result = service.provision
+
+        expect(result).to be_success
+        expect(service.workspace_dir).to be_present
       end
 
       it "raises ProvisionError for non-existent path" do
@@ -287,6 +290,66 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with subscription auth (CLAUDE_CONFIG_DIR)" do
+      before do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return("/host/home/user/.claude")
+      end
+
+      it "mounts Claude config directory read-only" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds).to include("/host/home/user/.claude:/home/agent/.claude:ro")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "uses the infrastructure network" do
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "does not set ANTHROPIC_BASE_URL or OPENAI_BASE_URL" do
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          expect(env.none? { |e| e.start_with?("ANTHROPIC_BASE_URL=") }).to be true
+          expect(env.none? { |e| e.start_with?("OPENAI_BASE_URL=") }).to be true
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "sets PAID_PROXY_URL using compose service name" do
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          expect(env).to include("PAID_PROXY_URL=http://web:3000")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "skips network creation" do
+        expect(NetworkPolicy).not_to receive(:ensure_network!)
+
+        service.provision
+      end
+
+      it "skips firewall rules" do
+        expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
+
+        service.provision
+      end
+    end
+
     context "when firewall rules fail in production" do
       before do
         allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
@@ -327,6 +390,7 @@ RSpec.describe Containers::Provision do
       before do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "command output\n") if block
+          [ [ "command output\n" ], [], 0 ]
         end
         allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
       end
@@ -360,6 +424,7 @@ RSpec.describe Containers::Provision do
       before do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stderr, "error message\n") if block
+          [ [], [ "error message\n" ], 1 ]
         end
         allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 1 } })
       end

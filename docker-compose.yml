@@ -36,24 +36,41 @@ services:
     build:
       context: .
       dockerfile: .devcontainer/Dockerfile
-    command: ./bin/rails server -b 0.0.0.0
+    command: bin/setup
+    working_dir: /workspaces/paid
     volumes:
       - .:/workspaces/paid
       - bundle-cache:/usr/local/bundle
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/paid/workspaces:/var/paid/workspaces
     ports:
       - "3000:3000"
     networks:
-      - paid_internal
-      - paid_agent
+      paid_internal:
+      paid_agent:
+        aliases:
+          - paid-proxy
     environment:
       DATABASE_URL: postgres://paid:paid@postgres:5432/paid_development
       RAILS_ENV: development
       TEMPORAL_HOST: temporal:7233
+      PAID_PROXY_PORT: "3000"
+      # Set CLAUDE_CONFIG_DIR to the Docker-host path to ~/.claude/ for subscription auth.
+      # When set, agent containers mount this directory and use native Claude Code auth.
+      # When unset, falls back to API key mode (set ANTHROPIC_API_KEY in Rails credentials).
+      CLAUDE_CONFIG_DIR: ${CLAUDE_CONFIG_DIR:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
       temporal:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/up || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
 
   temporal:
     image: temporalio/auto-setup:1.24
@@ -109,30 +126,51 @@ services:
     build:
       context: .
       dockerfile: .devcontainer/Dockerfile
-    command: bin/temporal_worker
+    command: >
+      bash -c "bin/setup --skip-server &&
+               mkdir -p /var/paid/workspaces/runs &&
+               bin/temporal_worker"
+    working_dir: /workspaces/paid
     depends_on:
       temporal:
         condition: service_healthy
       web:
-        condition: service_started
+        condition: service_healthy
     environment:
       - DATABASE_URL=postgres://paid:paid@postgres:5432/paid_development
       - TEMPORAL_ADDRESS=temporal:7233
       - TEMPORAL_NAMESPACE=default
       - TEMPORAL_TASK_QUEUE=paid-tasks
       - RAILS_ENV=development
+      - PAID_PROXY_PORT=3000
+      - CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     networks:
       - paid_internal
       - paid_agent
     volumes:
       - .:/workspaces/paid
       - bundle-cache:/usr/local/bundle
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/paid/workspaces:/var/paid/workspaces
+
+  # Builds the paid-agent:latest image used by Containers::Provision.
+  # This service exits immediately; it exists only to ensure the image is built.
+  agent-image:
+    build:
+      context: ./docker/agent
+      dockerfile: Dockerfile
+    image: paid-agent:latest
+    command: ["true"]
+    profiles:
+      - setup
 
   # Agent container for testing the agent image
   agent-test:
     build:
       context: ./docker/agent
       dockerfile: Dockerfile
+    image: paid-agent:latest
     volumes:
       - ./agent-workspace:/workspace
     networks:
@@ -145,13 +183,18 @@ volumes:
   bundle-cache:
 
 networks:
-  # Internal network for Paid infrastructure services
+  # Internal network for Paid infrastructure services.
+  # Explicit name: ensures agent containers created via Docker API can resolve
+  # compose service names (e.g. "web") on this network.
   paid_internal:
+    name: paid_internal
     driver: bridge
 
-  # Restricted network for agent containers
-  # internal: true disables default internet access
+  # Restricted network for agent containers (API key mode).
+  # internal: true disables default internet access.
+  # Explicit name: ensures NetworkPolicy::NETWORK_NAME matches.
   paid_agent:
+    name: paid_agent
     driver: bridge
     internal: true
     driver_opts:

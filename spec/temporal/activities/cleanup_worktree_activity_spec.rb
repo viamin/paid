@@ -6,14 +6,18 @@ RSpec.describe Activities::CleanupWorktreeActivity do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, :with_git_context, project: project) }
   let(:activity) { described_class.new }
-  let(:worktree_service) { instance_double(WorktreeService) }
 
   describe "#execute" do
-    it "removes the worktree for the agent run" do
-      allow(WorktreeService).to receive(:new).with(project).and_return(worktree_service)
-      expect(worktree_service).to receive(:remove_worktree)
-        .with(agent_run)
+    it "marks the worktree record as cleaned" do
+      worktree = create(:worktree, project: project, agent_run: agent_run, status: "active")
 
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:agent_run_id]).to eq(agent_run.id)
+      expect(worktree.reload.status).to eq("cleaned")
+    end
+
+    it "handles agent runs without a worktree record" do
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:agent_run_id]).to eq(agent_run.id)

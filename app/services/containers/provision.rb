@@ -5,19 +5,22 @@ require "docker-api"
 module Containers
   # Service for provisioning, managing, and cleaning up Docker containers for agent execution.
   #
-  # @example Basic usage
-  #   service = Containers::Provision.new(
-  #     agent_run: agent_run,
-  #     worktree_path: "/var/paid/workspaces/123/456"
-  #   )
+  # @example With auto-created workspace (git clone happens inside container)
+  #   service = Containers::Provision.new(agent_run: agent_run)
   #   result = service.provision
   #   if result.success?
   #     service.execute("claude --version")
   #   end
   #   service.cleanup
   #
+  # @example With explicit worktree path (legacy bind mount)
+  #   service = Containers::Provision.new(
+  #     agent_run: agent_run,
+  #     worktree_path: "/var/paid/workspaces/123/456"
+  #   )
+  #
   # @example With block for automatic cleanup
-  #   Containers::Provision.with_container(agent_run: agent_run, worktree_path: path) do |container|
+  #   Containers::Provision.with_container(agent_run: agent_run) do |container|
   #     container.execute("claude code --task 'Fix the bug'")
   #   end
   #
@@ -64,17 +67,20 @@ module Containers
       workspace_mount: "/workspace"
     }.freeze
 
-    attr_reader :agent_run, :worktree_path, :container, :options
+    WORKSPACE_ROOT = ENV.fetch("WORKSPACE_ROOT", "/var/paid/workspaces")
+
+    attr_reader :agent_run, :worktree_path, :container, :options, :workspace_dir
 
     # @param agent_run [AgentRun] The agent run to associate logs with
-    # @param worktree_path [String] Path to the git worktree to mount
+    # @param worktree_path [String, nil] Path to an existing worktree to bind-mount.
+    #   When nil, an empty per-run directory is auto-created for in-container git clone.
     # @param options [Hash] Override default container options
     # @option options [Integer] :memory_bytes Memory limit in bytes
     # @option options [Integer] :cpu_quota CPU quota (100_000 per CPU)
     # @option options [Integer] :pids_limit Maximum number of processes
     # @option options [Integer] :timeout_seconds Default command timeout
     # @option options [String] :image Docker image to use
-    def initialize(agent_run:, worktree_path:, **options)
+    def initialize(agent_run:, worktree_path: nil, **options)
       if options.key?(:network)
         Rails.logger.warn(
           message: "container_manager.container.network_option_ignored",
@@ -85,6 +91,7 @@ module Containers
       end
       @agent_run = agent_run
       @worktree_path = worktree_path
+      @workspace_dir = nil
       @options = DEFAULTS.merge(options)
       @container = nil
     end
@@ -97,10 +104,11 @@ module Containers
     def provision
       log_system("container.provision.start", image: options[:image])
 
-      validate_worktree_path!
+      prepare_workspace!
       ensure_network!
       @container = create_container
       start_container
+      fix_workspace_ownership!
       apply_network_restrictions!
 
       log_system("container.provision.success", container_id: container.id)
@@ -134,8 +142,9 @@ module Containers
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       begin
+        exec_result = nil
         Timeout.timeout(timeout) do
-          container.exec(cmd_array) do |stream_type, chunk|
+          exec_result = container.exec(cmd_array) do |stream_type, chunk|
             case stream_type
             when :stdout
               stdout_buffer << chunk
@@ -147,8 +156,10 @@ module Containers
           end
         end
 
-        # Get exit code from last exec
-        exit_code = fetch_exit_code
+        # container.exec returns [stdout_array, stderr_array, exit_code].
+        # The third element is the actual exec exit code, unlike
+        # container.info which reflects the main process state.
+        exit_code = exec_result.is_a?(Array) ? exec_result[2] : fetch_exit_code
 
         stdout = stdout_buffer.join
         stderr = stderr_buffer.join
@@ -204,6 +215,7 @@ module Containers
         end
       ensure
         @container = nil
+        cleanup_workspace_dir
       end
     end
 
@@ -234,12 +246,12 @@ module Containers
     #
     # @param agent_run [AgentRun] The agent run to associate logs with
     # @param container_id [String] The Docker container ID
-    # @param worktree_path [String] Path to the git worktree
+    # @param worktree_path [String, nil] Path to the git worktree (optional)
     # @return [Provision] The reconnected service instance
     # @raise [ProvisionError] When container cannot be found
-    def self.reconnect(agent_run:, container_id:, worktree_path:)
+    def self.reconnect(agent_run:, container_id:, worktree_path: nil)
       container = Docker::Container.get(container_id)
-      new(agent_run: agent_run, worktree_path: worktree_path || "").with_existing_container(container)
+      new(agent_run: agent_run, worktree_path: worktree_path).with_existing_container(container)
     rescue Docker::Error::NotFoundError
       raise ProvisionError, "Container #{container_id} not found"
     rescue Docker::Error::DockerError => e
@@ -249,11 +261,11 @@ module Containers
     # Provisions a container, yields to block, then ensures cleanup.
     #
     # @param agent_run [AgentRun] The agent run to associate logs with
-    # @param worktree_path [String] Path to the git worktree to mount
+    # @param worktree_path [String, nil] Path to the git worktree (optional)
     # @param options [Hash] Override default container options
     # @yield [Provision] The provisioned container service instance
     # @return [Object] The return value of the block
-    def self.with_container(agent_run:, worktree_path:, **options)
+    def self.with_container(agent_run:, worktree_path: nil, **options)
       service = new(agent_run: agent_run, worktree_path: worktree_path, **options)
       service.provision
       yield service
@@ -275,9 +287,43 @@ module Containers
       # Container was already removed between running? check and stop
     end
 
-    def validate_worktree_path!
-      raise ProvisionError, "Worktree path is required" if worktree_path.blank?
-      raise ProvisionError, "Worktree path does not exist: #{worktree_path}" unless File.directory?(worktree_path)
+    # Ensures the bind-mounted /workspace is writable by the non-root agent user.
+    # Docker bind mounts inherit host ownership which may not match the container
+    # user. Running chown as root inside the container fixes this portably.
+    def fix_workspace_ownership!
+      container.exec(
+        [ "chown", "-R", "agent:agent", options[:workspace_mount] ],
+        user: "root"
+      )
+    rescue Docker::Error::DockerError => e
+      log_system("container.workspace_chown_failed", error: e.message)
+    end
+
+    # Sets up the workspace directory for the container.
+    # When worktree_path is provided, validates it exists (legacy bind mount).
+    # When nil, creates a fresh per-run directory for in-container git clone.
+    def prepare_workspace!
+      if worktree_path.present?
+        raise ProvisionError, "Worktree path does not exist: #{worktree_path}" unless File.directory?(worktree_path)
+      else
+        @workspace_dir = File.join(WORKSPACE_ROOT, "runs", agent_run.id.to_s)
+        FileUtils.mkdir_p(@workspace_dir)
+        @worktree_path = @workspace_dir
+      end
+    end
+
+    def cleanup_workspace_dir
+      return unless @workspace_dir
+      return unless Dir.exist?(@workspace_dir)
+
+      FileUtils.rm_rf(@workspace_dir)
+      @workspace_dir = nil
+    rescue => e
+      Rails.logger.warn(
+        message: "container_manager.workspace_cleanup_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
     end
 
     def create_container
@@ -289,7 +335,7 @@ module Containers
     end
 
     # Writable directories inside the container:
-    #   /workspace  - bind mount of the worktree (rw, required for code changes)
+    #   /workspace  - bind mount of workspace dir (rw, for git clone and code changes)
     #   /tmp        - tmpfs (1GB, for scratch files)
     #   /home/agent/.cache - tmpfs (512MB, for tool caches)
     # All other paths are read-only via ReadonlyRootfs.
@@ -318,7 +364,16 @@ module Containers
     end
 
     def host_config
-      config = {
+      binds = []
+      binds << "#{worktree_path}:#{options[:workspace_mount]}:rw" if worktree_path.present?
+
+      # Mount the host's Claude config directory for subscription-based auth.
+      # CLAUDE_CONFIG_DIR must be the Docker-host path (not the worker container path)
+      # because Docker bind mounts reference the host filesystem.
+      claude_config = ENV["CLAUDE_CONFIG_DIR"]
+      binds << "#{claude_config}:/home/agent/.claude:ro" if claude_config.present?
+
+      {
         "Memory" => options[:memory_bytes],
         # MemorySwap == Memory disables swap. Containers exceeding the memory
         # limit are OOM-killed immediately rather than swapping to disk.
@@ -330,32 +385,56 @@ module Containers
           "/tmp" => "size=#{options[:tmpfs_tmp_size]},mode=1777",
           "/home/agent/.cache" => "size=#{options[:tmpfs_cache_size]},mode=0755"
         },
-        # Worktree is mounted read-write so agents can commit code changes.
-        # Security is enforced at the git/branch level, not filesystem permissions.
-        "Binds" => [ "#{worktree_path}:#{options[:workspace_mount]}:rw" ],
-        # Agent containers always use the restricted network.
-        # ensure_network! guarantees the network exists before we reach here.
-        "NetworkMode" => NetworkPolicy::NETWORK_NAME
+        "Binds" => binds,
+        "NetworkMode" => container_network
       }
+    end
 
-      config
+    # Subscription auth requires outbound HTTPS to reach Anthropic's servers.
+    # The paid_agent network is internal-only and blocks this, so subscription
+    # mode uses the infrastructure network which has outbound routing.
+    # API key mode continues to use the restricted paid_agent network.
+    def container_network
+      subscription_auth? ? NetworkPolicy::INFRA_NETWORK_NAME : NetworkPolicy::NETWORK_NAME
     end
 
     def environment_variables
       project = agent_run.project
+      proxy_port = ENV.fetch("PAID_PROXY_PORT", "3000")
+      proxy_host = subscription_auth? ? "web" : "paid-proxy"
+      proxy_base = "http://#{proxy_host}:#{proxy_port}"
 
-      [
-        "PAID_PROXY_URL=http://paid-proxy:3001",
+      env = [
+        "PAID_PROXY_URL=#{proxy_base}",
         "PROJECT_ID=#{project.id}",
         "AGENT_RUN_ID=#{agent_run.id}",
-        "HOME=/home/agent",
-        "ANTHROPIC_BASE_URL=http://paid-proxy:3001/api/proxy/anthropic",
-        "OPENAI_BASE_URL=http://paid-proxy:3001/api/proxy/openai",
-        "ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
-        "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
-        "ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
-        "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
+        "PROXY_TOKEN=#{agent_run.proxy_token}",
+        "HOME=/home/agent"
       ]
+
+      if subscription_auth?
+        # Subscription mode: Claude Code uses its native auth from ~/.claude/.
+        # Don't override ANTHROPIC_BASE_URL — let it talk to Anthropic directly.
+        log_system("container.auth_mode", mode: "subscription")
+      else
+        # API key mode: route LLM calls through the secrets proxy.
+        env.concat([
+          "ANTHROPIC_BASE_URL=#{proxy_base}/api/proxy/anthropic",
+          "OPENAI_BASE_URL=#{proxy_base}/api/proxy/openai",
+          "ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+          "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+          "ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
+          "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
+        ])
+      end
+
+      env
+    end
+
+    # Returns true when the host's Claude CLI config is available for
+    # subscription-based authentication (e.g. from `claude login`).
+    def subscription_auth?
+      ENV["CLAUDE_CONFIG_DIR"].present?
     end
 
     def container_name
@@ -363,6 +442,10 @@ module Containers
     end
 
     def ensure_network!
+      # Subscription auth uses the infrastructure network (already managed by compose).
+      # Only the restricted agent network needs explicit creation.
+      return if subscription_auth?
+
       NetworkPolicy.ensure_network!
       log_system("container.network.ready", network: NetworkPolicy::NETWORK_NAME)
     rescue NetworkPolicy::Error => e
@@ -370,6 +453,10 @@ module Containers
     end
 
     def apply_network_restrictions!
+      # Subscription auth containers are on the infrastructure network and need
+      # outbound access to Anthropic. Firewall rules would block this.
+      return if subscription_auth?
+
       NetworkPolicy.apply_firewall_rules(container)
       log_system("container.firewall.applied", container_id: container.id)
     rescue NetworkPolicy::Error => e
