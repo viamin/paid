@@ -49,6 +49,7 @@ classification. This service should be reused (or extended) for container execut
 rather than duplicating its logic in `RunAgentActivity`.
 
 Key method:
+
 ```ruby
 def execute_agent
   AgentHarness.send_message(prompt, provider: provider_name, dangerous_mode: true)
@@ -117,4 +118,4 @@ The cleanest approach is likely:
 
 ## agent-harness PR for reference
 
-https://github.com/viamin/agent-harness/pull/16
+<https://github.com/viamin/agent-harness/pull/16>
