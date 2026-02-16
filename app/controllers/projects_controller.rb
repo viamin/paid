@@ -79,7 +79,7 @@ class ProjectsController < ApplicationController
   end
 
   def parse_usernames_csv
-    params.dig(:project, :allowed_github_usernames_csv).to_s.split(",").map(&:strip).reject(&:blank?)
+    params.dig(:project, :allowed_github_usernames_csv).to_s.split(",").map(&:strip).reject(&:blank?).uniq
   end
 
   def save_project_with_cached_data

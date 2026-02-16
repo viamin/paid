@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "open3"
-
 module Activities
   class RunAgentActivity < BaseActivity
     activity_name "RunAgent"
@@ -34,10 +32,19 @@ module Activities
     private
 
     def check_for_changes(agent_run)
-      return false unless agent_run.worktree_path.present?
+      return false unless agent_run.container_id.present?
 
-      output, status = Open3.capture2e("git", "-C", agent_run.worktree_path, "diff", "--stat", "HEAD")
-      status.success? && output.present?
+      container_service = Containers::Provision.reconnect(
+        agent_run: agent_run,
+        container_id: agent_run.container_id
+      )
+
+      git_ops = Containers::GitOperations.new(
+        container_service: container_service,
+        agent_run: agent_run
+      )
+
+      git_ops.has_changes?
     rescue => e
       logger.warn(
         message: "agent_execution.check_changes_failed",

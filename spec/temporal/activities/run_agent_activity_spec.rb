@@ -6,14 +6,20 @@ RSpec.describe Activities::RunAgentActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
-  let(:agent_run) { create(:agent_run, :with_git_context, project: project, issue: issue) }
+  let(:agent_run) { create(:agent_run, :with_git_context, project: project, issue: issue, container_id: "abc123") }
   let(:success_result) { AgentRuns::Execute::Result.new(success: true) }
   let(:failure_result) { AgentRuns::Execute::Result.new(success: false, error: "Agent crashed") }
-  let(:success_status) { instance_double(Process::Status, success?: true) }
-  let(:failure_status) { instance_double(Process::Status, success?: false) }
+  let(:container_service) { instance_double(Containers::Provision) }
+  let(:git_ops) { instance_double(Containers::GitOperations) }
 
   before do
     allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+    allow(Containers::Provision).to receive(:reconnect)
+      .with(agent_run: agent_run, container_id: "abc123")
+      .and_return(container_service)
+    allow(Containers::GitOperations).to receive(:new)
+      .with(container_service: container_service, agent_run: agent_run)
+      .and_return(git_ops)
   end
 
   describe "#execute" do
@@ -23,7 +29,7 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       it "builds a prompt and executes the agent" do
-        allow(Open3).to receive(:capture2e).and_return([ "", success_status ])
+        allow(git_ops).to receive(:has_changes?).and_return(false)
 
         expect(agent_run).to receive(:prompt_for_issue).and_call_original
         expect(agent_run).to receive(:execute_agent)
@@ -31,8 +37,8 @@ RSpec.describe Activities::RunAgentActivity do
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "returns has_changes: true when git diff shows changes" do
-        allow(Open3).to receive(:capture2e).and_return([ "file.rb | 5 +\n", success_status ])
+      it "returns has_changes: true when container git diff shows changes" do
+        allow(git_ops).to receive(:has_changes?).and_return(true)
 
         result = activity.execute(agent_run_id: agent_run.id)
 
@@ -40,8 +46,8 @@ RSpec.describe Activities::RunAgentActivity do
         expect(result[:success]).to be true
       end
 
-      it "returns has_changes: false when git diff is empty" do
-        allow(Open3).to receive(:capture2e).and_return([ "", success_status ])
+      it "returns has_changes: false when container git diff is empty" do
+        allow(git_ops).to receive(:has_changes?).and_return(false)
 
         result = activity.execute(agent_run_id: agent_run.id)
 
@@ -49,8 +55,8 @@ RSpec.describe Activities::RunAgentActivity do
         expect(result[:success]).to be true
       end
 
-      it "returns has_changes: false when git diff fails" do
-        allow(Open3).to receive(:capture2e).and_return([ "fatal: not a git repository", failure_status ])
+      it "returns has_changes: false when container check fails" do
+        allow(git_ops).to receive(:has_changes?).and_raise(StandardError, "container gone")
 
         result = activity.execute(agent_run_id: agent_run.id)
 

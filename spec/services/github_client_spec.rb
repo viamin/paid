@@ -171,6 +171,22 @@ RSpec.describe GithubClient do
         expect(client.write_accessible?(repo)).to be false
       end
     end
+
+    context "with repeated calls" do
+      it "caches results per repo and does not repeat API calls" do
+        stub = stub_request(:post, "#{api_base}/repos/#{repo}/git/blobs")
+          .to_return(
+            status: 201,
+            body: { sha: "abc123", url: "#{api_base}/repos/#{repo}/git/blobs/abc123" }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        client.write_accessible?(repo)
+        client.write_accessible?(repo)
+
+        expect(stub).to have_been_requested.once
+      end
+    end
   end
 
   describe "#issues" do

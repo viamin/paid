@@ -15,7 +15,7 @@
 #   sudo scripts/setup-agent-network.sh
 #
 # Environment variables:
-#   SECRETS_PROXY_PORT - Port of the secrets proxy (default: 3001)
+#   SECRETS_PROXY_PORT - Port of the secrets proxy (default: 3000)
 #   DRY_RUN            - Set to "1" to print rules without applying (default: "")
 
 set -euo pipefail
@@ -24,7 +24,7 @@ set -euo pipefail
 NETWORK_NAME="paid_agent"
 
 # Secrets proxy port
-SECRETS_PROXY_PORT="${SECRETS_PROXY_PORT:-3001}"
+SECRETS_PROXY_PORT="${SECRETS_PROXY_PORT:-3000}"
 
 # Dry run mode
 DRY_RUN="${DRY_RUN:-}"

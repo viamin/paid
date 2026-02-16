@@ -364,5 +364,51 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(result[:issues].first[:trusted]).to be true
       end
     end
+
+    context "when locally-open issues are no longer returned by GitHub" do
+      let(:github_issues) do
+        [
+          OpenStruct.new(
+            id: 1001,
+            number: 1,
+            title: "Still open",
+            body: "Body",
+            state: "open",
+            labels: [ OpenStruct.new(name: "paid-build") ],
+            pull_request: nil,
+            user: OpenStruct.new(login: "viamin"),
+            created_at: 2.days.ago,
+            updated_at: 1.day.ago
+          )
+        ]
+      end
+
+      before do
+        allow(github_client).to receive(:issues).and_return(github_issues)
+      end
+
+      it "marks stale issues as closed" do
+        stale = create(:issue, project: project, github_issue_id: 5000, github_number: 50, github_state: "open")
+
+        activity.execute(project_id: project.id)
+
+        expect(stale.reload.github_state).to eq("closed")
+      end
+
+      it "does not close issues that were returned by GitHub" do
+        activity.execute(project_id: project.id)
+
+        issue = project.issues.find_by(github_issue_id: 1001)
+        expect(issue.github_state).to eq("open")
+      end
+
+      it "does not affect already-closed issues" do
+        closed = create(:issue, project: project, github_issue_id: 5001, github_number: 51, github_state: "closed")
+
+        activity.execute(project_id: project.id)
+
+        expect(closed.reload.github_state).to eq("closed")
+      end
+    end
   end
 end

@@ -201,16 +201,19 @@ class GithubClient
   #
   # Creates a small unreferenced blob object per successful probe.
   # Standard Git GC prunes these after ~2 weeks, but GitHub's backend
-  # GC behavior is not documented. Results should be cached to avoid
-  # repeated probes.
+  # GC behavior is not documented. Results are cached per client instance
+  # to avoid repeated probes.
   #
   # @param repo [String] Repository in "owner/name" format
   # @return [Boolean] true if the token can write to the repo
   def write_accessible?(repo)
+    @write_access_cache ||= {}
+    return @write_access_cache[repo] if @write_access_cache.key?(repo)
+
     client.create_blob(repo, "probe")
-    true
+    @write_access_cache[repo] = true
   rescue Octokit::Forbidden, Octokit::NotFound
-    false
+    @write_access_cache[repo] = false
   end
 
   # Gets the remaining rate limit.

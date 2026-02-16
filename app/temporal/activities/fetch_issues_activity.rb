@@ -17,11 +17,13 @@ module Activities
       github_issues = fetch_all_issues(client, project.full_name, labels)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
+      closed_count = close_stale_issues(project, github_issues)
 
       logger.info(
         message: "github_sync.fetch_issues",
         project_id: project.id,
-        issue_count: synced_issues.size
+        issue_count: synced_issues.size,
+        closed_count: closed_count
       )
 
       { issues: synced_issues, project_id: project_id }
@@ -71,7 +73,7 @@ module Activities
     end
 
     def sync_issue(project, github_issue)
-      creator_login = github_issue.user&.login
+      creator_login = github_issue.user&.login || "unknown"
       trusted = project.trusted_github_user?(creator_login)
 
       unless trusted
@@ -97,6 +99,24 @@ module Activities
       )
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted }
+    end
+
+    def close_stale_issues(project, github_issues)
+      fetched_github_ids = github_issues.map(&:id).to_set
+      stale_issues = project.issues.where(github_state: "open").where.not(github_issue_id: fetched_github_ids)
+      count = stale_issues.count
+
+      if count > 0
+        stale_issues.update_all(github_state: "closed")
+
+        logger.info(
+          message: "github_sync.closed_stale_issues",
+          project_id: project.id,
+          count: count
+        )
+      end
+
+      count
     end
 
     def extract_labels(github_issue)
