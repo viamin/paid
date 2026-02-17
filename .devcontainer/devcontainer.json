@@ -27,11 +27,15 @@
   "mounts": [
     "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
     "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached",
-    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached"
+    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,readonly,type=bind,consistency=cached"
   ],
 
   "remoteEnv": {
-    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin"
+    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin",
+    "GIT_CONFIG_COUNT": "1",
+    "GIT_CONFIG_KEY_0": "gpg.ssh.program",
+    "GIT_CONFIG_VALUE_0": "/usr/bin/ssh-keygen"
   },
 
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
@@ -47,17 +51,15 @@
 
   // Use 'postCreateCommand' to run commands after the container is created.
   "postCreateCommand": {
-    "bundler": "gem install bundler:2.7.2",
-    "corepack": "corepack enable && corepack prepare yarn@1.22.22 --activate",
+    "setup": "corepack enable && corepack prepare yarn@1.22.22 --activate && bin/setup --skip-server",
     "claude-install-and-configure": "curl -fsSL https://claude.ai/install.sh | bash && bash .devcontainer/configure-claude.sh",
-    "multiclaude": "go install github.com/dlorenc/multiclaude/cmd/multiclaude@latest",
-    "playwright": "npx playwright install --with-deps chromium",
-    "setup": "until pg_isready -h postgres -U postgres -q; do sleep 1; done && bin/setup --skip-server"
+    "multiclaude": "go install github.com/dlorenc/multiclaude/cmd/multiclaude@latest"
   },
 
   // Use 'postStartCommand' to run commands every time the container starts.
   "postStartCommand": {
-    "multiclaude-start": "multiclaude start || true"
+    "multiclaude-start": "multiclaude start || true",
+    "git-https": "git config --local remote.origin.url https://github.com/viamin/paid.git && git config --local credential.helper '!/usr/bin/gh auth git-credential'"
   },
   "customizations": {
     "vscode": {

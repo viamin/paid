@@ -49,8 +49,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code CLI (primary agent for MVP)
-# Version pinned for reproducible builds - update periodically
-RUN npm install -g @anthropic/claude-code@2.1.29
+# The installer places the binary under /root/.local/ which is inaccessible to the
+# non-root "agent" user. Copy the resolved binary to a system-wide path instead.
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && cp -L /root/.local/bin/claude /usr/local/bin/claude \
+    && chmod +x /usr/local/bin/claude
+
+# Install git credential helper for proxy-based authentication.
+# This allows git clone/push inside the container without exposing GitHub tokens.
+COPY scripts/git-credential-paid /usr/local/bin/git-credential-paid
+RUN chmod +x /usr/local/bin/git-credential-paid
+
+# Configure git at system level so it works with ReadonlyRootfs.
+# The credential helper fetches tokens from the secrets proxy on demand.
+RUN git config --system init.defaultBranch main \
+    && git config --system user.email "agent@paid.dev" \
+    && git config --system user.name "Paid Agent" \
+    && git config --system credential.helper /usr/local/bin/git-credential-paid
 
 # Create non-root user for security
 RUN useradd -m -s /bin/bash agent \
@@ -62,12 +77,6 @@ WORKDIR /workspace
 
 # Switch to non-root user
 USER agent
-
-# Configure git for the agent user
-# Note: These are default placeholders; actual user info is set at runtime for commits
-RUN git config --global init.defaultBranch main \
-    && git config --global user.email "agent@paid.dev" \
-    && git config --global user.name "Paid Agent"
 
 # Default command (overridden at runtime)
 CMD ["bash"]

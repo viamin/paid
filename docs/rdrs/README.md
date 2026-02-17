@@ -70,6 +70,12 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-013](RDR-013-code-quality-backpressure.md) | Code Quality and Backpressure System | Draft | High |
 
+### Semantic Understanding
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-018](RDR-018-semantic-code-search.md) | Semantic Code Search with Arcaneum | Draft | Medium |
+
 ### AI-Native Evolution (Phase 4)
 
 | RDR | Title | Status | Priority |

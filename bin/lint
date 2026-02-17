@@ -7,7 +7,7 @@ for arg in "$@"; do
     -A) AUTOFIX=true ;;
     *)
       echo "Usage: bin/lint [-A]"
-      echo "  -A  Auto-fix violations (rubocop -A, markdownlint --fix)"
+      echo "  -A  Auto-fix violations (rubocop -A, eslint --fix, markdownlint --fix)"
       exit 1
       ;;
   esac
@@ -15,6 +15,7 @@ done
 
 RUBOCOP_ARGS=""
 MARKDOWNLINT_ARGS=""
+ESLINT_ARGS=""
 
 if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
   RUBOCOP_ARGS="-f github"
@@ -23,6 +24,7 @@ fi
 if [ "$AUTOFIX" = true ]; then
   RUBOCOP_ARGS="$RUBOCOP_ARGS -A"
   MARKDOWNLINT_ARGS="--fix"
+  ESLINT_ARGS="--fix"
 fi
 
 echo "== Style: RuboCop =="
@@ -36,6 +38,9 @@ bin/bundler-audit
 
 echo "== Security: Yarn audit =="
 yarn audit
+
+echo "== JavaScript: ESLint =="
+npx eslint $ESLINT_ARGS
 
 echo "== Markdown: markdownlint =="
 npx markdownlint $MARKDOWNLINT_ARGS --ignore node_modules --ignore vendor '**/*.md'
