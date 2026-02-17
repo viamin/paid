@@ -62,10 +62,11 @@ module Containers
       sha
     end
 
-    # Checks whether the agent made any changes (committed or uncommitted).
+    # Checks whether the agent made any changes.
     #
-    # Compares current HEAD against the base commit to detect new commits,
-    # not just uncommitted changes.
+    # When base_commit_sha is available, compares HEAD against the base to
+    # detect new commits. Falls back to checking uncommitted working-tree
+    # changes only (no base to compare against).
     #
     # @return [Boolean]
     def has_changes?
@@ -88,6 +89,12 @@ module Containers
     private
 
     def clone_repo
+      # Idempotent: skip clone if a previous attempt already populated /workspace.
+      # This prevents failures on Temporal retries when the clone succeeded but a
+      # later step (e.g. DB update) failed.
+      check = execute_git("rev-parse", "--is-inside-work-tree")
+      return if check.success?
+
       project = agent_run.project
       url = "https://github.com/#{project.full_name}.git"
 
