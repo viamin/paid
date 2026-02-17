@@ -24,25 +24,24 @@ module Api
     def validate_container_request
       @agent_run_id = request.headers["X-Agent-Run-Id"]
 
-      unless @agent_run_id.present?
-        render json: { error: "Missing agent run ID" }, status: :unauthorized
-      end
+      render json: { error: "Missing agent run ID" }, status: :unauthorized unless @agent_run_id.present?
     end
 
     def set_agent_run
+      return if performed?
+
       @agent_run = AgentRun.find_by(id: @agent_run_id)
 
-      unless @agent_run&.running?
-        render json: { error: "Invalid or inactive agent run" }, status: :forbidden
-      end
+      render json: { error: "Invalid or inactive agent run" }, status: :forbidden unless @agent_run&.running?
     end
 
     def verify_proxy_token
+      return if performed?
+
       provided_token = request.headers["X-Proxy-Token"]
 
       unless provided_token.present?
-        render json: { error: "Invalid proxy token" }, status: :forbidden
-        return
+        render(json: { error: "Invalid proxy token" }, status: :forbidden) and return
       end
 
       stored_token = @agent_run.ensure_proxy_token!

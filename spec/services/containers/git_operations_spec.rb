@@ -13,9 +13,16 @@ RSpec.describe Containers::GitOperations do
 
   describe "#clone_and_setup_branch" do
     let(:head_sha) { "abc123def456789012345678901234567890abcd" }
+    let(:not_a_repo_result) { Containers::Provision::Result.failure(error: "not a git repo", stdout: "", stderr: "fatal: not a git repository", exit_code: 128) }
 
     before do
       allow(container_service).to receive(:execute).and_return(success_result)
+
+      # The clone is skipped when rev-parse succeeds (idempotency guard),
+      # so return failure to indicate /workspace is not yet a repo.
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "--is-inside-work-tree" ], timeout: nil, stream: false)
+        .and_return(not_a_repo_result)
 
       sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
