@@ -25,6 +25,10 @@ class NetworkPolicy
 
   NETWORK_NAME = "paid_agent"
 
+  # Infrastructure network with outbound routing.
+  # Used by subscription-auth containers that need to reach Anthropic directly.
+  INFRA_NETWORK_NAME = "paid_internal"
+
   NETWORK_SUBNET = "172.28.0.0/16"
 
   GITHUB_META_URL = "https://api.github.com/meta"
@@ -38,7 +42,7 @@ class NetworkPolicy
     20.201.28.0/24
   ].freeze
 
-  SECRETS_PROXY_PORT = 3001
+  SECRETS_PROXY_PORT = ENV.fetch("PAID_PROXY_PORT", "3000").to_i
 
   class << self
     # Ensures the agent Docker network exists. Creates it if missing.

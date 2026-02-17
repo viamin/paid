@@ -526,10 +526,14 @@ RSpec.describe AgentRun do
           expect(agent_run.reload.container_id).to eq("abc123container")
         end
 
-        it "raises ArgumentError when worktree_path is blank" do
+        it "provisions container when worktree_path is blank" do
+          allow(FileUtils).to receive(:mkdir_p).and_call_original
+          allow(FileUtils).to receive(:mkdir_p).with(a_string_matching(%r{runs/})).and_return(nil)
           agent_run = create(:agent_run, worktree_path: nil)
 
-          expect { agent_run.provision_container }.to raise_error(ArgumentError, /worktree_path is required/)
+          result = agent_run.provision_container
+
+          expect(result).to be_success
         end
 
         it "accepts optional container options" do
@@ -632,10 +636,12 @@ RSpec.describe AgentRun do
           }.to raise_error("test error")
         end
 
-        it "raises ArgumentError when worktree_path is blank" do
+        it "provisions container when worktree_path is blank" do
+          allow(FileUtils).to receive(:mkdir_p).and_call_original
+          allow(FileUtils).to receive(:mkdir_p).with(a_string_matching(%r{runs/})).and_return(nil)
           agent_run = create(:agent_run, worktree_path: nil)
 
-          expect { agent_run.with_container { } }.to raise_error(ArgumentError, /worktree_path is required/)
+          agent_run.with_container { |run| expect(run).to eq(agent_run) }
         end
       end
     end

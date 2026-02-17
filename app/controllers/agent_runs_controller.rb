@@ -17,6 +17,7 @@ class AgentRunsController < ApplicationController
   def new
     authorize @project, :run_agent?
     @issues = @project.issues
+      .issues_only
       .where(github_state: "open")
       .where(paid_state: %w[new planning failed])
       .order(github_number: :desc)

@@ -275,7 +275,7 @@ RSpec.describe NetworkPolicy do
     end
 
     it "defines the secrets proxy port" do
-      expect(described_class::SECRETS_PROXY_PORT).to eq(3001)
+      expect(described_class::SECRETS_PROXY_PORT).to eq(3000)
     end
 
     it "defines default GitHub IP ranges" do

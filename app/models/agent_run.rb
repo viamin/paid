@@ -157,15 +157,16 @@ class AgentRun < ApplicationRecord
 
   # Provisions a Docker container for this agent run.
   #
+  # When worktree_path is blank, an empty workspace directory is auto-created
+  # for in-container git clone. When set, the existing path is bind-mounted.
+  #
   # @param options [Hash] Override default container options
   # @return [Containers::Provision::Result] Result with container_id on success
   # @raise [Containers::Provision::ProvisionError] When container creation fails
   def provision_container(**options)
-    raise ArgumentError, "worktree_path is required" if worktree_path.blank?
-
     @container_service = Containers::Provision.new(
       agent_run: self,
-      worktree_path: worktree_path,
+      worktree_path: worktree_path.presence,
       **options
     )
     result = @container_service.provision
@@ -209,11 +210,9 @@ class AgentRun < ApplicationRecord
   # @yield [self] The agent run with provisioned container
   # @return [Object] The return value of the block
   def with_container(**options, &block)
-    raise ArgumentError, "worktree_path is required" if worktree_path.blank?
-
     Containers::Provision.with_container(
       agent_run: self,
-      worktree_path: worktree_path,
+      worktree_path: worktree_path.presence,
       **options
     ) do |service|
       @container_service = service

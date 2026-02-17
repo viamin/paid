@@ -31,6 +31,7 @@ Rails.application.routes.draw do
   namespace :api do
     match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :post
     match "proxy/openai/*path", to: "secrets_proxy#openai", via: :post
+    get "proxy/git-credentials", to: "git_credentials#show"
   end
 
   # Defines the root path route ("/")

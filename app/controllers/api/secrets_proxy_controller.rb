@@ -2,9 +2,8 @@
 
 module Api
   class SecretsProxyController < ActionController::API
-    before_action :validate_container_request
-    before_action :set_agent_run
-    before_action :verify_proxy_token
+    include Api::ContainerAuthentication
+
     before_action :check_rate_limit
 
     # Maximum tokens per agent run before rate limiting kicks in
@@ -35,37 +34,6 @@ module Api
     end
 
     private
-
-    def validate_container_request
-      @agent_run_id = request.headers["X-Agent-Run-Id"]
-
-      unless @agent_run_id.present?
-        render json: { error: "Missing agent run ID" }, status: :unauthorized
-      end
-    end
-
-    def set_agent_run
-      @agent_run = AgentRun.find_by(id: @agent_run_id)
-
-      unless @agent_run&.running?
-        render json: { error: "Invalid or inactive agent run" }, status: :forbidden
-      end
-    end
-
-    def verify_proxy_token
-      provided_token = request.headers["X-Proxy-Token"]
-
-      unless provided_token.present?
-        render json: { error: "Invalid proxy token" }, status: :forbidden
-        return
-      end
-
-      stored_token = @agent_run.ensure_proxy_token!
-
-      unless ActiveSupport::SecurityUtils.secure_compare(provided_token, stored_token)
-        render json: { error: "Invalid proxy token" }, status: :forbidden
-      end
-    end
 
     def check_rate_limit
       return unless @agent_run.total_tokens > MAX_TOKENS_PER_RUN
