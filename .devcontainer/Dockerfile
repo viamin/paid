@@ -21,16 +21,14 @@ RUN apt-get update && apt-get install -y \
 # Install yarn
 RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 
-# Install the required bundler version
-RUN gem install bundler:2.7.2
+# Install the required bundler version and fix permissions for vscode user
+RUN gem install bundler:2.7.2 \
+  && chmod -R g+w /usr/local/rvm/gems/default
 
 # Ensure the docker group exists so the vscode user can access the Docker socket
 RUN groupadd -f docker && usermod -aG docker vscode
 
 USER vscode
-
-# Pre-install bundler version used by the project (cached in image layer)
-RUN gem install bundler:2.7.2
 
 # Add rbenv to PATH
 ENV PATH="/home/vscode/.rbenv/shims:/home/vscode/.rbenv/bin:${PATH}"
