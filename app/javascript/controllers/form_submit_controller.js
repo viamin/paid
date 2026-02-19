@@ -6,7 +6,12 @@ export default class extends Controller {
   submit() {
     if (this.hasSubmitTarget) {
       this.submitTarget.disabled = true
-      this.submitTarget.textContent = this.submitTarget.dataset.disableWith || "Saving..."
+      const label = this.submitTarget.dataset.disableWith || "Saving..."
+      if (this.submitTarget.tagName === "INPUT") {
+        this.submitTarget.value = label
+      } else {
+        this.submitTarget.textContent = label
+      }
     }
   }
 }
