@@ -10,7 +10,7 @@ class AddValidationStatusToGithubTokens < ActiveRecord::Migration[8.1]
       dir.up do
         # Backfill existing tokens as already validated since they were validated synchronously
         execute <<~SQL
-          UPDATE github_tokens SET validation_status = 'validated' WHERE scopes != '[]'::jsonb
+          UPDATE github_tokens SET validation_status = 'validated'
         SQL
       end
     end
