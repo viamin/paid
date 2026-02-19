@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "rails_helper"
-require "ostruct"
 
 RSpec.describe "GithubTokens" do
   let(:account) { create(:account) }
@@ -60,6 +59,18 @@ RSpec.describe "GithubTokens" do
         get github_tokens_path
         expect(response.body).to include("Expiring Soon")
       end
+
+      it "shows validating status for pending tokens" do
+        create(:github_token, :pending_validation, account: account, name: "Pending Token")
+        get github_tokens_path
+        expect(response.body).to include("Validating...")
+      end
+
+      it "shows validation failed status" do
+        create(:github_token, :validation_failed, account: account, name: "Failed Token")
+        get github_tokens_path
+        expect(response.body).to include("Validation Failed")
+      end
     end
   end
 
@@ -109,23 +120,6 @@ RSpec.describe "GithubTokens" do
 
       context "with valid parameters" do
         let(:valid_token) { "ghp_#{'a' * 36}" }
-        let(:github_user_response) do
-          {
-            login: "testuser",
-            id: 12345,
-            name: "Test User",
-            email: "test@example.com"
-          }
-        end
-
-        before do
-          octokit_client = instance_double(Octokit::Client)
-          allow(Octokit::Client).to receive(:new).and_return(octokit_client)
-          allow(octokit_client).to receive_messages(user: OpenStruct.new(github_user_response), scopes: [ "repo", "read:org" ])
-          allow(octokit_client).to receive(:middleware=)
-          allow(octokit_client).to receive_messages(auto_paginate: false, repositories: [])
-          allow(octokit_client).to receive(:auto_paginate=)
-        end
 
         it "creates a new token" do
           expect {
@@ -133,11 +127,21 @@ RSpec.describe "GithubTokens" do
           }.to change(GithubToken, :count).by(1)
         end
 
-        it "redirects to the token show page with success message" do
+        it "creates token with pending validation status" do
+          post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
+          expect(GithubToken.last.validation_status).to eq("pending")
+        end
+
+        it "enqueues a validation job" do
+          expect {
+            post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
+          }.to have_enqueued_job(GithubTokenValidationJob)
+        end
+
+        it "redirects to the token show page" do
           post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
           expect(response).to redirect_to(github_token_path(GithubToken.last))
-          expect(flash[:notice]).to include("successfully added")
-          expect(flash[:notice]).to include("testuser")
+          expect(flash[:notice]).to include("Validating")
         end
 
         it "associates the token with the current account" do
@@ -164,78 +168,6 @@ RSpec.describe "GithubTokens" do
           post github_tokens_path, params: { github_token: { name: "", token: "ghp_#{'a' * 36}" } }
           expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include("can&#39;t be blank")
-        end
-      end
-
-      context "when GitHub API returns authentication error" do
-        let(:valid_token) { "ghp_#{'a' * 36}" }
-
-        before do
-          octokit_client = instance_double(Octokit::Client)
-          allow(Octokit::Client).to receive(:new).and_return(octokit_client)
-          allow(octokit_client).to receive(:middleware=)
-          allow(octokit_client).to receive(:user).and_raise(Octokit::Unauthorized.new({}))
-        end
-
-        it "re-renders the form with error message" do
-          post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          expect(response).to have_http_status(:unprocessable_content)
-          expect(response.body).to include("invalid or has been revoked")
-        end
-
-        it "does not create the token" do
-          expect {
-            post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          }.not_to change(GithubToken, :count)
-        end
-      end
-
-      context "when GitHub API returns rate limit error" do
-        let(:valid_token) { "ghp_#{'a' * 36}" }
-
-        before do
-          octokit_client = instance_double(Octokit::Client)
-          allow(Octokit::Client).to receive(:new).and_return(octokit_client)
-          allow(octokit_client).to receive(:middleware=)
-          allow(octokit_client).to receive(:user).and_raise(Octokit::TooManyRequests.new({}))
-          allow(octokit_client).to receive(:rate_limit).and_return(
-            OpenStruct.new(resets_at: 1.hour.from_now)
-          )
-        end
-
-        it "re-renders the form with rate limit error message" do
-          post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          expect(response).to have_http_status(:unprocessable_content)
-          expect(response.body).to include("rate limit exceeded")
-        end
-
-        it "does not create the token" do
-          expect {
-            post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          }.not_to change(GithubToken, :count)
-        end
-      end
-
-      context "when GitHub API returns other error" do
-        let(:valid_token) { "ghp_#{'a' * 36}" }
-
-        before do
-          octokit_client = instance_double(Octokit::Client)
-          allow(Octokit::Client).to receive(:new).and_return(octokit_client)
-          allow(octokit_client).to receive(:middleware=)
-          allow(octokit_client).to receive(:user).and_raise(Octokit::ServerError.new({}))
-        end
-
-        it "re-renders the form with API error message" do
-          post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          expect(response).to have_http_status(:unprocessable_content)
-          expect(response.body).to include("GitHub API error")
-        end
-
-        it "does not create the token" do
-          expect {
-            post github_tokens_path, params: { github_token: { name: "Test Token", token: valid_token } }
-          }.not_to change(GithubToken, :count)
         end
       end
     end
@@ -285,6 +217,61 @@ RSpec.describe "GithubTokens" do
         other_token = create(:github_token, account: other_account)
         get github_token_path(other_token)
         expect(response).to have_http_status(:not_found)
+      end
+
+      it "shows validating status for pending tokens" do
+        token = create(:github_token, :pending_validation, account: account)
+        get github_token_path(token)
+        expect(response.body).to include("Validating...")
+      end
+
+      it "shows validation failed badge for failed tokens" do
+        token = create(:github_token, :validation_failed, account: account)
+        get github_token_path(token)
+        expect(response.body).to include("Validation Failed")
+      end
+    end
+  end
+
+  describe "GET /github_tokens/:id/validation_status" do
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "shows validating state for pending tokens" do
+        token = create(:github_token, :pending_validation, account: account)
+        get validation_status_github_token_path(token)
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Validating token with GitHub")
+      end
+
+      it "shows success state for validated tokens" do
+        token = create(:github_token, account: account, accessible_repositories: [ { "id" => 1, "full_name" => "owner/repo" } ])
+        get validation_status_github_token_path(token)
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("validated successfully")
+      end
+
+      it "shows error state for failed tokens" do
+        token = create(:github_token, :validation_failed, account: account)
+        get validation_status_github_token_path(token)
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Validation Failed")
+        expect(response.body).to include("Retry Validation")
+      end
+    end
+  end
+
+  describe "POST /github_tokens/:id/retry_validation" do
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "resets validation status and enqueues job" do
+        token = create(:github_token, :validation_failed, account: account)
+        expect {
+          post retry_validation_github_token_path(token)
+        }.to have_enqueued_job(GithubTokenValidationJob)
+        expect(token.reload.validation_status).to eq("pending")
+        expect(response).to redirect_to(github_token_path(token))
       end
     end
   end

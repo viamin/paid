@@ -48,6 +48,14 @@
                         <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
                           Expired
                         </span>
+                      <% elsif token.validation_failed? %>
+                        <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
+                          Validation Failed
+                        </span>
+                      <% elsif token.validation_pending? || token.validating? %>
+                        <span class="inline-flex items-center rounded-md bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800">
+                          Validating...
+                        </span>
                       <% elsif token.expires_at.present? && token.expires_at < 7.days.from_now %>
                         <span class="inline-flex items-center rounded-md bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800">
                           Expiring Soon
