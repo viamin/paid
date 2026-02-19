@@ -50,7 +50,10 @@ module Activities
       result = container_service.execute(command, timeout: agent_timeout)
 
       if result.success?
-        agent_run.complete!
+        # Stay in running status — the run is only marked completed after
+        # push/PR activities succeed. Marking it completed here would cause
+        # the container auth middleware to reject subsequent git-push requests.
+        agent_run.log!("system", "Agent execution succeeded")
       else
         error_msg = "Agent exited with code #{result[:exit_code]}"
         agent_run.fail!(error: error_msg)

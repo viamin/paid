@@ -14,4 +14,10 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(described_class.superclass).to eq(Workflows::BaseWorkflow)
     end
   end
+
+  describe "MAX_ITERATIONS" do
+    it "is set to 100" do
+      expect(described_class::MAX_ITERATIONS).to eq(100)
+    end
+  end
 end

@@ -28,6 +28,12 @@ FileUtils.chdir APP_ROOT do
   #   FileUtils.cp "config/database.yml.sample", "config/database.yml"
   # end
 
+  puts "\n== Ensuring workspace directory =="
+  workspace_root = ENV.fetch("WORKSPACE_ROOT", "/var/paid/workspaces")
+  unless Dir.exist?(workspace_root)
+    system("sudo mkdir -p #{workspace_root}/runs && sudo chown -R $(whoami) /var/paid")
+  end
+
   puts "\n== Preparing database =="
   system! "bin/rails db:prepare"
   system! "bin/rails db:reset" if ARGV.include?("--reset")

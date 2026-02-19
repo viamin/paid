@@ -50,10 +50,6 @@ RSpec.describe NetworkPolicy do
           described_class::NETWORK_NAME,
           hash_including(
             "Driver" => "bridge",
-            "Internal" => true,
-            "Options" => hash_including(
-              "com.docker.network.bridge.enable_ip_masquerade" => "false"
-            ),
             "IPAM" => hash_including(
               "Config" => [ { "Subnet" => described_class::NETWORK_SUBNET } ]
             )
@@ -61,6 +57,35 @@ RSpec.describe NetworkPolicy do
         ).and_return(mock_network)
 
         described_class.ensure_network!
+      end
+
+      context "when in production" do
+        before { allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production")) }
+
+        it "creates an internal network with masquerade disabled" do
+          expect(Docker::Network).to receive(:create).with(
+            described_class::NETWORK_NAME,
+            hash_including(
+              "Internal" => true,
+              "Options" => hash_including(
+                "com.docker.network.bridge.enable_ip_masquerade" => "false"
+              )
+            )
+          ).and_return(mock_network)
+
+          described_class.ensure_network!
+        end
+      end
+
+      context "when in development" do
+        it "creates a non-internal network" do
+          expect(Docker::Network).to receive(:create).with(
+            described_class::NETWORK_NAME,
+            hash_not_including("Internal" => true)
+          ).and_return(mock_network)
+
+          described_class.ensure_network!
+        end
       end
 
       it "returns the newly created network" do

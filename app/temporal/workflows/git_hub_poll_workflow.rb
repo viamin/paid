@@ -6,9 +6,16 @@ module Workflows
   #
   # Runs as a long-lived workflow, sleeping between poll cycles. Can be
   # cancelled via ProjectWorkflowManager.stop_polling.
+  #
+  # Uses continue-as-new to prevent workflow history from exceeding
+  # Temporal's event limit. The server signals when history is getting
+  # large via continue_as_new_suggested; a hard cap provides a safety net.
   class GitHubPollWorkflow < BaseWorkflow
+    MAX_ITERATIONS = 100
+
     def execute(input)
       project_id = input[:project_id]
+      iterations = 0
 
       loop do
         result = run_activity(Activities::FetchIssuesActivity,
@@ -27,6 +34,11 @@ module Workflows
           { project_id: project_id }, timeout: 10)
 
         break if poll_config[:project_missing]
+
+        iterations += 1
+        if iterations >= MAX_ITERATIONS || Temporalio::Workflow.continue_as_new_suggested
+          raise Temporalio::Workflow::ContinueAsNewError.new({ project_id: project_id })
+        end
 
         Temporalio::Workflow.sleep(poll_config[:poll_interval_seconds])
       end
