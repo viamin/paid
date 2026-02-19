@@ -307,6 +307,8 @@ RSpec.describe Containers::Provision do
 
           tmpfs = config["HostConfig"]["Tmpfs"]
           expect(tmpfs).to have_key("/home/agent/.claude")
+          expect(tmpfs["/home/agent/.claude"]).to include("mode=0700")
+          expect(tmpfs["/home/agent/.claude"]).to include("size=#{256 * 1024 * 1024}")
           mock_container
         end
 
