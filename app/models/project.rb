@@ -11,6 +11,7 @@ class Project < ApplicationRecord
   has_many :agent_runs, dependent: :destroy
   has_many :worktrees, dependent: :destroy
   has_many :workflow_states, dependent: :destroy
+  has_many :code_chunks, dependent: :destroy
 
   validates :name, presence: true
   validates :owner, presence: true

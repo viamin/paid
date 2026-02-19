@@ -129,5 +129,45 @@ RSpec.describe Prompts::BuildForIssue do
         expect(prompt).to include("#99")
       end
     end
+
+    context "when project has indexed code chunks" do
+      before do
+        create(:code_chunk,
+          project: project,
+          file_path: "app/controllers/sessions_controller.rb",
+          content: "class SessionsController\n  def create\n    redirect_to root_path\n  end\nend",
+          language: "ruby",
+          chunk_type: "file")
+      end
+
+      it "includes codebase context section when chunks match" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).to include("Relevant Codebase Context")
+        expect(prompt).to include("sessions_controller.rb")
+      end
+    end
+
+    context "when project has no indexed code chunks" do
+      it "omits the codebase context section" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).not_to include("Relevant Codebase Context")
+      end
+    end
+
+    context "when semantic search raises an error" do
+      before do
+        create(:code_chunk, project: project, content: "some code")
+        allow(SemanticSearch::Query).to receive(:call).and_raise(StandardError, "search failed")
+      end
+
+      it "builds prompt without codebase context" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).to include("Fix login redirect")
+        expect(prompt).not_to include("Relevant Codebase Context")
+      end
+    end
   end
 end
