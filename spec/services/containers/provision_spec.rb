@@ -45,8 +45,8 @@ RSpec.describe Containers::Provision do
       expect(described_class::DEFAULTS[:pids_limit]).to eq(500)
     end
 
-    it "defines default timeout of 10 minutes" do
-      expect(described_class::DEFAULTS[:timeout_seconds]).to eq(600)
+    it "defines default timeout of 30 minutes" do
+      expect(described_class::DEFAULTS[:timeout_seconds]).to eq(1800)
     end
 
     it "defines default image name" do
@@ -299,10 +299,13 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return("/host/home/user/.claude")
       end
 
-      it "mounts Claude config directory read-only" do
+      it "mounts Claude config at staging path and creates writable tmpfs" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds).to include("/host/home/user/.claude:/home/agent/.claude:ro")
+          expect(binds).to include("/host/home/user/.claude:/home/agent/.claude-host:ro")
+
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.claude")
           mock_container
         end
 
