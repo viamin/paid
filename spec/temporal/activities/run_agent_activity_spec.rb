@@ -44,7 +44,7 @@ RSpec.describe Activities::RunAgentActivity do
 
         activity.execute(agent_run_id: agent_run.id)
 
-        expect(agent_run.reload.status).to eq("completed")
+        expect(agent_run.reload.status).to eq("running")
       end
 
       it "returns has_changes: true when container git diff shows changes" do

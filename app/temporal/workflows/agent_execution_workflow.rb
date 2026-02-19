@@ -45,7 +45,7 @@ module Workflows
         # Step 4: Run the agent (long timeout, no retry)
         agent_result = run_activity(Activities::RunAgentActivity,
           { agent_run_id: agent_run_id },
-          start_to_close_timeout: 900, retry_policy: NO_RETRY)
+          start_to_close_timeout: 2100, retry_policy: NO_RETRY)
 
         unless agent_result[:success]
           raise Temporalio::Error::ApplicationError.new(

@@ -59,7 +59,7 @@ module Containers
       memory_bytes: 2 * 1024 * 1024 * 1024,     # 2GB RAM
       cpu_quota: 200_000,                        # 2 CPUs (100_000 per CPU)
       pids_limit: 500,                           # 500 process limit
-      timeout_seconds: 600,                      # 10 minutes default timeout
+      timeout_seconds: 1800,                     # 30 minutes default timeout
       tmpfs_tmp_size: 1024 * 1024 * 1024,        # 1GB for /tmp
       tmpfs_cache_size: 512 * 1024 * 1024,       # 512MB for /home/agent/.cache
       image: "paid-agent:latest",
@@ -109,6 +109,7 @@ module Containers
       @container = create_container
       start_container
       fix_workspace_ownership!
+      seed_claude_credentials!
       apply_network_restrictions!
 
       log_system("container.provision.success", container_id: container.id)
@@ -144,7 +145,7 @@ module Containers
       begin
         exec_result = nil
         Timeout.timeout(timeout) do
-          exec_result = container.exec(cmd_array) do |stream_type, chunk|
+          exec_result = container.exec(cmd_array, wait: timeout) do |stream_type, chunk|
             case stream_type
             when :stdout
               stdout_buffer << chunk
@@ -287,6 +288,29 @@ module Containers
       # Container was already removed between running? check and stop
     end
 
+    # Copies credentials and settings from the read-only host mount into the
+    # writable ~/.claude tmpfs. Only the files Claude CLI needs for auth and
+    # configuration are copied; session/project data is created fresh each run.
+    def seed_claude_credentials!
+      return unless claude_config_host_path.present?
+
+      # Fix tmpfs ownership (created as root) then copy credential files.
+      container.exec(
+        [ "chown", "-R", "agent:agent", "/home/agent/.claude" ],
+        user: "root"
+      )
+      container.exec(
+        [ "sh", "-c",
+          "cp /home/agent/.claude-host/.credentials.json /home/agent/.claude/.credentials.json 2>/dev/null; " \
+          "cp /home/agent/.claude-host/settings.json /home/agent/.claude/settings.json 2>/dev/null; " \
+          "true" ],
+        user: "agent"
+      )
+      log_system("container.claude_credentials_seeded")
+    rescue Docker::Error::DockerError => e
+      log_system("container.claude_credentials_seed_failed", error: e.message)
+    end
+
     # Ensures the bind-mounted /workspace is writable by the non-root agent user.
     # Docker bind mounts inherit host ownership which may not match the container
     # user. Running chown as root inside the container fixes this portably.
@@ -335,9 +359,10 @@ module Containers
     end
 
     # Writable directories inside the container:
-    #   /workspace  - bind mount of workspace dir (rw, for git clone and code changes)
-    #   /tmp        - tmpfs (1GB, for scratch files)
-    #   /home/agent/.cache - tmpfs (512MB, for tool caches)
+    #   /workspace          - bind mount of workspace dir (rw, for git clone and code changes)
+    #   /tmp                - tmpfs (1GB, for scratch files)
+    #   /home/agent/.cache  - tmpfs (512MB, for tool caches)
+    #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
       {
@@ -367,11 +392,21 @@ module Containers
       binds = []
       binds << "#{worktree_path}:#{options[:workspace_mount]}:rw" if worktree_path.present?
 
-      # Mount the host's Claude config directory for subscription-based auth.
-      # CLAUDE_CONFIG_DIR must be the Docker-host path (not the worker container path)
-      # because Docker bind mounts reference the host filesystem.
-      claude_config = ENV["CLAUDE_CONFIG_DIR"]
-      binds << "#{claude_config}:/home/agent/.claude:ro" if claude_config.present?
+      # Mount the host's Claude config as read-only at a staging path.
+      # Credentials are copied into the writable /home/agent/.claude tmpfs
+      # by seed_claude_credentials! after container start.
+      binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro" if claude_config_host_path.present?
+
+      tmpfs = {
+        "/tmp" => "size=#{options[:tmpfs_tmp_size]},mode=1777",
+        "/home/agent/.cache" => "size=#{options[:tmpfs_cache_size]},mode=0755"
+      }
+
+      # Claude CLI needs to write session data, project indexes, todos, debug
+      # logs, and stats under ~/.claude. A writable tmpfs lets it do so without
+      # compromising the read-only rootfs. Ownership is fixed by
+      # fix_workspace_ownership!-style chown after container start.
+      tmpfs["/home/agent/.claude"] = "size=#{256 * 1024 * 1024},mode=0700"
 
       {
         "Memory" => options[:memory_bytes],
@@ -381,10 +416,7 @@ module Containers
         "CpuPeriod" => 100_000,
         "CpuQuota" => options[:cpu_quota],
         "PidsLimit" => options[:pids_limit],
-        "Tmpfs" => {
-          "/tmp" => "size=#{options[:tmpfs_tmp_size]},mode=1777",
-          "/home/agent/.cache" => "size=#{options[:tmpfs_cache_size]},mode=0755"
-        },
+        "Tmpfs" => tmpfs,
         "Binds" => binds,
         "NetworkMode" => container_network
       }
@@ -431,10 +463,27 @@ module Containers
       env
     end
 
-    # Returns true when the host's Claude CLI config is available for
+    # Returns true when Claude CLI config is available for
     # subscription-based authentication (e.g. from `claude login`).
     def subscription_auth?
-      ENV["CLAUDE_CONFIG_DIR"].present?
+      claude_config_host_path.present?
+    end
+
+    # Returns the Docker-host path to the Claude config directory.
+    # Checks CLAUDE_CONFIG_DIR first, then auto-detects from container mounts
+    # (for DooD setups where the devcontainer mounts ~/.claude from the host).
+    def claude_config_host_path
+      @claude_config_host_path ||= ENV["CLAUDE_CONFIG_DIR"].presence || detect_claude_config_host_path
+    end
+
+    def detect_claude_config_host_path
+      hostname = Socket.gethostname
+      container = Docker::Container.get(hostname)
+      mounts = container.info["Mounts"] || []
+      claude_mount = mounts.find { |m| m["Destination"]&.end_with?("/.claude") }
+      claude_mount&.dig("Source")
+    rescue Docker::Error::DockerError
+      nil
     end
 
     def container_name

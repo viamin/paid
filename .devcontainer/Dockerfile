@@ -21,6 +21,9 @@ RUN apt-get update && apt-get install -y \
 # Install yarn
 RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 
+# Install overmind process manager (requires tmux, installed above)
+RUN gem install overmind
+
 # Install the required bundler version and fix permissions for vscode user
 RUN gem install bundler:2.7.2 \
   && chmod -R g+w /usr/local/rvm/gems/default
