@@ -508,6 +508,7 @@ RSpec.describe AgentRun do
 
       before do
         allow(Docker::Container).to receive(:create).and_return(mock_container)
+        allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
         allow(NetworkPolicy).to receive_messages(ensure_network!: instance_double(Docker::Network), apply_firewall_rules: nil)
       end
 

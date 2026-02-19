@@ -25,6 +25,7 @@ RSpec.describe Containers::Provision do
 
   before do
     allow(Docker::Container).to receive(:create).and_return(mock_container)
+    allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
     allow(NetworkPolicy).to receive_messages(ensure_network!: mock_network, apply_firewall_rules: nil)
   end
 
@@ -45,8 +46,8 @@ RSpec.describe Containers::Provision do
       expect(described_class::DEFAULTS[:pids_limit]).to eq(500)
     end
 
-    it "defines default timeout of 10 minutes" do
-      expect(described_class::DEFAULTS[:timeout_seconds]).to eq(600)
+    it "defines default timeout of 30 minutes" do
+      expect(described_class::DEFAULTS[:timeout_seconds]).to eq(1800)
     end
 
     it "defines default image name" do
@@ -299,10 +300,15 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return("/host/home/user/.claude")
       end
 
-      it "mounts Claude config directory read-only" do
+      it "mounts Claude config at staging path and creates writable tmpfs" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds).to include("/host/home/user/.claude:/home/agent/.claude:ro")
+          expect(binds).to include("/host/home/user/.claude:/home/agent/.claude-host:ro")
+
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.claude")
+          expect(tmpfs["/home/agent/.claude"]).to include("mode=0700")
+          expect(tmpfs["/home/agent/.claude"]).to include("size=#{256 * 1024 * 1024}")
           mock_container
         end
 
@@ -416,7 +422,7 @@ RSpec.describe Containers::Provision do
       end
 
       it "accepts array command format" do
-        expect(mock_container).to receive(:exec).with([ "ls", "-la" ])
+        expect(mock_container).to receive(:exec).with([ "ls", "-la" ], hash_including(wait: anything))
 
         service.execute([ "ls", "-la" ])
       end

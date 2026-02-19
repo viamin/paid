@@ -19,6 +19,8 @@ Rails.application.routes.draw do
   # GitHub tokens management
   resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ] do
     get :repositories, on: :member
+    get :validation_status, on: :member
+    post :retry_validation, on: :member
   end
 
   # Projects management

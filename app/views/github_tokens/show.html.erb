@@ -31,6 +31,18 @@
             <span class="inline-flex items-center rounded-md bg-red-100 px-3 py-1 text-sm font-medium text-red-700">
               Expired
             </span>
+          <% elsif @github_token.validation_failed? %>
+            <span class="inline-flex items-center rounded-md bg-red-100 px-3 py-1 text-sm font-medium text-red-700">
+              Validation Failed
+            </span>
+          <% elsif @github_token.validation_pending? || @github_token.validating? %>
+            <span class="inline-flex items-center rounded-md bg-yellow-100 px-3 py-1 text-sm font-medium text-yellow-800">
+              <svg class="animate-spin -ml-0.5 mr-1.5 h-4 w-4 text-yellow-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Validating...
+            </span>
           <% elsif @github_token.expires_at.present? && @github_token.expires_at < 7.days.from_now %>
             <span class="inline-flex items-center rounded-md bg-yellow-100 px-3 py-1 text-sm font-medium text-yellow-800">
               Expiring Soon
@@ -43,6 +55,16 @@
         </div>
       </div>
     </div>
+
+    <% unless @github_token.validated? %>
+      <%= turbo_frame_tag "validation-status",
+          src: validation_status_github_token_path(@github_token),
+          loading: :lazy do %>
+        <div class="border-t border-gray-200 px-4 py-4 sm:px-6">
+          <div class="animate-pulse bg-gray-100 h-16 rounded-lg"></div>
+        </div>
+      <% end %>
+    <% end %>
 
     <% if @github_token.expires_at.present? && @github_token.expires_at < 7.days.from_now && !@github_token.expired? && !@github_token.revoked? %>
       <div class="border-t border-gray-200 bg-yellow-50 px-4 py-4 sm:px-6">
