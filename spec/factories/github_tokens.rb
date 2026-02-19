@@ -7,6 +7,20 @@ FactoryBot.define do
     sequence(:name) { |n| "Token #{n}" }
     token { "ghp_#{SecureRandom.alphanumeric(36)}" }
     scopes { [ "repo", "read:org" ] }
+    validation_status { "validated" }
+
+    trait :pending_validation do
+      validation_status { "pending" }
+    end
+
+    trait :validating do
+      validation_status { "validating" }
+    end
+
+    trait :validation_failed do
+      validation_status { "failed" }
+      validation_error { "Token is invalid or has been revoked" }
+    end
 
     trait :fine_grained do
       token { "github_pat_#{SecureRandom.alphanumeric(22)}_#{SecureRandom.alphanumeric(40)}" }

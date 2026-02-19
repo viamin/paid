@@ -9,6 +9,7 @@ class GithubToken < ApplicationRecord
   # Server-to-server: ghs_xxxx
   # Refresh token: ghr_xxxx
   GITHUB_TOKEN_PATTERN = /\A(ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[ours]_[A-Za-z0-9]{36,})\z/
+  VALIDATION_STATUSES = %w[pending validating validated failed].freeze
 
   belongs_to :account
   belongs_to :created_by, class_name: "User", optional: true
@@ -19,12 +20,15 @@ class GithubToken < ApplicationRecord
 
   validates :name, presence: true, uniqueness: { scope: :account_id }
   validates :token, presence: true
+  validates :validation_status, inclusion: { in: VALIDATION_STATUSES }
   validate :token_format_valid, if: -> { token.present? }
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
 
   scope :active, -> { where(revoked_at: nil).where("expires_at IS NULL OR expires_at > ?", Time.current) }
   scope :expired, -> { where.not(expires_at: nil).where("expires_at <= ?", Time.current) }
   scope :revoked, -> { where.not(revoked_at: nil) }
+  scope :pending_validation, -> { where(validation_status: "pending") }
+  scope :validated, -> { where(validation_status: "validated") }
 
   def active?
     revoked_at.nil? && (expires_at.nil? || expires_at > Time.current)
@@ -40,6 +44,34 @@ class GithubToken < ApplicationRecord
 
   def revoke!
     update!(revoked_at: Time.current)
+  end
+
+  def validation_pending?
+    validation_status == "pending"
+  end
+
+  def validating?
+    validation_status == "validating"
+  end
+
+  def validated?
+    validation_status == "validated"
+  end
+
+  def validation_failed?
+    validation_status == "failed"
+  end
+
+  def mark_validating!
+    update!(validation_status: "validating", validation_error: nil)
+  end
+
+  def mark_validated!
+    update!(validation_status: "validated", validation_error: nil)
+  end
+
+  def mark_validation_failed!(error_message)
+    update!(validation_status: "failed", validation_error: error_message)
   end
 
   # Whether this token is a fine-grained personal access token.
