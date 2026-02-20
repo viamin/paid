@@ -88,6 +88,7 @@ module Activities
           cleaned_at: nil,
           created_at: Time.current
         )
+        existing
       end
     end
   end
