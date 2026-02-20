@@ -47,14 +47,56 @@ module Activities
     end
 
     def create_worktree_record(agent_run)
-      Worktree.create!(
+      # For existing PR runs the branch name is deterministic, so a finished
+      # worktree record from a previous run may still exist. Reclaim it
+      # instead of failing on the uniqueness constraint.
+      #
+      # An active record for the *same* agent_run is a Temporal retry —
+      # return it as-is to stay idempotent.
+      #
+      # Rescue RecordNotUnique to handle the race where two activities
+      # both see no existing record and try to insert concurrently.
+      existing = Worktree.find_by(
         project: agent_run.project,
-        agent_run: agent_run,
-        path: "/workspace",
-        branch_name: agent_run.branch_name,
-        base_commit: agent_run.base_commit_sha,
-        status: "active"
+        branch_name: agent_run.branch_name
       )
+
+      if existing.nil?
+        Worktree.create!(
+          project: agent_run.project,
+          agent_run: agent_run,
+          path: "/workspace",
+          branch_name: agent_run.branch_name,
+          base_commit: agent_run.base_commit_sha,
+          status: "active"
+        )
+      elsif existing.active? && existing.agent_run_id == agent_run.id
+        # Temporal retry — the previous attempt already created this record.
+        existing
+      elsif existing.active?
+        raise Temporalio::Error::ApplicationError.new(
+          "Branch #{agent_run.branch_name} has an active worktree from agent run #{existing.agent_run_id}",
+          type: "WorktreeConflict"
+        )
+      else
+        # Reclaim cleaned or cleanup_failed records from finished runs.
+        # Reset created_at so the record isn't immediately flagged as
+        # stale/orphaned by cleanup jobs that check created_at age.
+        existing.update!(
+          agent_run: agent_run,
+          path: "/workspace",
+          base_commit: agent_run.base_commit_sha,
+          status: "active",
+          pushed: false,
+          cleaned_at: nil,
+          created_at: Time.current
+        )
+        existing
+      end
+    rescue ActiveRecord::RecordNotUnique
+      # Lost the race — another activity inserted first. Re-fetch and
+      # apply the idempotent/conflict logic.
+      retry
     end
   end
 end

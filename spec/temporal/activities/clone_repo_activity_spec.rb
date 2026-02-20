@@ -68,6 +68,58 @@ RSpec.describe Activities::CloneRepoActivity do
 
         activity.execute(agent_run_id: agent_run.id)
       end
+
+      it "reclaims a cleaned worktree record with the same branch name" do
+        old_agent_run = create(:agent_run, project: project)
+        create(:worktree, :cleaned, project: project, agent_run: old_agent_run,
+          branch_name: "existing-feature-branch", created_at: 3.days.ago)
+
+        freeze_time do
+          activity.execute(agent_run_id: agent_run.id)
+
+          worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
+          expect(worktree.agent_run).to eq(agent_run)
+          expect(worktree).to be_active
+          expect(worktree.pushed).to be(false)
+          expect(worktree.created_at).to eq(Time.current)
+          expect(Worktree.stale).not_to include(worktree)
+        end
+      end
+
+      it "reclaims a cleanup_failed worktree record with the same branch name" do
+        old_agent_run = create(:agent_run, project: project)
+        create(:worktree, :cleanup_failed, project: project, agent_run: old_agent_run,
+          branch_name: "existing-feature-branch", created_at: 3.days.ago)
+
+        freeze_time do
+          activity.execute(agent_run_id: agent_run.id)
+
+          worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
+          expect(worktree.agent_run).to eq(agent_run)
+          expect(worktree).to be_active
+          expect(worktree.pushed).to be(false)
+          expect(worktree.created_at).to eq(Time.current)
+          expect(Worktree.stale).not_to include(worktree)
+        end
+      end
+
+      it "is idempotent when retried with an active worktree from the same agent_run" do
+        create(:worktree, :active, project: project, agent_run: agent_run, branch_name: "existing-feature-branch")
+
+        expect { activity.execute(agent_run_id: agent_run.id) }.not_to change(Worktree, :count)
+
+        worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
+        expect(worktree.agent_run).to eq(agent_run)
+        expect(worktree).to be_active
+      end
+
+      it "raises WorktreeConflict when an active worktree belongs to a different agent_run" do
+        other_agent_run = create(:agent_run, :running, project: project)
+        create(:worktree, :active, project: project, agent_run: other_agent_run, branch_name: "existing-feature-branch")
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /active worktree from agent run/)
+      end
     end
   end
 end
