@@ -48,6 +48,19 @@
         </div>
 
         <div>
+          <h2 class="text-base font-semibold text-gray-900">Or Work on an Existing PR</h2>
+          <p class="mt-1 text-sm text-gray-500">Push changes to an existing pull request's branch instead of creating a new one.</p>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <label for="pull_request_url" class="block text-sm font-medium text-gray-700">Pull request URL:</label>
+            <input type="text" name="pull_request_url" id="pull_request_url"
+                   placeholder="https://github.com/<%= @project.full_name %>/pull/123"
+                   class="mt-1 block w-full rounded-md border-gray-300 font-mono text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+            <p class="mt-1 text-xs text-gray-500">Paste a GitHub pull request URL. The agent will check out the PR's branch and push updates to it.</p>
+          </div>
+        </div>
+
+        <div>
           <h2 class="text-base font-semibold text-gray-900">Or Provide a Custom Prompt</h2>
           <p class="mt-1 text-sm text-gray-500">Run the agent with a free-form prompt instead of a GitHub issue.</p>
 

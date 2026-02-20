@@ -245,6 +245,57 @@ RSpec.describe "AgentRuns" do
         end
       end
 
+      context "with pull_request_url parameter" do
+        it "starts workflow with source_pull_request_number" do
+          expect(temporal_client).to receive(:start_workflow).with(
+            Workflows::AgentExecutionWorkflow,
+            hash_including(
+              project_id: project.id,
+              source_pull_request_number: 135
+            ),
+            hash_including(
+              id: "manual-#{project.id}-pr-135"
+            )
+          ).and_return(workflow_handle)
+
+          post project_agent_runs_path(project), params: {
+            pull_request_url: "https://github.com/#{project.owner}/#{project.repo}/pull/135",
+            custom_prompt: "Fix the review comments"
+          }
+          expect(response).to redirect_to(project_path(project))
+        end
+
+        it "rejects PR URLs from wrong repository" do
+          post project_agent_runs_path(project), params: {
+            pull_request_url: "https://github.com/other-owner/other-repo/pull/42",
+            custom_prompt: "Fix it"
+          }
+          expect(response).to redirect_to(new_project_agent_run_path(project))
+          follow_redirect!
+          expect(response.body).to include("must be from")
+        end
+
+        it "rejects non-GitHub PR URLs" do
+          post project_agent_runs_path(project), params: {
+            pull_request_url: "https://notgithub.com/#{project.owner}/#{project.repo}/pull/42",
+            custom_prompt: "Fix it"
+          }
+          expect(response).to redirect_to(new_project_agent_run_path(project))
+          follow_redirect!
+          expect(response.body).to include("must be a github.com URL")
+        end
+
+        it "shows PR number in success message" do
+          post project_agent_runs_path(project), params: {
+            pull_request_url: "https://github.com/#{project.owner}/#{project.repo}/pull/135",
+            custom_prompt: "Fix it"
+          }
+          expect(response).to redirect_to(project_path(project))
+          follow_redirect!
+          expect(response.body).to include("PR #135")
+        end
+      end
+
       context "when Temporal workflow already running" do
         before do
           allow(temporal_client).to receive(:start_workflow)

@@ -22,6 +22,7 @@ module Workflows
       issue_id = input[:issue_id]
       agent_type = input.fetch(:agent_type, "claude_code")
       custom_prompt = input[:custom_prompt]
+      source_pull_request_number = input[:source_pull_request_number]
 
       Temporalio::Workflow.logger.info(
         "AgentExecutionWorkflow started for project=#{project_id} issue=#{issue_id}"
@@ -30,7 +31,8 @@ module Workflows
       # Step 1: Create agent run record
       agent_run_result = run_activity(Activities::CreateAgentRunActivity,
         { project_id: project_id, issue_id: issue_id, agent_type: agent_type,
-          custom_prompt: custom_prompt }.compact, timeout: 30)
+          custom_prompt: custom_prompt,
+          source_pull_request_number: source_pull_request_number }.compact, timeout: 30)
       agent_run_id = agent_run_result[:agent_run_id]
 
       begin
@@ -59,13 +61,19 @@ module Workflows
           run_activity(Activities::PushBranchActivity,
             { agent_run_id: agent_run_id }, timeout: 60)
 
-          # Step 6: Create PR
-          pr_result = run_activity(Activities::CreatePullRequestActivity,
-            { agent_run_id: agent_run_id }, timeout: 60)
+          if source_pull_request_number
+            # Existing PR: mark complete with existing PR details
+            run_activity(Activities::CompleteExistingPrRunActivity,
+              { agent_run_id: agent_run_id }, timeout: 60)
+          else
+            # Step 6: Create PR
+            pr_result = run_activity(Activities::CreatePullRequestActivity,
+              { agent_run_id: agent_run_id }, timeout: 60)
 
-          # Step 7: Update issue with PR link
-          run_activity(Activities::UpdateIssueWithPrActivity,
-            { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
+            # Step 7: Update issue with PR link
+            run_activity(Activities::UpdateIssueWithPrActivity,
+              { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
+          end
         else
           # No changes - mark as completed without PR
           run_activity(Activities::MarkAgentRunCompleteActivity,

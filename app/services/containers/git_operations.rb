@@ -45,14 +45,38 @@ module Containers
       )
     end
 
+    # Clones the repository and checks out an existing remote branch.
+    #
+    # @param branch_name [String] The remote branch to check out
+    # @return [void]
+    # @raise [CloneError] when clone or checkout fails
+    def clone_and_checkout_branch(branch_name:)
+      clone_repo
+      checkout_remote_branch(branch_name)
+      base_sha = record_merge_base
+
+      agent_run.update!(
+        worktree_path: "/workspace",
+        branch_name: branch_name,
+        base_commit_sha: base_sha
+      )
+    end
+
     # Pushes the agent's branch to the remote.
+    #
+    # Uses --force-with-lease for existing PR branches to safely handle
+    # rebased or amended commits while preventing overwriting concurrent
+    # changes from other collaborators.
     #
     # @return [String] the result commit SHA
     # @raise [PushError] when the push fails
     def push_branch
       validate_branch_name!
 
-      result = execute_git("push", "origin", agent_run.branch_name, timeout: PUSH_TIMEOUT)
+      push_args = [ "push", "origin", agent_run.branch_name ]
+      push_args << "--force-with-lease" if agent_run.existing_pr?
+
+      result = execute_git(*push_args, timeout: PUSH_TIMEOUT)
       raise PushError, "Push failed: #{result.error}" if result.failure?
 
       sha = fetch_head_sha
@@ -100,6 +124,24 @@ module Containers
 
       result = execute_git("clone", url, ".", timeout: CLONE_TIMEOUT)
       raise CloneError, "Clone failed: #{result.error}" if result.failure?
+    end
+
+    def checkout_remote_branch(branch_name)
+      result = execute_git("checkout", branch_name)
+      raise CloneError, "Checkout failed: #{result.error}" if result.failure?
+    end
+
+    def record_merge_base
+      project = agent_run.project
+      default_branch = project.default_branch || "main"
+
+      result = execute_git("merge-base", default_branch, "HEAD")
+      if result.success?
+        result[:stdout].strip
+      else
+        # Fall back to HEAD if merge-base fails (e.g. unrelated histories)
+        record_base_commit
+      end
     end
 
     def create_branch
