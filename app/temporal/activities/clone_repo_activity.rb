@@ -47,24 +47,18 @@ module Activities
     end
 
     def create_worktree_record(agent_run)
-      # For existing PR runs the branch name is deterministic, so a cleaned
+      # For existing PR runs the branch name is deterministic, so a finished
       # worktree record from a previous run may still exist. Reclaim it
       # instead of failing on the uniqueness constraint.
+      #
+      # An active record for the *same* agent_run is a Temporal retry —
+      # return it as-is to stay idempotent.
       existing = Worktree.find_by(
         project: agent_run.project,
         branch_name: agent_run.branch_name
       )
 
-      if existing && !existing.active?
-        existing.update!(
-          agent_run: agent_run,
-          path: "/workspace",
-          base_commit: agent_run.base_commit_sha,
-          status: "active",
-          pushed: false,
-          cleaned_at: nil
-        )
-      else
+      if existing.nil?
         Worktree.create!(
           project: agent_run.project,
           agent_run: agent_run,
@@ -72,6 +66,24 @@ module Activities
           branch_name: agent_run.branch_name,
           base_commit: agent_run.base_commit_sha,
           status: "active"
+        )
+      elsif existing.active? && existing.agent_run_id == agent_run.id
+        # Temporal retry — the previous attempt already created this record.
+        existing
+      elsif existing.active?
+        raise Temporalio::Error::ApplicationError.new(
+          "Branch #{agent_run.branch_name} has an active worktree from agent run #{existing.agent_run_id}",
+          type: "WorktreeConflict"
+        )
+      else
+        # Reclaim cleaned or cleanup_failed records from finished runs.
+        existing.update!(
+          agent_run: agent_run,
+          path: "/workspace",
+          base_commit: agent_run.base_commit_sha,
+          status: "active",
+          pushed: false,
+          cleaned_at: nil
         )
       end
     end
