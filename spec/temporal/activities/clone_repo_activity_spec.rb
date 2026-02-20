@@ -74,14 +74,16 @@ RSpec.describe Activities::CloneRepoActivity do
         create(:worktree, :cleaned, project: project, agent_run: old_agent_run,
           branch_name: "existing-feature-branch", created_at: 3.days.ago)
 
-        activity.execute(agent_run_id: agent_run.id)
+        freeze_time do
+          activity.execute(agent_run_id: agent_run.id)
 
-        worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
-        expect(worktree.agent_run).to eq(agent_run)
-        expect(worktree).to be_active
-        expect(worktree.pushed).to be(false)
-        expect(worktree.created_at).to be_within(5.seconds).of(Time.current)
-        expect(Worktree.stale).not_to include(worktree)
+          worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
+          expect(worktree.agent_run).to eq(agent_run)
+          expect(worktree).to be_active
+          expect(worktree.pushed).to be(false)
+          expect(worktree.created_at).to eq(Time.current)
+          expect(Worktree.stale).not_to include(worktree)
+        end
       end
 
       it "reclaims a cleanup_failed worktree record with the same branch name" do
@@ -89,14 +91,16 @@ RSpec.describe Activities::CloneRepoActivity do
         create(:worktree, :cleanup_failed, project: project, agent_run: old_agent_run,
           branch_name: "existing-feature-branch", created_at: 3.days.ago)
 
-        activity.execute(agent_run_id: agent_run.id)
+        freeze_time do
+          activity.execute(agent_run_id: agent_run.id)
 
-        worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
-        expect(worktree.agent_run).to eq(agent_run)
-        expect(worktree).to be_active
-        expect(worktree.pushed).to be(false)
-        expect(worktree.created_at).to be_within(5.seconds).of(Time.current)
-        expect(Worktree.stale).not_to include(worktree)
+          worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
+          expect(worktree.agent_run).to eq(agent_run)
+          expect(worktree).to be_active
+          expect(worktree.pushed).to be(false)
+          expect(worktree.created_at).to eq(Time.current)
+          expect(Worktree.stale).not_to include(worktree)
+        end
       end
 
       it "is idempotent when retried with an active worktree from the same agent_run" do
