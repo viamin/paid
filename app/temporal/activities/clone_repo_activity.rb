@@ -53,6 +53,9 @@ module Activities
       #
       # An active record for the *same* agent_run is a Temporal retry —
       # return it as-is to stay idempotent.
+      #
+      # Rescue RecordNotUnique to handle the race where two activities
+      # both see no existing record and try to insert concurrently.
       existing = Worktree.find_by(
         project: agent_run.project,
         branch_name: agent_run.branch_name
@@ -90,6 +93,10 @@ module Activities
         )
         existing
       end
+    rescue ActiveRecord::RecordNotUnique
+      # Lost the race — another activity inserted first. Re-fetch and
+      # apply the idempotent/conflict logic.
+      retry
     end
   end
 end
