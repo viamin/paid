@@ -152,6 +152,33 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("issue_url")
         expect(response.body).to include(project.full_name)
       end
+
+      it "shows open PRs in dropdown" do
+        create(:issue, :pull_request, project: project, github_number: 20, title: "Open PR")
+        create(:issue, :pull_request, :closed, project: project, github_number: 21, title: "Closed PR")
+        get new_project_agent_run_path(project)
+        expect(response.body).to include("Open PR")
+        expect(response.body).not_to include("Closed PR")
+      end
+
+      it "shows message when no PRs available" do
+        get new_project_agent_run_path(project)
+        expect(response.body).to include("No open pull requests found")
+      end
+
+      it "pre-selects issue when issue_id param is present" do
+        issue = create(:issue, project: project, github_number: 10, title: "Preselected issue", github_state: "open", paid_state: "new")
+        get new_project_agent_run_path(project, issue_id: issue.id)
+        expect(response.body).to include("selected")
+        expect(response.body).to include("Preselected issue")
+      end
+
+      it "pre-selects PR when pull_request_id param is present" do
+        pr = create(:issue, :pull_request, project: project, github_number: 30, title: "Preselected PR")
+        get new_project_agent_run_path(project, pull_request_id: pr.id)
+        expect(response.body).to include("selected")
+        expect(response.body).to include("Preselected PR")
+      end
     end
   end
 
@@ -245,6 +272,33 @@ RSpec.describe "AgentRuns" do
         end
       end
 
+      context "with pull_request_id parameter" do
+        let(:pr) { create(:issue, :pull_request, project: project, github_number: 77, title: "Fix styles") }
+
+        it "starts workflow with source_pull_request_number from dropdown" do
+          expect(temporal_client).to receive(:start_workflow).with(
+            Workflows::AgentExecutionWorkflow,
+            hash_including(
+              project_id: project.id,
+              source_pull_request_number: 77
+            ),
+            hash_including(
+              id: "manual-#{project.id}-pr-77"
+            )
+          ).and_return(workflow_handle)
+
+          post project_agent_runs_path(project), params: { pull_request_id: pr.id }
+          expect(response).to redirect_to(project_path(project))
+        end
+
+        it "shows PR number in success message" do
+          post project_agent_runs_path(project), params: { pull_request_id: pr.id }
+          expect(response).to redirect_to(project_path(project))
+          follow_redirect!
+          expect(response.body).to include("PR #77")
+        end
+      end
+
       context "with pull_request_url parameter" do
         it "starts workflow with source_pull_request_number" do
           expect(temporal_client).to receive(:start_workflow).with(
@@ -283,6 +337,13 @@ RSpec.describe "AgentRuns" do
           expect(response).to redirect_to(new_project_agent_run_path(project))
           follow_redirect!
           expect(response.body).to include("must be a github.com URL")
+        end
+
+        it "accepts PR URL without issue or custom prompt" do
+          post project_agent_runs_path(project), params: {
+            pull_request_url: "https://github.com/#{project.owner}/#{project.repo}/pull/135"
+          }
+          expect(response).to redirect_to(project_path(project))
         end
 
         it "shows PR number in success message" do

@@ -21,6 +21,10 @@ class AgentRunsController < ApplicationController
       .where(github_state: "open")
       .where(paid_state: %w[new planning failed])
       .order(github_number: :desc)
+    @pull_requests = @project.issues
+      .pull_requests_only
+      .where(github_state: "open")
+      .order(github_number: :desc)
   end
 
   def create
@@ -40,9 +44,9 @@ class AgentRunsController < ApplicationController
       return
     end
 
-    unless issue || custom_prompt
+    unless issue || custom_prompt || source_pr_number
       redirect_to new_project_agent_run_path(@project),
-        alert: "Please select an issue, enter an issue URL, or provide a custom prompt."
+        alert: "Please select an issue, enter an issue URL, provide a custom prompt, or enter a pull request URL."
       return
     end
 
@@ -91,7 +95,10 @@ class AgentRunsController < ApplicationController
 
   # Returns [pr_number, error_message]. If error_message is present, pr_number is nil.
   def resolve_pull_request
-    if params[:pull_request_url].present?
+    if params[:pull_request_id].present?
+      pr = @project.issues.pull_requests_only.find(params[:pull_request_id])
+      [ pr.github_number, nil ]
+    elsif params[:pull_request_url].present?
       fetch_pull_request_from_url(params[:pull_request_url])
     else
       [ nil, nil ]

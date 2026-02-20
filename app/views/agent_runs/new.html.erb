@@ -28,7 +28,7 @@
               <select name="issue_id" id="issue_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
                 <option value="">-- Select an issue --</option>
                 <% @issues.each do |issue| %>
-                  <option value="<%= issue.id %>">
+                  <option value="<%= issue.id %>" <%= "selected" if params[:issue_id].to_s == issue.id.to_s %>>
                     #<%= issue.github_number %> - <%= truncate(issue.title, length: 60) %>
                   </option>
                 <% end %>
@@ -52,11 +52,27 @@
           <p class="mt-1 text-sm text-gray-500">Push changes to an existing pull request's branch instead of creating a new one.</p>
 
           <div class="mt-4 rounded-lg border border-gray-200 p-4">
-            <label for="pull_request_url" class="block text-sm font-medium text-gray-700">Pull request URL:</label>
+            <label for="pull_request_id" class="block text-sm font-medium text-gray-700">Choose from synced PRs:</label>
+            <% if @pull_requests.any? %>
+              <select name="pull_request_id" id="pull_request_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                <option value="">-- Select a pull request --</option>
+                <% @pull_requests.each do |pr| %>
+                  <option value="<%= pr.id %>" <%= "selected" if params[:pull_request_id].to_s == pr.id.to_s %>>
+                    #<%= pr.github_number %> - <%= truncate(pr.title, length: 60) %>
+                  </option>
+                <% end %>
+              </select>
+            <% else %>
+              <p class="mt-1 text-sm text-gray-500">No open pull requests found. Sync PRs first or enter a URL below.</p>
+            <% end %>
+          </div>
+
+          <div class="mt-4 rounded-lg border border-gray-200 p-4">
+            <label for="pull_request_url" class="block text-sm font-medium text-gray-700">Or enter PR URL directly:</label>
             <input type="text" name="pull_request_url" id="pull_request_url"
                    placeholder="https://github.com/<%= @project.full_name %>/pull/123"
                    class="mt-1 block w-full rounded-md border-gray-300 font-mono text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-            <p class="mt-1 text-xs text-gray-500">Paste a GitHub pull request URL. The agent will check out the PR's branch and push updates to it.</p>
+            <p class="mt-1 text-xs text-gray-500">Paste a GitHub pull request URL for unsynced PRs. The agent will check out the PR's branch and push updates to it.</p>
           </div>
         </div>
 
