@@ -68,6 +68,18 @@ RSpec.describe Activities::CloneRepoActivity do
 
         activity.execute(agent_run_id: agent_run.id)
       end
+
+      it "reclaims a cleaned worktree record with the same branch name" do
+        old_agent_run = create(:agent_run, project: project)
+        create(:worktree, :cleaned, project: project, agent_run: old_agent_run, branch_name: "existing-feature-branch")
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
+        expect(worktree.agent_run).to eq(agent_run)
+        expect(worktree).to be_active
+        expect(worktree.pushed).to be(false)
+      end
     end
   end
 end

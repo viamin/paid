@@ -47,14 +47,33 @@ module Activities
     end
 
     def create_worktree_record(agent_run)
-      Worktree.create!(
+      # For existing PR runs the branch name is deterministic, so a cleaned
+      # worktree record from a previous run may still exist. Reclaim it
+      # instead of failing on the uniqueness constraint.
+      existing = Worktree.find_by(
         project: agent_run.project,
-        agent_run: agent_run,
-        path: "/workspace",
-        branch_name: agent_run.branch_name,
-        base_commit: agent_run.base_commit_sha,
-        status: "active"
+        branch_name: agent_run.branch_name
       )
+
+      if existing && !existing.active?
+        existing.update!(
+          agent_run: agent_run,
+          path: "/workspace",
+          base_commit: agent_run.base_commit_sha,
+          status: "active",
+          pushed: false,
+          cleaned_at: nil
+        )
+      else
+        Worktree.create!(
+          project: agent_run.project,
+          agent_run: agent_run,
+          path: "/workspace",
+          branch_name: agent_run.branch_name,
+          base_commit: agent_run.base_commit_sha,
+          status: "active"
+        )
+      end
     end
   end
 end
