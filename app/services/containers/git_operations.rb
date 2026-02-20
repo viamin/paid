@@ -100,7 +100,7 @@ module Containers
     # Checks whether the agent made any changes since a specific commit.
     #
     # Detects both new commits (via git log) and uncommitted working-tree
-    # changes (via git diff). This avoids false positives on existing PR
+    # changes (via git status). This avoids false positives on existing PR
     # branches where prior runs already added commits.
     #
     # @param commit_sha [String] the SHA to compare against (typically HEAD before the agent ran)
