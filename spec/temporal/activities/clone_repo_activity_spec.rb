@@ -71,7 +71,8 @@ RSpec.describe Activities::CloneRepoActivity do
 
       it "reclaims a cleaned worktree record with the same branch name" do
         old_agent_run = create(:agent_run, project: project)
-        create(:worktree, :cleaned, project: project, agent_run: old_agent_run, branch_name: "existing-feature-branch")
+        create(:worktree, :cleaned, project: project, agent_run: old_agent_run,
+          branch_name: "existing-feature-branch", created_at: 3.days.ago)
 
         activity.execute(agent_run_id: agent_run.id)
 
@@ -79,6 +80,8 @@ RSpec.describe Activities::CloneRepoActivity do
         expect(worktree.agent_run).to eq(agent_run)
         expect(worktree).to be_active
         expect(worktree.pushed).to be(false)
+        expect(worktree.created_at).to be_within(5.seconds).of(Time.current)
+        expect(Worktree.stale).not_to include(worktree)
       end
 
       it "reclaims a cleanup_failed worktree record with the same branch name" do

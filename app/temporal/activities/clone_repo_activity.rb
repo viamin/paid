@@ -77,13 +77,16 @@ module Activities
         )
       else
         # Reclaim cleaned or cleanup_failed records from finished runs.
+        # Reset created_at so the record isn't immediately flagged as
+        # stale/orphaned by cleanup jobs that check created_at age.
         existing.update!(
           agent_run: agent_run,
           path: "/workspace",
           base_commit: agent_run.base_commit_sha,
           status: "active",
           pushed: false,
-          cleaned_at: nil
+          cleaned_at: nil,
+          created_at: Time.current
         )
       end
     end
