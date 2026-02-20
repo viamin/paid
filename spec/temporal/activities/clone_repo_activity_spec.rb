@@ -120,6 +120,26 @@ RSpec.describe Activities::CloneRepoActivity do
         expect { activity.execute(agent_run_id: agent_run.id) }
           .to raise_error(Temporalio::Error::ApplicationError, /active worktree from agent run/)
       end
+
+      it "retries and reclaims when find_by misses a cleaned worktree and create! raises RecordInvalid" do
+        old_agent_run = create(:agent_run, project: project)
+        cleaned_worktree = create(:worktree, :cleaned, project: project, agent_run: old_agent_run,
+          branch_name: "existing-feature-branch", created_at: 3.days.ago)
+
+        # Simulate find_by returning nil on the first call (as observed in
+        # production), then finding the record on the retry after RecordInvalid.
+        call_count = 0
+        allow(Worktree).to receive(:find_by).and_wrap_original do |method, **args|
+          call_count += 1
+          call_count == 1 ? nil : method.call(**args)
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        cleaned_worktree.reload
+        expect(cleaned_worktree.agent_run).to eq(agent_run)
+        expect(cleaned_worktree).to be_active
+      end
     end
   end
 end

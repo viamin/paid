@@ -56,8 +56,9 @@ module Activities
       #
       # Rescue RecordNotUnique to handle the race where two activities
       # both see no existing record and try to insert concurrently.
+      agent_run.reload
       existing = Worktree.find_by(
-        project: agent_run.project,
+        project_id: agent_run.project_id,
         branch_name: agent_run.branch_name
       )
 
@@ -93,9 +94,13 @@ module Activities
         )
         existing
       end
-    rescue ActiveRecord::RecordNotUnique
-      # Lost the race — another activity inserted first. Re-fetch and
-      # apply the idempotent/conflict logic.
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+      # RecordNotUnique: lost the race — another activity inserted first.
+      # RecordInvalid with uniqueness error: find_by missed the existing
+      # record (e.g. stale query cache) but the validation caught it.
+      # In both cases, re-fetch and apply the idempotent/conflict logic.
+      raise unless e.is_a?(ActiveRecord::RecordNotUnique) ||
+                   e.message.include?("Branch name has already been taken")
       retry
     end
   end

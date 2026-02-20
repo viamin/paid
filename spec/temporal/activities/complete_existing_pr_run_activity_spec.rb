@@ -34,7 +34,16 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       expect(agent_run.pull_request_number).to eq(42)
     end
 
-    it "adds a comment to the existing PR" do
+    it "adds a comment with agent summary when stdout logs exist" do
+      agent_run.log!("stdout", "Fixed the login validation bug by updating the form handler.")
+
+      expect(github_client).to receive(:add_comment)
+        .with(project.full_name, 42, "## Agent Update\n\nFixed the login validation bug by updating the form handler.")
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "adds a generic comment when no stdout logs exist" do
       expect(github_client).to receive(:add_comment)
         .with(project.full_name, 42, "Agent pushed updates to this PR.")
 
