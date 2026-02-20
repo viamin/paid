@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_14_070851) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_20_030250) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -63,6 +63,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_14_070851) do
     t.integer "pull_request_number"
     t.string "pull_request_url", limit: 500
     t.string "result_commit_sha", limit: 40
+    t.integer "source_pull_request_number"
     t.datetime "started_at"
     t.string "status", limit: 50, default: "pending", null: false
     t.string "temporal_run_id", limit: 255
@@ -93,10 +94,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_14_070851) do
     t.jsonb "scopes", default: [], null: false
     t.text "token", null: false
     t.datetime "updated_at", null: false
+    t.text "validation_error"
+    t.string "validation_status", limit: 50, default: "pending", null: false
     t.index ["account_id", "name"], name: "index_github_tokens_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_github_tokens_on_account_id"
     t.index ["created_by_id"], name: "index_github_tokens_on_created_by_id"
     t.index ["revoked_at"], name: "index_github_tokens_on_revoked_at"
+    t.index ["validation_status"], name: "index_github_tokens_on_validation_status"
   end
 
   create_table "good_job_batches", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|

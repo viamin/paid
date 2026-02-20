@@ -1,4 +1,7 @@
-web: env RUBY_DEBUG_OPEN=true bin/rails server
+web: bin/rails server
 js: yarn build --watch
 css: yarn build:css --watch
 worker: bin/temporal_worker
+
+# Connect to a running process by running `overmind connect <process name>`
+# e.g. `overmind connect web` or `overmind connect worker`

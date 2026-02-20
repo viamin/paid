@@ -59,7 +59,8 @@
   // Use 'postStartCommand' to run commands every time the container starts.
   "postStartCommand": {
     "multiclaude-start": "multiclaude start || true",
-    "git-https": "git config --local remote.origin.url https://github.com/viamin/paid.git && git config --local credential.helper '!/usr/bin/gh auth git-credential'"
+    "git-https": "git config --local remote.origin.url https://github.com/viamin/paid.git && git config --local credential.helper '!/usr/bin/gh auth git-credential'",
+    "ensure-networks": "docker network inspect paid_internal >/dev/null 2>&1 || docker network create paid_internal --driver bridge"
   },
   "customizations": {
     "vscode": {

@@ -5,7 +5,8 @@
 CI.run do
   step "Setup", "bin/setup --skip-server"
 
-  step "Lint and security checks", "bin/lint"
+  step "Lint", "bin/lint"
+  step "Security audit", "bin/audit"
 
   # Optional: set a green GitHub commit status to unblock PR merge.
   # Requires the `gh` CLI and `gh extension install basecamp/gh-signoff`.

@@ -1,0 +1,35 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'IMPORTANT: Before compaction, update WORKLOG.md with: (1) current task state, (2) recent decisions and their rationale, (3) any blockers or open questions, (4) next steps. Read WORKLOG.md now to see what needs updating.'"
+          }
+        ]
+      },
+      {
+        "matcher": "manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'IMPORTANT: Before compaction, update WORKLOG.md with: (1) current task state, (2) recent decisions and their rationale, (3) any blockers or open questions, (4) next steps. Read WORKLOG.md now to see what needs updating.'"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Context was just compacted. Read WORKLOG.md and the task list (TaskList) to restore working context. Key project instructions are in CLAUDE.md (auto-loaded).'"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -124,17 +124,21 @@ class NetworkPolicy
         subnet: NETWORK_SUBNET
       )
 
-      Docker::Network.create(
-        NETWORK_NAME,
+      config = {
         "Driver" => "bridge",
-        "Internal" => true,
-        "Options" => {
-          "com.docker.network.bridge.enable_ip_masquerade" => "false"
-        },
         "IPAM" => {
           "Config" => [ { "Subnet" => NETWORK_SUBNET } ]
         }
-      )
+      }
+
+      if Rails.env.production?
+        config["Internal"] = true
+        config["Options"] = {
+          "com.docker.network.bridge.enable_ip_masquerade" => "false"
+        }
+      end
+
+      Docker::Network.create(NETWORK_NAME, config)
     rescue Docker::Error::DockerError => e
       raise Error, "Failed to create agent network: #{e.message}"
     end

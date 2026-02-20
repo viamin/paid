@@ -22,9 +22,8 @@ RSpec.describe "User Sessions" do
         }
         expect(response).to redirect_to(root_path)
         follow_redirect!
-        # Root redirects to dashboard for authenticated users
-        expect(response).to redirect_to(dashboard_path)
-        follow_redirect!
+        # Root is the dashboard for authenticated users
+        expect(response).to have_http_status(:ok)
         expect(response.body).to include(user.email)
       end
     end

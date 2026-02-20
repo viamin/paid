@@ -91,19 +91,6 @@ else
   bin/rubocop $RUBOCOP_ARGS
 fi
 
-if [ "$FILE_FILTER" = false ]; then
-  echo "== Security: Brakeman =="
-  bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error
-
-  echo "== Security: Gem audit =="
-  bin/bundler-audit
-
-  echo "== Security: Yarn audit =="
-  yarn audit
-else
-  echo "== Skipping security checks (file-filtered mode) =="
-fi
-
 echo "== JavaScript: ESLint =="
 if [ "$FILE_FILTER" = true ]; then
   if [ -n "$js_files" ]; then
@@ -130,4 +117,4 @@ else
   npx markdownlint $MARKDOWNLINT_ARGS --ignore node_modules --ignore vendor '**/*.md'
 fi
 
-echo "All checks passed."
+echo "All lint checks passed."

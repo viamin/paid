@@ -47,3 +47,6 @@
 
 # Ignore agent workspace directory (used for Docker container testing)
 /agent-workspace/
+
+# Session-specific working memory (ephemeral, per-developer)
+WORKLOG.md
