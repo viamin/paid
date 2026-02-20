@@ -314,6 +314,20 @@ RSpec.describe "Projects" do
         expect(response.body).to include("https://github.com/octocat/hello")
       end
 
+      it "shows Run links next to issues" do
+        project = create(:project, account: account, github_token: github_token)
+        issue = create(:issue, project: project, github_number: 5, title: "Test issue", github_state: "open")
+        get project_path(project)
+        expect(response.body).to include(new_project_agent_run_path(project, issue_id: issue.id))
+      end
+
+      it "shows Run links next to pull requests" do
+        project = create(:project, account: account, github_token: github_token)
+        pr = create(:issue, :pull_request, project: project, github_number: 8, title: "Test PR", github_state: "open")
+        get project_path(project)
+        expect(response.body).to include(new_project_agent_run_path(project, pull_request_id: pr.id))
+      end
+
       it "does not allow viewing projects from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)

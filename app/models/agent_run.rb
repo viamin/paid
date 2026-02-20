@@ -272,9 +272,9 @@ class AgentRun < ApplicationRecord
   end
 
   def has_prompt_source
-    return if issue.present? || custom_prompt.present?
+    return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
 
-    errors.add(:base, "must have either an issue or a custom prompt")
+    errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")
   end
 
   def generate_proxy_token
