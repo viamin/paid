@@ -9,7 +9,7 @@ This file provides guidance to AI coding assistants when working with code in th
 
 Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI agents to build software. It watches GitHub repos for labeled issues, plans implementations via LLM, and runs agents in isolated Docker containers to create pull requests.
 
-**Status**: Planning phase - the codebase is a fresh Rails 8 scaffold with documentation. Implementation follows the documented architecture in `docs/`.
+**Status**: Phase 1 (Foundation) complete. The MVP is working end-to-end: users can add GitHub projects, label issues, and agents create PRs in isolated Docker containers. Phase 2 (Intelligence) is next.
 
 ## Git Workflow
 
@@ -35,12 +35,13 @@ bin/rails server             # Start Rails server only
 bin/rails console            # Rails console
 
 # Code Quality
-bin/lint                     # Run all linters (RuboCop, markdownlint)
-bin/lint -A                  # Run all linters with auto-fix
+bin/lint                     # Run linters (RuboCop, ESLint, markdownlint)
+bin/lint -A                  # Run linters with auto-fix
 bin/rubocop                  # Run RuboCop (rubocop-rails-omakase style)
 bin/rubocop -a               # Auto-fix violations
 
 # Security
+bin/audit                    # Run all security checks (Brakeman, bundler-audit, yarn audit)
 bin/brakeman                 # Static security analysis
 bin/bundler-audit            # Gem vulnerability audit
 yarn audit                   # JS dependency audit

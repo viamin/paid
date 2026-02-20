@@ -2,6 +2,18 @@
 
 This document describes the database schema for Paid. The schema is designed around the principle that **configuration is data**—prompts, model preferences, and workflow parameters are all stored in the database, not in code.
 
+## Implementation Status
+
+**Phase 1 tables (implemented)**: accounts, users, account_memberships, project_memberships, github_tokens, projects, issues, agent_runs, agent_run_logs, workflow_states, worktrees
+
+**Phase 2 tables (planned)**: prompts, prompt_versions, models, model_selections, model_overrides, style_guides, token_usages, cost_budgets, quality_metrics, ab_tests, ab_test_variants, ab_test_assignments
+
+**Implementation notes**:
+
+- RBAC uses explicit `AccountMembership` and `ProjectMembership` tables with integer enum roles (not Rolify). See RDR-010.
+- Container tracking is stored directly on `agent_runs.container_id` rather than a separate `containers` table.
+- Token usage is tracked on `agent_runs` (tokens_input, tokens_output, cost_cents) and aggregated on `projects` (total_cost_cents, total_tokens_used). A dedicated `token_usages` table will be added in Phase 2.
+
 ## Entity Relationship Overview
 
 ```
