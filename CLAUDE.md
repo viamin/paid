@@ -9,7 +9,11 @@ This file provides guidance to AI coding assistants when working with code in th
 
 Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI agents to build software. It watches GitHub repos for labeled issues, plans implementations via LLM, and runs agents in isolated Docker containers to create pull requests.
 
-**Status**: Planning phase - the codebase is a fresh Rails 8 scaffold with documentation. Implementation follows the documented architecture in `docs/`.
+**Status**: Phase 1 (Foundation) complete. The MVP is working end-to-end: users can add GitHub projects, label issues, and agents create PRs in isolated Docker containers. Phase 2 (Intelligence) is next.
+
+## Git Workflow
+
+- **The `main` branch is protected** - Never commit directly to `main`. Always create a feature branch and open a pull request.
 
 ## GitHub Issues
 
@@ -31,12 +35,13 @@ bin/rails server             # Start Rails server only
 bin/rails console            # Rails console
 
 # Code Quality
-bin/lint                     # Run all linters (RuboCop, markdownlint)
-bin/lint -A                  # Run all linters with auto-fix
+bin/lint                     # Run linters (RuboCop, ESLint, markdownlint)
+bin/lint -A                  # Run linters with auto-fix
 bin/rubocop                  # Run RuboCop (rubocop-rails-omakase style)
 bin/rubocop -a               # Auto-fix violations
 
 # Security
+bin/audit                    # Run all security checks (Brakeman, bundler-audit, yarn audit)
 bin/brakeman                 # Static security analysis
 bin/bundler-audit            # Gem vulnerability audit
 yarn audit                   # JS dependency audit
@@ -145,6 +150,33 @@ Rails.logger.info(
 ```
 
 Components: `agent_execution`, `github_sync`, `prompt_evolution`, `container_manager`, `temporal_worker`, `model_selection`, `secrets_proxy`
+
+## Compact Instructions
+
+When compacting context, always preserve:
+
+- All file modifications with exact paths
+- Decisions made and user-stated criteria/requirements
+- Configuration details (API keys, account info, IDs)
+- Current task state, blockers, and next steps
+- Anything the user explicitly asked to remember
+- Contents of WORKLOG.md
+
+Before compaction, update WORKLOG.md with current session state.
+
+## Working Memory
+
+Use `WORKLOG.md` as persistent working memory across context compactions:
+
+- Write decisions and criteria to WORKLOG.md **immediately** when made
+- Update task state and blockers before switching tasks
+- Record the "why" behind architectural choices
+- Note specific error messages and their resolutions
+- After compaction, read WORKLOG.md to restore context
+- Use `/compact` manually at task boundaries instead of waiting for auto-compaction
+- Use `/clear` between unrelated tasks for a clean context
+- Use subagents (Task tool) for exploration to avoid filling context with file contents
+- Use TaskCreate/TaskUpdate for multi-step work (persists on disk, survives compaction)
 
 ## Key Documentation
 

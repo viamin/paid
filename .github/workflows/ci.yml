@@ -42,7 +42,7 @@ jobs:
           restore-keys: |
             rubocop-${{ runner.os }}-${{ env.DEPENDENCIES_HASH }}-
 
-      - name: Run lint and security checks
+      - name: Run lint checks
         run: bin/lint
 
   test:

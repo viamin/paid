@@ -5,16 +5,9 @@ require "rails_helper"
 RSpec.describe "Home" do
   describe "GET /" do
     context "when not authenticated" do
-      it "renders the home page" do
+      it "redirects to sign in" do
         get root_path
-        expect(response).to have_http_status(:ok)
-        expect(response.body).to include("Platform for AI Development")
-      end
-
-      it "displays sign up and sign in links" do
-        get root_path
-        expect(response.body).to include("Get started")
-        expect(response.body).to include("Sign in")
+        expect(response).to redirect_to(new_user_session_path)
       end
     end
 
@@ -24,9 +17,9 @@ RSpec.describe "Home" do
 
       before { sign_in user }
 
-      it "redirects to the dashboard" do
+      it "renders the dashboard" do
         get root_path
-        expect(response).to redirect_to(dashboard_path)
+        expect(response).to have_http_status(:ok)
       end
     end
   end

@@ -27,6 +27,7 @@ class AgentRun < ApplicationRecord
   validates :tokens_output, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :source_pull_request_number, numericality: { greater_than: 0 }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :has_prompt_source, on: :create
 
@@ -46,6 +47,10 @@ class AgentRun < ApplicationRecord
 
     end_time = completed_at || Time.current
     (end_time - started_at).to_i
+  end
+
+  def existing_pr?
+    source_pull_request_number.present?
   end
 
   def running?
@@ -267,9 +272,9 @@ class AgentRun < ApplicationRecord
   end
 
   def has_prompt_source
-    return if issue.present? || custom_prompt.present?
+    return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
 
-    errors.add(:base, "must have either an issue or a custom prompt")
+    errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")
   end
 
   def generate_proxy_token

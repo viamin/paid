@@ -9,6 +9,7 @@ module Activities
       issue_id = input[:issue_id]
       custom_prompt = input[:custom_prompt]
       agent_type = input.fetch(:agent_type, "claude_code")
+      source_pull_request_number = input[:source_pull_request_number]
 
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
@@ -18,6 +19,7 @@ module Activities
         issue: issue,
         agent_type: agent_type,
         custom_prompt: custom_prompt,
+        source_pull_request_number: source_pull_request_number,
         status: "pending"
       )
 

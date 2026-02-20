@@ -59,7 +59,7 @@ RSpec.describe AgentRun do
         agent_run = build(:agent_run, issue: nil, custom_prompt: nil)
 
         expect(agent_run).not_to be_valid
-        expect(agent_run.errors[:base]).to include("must have either an issue or a custom prompt")
+        expect(agent_run.errors[:base]).to include("must have either an issue, a custom prompt, or a source pull request")
       end
     end
   end
