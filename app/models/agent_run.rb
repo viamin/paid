@@ -27,6 +27,7 @@ class AgentRun < ApplicationRecord
   validates :tokens_output, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :source_pull_request_number, numericality: { greater_than: 0 }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :has_prompt_source, on: :create
 
@@ -46,6 +47,10 @@ class AgentRun < ApplicationRecord
 
     end_time = completed_at || Time.current
     (end_time - started_at).to_i
+  end
+
+  def existing_pr?
+    source_pull_request_number.present?
   end
 
   def running?

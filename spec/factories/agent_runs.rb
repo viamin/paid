@@ -12,6 +12,11 @@ FactoryBot.define do
       custom_prompt { "Make the requested changes" }
     end
 
+    trait :existing_pr do
+      source_pull_request_number { 42 }
+      custom_prompt { "Fix review comments on PR" }
+    end
+
     trait :running do
       status { "running" }
       started_at { 5.minutes.ago }

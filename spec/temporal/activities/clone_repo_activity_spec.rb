@@ -40,5 +40,34 @@ RSpec.describe Activities::CloneRepoActivity do
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect { activity.execute(agent_run_id: -1) }.to raise_error(ActiveRecord::RecordNotFound)
     end
+
+    context "when agent_run has an existing PR" do
+      let(:github_client) { instance_double(GithubClient) }
+      let(:pr_head) { double("pr_head", ref: "existing-feature-branch") } # rubocop:disable RSpec/VerifiedDoubles
+      let(:pr_data) { double("pr_data", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+
+      before do
+        agent_run.update!(source_pull_request_number: 135)
+
+        allow(GithubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 135)
+          .and_return(pr_data)
+        allow(git_ops).to receive(:clone_and_checkout_branch)
+
+        agent_run.update!(
+          branch_name: "existing-feature-branch",
+          base_commit_sha: "abc123def456",
+          worktree_path: "/workspace"
+        )
+      end
+
+      it "checks out the existing PR branch instead of creating a new one" do
+        expect(git_ops).to receive(:clone_and_checkout_branch).with(branch_name: "existing-feature-branch")
+        expect(git_ops).not_to receive(:clone_and_setup_branch)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
   end
 end

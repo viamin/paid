@@ -260,6 +260,48 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#pull_request" do
+    let(:repo) { "owner/repo" }
+
+    context "when pull request exists" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/42")
+          .to_return(
+            status: 200,
+            body: {
+              id: 1,
+              number: 42,
+              title: "Fix the bug",
+              state: "open",
+              html_url: "https://github.com/#{repo}/pull/42",
+              head: { ref: "fix-the-bug", sha: "abc123" },
+              base: { ref: "main" }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns pull request data" do
+        result = client.pull_request(repo, 42)
+
+        expect(result.number).to eq(42)
+        expect(result.head.ref).to eq("fix-the-bug")
+        expect(result.base.ref).to eq("main")
+      end
+    end
+
+    context "when pull request does not exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/999")
+          .to_return(status: 404, body: { message: "Not Found" }.to_json)
+      end
+
+      it "raises NotFoundError" do
+        expect { client.pull_request(repo, 999) }.to raise_error(GithubClient::NotFoundError)
+      end
+    end
+  end
+
   describe "#create_pull_request" do
     let(:repo) { "owner/repo" }
 
