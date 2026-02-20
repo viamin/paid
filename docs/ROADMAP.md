@@ -2,13 +2,15 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
+**Current Status**: Phase 1 (Foundation) is complete as of 2026-02-08. Phase 2 (Intelligence) is next.
+
 ## Phase Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           PAID IMPLEMENTATION PHASES                         │
 │                                                                              │
-│  Phase 1: Foundation    Phase 2: Intelligence   Phase 3: Scale              │
+│  Phase 1: Foundation✓   Phase 2: Intelligence   Phase 3: Scale              │
 │  ──────────────────     ─────────────────────   ─────────────               │
 │  • Rails app skeleton   • Prompt versioning     • Multi-agent               │
 │  • GitHub integration   • A/B testing           • Auto-scaling              │
@@ -38,29 +40,20 @@ This document outlines the phased implementation plan for Paid. Each phase build
 
 **Objective**: Basic Rails 8 app with authentication and core models.
 
+**Status**: Complete (Issues #4, #6, #7, #8, #9, #10)
+
 Tasks:
 
-- [ ] Initialize Rails 8 app with PostgreSQL:
-
-  ```bash
-  rails new paid \
-    --database=postgresql \
-    --css=tailwind \
-    --javascript=esbuild \
-    --skip-jbuilder \
-    --skip-action-mailbox \
-    --skip-action-text \
-    --skip-active-storage \
-    --skip-test \
-    --devcontainer
-  ```
-
-  Then add RSpec, FactoryBot, and other testing gems manually.
-- [ ] Set up Hotwire (Turbo + Stimulus) - included by default in Rails 8
-- [ ] Add authentication with Devise
-- [ ] Create core models: Account, User, Project, AgentRun
-- [ ] Basic UI: Projects list, add project form
-- [ ] Docker Compose for development (Rails + PostgreSQL, no Redis)
+- [x] Initialize Rails 8 app with PostgreSQL
+- [x] Set up Hotwire (Turbo + Stimulus) - included by default in Rails 8
+- [x] Add authentication with Devise
+- [x] Create core models: Account, User, Project, AgentRun
+- [x] Basic UI: Projects list, add project form
+- [x] Docker Compose for development (Rails + PostgreSQL, no Redis)
+- [x] Set up RSpec, FactoryBot, and testing infrastructure (#6)
+- [x] Set up GitHub Actions CI with coverage enforcement (#7)
+- [x] Set up RuboCop and lint CI workflow (#8)
+- [x] Set up Rolify and Pundit for authorization (#10) — later replaced with explicit AccountMembership/ProjectMembership tables per RDR-010
 
 Deliverables:
 
@@ -72,14 +65,17 @@ Deliverables:
 
 **Objective**: Connect to GitHub, fetch repo metadata, store PAT securely.
 
+**Status**: Complete (Issues #11, #12, #13, #15, #16, #17)
+
 Tasks:
 
-- [ ] Create GithubToken model (encrypted storage)
-- [ ] Add token setup UI with permission guidance
-- [ ] Implement GitHub API client (Octokit)
-- [ ] Fetch and display repository metadata
-- [ ] Create Project model linked to GitHub repo
-- [ ] Handle Projects V2 gracefully (feature detection)
+- [x] Create GithubToken model (encrypted storage) (#11)
+- [x] Add token setup UI with permission guidance (#16)
+- [x] Implement GitHub API client (Octokit) (#15)
+- [x] Fetch and display repository metadata (#15)
+- [x] Create Project model linked to GitHub repo (#12)
+- [x] Create Issue model for tracking GitHub issues (#13)
+- [ ] Handle Projects V2 gracefully (feature detection) — deferred
 
 Deliverables:
 
@@ -92,15 +88,17 @@ Deliverables:
 
 **Objective**: Temporal server running, basic workflow execution working.
 
+**Status**: Complete (Issues #18, #19, #20, #21)
+
 Tasks:
 
-- [ ] Add Temporal to docker-compose (based on aidp's setup)
-- [ ] Integrate temporalio-ruby gem
-- [ ] Create Temporal client configuration
-- [ ] Implement first workflow: GitHubPollWorkflow (skeleton)
-- [ ] Implement first activity: FetchIssuesActivity
-- [ ] Set up fixed worker pool (single worker initially)
-- [ ] Basic workflow monitoring in UI
+- [x] Add Temporal to docker-compose (#18)
+- [x] Integrate temporalio-ruby gem (#19)
+- [x] Create Temporal client configuration (#19)
+- [x] Implement first workflow: GitHubPollWorkflow (#20)
+- [x] Implement first activity: FetchIssuesActivity (#20)
+- [x] Set up fixed worker pool (single worker initially)
+- [x] Basic workflow monitoring in UI (#21)
 
 Deliverables:
 
@@ -113,14 +111,16 @@ Deliverables:
 
 **Objective**: Agents run in isolated Docker containers.
 
+**Status**: Complete (Issues #22, #23, #24, #25, #26)
+
 Tasks:
 
-- [ ] Create base agent container image (from aidp devcontainer)
-- [ ] Install agent CLIs supported by agent-harness (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode)
-- [ ] Implement container provisioning service
-- [ ] Set up git worktree management
-- [ ] Implement network allowlist (firewall)
-- [ ] Create secrets proxy service (basic)
+- [x] Create base agent container image (#22)
+- [x] Install agent CLIs supported by agent-harness (#22)
+- [x] Implement container provisioning service (#23) — `Containers::Provision`
+- [x] Set up git worktree management (#24) — `WorktreeService`, `Containers::GitOperations`
+- [x] Implement network allowlist (firewall) (#25) — `NetworkPolicy`
+- [x] Create secrets proxy service (#26) — `Api::SecretsProxyController`, `Api::GitCredentialsController`
 
 Deliverables:
 
@@ -133,15 +133,18 @@ Deliverables:
 
 **Objective**: End-to-end flow from labeled issue to PR.
 
+**Status**: Complete (Issues #27, #28, #29, #30)
+
 Tasks:
 
-- [ ] Implement label detection in GitHubPollWorkflow
-- [ ] Create AgentExecutionWorkflow
-- [ ] Implement RunAgentActivity (single agent: Claude Code)
-- [ ] Capture agent output and logs
-- [ ] Create PR via GitHub API
-- [ ] Update issue with PR link
-- [ ] Basic error handling and retries
+- [x] Implement label detection in GitHubPollWorkflow — `DetectLabelsActivity`
+- [x] Create AgentExecutionWorkflow (#28)
+- [x] Implement RunAgentActivity (single agent: Claude Code) (#27)
+- [x] Capture agent output and logs — `AgentRunLog` model
+- [x] Create PR via GitHub API (#29) — `CreatePullRequestActivity`
+- [x] Update issue with PR link (#29) — `UpdateIssueWithPrActivity`
+- [x] Basic error handling and retries
+- [x] Manual trigger option in UI (#30)
 
 Deliverables:
 
@@ -154,13 +157,15 @@ Deliverables:
 
 **Objective**: Integrate the extracted agent CLI abstraction via the agent-harness gem.
 
+**Status**: Complete (Issue #27)
+
 Tasks:
 
-- [ ] Adopt the extracted agent-harness gem and wire it into Paid
-- [ ] Align provider registry with installed CLIs (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode)
-- [ ] Use agent-harness orchestration hooks (provider switching, rate limits, health checks)
-- [ ] Map agent-harness token tracking into Paid cost tracking
-- [ ] Publish gem (private initially)
+- [x] Adopt the extracted agent-harness gem and wire it into Paid (#27) — `AgentRuns::Execute` service
+- [x] Align provider registry with installed CLIs — `config/initializers/agent_harness.rb`
+- [x] Use agent-harness orchestration hooks (provider switching, rate limits, health checks)
+- [x] Map agent-harness token tracking into Paid cost tracking — `TokenUsageTracker`
+- [ ] Publish gem (private initially) — deferred
 
 Deliverables:
 
@@ -171,13 +176,15 @@ Deliverables:
 
 ### Phase 1 Completion Criteria
 
-- [ ] User can add a GitHub project with PAT
-- [ ] Accounts exist and scope users/projects (Devise-backed auth)
-- [ ] User can manually trigger an agent on an issue
-- [ ] Agent runs in isolated container
-- [ ] PR is created with agent's changes
-- [ ] Basic UI shows project status and agent runs
-- [ ] Temporal workflows are observable
+- [x] User can add a GitHub project with PAT
+- [x] Accounts exist and scope users/projects (Devise-backed auth)
+- [x] User can manually trigger an agent on an issue
+- [x] Agent runs in isolated container
+- [x] PR is created with agent's changes
+- [x] Basic UI shows project status and agent runs
+- [x] Temporal workflows are observable
+
+**Phase 1 completed**: End-to-end MVP verified (Issue #31, closed 2026-02-08)
 
 ---
 

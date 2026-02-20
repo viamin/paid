@@ -97,6 +97,65 @@ RSpec.describe Containers::GitOperations do
     end
   end
 
+  describe "#clone_and_checkout_branch" do
+    let(:head_sha) { "abc123def456789012345678901234567890abcd" }
+    let(:merge_base_sha) { "fff000fff000fff000fff000fff000fff000fff0" }
+    let(:not_a_repo_result) { Containers::Provision::Result.failure(error: "not a git repo", stdout: "", stderr: "fatal: not a git repository", exit_code: 128) }
+
+    before do
+      allow(container_service).to receive(:execute).and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "--is-inside-work-tree" ], timeout: nil, stream: false)
+        .and_return(not_a_repo_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "merge-base", "main", "HEAD" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "#{merge_base_sha}\n", stderr: "", exit_code: 0))
+    end
+
+    it "clones and checks out the existing branch" do
+      expect(container_service).to receive(:execute)
+        .with([ "git", "clone", "https://github.com/#{project.full_name}.git", "." ],
+              timeout: 120, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "checkout", "fix-bug-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
+
+      expect(agent_run.reload.branch_name).to eq("fix-bug-branch")
+      expect(agent_run.worktree_path).to eq("/workspace")
+      expect(agent_run.base_commit_sha).to eq(merge_base_sha)
+    end
+
+    it "raises CloneError when checkout fails" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "checkout", "nonexistent" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.clone_and_checkout_branch(branch_name: "nonexistent") }
+        .to raise_error(described_class::CloneError, /Checkout failed/)
+    end
+
+    it "falls back to HEAD SHA when merge-base fails" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "merge-base", "main", "HEAD" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha_result)
+
+      git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
+
+      expect(agent_run.reload.base_commit_sha).to eq(head_sha)
+    end
+  end
+
   describe "#push_branch" do
     let(:head_sha) { "def456789012345678901234567890abcdef1234" }
 
@@ -130,6 +189,16 @@ RSpec.describe Containers::GitOperations do
       git_ops.push_branch
 
       expect(agent_run.worktree.reload).to be_pushed
+    end
+
+    it "uses --force-with-lease for existing PR branches" do
+      agent_run.update!(source_pull_request_number: 42)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "push", "origin", "paid/test-branch", "--force-with-lease" ], timeout: 60, stream: false)
+        .and_return(success_result)
+
+      git_ops.push_branch
     end
 
     it "raises PushError when branch_name is blank" do

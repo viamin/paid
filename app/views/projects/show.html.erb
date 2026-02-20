@@ -144,8 +144,11 @@
                     </div>
                   <% end %>
                 </div>
-                <div class="ml-4 flex-shrink-0">
+                <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
                   <%= paid_state_badge(issue.paid_state) %>
+                  <% if policy(@project).run_agent? %>
+                    <%= link_to "Run", new_project_agent_run_path(@project, issue_id: issue.id), class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+                  <% end %>
                 </div>
               </li>
             <% end %>
@@ -186,8 +189,11 @@
                     </div>
                   <% end %>
                 </div>
-                <div class="ml-4 flex-shrink-0">
+                <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
                   <%= paid_state_badge(pr.paid_state) %>
+                  <% if policy(@project).run_agent? %>
+                    <%= link_to "Run", new_project_agent_run_path(@project, pull_request_id: pr.id), class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+                  <% end %>
                 </div>
               </li>
             <% end %>

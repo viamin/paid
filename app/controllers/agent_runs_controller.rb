@@ -21,6 +21,10 @@ class AgentRunsController < ApplicationController
       .where(github_state: "open")
       .where(paid_state: %w[new planning failed])
       .order(github_number: :desc)
+    @pull_requests = @project.issues
+      .pull_requests_only
+      .where(github_state: "open")
+      .order(github_number: :desc)
   end
 
   def create
@@ -28,21 +32,30 @@ class AgentRunsController < ApplicationController
 
     custom_prompt = params[:custom_prompt]&.strip.presence
     issue, error = resolve_issue
+    source_pr_number, pr_error = resolve_pull_request
 
     if error
       redirect_to new_project_agent_run_path(@project), alert: error
       return
     end
 
-    unless issue || custom_prompt
-      redirect_to new_project_agent_run_path(@project),
-        alert: "Please select an issue, enter an issue URL, or provide a custom prompt."
+    if pr_error
+      redirect_to new_project_agent_run_path(@project), alert: pr_error
       return
     end
 
-    workflow_id = start_agent_workflow(issue: issue, custom_prompt: custom_prompt)
+    unless issue || custom_prompt || source_pr_number
+      redirect_to new_project_agent_run_path(@project),
+        alert: "Please select an issue, enter an issue URL, provide a custom prompt, or enter a pull request URL."
+      return
+    end
 
-    notice = if custom_prompt && issue
+    workflow_id = start_agent_workflow(issue: issue, custom_prompt: custom_prompt,
+      source_pull_request_number: source_pr_number)
+
+    notice = if source_pr_number
+      "Agent run started for PR ##{source_pr_number}. Workflow ID: #{workflow_id}"
+    elsif custom_prompt && issue
       "Agent run started for issue ##{issue.github_number} with custom prompt. Workflow ID: #{workflow_id}"
     elsif issue
       "Agent run started for issue ##{issue.github_number}. Workflow ID: #{workflow_id}"
@@ -80,6 +93,37 @@ class AgentRunsController < ApplicationController
     end
   end
 
+  # Returns [pr_number, error_message]. If error_message is present, pr_number is nil.
+  def resolve_pull_request
+    if params[:pull_request_id].present?
+      pr = @project.issues.pull_requests_only.find(params[:pull_request_id])
+      [ pr.github_number, nil ]
+    elsif params[:pull_request_url].present?
+      fetch_pull_request_from_url(params[:pull_request_url])
+    else
+      [ nil, nil ]
+    end
+  end
+
+  def fetch_pull_request_from_url(url)
+    uri = begin
+      URI.parse(url)
+    rescue URI::InvalidURIError
+      nil
+    end
+
+    unless uri&.host&.match?(/\A(www\.)?github\.com\z/)
+      return [ nil, "Pull request URL must be a github.com URL." ]
+    end
+
+    match = uri.path.match(%r{\A/([^/]+)/([^/]+)/pull/(\d+)\z})
+    unless match && match[1] == @project.owner && match[2] == @project.repo
+      return [ nil, "Pull request URL must be from #{@project.full_name}." ]
+    end
+
+    [ match[3].to_i, nil ]
+  end
+
   def fetch_issue_from_url(url)
     uri = begin
       URI.parse(url)
@@ -106,7 +150,7 @@ class AgentRunsController < ApplicationController
     end
   end
 
-  def start_agent_workflow(issue: nil, custom_prompt: nil)
+  def start_agent_workflow(issue: nil, custom_prompt: nil, source_pull_request_number: nil)
     agent_type = params[:agent_type].presence || "claude_code"
     agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(agent_type)
 
@@ -114,10 +158,13 @@ class AgentRunsController < ApplicationController
       project_id: @project.id,
       agent_type: agent_type,
       issue_id: issue&.id,
-      custom_prompt: custom_prompt
+      custom_prompt: custom_prompt,
+      source_pull_request_number: source_pull_request_number
     }.compact
 
-    workflow_id = if issue
+    workflow_id = if source_pull_request_number
+      "manual-#{@project.id}-pr-#{source_pull_request_number}"
+    elsif issue
       "manual-#{@project.id}-#{issue.id}"
     else
       "manual-#{@project.id}-prompt-#{SecureRandom.hex(8)}"

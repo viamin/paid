@@ -132,6 +132,16 @@ class GithubClient
     handle_errors { client.issues(repo, opts) }
   end
 
+  # Fetches a pull request by number.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Sawyer::Resource] Pull request data (includes .head.ref, .head.sha, .base.ref, etc.)
+  # @raise [NotFoundError] if the pull request does not exist
+  def pull_request(repo, number)
+    handle_errors { client.pull_request(repo, number) }
+  end
+
   # Creates a pull request.
   #
   # @param repo [String] Repository in "owner/name" format
