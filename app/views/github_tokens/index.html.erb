@@ -52,6 +52,10 @@
                         <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
                           Validation Failed
                         </span>
+                      <% elsif token.validation_stale? %>
+                        <span class="inline-flex items-center rounded-md bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800">
+                          Validation Stuck
+                        </span>
                       <% elsif token.validation_pending? || token.validating? %>
                         <span class="inline-flex items-center rounded-md bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800">
                           Validating...

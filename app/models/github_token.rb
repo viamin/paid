@@ -10,6 +10,7 @@ class GithubToken < ApplicationRecord
   # Refresh token: ghr_xxxx
   GITHUB_TOKEN_PATTERN = /\A(ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[ours]_[A-Za-z0-9]{36,})\z/
   VALIDATION_STATUSES = %w[pending validating validated failed].freeze
+  VALIDATION_STALE_THRESHOLD = 2.minutes
 
   belongs_to :account
   belongs_to :created_by, class_name: "User", optional: true
@@ -60,6 +61,10 @@ class GithubToken < ApplicationRecord
 
   def validation_failed?
     validation_status == "failed"
+  end
+
+  def validation_stale?
+    (validation_pending? || validating?) && updated_at < VALIDATION_STALE_THRESHOLD.ago
   end
 
   def mark_validating!

@@ -247,6 +247,42 @@ RSpec.describe GithubToken do
       end
     end
 
+    describe "#validation_stale?" do
+      it "returns false for a recently created pending token" do
+        token = create(:github_token, :pending_validation)
+        expect(token.validation_stale?).to be false
+      end
+
+      it "returns false for a recently created validating token" do
+        token = create(:github_token, :validating)
+        expect(token.validation_stale?).to be false
+      end
+
+      it "returns true for a pending token older than the stale threshold" do
+        token = create(:github_token, :pending_validation)
+        token.update_column(:updated_at, 3.minutes.ago)
+        expect(token.validation_stale?).to be true
+      end
+
+      it "returns true for a validating token older than the stale threshold" do
+        token = create(:github_token, :validating)
+        token.update_column(:updated_at, 3.minutes.ago)
+        expect(token.validation_stale?).to be true
+      end
+
+      it "returns false for validated tokens regardless of age" do
+        token = create(:github_token)
+        token.update_column(:updated_at, 1.hour.ago)
+        expect(token.validation_stale?).to be false
+      end
+
+      it "returns false for failed tokens regardless of age" do
+        token = create(:github_token, :validation_failed)
+        token.update_column(:updated_at, 1.hour.ago)
+        expect(token.validation_stale?).to be false
+      end
+    end
+
     describe "#touch_last_used!" do
       it "updates last_used_at to current time" do
         token = create(:github_token)
