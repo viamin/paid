@@ -6,6 +6,7 @@ class AgentRun < ApplicationRecord
 
   belongs_to :project
   belongs_to :issue, optional: true
+  belongs_to :prompt_version, optional: true
 
   has_many :agent_run_logs, dependent: :destroy
   has_one :worktree, dependent: :nullify
