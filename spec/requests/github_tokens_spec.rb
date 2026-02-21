@@ -71,6 +71,20 @@ RSpec.describe "GithubTokens" do
         get github_tokens_path
         expect(response.body).to include("Validation Failed")
       end
+
+      it "shows validation stuck status for stale validating tokens" do
+        token = create(:github_token, :validating, account: account, name: "Stuck Token")
+        token.update_column(:updated_at, 3.minutes.ago)
+        get github_tokens_path
+        expect(response.body).to include("Validation Stuck")
+      end
+
+      it "shows validation stuck status for stale pending tokens" do
+        token = create(:github_token, :pending_validation, account: account, name: "Stuck Pending Token")
+        token.update_column(:updated_at, 3.minutes.ago)
+        get github_tokens_path
+        expect(response.body).to include("Validation Stuck")
+      end
     end
   end
 
@@ -230,6 +244,20 @@ RSpec.describe "GithubTokens" do
         get github_token_path(token)
         expect(response.body).to include("Validation Failed")
       end
+
+      it "shows validation stuck badge for stale validating tokens" do
+        token = create(:github_token, :validating, account: account)
+        token.update_column(:updated_at, 3.minutes.ago)
+        get github_token_path(token)
+        expect(response.body).to include("Validation Stuck")
+      end
+
+      it "shows validation stuck badge for stale pending tokens" do
+        token = create(:github_token, :pending_validation, account: account)
+        token.update_column(:updated_at, 3.minutes.ago)
+        get github_token_path(token)
+        expect(response.body).to include("Validation Stuck")
+      end
     end
   end
 
@@ -258,6 +286,24 @@ RSpec.describe "GithubTokens" do
         expect(response.body).to include("Validation Failed")
         expect(response.body).to include("Retry Validation")
       end
+
+      it "shows stuck state for stale validating tokens" do
+        token = create(:github_token, :validating, account: account)
+        token.update_column(:updated_at, 3.minutes.ago)
+        get validation_status_github_token_path(token)
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Validation appears stuck")
+        expect(response.body).to include("Retry Validation")
+      end
+
+      it "shows stuck state for stale pending tokens" do
+        token = create(:github_token, :pending_validation, account: account)
+        token.update_column(:updated_at, 3.minutes.ago)
+        get validation_status_github_token_path(token)
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Validation appears stuck")
+        expect(response.body).to include("Retry Validation")
+      end
     end
   end
 
@@ -267,6 +313,26 @@ RSpec.describe "GithubTokens" do
 
       it "resets validation status and enqueues job" do
         token = create(:github_token, :validation_failed, account: account)
+        expect {
+          post retry_validation_github_token_path(token)
+        }.to have_enqueued_job(GithubTokenValidationJob)
+        expect(token.reload.validation_status).to eq("pending")
+        expect(response).to redirect_to(github_token_path(token))
+      end
+
+      it "resets stuck validating tokens and enqueues job" do
+        token = create(:github_token, :validating, account: account)
+        token.update_column(:updated_at, 3.minutes.ago)
+        expect {
+          post retry_validation_github_token_path(token)
+        }.to have_enqueued_job(GithubTokenValidationJob)
+        expect(token.reload.validation_status).to eq("pending")
+        expect(response).to redirect_to(github_token_path(token))
+      end
+
+      it "resets stuck pending tokens and enqueues job" do
+        token = create(:github_token, :pending_validation, account: account)
+        token.update_column(:updated_at, 3.minutes.ago)
         expect {
           post retry_validation_github_token_path(token)
         }.to have_enqueued_job(GithubTokenValidationJob)
