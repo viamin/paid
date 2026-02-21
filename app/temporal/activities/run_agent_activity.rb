@@ -19,6 +19,8 @@ module Activities
 
       pre_agent_sha = run_agent_in_container(agent_run, prompt)
 
+      commit_uncommitted_changes(agent_run)
+
       has_changes = check_for_changes(agent_run, pre_agent_sha)
 
       {
@@ -90,6 +92,29 @@ module Activities
         error: e.message
       )
       nil
+    end
+
+    # Commits any uncommitted changes the agent left behind.
+    # Agents may edit files without running git add/commit;
+    # this ensures those edits are captured before push.
+    def commit_uncommitted_changes(agent_run)
+      return unless agent_run.container_id.present?
+
+      container_service = reconnect_container(agent_run)
+      git_ops = Containers::GitOperations.new(
+        container_service: container_service,
+        agent_run: agent_run
+      )
+
+      if git_ops.commit_uncommitted_changes
+        agent_run.log!("system", "Auto-committed uncommitted agent changes")
+      end
+    rescue => e
+      logger.warn(
+        message: "agent_execution.commit_uncommitted_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
     end
 
     def check_for_changes(agent_run, pre_agent_sha)
