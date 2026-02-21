@@ -99,8 +99,12 @@ module Activities
       # RecordInvalid with uniqueness error: find_by missed the existing
       # record (e.g. stale query cache) but the validation caught it.
       # In both cases, re-fetch and apply the idempotent/conflict logic.
-      raise unless e.is_a?(ActiveRecord::RecordNotUnique) ||
-                   e.message.include?("Branch name has already been taken")
+      retryable_uniqueness_error =
+        e.is_a?(ActiveRecord::RecordInvalid) &&
+        e.record.is_a?(Worktree) &&
+        e.record.errors.of_kind?(:branch_name, :taken)
+
+      raise unless e.is_a?(ActiveRecord::RecordNotUnique) || retryable_uniqueness_error
       retry
     end
   end
