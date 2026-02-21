@@ -86,10 +86,42 @@ module Containers
       sha
     end
 
+    # Installs pre-commit and pre-push git hooks inside the container.
+    #
+    # Pre-commit runs lint; pre-push runs lint + tests. Both check whether the
+    # command binary is on PATH before running (via `command -v`); when the
+    # binary is missing the hook prints a warning and exits successfully.
+    # Existing hooks (from Husky, Lefthook, etc.) are never overwritten.
+    #
+    # @param lint_command [String] command to run for linting
+    # @param test_command [String] command to run for tests
+    # @return [void]
+    def install_git_hooks(lint_command:, test_command:)
+      install_hook("pre-commit", pre_commit_script(lint_command))
+      install_hook("pre-push", pre_push_script(lint_command, test_command))
+    rescue Error => e
+      # Expected failures: hook write/chmod failed, unsafe command, etc.
+      Rails.logger.warn(
+        message: "container_git.install_hooks_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+    rescue StandardError => e
+      # Unexpected failures: container gone, network error, etc.
+      Rails.logger.error(
+        message: "container_git.install_hooks_unexpected_error",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
     # Stages and commits any uncommitted changes left by the agent.
     #
     # Agents sometimes edit files without committing. This ensures those
     # changes are captured in a commit so they survive the push step.
+    # Hooks run normally — if they fail, the commit fails and the error
+    # propagates so the caller can handle it.
     #
     # @return [Boolean] true if a commit was created, false if working tree was clean
     def commit_uncommitted_changes
@@ -237,6 +269,91 @@ module Containers
 
     def validate_branch_name!
       raise PushError, "branch_name is blank" if agent_run.branch_name.blank?
+    end
+
+    def install_hook(hook_name, script)
+      hook_path = ".git/hooks/#{hook_name}"
+
+      # Don't overwrite existing hooks (e.g. from Husky or Lefthook)
+      check = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
+      if check.success?
+        Rails.logger.info(
+          message: "container_git.hook_exists",
+          agent_run_id: agent_run.id,
+          hook: hook_name
+        )
+        return
+      end
+
+      write_result = container_service.execute(
+        "cat > #{hook_path} << 'HOOKEOF'\n#{script}\nHOOKEOF",
+        timeout: nil, stream: false
+      )
+      raise Error, "Failed to write #{hook_name} hook: #{write_result.error}" if write_result.failure?
+
+      chmod_result = container_service.execute("chmod +x #{hook_path}", timeout: nil, stream: false)
+      raise Error, "Failed to chmod #{hook_name} hook: #{chmod_result.error}" if chmod_result.failure?
+    end
+
+    # Validates that a shell command is a simple executable with arguments.
+    # Each word must be an alphanumeric token, path, or flag — no shell
+    # operators (||, &&, ;, |, $, `, etc.) can appear.
+    # Commands are expected from LANGUAGE_*_COMMANDS constants, but this
+    # provides defense-in-depth against injection if the source changes.
+    SAFE_WORD_PATTERN = /\A[a-zA-Z0-9_\-\/\.]+\z/
+
+    def validate_hook_command!(command)
+      words = command.split
+      raise Error, "Hook command is blank" if words.empty?
+      return if words.all? { |w| w.match?(SAFE_WORD_PATTERN) }
+
+      raise Error, "Hook command contains unsafe characters: #{command.inspect}"
+    end
+
+    def pre_commit_script(lint_command)
+      validate_hook_command!(lint_command)
+
+      <<~SHELL
+        #!/bin/sh
+        # Installed by Paid — enforce lint before commit
+
+        if [ -f bin/lint ]; then
+          echo "Running bin/lint..."
+          bin/lint --staged || exit 1
+        elif command -v #{lint_command.split.first} >/dev/null 2>&1; then
+          echo "Running #{lint_command}..."
+          #{lint_command} || exit 1
+        else
+          echo "Warning: lint tool not available yet, skipping pre-commit check"
+        fi
+      SHELL
+    end
+
+    def pre_push_script(lint_command, test_command)
+      validate_hook_command!(lint_command)
+      validate_hook_command!(test_command)
+
+      <<~SHELL
+        #!/bin/sh
+        # Installed by Paid — enforce lint + tests before push
+
+        if [ -f bin/lint ]; then
+          echo "Running bin/lint --changed..."
+          bin/lint --changed || exit 1
+        elif command -v #{lint_command.split.first} >/dev/null 2>&1; then
+          echo "Running #{lint_command}..."
+          #{lint_command} || exit 1
+        else
+          echo "Warning: lint tool not available, skipping lint check"
+        fi
+
+        if command -v #{test_command.split.first} >/dev/null 2>&1; then
+          echo "Running #{test_command}..."
+          #{test_command} || exit 1
+        else
+          echo "Warning: test tool not available, skipping test check"
+        fi
+      SHELL
     end
 
     def execute_git(*args, timeout: nil)

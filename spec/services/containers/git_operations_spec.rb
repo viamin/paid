@@ -378,4 +378,174 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.has_changes?).to be false
     end
   end
+
+  describe "#install_git_hooks" do
+    let(:hook_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
+    let(:hook_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+
+    it "writes pre-commit and pre-push hooks when none exist" do
+      allow(container_service).to receive(:execute)
+        .with("test -f .git/hooks/pre-commit", timeout: nil, stream: false)
+        .and_return(hook_missing_result)
+      allow(container_service).to receive(:execute)
+        .with("test -f .git/hooks/pre-push", timeout: nil, stream: false)
+        .and_return(hook_missing_result)
+
+      expect(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks\/pre-commit/), timeout: nil, stream: false)
+        .and_return(success_result)
+      expect(container_service).to receive(:execute)
+        .with("chmod +x .git/hooks/pre-commit", timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks\/pre-push/), timeout: nil, stream: false)
+        .and_return(success_result)
+      expect(container_service).to receive(:execute)
+        .with("chmod +x .git/hooks/pre-push", timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.install_git_hooks(lint_command: "bundle exec rubocop", test_command: "bundle exec rspec")
+    end
+
+    it "does not overwrite existing hooks" do
+      allow(container_service).to receive(:execute)
+        .with("test -f .git/hooks/pre-commit", timeout: nil, stream: false)
+        .and_return(hook_exists_result)
+      allow(container_service).to receive(:execute)
+        .with("test -f .git/hooks/pre-push", timeout: nil, stream: false)
+        .and_return(hook_exists_result)
+
+      expect(container_service).not_to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks/), anything)
+
+      git_ops.install_git_hooks(lint_command: "bundle exec rubocop", test_command: "bundle exec rspec")
+    end
+
+    it "includes lint command in pre-commit hook but not test command" do
+      allow(container_service).to receive(:execute).and_return(hook_missing_result)
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/chmod/), anything)
+        .and_return(success_result)
+
+      pre_commit_script = nil
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks\/pre-commit/), timeout: nil, stream: false) { |cmd, **|
+          pre_commit_script = cmd
+          success_result
+        }
+
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks\/pre-push/), timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.install_git_hooks(lint_command: "ruff check .", test_command: "pytest")
+
+      expect(pre_commit_script).to include("ruff check .")
+      expect(pre_commit_script).not_to include("pytest")
+    end
+
+    it "includes both lint and test commands in pre-push hook" do
+      allow(container_service).to receive(:execute).and_return(hook_missing_result)
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/chmod/), anything)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks\/pre-commit/), timeout: nil, stream: false)
+        .and_return(success_result)
+
+      pre_push_script = nil
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks\/pre-push/), timeout: nil, stream: false) { |cmd, **|
+          pre_push_script = cmd
+          success_result
+        }
+
+      git_ops.install_git_hooks(lint_command: "ruff check .", test_command: "pytest")
+
+      expect(pre_push_script).to include("ruff check .")
+      expect(pre_push_script).to include("pytest")
+    end
+
+    it "does not raise when hook installation fails with exception" do
+      allow(container_service).to receive(:execute).and_raise(StandardError, "container error")
+
+      expect { git_ops.install_git_hooks(lint_command: "rubocop", test_command: "rspec") }.not_to raise_error
+    end
+
+    it "does not raise when hook write returns a failure result" do
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/test -f/), anything)
+        .and_return(hook_missing_result)
+      allow(container_service).to receive(:execute)
+        .with(a_string_matching(/cat > \.git\/hooks/), anything)
+        .and_return(failure_result)
+
+      expect { git_ops.install_git_hooks(lint_command: "rubocop", test_command: "rspec") }.not_to raise_error
+    end
+
+    describe "command validation" do
+      it "accepts simple commands" do
+        allow(container_service).to receive(:execute).and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks/), anything)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/chmod/), anything)
+          .and_return(success_result)
+
+        expect { git_ops.install_git_hooks(lint_command: "bundle exec rubocop", test_command: "bundle exec rspec") }
+          .not_to raise_error
+      end
+
+      it "accepts commands with paths and dots" do
+        allow(container_service).to receive(:execute).and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks/), anything)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/chmod/), anything)
+          .and_return(success_result)
+
+        expect { git_ops.install_git_hooks(lint_command: "ruff check .", test_command: "go test ./...") }
+          .not_to raise_error
+      end
+
+      it "rejects commands with semicolons" do
+        expect { git_ops.install_git_hooks(lint_command: "echo; rm -rf /", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with backticks" do
+        expect { git_ops.install_git_hooks(lint_command: "`malicious`", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with dollar signs" do
+        expect { git_ops.install_git_hooks(lint_command: "echo $HOME", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with pipes" do
+        expect { git_ops.install_git_hooks(lint_command: "cat | sh", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with shell operators" do
+        expect { git_ops.install_git_hooks(lint_command: "true || malicious", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "logs a warning when command validation fails" do
+        allow(Rails.logger).to receive(:warn)
+
+        git_ops.install_git_hooks(lint_command: "echo; rm -rf /", test_command: "rspec")
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(message: "container_git.install_hooks_failed")
+        )
+      end
+    end
+  end
 end

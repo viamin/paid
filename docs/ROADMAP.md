@@ -17,7 +17,8 @@ This document outlines the phased implementation plan for Paid. Each phase build
 │  • Single agent         • Model meta-agent      • Quality gates             │
 │  • Temporal setup       • Quality metrics       • Prompt evolution          │
 │  • Container isolation  • Cost tracking         • Performance               │
-│  • Manual PR creation   • Live dashboard        • Multi-tenancy prep        │
+│  • Manual PR creation   • Semantic code search  • Multi-tenancy prep        │
+│  •                      • Live dashboard        •                           │
 │                                                                              │
 │  Phase 4: AI-Native Evolution                                               │
 │  ────────────────────────────                                               │
@@ -316,7 +317,31 @@ Deliverables:
 - Quality trends visible over time
 - Correlation between prompts and quality
 
-### 2.7 Live Dashboard
+### 2.7 Semantic Code Search
+
+**Objective**: Agents have indexed codebase knowledge from their first run on a project.
+
+Tasks:
+
+- [ ] Add Qdrant and MeiliSearch to docker-compose
+- [ ] Create CodeChunk model and Qdrant collection management
+- [ ] Implement indexing pipeline (git tree walking, chunking, embedding, storage)
+- [ ] Implement search service (semantic via Qdrant, full-text via MeiliSearch)
+- [ ] Trigger deep indexing on project creation
+- [ ] Incremental re-indexing on git push webhook
+- [ ] Integrate semantic context into agent prompts via `Prompts::BuildForIssue`
+- [ ] UI for index status and manual re-indexing
+
+Deliverables:
+
+- New projects are deeply indexed on creation
+- Agents receive relevant codebase context in their prompts
+- Semantic search ("how does auth work?") and exact search ("def authenticate_user") both work
+- Per-project isolation via separate Qdrant collections and MeiliSearch indexes
+
+Related: [RDR-018](rdrs/RDR-018-semantic-code-search.md)
+
+### 2.8 Live Dashboard
 
 **Objective**: Real-time visibility into agent activity.
 
@@ -344,6 +369,7 @@ Deliverables:
 - [ ] Costs tracked and displayed per project
 - [ ] A/B tests runnable on prompts
 - [ ] Quality metrics collected and displayed
+- [ ] Projects indexed on creation with semantic + full-text search available to agents
 - [ ] Live dashboard with interrupt capability
 
 ---
@@ -700,6 +726,7 @@ Phase 2.1 (Prompts) ────────────────────
 
 Phase 2.3 (Model Meta-Agent) ────────────────────────────────────►
 Phase 2.4 (Cost Tracking) ───────────────────────────────────────►
+Phase 2.7 (Semantic Search) ─────────────────────────────────────►
 ```
 
 ---
@@ -730,6 +757,7 @@ Phase 2.4 (Cost Tracking) ──────────────────
 - Model selection improves cost efficiency by 20%
 - A/B tests identify winning prompts
 - Quality metrics correlate with human feedback
+- Projects indexed on creation, semantic search < 500ms
 - Dashboard latency < 1 second
 
 ### Phase 3
