@@ -115,8 +115,9 @@ module Containers
       status_result.success? && status_result[:stdout].present?
     rescue => e
       Rails.logger.warn(
-        message: "container_git.check_changes_failed",
+        message: "container_git.has_changes_since_failed",
         agent_run_id: agent_run.id,
+        commit_sha: commit_sha,
         error: e.message
       )
       false
