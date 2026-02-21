@@ -216,6 +216,70 @@ RSpec.describe Containers::GitOperations do
     end
   end
 
+  describe "#head_sha" do
+    it "returns the current HEAD SHA" do
+      sha_result = Containers::Provision::Result.success(stdout: "abc123def456\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha_result)
+
+      expect(git_ops.head_sha).to eq("abc123def456")
+    end
+
+    it "raises Error when command fails" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.head_sha }.to raise_error(described_class::Error, /Failed to get HEAD SHA/)
+    end
+  end
+
+  describe "#has_changes_since?" do
+    let(:pre_sha) { "abc123def456" }
+    let(:empty_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+
+    it "returns true when there are new commits since the given SHA" do
+      log_result = Containers::Provision::Result.success(stdout: "def789 Add feature\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "#{pre_sha}..HEAD" ], timeout: nil, stream: false)
+        .and_return(log_result)
+
+      expect(git_ops.has_changes_since?(pre_sha)).to be true
+    end
+
+    it "returns true when there are uncommitted changes but no new commits" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "#{pre_sha}..HEAD" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      expect(git_ops.has_changes_since?(pre_sha)).to be true
+    end
+
+    it "returns false when there are no new commits and no uncommitted changes" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "log", "--oneline", "#{pre_sha}..HEAD" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+
+      expect(git_ops.has_changes_since?(pre_sha)).to be false
+    end
+
+    it "returns false on error" do
+      allow(container_service).to receive(:execute).and_raise(StandardError, "container gone")
+
+      expect(git_ops.has_changes_since?(pre_sha)).to be false
+    end
+  end
+
   describe "#has_changes?" do
     let(:base_sha) { "abc123def456" }
 

@@ -21,7 +21,7 @@ module Activities
         pr_number: pr.number
       )
 
-      post_update_comment(client, project, pr.number, agent_run_id)
+      post_update_comment(client, project, pr.number, agent_run)
 
       agent_run.log!("system", "Pushed updates to existing PR: #{pr.html_url}")
 
@@ -40,19 +40,27 @@ module Activities
 
     private
 
-    def post_update_comment(client, project, pr_number, agent_run_id)
-      client.add_comment(
-        project.full_name,
-        pr_number,
-        "Agent pushed updates to this PR."
-      )
+    def post_update_comment(client, project, pr_number, agent_run)
+      body = build_comment_body(agent_run)
+
+      client.add_comment(project.full_name, pr_number, body)
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.existing_pr_comment_failed",
-        agent_run_id: agent_run_id,
+        agent_run_id: agent_run.id,
         pr_number: pr_number,
         error: e.message
       )
+    end
+
+    def build_comment_body(agent_run)
+      summary = agent_run.agent_summary
+
+      if summary.present?
+        "## Agent Update\n\n#{summary.truncate(50_000)}"
+      else
+        "Agent pushed updates to this PR."
+      end
     end
   end
 end

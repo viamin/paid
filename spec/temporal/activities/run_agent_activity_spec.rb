@@ -26,10 +26,11 @@ RSpec.describe Activities::RunAgentActivity do
     context "when agent succeeds in container" do
       before do
         allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
       end
 
       it "executes the agent CLI inside the container" do
-        allow(git_ops).to receive(:has_changes?).and_return(false)
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
 
         expect(container_service).to receive(:execute).with(
           array_including("claude", "--print", "--output-format=text", "--dangerously-skip-permissions", "-p"),
@@ -39,16 +40,24 @@ RSpec.describe Activities::RunAgentActivity do
         activity.execute(agent_run_id: agent_run.id)
       end
 
+      it "captures HEAD SHA before running the agent" do
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        expect(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
       it "starts the agent run before execution" do
-        allow(git_ops).to receive(:has_changes?).and_return(false)
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
 
         activity.execute(agent_run_id: agent_run.id)
 
         expect(agent_run.reload.status).to eq("running")
       end
 
-      it "returns has_changes: true when container git diff shows changes" do
-        allow(git_ops).to receive(:has_changes?).and_return(true)
+      it "returns has_changes: true when agent made new commits" do
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
 
         result = activity.execute(agent_run_id: agent_run.id)
 
@@ -56,8 +65,8 @@ RSpec.describe Activities::RunAgentActivity do
         expect(result[:success]).to be true
       end
 
-      it "returns has_changes: false when container git diff is empty" do
-        allow(git_ops).to receive(:has_changes?).and_return(false)
+      it "returns has_changes: false when agent made no changes" do
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
 
         result = activity.execute(agent_run_id: agent_run.id)
 
@@ -66,16 +75,28 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       it "returns has_changes: false when container check fails" do
-        allow(git_ops).to receive(:has_changes?).and_raise(StandardError, "container gone")
+        allow(git_ops).to receive(:has_changes_since?).and_raise(StandardError, "container gone")
 
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(result[:has_changes]).to be false
       end
+
+      it "falls back to has_changes? when pre_agent_sha capture fails" do
+        allow(git_ops).to receive(:head_sha).and_raise(StandardError, "container not ready")
+        allow(git_ops).to receive(:has_changes?).and_return(true)
+        allow(git_ops).to receive(:has_changes_since?)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be true
+        expect(git_ops).not_to have_received(:has_changes_since?)
+      end
     end
 
     context "when agent fails in container" do
       before do
+        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
         allow(container_service).to receive(:execute).and_return(exec_failure)
       end
 
@@ -98,6 +119,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     context "when agent times out" do
       before do
+        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
         allow(container_service).to receive(:execute)
           .and_raise(Containers::Provision::TimeoutError)
       end

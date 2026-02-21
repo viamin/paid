@@ -79,11 +79,48 @@ module Containers
       result = execute_git(*push_args, timeout: PUSH_TIMEOUT)
       raise PushError, "Push failed: #{result.error}" if result.failure?
 
-      sha = fetch_head_sha
+      sha = head_sha
       agent_run.update!(result_commit_sha: sha)
       agent_run.worktree&.mark_pushed!
 
       sha
+    end
+
+    # Returns the current HEAD SHA from the container.
+    #
+    # @return [String] the full SHA
+    # @raise [Error] when the command fails
+    def head_sha
+      result = execute_git("rev-parse", "HEAD")
+      raise Error, "Failed to get HEAD SHA: #{result.error}" if result.failure?
+
+      result[:stdout].strip
+    end
+
+    # Checks whether the agent made any changes since a specific commit.
+    #
+    # Detects both new commits (via git log) and uncommitted working-tree
+    # changes (via git status). This avoids false positives on existing PR
+    # branches where prior runs already added commits.
+    #
+    # @param commit_sha [String] the SHA to compare against (typically HEAD before the agent ran)
+    # @return [Boolean]
+    def has_changes_since?(commit_sha)
+      # Check for new commits since the given SHA
+      log_result = execute_git("log", "--oneline", "#{commit_sha}..HEAD")
+      return true if log_result.success? && log_result[:stdout].present?
+
+      # Check for any uncommitted changes (staged or unstaged)
+      status_result = execute_git("status", "--porcelain")
+      status_result.success? && status_result[:stdout].present?
+    rescue => e
+      Rails.logger.warn(
+        message: "container_git.has_changes_since_failed",
+        agent_run_id: agent_run.id,
+        commit_sha: commit_sha,
+        error: e.message
+      )
+      false
     end
 
     # Checks whether the agent made any changes.
@@ -176,17 +213,7 @@ module Containers
     end
 
     def record_base_commit
-      result = execute_git("rev-parse", "HEAD")
-      raise Error, "Failed to get HEAD SHA: #{result.error}" if result.failure?
-
-      result[:stdout].strip
-    end
-
-    def fetch_head_sha
-      result = execute_git("rev-parse", "HEAD")
-      raise Error, "Failed to get HEAD SHA: #{result.error}" if result.failure?
-
-      result[:stdout].strip
+      head_sha
     end
 
     def validate_branch_name!

@@ -51,9 +51,9 @@ module Activities
     def pr_body(issue, agent_run)
       parts = []
 
-      agent_summary = agent_run.agent_run_logs.where(log_type: "stdout").order(:created_at).limit(500).pluck(:content).join("\n").strip
-      if agent_summary.present?
-        parts << agent_summary.truncate(50_000)
+      summary = agent_run.agent_summary
+      if summary.present?
+        parts << summary.truncate(50_000)
       else
         parts << "## Summary"
         parts << ""
