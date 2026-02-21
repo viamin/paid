@@ -74,7 +74,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-018](RDR-018-semantic-code-search.md) | Semantic Code Search with Arcaneum | Draft | Medium |
+| [RDR-018](RDR-018-semantic-code-search.md) | Semantic Code Search (Qdrant + MeiliSearch) | Draft | Medium |
 
 ### AI-Native Evolution (Phase 4)
 

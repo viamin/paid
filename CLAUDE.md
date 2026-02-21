@@ -113,6 +113,10 @@ Orchestration code should be mechanically simple - delegate all semantic reasoni
 - **Keep in code**: I/O, structural safety checks, policy enforcement, state management
 - **Delegate to AI**: Quality judgments, semantic analysis, plan composition, pattern matching for meaning
 
+### Always Fix Forward
+
+Never skip pre-commit hooks (`--no-verify`), never disable linters, never ignore failing tests. If a check fails, fix the underlying issue. This applies to both human developers and AI agents.
+
 ### Ruby Conventions
 
 - Follow `rubocop-rails-omakase` style (StandardRB-based)

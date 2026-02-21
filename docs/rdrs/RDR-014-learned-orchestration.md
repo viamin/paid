@@ -110,34 +110,17 @@ For each agent run:
    - Good for parallelism levels, timeout values
    - Less applicable to discrete structural decisions
 
-### Phased Approach
+### Design Principle: Build for Full Autonomy
 
-Given complexity, implement in phases:
+Design and build the complete system from the start — decision logging, context-aware strategy selection, LLM-based evolution, and A/B testing all deployed together. Some components will naturally become active only after sufficient data accumulates (strategy evolution requires ~30 decision records), but the architecture should be complete from day one rather than built in graduated phases.
 
-**Phase A: Observability Foundation**
+This avoids building a "recommendation-only" system and later rebuilding it as an "automated" system. The full pipeline is:
 
 - Log all orchestration decisions with full context
-- Build dataset of (context, decision, outcome) tuples
-- Dashboard for analyzing orchestration patterns
-
-**Phase B: Recommendation System**
-
-- Train models on historical data
-- Recommend orchestration parameters (don't enforce)
-- Human reviews and accepts/rejects recommendations
-- Measure recommendation acceptance rate
-
-**Phase C: Automated A/B Testing**
-
-- Test learned strategies against baseline
-- Promote winners automatically (with guardrails)
-- Continuous improvement loop
-
-**Phase D: Full Adaptive Orchestration**
-
-- System autonomously adapts orchestration
-- Human oversight for anomalies only
-- Scaling laws emerge (more compute → better orchestration)
+- Select strategies based on context using the full selection engine
+- Evolve strategies via LLM-based mutation when sufficient data exists
+- A/B test evolved strategies with automatic promotion (with guardrails)
+- Human oversight for anomalies via alerting, not manual gating
 
 ## Proposed Solution
 
@@ -420,26 +403,16 @@ end
 - [ ] Quality metrics collection working
 - [ ] Sufficient execution history (100+ runs recommended)
 
-### Phase A: Observability Foundation (Recommended First)
+### Implementation Steps
 
-1. Create `orchestration_decisions` table
-2. Instrument current workflows to log decisions
-3. Build analysis queries for decision patterns
-4. Dashboard showing orchestration metrics
-
-### Phase B: Strategy Data Model
-
-1. Create `strategies` and `strategy_versions` tables
-2. Extract current hardcoded strategies into database
-3. Implement `OrchestrationStrategySelector`
-4. Add strategy context to agent runs
-
-### Phase C: Evolution System
-
-1. Create `StrategyEvolutionWorkflow`
-2. Implement strategy mutation via LLM
-3. Integrate with existing A/B test infrastructure
-4. Schedule periodic evolution checks
+1. Create `orchestration_decisions`, `strategies`, and `strategy_versions` tables
+2. Instrument current workflows to log all decisions with full context
+3. Extract current hardcoded strategies into database as initial strategy versions
+4. Implement `OrchestrationStrategySelector` with context-aware selection
+5. Create `StrategyEvolutionWorkflow` with LLM-based strategy mutation
+6. Integrate with A/B test infrastructure for strategy validation
+7. Schedule periodic evolution checks (activates when sufficient data exists)
+8. Build dashboard showing orchestration metrics and strategy performance
 
 ### Files to Create
 
@@ -454,9 +427,9 @@ end
 
 ### Success Metrics
 
-- **Phase A**: 100% of orchestration decisions logged with context
-- **Phase B**: Strategy selection based on context working
-- **Phase C**: First strategy A/B test completed with measurable outcome
+- 100% of orchestration decisions logged with context
+- Strategy selection based on context working
+- First strategy A/B test completed with measurable outcome
 
 ## Validation
 
@@ -488,7 +461,6 @@ end
 
 ## Notes
 
-- Start with Phase A (observability) to gather data before building learning
-- Consider multi-armed bandits as simpler alternative to full strategy evolution
+- Strategy evolution naturally activates once sufficient data exists (~30 decisions logged). The system is idle but ready before that threshold.
 - Strategy evolution cadence should be slower than prompt evolution (strategies are higher-stakes)
-- Human review gate recommended for initial deployments
+- Anomaly alerting replaces manual review gates — the system operates autonomously with human oversight via alerts

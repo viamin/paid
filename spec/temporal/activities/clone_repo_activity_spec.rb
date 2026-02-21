@@ -18,6 +18,7 @@ RSpec.describe Activities::CloneRepoActivity do
         .with(container_service: container_service, agent_run: agent_run)
         .and_return(git_ops)
       allow(git_ops).to receive(:clone_and_setup_branch)
+      allow(git_ops).to receive(:install_git_hooks)
 
       # Simulate what clone_and_setup_branch does to agent_run
       agent_run.update!(
@@ -37,6 +38,15 @@ RSpec.describe Activities::CloneRepoActivity do
       expect(Worktree.find_by(agent_run: agent_run)).to be_present
     end
 
+    it "installs git hooks after cloning" do
+      expect(git_ops).to receive(:install_git_hooks).with(
+        lint_command: "bundle exec rubocop",
+        test_command: "bundle exec rspec"
+      )
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect { activity.execute(agent_run_id: -1) }.to raise_error(ActiveRecord::RecordNotFound)
     end
@@ -54,6 +64,7 @@ RSpec.describe Activities::CloneRepoActivity do
           .with(project.full_name, 135)
           .and_return(pr_data)
         allow(git_ops).to receive(:clone_and_checkout_branch)
+        allow(git_ops).to receive(:install_git_hooks)
 
         agent_run.update!(
           branch_name: "existing-feature-branch",
@@ -65,6 +76,15 @@ RSpec.describe Activities::CloneRepoActivity do
       it "checks out the existing PR branch instead of creating a new one" do
         expect(git_ops).to receive(:clone_and_checkout_branch).with(branch_name: "existing-feature-branch")
         expect(git_ops).not_to receive(:clone_and_setup_branch)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "installs git hooks after checking out existing PR branch" do
+        expect(git_ops).to receive(:install_git_hooks).with(
+          lint_command: "bundle exec rubocop",
+          test_command: "bundle exec rspec"
+        )
 
         activity.execute(agent_run_id: agent_run.id)
       end

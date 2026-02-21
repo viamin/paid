@@ -372,7 +372,8 @@ end
 # app/services/surrogate_model.rb
 class SurrogateModel
   # Gaussian Process regression for outcome prediction
-  # Could also use Random Forest, Neural Network, etc.
+  # GP provides both mean prediction and uncertainty estimates,
+  # which are essential for principled exploration/exploitation.
 
   def predict(bundle, context)
     features = encode_bundle_context(bundle, context)
@@ -519,26 +520,17 @@ end
 - [ ] Quality metrics collection working
 - [ ] Sufficient execution history (50+ runs recommended)
 
-### Phase 1: Data Collection
+### Implementation Steps
 
-1. Create `configuration_bundles` table
-2. Create `bundle_outcomes` table
-3. Instrument workflow to record bundle + outcome
-4. Build baseline bundles from current configuration
+1. Create `configuration_bundles` and `bundle_outcomes` tables
+2. Build baseline bundles from current configuration
+3. Instrument workflow to record bundle + outcome for every agent run
+4. Implement `ConfigurationOptimizer` with Gaussian Process surrogate model
+5. Integrate optimizer into workflow execution with exploration/exploitation
+6. Add monitoring for optimization metrics
+7. Build dashboard for configuration performance and outcome trends
 
-### Phase 2: Optimization Infrastructure
-
-1. Implement `ConfigurationOptimizer`
-2. Implement surrogate model (start with Random Forest, upgrade to GP)
-3. Integrate optimizer into workflow execution
-4. Add monitoring for optimization metrics
-
-### Phase 3: Active Optimization
-
-1. Enable exploration with low rate (10%)
-2. Monitor outcome trends
-3. Tune exploration rate based on performance
-4. Build dashboard for configuration performance
+The optimizer activates once sufficient baseline data exists (~50 recorded outcomes). Before that threshold, all runs use baseline configuration while collecting data.
 
 ### Files to Create
 
@@ -552,9 +544,8 @@ end
 
 ### Dependencies
 
-- `rumale` gem for ML models (Random Forest)
 - `numo-narray` for numerical operations
-- Consider `torch.rb` for more sophisticated models later
+- Gaussian Process implementation (pure Ruby or `torch.rb`)
 
 ### Success Metrics
 
@@ -594,7 +585,7 @@ end
 
 ## Notes
 
-- Start with simple surrogate (Random Forest) before Gaussian Process
-- Consider Thompson Sampling as simpler alternative to full Bayesian optimization
+- Use Gaussian Process surrogate model from the start — it provides uncertainty estimates needed for principled exploration/exploitation, which Random Forest cannot.
 - Exploration should be gated on task importance (don't explore on critical tasks)
 - Configuration bundles should be human-reviewable (not just numerical vectors)
+- The optimizer is always deployed but only activates exploration once sufficient baseline data exists

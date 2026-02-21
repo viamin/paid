@@ -1,4 +1,4 @@
-# RDR-018: Semantic Code Search with Arcaneum
+# RDR-018: Semantic Code Search
 
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
@@ -29,6 +29,7 @@ Requirements:
 - Support full-text search for exact matches ("def authenticate_user")
 - Integrate with agent execution workflow to provide codebase context
 - Scale to multiple projects without cross-contamination
+- Trigger deep codebase analysis when a project is added
 
 ## Context
 
@@ -99,7 +100,7 @@ The "Bitter Lesson" principle (documented in VISION.md) suggests we should inves
 - Heavy dependencies (~1-2GB for embedding models)
 - No multi-user or production deployment patterns documented
 
-### Integration Options
+### Integration Options Evaluated
 
 #### Option A: CLI Subprocess (Simplest)
 
@@ -116,7 +117,7 @@ results = JSON.parse(output)
 
 #### Option B: Direct Backend Integration (Recommended)
 
-Bypass Arcaneum's CLI and use Qdrant and MeiliSearch directly via their Ruby client gems. Let Arcaneum handle indexing (as a background task) and use Ruby gems for search at request time.
+Bypass Arcaneum's CLI and use Qdrant and MeiliSearch directly via their Ruby client gems. Build indexing in Ruby; use Ruby gems for search at request time.
 
 Ruby gems available:
 
@@ -134,55 +135,29 @@ client.points.search(
 ```
 
 **Pros**: Native Ruby; better performance; easier testing; no Python in hot path
-**Cons**: Must generate embeddings separately (external API or local model); doesn't leverage Arcaneum's AST chunking for indexing
+**Cons**: Must generate embeddings separately (external API or local model); must build own chunking (doesn't leverage Arcaneum's AST chunking)
 
 #### Option C: Hybrid (Best of Both)
 
 Use Arcaneum CLI for **indexing** (leverages AST chunking, PDF processing) via background jobs, and Ruby gems for **searching** (low-latency, native integration).
 
-```ruby
-# Indexing (background job, uses Arcaneum CLI)
-class IndexProjectJob < ApplicationJob
-  def perform(project_id)
-    project = Project.find(project_id)
-    system("arc", "corpus", "sync", project.name, project.repo_path)
-  end
-end
-
-# Searching (request time, uses Ruby gems)
-class SemanticSearch::Query
-  def call(query, project:)
-    embedding = generate_embedding(query)
-    qdrant.points.search(
-      collection_name: "project_#{project.id}",
-      vector: embedding,
-      limit: 10
-    )
-  end
-end
-```
-
 **Pros**: Best indexing quality; fast searching; clean separation
 **Cons**: Most complex setup; requires both Python and Ruby tooling; two systems to maintain
 
-#### Option D: PostgreSQL pgvector (Alternative)
+#### Option D: PostgreSQL pgvector
 
-Skip Arcaneum entirely. Use PostgreSQL's pgvector extension for vector search alongside existing full-text search capabilities.
+Skip dedicated search infrastructure. Use PostgreSQL's pgvector extension for vector search alongside existing full-text search capabilities.
 
 ```ruby
 # Gemfile
 gem "neighbor"  # Rails pgvector integration
 
-# Migration
-enable_extension "vector"
-add_column :code_chunks, :embedding, :vector, limit: 1536
-
 # Search
 CodeChunk.nearest_neighbors(:embedding, query_embedding, distance: :cosine).limit(10)
 ```
 
-**Pros**: Single database; no additional infrastructure; Rails-native; simpler deployment; pgvector is mature and well-supported
-**Cons**: Must implement own chunking/indexing; no AST-aware parsing; PostgreSQL handles vectors but isn't specialized for it at scale
+**Pros**: Single database; no additional infrastructure; Rails-native; simpler deployment
+**Cons**: Must implement own chunking/indexing; no AST-aware parsing; PostgreSQL handles vectors but isn't specialized for it; lower-dimensional support; would serve as transitional technology before eventually migrating to dedicated search infrastructure
 
 ### Key Discoveries
 
@@ -192,35 +167,25 @@ CodeChunk.nearest_neighbors(:embedding, query_embedding, distance: :cosine).limi
 
 3. **Embedding generation is the gap**: Any Ruby-native approach needs a strategy for generating embeddings. Options include external APIs (OpenAI, Cohere), local models via Python subprocess, or the ruby-llm gem's embedding support.
 
-4. **pgvector is a viable simpler path**: For a Rails app already using PostgreSQL, pgvector + the `neighbor` gem provides vector search without additional infrastructure. Combined with PostgreSQL's built-in full-text search, this covers both search modes with zero new services.
+4. **pgvector is transitional**: While pgvector provides vector search without new infrastructure, it is not a specialized vector database. It would only serve as a stepping stone before migrating to Qdrant when scale or quality demands it. Better to build for the target architecture from the start.
 
-5. **Corpus-per-project maps well**: Arcaneum's corpus abstraction aligns with Paid's project model. Each project would have its own corpus, preventing cross-contamination.
+5. **Corpus-per-project maps well**: Arcaneum's corpus abstraction aligns with Paid's project model. Each project would have its own Qdrant collection and MeiliSearch index, preventing cross-contamination.
+
+6. **Deep initial indexing is critical**: Agents benefit most when semantic context is available from their very first run on a project. Triggering a comprehensive index on project creation ensures this.
 
 ## Proposed Solution
 
-### Recommendation: Phased Approach
+### Recommendation: Qdrant + MeiliSearch (Direct Integration)
 
-Start with **Option D (pgvector)** for simplicity, with the architecture designed to swap in specialized backends later if needed.
+Use purpose-built search infrastructure from the start:
 
-**Phase 1 — pgvector Foundation** (Recommended starting point):
+- **Qdrant** for semantic (vector) search — purpose-built vector database with high-dimensional support, filtering, and payload storage
+- **MeiliSearch** for full-text search — typo-tolerant, faceted search with native Rails integration
+- **Ruby gems** (`qdrant-ruby`, `meilisearch-rails`) for search at request time
+- **External API** for embedding generation (OpenAI text-embedding-3-large or equivalent via ruby-llm)
+- **Deep indexing** triggered automatically on project creation, with incremental updates on git push
 
-- Add pgvector extension to PostgreSQL
-- Create `code_chunks` table with vector embeddings
-- Implement basic indexing service using git tree walking + embedding API
-- Provide semantic search to agents via context injection in prompts
-- Use PostgreSQL full-text search for exact matching
-
-**Phase 2 — Enhanced Indexing** (If Phase 1 proves valuable):
-
-- Integrate Arcaneum CLI as a background indexing pipeline for better code chunking
-- Continue using pgvector/PostgreSQL for search (keep it simple)
-- Add PDF and documentation indexing
-
-**Phase 3 — Specialized Backends** (If scale demands):
-
-- Migrate to Qdrant + MeiliSearch if PostgreSQL becomes a bottleneck
-- Use Ruby gems for search, Arcaneum for indexing
-- Evaluate whether the complexity is justified by usage patterns
+This uses Option B (Direct Backend Integration) from the research findings. pgvector (Option D) was rejected as a transitional technology — it would only delay the eventual migration to dedicated search infrastructure while providing inferior search quality in the interim.
 
 ### Technical Design
 
@@ -232,30 +197,39 @@ Start with **Option D (pgvector)** for simplicity, with the architecture designe
 │  │     INDEX PIPELINE     │  │      SEARCH SERVICE       │  │
 │  │                        │  │                           │  │
 │  │  1. Git clone/pull     │  │  Query → Embedding        │  │
-│  │  2. Walk file tree     │  │  Embedding → pgvector     │  │
-│  │  3. Chunk by function  │  │  Results → Context        │  │
-│  │  4. Generate embeddings│  │  Context → Agent prompt   │  │
-│  │  5. Store in pgvector  │  │                           │  │
-│  │                        │  │  Also: PG full-text search│  │
-│  │  (Background job via   │  │  for exact code matches   │  │
+│  │  2. Walk file tree     │  │  Embedding → Qdrant       │  │
+│  │  3. Chunk by function  │  │  Query text → MeiliSearch │  │
+│  │  4. Generate embeddings│  │  Merge + rank results     │  │
+│  │  5. Store in Qdrant    │  │  Context → Agent prompt   │  │
+│  │  6. Index in MeiliSearch│ │                           │  │
+│  │                        │  │                           │  │
+│  │  Triggers:             │  │                           │  │
+│  │  • Project creation    │  │                           │  │
+│  │  • Git push webhook    │  │                           │  │
+│  │  • Manual re-index     │  │                           │  │
+│  │                        │  │                           │  │
+│  │  (Background job via   │  │                           │  │
 │  │   GoodJob)             │  │                           │  │
 │  └────────────────────────┘  └───────────────────────────┘  │
 │                                                             │
-│  Storage: PostgreSQL + pgvector extension                   │
+│  Vector Storage: Qdrant (one collection per project)        │
+│  Full-text: MeiliSearch (one index per project)             │
 │  Embeddings: External API (OpenAI/Cohere) or ruby-llm      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Decision Rationale
 
-1. **pgvector first**: Avoids new infrastructure. PostgreSQL is already in the stack. The `neighbor` gem provides clean Rails integration.
-2. **Arcaneum for later**: Its AST-aware chunking is valuable but not critical for an MVP. Basic file/function chunking is sufficient to prove the concept.
-3. **Phased approach**: Validates whether semantic search improves agent performance before investing in complex infrastructure.
-4. **Embedding via API**: Avoids local model hosting complexity. Cost is minimal for indexing (one-time per file change).
+1. **Purpose-built tools**: Qdrant is designed for vector search with high-dimensional embeddings, filtering, and payload storage. MeiliSearch is designed for typo-tolerant full-text search. Both outperform general-purpose alternatives in their domains.
+2. **No transitional technology**: pgvector would only be a stepping stone. Building directly on Qdrant avoids a future migration and provides better search quality from day one.
+3. **Ruby-native search path**: Both `qdrant-ruby` and `meilisearch-rails` provide native Ruby clients, keeping the request-time search path in Ruby with no subprocess overhead.
+4. **Docker-native deployment**: Both Qdrant and MeiliSearch run as Docker containers, fitting the existing infrastructure.
+5. **Project-scoped isolation**: One Qdrant collection and one MeiliSearch index per project prevents cross-contamination and enables per-project management.
+6. **Deep indexing on project creation**: A background job performs comprehensive initial indexing when a project is added, so agents have semantic context from their first run.
 
 ### Integration Point
 
-Semantic search would plug into the agent execution workflow between issue fetching and agent invocation:
+Semantic search plugs into the agent execution workflow between issue fetching and agent invocation:
 
 ```ruby
 # In AgentExecutionWorkflow
@@ -263,7 +237,7 @@ def execute(issue_id)
   issue = activity.fetch_issue(issue_id)
   project = issue.project
 
-  # NEW: Retrieve relevant codebase context
+  # Retrieve relevant codebase context via Qdrant + MeiliSearch
   context = activity.search_codebase(
     query: issue.title + "\n" + issue.body,
     project: project,
@@ -285,21 +259,21 @@ end
 
 **Description**: Use Arcaneum end-to-end via subprocess calls for both indexing and searching.
 
-**Pros**: Leverages all Arcaneum features; minimal custom code
+**Pros**: Leverages all Arcaneum features including AST-aware chunking; minimal custom code
 
 **Cons**: Python runtime dependency; subprocess overhead on every search; hard to test; fragile error handling; heavy dependencies (~1-2GB models)
 
-**Reason for deferral**: Too much operational complexity for an unproven feature. The Python dependency conflicts with the Ruby-centric stack.
+**Reason for rejection**: Too much operational complexity. The Python dependency conflicts with the Ruby-centric stack. Arcaneum's indexing insights (AST-aware chunking) can be adopted in a Ruby implementation without depending on the full Python toolchain.
 
-### Alternative 2: Qdrant + MeiliSearch (Direct)
+### Alternative 2: PostgreSQL pgvector
 
-**Description**: Deploy Qdrant and MeiliSearch as services, use Ruby gems to interact with them directly.
+**Description**: Use PostgreSQL's pgvector extension for vector search alongside built-in full-text search. No new infrastructure required.
 
-**Pros**: Purpose-built search infrastructure; Ruby-native clients available
+**Pros**: Single database; no additional services; Rails-native via `neighbor` gem; simpler deployment
 
-**Cons**: Two additional services to deploy and maintain; more infrastructure complexity; operational overhead
+**Cons**: pgvector is a general-purpose extension, not a specialized vector database. Lower-dimensional vector support, fewer filtering options, and weaker performance at scale compared to Qdrant. Would serve as a transitional technology requiring migration later.
 
-**Reason for deferral**: Premature optimization. pgvector handles the initial use case. Migrate if scale demands.
+**Reason for rejection**: pgvector would only be a stepping stone to Qdrant. Building directly on the target technology avoids a migration and provides better search quality from day one.
 
 ### Alternative 3: External Search Service (Algolia, Elastic)
 
@@ -309,23 +283,34 @@ end
 
 **Cons**: Cost; data leaves the environment; vendor lock-in; may not support vector search well
 
-**Reason for rejection**: Adds external dependency and cost for a feature that may not prove valuable. Self-hosted is preferred given the existing Docker infrastructure.
+**Reason for rejection**: Adds external dependency and cost for a feature that benefits from self-hosted control. Docker infrastructure already exists.
+
+### Alternative 4: ChromaDB
+
+**Description**: Use ChromaDB as the vector database instead of Qdrant.
+
+**Pros**: Simple API; growing ecosystem; embeddable option
+
+**Cons**: Python-centric (no official Ruby gem); less mature production deployment story; would require REST API calls from Ruby rather than a native client
+
+**Reason for rejection**: Qdrant has a mature Ruby client (`qdrant-ruby`), better production deployment patterns, and richer filtering capabilities. ChromaDB could be reconsidered if a quality Ruby client emerges.
 
 ## Trade-offs and Consequences
 
 ### Positive Consequences
 
-- **Faster agent context building**: Agents start with relevant codebase knowledge
+- **Faster agent context building**: Agents start with relevant codebase knowledge from their first run
 - **Better code quality**: Agents can discover existing patterns and conventions
 - **Institutional memory**: Knowledge persists across agent runs
-- **Minimal new infrastructure**: pgvector uses existing PostgreSQL
-- **Upgrade path**: Architecture supports migrating to specialized backends
+- **Purpose-built search**: Qdrant and MeiliSearch each excel at their respective search modes
+- **Deep initial indexing**: Project creation triggers comprehensive codebase analysis
 
 ### Negative Consequences
 
-- **Embedding API cost**: Small cost per indexing operation (mitigated: only on file changes)
+- **Additional infrastructure**: Two new services (Qdrant, MeiliSearch) to deploy and maintain
+- **Embedding API cost**: Small cost per indexing operation (mitigated: only on file changes, incremental sync)
 - **Index staleness**: Code changes require re-indexing (mitigated: trigger on git push/webhook)
-- **Storage growth**: Embeddings consume database space (mitigated: prune on project deletion)
+- **Storage requirements**: Qdrant and MeiliSearch need dedicated storage (mitigated: prune on project deletion)
 
 ### Risks and Mitigations
 
@@ -333,33 +318,42 @@ end
   **Mitigation**: A/B test with and without semantic context. Measure PR acceptance rates.
 
 - **Risk**: Embedding quality is poor for code
-  **Mitigation**: Use code-optimized embedding models (e.g., OpenAI text-embedding-3-large, Cohere embed-v3). Benchmark with representative queries.
+  **Mitigation**: Use code-optimized embedding models (e.g., OpenAI text-embedding-3-large, jina-code). Benchmark with representative queries.
 
-- **Risk**: pgvector performance degrades at scale
-  **Mitigation**: Phase 3 migration path to Qdrant is designed in. Monitor query latency.
+- **Risk**: Qdrant/MeiliSearch operational complexity
+  **Mitigation**: Both services are mature, well-documented, and Docker-native. Paid already manages Docker services in development and production.
 
 ## Implementation Plan
 
 ### Prerequisites
 
 - [ ] Evaluate embedding API options and costs (OpenAI vs Cohere vs local)
-- [ ] Benchmark pgvector query performance with realistic data volumes
 - [ ] Define chunking strategy for code files (function-level vs file-level)
 
-### Step-by-Step Implementation (Phase 1)
+### Step 1: Add Infrastructure
 
-#### Step 1: Add pgvector Extension
+Add Qdrant and MeiliSearch to `docker-compose.yml`:
 
-```ruby
-# db/migrate/xxx_enable_pgvector.rb
-class EnablePgvector < ActiveRecord::Migration[8.0]
-  def change
-    enable_extension "vector"
-  end
-end
+```yaml
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: ${MEILISEARCH_MASTER_KEY}
+    volumes:
+      - meilisearch_data:/meili_data
 ```
 
-#### Step 2: Create Code Chunks Table
+### Step 2: Create Code Chunks Table
 
 ```ruby
 # db/migrate/xxx_create_code_chunks.rb
@@ -372,9 +366,10 @@ class CreateCodeChunks < ActiveRecord::Migration[8.0]
       t.string :identifier               # function/class name
       t.text :content, null: false
       t.string :content_hash, null: false # SHA256 for incremental sync
-      t.vector :embedding, limit: 1536    # Dimension depends on model
+      t.string :language
       t.integer :start_line
       t.integer :end_line
+      t.string :qdrant_point_id          # Reference to Qdrant point
 
       t.timestamps
       t.index [:project_id, :file_path, :identifier], unique: true
@@ -384,7 +379,7 @@ class CreateCodeChunks < ActiveRecord::Migration[8.0]
 end
 ```
 
-#### Step 3: Implement Indexing Service
+### Step 3: Implement Indexing Service
 
 ```ruby
 # app/services/semantic_search/index_project.rb
@@ -397,16 +392,81 @@ module SemanticSearch
     end
 
     def call
+      ensure_qdrant_collection!
+      ensure_meilisearch_index!
+
       walk_files(project.repo_path).each do |file_path|
         chunks = chunk_file(file_path)
         chunks.each { |chunk| index_chunk(chunk) }
       end
     end
+
+    private
+
+    def ensure_qdrant_collection!
+      qdrant.collections.create(
+        collection_name: collection_name,
+        vectors: { size: 3072, distance: "Cosine" }  # text-embedding-3-large dimensions
+      )
+    rescue Qdrant::Error # Collection already exists
+      nil
+    end
+
+    def index_chunk(chunk)
+      hash = Digest::SHA256.hexdigest(chunk[:content])
+      existing = CodeChunk.find_by(project: project, file_path: chunk[:path], identifier: chunk[:id])
+      return if existing&.content_hash == hash  # Skip unchanged
+
+      embedding = generate_embedding(chunk[:content])
+
+      # Store vector in Qdrant
+      point_id = SecureRandom.uuid
+      qdrant.points.upsert(
+        collection_name: collection_name,
+        points: [{
+          id: point_id,
+          vector: embedding,
+          payload: {
+            file_path: chunk[:path],
+            identifier: chunk[:id],
+            chunk_type: chunk[:type],
+            language: chunk[:language]
+          }
+        }]
+      )
+
+      # Index full text in MeiliSearch
+      meilisearch_index.add_documents([{
+        id: point_id,
+        file_path: chunk[:path],
+        identifier: chunk[:id],
+        content: chunk[:content],
+        language: chunk[:language]
+      }])
+
+      # Store metadata in PostgreSQL
+      CodeChunk.upsert({
+        project_id: project.id,
+        file_path: chunk[:path],
+        chunk_type: chunk[:type],
+        identifier: chunk[:id],
+        content: chunk[:content],
+        content_hash: hash,
+        language: chunk[:language],
+        start_line: chunk[:start_line],
+        end_line: chunk[:end_line],
+        qdrant_point_id: point_id
+      }, unique_by: [:project_id, :file_path, :identifier])
+    end
+
+    def collection_name = "project_#{project.id}"
+    def qdrant = Qdrant::Client.new(url: ENV["QDRANT_URL"])
+    def meilisearch_index = MeiliSearch::Client.new(ENV["MEILISEARCH_URL"], ENV["MEILISEARCH_MASTER_KEY"]).index(collection_name)
   end
 end
 ```
 
-#### Step 4: Implement Search Service
+### Step 4: Implement Search Service
 
 ```ruby
 # app/services/semantic_search/query.rb
@@ -422,38 +482,75 @@ module SemanticSearch
 
     def call
       embedding = generate_embedding(query)
-      CodeChunk
-        .where(project: project)
-        .nearest_neighbors(:embedding, embedding, distance: :cosine)
-        .limit(limit)
+
+      # Semantic search via Qdrant
+      vector_results = qdrant.points.search(
+        collection_name: "project_#{project.id}",
+        vector: embedding,
+        limit: limit,
+        with_payload: true
+      )
+
+      # Full-text search via MeiliSearch
+      text_results = meilisearch_index.search(query, limit: limit)
+
+      # Merge and deduplicate results, prioritizing semantic matches
+      merge_results(vector_results, text_results)
     end
+
+    private
+
+    def qdrant = Qdrant::Client.new(url: ENV["QDRANT_URL"])
+    def meilisearch_index = MeiliSearch::Client.new(ENV["MEILISEARCH_URL"], ENV["MEILISEARCH_MASTER_KEY"]).index("project_#{project.id}")
   end
 end
 ```
 
-#### Step 5: Integrate with Agent Workflow
+### Step 5: Trigger Indexing on Project Creation
+
+```ruby
+# app/jobs/index_project_job.rb
+class IndexProjectJob < ApplicationJob
+  queue_as :default
+
+  def perform(project_id)
+    project = Project.find(project_id)
+    SemanticSearch::IndexProject.call(project: project)
+  end
+end
+
+# Wire into Projects::Import or model callback:
+# IndexProjectJob.perform_later(project.id)
+```
+
+### Step 6: Integrate with Agent Workflow
 
 Modify `Prompts::BuildForIssue` to include semantic search results as codebase context in the agent prompt.
 
 ### Files to Create
 
-- `db/migrate/xxx_enable_pgvector.rb`
 - `db/migrate/xxx_create_code_chunks.rb`
 - `app/models/code_chunk.rb`
 - `app/services/semantic_search/index_project.rb`
 - `app/services/semantic_search/query.rb`
 - `app/jobs/index_project_job.rb`
+- `config/initializers/qdrant.rb`
+- `config/initializers/meilisearch.rb`
 
 ### Files to Modify
 
-- `Gemfile` (add `neighbor` gem)
+- `docker-compose.yml` (add Qdrant and MeiliSearch services)
+- `Gemfile` (add `qdrant-ruby` and `meilisearch-rails` gems)
 - `app/services/prompts/build_for_issue.rb` (inject semantic context)
 - `app/temporal/workflows/agent_execution_workflow.rb` (add search step)
+- `app/services/projects/import.rb` or model callback (trigger indexing on project creation)
 
 ### Dependencies
 
-- `neighbor` gem for pgvector Rails integration
-- pgvector PostgreSQL extension
+- `qdrant-ruby` gem for Qdrant API client
+- `meilisearch-rails` gem for MeiliSearch Rails integration
+- Qdrant Docker image (`qdrant/qdrant`)
+- MeiliSearch Docker image (`getmeili/meilisearch`)
 - Embedding API access (OpenAI or equivalent)
 
 ## Validation
@@ -479,6 +576,9 @@ Modify `Prompts::BuildForIssue` to include semantic search results as codebase c
 4. **Scenario**: Search across project with 10K+ files
    **Expected**: Query completes in < 500ms
 
+5. **Scenario**: New project added to Paid
+   **Expected**: Deep indexing job triggered automatically; semantic context available for first agent run
+
 ### Performance Validation
 
 - Index a 10K-file repository in < 30 minutes (background job)
@@ -494,21 +594,22 @@ Modify `Prompts::BuildForIssue` to include semantic search results as codebase c
 
 ### Dependencies
 
-- [Arcaneum](https://github.com/cwensel/arcaneum) — Semantic search CLI tool (investigated)
-- [neighbor](https://github.com/ankane/neighbor) — pgvector Rails integration
-- [qdrant-ruby](https://github.com/patterns-ai-core/qdrant-ruby) — Qdrant API client (Phase 3)
-- [meilisearch-rails](https://github.com/meilisearch/meilisearch-rails) — MeiliSearch integration (Phase 3)
-- [pgvector](https://github.com/pgvector/pgvector) — PostgreSQL vector extension
+- [Arcaneum](https://github.com/cwensel/arcaneum) — Semantic search CLI tool (investigated, indexing insights adopted)
+- [qdrant-ruby](https://github.com/patterns-ai-core/qdrant-ruby) — Qdrant API client for Ruby
+- [meilisearch-rails](https://github.com/meilisearch/meilisearch-rails) — MeiliSearch Rails integration
+- [Qdrant](https://qdrant.tech/) — Purpose-built vector database
+- [MeiliSearch](https://www.meilisearch.com/) — Full-text search engine
 
 ### Research Resources
 
 - [Arcaneum GitHub repository](https://github.com/cwensel/arcaneum)
-- [pgvector documentation](https://github.com/pgvector/pgvector)
+- [Qdrant documentation](https://qdrant.tech/documentation/)
 - [MeiliSearch Rails Quick Start](https://www.meilisearch.com/docs/guides/ruby_on_rails_quick_start)
 
 ## Notes
 
-- Arcaneum's strongest value proposition is its AST-aware code chunking and multi-format indexing. Consider extracting this logic (or building a simpler Ruby equivalent) rather than depending on the full Python toolchain.
+- Arcaneum's strongest value proposition is its AST-aware code chunking. Consider adopting this chunking approach in the Ruby indexing service rather than depending on the full Python toolchain.
 - The embedding model choice significantly affects search quality for code. Code-specific models (like jina-code or OpenAI's text-embedding-3-large) outperform general-purpose models.
 - Consider exposing semantic search in the UI so users can verify index quality and search relevance before relying on it for agent execution.
-- Future: Arcaneum's "store" feature (agent memory) could be used to persist knowledge gained during agent runs, building institutional memory across runs.
+- Deep indexing on project creation is critical — agents should have semantic context available from their first run, not after a manual re-index.
+- Arcaneum's "store" feature (agent memory) could inspire a similar capability for persisting knowledge gained during agent runs, building institutional memory across runs.
