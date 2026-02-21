@@ -36,7 +36,10 @@ bin/rails console            # Rails console
 
 # Code Quality
 bin/lint                     # Run linters (RuboCop, ESLint, markdownlint)
-bin/lint -A                  # Run linters with auto-fix
+bin/lint -a                  # Run linters with safe auto-fix
+bin/lint -A                  # Run linters with auto-fix (including unsafe)
+bin/lint --changed           # Lint only changed files (staged + unstaged vs HEAD)
+bin/lint --staged            # Lint only staged files
 bin/rubocop                  # Run RuboCop (rubocop-rails-omakase style)
 bin/rubocop -a               # Auto-fix violations
 

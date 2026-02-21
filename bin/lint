@@ -2,12 +2,27 @@
 set -euo pipefail
 
 AUTOFIX=false
+SAFE_AUTOFIX=false
+CHANGED=false
+STAGED=false
+
 for arg in "$@"; do
   case "$arg" in
+    -a) SAFE_AUTOFIX=true ;;
     -A) AUTOFIX=true ;;
+    --changed) CHANGED=true ;;
+    --staged) STAGED=true ;;
+    -h|--help)
+      echo "Usage: bin/lint [-a] [-A] [--changed] [--staged]"
+      echo "  -a         Safe auto-fix only (rubocop -a)"
+      echo "  -A         Auto-fix all including unsafe (rubocop -A, eslint --fix, markdownlint --fix)"
+      echo "  --changed  Lint only changed files (staged + unstaged vs HEAD)"
+      echo "  --staged   Lint only staged files"
+      exit 0
+      ;;
     *)
-      echo "Usage: bin/lint [-A]"
-      echo "  -A  Auto-fix violations (rubocop -A, eslint --fix, markdownlint --fix)"
+      echo "Unknown option: $arg"
+      echo "Usage: bin/lint [-a] [-A] [--changed] [--staged]"
       exit 1
       ;;
   esac
@@ -25,15 +40,81 @@ if [ "$AUTOFIX" = true ]; then
   RUBOCOP_ARGS="$RUBOCOP_ARGS -A"
   MARKDOWNLINT_ARGS="--fix"
   ESLINT_ARGS="--fix"
+elif [ "$SAFE_AUTOFIX" = true ]; then
+  RUBOCOP_ARGS="$RUBOCOP_ARGS -a"
+  MARKDOWNLINT_ARGS="--fix"
+  ESLINT_ARGS="--fix"
+fi
+
+# Collect files when using --changed or --staged
+FILE_FILTER=false
+FILES=""
+
+if [ "$CHANGED" = true ] || [ "$STAGED" = true ]; then
+  FILE_FILTER=true
+
+  if [ "$CHANGED" = true ]; then
+    # All changes vs HEAD (staged + unstaged); fall back to --cached for initial commits
+    FILES=$(git diff --name-only HEAD --diff-filter=d 2>/dev/null || git diff --name-only --cached --diff-filter=d)
+  else
+    # Only staged changes
+    FILES=$(git diff --name-only --cached --diff-filter=d)
+  fi
+fi
+
+if [ "$FILE_FILTER" = true ] && [ -z "$FILES" ]; then
+  echo "No changed files found. Nothing to lint."
+  exit 0
+fi
+
+# Filter files by extension for each linter
+ruby_files=""
+js_files=""
+md_files=""
+
+if [ "$FILE_FILTER" = true ]; then
+  ruby_files=$(echo "$FILES" | grep -E '\.rb$' || true)
+  js_files=$(echo "$FILES" | grep -E '\.(js|ts|jsx|tsx)$' || true)
+  md_files=$(echo "$FILES" | grep -E '\.md$' || true)
 fi
 
 echo "== Style: RuboCop =="
-bin/rubocop $RUBOCOP_ARGS
+if [ "$FILE_FILTER" = true ]; then
+  if [ -n "$ruby_files" ]; then
+    # shellcheck disable=SC2086
+    bin/rubocop $RUBOCOP_ARGS $ruby_files
+  else
+    echo "  No Ruby files to lint."
+  fi
+else
+  # shellcheck disable=SC2086
+  bin/rubocop $RUBOCOP_ARGS
+fi
 
 echo "== JavaScript: ESLint =="
-npx eslint $ESLINT_ARGS
+if [ "$FILE_FILTER" = true ]; then
+  if [ -n "$js_files" ]; then
+    # shellcheck disable=SC2086
+    npx eslint $ESLINT_ARGS $js_files
+  else
+    echo "  No JavaScript files to lint."
+  fi
+else
+  # shellcheck disable=SC2086
+  npx eslint $ESLINT_ARGS
+fi
 
 echo "== Markdown: markdownlint =="
-npx markdownlint $MARKDOWNLINT_ARGS --ignore node_modules --ignore vendor '**/*.md'
+if [ "$FILE_FILTER" = true ]; then
+  if [ -n "$md_files" ]; then
+    # shellcheck disable=SC2086
+    npx markdownlint $MARKDOWNLINT_ARGS $md_files
+  else
+    echo "  No Markdown files to lint."
+  fi
+else
+  # shellcheck disable=SC2086
+  npx markdownlint $MARKDOWNLINT_ARGS --ignore node_modules --ignore vendor '**/*.md'
+fi
 
 echo "All lint checks passed."
