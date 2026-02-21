@@ -569,26 +569,18 @@ end
 - [ ] Sufficient task diversity for experiments
 - [ ] Compute budget for experiments
 
-### Phase 1: Instrumentation
+### Implementation Steps
 
-1. Create `scaling_observations` table
-2. Instrument workflow to record scaling dimensions
-3. Build baseline dataset from existing runs
-4. Exploratory analysis of existing data
+1. Create `scaling_observations` and `scaling_experiments` tables
+2. Instrument workflow to record all scaling dimensions on every agent run
+3. Create experiment framework with balanced assignment and statistical analysis
+4. Implement `ScalingAnalyzer` with power law, logarithmic, and linear fitting
+5. Implement `ScalingBasedAllocator` for dynamic resource allocation
+6. Integrate allocator into production workflow (activates when scaling exponents are estimated with sufficient confidence)
+7. Build dashboard for scaling metrics, experiment results, and allocation recommendations
+8. Run initial experiments: agent count scaling, then iteration count, then parallelism
 
-### Phase 2: Controlled Experiments
-
-1. Create experiment framework
-2. Run agent count experiment (highest impact hypothesis)
-3. Run iteration count experiment
-4. Analyze results and publish internal findings
-
-### Phase 3: Dynamic Allocation
-
-1. Implement scaling-based allocator
-2. A/B test against fixed allocation
-3. Integrate into production workflow
-4. Continuous monitoring and refinement
+The instrumentation and experiment framework are deployed together. Experiments are defined and run as data accumulates. The allocator activates once scaling exponents are estimated with confidence intervals narrow enough to be actionable.
 
 ### Files to Create
 
@@ -646,9 +638,9 @@ end
 
 ## Notes
 
-- Start with observational analysis before experiments (cheaper)
-- Agent count scaling is highest priority (most actionable)
-- Consider diminishing returns thresholds may differ by task type
+- Observational analysis runs continuously from deployment; controlled experiments layer on top as data accumulates
+- Agent count scaling is highest priority experiment (most actionable)
+- Diminishing returns thresholds may differ by task type — segment analysis by context
 - Scaling laws should inform but not replace A/B testing of specific changes
 - Document findings even if negative (ceiling discovered is valuable knowledge)
 - Consider publishing findings to broader community

@@ -35,6 +35,14 @@ RSpec.describe Prompts::BuildForIssue do
       expect(prompt).to include("Do not push")
     end
 
+    it "enforces lint and tests before committing" do
+      prompt = described_class.call(issue: issue, project: project)
+
+      expect(prompt).to include("MUST pass before every commit")
+      expect(prompt).to include("Never use `--no-verify`")
+      expect(prompt).to include("Fix forward")
+    end
+
     it "includes test command for ruby projects" do
       prompt = described_class.call(issue: issue, project: project)
 

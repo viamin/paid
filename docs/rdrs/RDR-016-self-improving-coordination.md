@@ -621,26 +621,19 @@ end
 - [ ] A/B testing framework (RDR-009)
 - [ ] Sufficient execution history
 
-### Phase 1: Decision Logging
+### Implementation Steps
 
-1. Create coordination decision tables
-2. Instrument existing coordination code
-3. Build analysis queries
-4. Dashboard for coordination metrics
+1. Create coordination policy, policy version, and coordination decision tables
+2. Extract hardcoded coordination rules into database policies as initial versions
+3. Instrument existing coordination code to log all decisions with full context
+4. Implement `DecompositionService`, `FailureRecoveryService`, and `EscalationService` using policy-based rules
+5. Implement policy selection by context
+6. Create policy evolution workflow with LLM-based mutation
+7. Integrate with A/B testing for policy validation
+8. Schedule periodic evolution checks (activates when sufficient data exists, ~50 decisions per policy)
+9. Build dashboard for coordination metrics and policy performance
 
-### Phase 2: Policy Data Model
-
-1. Create policy and version tables
-2. Extract hardcoded rules into policies
-3. Implement policy selection by context
-4. Wire services to use policies
-
-### Phase 3: Evolution System
-
-1. Create policy evolution workflow
-2. Implement analysis activities
-3. Integrate with A/B testing
-4. Schedule periodic evolution
+The full system is deployed from the start. Evolution components naturally activate once sufficient decision data has been collected.
 
 ### Files to Create
 
@@ -694,7 +687,6 @@ end
 
 ## Notes
 
-- Start with failure recovery policies (highest signal, clearest outcomes)
-- Decomposition policies are highest impact but need more data
-- Consider human review for escalation policy changes (safety-critical)
+- All policy types (decomposition, failure recovery, escalation) are deployed simultaneously. Each activates evolution independently when sufficient data exists for that policy type.
+- Anomaly alerting for escalation policy changes provides safety oversight without manual review gates
 - Coordination learning can feed into prompt evolution (surface coordination insights)
