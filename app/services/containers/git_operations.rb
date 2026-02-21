@@ -294,13 +294,17 @@ module Containers
       raise Error, "Failed to chmod #{hook_name} hook: #{chmod_result.error}" if chmod_result.failure?
     end
 
-    # Validates that a shell command contains only safe characters.
+    # Validates that a shell command is a simple executable with arguments.
+    # Each word must be an alphanumeric token, path, or flag — no shell
+    # operators (||, &&, ;, |, $, `, etc.) can appear.
     # Commands are expected from LANGUAGE_*_COMMANDS constants, but this
     # provides defense-in-depth against injection if the source changes.
-    SAFE_COMMAND_PATTERN = /\A[a-zA-Z0-9_\-\/\. ]+\z/
+    SAFE_WORD_PATTERN = /\A[a-zA-Z0-9_\-\/\.]+\z/
 
     def validate_hook_command!(command)
-      return if command.match?(SAFE_COMMAND_PATTERN)
+      words = command.split
+      raise Error, "Hook command is blank" if words.empty?
+      return if words.all? { |w| w.match?(SAFE_WORD_PATTERN) }
 
       raise Error, "Hook command contains unsafe characters: #{command.inspect}"
     end

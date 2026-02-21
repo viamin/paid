@@ -484,5 +484,68 @@ RSpec.describe Containers::GitOperations do
 
       expect { git_ops.install_git_hooks(lint_command: "rubocop", test_command: "rspec") }.not_to raise_error
     end
+
+    describe "command validation" do
+      it "accepts simple commands" do
+        allow(container_service).to receive(:execute).and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks/), anything)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/chmod/), anything)
+          .and_return(success_result)
+
+        expect { git_ops.install_git_hooks(lint_command: "bundle exec rubocop", test_command: "bundle exec rspec") }
+          .not_to raise_error
+      end
+
+      it "accepts commands with paths and dots" do
+        allow(container_service).to receive(:execute).and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks/), anything)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/chmod/), anything)
+          .and_return(success_result)
+
+        expect { git_ops.install_git_hooks(lint_command: "ruff check .", test_command: "go test ./...") }
+          .not_to raise_error
+      end
+
+      it "rejects commands with semicolons" do
+        expect { git_ops.install_git_hooks(lint_command: "echo; rm -rf /", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with backticks" do
+        expect { git_ops.install_git_hooks(lint_command: "`malicious`", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with dollar signs" do
+        expect { git_ops.install_git_hooks(lint_command: "echo $HOME", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with pipes" do
+        expect { git_ops.install_git_hooks(lint_command: "cat | sh", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "rejects commands with shell operators" do
+        expect { git_ops.install_git_hooks(lint_command: "true || malicious", test_command: "rspec") }
+          .not_to raise_error # rescued by install_git_hooks
+      end
+
+      it "logs a warning when command validation fails" do
+        allow(Rails.logger).to receive(:warn)
+
+        git_ops.install_git_hooks(lint_command: "echo; rm -rf /", test_command: "rspec")
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(message: "container_git.install_hooks_failed")
+        )
+      end
+    end
   end
 end

@@ -404,10 +404,22 @@ module SemanticSearch
     private
 
     # Walks the file tree, yielding indexable source files.
-    # Skips vendor directories, binary files, and dotfiles.
+    # Skips symlinks, vendor directories, binary files, and dotfiles.
+    # Validates real paths stay under the repo root to prevent symlink
+    # traversal attacks in untrusted repositories.
     def walk_files(repo_path)
-      Dir.glob(File.join(repo_path, "**", "*"))
-         .select { |f| File.file?(f) && indexable?(f) }
+      root = File.realpath(repo_path)
+
+      Dir.glob(File.join(root, "**", "*"))
+         .select do |f|
+           next false if File.symlink?(f)
+           next false unless File.file?(f)
+
+           real = File.realpath(f)
+           real.start_with?("#{root}/") && indexable?(real)
+         rescue Errno::ENOENT, Errno::EACCES
+           false
+         end
     end
 
     # Splits a source file into semantic chunks (function/class/module level).
@@ -426,8 +438,25 @@ module SemanticSearch
     end
 
     # Generates a vector embedding for the given text content.
+    # Uses OpenAI's text-embedding-3-large (3072 dimensions).
     def generate_embedding(content)
-      RubyLLM.embed(content, model: "text-embedding-3-large").vectors
+      client = OpenAI::Client.new
+      response = client.embeddings(
+        parameters: {
+          model: "text-embedding-3-large",
+          input: content
+        }
+      )
+      response.dig("data", 0, "embedding")
+    end
+
+    def ensure_meilisearch_index!
+      meilisearch_index.update_settings(
+        searchableAttributes: %w[content identifier file_path],
+        filterableAttributes: %w[language chunk_type]
+      )
+    rescue MeiliSearch::ApiError => e
+      raise unless e.message.include?("already exists")
     end
 
     def ensure_qdrant_collection!
