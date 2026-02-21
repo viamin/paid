@@ -38,12 +38,13 @@ module Activities
       lint_cmd = Prompts::BuildForIssue::LANGUAGE_LINT_COMMANDS[language]
       test_cmd = Prompts::BuildForIssue::LANGUAGE_TEST_COMMANDS[language]
 
-      # Skip hook installation when we don't have real lint/test commands
+      # Skip hook installation when neither lint nor test commands exist.
+      # When only one exists, the other gets a no-op fallback (true).
       return unless lint_cmd || test_cmd
 
       git_ops.install_git_hooks(
-        lint_command: lint_cmd || "echo 'no lint configured'",
-        test_command: test_cmd || "echo 'no tests configured'"
+        lint_command: lint_cmd || "true",
+        test_command: test_cmd || "true"
       )
     end
 
