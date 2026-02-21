@@ -46,7 +46,9 @@ module Activities
       )
     end
 
-    def create_worktree_record(agent_run)
+    MAX_WORKTREE_RETRIES = 3
+
+    def create_worktree_record(agent_run, attempts: 0)
       # For existing PR runs the branch name is deterministic, so a finished
       # worktree record from a previous run may still exist. Reclaim it
       # instead of failing on the uniqueness constraint.
@@ -105,7 +107,8 @@ module Activities
         e.record.errors.of_kind?(:branch_name, :taken)
 
       raise unless e.is_a?(ActiveRecord::RecordNotUnique) || retryable_uniqueness_error
-      retry
+      raise if attempts >= MAX_WORKTREE_RETRIES
+      create_worktree_record(agent_run, attempts: attempts + 1)
     end
   end
 end
