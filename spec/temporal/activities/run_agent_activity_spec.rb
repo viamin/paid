@@ -26,7 +26,7 @@ RSpec.describe Activities::RunAgentActivity do
     context "when agent succeeds in container" do
       before do
         allow(container_service).to receive(:execute).and_return(exec_success)
-        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(git_ops).to receive_messages(head_sha: "pre_agent_sha_abc123", commit_uncommitted_changes: false)
       end
 
       it "executes the agent CLI inside the container" do
@@ -82,9 +82,17 @@ RSpec.describe Activities::RunAgentActivity do
         expect(result[:has_changes]).to be false
       end
 
+      it "auto-commits uncommitted changes after agent runs" do
+        allow(git_ops).to receive(:has_changes_since?).and_return(true)
+
+        expect(git_ops).to receive(:commit_uncommitted_changes).and_return(true)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
       it "falls back to has_changes? when pre_agent_sha capture fails" do
         allow(git_ops).to receive(:head_sha).and_raise(StandardError, "container not ready")
-        allow(git_ops).to receive(:has_changes?).and_return(true)
+        allow(git_ops).to receive_messages(commit_uncommitted_changes: false, has_changes?: true)
         allow(git_ops).to receive(:has_changes_since?)
 
         result = activity.execute(agent_run_id: agent_run.id)

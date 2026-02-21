@@ -86,6 +86,25 @@ module Containers
       sha
     end
 
+    # Stages and commits any uncommitted changes left by the agent.
+    #
+    # Agents sometimes edit files without committing. This ensures those
+    # changes are captured in a commit so they survive the push step.
+    #
+    # @return [Boolean] true if a commit was created, false if working tree was clean
+    def commit_uncommitted_changes
+      status_result = execute_git("status", "--porcelain")
+      return false unless status_result.success? && status_result[:stdout].present?
+
+      add_result = execute_git("add", "-A")
+      raise Error, "Failed to stage changes: #{add_result.error}" if add_result.failure?
+
+      commit_result = execute_git("commit", "-m", "Apply agent changes")
+      raise Error, "Failed to commit changes: #{commit_result.error}" if commit_result.failure?
+
+      true
+    end
+
     # Returns the current HEAD SHA from the container.
     #
     # @return [String] the full SHA
