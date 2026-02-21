@@ -235,6 +235,65 @@ RSpec.describe Containers::GitOperations do
     end
   end
 
+  describe "#commit_uncommitted_changes" do
+    let(:empty_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+
+    it "returns false when working tree is clean" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(empty_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be false
+    end
+
+    it "stages and commits when there are uncommitted changes" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
+    it "raises Error when staging fails" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(described_class::Error, /Failed to stage/)
+    end
+
+    it "raises Error when commit fails" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "commit", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.commit_uncommitted_changes }.to raise_error(described_class::Error, /Failed to commit/)
+    end
+  end
+
   describe "#has_changes_since?" do
     let(:pre_sha) { "abc123def456" }
     let(:empty_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
