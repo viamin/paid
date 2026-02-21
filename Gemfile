@@ -94,3 +94,6 @@ group :development do
 end
 
 gem "good_job", "~> 4.13"
+
+# pgvector integration for semantic code search [https://github.com/ankane/neighbor]
+gem "neighbor"

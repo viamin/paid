@@ -27,6 +27,8 @@ module Prompts
       "rust" => "cargo clippy"
     }.freeze
 
+    CONTEXT_LIMIT = 10
+
     attr_reader :issue, :project
 
     def initialize(issue:, project:)
@@ -41,7 +43,18 @@ module Prompts
     def build
       raise UntrustedIssueError, "Cannot build prompt for issue from untrusted user: #{issue.github_creator_login}" unless issue.trusted?
 
-      <<~PROMPT
+      sections = []
+      sections << task_section
+      sections << codebase_context_section if codebase_context.any?
+      sections << instructions_section
+      sections << important_section
+      sections.join("\n")
+    end
+
+    private
+
+    def task_section
+      <<~SECTION
         # Task
 
         You are working on the following GitHub issue:
@@ -49,7 +62,25 @@ module Prompts
         **#{issue.title}** (##{issue.github_number})
 
         #{issue.body}
+      SECTION
+    end
 
+    def codebase_context_section
+      chunks = codebase_context.map do |chunk|
+        "## #{chunk.file_path}:#{chunk.start_line}-#{chunk.end_line} (#{chunk.chunk_type}: #{chunk.identifier})\n\n```#{chunk.language}\n#{chunk.content}\n```"
+      end
+
+      <<~SECTION
+        # Relevant Codebase Context
+
+        The following code snippets from the repository may be relevant to this issue:
+
+        #{chunks.join("\n\n")}
+      SECTION
+    end
+
+    def instructions_section
+      <<~SECTION
         # Instructions
 
         1. Analyze the issue and understand what needs to be done
@@ -57,7 +88,11 @@ module Prompts
         3. Ensure tests pass (run `#{test_command}` if available)
         4. Ensure linting passes (run `#{lint_command}` if available)
         5. Commit your changes with a descriptive message
+      SECTION
+    end
 
+    def important_section
+      <<~SECTION
         # Important
 
         - Work within the existing codebase style and conventions
@@ -66,10 +101,29 @@ module Prompts
         - Focus on completing the specific task in the issue
 
         When you're done, commit all your changes. Do not push.
-      PROMPT
+      SECTION
     end
 
-    private
+    def codebase_context
+      @codebase_context ||= fetch_codebase_context
+    end
+
+    def fetch_codebase_context
+      query_text = [ issue.title, issue.body ].compact.join("\n")
+      SemanticSearch::Query.call(
+        query: query_text,
+        project: project,
+        mode: :text,
+        limit: CONTEXT_LIMIT
+      ).to_a
+    rescue => e
+      Rails.logger.warn(
+        message: "prompt_builder.semantic_search_failed",
+        project_id: project.id,
+        error: e.message
+      )
+      []
+    end
 
     def test_command
       LANGUAGE_TEST_COMMANDS.fetch(detected_language, "echo \"No test command configured\"")

@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-02-16
-- **Status**: Draft
+- **Status**: Accepted
 - **Type**: Architecture
 - **Priority**: Medium
 - **Related Issues**: #66 (Look into using arcaneum for semantic data)
