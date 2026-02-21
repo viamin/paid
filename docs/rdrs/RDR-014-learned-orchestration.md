@@ -110,7 +110,7 @@ For each agent run:
    - Good for parallelism levels, timeout values
    - Less applicable to discrete structural decisions
 
-### Design Principle: Build for Full Autonomy
+### Design Principle: Build Complete System from Start
 
 Design and build the complete system from the start — decision logging, context-aware strategy selection, LLM-based evolution, and A/B testing all deployed together. Some components will naturally become active only after sufficient data accumulates (strategy evolution requires ~30 decision records), but the architecture should be complete from day one rather than built in graduated phases.
 
@@ -311,7 +311,7 @@ end
 2. **Context-aware selection**: Different projects/tasks get different strategies
 3. **LLM-based evolution**: Semantically meaningful improvements (vs random mutation)
 4. **A/B testing validation**: Statistical rigor before promotion
-5. **Gradual autonomy**: Start with recommendations, progress to full automation
+5. **Data-driven activation**: All components deployed from start, activate when sufficient data exists
 
 ## Alternatives Considered
 

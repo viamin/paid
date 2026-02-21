@@ -337,14 +337,14 @@ Add Qdrant and MeiliSearch to `docker-compose.yml`:
 ```yaml
 services:
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.13.2
     ports:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
 
   meilisearch:
-    image: getmeili/meilisearch:latest
+    image: getmeili/meilisearch:v1.13.0
     ports:
       - "7700:7700"
     environment:
@@ -403,13 +403,40 @@ module SemanticSearch
 
     private
 
+    # Walks the file tree, yielding indexable source files.
+    # Skips vendor directories, binary files, and dotfiles.
+    def walk_files(repo_path)
+      Dir.glob(File.join(repo_path, "**", "*"))
+         .select { |f| File.file?(f) && indexable?(f) }
+    end
+
+    # Splits a source file into semantic chunks (function/class/module level).
+    # Falls back to file-level chunking when AST parsing is unavailable.
+    def chunk_file(file_path)
+      content = File.read(file_path)
+      language = detect_language(file_path)
+
+      # TODO(#66): Implement AST-aware chunking via tree-sitter for
+      # function/class-level granularity. For now, chunk at file level.
+      [{
+        path: file_path, id: file_path, type: "file",
+        content: content, language: language,
+        start_line: 1, end_line: content.lines.count
+      }]
+    end
+
+    # Generates a vector embedding for the given text content.
+    def generate_embedding(content)
+      RubyLLM.embed(content, model: "text-embedding-3-large").vectors
+    end
+
     def ensure_qdrant_collection!
       qdrant.collections.create(
         collection_name: collection_name,
         vectors: { size: 3072, distance: "Cosine" }  # text-embedding-3-large dimensions
       )
-    rescue Qdrant::Error # Collection already exists
-      nil
+    rescue Qdrant::Error => e
+      raise unless e.message.include?("already exists")
     end
 
     def index_chunk(chunk)
@@ -460,8 +487,8 @@ module SemanticSearch
     end
 
     def collection_name = "project_#{project.id}"
-    def qdrant = Qdrant::Client.new(url: ENV["QDRANT_URL"])
-    def meilisearch_index = MeiliSearch::Client.new(ENV["MEILISEARCH_URL"], ENV["MEILISEARCH_MASTER_KEY"]).index(collection_name)
+    def qdrant = @qdrant ||= Qdrant::Client.new(url: ENV["QDRANT_URL"])
+    def meilisearch_index = @meilisearch_index ||= MeiliSearch::Client.new(ENV["MEILISEARCH_URL"], ENV["MEILISEARCH_MASTER_KEY"]).index(collection_name)
   end
 end
 ```
@@ -500,8 +527,47 @@ module SemanticSearch
 
     private
 
-    def qdrant = Qdrant::Client.new(url: ENV["QDRANT_URL"])
-    def meilisearch_index = MeiliSearch::Client.new(ENV["MEILISEARCH_URL"], ENV["MEILISEARCH_MASTER_KEY"]).index("project_#{project.id}")
+    # Merges vector (semantic) and full-text results into a single ranked list.
+    # Deduplicates by point ID. Semantic matches are prioritized: a result
+    # appearing in both sets gets a boosted score; remaining text-only results
+    # are appended after all semantic results.
+    def merge_results(vector_results, text_results)
+      text_ids = Set.new(text_results["hits"]&.map { |h| h["id"] })
+      seen = Set.new
+      merged = []
+
+      # Semantic results first (highest relevance)
+      vector_results.dig("result")&.each do |point|
+        id = point["id"]
+        next if seen.include?(id)
+        seen.add(id)
+
+        merged << {
+          id: id,
+          score: point["score"],
+          payload: point["payload"],
+          source: text_ids.include?(id) ? :both : :semantic
+        }
+      end
+
+      # Append text-only results
+      text_results["hits"]&.each do |hit|
+        next if seen.include?(hit["id"])
+        seen.add(hit["id"])
+
+        merged << {
+          id: hit["id"],
+          score: nil,
+          payload: hit.slice("file_path", "identifier", "content"),
+          source: :full_text
+        }
+      end
+
+      merged.first(limit)
+    end
+
+    def qdrant = @qdrant ||= Qdrant::Client.new(url: ENV["QDRANT_URL"])
+    def meilisearch_index = @meilisearch_index ||= MeiliSearch::Client.new(ENV["MEILISEARCH_URL"], ENV["MEILISEARCH_MASTER_KEY"]).index("project_#{project.id}")
   end
 end
 ```

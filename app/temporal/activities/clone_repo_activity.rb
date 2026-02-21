@@ -25,7 +25,7 @@ module Activities
         git_ops.clone_and_setup_branch
       end
 
-      install_ci_hooks(git_ops, agent_run)
+      install_quality_hooks(git_ops, agent_run)
       create_worktree_record(agent_run)
 
       { agent_run_id: agent_run_id, branch_name: agent_run.branch_name }
@@ -33,7 +33,7 @@ module Activities
 
     private
 
-    def install_ci_hooks(git_ops, agent_run)
+    def install_quality_hooks(git_ops, agent_run)
       language = detect_language(agent_run.project)
       lint_cmd = Prompts::BuildForIssue::LANGUAGE_LINT_COMMANDS[language]
       test_cmd = Prompts::BuildForIssue::LANGUAGE_TEST_COMMANDS[language]

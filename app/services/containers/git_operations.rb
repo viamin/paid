@@ -98,10 +98,19 @@ module Containers
     def install_git_hooks(lint_command:, test_command:)
       install_hook("pre-commit", pre_commit_script(lint_command))
       install_hook("pre-push", pre_push_script(lint_command, test_command))
-    rescue => e
+    rescue Error => e
+      # Expected failures: hook write/chmod failed, unsafe command, etc.
       Rails.logger.warn(
         message: "container_git.install_hooks_failed",
         agent_run_id: agent_run.id,
+        error: e.message
+      )
+    rescue StandardError => e
+      # Unexpected failures: container gone, network error, etc.
+      Rails.logger.error(
+        message: "container_git.install_hooks_unexpected_error",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
         error: e.message
       )
     end
@@ -285,7 +294,20 @@ module Containers
       raise Error, "Failed to chmod #{hook_name} hook: #{chmod_result.error}" if chmod_result.failure?
     end
 
+    # Validates that a shell command contains only safe characters.
+    # Commands are expected from LANGUAGE_*_COMMANDS constants, but this
+    # provides defense-in-depth against injection if the source changes.
+    SAFE_COMMAND_PATTERN = /\A[a-zA-Z0-9_\-\/\. ]+\z/
+
+    def validate_hook_command!(command)
+      return if command.match?(SAFE_COMMAND_PATTERN)
+
+      raise Error, "Hook command contains unsafe characters: #{command.inspect}"
+    end
+
     def pre_commit_script(lint_command)
+      validate_hook_command!(lint_command)
+
       <<~SHELL
         #!/bin/sh
         # Installed by Paid — enforce lint before commit
@@ -303,6 +325,9 @@ module Containers
     end
 
     def pre_push_script(lint_command, test_command)
+      validate_hook_command!(lint_command)
+      validate_hook_command!(test_command)
+
       <<~SHELL
         #!/bin/sh
         # Installed by Paid — enforce lint + tests before push
