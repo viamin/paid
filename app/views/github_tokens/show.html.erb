@@ -35,6 +35,10 @@
             <span class="inline-flex items-center rounded-md bg-red-100 px-3 py-1 text-sm font-medium text-red-700">
               Validation Failed
             </span>
+          <% elsif @github_token.validation_stale? %>
+            <span class="inline-flex items-center rounded-md bg-yellow-100 px-3 py-1 text-sm font-medium text-yellow-800">
+              Validation Stuck
+            </span>
           <% elsif @github_token.validation_pending? || @github_token.validating? %>
             <span class="inline-flex items-center rounded-md bg-yellow-100 px-3 py-1 text-sm font-medium text-yellow-800">
               <svg class="animate-spin -ml-0.5 mr-1.5 h-4 w-4 text-yellow-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
