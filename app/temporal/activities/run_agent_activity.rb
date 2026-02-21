@@ -17,9 +17,9 @@ module Activities
       prompt = agent_run.effective_prompt
       raise Temporalio::Error::ApplicationError.new("No prompt available for agent run", type: "MissingPrompt") unless prompt
 
-      run_agent_in_container(agent_run, prompt)
+      pre_agent_sha = run_agent_in_container(agent_run, prompt)
 
-      has_changes = check_for_changes(agent_run)
+      has_changes = check_for_changes(agent_run, pre_agent_sha)
 
       {
         agent_run_id: agent_run_id,
@@ -30,6 +30,12 @@ module Activities
 
     private
 
+    # Runs the agent CLI inside the container and returns the pre-agent HEAD SHA.
+    #
+    # Captures HEAD before the agent executes so callers can detect whether
+    # the agent made any new changes (vs. commits from prior runs).
+    #
+    # @return [String, nil] the HEAD SHA before the agent ran, or nil on capture failure
     def run_agent_in_container(agent_run, prompt)
       container_service = reconnect_container(agent_run)
 
@@ -42,6 +48,8 @@ module Activities
       end
 
       command = command_prefix + [ prompt ]
+
+      pre_agent_sha = capture_head_sha(container_service, agent_run)
 
       agent_run.start!
       agent_run.log!("system", "Starting #{agent_run.agent_type} agent in container")
@@ -62,12 +70,29 @@ module Activities
           type: "AgentExecutionFailed"
         )
       end
+
+      pre_agent_sha
     rescue Containers::Provision::TimeoutError => e
       agent_run.timeout!
       raise Temporalio::Error::ApplicationError.new(e.message, type: "AgentTimeout")
     end
 
-    def check_for_changes(agent_run)
+    def capture_head_sha(container_service, agent_run)
+      git_ops = Containers::GitOperations.new(
+        container_service: container_service,
+        agent_run: agent_run
+      )
+      git_ops.head_sha
+    rescue => e
+      logger.warn(
+        message: "agent_execution.capture_head_sha_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+      nil
+    end
+
+    def check_for_changes(agent_run, pre_agent_sha)
       return false unless agent_run.container_id.present?
 
       container_service = reconnect_container(agent_run)
@@ -77,7 +102,11 @@ module Activities
         agent_run: agent_run
       )
 
-      git_ops.has_changes?
+      if pre_agent_sha.present?
+        git_ops.has_changes_since?(pre_agent_sha)
+      else
+        git_ops.has_changes?
+      end
     rescue => e
       logger.warn(
         message: "agent_execution.check_changes_failed",

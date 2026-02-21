@@ -149,6 +149,20 @@ class AgentRun < ApplicationRecord
     Prompts::BuildForIssue.call(issue: issue, project: project)
   end
 
+  # Returns the agent's stdout output joined as a single string.
+  #
+  # @param limit [Integer] Max number of log entries to fetch (default 500)
+  # @return [String] The agent summary text (may be empty)
+  def agent_summary(limit: 500)
+    agent_run_logs
+      .where(log_type: "stdout")
+      .order(:created_at)
+      .limit(limit)
+      .pluck(:content)
+      .join("\n")
+      .strip
+  end
+
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to prompt_for_issue.
   #

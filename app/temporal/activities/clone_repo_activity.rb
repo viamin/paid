@@ -46,7 +46,9 @@ module Activities
       )
     end
 
-    def create_worktree_record(agent_run)
+    MAX_WORKTREE_RETRIES = 3
+
+    def create_worktree_record(agent_run, attempts: 0)
       # For existing PR runs the branch name is deterministic, so a finished
       # worktree record from a previous run may still exist. Reclaim it
       # instead of failing on the uniqueness constraint.
@@ -56,8 +58,9 @@ module Activities
       #
       # Rescue RecordNotUnique to handle the race where two activities
       # both see no existing record and try to insert concurrently.
+      agent_run.reload
       existing = Worktree.find_by(
-        project: agent_run.project,
+        project_id: agent_run.project_id,
         branch_name: agent_run.branch_name
       )
 
@@ -93,10 +96,19 @@ module Activities
         )
         existing
       end
-    rescue ActiveRecord::RecordNotUnique
-      # Lost the race — another activity inserted first. Re-fetch and
-      # apply the idempotent/conflict logic.
-      retry
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+      # RecordNotUnique: lost the race — another activity inserted first.
+      # RecordInvalid with uniqueness error: find_by missed the existing
+      # record (e.g. stale query cache) but the validation caught it.
+      # In both cases, re-fetch and apply the idempotent/conflict logic.
+      retryable_uniqueness_error =
+        e.is_a?(ActiveRecord::RecordInvalid) &&
+        e.record.is_a?(Worktree) &&
+        e.record.errors.of_kind?(:branch_name, :taken)
+
+      raise unless e.is_a?(ActiveRecord::RecordNotUnique) || retryable_uniqueness_error
+      raise if attempts >= MAX_WORKTREE_RETRIES
+      create_worktree_record(agent_run, attempts: attempts + 1)
     end
   end
 end
