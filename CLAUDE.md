@@ -115,7 +115,7 @@ Orchestration code should be mechanically simple - delegate all semantic reasoni
 
 ### Always Fix Forward
 
-Never skip pre-commit hooks (`--no-verify`), never disable linters, never ignore failing tests. If a check fails, fix the underlying issue. This applies to both human developers and AI agents.
+Never skip pre-commit hooks (`--no-verify`), never disable linters, never ignore failing tests. If a check fails, fix the underlying issue. This applies to both human developers, AI agents, and system-level code. The only acceptable use of `--no-verify` is when a hook fails due to an unpatched CVE with no released fix.
 
 ### Ruby Conventions
 

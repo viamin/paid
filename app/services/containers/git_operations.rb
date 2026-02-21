@@ -88,9 +88,10 @@ module Containers
 
     # Installs pre-commit and pre-push git hooks inside the container.
     #
-    # Pre-commit runs lint; pre-push runs lint + tests. Both skip gracefully
-    # when the required tool binary isn't available yet (e.g. before bundle
-    # install). Existing hooks (from Husky, Lefthook, etc.) are never overwritten.
+    # Pre-commit runs lint; pre-push runs lint + tests. Both check whether the
+    # command binary is on PATH before running (via `command -v`); when the
+    # binary is missing the hook prints a warning and exits successfully.
+    # Existing hooks (from Husky, Lefthook, etc.) are never overwritten.
     #
     # @param lint_command [String] command to run for linting
     # @param test_command [String] command to run for tests
@@ -119,8 +120,8 @@ module Containers
     #
     # Agents sometimes edit files without committing. This ensures those
     # changes are captured in a commit so they survive the push step.
-    # Uses --no-verify to bypass pre-commit hooks — this is a system
-    # safety-net, not agent code, so hooks should not block it.
+    # Hooks run normally — if they fail, the commit fails and the error
+    # propagates so the caller can handle it.
     #
     # @return [Boolean] true if a commit was created, false if working tree was clean
     def commit_uncommitted_changes
@@ -130,7 +131,7 @@ module Containers
       add_result = execute_git("add", "-A")
       raise Error, "Failed to stage changes: #{add_result.error}" if add_result.failure?
 
-      commit_result = execute_git("commit", "--no-verify", "-m", "Apply agent changes")
+      commit_result = execute_git("commit", "-m", "Apply agent changes")
       raise Error, "Failed to commit changes: #{commit_result.error}" if commit_result.failure?
 
       true

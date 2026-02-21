@@ -62,7 +62,7 @@ module Prompts
         # Rules — you MUST follow these
 
         - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
-        - **Never use `--no-verify`** or any flag that skips git hooks in your commits.
+        - **Never use `--no-verify`** or any flag that skips git hooks.
         - **Never disable linters** (e.g. rubocop:disable, eslint-disable, noqa) to silence failures. Fix the code instead.
         - **Fix forward** — if a check fails, fix the underlying issue. Do not bypass the check.
         - Work within the existing codebase style and conventions

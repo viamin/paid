@@ -257,7 +257,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(success_result)
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .with([ "git", "commit", "-m", "Apply agent changes" ], timeout: nil, stream: false)
         .and_return(success_result)
 
       expect(git_ops.commit_uncommitted_changes).to be true
@@ -287,7 +287,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(success_result)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .with([ "git", "commit", "-m", "Apply agent changes" ], timeout: nil, stream: false)
         .and_return(failure_result)
 
       expect { git_ops.commit_uncommitted_changes }.to raise_error(described_class::Error, /Failed to commit/)
