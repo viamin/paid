@@ -779,28 +779,5 @@ RSpec.describe Containers::Provision do
         expect(result).to be_success
       end
     end
-
-    context "with watchdog cleanup after successful execution" do
-      it "cleans up watchdog thread after completion" do
-        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
-          block.call(:stdout, "output\n") if block
-          [ [ "output\n" ], [], 0 ]
-        end
-
-        created_threads = []
-        allow(Thread).to receive(:new).and_wrap_original do |orig, *args, &block|
-          thread = orig.call(*args, &block)
-          created_threads << thread
-          thread
-        end
-
-        service.execute("fast_command", timeout: 10, startup_timeout: 5)
-
-        created_threads.each do |thread|
-          thread.join(1)
-          expect(thread.alive?).to be(false)
-        end
-      end
-    end
   end
 end

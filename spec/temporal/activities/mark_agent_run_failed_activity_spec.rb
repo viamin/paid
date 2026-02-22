@@ -37,6 +37,27 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("failed")
     end
 
+    it "does not overwrite timeout status" do
+      agent_run = create(:agent_run, :running, project: project)
+      agent_run.timeout!(error: "startup_timeout: No output received")
+
+      activity.execute(agent_run_id: agent_run.id, error: "Activity task failed")
+
+      agent_run.reload
+      expect(agent_run.status).to eq("timeout")
+      expect(agent_run.error_message).to eq("startup_timeout: No output received")
+    end
+
+    it "does not overwrite completed status" do
+      agent_run = create(:agent_run, :running, project: project)
+      agent_run.complete!
+
+      activity.execute(agent_run_id: agent_run.id, error: "Activity task failed")
+
+      agent_run.reload
+      expect(agent_run.status).to eq("completed")
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect {
         activity.execute(agent_run_id: -1, error: "error")

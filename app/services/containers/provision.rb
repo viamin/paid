@@ -170,11 +170,15 @@ module Containers
       # (Thread.raise is unreliable with Excon's blocking I/O), then sets
       # timeout_reason so the main thread can raise the right error.
       # exec_completed prevents late watchdog firing after exec returns.
+      # All shared state is accessed under watchdog_mutex; the reason ref
+      # lambda ensures raise_if_watchdog_timeout! reads the current value
+      # rather than a stale snapshot captured at call time.
       watchdog_mutex = Mutex.new
       output_received = false
       last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       exec_completed = false
       timeout_reason = nil # :startup or :idle, set by watchdog
+      timeout_reason_ref = -> { timeout_reason }
       watchdog = nil
 
       begin
@@ -215,7 +219,7 @@ module Containers
 
         # Check if the watchdog stopped the container (exec returns normally
         # with a non-zero exit code when the process is killed).
-        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason, startup_timeout, idle_timeout)
+        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
 
         # container.exec returns [stdout_array, stderr_array, exit_code].
         # The third element is the actual exec exit code, unlike
@@ -247,13 +251,13 @@ module Containers
       rescue Timeout::Error
         # Check if the watchdog triggered — the container stop may have caused
         # a Timeout::Error instead of a clean exec return.
-        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason, startup_timeout, idle_timeout)
+        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
         log_partial_output(stdout_buffer, stderr_buffer)
         log_system("container.execute.timeout", timeout: timeout)
         raise TimeoutError, "Command timed out after #{timeout} seconds"
       rescue Docker::Error::DockerError => e
         # Check if the watchdog triggered — container stop causes Docker errors.
-        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason, startup_timeout, idle_timeout)
+        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
         log_partial_output(stdout_buffer, stderr_buffer)
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
@@ -616,8 +620,11 @@ module Containers
     # Called after container.exec returns or in rescue blocks, since the watchdog
     # stops the container to unblock the exec (which may surface as a Docker error
     # or a normal return with a non-zero exit code).
-    def raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason, startup_timeout, idle_timeout)
-      reason = watchdog_mutex.synchronize { timeout_reason }
+    #
+    # timeout_reason_ref is a lambda that reads the shared timeout_reason variable
+    # under the mutex, ensuring we see the latest value rather than a stale snapshot.
+    def raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
+      reason = watchdog_mutex.synchronize { timeout_reason_ref.call }
       return unless reason
 
       case reason

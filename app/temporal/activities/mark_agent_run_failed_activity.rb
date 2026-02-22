@@ -9,6 +9,13 @@ module Activities
       error = input[:error]
       agent_run = AgentRun.find(agent_run_id)
 
+      # Don't overwrite a more specific terminal status (e.g. "timeout")
+      # that was already set by the activity that detected the failure.
+      if agent_run.finished?
+        agent_run.log!("system", "Agent run already #{agent_run.status}, skipping fail! (error: #{error})")
+        return { agent_run_id: agent_run_id }
+      end
+
       agent_run.fail!(error: error)
       agent_run.log!("system", "Agent run failed: #{error}")
 

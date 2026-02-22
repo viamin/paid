@@ -57,12 +57,7 @@ module Activities
       agent_run.log!("system", "Starting #{agent_run.agent_type} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
 
-      result = container_service.execute(
-        command,
-        timeout: agent_timeout,
-        startup_timeout: agent_startup_timeout,
-        idle_timeout: agent_idle_timeout
-      )
+      result = container_service.execute(command, timeout: agent_timeout)
 
       if result.success?
         # Stay in running status — the run is only marked completed after
@@ -70,7 +65,8 @@ module Activities
         # the container auth middleware to reject subsequent git-push requests.
         agent_run.log!("system", "Agent execution succeeded")
       else
-        error_msg = "Agent exited with code #{result[:exit_code]}"
+        output = (result[:stderr].presence || result[:stdout]).to_s.strip.truncate(500)
+        error_msg = "Agent exited with code #{result[:exit_code]}: #{output}"
         agent_run.fail!(error: error_msg)
         raise Temporalio::Error::ApplicationError.new(
           "Agent execution failed: #{error_msg}",
@@ -165,14 +161,6 @@ module Activities
 
     def agent_timeout
       Rails.application.config.x.agent_timeout
-    end
-
-    def agent_startup_timeout
-      Rails.application.config.x.agent_startup_timeout
-    end
-
-    def agent_idle_timeout
-      Rails.application.config.x.agent_idle_timeout
     end
   end
 end

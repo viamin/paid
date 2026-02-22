@@ -34,9 +34,7 @@ RSpec.describe Activities::RunAgentActivity do
 
         expect(container_service).to receive(:execute).with(
           array_including("claude", "--print", "--output-format=text", "--dangerously-skip-permissions", "-p"),
-          timeout: anything,
-          startup_timeout: anything,
-          idle_timeout: anything
+          timeout: anything
         ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
