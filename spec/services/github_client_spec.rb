@@ -491,6 +491,179 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#check_runs_for_ref" do
+    let(:repo) { "owner/repo" }
+    let(:ref) { "abc123" }
+
+    context "when check runs exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/commits/#{ref}/check-runs")
+          .to_return(
+            status: 200,
+            body: {
+              total_count: 2,
+              check_runs: [
+                { id: 1, name: "rspec", conclusion: "failure" },
+                { id: 2, name: "rubocop", conclusion: "success" }
+              ]
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns check run names and conclusions" do
+        result = client.check_runs_for_ref(repo, ref)
+
+        expect(result).to eq([
+          { name: "rspec", conclusion: "failure" },
+          { name: "rubocop", conclusion: "success" }
+        ])
+      end
+    end
+
+    context "when ref does not exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/commits/#{ref}/check-runs")
+          .to_return(status: 404, body: { message: "Not Found" }.to_json)
+      end
+
+      it "raises NotFoundError" do
+        expect { client.check_runs_for_ref(repo, ref) }.to raise_error(GithubClient::NotFoundError)
+      end
+    end
+  end
+
+  describe "#issue_comments" do
+    let(:repo) { "owner/repo" }
+
+    context "when comments exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .to_return(
+            status: 200,
+            body: [
+              { id: 1, body: "Looks good", user: { login: "reviewer" } },
+              { id: 2, body: "Please fix", user: { login: "maintainer" } }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns comments" do
+        result = client.issue_comments(repo, 42)
+
+        expect(result.size).to eq(2)
+        expect(result.first.body).to eq("Looks good")
+        expect(result.first.user.login).to eq("reviewer")
+      end
+    end
+  end
+
+  describe "#review_threads" do
+    let(:repo) { "owner/repo" }
+
+    context "when threads exist" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    reviewThreads: {
+                      nodes: [
+                        {
+                          id: "thread_1",
+                          isResolved: false,
+                          comments: {
+                            nodes: [
+                              { body: "Fix this", path: "app/model.rb", line: 10, author: { login: "reviewer" } }
+                            ]
+                          }
+                        },
+                        {
+                          id: "thread_2",
+                          isResolved: true,
+                          comments: {
+                            nodes: [
+                              { body: "Done", path: "app/view.rb", line: 5, author: { login: "author" } }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns threads with resolution status and comments" do
+        result = client.review_threads(repo, 42)
+
+        expect(result.size).to eq(2)
+        expect(result.first[:id]).to eq("thread_1")
+        expect(result.first[:is_resolved]).to be false
+        expect(result.first[:comments].first[:body]).to eq("Fix this")
+        expect(result.first[:comments].first[:path]).to eq("app/model.rb")
+        expect(result.first[:comments].first[:line]).to eq(10)
+        expect(result.first[:comments].first[:author]).to eq("reviewer")
+
+        expect(result.last[:is_resolved]).to be true
+      end
+    end
+  end
+
+  describe "#resolve_review_thread" do
+    context "when resolution succeeds" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                resolveReviewThread: {
+                  thread: { id: "thread_1", isResolved: true }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "resolves the thread" do
+        result = client.resolve_review_thread("thread_1")
+
+        expect(result.dig("data", "resolveReviewThread", "thread", "isResolved")).to be true
+      end
+    end
+  end
+
+  describe "#create_pull_request_comment_reply" do
+    let(:repo) { "owner/repo" }
+
+    context "when reply succeeds" do
+      before do
+        stub_request(:post, "#{api_base}/repos/#{repo}/pulls/42/comments")
+          .with(body: { body: "Fixed!", in_reply_to: 100 }.to_json)
+          .to_return(
+            status: 201,
+            body: { id: 200, body: "Fixed!", user: { login: "bot" } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "creates a reply" do
+        result = client.create_pull_request_comment_reply(repo, 42, 100, "Fixed!")
+
+        expect(result.body).to eq("Fixed!")
+      end
+    end
+  end
+
   describe "#rate_limit_remaining" do
     context "when rate limit info is available" do
       it "returns remaining requests" do

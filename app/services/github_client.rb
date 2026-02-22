@@ -226,6 +226,100 @@ class GithubClient
     @write_access_cache[repo] = false
   end
 
+  # Fetches CI check runs for a git ref (branch, tag, or SHA).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Git ref (branch name, tag, or SHA)
+  # @return [Array<Hash>] Check runs with :name and :conclusion keys
+  def check_runs_for_ref(repo, ref)
+    handle_errors do
+      response = client.check_runs_for_ref(repo, ref)
+      response.check_runs.map { |cr| { name: cr.name, conclusion: cr.conclusion } }
+    end
+  end
+
+  # Fetches conversation comments on an issue or pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @return [Array<Sawyer::Resource>] Comments (each has .user.login, .body, .created_at)
+  def issue_comments(repo, number)
+    handle_errors { client.issue_comments(repo, number) }
+  end
+
+  # Fetches review threads on a pull request via GraphQL.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Array<Hash>] Threads with :id, :is_resolved, :comments keys
+  def review_threads(repo, number)
+    owner, name = repo.split("/", 2)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            reviewThreads(first: 100) {
+              nodes {
+                id
+                isResolved
+                comments(first: 50) {
+                  nodes {
+                    body
+                    path
+                    line
+                    author { login }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(query, owner: owner, name: name, number: number)
+    threads = data.dig("data", "repository", "pullRequest", "reviewThreads", "nodes") || []
+
+    threads.map do |thread|
+      {
+        id: thread["id"],
+        is_resolved: thread["isResolved"],
+        comments: (thread.dig("comments", "nodes") || []).map do |c|
+          { body: c["body"], path: c["path"], line: c["line"], author: c.dig("author", "login") }
+        end
+      }
+    end
+  end
+
+  # Resolves a review thread on a pull request via GraphQL.
+  #
+  # @param thread_node_id [String] The GraphQL node ID of the review thread
+  # @return [Hash] The response data
+  def resolve_review_thread(thread_node_id)
+    query = <<~GRAPHQL
+      mutation($threadId: ID!) {
+        resolveReviewThread(input: { threadId: $threadId }) {
+          thread { id isResolved }
+        }
+      }
+    GRAPHQL
+
+    graphql_request(query, threadId: thread_node_id)
+  end
+
+  # Replies to a review comment on a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param pull_number [Integer] Pull request number
+  # @param comment_id [Integer] The ID of the review comment to reply to
+  # @param body [String] Reply body (Markdown supported)
+  # @return [Sawyer::Resource] The created reply
+  def create_pull_request_comment_reply(repo, pull_number, comment_id, body)
+    handle_errors do
+      client.create_pull_request_comment_reply(repo, pull_number, body, comment_id)
+    end
+  end
+
   # Gets the remaining rate limit.
   #
   # @return [Integer] Number of requests remaining
@@ -274,6 +368,27 @@ class GithubClient
       builder.use Octokit::Middleware::FollowRedirects
       builder.use Octokit::Response::RaiseError
       builder.adapter Faraday.default_adapter
+    end
+  end
+
+  def graphql_request(query, **variables)
+    response = graphql_connection.post("/graphql") do |req|
+      req.headers["Authorization"] = "token #{client.access_token}"
+      req.body = { query: query, variables: variables }
+    end
+    response.body
+  rescue Faraday::UnauthorizedError
+    raise AuthenticationError
+  rescue Faraday::Error => e
+    raise ApiError.new(e.message)
+  end
+
+  def graphql_connection
+    @graphql_connection ||= Faraday.new(url: "https://api.github.com") do |f|
+      f.request :json
+      f.response :json
+      f.response :raise_error
+      f.adapter Faraday.default_adapter
     end
   end
 

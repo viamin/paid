@@ -198,7 +198,49 @@ module Containers
       false
     end
 
+    # Fetches a remote branch inside the container.
+    #
+    # @param branch [String] The branch to fetch
+    # @return [void]
+    # @raise [Error] when the fetch fails
+    def fetch_branch(branch)
+      result = execute_git("fetch", "origin", branch)
+      raise Error, "Fetch failed: #{result.error}" if result.failure?
+    end
+
+    # Rebases the current branch onto a remote branch.
+    #
+    # Fetches the target branch first, then runs git rebase. On conflict,
+    # aborts the rebase and returns false so the caller can instruct the
+    # agent to resolve conflicts via merge instead.
+    #
+    # @param onto_branch [String] The branch to rebase onto (e.g. "main")
+    # @return [Boolean] true if rebase succeeded, false if conflicts occurred
+    def rebase_onto(onto_branch)
+      fetch_branch(onto_branch)
+
+      result = execute_git("rebase", "origin/#{onto_branch}")
+      if rebase_conflict?(result)
+        abort_rebase
+        return false
+      end
+
+      raise Error, "Rebase failed: #{result.error}" if result.failure?
+
+      true
+    end
+
     private
+
+    def rebase_conflict?(result)
+      result.failure? && result[:stderr].to_s.include?("CONFLICT")
+    end
+
+    def abort_rebase
+      execute_git("rebase", "--abort")
+    rescue Error
+      # Best effort — abort may fail if rebase state is already gone
+    end
 
     def clone_repo
       # Idempotent: skip clone if a previous attempt already populated /workspace.

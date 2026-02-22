@@ -379,6 +379,114 @@ RSpec.describe Containers::GitOperations do
     end
   end
 
+  describe "#fetch_branch" do
+    it "fetches the specified branch from origin" do
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "main" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.fetch_branch("main")
+    end
+
+    it "raises Error when fetch fails" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "main" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.fetch_branch("main") }.to raise_error(described_class::Error, /Fetch failed/)
+    end
+  end
+
+  describe "#rebase_onto" do
+    let(:fetch_result) { success_result }
+
+    before do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "main" ], timeout: nil, stream: false)
+        .and_return(fetch_result)
+    end
+
+    context "when rebase succeeds" do
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "returns true" do
+        expect(git_ops.rebase_onto("main")).to be true
+      end
+
+      it "fetches the branch first" do
+        expect(container_service).to receive(:execute)
+          .with([ "git", "fetch", "origin", "main" ], timeout: nil, stream: false)
+          .and_return(success_result)
+          .ordered
+
+        expect(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(success_result)
+          .ordered
+
+        git_ops.rebase_onto("main")
+      end
+    end
+
+    context "when rebase has conflicts" do
+      let(:conflict_result) do
+        Containers::Provision::Result.failure(
+          error: "rebase failed",
+          stdout: "",
+          stderr: "CONFLICT (content): Merge conflict in app/model.rb\nFailed to merge in the changes.",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(conflict_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "returns false" do
+        expect(git_ops.rebase_onto("main")).to be false
+      end
+
+      it "aborts the rebase" do
+        expect(container_service).to receive(:execute)
+          .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.rebase_onto("main")
+      end
+    end
+
+    context "when rebase fails for non-conflict reasons" do
+      let(:error_result) do
+        Containers::Provision::Result.failure(
+          error: "rebase failed",
+          stdout: "",
+          stderr: "fatal: invalid upstream 'origin/main'",
+          exit_code: 128
+        )
+      end
+
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(error_result)
+      end
+
+      it "raises Error" do
+        expect { git_ops.rebase_onto("main") }.to raise_error(described_class::Error, /Rebase failed/)
+      end
+    end
+  end
+
   describe "#install_git_hooks" do
     let(:hook_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
     let(:hook_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
