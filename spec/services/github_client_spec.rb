@@ -643,14 +643,15 @@ RSpec.describe GithubClient do
           )
       end
 
-      it "returns reviews with user, state, and submitted_at" do
+      it "returns reviews with user, state, and submitted_at parsed as Time" do
         result = client.pull_request_reviews(repo, 42)
 
         expect(result.size).to eq(2)
         expect(result.first[:id]).to eq(1)
         expect(result.first[:user_login]).to eq("reviewer")
         expect(result.first[:state]).to eq("CHANGES_REQUESTED")
-        expect(result.first[:submitted_at]).to eq("2026-02-20T10:00:00Z")
+        expect(result.first[:submitted_at]).to be_a(Time)
+        expect(result.first[:submitted_at]).to eq(Time.parse("2026-02-20T10:00:00Z"))
         expect(result.last[:state]).to eq("APPROVED")
       end
     end

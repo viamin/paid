@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe Activities::ScanPaidPrsActivity do
   let(:activity) { described_class.new }
@@ -17,6 +18,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   before do
     allow(github_token).to receive(:client).and_return(github_client)
     allow(project).to receive(:github_token).and_return(github_token)
+    allow(Project).to receive(:find_by).and_call_original
+    allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
   end
 
   describe "#execute" do
@@ -215,6 +218,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not trigger when the latest review is approved" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when changes_requested review is older than the last completed agent run" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ], paid_state: "completed")
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", submitted_at: 2.hours.ago }
+          ]
+        )
+      end
+
+      it "does not trigger for reviews older than the last agent run" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])

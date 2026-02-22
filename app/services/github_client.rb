@@ -321,7 +321,7 @@ class GithubClient
           id: r.id,
           user_login: r.user&.login,
           state: r.state,
-          submitted_at: r.submitted_at
+          submitted_at: parse_timestamp(r.submitted_at)
         }
       end
     end
@@ -409,6 +409,13 @@ class GithubClient
       f.response :json
       f.response :raise_error
       f.adapter Faraday.default_adapter
+    end
+  end
+
+  def parse_timestamp(value)
+    case value
+    when Time then value
+    when String then Time.parse(value)
     end
   end
 

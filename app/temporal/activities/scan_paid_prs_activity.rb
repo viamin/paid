@@ -19,6 +19,7 @@ module Activities
 
     PAID_GENERATED_LABEL = "paid-generated"
     MIN_COMMENT_LENGTH = 20
+    KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
 
     def execute(input)
       project_id = input[:project_id]
@@ -46,7 +47,7 @@ module Activities
     def find_paid_prs(project)
       project.issues
         .where(is_pull_request: true, github_state: "open")
-        .select { |issue| issue.has_label?(PAID_GENERATED_LABEL) }
+        .where("labels @> ?", [ PAID_GENERATED_LABEL ].to_json)
     end
 
     def scan_pr(project, client, issue)
@@ -164,7 +165,7 @@ module Activities
       latest_by_user = reviews
         .select { |r| project.trusted_github_user?(r[:user_login]) && !bot_user?(r[:user_login]) }
         .group_by { |r| r[:user_login]&.downcase }
-        .transform_values { |user_reviews| user_reviews.max_by { |r| r[:submitted_at].to_s } }
+        .transform_values { |user_reviews| user_reviews.max_by { |r| r[:submitted_at] || Time.at(0) } }
 
       changes_requested = latest_by_user.values.select do |review|
         next false unless review[:state] == "CHANGES_REQUESTED"
@@ -225,7 +226,10 @@ module Activities
     def bot_user?(login)
       return true if login.blank?
 
-      login.end_with?("[bot]") || login.include?("bot")
+      normalized = login.downcase
+      return true if normalized.end_with?("[bot]", "-bot")
+
+      KNOWN_BOT_PREFIXES.any? { |prefix| normalized.start_with?(prefix) }
     end
 
     def log_signal_error(signal, project, issue, error)
