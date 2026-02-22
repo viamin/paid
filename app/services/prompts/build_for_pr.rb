@@ -170,6 +170,10 @@ module Prompts
         4. Run the test suite and fix any failures: `#{test_command}`
         5. Commit your changes with a descriptive message
 
+        **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
+        If the commit is rejected, read the error output carefully, fix the issues, and commit again.
+        Keep iterating until the commit succeeds. Do not leave uncommitted changes.
+
         When you're done, commit all your changes. Do not push.
       SECTION
     end

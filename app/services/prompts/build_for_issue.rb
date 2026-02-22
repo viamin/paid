@@ -55,9 +55,13 @@ module Prompts
         1. Set up the project first — install dependencies (`bundle install`, `npm install`, etc.)
         2. Analyze the issue and understand what needs to be done
         3. Make the necessary code changes
-        4. Run lint and fix any violations BEFORE committing: `#{lint_command}`
-        5. Run the test suite and fix any failures BEFORE committing: `#{test_command}`
+        4. Run lint and fix any violations: `#{lint_command}`
+        5. Run the test suite and fix any failures: `#{test_command}`
         6. Commit your changes with a descriptive message
+
+        **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
+        If the commit is rejected, read the error output carefully, fix the issues, and commit again.
+        Keep iterating until the commit succeeds. Do not leave uncommitted changes.
 
         # Rules — you MUST follow these
 
