@@ -18,6 +18,7 @@ class CreatePromptsAndPromptVersions < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
+    add_index :prompts, :current_version_id
     add_index :prompts, :category
     add_index :prompts, :active
 

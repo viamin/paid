@@ -38,7 +38,7 @@ CODING_ISSUE_VARIABLES = [
   { "name" => "lint_command", "required" => false, "description" => "Lint command for the project language" }
 ].freeze
 
-prompt = Prompt.find_or_initialize_by(slug: "coding.issue_implementation")
+prompt = Prompt.find_or_initialize_by(slug: "coding.issue_implementation", account_id: nil, project_id: nil)
 prompt.assign_attributes(
   name: "Issue Implementation",
   description: "Default prompt for implementing a GitHub issue. Includes task description, instructions, and coding guidelines.",
