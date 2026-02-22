@@ -13,7 +13,7 @@ rescue ArgumentError
 end
 
 Rails.application.config.x.agent_timeout = parse_timeout.call("AGENT_TIMEOUT", 1800)
-Rails.application.config.x.agent_startup_timeout = parse_timeout.call("AGENT_STARTUP_TIMEOUT", 300)
+Rails.application.config.x.agent_startup_timeout = parse_timeout.call("AGENT_STARTUP_TIMEOUT", 120)
 Rails.application.config.x.agent_idle_timeout = parse_timeout.call("AGENT_IDLE_TIMEOUT", 300)
 Rails.application.config.x.agent_execution_budget = parse_timeout.call("AGENT_EXECUTION_BUDGET", 3600)
 

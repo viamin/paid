@@ -659,7 +659,7 @@ module Containers
             # Container may already be stopped
           end
 
-          break
+          Thread.exit
         end
       end
     end

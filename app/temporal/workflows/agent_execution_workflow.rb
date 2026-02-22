@@ -56,10 +56,11 @@ module Workflows
         end
 
         # Step 4: Run the agent (long timeout, no retry)
-        # Timeout = execution budget (3600s) + 300s safety buffer
+        # Timeout = configured execution budget + 300s safety buffer
+        execution_budget = Rails.application.config.x.agent_execution_budget
         agent_result = run_activity(Activities::RunAgentActivity,
           { agent_run_id: agent_run_id },
-          start_to_close_timeout: 3900, retry_policy: NO_RETRY)
+          start_to_close_timeout: execution_budget + 300, retry_policy: NO_RETRY)
 
         unless agent_result[:success]
           raise Temporalio::Error::ApplicationError.new(
