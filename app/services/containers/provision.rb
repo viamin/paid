@@ -140,19 +140,23 @@ module Containers
 
     # Executes a command inside the container and captures output.
     #
-    # If +startup_timeout+ is set, a +StartupTimeoutError+ is raised when no output is
-    # received within +startup_timeout+ seconds from when the command starts. If
-    # +idle_timeout+ is set, an +IdleTimeoutError+ is raised when output stops flowing
-    # for more than +idle_timeout+ seconds after the first output has been received.
+    # A background watchdog thread monitors output activity when +startup_timeout+
+    # or +idle_timeout+ is set. If the timeout fires, the watchdog stops the
+    # container to unblock the exec HTTP stream, and the main thread raises the
+    # appropriate error after exec returns.
     #
     # @param command [String, Array<String>] Command to execute
     # @param timeout [Integer] Timeout in seconds (default from options)
-    # @param startup_timeout [Integer, nil] Max seconds to wait for first output before raising StartupTimeoutError
-    # @param idle_timeout [Integer, nil] Max seconds between output chunks after initial output before raising IdleTimeoutError
+    # @param startup_timeout [Integer, nil] Max seconds to wait for first output.
+    #   Raises +StartupTimeoutError+ if no output is received within this window.
+    # @param idle_timeout [Integer, nil] Max seconds between output chunks after
+    #   the first output has been received. Raises +IdleTimeoutError+ if output
+    #   stops flowing for longer than this duration.
     # @param stream [Boolean] Whether to stream output to agent logs
     # @return [Result] Result with stdout, stderr, and exit_code
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
+    # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
     def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true)
       raise ProvisionError, "Container not provisioned" unless container
 
@@ -253,7 +257,7 @@ module Containers
         # a Timeout::Error instead of a clean exec return.
         raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
         log_partial_output(stdout_buffer, stderr_buffer)
-        log_system("container.execute.timeout", timeout: timeout)
+        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: timeout)
         raise TimeoutError, "Command timed out after #{timeout} seconds"
       rescue Docker::Error::DockerError => e
         # Check if the watchdog triggered — container stop causes Docker errors.
