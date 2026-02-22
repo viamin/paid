@@ -140,12 +140,19 @@ module Containers
 
     # Executes a command inside the container and captures output.
     #
+    # If +startup_timeout+ is set, a +StartupTimeoutError+ is raised when no output is
+    # received within +startup_timeout+ seconds from when the command starts. If
+    # +idle_timeout+ is set, an +IdleTimeoutError+ is raised when output stops flowing
+    # for more than +idle_timeout+ seconds after the first output has been received.
+    #
     # @param command [String, Array<String>] Command to execute
     # @param timeout [Integer] Timeout in seconds (default from options)
-    # @param startup_timeout [Integer, nil] Max seconds to wait for first output
-    # @param idle_timeout [Integer, nil] Max seconds between output chunks
+    # @param startup_timeout [Integer, nil] Max seconds to wait for first output before raising StartupTimeoutError
+    # @param idle_timeout [Integer, nil] Max seconds between output chunks after initial output before raising IdleTimeoutError
     # @param stream [Boolean] Whether to stream output to agent logs
     # @return [Result] Result with stdout, stderr, and exit_code
+    # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
+    # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true)
       raise ProvisionError, "Container not provisioned" unless container
 
@@ -158,19 +165,23 @@ module Containers
       stderr_buffer = []
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-      # Watchdog state shared between the exec thread and watchdog thread
-      activity_mutex = Mutex.new
+      # Watchdog state shared between the exec thread and watchdog thread.
+      # The watchdog stops the container to unblock the exec HTTP stream
+      # (Thread.raise is unreliable with Excon's blocking I/O), then sets
+      # timeout_reason so the main thread can raise the right error.
+      watchdog_mutex = Mutex.new
       output_received = false
       last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      timeout_reason = nil # :startup or :idle, set by watchdog
       watchdog = nil
-      exec_thread = Thread.current
 
       begin
         watchdog = start_watchdog(
-          exec_thread: exec_thread,
-          activity_mutex: activity_mutex,
+          container: container,
+          watchdog_mutex: watchdog_mutex,
           output_received_ref: -> { output_received },
           last_activity_ref: -> { last_activity_at },
+          timeout_reason_setter: ->(reason) { timeout_reason = reason },
           startup_timeout: startup_timeout,
           idle_timeout: idle_timeout
         )
@@ -178,7 +189,7 @@ module Containers
         exec_result = nil
         Timeout.timeout(timeout) do
           exec_result = container.exec(cmd_array, wait: timeout) do |stream_type, chunk|
-            activity_mutex.synchronize do
+            watchdog_mutex.synchronize do
               output_received = true
               last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             end
@@ -193,6 +204,10 @@ module Containers
             end
           end
         end
+
+        # Check if the watchdog stopped the container (exec returns normally
+        # with a non-zero exit code when the process is killed).
+        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason, startup_timeout, idle_timeout)
 
         # container.exec returns [stdout_array, stderr_array, exit_code].
         # The third element is the actual exec exit code, unlike
@@ -218,13 +233,19 @@ module Containers
         end
       rescue StartupTimeoutError, IdleTimeoutError => e
         log_partial_output(stdout_buffer, stderr_buffer)
-        log_system("container.execute.timeout", timeout_type: e.class.name.demodulize, timeout: timeout)
+        timeout_value = e.is_a?(StartupTimeoutError) ? startup_timeout : idle_timeout
+        log_system("container.execute.timeout", timeout_type: e.class.name.demodulize, timeout: timeout_value)
         raise
       rescue Timeout::Error
+        # Check if the watchdog triggered — the container stop may have caused
+        # a Timeout::Error instead of a clean exec return.
+        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason, startup_timeout, idle_timeout)
         log_partial_output(stdout_buffer, stderr_buffer)
         log_system("container.execute.timeout", timeout: timeout)
         raise TimeoutError, "Command timed out after #{timeout} seconds"
       rescue Docker::Error::DockerError => e
+        # Check if the watchdog triggered — container stop causes Docker errors.
+        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason, startup_timeout, idle_timeout)
         log_partial_output(stdout_buffer, stderr_buffer)
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
@@ -582,30 +603,63 @@ module Containers
       log_output(:stderr, stderr_buffer.join) if stderr_buffer.any?
     end
 
-    # Starts a watchdog thread that monitors output activity and raises
-    # StartupTimeoutError or IdleTimeoutError on the exec thread when
-    # the agent appears stuck. Returns nil if no timeouts are configured.
-    def start_watchdog(exec_thread:, activity_mutex:, output_received_ref:, last_activity_ref:, startup_timeout:, idle_timeout:)
+    # Checks if the watchdog set a timeout reason and raises the appropriate error.
+    # Called after container.exec returns or in rescue blocks, since the watchdog
+    # stops the container to unblock the exec (which may surface as a Docker error
+    # or a normal return with a non-zero exit code).
+    def raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason, startup_timeout, idle_timeout)
+      reason = watchdog_mutex.synchronize { timeout_reason }
+      return unless reason
+
+      case reason
+      when :startup
+        raise StartupTimeoutError, "No output received within #{startup_timeout} seconds"
+      when :idle
+        raise IdleTimeoutError, "No output received for #{idle_timeout} seconds"
+      end
+    end
+
+    # Starts a watchdog thread that monitors output activity and stops the
+    # container when the agent appears stuck. Stopping the container closes
+    # the Docker exec HTTP stream, unblocking the main thread's container.exec
+    # call. The timeout_reason_setter lambda records which timeout triggered
+    # so the main thread can raise the right error class.
+    #
+    # This approach is more reliable than Thread.raise, which can be swallowed
+    # or re-wrapped by the HTTP library (Excon) during blocking I/O.
+    #
+    # Returns nil if no timeouts are configured.
+    def start_watchdog(container:, watchdog_mutex:, output_received_ref:, last_activity_ref:, timeout_reason_setter:, startup_timeout:, idle_timeout:)
       return nil unless startup_timeout || idle_timeout
 
       Thread.new do
         loop do
           sleep 1
-          now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-          activity_mutex.synchronize do
+          reason = watchdog_mutex.synchronize do
+            now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             elapsed = now - last_activity_ref.call
 
             if !output_received_ref.call && startup_timeout && elapsed > startup_timeout
-              exec_thread.raise(StartupTimeoutError)
-              break
-            end
-
-            if output_received_ref.call && idle_timeout && elapsed > idle_timeout
-              exec_thread.raise(IdleTimeoutError)
-              break
+              :startup
+            elsif output_received_ref.call && idle_timeout && elapsed > idle_timeout
+              :idle
             end
           end
+
+          next unless reason
+
+          # Record the reason before stopping — the main thread checks this
+          # after container.exec unblocks.
+          watchdog_mutex.synchronize { timeout_reason_setter.call(reason) }
+
+          begin
+            container.stop(timeout: 0)
+          rescue Docker::Error::DockerError
+            # Container may already be stopped
+          end
+
+          break
         end
       end
     end

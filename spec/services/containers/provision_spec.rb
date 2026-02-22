@@ -692,15 +692,24 @@ RSpec.describe Containers::Provision do
   end
 
   describe "watchdog timeouts" do
+    # The watchdog stops the container to unblock exec. We use a flag
+    # to simulate the container being stopped mid-exec.
+    let(:container_stopped) { Concurrent::AtomicBoolean.new(false) }
+
     before do
       service.provision
+      # When the watchdog calls container.stop, set the flag so the
+      # exec mock can unblock.
+      allow(mock_container).to receive(:stop) do |**_opts|
+        container_stopped.make_true
+      end
     end
 
     context "with startup timeout" do
       it "fires when exec produces no output" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          sleep 5
-          [ [], [], 0 ]
+          sleep 0.1 until container_stopped.true?
+          [ [], [], 137 ]
         end
 
         expect {
@@ -723,8 +732,8 @@ RSpec.describe Containers::Provision do
       it "fires when output stops mid-stream" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "initial output\n") if block
-          sleep 5
-          [ [ "initial output\n" ], [], 0 ]
+          sleep 0.1 until container_stopped.true?
+          [ [ "initial output\n" ], [], 137 ]
         end
 
         expect {
@@ -746,6 +755,19 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with startup timeout when exec raises Docker error" do
+      it "detects the watchdog reason through the Docker error" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.1 until container_stopped.true?
+          raise Docker::Error::ServerError, "connection closed"
+        end
+
+        expect {
+          service.execute("slow_command", timeout: 10, startup_timeout: 1)
+        }.to raise_error(described_class::StartupTimeoutError)
+      end
+    end
+
     context "without watchdog timeouts" do
       it "succeeds without watchdog when neither timeout is passed" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
@@ -753,12 +775,22 @@ RSpec.describe Containers::Provision do
           [ [ "output\n" ], [], 0 ]
         end
 
-        thread_count_before = Thread.list.count
         result = service.execute("normal_command", timeout: 10)
-        # Watchdog thread should not persist after execution
-        sleep 0.1 # allow any ephemeral threads to settle
-        expect(Thread.list.count).to be <= thread_count_before
         expect(result).to be_success
+      end
+    end
+
+    context "with watchdog cleanup after successful execution" do
+      it "cleans up watchdog thread after completion" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "output\n") if block
+          [ [ "output\n" ], [], 0 ]
+        end
+
+        thread_count_before = Thread.list.count
+        service.execute("fast_command", timeout: 10, startup_timeout: 5)
+        sleep 0.1 # allow watchdog thread to be killed
+        expect(Thread.list.count).to be <= thread_count_before
       end
     end
   end
