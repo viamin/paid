@@ -692,8 +692,8 @@ module Containers
 
           begin
             container.stop(timeout: 0)
-          rescue Docker::Error::DockerError
-            # Container may already be stopped
+          rescue Docker::Error::DockerError => e
+            log_system("container.watchdog.stop_failed", error: e.message)
           end
 
           break
@@ -706,7 +706,9 @@ module Containers
       return unless watchdog&.alive?
 
       watchdog.kill
-      watchdog.join(1)
+      unless watchdog.join(1)
+        log_system("container.watchdog.zombie", message: "Watchdog thread did not terminate within 1s")
+      end
     end
 
     # Simple result object for method returns
