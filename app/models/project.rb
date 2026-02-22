@@ -17,6 +17,7 @@ class Project < ApplicationRecord
   validates :repo, presence: true
   validates :github_id, presence: true, uniqueness: { scope: :account_id }
   validates :poll_interval_seconds, numericality: { greater_than_or_equal_to: 60 }
+  validates :max_pr_followup_runs, numericality: { greater_than_or_equal_to: 0 }
   validate :allowed_github_usernames_not_empty
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
   validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
