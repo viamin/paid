@@ -44,6 +44,17 @@ module Workflows
         run_activity(Activities::CloneRepoActivity,
           { agent_run_id: agent_run_id }, timeout: 180)
 
+        # Step 3b: For existing PR runs without a custom prompt, rebase and build a rich prompt
+        pr_run_without_prompt = source_pull_request_number.present? && custom_prompt.blank?
+        if pr_run_without_prompt
+          rebase_result = run_activity(Activities::RebaseBranchActivity,
+            { agent_run_id: agent_run_id }, timeout: 120)
+
+          run_activity(Activities::PreparePrPromptActivity,
+            { agent_run_id: agent_run_id,
+              rebase_succeeded: rebase_result[:rebase_succeeded] }, timeout: 60)
+        end
+
         # Step 4: Run the agent (long timeout, no retry)
         agent_result = run_activity(Activities::RunAgentActivity,
           { agent_run_id: agent_run_id },
@@ -62,6 +73,21 @@ module Workflows
             { agent_run_id: agent_run_id }, timeout: 60)
 
           if source_pull_request_number
+            # Resolve review threads (best-effort, non-fatal)
+            if pr_run_without_prompt
+              begin
+                run_activity(Activities::ResolveReviewThreadsActivity,
+                  { agent_run_id: agent_run_id }, timeout: 60)
+              rescue => e
+                Temporalio::Workflow.logger.warn(
+                  message: "agent_execution.resolve_threads_failed",
+                  agent_run_id: agent_run_id,
+                  error_class: e.class.name,
+                  error: e.message
+                )
+              end
+            end
+
             # Existing PR: mark complete with existing PR details
             run_activity(Activities::CompleteExistingPrRunActivity,
               { agent_run_id: agent_run_id }, timeout: 60)
