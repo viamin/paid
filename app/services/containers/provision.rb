@@ -225,6 +225,10 @@ module Containers
         # with a non-zero exit code when the process is killed).
         raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
 
+        # The watchdog polls every 1s, so exec may return between ticks with a
+        # deadline already exceeded. Check the deadline directly in the main thread.
+        check_deadline_exceeded!(watchdog_mutex, output_received, last_activity_at, startup_timeout, idle_timeout)
+
         # container.exec returns [stdout_array, stderr_array, exit_code].
         # The third element is the actual exec exit code, unlike
         # container.info which reflects the main process state.
@@ -639,6 +643,23 @@ module Containers
       end
     end
 
+    # Post-exec deadline check for when exec returns between watchdog polling
+    # ticks. The watchdog sleeps 1s between checks, so a fast-completing exec
+    # can slip through with a deadline already exceeded.
+    def check_deadline_exceeded!(watchdog_mutex, output_received, last_activity_at, startup_timeout, idle_timeout)
+      return unless startup_timeout || idle_timeout
+
+      elapsed = watchdog_mutex.synchronize do
+        Process.clock_gettime(Process::CLOCK_MONOTONIC) - last_activity_at
+      end
+
+      if !output_received && startup_timeout && elapsed >= startup_timeout
+        raise StartupTimeoutError, "No output received within #{startup_timeout} seconds"
+      elsif output_received && idle_timeout && elapsed >= idle_timeout
+        raise IdleTimeoutError, "No output received for #{idle_timeout} seconds"
+      end
+    end
+
     # Starts a watchdog thread that monitors output activity and stops the
     # container when the agent appears stuck. Stopping the container closes
     # the Docker exec HTTP stream, unblocking the main thread's container.exec
@@ -668,9 +689,9 @@ module Containers
               now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               elapsed = now - last_activity_ref.call
 
-              reason = if !output_received_ref.call && startup_timeout && elapsed > startup_timeout
+              reason = if !output_received_ref.call && startup_timeout && elapsed >= startup_timeout
                 :startup
-              elsif output_received_ref.call && idle_timeout && elapsed > idle_timeout
+              elsif output_received_ref.call && idle_timeout && elapsed >= idle_timeout
                 :idle
               end
 
