@@ -169,9 +169,11 @@ module Containers
       # The watchdog stops the container to unblock the exec HTTP stream
       # (Thread.raise is unreliable with Excon's blocking I/O), then sets
       # timeout_reason so the main thread can raise the right error.
+      # exec_completed prevents late watchdog firing after exec returns.
       watchdog_mutex = Mutex.new
       output_received = false
       last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      exec_completed = false
       timeout_reason = nil # :startup or :idle, set by watchdog
       watchdog = nil
 
@@ -181,6 +183,7 @@ module Containers
           watchdog_mutex: watchdog_mutex,
           output_received_ref: -> { output_received },
           last_activity_ref: -> { last_activity_at },
+          exec_completed_ref: -> { exec_completed },
           timeout_reason_setter: ->(reason) { timeout_reason = reason },
           startup_timeout: startup_timeout,
           idle_timeout: idle_timeout
@@ -204,6 +207,11 @@ module Containers
             end
           end
         end
+
+        # Signal the watchdog that exec has returned, then stop it immediately
+        # to prevent late/false timeouts during post-processing.
+        watchdog_mutex.synchronize { exec_completed = true }
+        stop_watchdog(watchdog)
 
         # Check if the watchdog stopped the container (exec returns normally
         # with a non-zero exit code when the process is killed).
@@ -250,7 +258,8 @@ module Containers
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
       ensure
-        watchdog&.kill
+        watchdog_mutex.synchronize { exec_completed = true }
+        stop_watchdog(watchdog)
       end
     end
 
@@ -625,33 +634,45 @@ module Containers
     # call. The timeout_reason_setter lambda records which timeout triggered
     # so the main thread can raise the right error class.
     #
+    # The exec_completed_ref lambda is checked before acting on a timeout to
+    # avoid late/false triggers after exec has already returned normally.
+    #
     # This approach is more reliable than Thread.raise, which can be swallowed
     # or re-wrapped by the HTTP library (Excon) during blocking I/O.
     #
     # Returns nil if no timeouts are configured.
-    def start_watchdog(container:, watchdog_mutex:, output_received_ref:, last_activity_ref:, timeout_reason_setter:, startup_timeout:, idle_timeout:)
+    def start_watchdog(container:, watchdog_mutex:, output_received_ref:,
+      last_activity_ref:, exec_completed_ref:, timeout_reason_setter:,
+      startup_timeout:, idle_timeout:)
       return nil unless startup_timeout || idle_timeout
 
       Thread.new do
         loop do
           sleep 1
 
-          reason = watchdog_mutex.synchronize do
-            now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-            elapsed = now - last_activity_ref.call
+          should_fire = watchdog_mutex.synchronize do
+            if exec_completed_ref.call
+              false
+            else
+              now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+              elapsed = now - last_activity_ref.call
 
-            if !output_received_ref.call && startup_timeout && elapsed > startup_timeout
-              :startup
-            elsif output_received_ref.call && idle_timeout && elapsed > idle_timeout
-              :idle
+              reason = if !output_received_ref.call && startup_timeout && elapsed > startup_timeout
+                :startup
+              elsif output_received_ref.call && idle_timeout && elapsed > idle_timeout
+                :idle
+              end
+
+              if reason
+                timeout_reason_setter.call(reason)
+                true
+              else
+                false
+              end
             end
           end
 
-          next unless reason
-
-          # Record the reason before stopping — the main thread checks this
-          # after container.exec unblocks.
-          watchdog_mutex.synchronize { timeout_reason_setter.call(reason) }
+          next unless should_fire
 
           begin
             container.stop(timeout: 0)
@@ -659,9 +680,17 @@ module Containers
             # Container may already be stopped
           end
 
-          Thread.exit
+          break
         end
       end
+    end
+
+    # Stops the watchdog thread and waits for it to exit cleanly.
+    def stop_watchdog(watchdog)
+      return unless watchdog&.alive?
+
+      watchdog.kill
+      watchdog.join(1)
     end
 
     # Simple result object for method returns

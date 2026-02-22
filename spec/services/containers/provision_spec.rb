@@ -787,10 +787,19 @@ RSpec.describe Containers::Provision do
           [ [ "output\n" ], [], 0 ]
         end
 
-        thread_count_before = Thread.list.count
+        created_threads = []
+        allow(Thread).to receive(:new).and_wrap_original do |orig, *args, &block|
+          thread = orig.call(*args, &block)
+          created_threads << thread
+          thread
+        end
+
         service.execute("fast_command", timeout: 10, startup_timeout: 5)
-        sleep 0.1 # allow watchdog thread to be killed
-        expect(Thread.list.count).to be <= thread_count_before
+
+        created_threads.each do |thread|
+          thread.join(1)
+          expect(thread.alive?).to be(false)
+        end
       end
     end
   end
