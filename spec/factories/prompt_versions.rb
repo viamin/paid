@@ -5,7 +5,7 @@ FactoryBot.define do
     prompt
     sequence(:version) { |n| n }
     template { "You are working on {{title}}.\n\n{{body}}" }
-    variables { [{ "name" => "title", "required" => true }, { "name" => "body", "required" => true }] }
+    variables { [ { "name" => "title", "required" => true }, { "name" => "body", "required" => true } ] }
     created_by { "seed" }
 
     trait :with_system_prompt do

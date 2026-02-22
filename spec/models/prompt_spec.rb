@@ -61,7 +61,7 @@ RSpec.describe Prompt do
         active = create(:prompt, :global, active: true)
         create(:prompt, :global, :inactive)
 
-        expect(described_class.active).to eq([active])
+        expect(described_class.active).to eq([ active ])
       end
     end
 
@@ -70,7 +70,7 @@ RSpec.describe Prompt do
         coding = create(:prompt, :global, category: "coding")
         create(:prompt, :global, :planning)
 
-        expect(described_class.by_category("coding")).to eq([coding])
+        expect(described_class.by_category("coding")).to eq([ coding ])
       end
     end
 
@@ -79,7 +79,7 @@ RSpec.describe Prompt do
         global = create(:prompt, :global)
         create(:prompt, :for_account)
 
-        expect(described_class.global).to eq([global])
+        expect(described_class.global).to eq([ global ])
       end
     end
 
@@ -89,7 +89,7 @@ RSpec.describe Prompt do
         account_prompt = create(:prompt, account: account, project: nil)
         create(:prompt, :global)
 
-        expect(described_class.for_account(account)).to eq([account_prompt])
+        expect(described_class.for_account(account)).to eq([ account_prompt ])
       end
     end
 
@@ -99,7 +99,7 @@ RSpec.describe Prompt do
         project_prompt = create(:prompt, project: project)
         create(:prompt, :global)
 
-        expect(described_class.for_project(project)).to eq([project_prompt])
+        expect(described_class.for_project(project)).to eq([ project_prompt ])
       end
     end
   end
@@ -161,24 +161,24 @@ RSpec.describe Prompt do
     let(:project) { create(:project, account: account) }
 
     it "returns global prompt when no overrides exist" do
-      global = create(:prompt, :global, slug: "coding.test", :with_version)
+      global = create(:prompt, :global, :with_version, slug: "coding.test")
 
       result = described_class.resolve("coding.test", project: project)
       expect(result).to eq(global)
     end
 
     it "returns account prompt over global" do
-      create(:prompt, :global, slug: "coding.test", :with_version)
-      account_prompt = create(:prompt, account: account, slug: "coding.test", :with_version)
+      create(:prompt, :global, :with_version, slug: "coding.test")
+      account_prompt = create(:prompt, :with_version, account: account, slug: "coding.test")
 
       result = described_class.resolve("coding.test", project: project)
       expect(result).to eq(account_prompt)
     end
 
     it "returns project prompt over account and global" do
-      create(:prompt, :global, slug: "coding.test", :with_version)
-      create(:prompt, account: account, slug: "coding.test", :with_version)
-      project_prompt = create(:prompt, project: project, slug: "coding.test", :with_version)
+      create(:prompt, :global, :with_version, slug: "coding.test")
+      create(:prompt, :with_version, account: account, slug: "coding.test")
+      project_prompt = create(:prompt, :with_version, project: project, slug: "coding.test")
 
       result = described_class.resolve("coding.test", project: project)
       expect(result).to eq(project_prompt)
@@ -186,7 +186,7 @@ RSpec.describe Prompt do
 
     it "skips inactive prompts" do
       create(:prompt, project: project, slug: "coding.test", active: false)
-      global = create(:prompt, :global, slug: "coding.test", :with_version)
+      global = create(:prompt, :global, :with_version, slug: "coding.test")
 
       result = described_class.resolve("coding.test", project: project)
       expect(result).to eq(global)
@@ -199,7 +199,7 @@ RSpec.describe Prompt do
 
     it "does not return prompts from other accounts" do
       other_account = create(:account)
-      create(:prompt, account: other_account, slug: "coding.test", :with_version)
+      create(:prompt, :with_version, account: other_account, slug: "coding.test")
 
       result = described_class.resolve("coding.test", project: project)
       expect(result).to be_nil
@@ -207,7 +207,7 @@ RSpec.describe Prompt do
 
     it "does not return prompts from other projects" do
       other_project = create(:project, account: account)
-      create(:prompt, project: other_project, slug: "coding.test", :with_version)
+      create(:prompt, :with_version, project: other_project, slug: "coding.test")
 
       result = described_class.resolve("coding.test", project: project)
       expect(result).to be_nil

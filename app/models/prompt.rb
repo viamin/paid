@@ -10,8 +10,10 @@ class Prompt < ApplicationRecord
   belongs_to :current_version, class_name: "PromptVersion", optional: true
 
   validates :slug, presence: true, length: { maximum: 100 },
-    format: { with: /\A[a-z0-9._-]+\z/, message: "can only contain lowercase letters, numbers, dots, hyphens, and underscores" },
-    uniqueness: { scope: [:account_id, :project_id] }
+    format: { with: /\A[a-z0-9._-]+\z/, message: "can only contain lowercase letters, numbers, dots, hyphens, and underscores" }
+  validates :slug, uniqueness: true, if: :global?
+  validates :slug, uniqueness: { scope: :account_id }, if: :account_level?
+  validates :slug, uniqueness: { scope: :project_id }, if: :project_level?
   validates :name, presence: true, length: { maximum: 255 }
   validates :category, presence: true, inclusion: { in: CATEGORIES }
   validate :project_belongs_to_account, if: -> { project.present? && account.present? }
@@ -40,10 +42,12 @@ class Prompt < ApplicationRecord
   # @param attributes [Hash] Attributes for the new PromptVersion
   # @return [PromptVersion] The newly created version
   def create_version!(attributes = {})
-    next_version = (prompt_versions.maximum(:version) || 0) + 1
-    version = prompt_versions.create!(attributes.merge(version: next_version))
-    update!(current_version: version)
-    version
+    with_lock do
+      next_version = (prompt_versions.maximum(:version) || 0) + 1
+      version = prompt_versions.create!(attributes.merge(version: next_version))
+      update!(current_version: version)
+      version
+    end
   end
 
   # Resolves the effective prompt for a given project, using inheritance:

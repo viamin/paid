@@ -38,19 +38,27 @@ RSpec.describe PromptVersion do
   end
 
   describe "immutability" do
-    it "prevents updates after creation" do
+    it "prevents content field updates after creation" do
       prompt = create(:prompt, :global)
       version = create(:prompt_version, prompt: prompt, version: 1)
 
       version.template = "Updated template"
       expect(version).not_to be_valid
-      expect(version.errors[:base]).to include("prompt versions are immutable after creation")
+      expect(version.errors[:base]).to include("prompt version content fields are immutable after creation")
+    end
+
+    it "allows metric field updates after creation" do
+      prompt = create(:prompt, :global)
+      version = create(:prompt_version, prompt: prompt, version: 1)
+
+      version.usage_count = 10
+      expect(version).to be_valid
     end
   end
 
   describe "#render" do
     it "interpolates variables into the template" do
-      version = build(:prompt_version, template: "Fix **{{title}}** (#{{number}})\n\n{{body}}")
+      version = build(:prompt_version, template: "Fix **{{title}}** (\#{{number}})\n\n{{body}}")
 
       result = version.render(title: "Bug in login", number: 42, body: "Login fails")
 
