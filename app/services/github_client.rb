@@ -307,6 +307,26 @@ class GithubClient
     graphql_request(query, threadId: thread_node_id)
   end
 
+  # Fetches reviews on a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Array<Hash>] Reviews with :id, :user_login, :state, :submitted_at keys
+  # @raise [NotFoundError] if the pull request does not exist
+  def pull_request_reviews(repo, number)
+    handle_errors do
+      reviews = client.pull_request_reviews(repo, number)
+      reviews.map do |r|
+        {
+          id: r.id,
+          user_login: r.user&.login,
+          state: r.state,
+          submitted_at: r.submitted_at
+        }
+      end
+    end
+  end
+
   # Replies to a review comment on a pull request.
   #
   # @param repo [String] Repository in "owner/name" format
