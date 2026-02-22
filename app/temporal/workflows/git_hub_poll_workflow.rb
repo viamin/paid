@@ -30,6 +30,12 @@ module Workflows
           handle_detection(detection, project_id)
         end
 
+        # Scan paid-generated PRs for follow-up work
+        scan_result = run_activity(Activities::ScanPaidPrsActivity,
+          { project_id: project_id }, timeout: 120)
+
+        handle_pr_scan_results(scan_result, project_id)
+
         poll_config = run_activity(Activities::GetPollIntervalActivity,
           { project_id: project_id }, timeout: 10)
 
@@ -63,6 +69,39 @@ module Workflows
         { project_id: project_id, issue_id: issue_id },
         id: workflow_id
       )
+    end
+
+    def handle_pr_scan_results(scan_result, project_id)
+      return if scan_result[:prs_to_trigger].blank?
+
+      scan_result[:prs_to_trigger].each do |pr_data|
+        start_pr_followup_workflow(project_id, pr_data)
+      end
+    end
+
+    def start_pr_followup_workflow(project_id, pr_data)
+      issue_id = pr_data[:issue_id]
+      pr_number = pr_data[:pr_number]
+      timestamp = Temporalio::Workflow.current_time.to_i
+      workflow_id = "pr-followup-#{project_id}-#{pr_number}-#{timestamp}"
+
+      Temporalio::Workflow.start_child_workflow(
+        Workflows::AgentExecutionWorkflow,
+        {
+          project_id: project_id,
+          issue_id: issue_id,
+          source_pull_request_number: pr_number
+        },
+        id: workflow_id
+      )
+
+      # Record state mutations after child workflow starts successfully,
+      # keeping the scan activity read-only and retry-safe.
+      run_activity(Activities::RecordPrFollowupActivity, {
+        project_id: project_id,
+        issue_id: issue_id,
+        labels_to_remove: pr_data[:labels_to_remove] || []
+      }, timeout: 30)
     end
   end
 end

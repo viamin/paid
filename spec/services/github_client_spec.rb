@@ -617,6 +617,57 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#pull_request_reviews" do
+    let(:repo) { "owner/repo" }
+
+    context "when reviews exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/42/reviews")
+          .to_return(
+            status: 200,
+            body: [
+              {
+                id: 1,
+                user: { login: "reviewer" },
+                state: "CHANGES_REQUESTED",
+                submitted_at: "2026-02-20T10:00:00Z"
+              },
+              {
+                id: 2,
+                user: { login: "approver" },
+                state: "APPROVED",
+                submitted_at: "2026-02-21T10:00:00Z"
+              }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns reviews with user, state, and submitted_at parsed as Time" do
+        result = client.pull_request_reviews(repo, 42)
+
+        expect(result.size).to eq(2)
+        expect(result.first[:id]).to eq(1)
+        expect(result.first[:user_login]).to eq("reviewer")
+        expect(result.first[:state]).to eq("CHANGES_REQUESTED")
+        expect(result.first[:submitted_at]).to be_a(Time)
+        expect(result.first[:submitted_at]).to eq(Time.parse("2026-02-20T10:00:00Z"))
+        expect(result.last[:state]).to eq("APPROVED")
+      end
+    end
+
+    context "when pull request does not exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/999/reviews")
+          .to_return(status: 404, body: { message: "Not Found" }.to_json)
+      end
+
+      it "raises NotFoundError" do
+        expect { client.pull_request_reviews(repo, 999) }.to raise_error(GithubClient::NotFoundError)
+      end
+    end
+  end
+
   describe "#resolve_review_thread" do
     context "when resolution succeeds" do
       before do
