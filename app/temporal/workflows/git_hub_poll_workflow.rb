@@ -94,6 +94,14 @@ module Workflows
         },
         id: workflow_id
       )
+
+      # Record state mutations after child workflow starts successfully,
+      # keeping the scan activity read-only and retry-safe.
+      run_activity(Activities::RecordPrFollowupActivity, {
+        project_id: project_id,
+        issue_id: issue_id,
+        labels_to_remove: pr_data[:labels_to_remove] || []
+      }, timeout: 30)
     end
   end
 end

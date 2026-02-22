@@ -13,13 +13,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       auto_fix_merge_conflicts: false)
   end
   let(:github_client) { instance_double(GithubClient) }
-  let(:github_token) { project.github_token }
 
   before do
-    allow(github_token).to receive(:client).and_return(github_client)
-    allow(project).to receive(:github_token).and_return(github_token)
-    allow(Project).to receive(:find_by).and_call_original
-    allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
+    allow(GithubClient).to receive(:new).and_return(github_client)
   end
 
   describe "#execute" do
@@ -58,7 +54,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           labels: [ "paid-generated" ],
           paid_state: "completed")
       end
-      let(:pr_data) { OpenStruct.new(head: OpenStruct.new(sha: "abc123"), mergeable: true) }
 
       before do
         pr_issue # ensure record exists
@@ -80,10 +75,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:details]).to eq([ "rspec" ])
       end
 
-      it "increments pr_followup_count" do
+      it "does not increment pr_followup_count (workflow handles mutations)" do
         activity.execute(project_id: project.id)
 
-        expect(pr_issue.reload.pr_followup_count).to eq(1)
+        expect(pr_issue.reload.pr_followup_count).to eq(0)
+      end
+
+      it "returns empty labels_to_remove when no actionable labels" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].first[:labels_to_remove]).to eq([])
       end
     end
 
@@ -253,17 +254,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-rework" ], paid_state: "completed")
         stub_github_for_pr
-        allow(github_client).to receive(:remove_label_from_issue)
       end
 
-      it "detects actionable labels and removes them" do
+      it "detects actionable labels and returns them for removal" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("actionable_labels")
-        expect(github_client).to have_received(:remove_label_from_issue)
-          .with(project.full_name, 42, "paid-rework")
+        expect(trigger[:labels_to_remove]).to eq([ "paid-rework" ])
       end
     end
 

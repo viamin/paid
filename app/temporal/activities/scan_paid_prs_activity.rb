@@ -50,6 +50,9 @@ module Activities
         .where("labels @> ?", [ PAID_GENERATED_LABEL ].to_json)
     end
 
+    # Returns trigger data without performing side effects. State mutations
+    # (incrementing pr_followup_count, removing labels) are handled by the
+    # workflow after child workflows start, ensuring idempotency on retry.
     def scan_pr(project, client, issue)
       return nil if active_run_exists?(project, issue)
       return nil if followup_limit_reached?(project, issue)
@@ -57,14 +60,15 @@ module Activities
       triggers = detect_triggers(project, client, issue)
       return nil if triggers.empty?
 
-      issue.increment!(:pr_followup_count)
-      remove_actionable_labels(client, project, issue, triggers)
       log_triggers(project, issue, triggers)
+
+      labels_to_remove = extract_actionable_labels(triggers)
 
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: triggers
+        triggers: triggers,
+        labels_to_remove: labels_to_remove
       }
     end
 
@@ -89,21 +93,30 @@ module Activities
 
     def detect_triggers(project, client, issue)
       last_run = last_completed_run(project, issue)
+      pr_data = fetch_pr_data(client, project, issue)
       triggers = []
 
-      triggers.concat(check_ci_failures(client, project, issue))
+      triggers.concat(check_ci_failures(client, project, issue, pr_data))
       triggers.concat(check_review_threads(client, project, issue))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(check_changes_requested(client, project, issue, last_run))
       triggers.concat(check_actionable_labels(project, issue))
-      triggers.concat(check_merge_conflicts(client, project, issue))
+      triggers.concat(check_merge_conflicts(project, pr_data))
 
       triggers
     end
 
-    def check_ci_failures(client, project, issue)
-      pr = client.pull_request(project.full_name, issue.github_number)
-      checks = client.check_runs_for_ref(project.full_name, pr.head.sha)
+    def fetch_pr_data(client, project, issue)
+      client.pull_request(project.full_name, issue.github_number)
+    rescue GithubClient::Error => e
+      log_signal_error("fetch_pr", project, issue, e)
+      nil
+    end
+
+    def check_ci_failures(client, project, issue, pr_data)
+      return [] unless pr_data
+
+      checks = client.check_runs_for_ref(project.full_name, pr_data.head.sha)
 
       # Skip if any checks are still pending
       return [] if checks.any? { |c| c[:conclusion].nil? }
@@ -192,35 +205,21 @@ module Activities
       [ { type: "actionable_labels", details: matching } ]
     end
 
-    def check_merge_conflicts(client, project, issue)
+    def check_merge_conflicts(project, pr_data)
       return [] unless project.auto_fix_merge_conflicts
-
-      pr = client.pull_request(project.full_name, issue.github_number)
+      return [] unless pr_data
 
       # GitHub's mergeable field can be nil while computing; treat nil as "not ready"
-      return [] if pr.mergeable.nil? || pr.mergeable
+      return [] if pr_data.mergeable.nil? || pr_data.mergeable
 
       [ { type: "merge_conflicts", details: "PR has merge conflicts" } ]
-    rescue GithubClient::Error => e
-      log_signal_error("merge_conflicts", project, issue, e)
-      []
     end
 
-    def remove_actionable_labels(client, project, issue, triggers)
+    def extract_actionable_labels(triggers)
       label_trigger = triggers.find { |t| t[:type] == "actionable_labels" }
-      return unless label_trigger
+      return [] unless label_trigger
 
-      label_trigger[:details].each do |label|
-        client.remove_label_from_issue(project.full_name, issue.github_number, label)
-      rescue GithubClient::Error => e
-        logger.warn(
-          message: "pr_scanner.remove_label_failed",
-          project_id: project.id,
-          pr_number: issue.github_number,
-          label: label,
-          error: e.message
-        )
-      end
+      label_trigger[:details]
     end
 
     def bot_user?(login)
