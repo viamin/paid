@@ -95,10 +95,7 @@ bin/dev                 # Start dev server (Rails + JS + CSS watchers)
 | `TEMPORAL_TASK_QUEUE` | Temporal task queue name | `paid-tasks` |
 | `TEMPORAL_UI_URL` | Temporal UI base URL for monitoring links | `http://localhost:8080` |
 | `OPENAI_API_KEY` | OpenAI API key (for agents that use OpenAI) | _(none)_ |
-| `AGENT_TIMEOUT` | Agent execution timeout in seconds | `1800` |
-| `AGENT_STARTUP_TIMEOUT` | Max seconds to wait for first agent output before timing out | `120` |
-| `AGENT_IDLE_TIMEOUT` | Max seconds of no output during agent execution before timing out | `300` |
-| `AGENT_EXECUTION_BUDGET` | Total execution budget in seconds for an agent run | `3600` |
+| `AGENT_TIMEOUT` | Agent execution timeout in seconds | `3600` |
 | `CURSOR_ENABLED` | Enable Cursor agent provider | `false` |
 | `AIDER_ENABLED` | Enable Aider agent provider | `false` |
 | `CLAUDE_CONFIG_DIR` | Host path to `~/.claude/` for Claude Code subscription auth | _(none)_ |

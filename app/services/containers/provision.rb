@@ -253,16 +253,16 @@ module Containers
         log_system("container.execute.timeout", timeout_type: e.class.name.demodulize, timeout: timeout_value)
         raise
       rescue Timeout::Error
-        # Check if the watchdog triggered — the container stop may have caused
-        # a Timeout::Error instead of a clean exec return.
-        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
+        # Log partial output first — raise_if_watchdog_timeout! may re-raise
+        # as StartupTimeoutError/IdleTimeoutError, bypassing the lines below.
         log_partial_output(stdout_buffer, stderr_buffer)
+        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
         log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: timeout)
         raise TimeoutError, "Command timed out after #{timeout} seconds"
       rescue Docker::Error::DockerError => e
-        # Check if the watchdog triggered — container stop causes Docker errors.
-        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
+        # Log partial output first — raise_if_watchdog_timeout! may re-raise.
         log_partial_output(stdout_buffer, stderr_buffer)
+        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
       ensure
