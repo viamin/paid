@@ -685,6 +685,11 @@ module Containers
 
           next unless should_fire
 
+          # Re-check exec_completed under the mutex to close the race window
+          # between should_fire computation and container.stop — exec may have
+          # returned between releasing the mutex above and reaching here.
+          break if watchdog_mutex.synchronize { exec_completed_ref.call }
+
           begin
             container.stop(timeout: 0)
           rescue Docker::Error::DockerError

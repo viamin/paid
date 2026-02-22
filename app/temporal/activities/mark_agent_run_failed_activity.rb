@@ -13,13 +13,13 @@ module Activities
       # that was already set by the activity that detected the failure.
       if agent_run.finished?
         agent_run.log!("system", "Agent run already #{agent_run.status}, skipping fail! (error: #{error})")
-        return { agent_run_id: agent_run_id }
+      else
+        agent_run.fail!(error: error)
+        agent_run.log!("system", "Agent run failed: #{error}")
       end
 
-      agent_run.fail!(error: error)
-      agent_run.log!("system", "Agent run failed: #{error}")
-
-      if agent_run.issue
+      # Always update issue state so it doesn't stay stuck in "in_progress".
+      if agent_run.issue && agent_run.issue.paid_state != "failed"
         agent_run.issue.update!(paid_state: "failed")
       end
 
