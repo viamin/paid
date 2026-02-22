@@ -164,7 +164,7 @@ RSpec.describe Containers::GitOperations do
       create(:worktree, project: project, agent_run: agent_run, branch_name: "paid/test-branch", status: "active")
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "push", "origin", "paid/test-branch" ], timeout: 60, stream: false)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false)
         .and_return(success_result)
 
       sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
@@ -173,7 +173,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(sha_result)
     end
 
-    it "pushes the branch and returns the commit SHA" do
+    it "pushes the branch with --no-verify and returns the commit SHA" do
       result = git_ops.push_branch
 
       expect(result).to eq(head_sha)
@@ -195,7 +195,7 @@ RSpec.describe Containers::GitOperations do
       agent_run.update!(source_pull_request_number: 42)
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "push", "origin", "paid/test-branch", "--force-with-lease" ], timeout: 60, stream: false)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease" ], timeout: 60, stream: false)
         .and_return(success_result)
 
       git_ops.push_branch
@@ -207,12 +207,12 @@ RSpec.describe Containers::GitOperations do
       expect { git_ops.push_branch }.to raise_error(described_class::PushError, /branch_name is blank/)
     end
 
-    it "raises PushError when push fails" do
+    it "raises PushError with stderr details when push fails" do
       allow(container_service).to receive(:execute)
         .with(array_including("push"), anything)
         .and_return(failure_result)
 
-      expect { git_ops.push_branch }.to raise_error(described_class::PushError)
+      expect { git_ops.push_branch }.to raise_error(described_class::PushError, /error/)
     end
   end
 
@@ -246,7 +246,7 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.commit_uncommitted_changes).to be false
     end
 
-    it "stages and commits when there are uncommitted changes" do
+    it "stages and commits with --no-verify when there are uncommitted changes" do
       status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
         .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
@@ -257,7 +257,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(success_result)
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "commit", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
         .and_return(success_result)
 
       expect(git_ops.commit_uncommitted_changes).to be true
@@ -287,7 +287,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(success_result)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "commit", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
         .and_return(failure_result)
 
       expect { git_ops.commit_uncommitted_changes }.to raise_error(described_class::Error, /Failed to commit/)
@@ -491,12 +491,9 @@ RSpec.describe Containers::GitOperations do
     let(:hook_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
     let(:hook_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
 
-    it "writes pre-commit and pre-push hooks when none exist" do
+    it "writes only a pre-commit hook (no pre-push)" do
       allow(container_service).to receive(:execute)
         .with("test -f .git/hooks/pre-commit", timeout: nil, stream: false)
-        .and_return(hook_missing_result)
-      allow(container_service).to receive(:execute)
-        .with("test -f .git/hooks/pre-push", timeout: nil, stream: false)
         .and_return(hook_missing_result)
 
       expect(container_service).to receive(:execute)
@@ -506,22 +503,15 @@ RSpec.describe Containers::GitOperations do
         .with("chmod +x .git/hooks/pre-commit", timeout: nil, stream: false)
         .and_return(success_result)
 
-      expect(container_service).to receive(:execute)
-        .with(a_string_matching(/cat > \.git\/hooks\/pre-push/), timeout: nil, stream: false)
-        .and_return(success_result)
-      expect(container_service).to receive(:execute)
-        .with("chmod +x .git/hooks/pre-push", timeout: nil, stream: false)
-        .and_return(success_result)
+      expect(container_service).not_to receive(:execute)
+        .with(a_string_matching(/pre-push/), anything)
 
       git_ops.install_git_hooks(lint_command: "bundle exec rubocop", test_command: "bundle exec rspec")
     end
 
-    it "does not overwrite existing hooks" do
+    it "does not overwrite existing pre-commit hook" do
       allow(container_service).to receive(:execute)
         .with("test -f .git/hooks/pre-commit", timeout: nil, stream: false)
-        .and_return(hook_exists_result)
-      allow(container_service).to receive(:execute)
-        .with("test -f .git/hooks/pre-push", timeout: nil, stream: false)
         .and_return(hook_exists_result)
 
       expect(container_service).not_to receive(:execute)
@@ -530,7 +520,7 @@ RSpec.describe Containers::GitOperations do
       git_ops.install_git_hooks(lint_command: "bundle exec rubocop", test_command: "bundle exec rspec")
     end
 
-    it "includes lint command in pre-commit hook but not test command" do
+    it "includes both lint and test commands in pre-commit hook" do
       allow(container_service).to receive(:execute).and_return(hook_missing_result)
       allow(container_service).to receive(:execute)
         .with(a_string_matching(/chmod/), anything)
@@ -543,37 +533,10 @@ RSpec.describe Containers::GitOperations do
           success_result
         }
 
-      allow(container_service).to receive(:execute)
-        .with(a_string_matching(/cat > \.git\/hooks\/pre-push/), timeout: nil, stream: false)
-        .and_return(success_result)
-
       git_ops.install_git_hooks(lint_command: "ruff check .", test_command: "pytest")
 
       expect(pre_commit_script).to include("ruff check .")
-      expect(pre_commit_script).not_to include("pytest")
-    end
-
-    it "includes both lint and test commands in pre-push hook" do
-      allow(container_service).to receive(:execute).and_return(hook_missing_result)
-      allow(container_service).to receive(:execute)
-        .with(a_string_matching(/chmod/), anything)
-        .and_return(success_result)
-
-      allow(container_service).to receive(:execute)
-        .with(a_string_matching(/cat > \.git\/hooks\/pre-commit/), timeout: nil, stream: false)
-        .and_return(success_result)
-
-      pre_push_script = nil
-      allow(container_service).to receive(:execute)
-        .with(a_string_matching(/cat > \.git\/hooks\/pre-push/), timeout: nil, stream: false) { |cmd, **|
-          pre_push_script = cmd
-          success_result
-        }
-
-      git_ops.install_git_hooks(lint_command: "ruff check .", test_command: "pytest")
-
-      expect(pre_push_script).to include("ruff check .")
-      expect(pre_push_script).to include("pytest")
+      expect(pre_commit_script).to include("pytest")
     end
 
     it "does not raise when hook installation fails with exception" do

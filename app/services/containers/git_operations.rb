@@ -73,11 +73,14 @@ module Containers
     def push_branch
       validate_branch_name!
 
-      push_args = [ "push", "origin", agent_run.branch_name ]
+      # --no-verify skips any pre-push hooks. The push is a system operation
+      # that runs after the agent has exited — quality was already enforced
+      # by the pre-commit hook during agent execution.
+      push_args = [ "push", "--no-verify", "origin", agent_run.branch_name ]
       push_args << "--force-with-lease" if agent_run.existing_pr?
 
       result = execute_git(*push_args, timeout: PUSH_TIMEOUT)
-      raise PushError, "Push failed: #{result.error}" if result.failure?
+      raise PushError, "Push failed: #{error_with_stderr(result)}" if result.failure?
 
       sha = head_sha
       agent_run.update!(result_commit_sha: sha)
@@ -86,19 +89,23 @@ module Containers
       sha
     end
 
-    # Installs pre-commit and pre-push git hooks inside the container.
+    # Installs a pre-commit git hook inside the container.
     #
-    # Pre-commit runs lint; pre-push runs lint + tests. Both check whether the
-    # command binary is on PATH before running (via `command -v`); when the
-    # binary is missing the hook prints a warning and exits successfully.
+    # The pre-commit hook runs lint + tests so the agent gets immediate
+    # feedback and can fix issues before the commit succeeds. No pre-push
+    # hook is installed because the push is a system operation that runs
+    # after the agent has exited — the agent cannot fix push-time failures.
+    #
+    # Checks whether the command binary is on PATH before running (via
+    # `command -v`); when the binary is missing the hook prints a warning
+    # and exits successfully.
     # Existing hooks (from Husky, Lefthook, etc.) are never overwritten.
     #
     # @param lint_command [String] command to run for linting
     # @param test_command [String] command to run for tests
     # @return [void]
     def install_git_hooks(lint_command:, test_command:)
-      install_hook("pre-commit", pre_commit_script(lint_command))
-      install_hook("pre-push", pre_push_script(lint_command, test_command))
+      install_hook("pre-commit", pre_commit_script(lint_command, test_command))
     rescue Error => e
       # Expected failures: hook write/chmod failed, unsafe command, etc.
       Rails.logger.warn(
@@ -120,8 +127,10 @@ module Containers
     #
     # Agents sometimes edit files without committing. This ensures those
     # changes are captured in a commit so they survive the push step.
-    # Hooks run normally — if they fail, the commit fails and the error
-    # propagates so the caller can handle it.
+    #
+    # Uses --no-verify because this is a safety net that runs after the
+    # agent has exited — the agent cannot fix hook failures at this point.
+    # The pre-commit hook already had its chance during agent execution.
     #
     # @return [Boolean] true if a commit was created, false if working tree was clean
     def commit_uncommitted_changes
@@ -129,10 +138,10 @@ module Containers
       return false unless status_result.success? && status_result[:stdout].present?
 
       add_result = execute_git("add", "-A")
-      raise Error, "Failed to stage changes: #{add_result.error}" if add_result.failure?
+      raise Error, "Failed to stage changes: #{error_with_stderr(add_result)}" if add_result.failure?
 
-      commit_result = execute_git("commit", "-m", "Apply agent changes")
-      raise Error, "Failed to commit changes: #{commit_result.error}" if commit_result.failure?
+      commit_result = execute_git("commit", "--no-verify", "-m", "Apply agent changes")
+      raise Error, "Failed to commit changes: #{error_with_stderr(commit_result)}" if commit_result.failure?
 
       true
     end
@@ -143,7 +152,7 @@ module Containers
     # @raise [Error] when the command fails
     def head_sha
       result = execute_git("rev-parse", "HEAD")
-      raise Error, "Failed to get HEAD SHA: #{result.error}" if result.failure?
+      raise Error, "Failed to get HEAD SHA: #{error_with_stderr(result)}" if result.failure?
 
       result[:stdout].strip
     end
@@ -205,7 +214,7 @@ module Containers
     # @raise [Error] when the fetch fails
     def fetch_branch(branch)
       result = execute_git("fetch", "origin", branch)
-      raise Error, "Fetch failed: #{result.error}" if result.failure?
+      raise Error, "Fetch failed: #{error_with_stderr(result)}" if result.failure?
     end
 
     # Rebases the current branch onto a remote branch.
@@ -225,7 +234,7 @@ module Containers
         return false
       end
 
-      raise Error, "Rebase failed: #{result.error}" if result.failure?
+      raise Error, "Rebase failed: #{error_with_stderr(result)}" if result.failure?
 
       true
     end
@@ -253,12 +262,12 @@ module Containers
       url = "https://github.com/#{project.full_name}.git"
 
       result = execute_git("clone", url, ".", timeout: CLONE_TIMEOUT)
-      raise CloneError, "Clone failed: #{result.error}" if result.failure?
+      raise CloneError, "Clone failed: #{error_with_stderr(result)}" if result.failure?
     end
 
     def checkout_remote_branch(branch_name)
       result = execute_git("checkout", branch_name)
-      raise CloneError, "Checkout failed: #{result.error}" if result.failure?
+      raise CloneError, "Checkout failed: #{error_with_stderr(result)}" if result.failure?
     end
 
     def record_merge_base
@@ -280,7 +289,7 @@ module Containers
       branch_name = "paid/#{slug}-#{suffix}"
 
       result = execute_git("checkout", "-b", branch_name)
-      raise Error, "Branch creation failed: #{result.error}" if result.failure?
+      raise Error, "Branch creation failed: #{error_with_stderr(result)}" if result.failure?
 
       branch_name
     end
@@ -352,41 +361,24 @@ module Containers
       raise Error, "Hook command contains unsafe characters: #{command.inspect}"
     end
 
-    def pre_commit_script(lint_command)
-      validate_hook_command!(lint_command)
-
-      <<~SHELL
-        #!/bin/sh
-        # Installed by Paid — enforce lint before commit
-
-        if [ -f bin/lint ]; then
-          echo "Running bin/lint..."
-          bin/lint --staged || exit 1
-        elif command -v #{lint_command.split.first} >/dev/null 2>&1; then
-          echo "Running #{lint_command}..."
-          #{lint_command} || exit 1
-        else
-          echo "Warning: lint tool not available yet, skipping pre-commit check"
-        fi
-      SHELL
-    end
-
-    def pre_push_script(lint_command, test_command)
+    def pre_commit_script(lint_command, test_command)
       validate_hook_command!(lint_command)
       validate_hook_command!(test_command)
 
       <<~SHELL
         #!/bin/sh
-        # Installed by Paid — enforce lint + tests before push
+        # Installed by Paid — enforce lint + tests before commit
+        # All quality checks run here so the agent gets immediate feedback
+        # and can fix issues before the commit succeeds.
 
         if [ -f bin/lint ]; then
-          echo "Running bin/lint --changed..."
-          bin/lint --changed || exit 1
+          echo "Running bin/lint --staged..."
+          bin/lint --staged || exit 1
         elif command -v #{lint_command.split.first} >/dev/null 2>&1; then
           echo "Running #{lint_command}..."
           #{lint_command} || exit 1
         else
-          echo "Warning: lint tool not available, skipping lint check"
+          echo "Warning: lint tool not available yet, skipping lint check"
         fi
 
         if command -v #{test_command.split.first} >/dev/null 2>&1; then
@@ -401,6 +393,15 @@ module Containers
     def execute_git(*args, timeout: nil)
       cmd = [ "git" ] + args
       container_service.execute(cmd, timeout: timeout, stream: false)
+    end
+
+    # Builds a descriptive error string that includes stderr when available.
+    # Without this, errors only show "Command exited with code N" which
+    # makes debugging impossible.
+    def error_with_stderr(result)
+      parts = [ result.error ]
+      parts << result[:stderr] if result[:stderr].present?
+      parts.join(" — ")
     end
   end
 end
