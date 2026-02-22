@@ -54,6 +54,20 @@ module Containers
       end
     end
 
+    # Raised when no output is received within the startup timeout
+    class StartupTimeoutError < TimeoutError
+      def initialize(msg = "No output received within startup timeout")
+        super
+      end
+    end
+
+    # Raised when output stops flowing for longer than the idle timeout
+    class IdleTimeoutError < TimeoutError
+      def initialize(msg = "No output received within idle timeout")
+        super
+      end
+    end
+
     # Default resource limits (per issue #23 requirements)
     DEFAULTS = {
       memory_bytes: 2 * 1024 * 1024 * 1024,     # 2GB RAM
@@ -128,9 +142,11 @@ module Containers
     #
     # @param command [String, Array<String>] Command to execute
     # @param timeout [Integer] Timeout in seconds (default from options)
+    # @param startup_timeout [Integer, nil] Max seconds to wait for first output
+    # @param idle_timeout [Integer, nil] Max seconds between output chunks
     # @param stream [Boolean] Whether to stream output to agent logs
     # @return [Result] Result with stdout, stderr, and exit_code
-    def execute(command, timeout: nil, stream: true)
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true)
       raise ProvisionError, "Container not provisioned" unless container
 
       timeout ||= options[:timeout_seconds]
@@ -142,10 +158,31 @@ module Containers
       stderr_buffer = []
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
+      # Watchdog state shared between the exec thread and watchdog thread
+      activity_mutex = Mutex.new
+      output_received = false
+      last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      watchdog = nil
+      exec_thread = Thread.current
+
       begin
+        watchdog = start_watchdog(
+          exec_thread: exec_thread,
+          activity_mutex: activity_mutex,
+          output_received_ref: -> { output_received },
+          last_activity_ref: -> { last_activity_at },
+          startup_timeout: startup_timeout,
+          idle_timeout: idle_timeout
+        )
+
         exec_result = nil
         Timeout.timeout(timeout) do
           exec_result = container.exec(cmd_array, wait: timeout) do |stream_type, chunk|
+            activity_mutex.synchronize do
+              output_received = true
+              last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            end
+
             case stream_type
             when :stdout
               stdout_buffer << chunk
@@ -179,18 +216,20 @@ module Containers
             exit_code: exit_code
           )
         end
+      rescue StartupTimeoutError, IdleTimeoutError => e
+        log_partial_output(stdout_buffer, stderr_buffer)
+        log_system("container.execute.timeout", timeout_type: e.class.name.demodulize, timeout: timeout)
+        raise
       rescue Timeout::Error
-        # Log any accumulated output before raising so partial results aren't lost
-        log_output(:stdout, stdout_buffer.join) if stdout_buffer.any?
-        log_output(:stderr, stderr_buffer.join) if stderr_buffer.any?
+        log_partial_output(stdout_buffer, stderr_buffer)
         log_system("container.execute.timeout", timeout: timeout)
         raise TimeoutError, "Command timed out after #{timeout} seconds"
       rescue Docker::Error::DockerError => e
-        # Log any accumulated output before raising so partial results aren't lost
-        log_output(:stdout, stdout_buffer.join) if stdout_buffer.any?
-        log_output(:stderr, stderr_buffer.join) if stderr_buffer.any?
+        log_partial_output(stdout_buffer, stderr_buffer)
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
+      ensure
+        watchdog&.kill
       end
     end
 
@@ -536,6 +575,39 @@ module Containers
       return if content.blank?
 
       agent_run.log!(type.to_s, content)
+    end
+
+    def log_partial_output(stdout_buffer, stderr_buffer)
+      log_output(:stdout, stdout_buffer.join) if stdout_buffer.any?
+      log_output(:stderr, stderr_buffer.join) if stderr_buffer.any?
+    end
+
+    # Starts a watchdog thread that monitors output activity and raises
+    # StartupTimeoutError or IdleTimeoutError on the exec thread when
+    # the agent appears stuck. Returns nil if no timeouts are configured.
+    def start_watchdog(exec_thread:, activity_mutex:, output_received_ref:, last_activity_ref:, startup_timeout:, idle_timeout:)
+      return nil unless startup_timeout || idle_timeout
+
+      Thread.new do
+        loop do
+          sleep 1
+          now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+          activity_mutex.synchronize do
+            elapsed = now - last_activity_ref.call
+
+            if !output_received_ref.call && startup_timeout && elapsed > startup_timeout
+              exec_thread.raise(StartupTimeoutError)
+              break
+            end
+
+            if output_received_ref.call && idle_timeout && elapsed > idle_timeout
+              exec_thread.raise(IdleTimeoutError)
+              break
+            end
+          end
+        end
+      end
     end
 
     # Simple result object for method returns

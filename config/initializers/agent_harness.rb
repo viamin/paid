@@ -2,16 +2,20 @@
 
 require "agent_harness"
 
-agent_timeout = begin
-  Integer(ENV.fetch("AGENT_TIMEOUT", 1800))
+def self.parse_timeout(env_key, default)
+  Integer(ENV.fetch(env_key, default))
 rescue ArgumentError
   Rails.logger.warn(message: "agent_harness.invalid_timeout",
-    value: ENV["AGENT_TIMEOUT"],
-    fallback: 1800)
-  1800
+    env_key: env_key,
+    value: ENV[env_key],
+    fallback: default)
+  default
 end
 
-Rails.application.config.x.agent_timeout = [ agent_timeout, 1 ].max
+Rails.application.config.x.agent_timeout = [ parse_timeout("AGENT_TIMEOUT", 1800), 1 ].max
+Rails.application.config.x.agent_startup_timeout = parse_timeout("AGENT_STARTUP_TIMEOUT", 120)
+Rails.application.config.x.agent_idle_timeout = parse_timeout("AGENT_IDLE_TIMEOUT", 300)
+Rails.application.config.x.agent_execution_budget = parse_timeout("AGENT_EXECUTION_BUDGET", 3600)
 
 AgentHarness.configure do |config|
   config.default_provider = :claude

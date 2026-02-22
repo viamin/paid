@@ -57,7 +57,12 @@ module Activities
       agent_run.log!("system", "Starting #{agent_run.agent_type} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
 
-      result = container_service.execute(command, timeout: agent_timeout)
+      result = container_service.execute(
+        command,
+        timeout: agent_timeout,
+        startup_timeout: agent_startup_timeout,
+        idle_timeout: agent_idle_timeout
+      )
 
       if result.success?
         # Stay in running status — the run is only marked completed after
@@ -75,7 +80,12 @@ module Activities
 
       pre_agent_sha
     rescue Containers::Provision::TimeoutError => e
-      agent_run.timeout!
+      timeout_type = case e
+      when Containers::Provision::StartupTimeoutError then "startup"
+      when Containers::Provision::IdleTimeoutError then "idle"
+      else "wall_clock"
+      end
+      agent_run.timeout!(error: "#{timeout_type}_timeout: #{e.message}")
       raise Temporalio::Error::ApplicationError.new(e.message, type: "AgentTimeout")
     end
 
@@ -155,6 +165,14 @@ module Activities
 
     def agent_timeout
       Rails.application.config.x.agent_timeout
+    end
+
+    def agent_startup_timeout
+      Rails.application.config.x.agent_startup_timeout
+    end
+
+    def agent_idle_timeout
+      Rails.application.config.x.agent_idle_timeout
     end
   end
 end
