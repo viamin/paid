@@ -43,6 +43,40 @@ class ProjectWorkflowManager
       )
     end
 
+    def workflow_status(project)
+      handle = Paid.temporal_client.workflow_handle(workflow_id_for(project))
+      desc = handle.describe
+      {
+        status: desc.status,
+        running: desc.status == Temporalio::Client::WorkflowExecutionStatus::RUNNING
+      }
+    rescue Temporalio::Error::RPCError => e
+      raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+      { status: :not_found, running: false }
+    end
+
+    def restart_polling(project, reason: nil)
+      handle = Paid.temporal_client.workflow_handle(workflow_id_for(project))
+      handle.terminate(reason || "self-healing restart")
+    rescue Temporalio::Error::RPCError => e
+      raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+      # Workflow not found — that's fine, we'll start fresh
+    ensure
+      start_polling(project)
+    end
+
+    def restart_all_polling(reason: "deployment")
+      Project.active.where("poll_interval_seconds > 0").find_each do |project|
+        restart_polling(project, reason: reason)
+      rescue => e
+        Rails.logger.error(
+          message: "github_sync.restart_failed",
+          project_id: project.id,
+          error: e.message
+        )
+      end
+    end
+
     private
 
     def workflow_id_for(project)
