@@ -61,6 +61,10 @@ class AgentRun < ApplicationRecord
   # Atomically claims the oldest queued run by transitioning it to pending
   # inside a transaction with FOR UPDATE SKIP LOCKED. Returns nil if no
   # queued run is available or another process already claimed it.
+  #
+  # Note: if the transaction commits but the subsequent workflow start fails,
+  # the run stays "pending" without an associated workflow. ProcessRunQueueJob
+  # handles this by marking such runs as failed in its rescue block.
   def self.claim_next_queued_run
     transaction do
       run = queued.order(created_at: :asc).lock("FOR UPDATE SKIP LOCKED").first

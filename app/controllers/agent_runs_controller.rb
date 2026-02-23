@@ -50,44 +50,31 @@ class AgentRunsController < ApplicationController
       return
     end
 
-    # Reserve capacity by creating the AgentRun record first.
-    # If at capacity, the run is created as "queued" and will auto-start later.
-    # If capacity is available, the run is created as "pending" and a workflow starts immediately.
-    agent_run = create_agent_run(
+    # Always create runs as "queued" and let ProcessRunQueueJob handle starting.
+    # This eliminates TOCTOU race conditions between capacity check and workflow start,
+    # and provides a single consistent code path with Temporal workflows.
+    create_agent_run(
       issue: issue,
       custom_prompt: custom_prompt,
       source_pull_request_number: source_pr_number
     )
 
-    if agent_run.queued?
-      redirect_to project_path(@project),
-        notice: "Agent run queued (at capacity). It will start automatically when a slot opens."
-      return
-    end
+    ProcessRunQueueJob.perform_later
 
-    workflow_id = start_agent_workflow(agent_run: agent_run, issue: issue,
-      source_pull_request_number: source_pr_number)
-
-    notice = if source_pr_number
-      "Agent run started for PR ##{source_pr_number}. Workflow ID: #{workflow_id}"
-    elsif custom_prompt && issue
-      "Agent run started for issue ##{issue.github_number} with custom prompt. Workflow ID: #{workflow_id}"
-    elsif issue
-      "Agent run started for issue ##{issue.github_number}. Workflow ID: #{workflow_id}"
+    notice = if AgentRun.has_run_capacity?
+      "Agent run created and will start momentarily."
     else
-      "Agent run started with custom prompt. Workflow ID: #{workflow_id}"
+      "Agent run queued (at capacity). It will start automatically when a slot opens."
     end
 
     redirect_to project_path(@project), notice: notice
-  rescue ActiveRecord::RecordNotUnique
-    redirect_to new_project_agent_run_path(@project),
-      alert: "An agent run is already queued or in progress."
-  rescue Temporalio::Error::WorkflowAlreadyStartedError
-    alert_message = issue ? "An agent run is already in progress for this issue." : "An agent run is already in progress."
-    redirect_to new_project_agent_run_path(@project), alert: alert_message
-  rescue Temporalio::Error::RPCError => e
-    redirect_to new_project_agent_run_path(@project),
-      alert: "Failed to start agent run: #{e.message}"
+  rescue ActiveRecord::RecordNotUnique => e
+    alert = if e.cause&.message&.include?("proxy_token")
+      "An unexpected error occurred. Please try again."
+    else
+      "An agent run is already queued or in progress."
+    end
+    redirect_to new_project_agent_run_path(@project), alert: alert
   end
 
   private
@@ -168,14 +155,13 @@ class AgentRunsController < ApplicationController
     end
   end
 
-  # Creates the AgentRun record, reserving capacity atomically.
-  # Returns a "queued" run when at capacity, or a "pending" run when capacity is available.
+  # Creates the AgentRun record with "queued" status.
+  # Capacity evaluation and workflow starts are handled by ProcessRunQueueJob,
+  # ensuring a single consistent code path and eliminating TOCTOU race conditions.
   # Raises ActiveRecord::RecordNotUnique if a duplicate active run exists (enforced by DB indexes).
   def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil)
     agent_type = params[:agent_type].presence || "claude_code"
     agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(agent_type)
-
-    status = AgentRun.has_run_capacity? ? "pending" : "queued"
 
     AgentRun.create!(
       project: @project,
@@ -183,45 +169,7 @@ class AgentRunsController < ApplicationController
       agent_type: agent_type,
       custom_prompt: custom_prompt,
       source_pull_request_number: source_pull_request_number,
-      status: status
+      status: "queued"
     )
-  end
-
-  def start_agent_workflow(agent_run:, issue: nil, source_pull_request_number: nil)
-    workflow_input = {
-      project_id: @project.id,
-      agent_type: agent_run.agent_type,
-      agent_run_id: agent_run.id,
-      issue_id: issue&.id,
-      custom_prompt: agent_run.custom_prompt,
-      source_pull_request_number: source_pull_request_number
-    }.compact
-
-    workflow_id = if source_pull_request_number
-      "manual-#{@project.id}-pr-#{source_pull_request_number}"
-    elsif issue
-      "manual-#{@project.id}-#{issue.id}"
-    else
-      "manual-#{@project.id}-prompt-#{SecureRandom.hex(8)}"
-    end
-
-    handle = Paid.temporal_client.start_workflow(
-      Workflows::AgentExecutionWorkflow,
-      workflow_input,
-      id: workflow_id,
-      id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL,
-      task_queue: Paid.task_queue
-    )
-
-    Rails.logger.info(
-      message: "agent_execution.manual_trigger",
-      project_id: @project.id,
-      issue_id: issue&.id,
-      workflow_id: handle.id,
-      agent_type: agent_run.agent_type,
-      has_custom_prompt: agent_run.custom_prompt.present?
-    )
-
-    handle.id
   end
 end

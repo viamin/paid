@@ -1,11 +1,16 @@
 # frozen_string_literal: true
 
+require "digest/md5"
+
 class ProcessRunQueueJob < ApplicationJob
   queue_as :default
 
-  # Advisory lock key for single-execution of queue processing.
-  # Prevents concurrent jobs from each claiming runs and exceeding MAX_CONCURRENT_RUNS.
-  ADVISORY_LOCK_KEY = 73_982_614 # arbitrary fixed integer
+  # Advisory lock key derived from class name to avoid collisions with other locks.
+  ADVISORY_LOCK_KEY = Digest::MD5.hexdigest("ProcessRunQueueJob").to_i(16) % (2**31 - 1)
+
+  # Maximum consecutive workflow start failures before aborting the loop.
+  # Prevents cascading failures when Temporal is down.
+  MAX_CONSECUTIVE_FAILURES = 3
 
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
@@ -14,14 +19,21 @@ class ProcessRunQueueJob < ApplicationJob
     return unless acquired
 
     begin
+      consecutive_failures = 0
+
       while AgentRun.has_run_capacity?
         agent_run = AgentRun.claim_next_queued_run
         break unless agent_run
 
-        start_claimed_run(agent_run)
+        if start_claimed_run(agent_run)
+          consecutive_failures = 0
+        else
+          consecutive_failures += 1
+          break if consecutive_failures >= MAX_CONSECUTIVE_FAILURES
+        end
       end
     ensure
-      ActiveRecord::Base.connection.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})")
+      ActiveRecord::Base.connection.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})") if acquired
     end
   end
 
@@ -51,6 +63,7 @@ class ProcessRunQueueJob < ApplicationJob
       agent_run_id: agent_run.id,
       workflow_id: workflow_id
     )
+    true
   rescue => e
     agent_run.fail!(error: "Failed to start workflow: #{e.message}")
     Rails.logger.error(
@@ -58,5 +71,6 @@ class ProcessRunQueueJob < ApplicationJob
       agent_run_id: agent_run.id,
       error: e.message
     )
+    false
   end
 end

@@ -46,7 +46,18 @@ module Activities
 
     def resume_queued_run(agent_run_id)
       agent_run = AgentRun.find(agent_run_id)
-      agent_run.update!(status: "pending") if agent_run.queued?
+
+      if agent_run.queued?
+        agent_run.update!(status: "pending")
+      else
+        logger.warn(
+          message: "agent_execution.resume_queued_run_unexpected_status",
+          agent_run_id: agent_run.id,
+          current_status: agent_run.status,
+          project_id: agent_run.project_id
+        )
+      end
+
       agent_run.issue&.update!(paid_state: "in_progress")
 
       logger.info(

@@ -16,6 +16,8 @@ module Activities
 
       # Use a transaction with row-level locking to prevent duplicate
       # queued/active runs for the same issue or PR under concurrency.
+      # Falls back to DB unique indexes (RecordNotUnique) as a safety net
+      # for races between concurrent activity executions.
       agent_run, duplicate = AgentRun.transaction do
         existing = find_existing_run(project, issue, source_pull_request_number)
         if existing
@@ -31,6 +33,10 @@ module Activities
           )
           [ run, false ]
         end
+      rescue ActiveRecord::RecordNotUnique
+        existing = find_existing_run(project, issue, source_pull_request_number)
+        raise unless existing
+        [ existing, true ]
       end
 
       if duplicate
@@ -55,6 +61,8 @@ module Activities
 
     private
 
+    # Returns nil for custom-prompt-only runs (no issue or PR) intentionally:
+    # custom prompts are unique by definition and cannot be meaningfully deduplicated.
     def find_existing_run(project, issue, source_pull_request_number)
       scope = project.agent_runs.where(status: %w[queued pending running]).lock("FOR UPDATE")
       if issue

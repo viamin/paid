@@ -61,6 +61,9 @@ module Workflows
       end
     end
 
+    # When at capacity, queues an AgentRun record (no child workflow). ProcessRunQueueJob
+    # will start the workflow when a slot opens. This asymmetry is intentional: queued
+    # runs don't need workflow-level monitoring since the DB record tracks their state.
     def start_agent_workflow(project_id, issue_id, prefix: "agent")
       capacity = run_activity(Activities::CheckRunCapacityActivity, {}, timeout: 10)
 
