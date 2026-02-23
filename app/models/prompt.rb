@@ -13,8 +13,8 @@ class Prompt < ApplicationRecord
 
   validates :slug, presence: true, length: { maximum: 100 },
     format: { with: /\A[a-z0-9._-]+\z/, message: "can only contain lowercase letters, numbers, dots, hyphens, and underscores" }
-  validates :slug, uniqueness: true, if: :global?
-  validates :slug, uniqueness: { scope: :account_id }, if: :account_level?
+  validates :slug, uniqueness: { conditions: -> { where(account_id: nil, project_id: nil) } }, if: :global?
+  validates :slug, uniqueness: { scope: :account_id, conditions: -> { where(project_id: nil) } }, if: :account_level?
   validates :slug, uniqueness: { scope: :project_id }, if: :project_level?
   validates :name, presence: true, length: { maximum: 255 }
   validates :category, presence: true, inclusion: { in: CATEGORIES }

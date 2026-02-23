@@ -13,12 +13,12 @@ FactoryBot.define do
     end
 
     trait :for_account do
-      account
+      account { association :account, strategy: :create }
       project { nil }
     end
 
     trait :for_project do
-      project
+      project { association :project, strategy: :create }
       account { project.account }
     end
 
