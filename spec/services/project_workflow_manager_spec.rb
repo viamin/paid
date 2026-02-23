@@ -77,7 +77,7 @@ RSpec.describe ProjectWorkflowManager do
       result = described_class.workflow_status(project)
 
       expect(result[:running]).to be true
-      expect(result[:status]).to eq(Temporalio::Client::WorkflowExecutionStatus::RUNNING.to_s)
+      expect(result[:status]).to eq(Temporalio::Client::WorkflowExecutionStatus::RUNNING)
     end
 
     it "returns not running for a failed workflow" do
@@ -87,7 +87,7 @@ RSpec.describe ProjectWorkflowManager do
       result = described_class.workflow_status(project)
 
       expect(result[:running]).to be false
-      expect(result[:status]).to eq(Temporalio::Client::WorkflowExecutionStatus::FAILED.to_s)
+      expect(result[:status]).to eq(Temporalio::Client::WorkflowExecutionStatus::FAILED)
     end
 
     it "returns not_found when workflow does not exist" do
@@ -102,7 +102,7 @@ RSpec.describe ProjectWorkflowManager do
       result = described_class.workflow_status(project)
 
       expect(result[:running]).to be false
-      expect(result[:status]).to eq("not_found")
+      expect(result[:status]).to eq(:not_found)
     end
   end
 
@@ -131,6 +131,18 @@ RSpec.describe ProjectWorkflowManager do
       described_class.restart_polling(project)
 
       expect(temporal_client).to have_received(:start_workflow).at_least(:once)
+    end
+
+    it "re-raises non-NOT_FOUND RPC errors" do
+      allow(temporal_client).to receive(:workflow_handle).and_raise(
+        Temporalio::Error::RPCError.new(
+          "unavailable",
+          code: Temporalio::Error::RPCError::Code::UNAVAILABLE,
+          raw_grpc_status: nil
+        )
+      )
+
+      expect { described_class.restart_polling(project) }.to raise_error(Temporalio::Error::RPCError)
     end
   end
 

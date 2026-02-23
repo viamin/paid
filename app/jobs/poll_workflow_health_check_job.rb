@@ -25,17 +25,29 @@ class PollWorkflowHealthCheckJob < ApplicationJob
 
   private
 
+  RESTARTABLE_STATUSES = [
+    Temporalio::Client::WorkflowExecutionStatus::FAILED,
+    Temporalio::Client::WorkflowExecutionStatus::TERMINATED,
+    Temporalio::Client::WorkflowExecutionStatus::TIMED_OUT,
+    :not_found
+  ].freeze
+
   def check_and_heal(project)
     status = ProjectWorkflowManager.workflow_status(project)
     return if status[:running]
+    return unless RESTARTABLE_STATUSES.include?(status[:status])
+
+    # Re-check to reduce race conditions with other lifecycle operations
+    latest_status = ProjectWorkflowManager.workflow_status(project)
+    return if latest_status[:running]
 
     Rails.logger.warn(
       message: "temporal_worker.poll_workflow_not_running",
       project_id: project.id,
-      workflow_status: status[:status]
+      workflow_status: latest_status[:status]
     )
 
-    ProjectWorkflowManager.restart_polling(project, reason: "health check: was #{status[:status]}")
+    ProjectWorkflowManager.restart_polling(project, reason: "health check: was #{latest_status[:status]}")
 
     Rails.logger.info(
       message: "temporal_worker.poll_workflow_restarted",

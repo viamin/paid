@@ -45,6 +45,20 @@ RSpec.describe PollWorkflowHealthCheckJob do
       expect(workflow_handle).not_to have_received(:terminate)
     end
 
+    it "skips canceled workflows" do
+      create(:project)
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::CANCELED) # rubocop:disable RSpec/VerifiedDoubles
+
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:describe).and_return(desc)
+      allow(workflow_handle).to receive(:terminate)
+
+      described_class.perform_now
+
+      expect(workflow_handle).not_to have_received(:terminate)
+    end
+
     it "does nothing when no projects have polling enabled" do
       described_class.perform_now
 

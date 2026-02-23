@@ -47,18 +47,19 @@ class ProjectWorkflowManager
       handle = Paid.temporal_client.workflow_handle(workflow_id_for(project))
       desc = handle.describe
       {
-        status: desc.status.to_s,
+        status: desc.status,
         running: desc.status == Temporalio::Client::WorkflowExecutionStatus::RUNNING
       }
     rescue Temporalio::Error::RPCError => e
       raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
-      { status: "not_found", running: false }
+      { status: :not_found, running: false }
     end
 
     def restart_polling(project, reason: nil)
       handle = Paid.temporal_client.workflow_handle(workflow_id_for(project))
       handle.terminate(reason || "self-healing restart")
-    rescue Temporalio::Error::RPCError
+    rescue Temporalio::Error::RPCError => e
+      raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
       # Workflow not found — that's fine, we'll start fresh
     ensure
       start_polling(project)
