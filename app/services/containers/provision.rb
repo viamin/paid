@@ -54,6 +54,20 @@ module Containers
       end
     end
 
+    # Raised when no output is received within the startup timeout
+    class StartupTimeoutError < TimeoutError
+      def initialize(msg = "No output received within startup timeout")
+        super
+      end
+    end
+
+    # Raised when output stops flowing for longer than the idle timeout
+    class IdleTimeoutError < TimeoutError
+      def initialize(msg = "No output received within idle timeout")
+        super
+      end
+    end
+
     # Default resource limits (per issue #23 requirements)
     DEFAULTS = {
       memory_bytes: 2 * 1024 * 1024 * 1024,     # 2GB RAM
@@ -126,11 +140,24 @@ module Containers
 
     # Executes a command inside the container and captures output.
     #
+    # A background watchdog thread monitors output activity when +startup_timeout+
+    # or +idle_timeout+ is set. If the timeout fires, the watchdog stops the
+    # container to unblock the exec HTTP stream, and the main thread raises the
+    # appropriate error after exec returns.
+    #
     # @param command [String, Array<String>] Command to execute
     # @param timeout [Integer] Timeout in seconds (default from options)
+    # @param startup_timeout [Integer, nil] Max seconds to wait for first output.
+    #   Raises +StartupTimeoutError+ if no output is received within this window.
+    # @param idle_timeout [Integer, nil] Max seconds between output chunks after
+    #   the first output has been received. Raises +IdleTimeoutError+ if output
+    #   stops flowing for longer than this duration.
     # @param stream [Boolean] Whether to stream output to agent logs
     # @return [Result] Result with stdout, stderr, and exit_code
-    def execute(command, timeout: nil, stream: true)
+    # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
+    # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
+    # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true)
       raise ProvisionError, "Container not provisioned" unless container
 
       timeout ||= options[:timeout_seconds]
@@ -142,10 +169,42 @@ module Containers
       stderr_buffer = []
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
+      # Watchdog state shared between the exec thread and watchdog thread.
+      # The watchdog stops the container to unblock the exec HTTP stream
+      # (Thread.raise is unreliable with Excon's blocking I/O), then sets
+      # timeout_reason so the main thread can raise the right error.
+      # exec_completed prevents late watchdog firing after exec returns.
+      # All shared state is accessed under watchdog_mutex; the reason ref
+      # lambda ensures raise_if_watchdog_timeout! reads the current value
+      # rather than a stale snapshot captured at call time.
+      watchdog_mutex = Mutex.new
+      output_received = false
+      last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      exec_completed = false
+      timeout_reason = nil # :startup or :idle, set by watchdog
+      timeout_reason_ref = -> { timeout_reason }
+      watchdog = nil
+
       begin
+        watchdog = start_watchdog(
+          container: container,
+          watchdog_mutex: watchdog_mutex,
+          output_received_ref: -> { output_received },
+          last_activity_ref: -> { last_activity_at },
+          exec_completed_ref: -> { exec_completed },
+          timeout_reason_setter: ->(reason) { timeout_reason = reason },
+          startup_timeout: startup_timeout,
+          idle_timeout: idle_timeout
+        )
+
         exec_result = nil
         Timeout.timeout(timeout) do
           exec_result = container.exec(cmd_array, wait: timeout) do |stream_type, chunk|
+            watchdog_mutex.synchronize do
+              output_received = true
+              last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            end
+
             case stream_type
             when :stdout
               stdout_buffer << chunk
@@ -156,6 +215,19 @@ module Containers
             end
           end
         end
+
+        # Signal the watchdog that exec has returned, then stop it immediately
+        # to prevent late/false timeouts during post-processing.
+        watchdog_mutex.synchronize { exec_completed = true }
+        stop_watchdog(watchdog)
+
+        # Check if the watchdog stopped the container (exec returns normally
+        # with a non-zero exit code when the process is killed).
+        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
+
+        # The watchdog polls every 1s, so exec may return between ticks with a
+        # deadline already exceeded. Check the deadline directly in the main thread.
+        check_deadline_exceeded!(watchdog_mutex, output_received, last_activity_at, startup_timeout, idle_timeout)
 
         # container.exec returns [stdout_array, stderr_array, exit_code].
         # The third element is the actual exec exit code, unlike
@@ -179,18 +251,27 @@ module Containers
             exit_code: exit_code
           )
         end
+      rescue StartupTimeoutError, IdleTimeoutError => e
+        log_partial_output(stdout_buffer, stderr_buffer)
+        timeout_value = e.is_a?(StartupTimeoutError) ? startup_timeout : idle_timeout
+        log_system("container.execute.timeout", timeout_type: e.class.name.demodulize, timeout: timeout_value)
+        raise
       rescue Timeout::Error
-        # Log any accumulated output before raising so partial results aren't lost
-        log_output(:stdout, stdout_buffer.join) if stdout_buffer.any?
-        log_output(:stderr, stderr_buffer.join) if stderr_buffer.any?
-        log_system("container.execute.timeout", timeout: timeout)
+        # Log partial output first — raise_if_watchdog_timeout! may re-raise
+        # as StartupTimeoutError/IdleTimeoutError, bypassing the lines below.
+        log_partial_output(stdout_buffer, stderr_buffer)
+        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
+        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: timeout)
         raise TimeoutError, "Command timed out after #{timeout} seconds"
       rescue Docker::Error::DockerError => e
-        # Log any accumulated output before raising so partial results aren't lost
-        log_output(:stdout, stdout_buffer.join) if stdout_buffer.any?
-        log_output(:stderr, stderr_buffer.join) if stderr_buffer.any?
+        # Log partial output first — raise_if_watchdog_timeout! may re-raise.
+        log_partial_output(stdout_buffer, stderr_buffer)
+        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
+      ensure
+        watchdog_mutex.synchronize { exec_completed = true }
+        stop_watchdog(watchdog)
       end
     end
 
@@ -536,6 +617,119 @@ module Containers
       return if content.blank?
 
       agent_run.log!(type.to_s, content)
+    end
+
+    def log_partial_output(stdout_buffer, stderr_buffer)
+      log_output(:stdout, stdout_buffer.join) if stdout_buffer.any?
+      log_output(:stderr, stderr_buffer.join) if stderr_buffer.any?
+    end
+
+    # Checks if the watchdog set a timeout reason and raises the appropriate error.
+    # Called after container.exec returns or in rescue blocks, since the watchdog
+    # stops the container to unblock the exec (which may surface as a Docker error
+    # or a normal return with a non-zero exit code).
+    #
+    # timeout_reason_ref is a lambda that reads the shared timeout_reason variable
+    # under the mutex, ensuring we see the latest value rather than a stale snapshot.
+    def raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
+      reason = watchdog_mutex.synchronize { timeout_reason_ref.call }
+      return unless reason
+
+      case reason
+      when :startup
+        raise StartupTimeoutError, "No output received within #{startup_timeout} seconds"
+      when :idle
+        raise IdleTimeoutError, "No output received for #{idle_timeout} seconds"
+      end
+    end
+
+    # Post-exec deadline check for when exec returns between watchdog polling
+    # ticks. The watchdog sleeps 1s between checks, so a fast-completing exec
+    # can slip through with a deadline already exceeded.
+    def check_deadline_exceeded!(watchdog_mutex, output_received, last_activity_at, startup_timeout, idle_timeout)
+      return unless startup_timeout || idle_timeout
+
+      elapsed = watchdog_mutex.synchronize do
+        Process.clock_gettime(Process::CLOCK_MONOTONIC) - last_activity_at
+      end
+
+      if !output_received && startup_timeout && elapsed >= startup_timeout
+        raise StartupTimeoutError, "No output received within #{startup_timeout} seconds"
+      elsif output_received && idle_timeout && elapsed >= idle_timeout
+        raise IdleTimeoutError, "No output received for #{idle_timeout} seconds"
+      end
+    end
+
+    # Starts a watchdog thread that monitors output activity and stops the
+    # container when the agent appears stuck. Stopping the container closes
+    # the Docker exec HTTP stream, unblocking the main thread's container.exec
+    # call. The timeout_reason_setter lambda records which timeout triggered
+    # so the main thread can raise the right error class.
+    #
+    # The exec_completed_ref lambda is checked before acting on a timeout to
+    # avoid late/false triggers after exec has already returned normally.
+    #
+    # This approach is more reliable than Thread.raise, which can be swallowed
+    # or re-wrapped by the HTTP library (Excon) during blocking I/O.
+    #
+    # Returns nil if no timeouts are configured.
+    def start_watchdog(container:, watchdog_mutex:, output_received_ref:,
+      last_activity_ref:, exec_completed_ref:, timeout_reason_setter:,
+      startup_timeout:, idle_timeout:)
+      return nil unless startup_timeout || idle_timeout
+
+      Thread.new do
+        loop do
+          sleep 1
+
+          should_fire = watchdog_mutex.synchronize do
+            if exec_completed_ref.call
+              false
+            else
+              now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+              elapsed = now - last_activity_ref.call
+
+              reason = if !output_received_ref.call && startup_timeout && elapsed >= startup_timeout
+                :startup
+              elsif output_received_ref.call && idle_timeout && elapsed >= idle_timeout
+                :idle
+              end
+
+              if reason
+                timeout_reason_setter.call(reason)
+                true
+              else
+                false
+              end
+            end
+          end
+
+          next unless should_fire
+
+          # Re-check exec_completed under the mutex to close the race window
+          # between should_fire computation and container.stop — exec may have
+          # returned between releasing the mutex above and reaching here.
+          break if watchdog_mutex.synchronize { exec_completed_ref.call }
+
+          begin
+            container.stop(timeout: 0)
+          rescue Docker::Error::DockerError => e
+            log_system("container.watchdog.stop_failed", error: e.message)
+          end
+
+          break
+        end
+      end
+    end
+
+    # Stops the watchdog thread and waits for it to exit cleanly.
+    def stop_watchdog(watchdog)
+      return unless watchdog&.alive?
+
+      watchdog.kill
+      unless watchdog.join(1)
+        log_system("container.watchdog.zombie", message: "Watchdog thread did not terminate within 1s")
+      end
     end
 
     # Simple result object for method returns

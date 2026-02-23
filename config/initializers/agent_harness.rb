@@ -3,15 +3,15 @@
 require "agent_harness"
 
 agent_timeout = begin
-  Integer(ENV.fetch("AGENT_TIMEOUT", 1800))
+  [ Integer(ENV.fetch("AGENT_TIMEOUT", 3600)), 1 ].max
 rescue ArgumentError
   Rails.logger.warn(message: "agent_harness.invalid_timeout",
     value: ENV["AGENT_TIMEOUT"],
-    fallback: 1800)
-  1800
+    fallback: 3600)
+  3600
 end
 
-Rails.application.config.x.agent_timeout = [ agent_timeout, 1 ].max
+Rails.application.config.x.agent_timeout = agent_timeout
 
 AgentHarness.configure do |config|
   config.default_provider = :claude

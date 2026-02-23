@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_20_030250) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_22_020000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -207,10 +207,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_20_030250) do
     t.jsonb "labels", default: [], null: false
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
+    t.integer "pr_followup_count", default: 0, null: false
     t.bigint "project_id", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
+    t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
@@ -233,15 +235,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_20_030250) do
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
     t.jsonb "allowed_github_usernames", default: [], null: false
+    t.boolean "auto_fix_merge_conflicts", default: false, null: false
+    t.boolean "auto_scan_prs", default: true, null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
     t.jsonb "label_mappings", default: {}, null: false
+    t.integer "max_pr_followup_runs", default: 3, null: false
     t.string "name", null: false
     t.string "owner", null: false
     t.integer "poll_interval_seconds", default: 60, null: false
+    t.jsonb "pr_action_labels", default: [], null: false
     t.string "repo", null: false
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false

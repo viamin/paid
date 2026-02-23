@@ -101,10 +101,11 @@ class AgentRun < ApplicationRecord
     )
   end
 
-  def timeout!
+  def timeout!(error: nil)
     update!(
       status: "timeout",
       completed_at: Time.current,
+      error_message: error,
       duration_seconds: duration
     )
   end

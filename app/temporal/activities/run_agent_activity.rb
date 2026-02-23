@@ -65,7 +65,8 @@ module Activities
         # the container auth middleware to reject subsequent git-push requests.
         agent_run.log!("system", "Agent execution succeeded")
       else
-        error_msg = "Agent exited with code #{result[:exit_code]}"
+        output = (result[:stderr].presence || result[:stdout]).to_s.strip.truncate(500)
+        error_msg = "Agent exited with code #{result[:exit_code]}: #{output}"
         agent_run.fail!(error: error_msg)
         raise Temporalio::Error::ApplicationError.new(
           "Agent execution failed: #{error_msg}",
@@ -75,7 +76,12 @@ module Activities
 
       pre_agent_sha
     rescue Containers::Provision::TimeoutError => e
-      agent_run.timeout!
+      timeout_type = case e
+      when Containers::Provision::StartupTimeoutError then "startup"
+      when Containers::Provision::IdleTimeoutError then "idle"
+      else "wall_clock"
+      end
+      agent_run.timeout!(error: "#{timeout_type}_timeout: #{e.message}")
       raise Temporalio::Error::ApplicationError.new(e.message, type: "AgentTimeout")
     end
 
