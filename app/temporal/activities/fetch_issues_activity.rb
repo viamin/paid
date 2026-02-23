@@ -6,6 +6,8 @@ module Activities
   # Returns a list of synced issue summaries for downstream processing.
   # Handles rate limiting by re-raising as a retryable Temporal error.
   class FetchIssuesActivity < BaseActivity
+    PAID_GENERATED_LABEL = "paid-generated"
+
     def execute(input)
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
@@ -14,6 +16,7 @@ module Activities
       client = project.github_token.client
 
       labels = project.label_mappings.values.compact_blank.uniq
+      labels = (labels + [ PAID_GENERATED_LABEL ]).uniq
       github_issues = fetch_all_issues(client, project.full_name, labels)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
@@ -38,14 +41,35 @@ module Activities
 
     MAX_PAGES = 10
 
+    # Fetches open issues for each label separately, then deduplicates.
+    # GitHub's API treats multiple labels as AND (all required), so we
+    # must query per-label to get OR behavior (any label matches).
     def fetch_all_issues(client, repo_full_name, labels)
+      return fetch_issues_for_label(client, repo_full_name, nil) if labels.empty?
+
+      seen_ids = Set.new
+      all_issues = []
+
+      labels.each do |label|
+        fetch_issues_for_label(client, repo_full_name, label).each do |issue|
+          next if seen_ids.include?(issue.id)
+
+          seen_ids.add(issue.id)
+          all_issues << issue
+        end
+      end
+
+      all_issues
+    end
+
+    def fetch_issues_for_label(client, repo_full_name, label)
       issues = []
       page = 1
 
       loop do
         page_issues = client.issues(
           repo_full_name,
-          labels: labels,
+          labels: label ? [ label ] : nil,
           state: "open",
           per_page: 100,
           page: page
@@ -62,6 +86,7 @@ module Activities
           logger.warn(
             message: "github_sync.fetch_issues_page_limit",
             repo: repo_full_name,
+            label: label,
             fetched_count: issues.size,
             max_pages: MAX_PAGES
           )
@@ -102,6 +127,8 @@ module Activities
     end
 
     def close_stale_issues(project, github_issues)
+      return 0 if github_issues.empty?
+
       fetched_github_ids = github_issues.map(&:id).to_set
       stale_issues = project.issues.where(github_state: "open").where.not(github_issue_id: fetched_github_ids)
       count = stale_issues.count
