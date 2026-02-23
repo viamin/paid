@@ -149,6 +149,13 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.status).to eq("timeout")
         expect(agent_run.error_message).to include("wall_clock_timeout")
       end
+
+      it "enqueues ProcessRunQueueJob" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError)
+          .and have_enqueued_job(ProcessRunQueueJob)
+      end
     end
 
     context "when agent hits startup timeout" do
@@ -204,8 +211,9 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     context "when no container is provisioned" do
+      let(:other_issue) { create(:issue, project: project) }
       let(:agent_run_no_container) do
-        create(:agent_run, :with_git_context, project: project, issue: issue, container_id: nil)
+        create(:agent_run, :with_git_context, project: project, issue: other_issue, container_id: nil)
       end
 
       it "raises an ApplicationError" do
@@ -236,7 +244,8 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     it "raises for unsupported agent types" do
-      unsupported_run = create(:agent_run, project: project, issue: issue,
+      unsupported_issue = create(:issue, project: project)
+      unsupported_run = create(:agent_run, project: project, issue: unsupported_issue,
         agent_type: "cursor", container_id: "abc123")
       allow(AgentRun).to receive(:find).with(unsupported_run.id).and_return(unsupported_run)
       allow(Containers::Provision).to receive(:reconnect)

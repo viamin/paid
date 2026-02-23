@@ -22,6 +22,8 @@ module Activities
         reason: reason
       )
 
+      ProcessRunQueueJob.perform_later
+
       { agent_run_id: agent_run_id }
     end
   end

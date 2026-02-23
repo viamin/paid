@@ -23,16 +23,19 @@ module Workflows
       agent_type = input.fetch(:agent_type, "claude_code")
       custom_prompt = input[:custom_prompt]
       source_pull_request_number = input[:source_pull_request_number]
+      agent_run_id = input[:agent_run_id]
 
       Temporalio::Workflow.logger.info(
         "AgentExecutionWorkflow started for project=#{project_id} issue=#{issue_id}"
       )
 
-      # Step 1: Create agent run record
+      # Step 1: Create agent run record (or resume a queued one)
+      create_input = { project_id: project_id, issue_id: issue_id, agent_type: agent_type,
+        custom_prompt: custom_prompt,
+        source_pull_request_number: source_pull_request_number,
+        agent_run_id: agent_run_id }.compact
       agent_run_result = run_activity(Activities::CreateAgentRunActivity,
-        { project_id: project_id, issue_id: issue_id, agent_type: agent_type,
-          custom_prompt: custom_prompt,
-          source_pull_request_number: source_pull_request_number }.compact, timeout: 30)
+        create_input, timeout: 30)
       agent_run_id = agent_run_result[:agent_run_id]
 
       begin

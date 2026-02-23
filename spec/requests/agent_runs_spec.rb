@@ -192,34 +192,34 @@ RSpec.describe "AgentRuns" do
 
     context "when authenticated" do
       let(:issue) { create(:issue, project: project, github_number: 42, title: "Fix the bug") }
-      let(:temporal_client) { double("TemporalClient") } # rubocop:disable RSpec/VerifiedDoubles
-      let(:workflow_handle) { double("WorkflowHandle", id: "manual-workflow-id") } # rubocop:disable RSpec/VerifiedDoubles
 
       before do
         sign_in user
-        allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
-        allow(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
       end
 
-      it "starts a workflow and redirects with success message" do
+      it "creates a queued run and redirects with success message" do
         post project_agent_runs_path(project), params: { issue_id: issue.id }
         expect(response).to redirect_to(project_path(project))
         follow_redirect!
-        expect(response.body).to include("Agent run started")
+        expect(response.body).to include("Agent run")
       end
 
-      it "starts workflow with correct parameters" do
-        expect(temporal_client).to receive(:start_workflow).with(
-          Workflows::AgentExecutionWorkflow,
-          hash_including(project_id: project.id, issue_id: issue.id, agent_type: "claude_code"),
-          hash_including(
-            id: "manual-#{project.id}-#{issue.id}",
-            id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL,
-            task_queue: "paid-tasks"
-          )
-        ).and_return(workflow_handle)
+      it "creates an agent run with correct parameters" do
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, agent_type: "claude_code" }
+        }.to change(AgentRun, :count).by(1)
 
-        post project_agent_runs_path(project), params: { issue_id: issue.id, agent_type: "claude_code" }
+        agent_run = AgentRun.last
+        expect(agent_run.project).to eq(project)
+        expect(agent_run.issue).to eq(issue)
+        expect(agent_run.agent_type).to eq("claude_code")
+        expect(agent_run.status).to eq("queued")
+      end
+
+      it "enqueues ProcessRunQueueJob" do
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.to have_enqueued_job(ProcessRunQueueJob)
       end
 
       it "redirects with error when no issue selected" do
@@ -275,47 +275,37 @@ RSpec.describe "AgentRuns" do
       context "with pull_request_id parameter" do
         let(:pr) { create(:issue, :pull_request, project: project, github_number: 77, title: "Fix styles") }
 
-        it "starts workflow with source_pull_request_number from dropdown" do
-          expect(temporal_client).to receive(:start_workflow).with(
-            Workflows::AgentExecutionWorkflow,
-            hash_including(
-              project_id: project.id,
-              source_pull_request_number: 77
-            ),
-            hash_including(
-              id: "manual-#{project.id}-pr-77"
-            )
-          ).and_return(workflow_handle)
+        it "creates a queued run with source_pull_request_number from dropdown" do
+          expect {
+            post project_agent_runs_path(project), params: { pull_request_id: pr.id }
+          }.to change(AgentRun, :count).by(1)
 
-          post project_agent_runs_path(project), params: { pull_request_id: pr.id }
+          agent_run = AgentRun.last
+          expect(agent_run.source_pull_request_number).to eq(77)
+          expect(agent_run.status).to eq("queued")
           expect(response).to redirect_to(project_path(project))
         end
 
-        it "shows PR number in success message" do
-          post project_agent_runs_path(project), params: { pull_request_id: pr.id }
-          expect(response).to redirect_to(project_path(project))
-          follow_redirect!
-          expect(response.body).to include("PR #77")
+        it "enqueues ProcessRunQueueJob for PR runs" do
+          expect {
+            post project_agent_runs_path(project), params: { pull_request_id: pr.id }
+          }.to have_enqueued_job(ProcessRunQueueJob)
         end
       end
 
       context "with pull_request_url parameter" do
-        it "starts workflow with source_pull_request_number" do
-          expect(temporal_client).to receive(:start_workflow).with(
-            Workflows::AgentExecutionWorkflow,
-            hash_including(
-              project_id: project.id,
-              source_pull_request_number: 135
-            ),
-            hash_including(
-              id: "manual-#{project.id}-pr-135"
-            )
-          ).and_return(workflow_handle)
+        it "creates a queued run with source_pull_request_number" do
+          expect {
+            post project_agent_runs_path(project), params: {
+              pull_request_url: "https://github.com/#{project.owner}/#{project.repo}/pull/135",
+              custom_prompt: "Fix the review comments"
+            }
+          }.to change(AgentRun, :count).by(1)
 
-          post project_agent_runs_path(project), params: {
-            pull_request_url: "https://github.com/#{project.owner}/#{project.repo}/pull/135",
-            custom_prompt: "Fix the review comments"
-          }
+          agent_run = AgentRun.last
+          expect(agent_run.source_pull_request_number).to eq(135)
+          expect(agent_run.custom_prompt).to eq("Fix the review comments")
+          expect(agent_run.status).to eq("queued")
           expect(response).to redirect_to(project_path(project))
         end
 
@@ -346,71 +336,69 @@ RSpec.describe "AgentRuns" do
           expect(response).to redirect_to(project_path(project))
         end
 
-        it "shows PR number in success message" do
+        it "redirects with success notice" do
           post project_agent_runs_path(project), params: {
             pull_request_url: "https://github.com/#{project.owner}/#{project.repo}/pull/135",
             custom_prompt: "Fix it"
           }
           expect(response).to redirect_to(project_path(project))
           follow_redirect!
-          expect(response.body).to include("PR #135")
+          expect(response.body).to include("Agent run")
         end
       end
 
-      context "when Temporal workflow already running" do
+      context "when at capacity" do
         before do
-          allow(temporal_client).to receive(:start_workflow)
-            .and_raise(Temporalio::Error::WorkflowAlreadyStartedError.new(
-              workflow_id: "test-workflow",
-              workflow_type: "TestWorkflow",
-              run_id: "test-run"
-            ))
+          allow(AgentRun).to receive(:has_run_capacity?).and_return(false)
         end
 
-        it "redirects with error message" do
+        it "creates a queued agent run" do
+          expect {
+            post project_agent_runs_path(project), params: { issue_id: issue.id }
+          }.to change(AgentRun, :count).by(1)
+
+          expect(AgentRun.last.status).to eq("queued")
+          expect(AgentRun.last.issue).to eq(issue)
+        end
+
+        it "redirects with queued notice" do
           post project_agent_runs_path(project), params: { issue_id: issue.id }
+
+          expect(response).to redirect_to(project_path(project))
+          follow_redirect!
+          expect(response.body).to include("queued")
+        end
+
+        it "queues runs with custom prompt" do
+          post project_agent_runs_path(project), params: {
+            custom_prompt: "Fix the bug"
+          }
+
+          expect(AgentRun.last.status).to eq("queued")
+          expect(AgentRun.last.custom_prompt).to eq("Fix the bug")
+        end
+
+        it "rejects duplicate queued run for the same issue via DB constraint" do
+          create(:agent_run, :queued, project: project, issue: issue)
+
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+
           expect(response).to redirect_to(new_project_agent_run_path(project))
           follow_redirect!
-          expect(response.body).to include("already in progress")
-        end
-      end
-
-      context "when Temporal connection fails" do
-        before do
-          allow(temporal_client).to receive(:start_workflow)
-            .and_raise(Temporalio::Error::RPCError.new(
-              "Connection refused",
-              code: Temporalio::Error::RPCError::Code::UNAVAILABLE,
-              raw_grpc_status: nil
-            ))
-        end
-
-        it "redirects with error message" do
-          post project_agent_runs_path(project), params: { issue_id: issue.id }
-          expect(response).to redirect_to(new_project_agent_run_path(project))
-          follow_redirect!
-          expect(response.body).to include("Failed to start agent run")
+          expect(response.body).to include("already queued or in progress")
         end
       end
 
       it "defaults to claude_code agent type" do
-        expect(temporal_client).to receive(:start_workflow).with(
-          anything,
-          hash_including(agent_type: "claude_code"),
-          anything
-        ).and_return(workflow_handle)
-
         post project_agent_runs_path(project), params: { issue_id: issue.id }
+
+        expect(AgentRun.last.agent_type).to eq("claude_code")
       end
 
       it "ignores invalid agent types and defaults to claude_code" do
-        expect(temporal_client).to receive(:start_workflow).with(
-          anything,
-          hash_including(agent_type: "claude_code"),
-          anything
-        ).and_return(workflow_handle)
-
         post project_agent_runs_path(project), params: { issue_id: issue.id, agent_type: "invalid" }
+
+        expect(AgentRun.last.agent_type).to eq("claude_code")
       end
     end
   end
