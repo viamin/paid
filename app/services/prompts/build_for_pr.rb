@@ -36,7 +36,7 @@ module Prompts
     def build
       sections = []
       sections << task_section
-      sections << issue_requirements_section if issue
+      sections << issue_requirements_section if linked_issue?
       sections << merge_conflicts_section unless rebase_succeeded
       sections << ci_failures_section if failing_checks.any?
       sections << code_review_section if unresolved_threads.any?
@@ -47,6 +47,13 @@ module Prompts
     end
 
     private
+
+    # Returns true when a separate issue is linked (not the PR's own Issue record).
+    # PR follow-up runs pass the PR's Issue as `issue`, which duplicates the
+    # PR body already present in task_section. Skip it in that case.
+    def linked_issue?
+      issue.present? && !issue.is_pull_request?
+    end
 
     def pr_data
       @pr_data ||= github_client.pull_request(project.full_name, pr_number)
@@ -152,7 +159,7 @@ module Prompts
       priorities = []
       priorities << "Resolve merge conflicts" unless rebase_succeeded
       priorities << "Fix CI failures" if failing_checks.any?
-      priorities << "Close implementation gaps against the linked issue" if issue
+      priorities << "Close implementation gaps against the linked issue" if linked_issue?
       priorities << "Address code review comments" if unresolved_threads.any?
       priorities << "Address conversation comments" if trusted_comments.any?
       priority_list = priorities.each_with_index.map { |p, i| "#{i + 1}. #{p}" }.join("\n")
