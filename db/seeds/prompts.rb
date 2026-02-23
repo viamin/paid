@@ -14,17 +14,25 @@ CODING_ISSUE_TEMPLATE = <<~'TEMPLATE'
 
   # Instructions
 
-  1. Analyze the issue and understand what needs to be done
-  2. Make the necessary code changes
-  3. Ensure tests pass (run `{{test_command}}` if available)
-  4. Ensure linting passes (run `{{lint_command}}` if available)
-  5. Commit your changes with a descriptive message
+  1. Set up the project first — install dependencies (`bundle install`, `npm install`, etc.)
+  2. Analyze the issue and understand what needs to be done
+  3. Make the necessary code changes
+  4. Run lint and fix any violations: `{{lint_command}}`
+  5. Run the test suite and fix any failures: `{{test_command}}`
+  6. Commit your changes with a descriptive message
 
-  # Important
+  **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
+  If the commit is rejected, read the error output carefully, fix the issues, and commit again.
+  Keep iterating until the commit succeeds. Do not leave uncommitted changes.
 
+  # Rules — you MUST follow these
+
+  - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
+  - **Never use `--no-verify`** or any flag that skips git hooks.
+  - **Never disable linters** (e.g. rubocop:disable, eslint-disable, noqa) to silence failures. Fix the code instead.
+  - **Fix forward** — if a check fails, fix the underlying issue. Do not bypass the check.
   - Work within the existing codebase style and conventions
   - Do not modify unrelated files
-  - If you're unsure about something, leave a comment in the code
   - Focus on completing the specific task in the issue
 
   When you're done, commit all your changes. Do not push.

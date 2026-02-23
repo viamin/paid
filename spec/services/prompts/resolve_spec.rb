@@ -30,6 +30,12 @@ RSpec.describe Prompts::Resolve do
       expect(result).to be_nil
     end
 
+    it "raises ArgumentError when project is nil" do
+      expect {
+        described_class.call(slug: "coding.test", project: nil)
+      }.to raise_error(ArgumentError, "project cannot be nil")
+    end
+
     it "resolves project-level prompt over account-level" do
       global_prompt = create(:prompt, :global, slug: "coding.test")
       global_prompt.create_version!(template: "Global")

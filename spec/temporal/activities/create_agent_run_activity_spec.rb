@@ -43,5 +43,73 @@ RSpec.describe Activities::CreateAgentRunActivity do
         activity.execute(project_id: project.id, issue_id: -1)
       }.to raise_error(ActiveRecord::RecordNotFound)
     end
+
+    context "with prompt versioning" do
+      let!(:prompt) do
+        p = create(:prompt, :global, slug: "coding.issue_implementation")
+        p.create_version!(
+          template: <<~'TEMPLATE'
+            Work on {{title}} (#{{issue_number}})
+
+            {{body}}
+
+            Test: {{test_command}}
+            Lint: {{lint_command}}
+          TEMPLATE
+        )
+        p
+      end
+
+      it "resolves and renders prompt version when no custom_prompt is provided" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.prompt_version).to eq(prompt.current_version)
+        expect(agent_run.custom_prompt).to include(issue.title)
+        expect(agent_run.custom_prompt).to include(issue.github_number.to_s)
+      end
+
+      it "renders template with correct variables" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.custom_prompt).to include("Test: bundle exec rspec")
+        expect(agent_run.custom_prompt).to include("Lint: bundle exec rubocop")
+      end
+
+      it "does not assign prompt_version when custom_prompt is provided" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          custom_prompt: "Do something custom"
+        )
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.prompt_version).to be_nil
+        expect(agent_run.custom_prompt).to eq("Do something custom")
+      end
+
+      it "does not assign prompt_version when no issue is present" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: nil,
+          custom_prompt: "No issue prompt"
+        )
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.prompt_version).to be_nil
+        expect(agent_run.custom_prompt).to eq("No issue prompt")
+      end
+
+      it "handles nil when Prompts::Resolve returns nil" do
+        prompt.update!(active: false)
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.prompt_version).to be_nil
+        expect(agent_run.custom_prompt).to be_nil
+      end
+    end
   end
 end

@@ -56,14 +56,14 @@ module Activities
     private
 
     def test_command_for(project)
-      Prompts::BuildForIssue::LANGUAGE_TEST_COMMANDS.fetch(
+      Prompts::LanguageCommands::LANGUAGE_TEST_COMMANDS.fetch(
         detected_language(project),
         "echo \"No test command configured\""
       )
     end
 
     def lint_command_for(project)
-      Prompts::BuildForIssue::LANGUAGE_LINT_COMMANDS.fetch(
+      Prompts::LanguageCommands::LANGUAGE_LINT_COMMANDS.fetch(
         detected_language(project),
         "echo \"No lint command configured\""
       )

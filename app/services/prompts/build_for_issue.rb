@@ -7,25 +7,13 @@ module Prompts
   #   prompt = Prompts::BuildForIssue.call(issue: issue, project: project)
   #   # => "# Task\n\nYou are working on..."
   class BuildForIssue
+    include LanguageCommands
+
     class UntrustedIssueError < StandardError; end
 
-    LANGUAGE_TEST_COMMANDS = {
-      "ruby" => "bundle exec rspec",
-      "javascript" => "npm test",
-      "typescript" => "npm test",
-      "python" => "pytest",
-      "go" => "go test ./...",
-      "rust" => "cargo test"
-    }.freeze
-
-    LANGUAGE_LINT_COMMANDS = {
-      "ruby" => "bundle exec rubocop",
-      "javascript" => "npm run lint",
-      "typescript" => "npm run lint",
-      "python" => "ruff check .",
-      "go" => "golangci-lint run",
-      "rust" => "cargo clippy"
-    }.freeze
+    # Kept for backwards compatibility with existing references
+    LANGUAGE_TEST_COMMANDS = LanguageCommands::LANGUAGE_TEST_COMMANDS
+    LANGUAGE_LINT_COMMANDS = LanguageCommands::LANGUAGE_LINT_COMMANDS
 
     attr_reader :issue, :project
 

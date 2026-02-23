@@ -11,6 +11,7 @@ module Prompts
     attr_reader :slug, :project
 
     def initialize(slug:, project:)
+      raise ArgumentError, "project cannot be nil" if project.nil?
       @slug = slug
       @project = project
     end

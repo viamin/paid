@@ -13,7 +13,9 @@ FactoryBot.define do
     end
 
     trait :with_parent do
-      parent_version { association :prompt_version, prompt: prompt }
+      after(:build) do |version|
+        version.parent_version ||= build(:prompt_version, prompt: version.prompt)
+      end
     end
   end
 end
