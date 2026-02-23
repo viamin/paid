@@ -19,7 +19,7 @@ FactoryBot.define do
 
     trait :for_project do
       project
-      account { nil }
+      account { project.account }
     end
 
     trait :planning do

@@ -9,6 +9,8 @@ class Prompt < ApplicationRecord
   has_many :prompt_versions, dependent: :destroy
   belongs_to :current_version, class_name: "PromptVersion", optional: true
 
+  before_validation :set_account_from_project, if: -> { project.present? && account.nil? }
+
   validates :slug, presence: true, length: { maximum: 100 },
     format: { with: /\A[a-z0-9._-]+\z/, message: "can only contain lowercase letters, numbers, dots, hyphens, and underscores" }
   validates :slug, uniqueness: true, if: :global?
@@ -16,6 +18,7 @@ class Prompt < ApplicationRecord
   validates :slug, uniqueness: { scope: :project_id }, if: :project_level?
   validates :name, presence: true, length: { maximum: 255 }
   validates :category, presence: true, inclusion: { in: CATEGORIES }
+  validates :account, presence: true, if: :project_level?
   validate :project_belongs_to_account, if: -> { project.present? && account.present? }
 
   scope :active, -> { where(active: true) }
@@ -69,6 +72,10 @@ class Prompt < ApplicationRecord
   end
 
   private
+
+  def set_account_from_project
+    self.account = project.account
+  end
 
   def project_belongs_to_account
     return if project.account_id == account_id

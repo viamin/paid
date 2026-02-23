@@ -44,6 +44,14 @@ RSpec.describe Prompt do
       expect(account_prompt).to be_valid
     end
 
+    it "auto-sets account from project when account is nil" do
+      project = create(:project)
+      prompt = build(:prompt, project: project, account: nil, slug: "test.prompt")
+
+      expect(prompt).to be_valid
+      expect(prompt.account).to eq(project.account)
+    end
+
     it "validates project belongs to account" do
       account = create(:account)
       other_account = create(:account)

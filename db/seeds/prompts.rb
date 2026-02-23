@@ -46,13 +46,24 @@ prompt.assign_attributes(
   active: true
 )
 
-if prompt.new_record? || prompt.current_version.nil?
-  prompt.save!
+prompt.save!
+
+current = prompt.current_version
+
+if current.nil? ||
+   current.template != CODING_ISSUE_TEMPLATE ||
+   current.variables != CODING_ISSUE_VARIABLES
+  change_notes = if current.nil?
+    "Initial version migrated from Prompts::BuildForIssue"
+  else
+    "Updated from seeds: template and/or variables changed"
+  end
+
   prompt.create_version!(
     template: CODING_ISSUE_TEMPLATE,
     variables: CODING_ISSUE_VARIABLES,
     created_by: "seed",
-    change_notes: "Initial version migrated from Prompts::BuildForIssue"
+    change_notes: change_notes
   )
 
   Rails.logger.info(message: "seeds.created_prompt", slug: "coding.issue_implementation")
