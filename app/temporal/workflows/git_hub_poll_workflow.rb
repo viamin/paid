@@ -62,7 +62,7 @@ module Workflows
     end
 
     def start_agent_workflow(project_id, issue_id, prefix: "agent")
-      workflow_id = "#{prefix}-#{project_id}-#{issue_id}-#{Temporalio::Workflow.current_time.to_i}"
+      workflow_id = "#{prefix}-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
 
       Temporalio::Workflow.start_child_workflow(
         Workflows::AgentExecutionWorkflow,
@@ -82,7 +82,7 @@ module Workflows
     def start_pr_followup_workflow(project_id, pr_data)
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
-      timestamp = Temporalio::Workflow.current_time.to_i
+      timestamp = Temporalio::Workflow.now.to_i
       workflow_id = "pr-followup-#{project_id}-#{pr_number}-#{timestamp}"
 
       Temporalio::Workflow.start_child_workflow(
