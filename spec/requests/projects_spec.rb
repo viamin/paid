@@ -289,8 +289,8 @@ RSpec.describe "Projects" do
         project = create(:project, :with_metrics, account: account, github_token: github_token)
         create_list(:agent_run, 3, project: project, status: "completed")
         get project_path(project)
-        expect(response.body).to include("Total Runs")
-        expect(response.body).to include("Completed")
+        expect(response.body).to include("Runs:")
+        expect(response.body).to include("Completed:")
         expect(response.body).to include("$15.00")
       end
 
