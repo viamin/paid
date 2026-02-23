@@ -70,7 +70,7 @@ module Containers
 
     # Default resource limits (per issue #23 requirements)
     DEFAULTS = {
-      memory_bytes: 2 * 1024 * 1024 * 1024,     # 2GB RAM
+      memory_bytes: Integer(ENV.fetch("CONTAINER_MEMORY_BYTES", 4 * 1024 * 1024 * 1024)), # 4GB RAM
       cpu_quota: 200_000,                        # 2 CPUs (100_000 per CPU)
       pids_limit: 500,                           # 500 process limit
       timeout_seconds: 1800,                     # 30 minutes default timeout
