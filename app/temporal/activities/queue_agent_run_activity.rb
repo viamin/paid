@@ -14,26 +14,34 @@ module Activities
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
 
-      # Prevent duplicate queued/active runs for the same issue or PR
-      existing = find_existing_run(project, issue, source_pull_request_number)
-      if existing
+      # Use a transaction with row-level locking to prevent duplicate
+      # queued/active runs for the same issue or PR under concurrency.
+      agent_run, duplicate = AgentRun.transaction do
+        existing = find_existing_run(project, issue, source_pull_request_number)
+        if existing
+          [ existing, true ]
+        else
+          run = AgentRun.create!(
+            project: project,
+            issue: issue,
+            agent_type: agent_type,
+            custom_prompt: custom_prompt,
+            source_pull_request_number: source_pull_request_number,
+            status: "queued"
+          )
+          [ run, false ]
+        end
+      end
+
+      if duplicate
         logger.info(
           message: "concurrency.duplicate_run_skipped",
-          agent_run_id: existing.id,
+          agent_run_id: agent_run.id,
           project_id: project_id,
           issue_id: issue_id
         )
-        return { agent_run_id: existing.id, queued: false, duplicate: true }
+        return { agent_run_id: agent_run.id, queued: false, duplicate: true }
       end
-
-      agent_run = AgentRun.create!(
-        project: project,
-        issue: issue,
-        agent_type: agent_type,
-        custom_prompt: custom_prompt,
-        source_pull_request_number: source_pull_request_number,
-        status: "queued"
-      )
 
       logger.info(
         message: "concurrency.agent_run_queued",
@@ -48,7 +56,7 @@ module Activities
     private
 
     def find_existing_run(project, issue, source_pull_request_number)
-      scope = project.agent_runs.where(status: %w[queued pending running])
+      scope = project.agent_runs.where(status: %w[queued pending running]).lock("FOR UPDATE")
       if issue
         scope.where(issue: issue).first
       elsif source_pull_request_number

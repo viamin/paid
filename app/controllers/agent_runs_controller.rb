@@ -50,21 +50,22 @@ class AgentRunsController < ApplicationController
       return
     end
 
-    unless AgentRun.has_run_capacity?
-      if duplicate_run_exists?(issue: issue, source_pull_request_number: source_pr_number)
-        redirect_to new_project_agent_run_path(@project),
-          alert: "An agent run is already queued or in progress."
-        return
-      end
+    # Reserve capacity by creating the AgentRun record first.
+    # If at capacity, the run is created as "queued" and will auto-start later.
+    # If capacity is available, the run is created as "pending" and a workflow starts immediately.
+    agent_run = create_agent_run(
+      issue: issue,
+      custom_prompt: custom_prompt,
+      source_pull_request_number: source_pr_number
+    )
 
-      queue_agent_run(issue: issue, custom_prompt: custom_prompt,
-        source_pull_request_number: source_pr_number)
+    if agent_run.queued?
       redirect_to project_path(@project),
         notice: "Agent run queued (at capacity). It will start automatically when a slot opens."
       return
     end
 
-    workflow_id = start_agent_workflow(issue: issue, custom_prompt: custom_prompt,
+    workflow_id = start_agent_workflow(agent_run: agent_run, issue: issue,
       source_pull_request_number: source_pr_number)
 
     notice = if source_pr_number
@@ -78,6 +79,9 @@ class AgentRunsController < ApplicationController
     end
 
     redirect_to project_path(@project), notice: notice
+  rescue ActiveRecord::RecordNotUnique
+    redirect_to new_project_agent_run_path(@project),
+      alert: "An agent run is already queued or in progress."
   rescue Temporalio::Error::WorkflowAlreadyStartedError
     alert_message = issue ? "An agent run is already in progress for this issue." : "An agent run is already in progress."
     redirect_to new_project_agent_run_path(@project), alert: alert_message
@@ -164,20 +168,14 @@ class AgentRunsController < ApplicationController
     end
   end
 
-  def duplicate_run_exists?(issue: nil, source_pull_request_number: nil)
-    scope = @project.agent_runs.where(status: %w[queued pending running])
-    if issue
-      scope.where(issue: issue).exists?
-    elsif source_pull_request_number
-      scope.where(source_pull_request_number: source_pull_request_number).exists?
-    else
-      false
-    end
-  end
-
-  def queue_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil)
+  # Creates the AgentRun record, reserving capacity atomically.
+  # Returns a "queued" run when at capacity, or a "pending" run when capacity is available.
+  # Raises ActiveRecord::RecordNotUnique if a duplicate active run exists (enforced by DB indexes).
+  def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil)
     agent_type = params[:agent_type].presence || "claude_code"
     agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(agent_type)
+
+    status = AgentRun.has_run_capacity? ? "pending" : "queued"
 
     AgentRun.create!(
       project: @project,
@@ -185,19 +183,17 @@ class AgentRunsController < ApplicationController
       agent_type: agent_type,
       custom_prompt: custom_prompt,
       source_pull_request_number: source_pull_request_number,
-      status: "queued"
+      status: status
     )
   end
 
-  def start_agent_workflow(issue: nil, custom_prompt: nil, source_pull_request_number: nil)
-    agent_type = params[:agent_type].presence || "claude_code"
-    agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(agent_type)
-
+  def start_agent_workflow(agent_run:, issue: nil, source_pull_request_number: nil)
     workflow_input = {
       project_id: @project.id,
-      agent_type: agent_type,
+      agent_type: agent_run.agent_type,
+      agent_run_id: agent_run.id,
       issue_id: issue&.id,
-      custom_prompt: custom_prompt,
+      custom_prompt: agent_run.custom_prompt,
       source_pull_request_number: source_pull_request_number
     }.compact
 
@@ -222,8 +218,8 @@ class AgentRunsController < ApplicationController
       project_id: @project.id,
       issue_id: issue&.id,
       workflow_id: handle.id,
-      agent_type: agent_type,
-      has_custom_prompt: custom_prompt.present?
+      agent_type: agent_run.agent_type,
+      has_custom_prompt: agent_run.custom_prompt.present?
     )
 
     handle.id

@@ -16,6 +16,10 @@ module Activities
       else
         agent_run.fail!(error: error)
         agent_run.log!("system", "Agent run failed: #{error}")
+
+        # Only trigger queue processing when this activity actually transitions the run,
+        # avoiding redundant enqueues when the run was already terminal (e.g. timeout).
+        ProcessRunQueueJob.perform_later
       end
 
       # Always update issue state so it doesn't stay stuck in "in_progress".
@@ -28,8 +32,6 @@ module Activities
         agent_run_id: agent_run_id,
         error: error
       )
-
-      ProcessRunQueueJob.perform_later
 
       { agent_run_id: agent_run_id }
     end

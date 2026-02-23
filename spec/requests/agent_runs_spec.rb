@@ -391,7 +391,7 @@ RSpec.describe "AgentRuns" do
           expect(AgentRun.last.custom_prompt).to eq("Fix the bug")
         end
 
-        it "rejects duplicate queued run for the same issue" do
+        it "rejects duplicate queued run for the same issue via DB constraint" do
           create(:agent_run, :queued, project: project, issue: issue)
 
           post project_agent_runs_path(project), params: { issue_id: issue.id }
