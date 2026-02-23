@@ -166,6 +166,14 @@ RSpec.describe ProjectWorkflowManager do
       ).at_least(:once)
     end
 
+    it "skips inactive projects" do
+      create(:project, :inactive)
+
+      described_class.restart_all_polling(reason: "deploy")
+
+      expect(temporal_client).not_to have_received(:start_workflow)
+    end
+
     it "continues processing other projects when one fails" do
       create(:project)
       create(:project)

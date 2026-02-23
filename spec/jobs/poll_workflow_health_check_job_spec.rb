@@ -45,6 +45,66 @@ RSpec.describe PollWorkflowHealthCheckJob do
       expect(workflow_handle).not_to have_received(:terminate)
     end
 
+    it "restarts terminated workflows" do
+      project = create(:project)
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::TERMINATED) # rubocop:disable RSpec/VerifiedDoubles
+
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:describe).and_return(desc)
+      allow(workflow_handle).to receive(:terminate)
+
+      described_class.perform_now
+
+      expect(workflow_handle).to have_received(:terminate)
+      expect(temporal_client).to have_received(:start_workflow).with(
+        Workflows::GitHubPollWorkflow,
+        { project_id: project.id },
+        id: "github-poll-#{project.id}",
+        task_queue: "paid-tasks"
+      ).at_least(:once)
+    end
+
+    it "restarts timed out workflows" do
+      project = create(:project)
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::TIMED_OUT) # rubocop:disable RSpec/VerifiedDoubles
+
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:describe).and_return(desc)
+      allow(workflow_handle).to receive(:terminate)
+
+      described_class.perform_now
+
+      expect(workflow_handle).to have_received(:terminate)
+      expect(temporal_client).to have_received(:start_workflow).with(
+        Workflows::GitHubPollWorkflow,
+        { project_id: project.id },
+        id: "github-poll-#{project.id}",
+        task_queue: "paid-tasks"
+      ).at_least(:once)
+    end
+
+    it "restarts completed workflows (poll workflows should never complete naturally)" do
+      project = create(:project)
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::COMPLETED) # rubocop:disable RSpec/VerifiedDoubles
+
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:describe).and_return(desc)
+      allow(workflow_handle).to receive(:terminate)
+
+      described_class.perform_now
+
+      expect(workflow_handle).to have_received(:terminate)
+      expect(temporal_client).to have_received(:start_workflow).with(
+        Workflows::GitHubPollWorkflow,
+        { project_id: project.id },
+        id: "github-poll-#{project.id}",
+        task_queue: "paid-tasks"
+      ).at_least(:once)
+    end
+
     it "skips canceled workflows" do
       create(:project)
       workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
@@ -57,6 +117,14 @@ RSpec.describe PollWorkflowHealthCheckJob do
       described_class.perform_now
 
       expect(workflow_handle).not_to have_received(:terminate)
+    end
+
+    it "skips inactive projects" do
+      create(:project, :inactive)
+
+      described_class.perform_now
+
+      expect(temporal_client).not_to have_received(:start_workflow)
     end
 
     it "does nothing when no projects have polling enabled" do

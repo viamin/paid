@@ -12,8 +12,13 @@ class PollWorkflowHealthCheckJob < ApplicationJob
   queue_as :maintenance
 
   def perform
-    Project.where("poll_interval_seconds > 0").find_each do |project|
-      check_and_heal(project)
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    checked = 0
+    restarted = 0
+
+    Project.active.where("poll_interval_seconds > 0").find_each do |project|
+      checked += 1
+      restarted += 1 if check_and_heal(project)
     rescue => e
       Rails.logger.error(
         message: "temporal_worker.health_check_failed",
@@ -21,6 +26,14 @@ class PollWorkflowHealthCheckJob < ApplicationJob
         error: e.message
       )
     end
+
+    duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+    Rails.logger.info(
+      message: "temporal_worker.health_check_completed",
+      projects_checked: checked,
+      projects_restarted: restarted,
+      duration_ms: duration_ms
+    )
   end
 
   private
@@ -29,6 +42,7 @@ class PollWorkflowHealthCheckJob < ApplicationJob
     Temporalio::Client::WorkflowExecutionStatus::FAILED,
     Temporalio::Client::WorkflowExecutionStatus::TERMINATED,
     Temporalio::Client::WorkflowExecutionStatus::TIMED_OUT,
+    Temporalio::Client::WorkflowExecutionStatus::COMPLETED,
     :not_found
   ].freeze
 
@@ -40,6 +54,7 @@ class PollWorkflowHealthCheckJob < ApplicationJob
     # Re-check to reduce race conditions with other lifecycle operations
     latest_status = ProjectWorkflowManager.workflow_status(project)
     return if latest_status[:running]
+    return unless RESTARTABLE_STATUSES.include?(latest_status[:status])
 
     Rails.logger.warn(
       message: "temporal_worker.poll_workflow_not_running",
@@ -53,5 +68,6 @@ class PollWorkflowHealthCheckJob < ApplicationJob
       message: "temporal_worker.poll_workflow_restarted",
       project_id: project.id
     )
+    true
   end
 end

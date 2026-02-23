@@ -66,7 +66,7 @@ class ProjectWorkflowManager
     end
 
     def restart_all_polling(reason: "deployment")
-      Project.where("poll_interval_seconds > 0").find_each do |project|
+      Project.active.where("poll_interval_seconds > 0").find_each do |project|
         restart_polling(project, reason: reason)
       rescue => e
         Rails.logger.error(
