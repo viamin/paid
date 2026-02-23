@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class AddUniqueActiveRunIndexes < ActiveRecord::Migration[8.0]
+class AddUniqueActiveRunIndexes < ActiveRecord::Migration[8.1]
   def change
     # Prevent duplicate queued/pending/running runs for the same project+issue.
     add_index :agent_runs, [ :project_id, :issue_id ],

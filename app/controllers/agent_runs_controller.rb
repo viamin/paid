@@ -61,10 +61,10 @@ class AgentRunsController < ApplicationController
 
     ProcessRunQueueJob.perform_later
 
-    notice = if AgentRun.has_run_capacity?
+    notice = if AgentRun.has_run_capacity? && AgentRun.queued.count <= 1
       "Agent run created and will start momentarily."
     else
-      "Agent run queued (at capacity). It will start automatically when a slot opens."
+      "Agent run queued. It will start automatically when a slot opens."
     end
 
     redirect_to project_path(@project), notice: notice

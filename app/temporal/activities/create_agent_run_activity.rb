@@ -49,7 +49,9 @@ module Activities
 
       if agent_run.queued?
         agent_run.update!(status: "pending")
-      else
+      elsif agent_run.status != "pending"
+        # "pending" is expected — ProcessRunQueueJob claims runs (queued→pending)
+        # before starting the workflow. Only warn for truly unexpected statuses.
         logger.warn(
           message: "agent_execution.resume_queued_run_unexpected_status",
           agent_run_id: agent_run.id,
