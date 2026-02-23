@@ -367,4 +367,91 @@ RSpec.describe Project do
       expect(project.created_by).to be_nil
     end
   end
+
+  describe "broadcast methods" do
+    let(:project) { create(:project) }
+
+    before do
+      allow(project).to receive(:broadcast_replace_to)
+    end
+
+    describe "#broadcast_stats_update" do
+      it "broadcasts replace to the project_updates stream with stats partial" do
+        project.broadcast_stats_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :project_updates,
+          target: "stats_project_#{project.id}",
+          partial: "projects/stats",
+          locals: { project: project }
+        )
+      end
+    end
+
+    describe "#broadcast_agent_runs_update" do
+      it "broadcasts replace to the project_updates stream with agent_runs partial" do
+        project.broadcast_agent_runs_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :project_updates,
+          target: "agent_runs_project_#{project.id}",
+          partial: "projects/agent_runs",
+          locals: hash_including(project: project, show_actions: false)
+        )
+      end
+
+      it "does not include show_actions: true to avoid authorization leaks" do
+        project.broadcast_agent_runs_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          anything, anything,
+          hash_including(locals: hash_including(show_actions: false))
+        )
+      end
+    end
+
+    describe "#broadcast_issues_update" do
+      it "broadcasts replace to the project_updates stream with issues partial" do
+        project.broadcast_issues_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :project_updates,
+          target: "issues_project_#{project.id}",
+          partial: "projects/issues",
+          locals: hash_including(project: project, show_actions: false)
+        )
+      end
+
+      it "does not include show_actions: true to avoid authorization leaks" do
+        project.broadcast_issues_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          anything, anything,
+          hash_including(locals: hash_including(show_actions: false))
+        )
+      end
+    end
+
+    describe "#broadcast_pull_requests_update" do
+      it "broadcasts replace to the project_updates stream with pull_requests partial" do
+        project.broadcast_pull_requests_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :project_updates,
+          target: "pull_requests_project_#{project.id}",
+          partial: "projects/pull_requests",
+          locals: hash_including(project: project, show_actions: false)
+        )
+      end
+
+      it "does not include show_actions: true to avoid authorization leaks" do
+        project.broadcast_pull_requests_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          anything, anything,
+          hash_including(locals: hash_including(show_actions: false))
+        )
+      end
+    end
+  end
 end

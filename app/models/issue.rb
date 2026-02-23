@@ -20,9 +20,9 @@ class Issue < ApplicationRecord
   validates :paid_state, presence: true, inclusion: { in: PAID_STATES }
   validate :parent_issue_belongs_to_same_project, if: -> { parent_issue.present? }
 
-  after_create_commit :broadcast_project_updates
-  after_update_commit :broadcast_project_updates
-  after_destroy_commit :broadcast_project_updates
+  after_create_commit :broadcast_current_section
+  after_update_commit :broadcast_changed_sections
+  after_destroy_commit :broadcast_current_section
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
   scope :root_issues, -> { where(parent_issue_id: nil) }
@@ -59,8 +59,19 @@ class Issue < ApplicationRecord
     errors.add(:parent_issue, "must belong to the same project")
   end
 
-  def broadcast_project_updates
+  def broadcast_current_section
     if is_pull_request?
+      project.broadcast_pull_requests_update
+    else
+      project.broadcast_issues_update
+    end
+  end
+
+  def broadcast_changed_sections
+    if saved_change_to_is_pull_request?
+      project.broadcast_issues_update
+      project.broadcast_pull_requests_update
+    elsif is_pull_request?
       project.broadcast_pull_requests_update
     else
       project.broadcast_issues_update

@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 class Project < ApplicationRecord
-  include ActionView::RecordIdentifier
-
   belongs_to :account
   belongs_to :github_token
   belongs_to :created_by, class_name: "User", optional: true
@@ -90,7 +88,7 @@ class Project < ApplicationRecord
   def broadcast_stats_update
     broadcast_replace_to(
       self, :project_updates,
-      target: dom_id(self, :stats),
+      target: ActionView::RecordIdentifier.dom_id(self, :stats),
       partial: "projects/stats",
       locals: { project: self }
     )
@@ -99,9 +97,9 @@ class Project < ApplicationRecord
   def broadcast_agent_runs_update
     broadcast_replace_to(
       self, :project_updates,
-      target: dom_id(self, :agent_runs),
+      target: ActionView::RecordIdentifier.dom_id(self, :agent_runs),
       partial: "projects/agent_runs",
-      locals: { project: self, recent_agent_runs: agent_runs.recent.limit(10), show_actions: true }
+      locals: { project: self, recent_agent_runs: agent_runs.recent.limit(10), show_actions: false }
     )
   end
 
@@ -109,9 +107,9 @@ class Project < ApplicationRecord
     open_items = issues.where(github_state: "open").order(github_number: :desc)
     broadcast_replace_to(
       self, :project_updates,
-      target: dom_id(self, :issues),
+      target: ActionView::RecordIdentifier.dom_id(self, :issues),
       partial: "projects/issues",
-      locals: { project: self, issues: open_items.issues_only.limit(25), show_actions: true }
+      locals: { project: self, issues: open_items.issues_only.limit(25), show_actions: false }
     )
   end
 
@@ -119,9 +117,9 @@ class Project < ApplicationRecord
     open_items = issues.where(github_state: "open").order(github_number: :desc)
     broadcast_replace_to(
       self, :project_updates,
-      target: dom_id(self, :pull_requests),
+      target: ActionView::RecordIdentifier.dom_id(self, :pull_requests),
       partial: "projects/pull_requests",
-      locals: { project: self, pull_requests: open_items.pull_requests_only.limit(25), show_actions: true }
+      locals: { project: self, pull_requests: open_items.pull_requests_only.limit(25), show_actions: false }
     )
   end
 

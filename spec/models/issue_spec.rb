@@ -257,4 +257,104 @@ RSpec.describe Issue do
       expect(issue.errors[:paid_state]).to include("is not included in the list")
     end
   end
+
+  describe "broadcast callbacks" do
+    let(:project) { create(:project) }
+
+    context "when creating an issue" do
+      it "broadcasts issues update for a regular issue" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        create(:issue, project: project)
+
+        expect(project).to have_received(:broadcast_issues_update)
+        expect(project).not_to have_received(:broadcast_pull_requests_update)
+      end
+
+      it "broadcasts pull requests update for a pull request" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        create(:issue, :pull_request, project: project)
+
+        expect(project).not_to have_received(:broadcast_issues_update)
+        expect(project).to have_received(:broadcast_pull_requests_update)
+      end
+    end
+
+    context "when updating an issue" do
+      it "broadcasts issues update for a regular issue" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        issue = create(:issue, project: project)
+
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        issue.update!(title: "Updated title")
+
+        expect(project).to have_received(:broadcast_issues_update)
+        expect(project).not_to have_received(:broadcast_pull_requests_update)
+      end
+
+      it "broadcasts pull requests update for a pull request" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project)
+
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        pr.update!(title: "Updated PR title")
+
+        expect(project).not_to have_received(:broadcast_issues_update)
+        expect(project).to have_received(:broadcast_pull_requests_update)
+      end
+
+      it "broadcasts both sections when is_pull_request changes" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        issue = create(:issue, project: project, is_pull_request: false)
+
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        issue.update!(is_pull_request: true)
+
+        expect(project).to have_received(:broadcast_issues_update)
+        expect(project).to have_received(:broadcast_pull_requests_update)
+      end
+    end
+
+    context "when destroying an issue" do
+      it "broadcasts issues update for a regular issue" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        issue = create(:issue, project: project)
+
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        issue.destroy!
+
+        expect(project).to have_received(:broadcast_issues_update)
+        expect(project).not_to have_received(:broadcast_pull_requests_update)
+      end
+
+      it "broadcasts pull requests update for a pull request" do
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project)
+
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        pr.destroy!
+
+        expect(project).not_to have_received(:broadcast_issues_update)
+        expect(project).to have_received(:broadcast_pull_requests_update)
+      end
+    end
+  end
 end
