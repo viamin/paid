@@ -34,8 +34,8 @@ RSpec.describe Containers::Provision do
   end
 
   describe "constants" do
-    it "defines default memory limit of 2GB" do
-      expect(described_class::DEFAULTS[:memory_bytes]).to eq(2 * 1024 * 1024 * 1024)
+    it "defines default memory limit of 4GB" do
+      expect(described_class::DEFAULTS[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)
     end
 
     it "defines default CPU quota for 2 CPUs" do
@@ -118,8 +118,8 @@ RSpec.describe Containers::Provision do
       it "configures resource limits" do
         expect(Docker::Container).to receive(:create) do |config|
           host_config = config["HostConfig"]
-          expect(host_config["Memory"]).to eq(2 * 1024 * 1024 * 1024)
-          expect(host_config["MemorySwap"]).to eq(2 * 1024 * 1024 * 1024)
+          expect(host_config["Memory"]).to eq(4 * 1024 * 1024 * 1024)
+          expect(host_config["MemorySwap"]).to eq(4 * 1024 * 1024 * 1024)
           expect(host_config["CpuPeriod"]).to eq(100_000)
           expect(host_config["CpuQuota"]).to eq(200_000)
           expect(host_config["PidsLimit"]).to eq(500)
