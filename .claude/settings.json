@@ -1,4 +1,8 @@
 {
+  "statusLine": {
+    "type": "command",
+    "command": "bash /workspaces/paid/.claude/statusline-command.sh"
+  },
   "hooks": {
     "PreCompact": [
       {
