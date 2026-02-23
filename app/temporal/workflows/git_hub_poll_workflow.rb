@@ -62,6 +62,14 @@ module Workflows
     end
 
     def start_agent_workflow(project_id, issue_id, prefix: "agent")
+      capacity = run_activity(Activities::CheckRunCapacityActivity, {}, timeout: 10)
+
+      unless capacity[:has_capacity]
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: issue_id }, timeout: 30)
+        return
+      end
+
       workflow_id = "#{prefix}-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
 
       Temporalio::Workflow.start_child_workflow(
@@ -82,6 +90,23 @@ module Workflows
     def start_pr_followup_workflow(project_id, pr_data)
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
+
+      capacity = run_activity(Activities::CheckRunCapacityActivity, {}, timeout: 10)
+
+      unless capacity[:has_capacity]
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: issue_id,
+            source_pull_request_number: pr_number }, timeout: 30)
+
+        # Still record the followup even when queued
+        run_activity(Activities::RecordPrFollowupActivity, {
+          project_id: project_id,
+          issue_id: issue_id,
+          labels_to_remove: pr_data[:labels_to_remove] || []
+        }, timeout: 30)
+        return
+      end
+
       timestamp = Temporalio::Workflow.now.to_i
       workflow_id = "pr-followup-#{project_id}-#{pr_number}-#{timestamp}"
 

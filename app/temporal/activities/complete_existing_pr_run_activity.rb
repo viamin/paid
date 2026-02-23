@@ -35,6 +35,8 @@ module Activities
         pull_request_url: pr.html_url
       )
 
+      ProcessRunQueueJob.perform_later
+
       { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number }
     end
 

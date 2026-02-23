@@ -62,6 +62,13 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("failed")
     end
 
+    it "enqueues ProcessRunQueueJob" do
+      agent_run = create(:agent_run, :running, project: project)
+
+      expect { activity.execute(agent_run_id: agent_run.id, error: "Something broke") }
+        .to have_enqueued_job(ProcessRunQueueJob)
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect {
         activity.execute(agent_run_id: -1, error: "error")

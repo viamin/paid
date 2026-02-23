@@ -75,7 +75,7 @@ module Activities
     def active_run_exists?(project, issue)
       project.agent_runs
         .where(source_pull_request_number: issue.github_number)
-        .active
+        .where(status: %w[queued pending running])
         .exists?
     end
 

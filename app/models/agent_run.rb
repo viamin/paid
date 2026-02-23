@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  STATUSES = %w[pending running completed failed cancelled timeout].freeze
+  STATUSES = %w[queued pending running completed failed cancelled timeout].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
 
   belongs_to :project
@@ -32,6 +32,7 @@ class AgentRun < ApplicationRecord
   validate :has_prompt_source, on: :create
 
   scope :by_status, ->(status) { where(status: status) }
+  scope :queued, -> { where(status: "queued") }
   scope :pending, -> { where(status: "pending") }
   scope :running, -> { where(status: "running") }
   scope :completed, -> { where(status: "completed") }
@@ -49,8 +50,20 @@ class AgentRun < ApplicationRecord
     (end_time - started_at).to_i
   end
 
+  def self.has_run_capacity?
+    active.count < Rails.application.config.x.max_concurrent_runs
+  end
+
+  def self.next_queued_run
+    queued.order(created_at: :asc).first
+  end
+
   def existing_pr?
     source_pull_request_number.present?
+  end
+
+  def queued?
+    status == "queued"
   end
 
   def running?

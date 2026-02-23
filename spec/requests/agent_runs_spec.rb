@@ -357,6 +357,41 @@ RSpec.describe "AgentRuns" do
         end
       end
 
+      context "when at capacity" do
+        before do
+          allow(AgentRun).to receive(:has_run_capacity?).and_return(false)
+        end
+
+        it "creates a queued agent run instead of starting execution workflow" do
+          expect(temporal_client).not_to receive(:start_workflow)
+            .with(Workflows::AgentExecutionWorkflow, anything, anything)
+
+          expect {
+            post project_agent_runs_path(project), params: { issue_id: issue.id }
+          }.to change(AgentRun, :count).by(1)
+
+          expect(AgentRun.last.status).to eq("queued")
+          expect(AgentRun.last.issue).to eq(issue)
+        end
+
+        it "redirects with queued notice" do
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+
+          expect(response).to redirect_to(project_path(project))
+          follow_redirect!
+          expect(response.body).to include("queued")
+        end
+
+        it "queues runs with custom prompt" do
+          post project_agent_runs_path(project), params: {
+            custom_prompt: "Fix the bug"
+          }
+
+          expect(AgentRun.last.status).to eq("queued")
+          expect(AgentRun.last.custom_prompt).to eq("Fix the bug")
+        end
+      end
+
       context "when Temporal workflow already running" do
         before do
           allow(temporal_client).to receive(:start_workflow)

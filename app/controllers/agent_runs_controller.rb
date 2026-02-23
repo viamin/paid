@@ -50,6 +50,14 @@ class AgentRunsController < ApplicationController
       return
     end
 
+    unless AgentRun.has_run_capacity?
+      queue_agent_run(issue: issue, custom_prompt: custom_prompt,
+        source_pull_request_number: source_pr_number)
+      redirect_to project_path(@project),
+        notice: "Agent run queued (at capacity). It will start automatically when a slot opens."
+      return
+    end
+
     workflow_id = start_agent_workflow(issue: issue, custom_prompt: custom_prompt,
       source_pull_request_number: source_pr_number)
 
@@ -148,6 +156,20 @@ class AgentRunsController < ApplicationController
     else
       [ nil, "Issue ##{issue_number} not found. Issues must be synced before triggering a run." ]
     end
+  end
+
+  def queue_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil)
+    agent_type = params[:agent_type].presence || "claude_code"
+    agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(agent_type)
+
+    AgentRun.create!(
+      project: @project,
+      issue: issue,
+      agent_type: agent_type,
+      custom_prompt: custom_prompt,
+      source_pull_request_number: source_pull_request_number,
+      status: "queued"
+    )
   end
 
   def start_agent_workflow(issue: nil, custom_prompt: nil, source_pull_request_number: nil)

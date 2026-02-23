@@ -135,11 +135,22 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe ".queued" do
+      it "returns only queued runs" do
+        queued_run = create(:agent_run, :queued)
+        create(:agent_run, :running)
+
+        expect(described_class.queued).to include(queued_run)
+        expect(described_class.queued.count).to eq(1)
+      end
+    end
+
     describe ".active" do
-      it "includes pending and running runs" do
+      it "includes pending and running runs but not queued" do
         pending_run = create(:agent_run)
         running_run = create(:agent_run, :running)
         create(:agent_run, :completed)
+        create(:agent_run, :queued)
 
         active = described_class.active
         expect(active).to include(pending_run, running_run)
@@ -190,6 +201,20 @@ RSpec.describe AgentRun do
         agent_run = build(:agent_run, started_at: 5.minutes.ago, completed_at: nil)
 
         expect(agent_run.duration).to be_within(1).of(300)
+      end
+    end
+
+    describe "#queued?" do
+      it "returns true when status is queued" do
+        agent_run = build(:agent_run, :queued)
+
+        expect(agent_run.queued?).to be true
+      end
+
+      it "returns false when status is not queued" do
+        agent_run = build(:agent_run)
+
+        expect(agent_run.queued?).to be false
       end
     end
 
@@ -648,9 +673,47 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".has_run_capacity?" do
+    it "returns true when active count is below max" do
+      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
+      create(:agent_run, :running)
+
+      expect(described_class.has_run_capacity?).to be true
+    end
+
+    it "returns false when active count equals max" do
+      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(1)
+      create(:agent_run, :running)
+
+      expect(described_class.has_run_capacity?).to be false
+    end
+
+    it "does not count queued runs as active" do
+      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(1)
+      create(:agent_run, :queued)
+
+      expect(described_class.has_run_capacity?).to be true
+    end
+  end
+
+  describe ".next_queued_run" do
+    it "returns the oldest queued run" do
+      older = create(:agent_run, :queued, created_at: 2.minutes.ago)
+      create(:agent_run, :queued, created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(older)
+    end
+
+    it "returns nil when no queued runs exist" do
+      create(:agent_run, :running)
+
+      expect(described_class.next_queued_run).to be_nil
+    end
+  end
+
   describe "constants" do
     it "defines valid STATUSES" do
-      expect(described_class::STATUSES).to eq(%w[pending running completed failed cancelled timeout])
+      expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout])
     end
 
     it "defines valid AGENT_TYPES" do
