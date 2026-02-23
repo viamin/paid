@@ -266,9 +266,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_000001) do
     t.decimal "avg_iterations", precision: 4, scale: 2
     t.decimal "avg_quality_score", precision: 4, scale: 2
     t.text "change_notes"
+    t.datetime "created_at", null: false
     t.string "created_by", limit: 50
     t.bigint "created_by_user_id"
-    t.datetime "created_at", null: false
     t.bigint "parent_version_id"
     t.bigint "prompt_id", null: false
     t.text "system_prompt"
@@ -286,12 +286,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_000001) do
     t.bigint "account_id"
     t.boolean "active", default: true, null: false
     t.string "category", limit: 50, null: false
+    t.datetime "created_at", null: false
     t.bigint "current_version_id"
     t.text "description"
     t.string "name", limit: 255, null: false
     t.bigint "project_id"
     t.string "slug", limit: 100, null: false
-    t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_prompts_on_account_id"
     t.index ["active"], name: "index_prompts_on_active"
@@ -301,7 +301,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_000001) do
     t.index ["slug", "account_id"], name: "index_prompts_on_slug_account", unique: true, where: "((account_id IS NOT NULL) AND (project_id IS NULL))"
     t.index ["slug", "project_id"], name: "index_prompts_on_slug_project", unique: true, where: "(project_id IS NOT NULL)"
     t.index ["slug"], name: "index_prompts_on_slug_global", unique: true, where: "((account_id IS NULL) AND (project_id IS NULL))"
-    t.check_constraint "(project_id IS NULL OR account_id IS NOT NULL)", name: "chk_prompts_scope_consistency"
+    t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_prompts_scope_consistency"
   end
 
   create_table "users", force: :cascade do |t|
@@ -358,8 +358,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_000001) do
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
-  add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
+  add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "issues", "issues", column: "parent_issue_id"
