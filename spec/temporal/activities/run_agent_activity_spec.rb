@@ -149,6 +149,13 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.status).to eq("timeout")
         expect(agent_run.error_message).to include("wall_clock_timeout")
       end
+
+      it "enqueues ProcessRunQueueJob" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError)
+          .and have_enqueued_job(ProcessRunQueueJob)
+      end
     end
 
     context "when agent hits startup timeout" do

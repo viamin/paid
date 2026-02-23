@@ -58,6 +58,19 @@ class AgentRun < ApplicationRecord
     queued.order(created_at: :asc).first
   end
 
+  # Atomically claims the oldest queued run by transitioning it to pending
+  # inside a transaction with FOR UPDATE SKIP LOCKED. Returns nil if no
+  # queued run is available or another process already claimed it.
+  def self.claim_next_queued_run
+    transaction do
+      run = queued.order(created_at: :asc).lock("FOR UPDATE SKIP LOCKED").first
+      return nil unless run
+
+      run.update!(status: "pending")
+      run
+    end
+  end
+
   def existing_pr?
     source_pull_request_number.present?
   end

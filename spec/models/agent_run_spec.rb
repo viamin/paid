@@ -711,6 +711,25 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".claim_next_queued_run" do
+    it "atomically claims the oldest queued run and transitions to pending" do
+      older = create(:agent_run, :queued, created_at: 2.minutes.ago)
+      create(:agent_run, :queued, created_at: 1.minute.ago)
+
+      claimed = described_class.claim_next_queued_run
+
+      expect(claimed).to eq(older)
+      expect(claimed.status).to eq("pending")
+      expect(older.reload.status).to eq("pending")
+    end
+
+    it "returns nil when no queued runs exist" do
+      create(:agent_run, :running)
+
+      expect(described_class.claim_next_queued_run).to be_nil
+    end
+  end
+
   describe "constants" do
     it "defines valid STATUSES" do
       expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout])

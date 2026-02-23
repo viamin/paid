@@ -5,16 +5,18 @@ class ProcessRunQueueJob < ApplicationJob
 
   def perform
     while AgentRun.has_run_capacity?
-      agent_run = AgentRun.next_queued_run
+      # Atomically claim the oldest queued run via FOR UPDATE SKIP LOCKED,
+      # preventing concurrent job instances from double-starting the same run.
+      agent_run = AgentRun.claim_next_queued_run
       break unless agent_run
 
-      start_queued_run(agent_run)
+      start_claimed_run(agent_run)
     end
   end
 
   private
 
-  def start_queued_run(agent_run)
+  def start_claimed_run(agent_run)
     workflow_input = {
       project_id: agent_run.project_id,
       agent_type: agent_run.agent_type,
@@ -32,8 +34,6 @@ class ProcessRunQueueJob < ApplicationJob
       id: workflow_id,
       task_queue: Paid.task_queue
     )
-
-    agent_run.update!(status: "pending")
 
     Rails.logger.info(
       message: "process_run_queue.started_queued_run",

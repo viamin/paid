@@ -14,6 +14,18 @@ module Activities
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
 
+      # Prevent duplicate queued/active runs for the same issue or PR
+      existing = find_existing_run(project, issue, source_pull_request_number)
+      if existing
+        logger.info(
+          message: "concurrency.duplicate_run_skipped",
+          agent_run_id: existing.id,
+          project_id: project_id,
+          issue_id: issue_id
+        )
+        return { agent_run_id: existing.id, queued: false, duplicate: true }
+      end
+
       agent_run = AgentRun.create!(
         project: project,
         issue: issue,
@@ -31,6 +43,17 @@ module Activities
       )
 
       { agent_run_id: agent_run.id, queued: true }
+    end
+
+    private
+
+    def find_existing_run(project, issue, source_pull_request_number)
+      scope = project.agent_runs.where(status: %w[queued pending running])
+      if issue
+        scope.where(issue: issue).first
+      elsif source_pull_request_number
+        scope.where(source_pull_request_number: source_pull_request_number).first
+      end
     end
   end
 end

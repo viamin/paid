@@ -51,6 +51,12 @@ class AgentRunsController < ApplicationController
     end
 
     unless AgentRun.has_run_capacity?
+      if duplicate_run_exists?(issue: issue, source_pull_request_number: source_pr_number)
+        redirect_to new_project_agent_run_path(@project),
+          alert: "An agent run is already queued or in progress."
+        return
+      end
+
       queue_agent_run(issue: issue, custom_prompt: custom_prompt,
         source_pull_request_number: source_pr_number)
       redirect_to project_path(@project),
@@ -155,6 +161,17 @@ class AgentRunsController < ApplicationController
       [ issue, nil ]
     else
       [ nil, "Issue ##{issue_number} not found. Issues must be synced before triggering a run." ]
+    end
+  end
+
+  def duplicate_run_exists?(issue: nil, source_pull_request_number: nil)
+    scope = @project.agent_runs.where(status: %w[queued pending running])
+    if issue
+      scope.where(issue: issue).exists?
+    elsif source_pull_request_number
+      scope.where(source_pull_request_number: source_pull_request_number).exists?
+    else
+      false
     end
   end
 

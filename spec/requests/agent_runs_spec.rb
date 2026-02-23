@@ -390,6 +390,16 @@ RSpec.describe "AgentRuns" do
           expect(AgentRun.last.status).to eq("queued")
           expect(AgentRun.last.custom_prompt).to eq("Fix the bug")
         end
+
+        it "rejects duplicate queued run for the same issue" do
+          create(:agent_run, :queued, project: project, issue: issue)
+
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+
+          expect(response).to redirect_to(new_project_agent_run_path(project))
+          follow_redirect!
+          expect(response.body).to include("already queued or in progress")
+        end
       end
 
       context "when Temporal workflow already running" do
