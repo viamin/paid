@@ -29,9 +29,9 @@ RSpec.describe "WorkflowStatuses" do
         expect(response.body).to include("GitHub Polling")
       end
 
-      it "shows 'Not started' when no poll workflow exists" do
+      it "shows 'Not connected' when no poll workflow exists" do
         get project_workflow_status_path(project)
-        expect(response.body).to include("Not started")
+        expect(response.body).to include("Not connected")
       end
 
       it "shows 'Active' when poll workflow is running" do
@@ -80,7 +80,8 @@ RSpec.describe "WorkflowStatuses" do
 
       it "shows empty state when no workflows exist" do
         get project_workflow_status_path(project)
-        expect(response.body).to include("No workflow executions yet.")
+        expect(response.body).to include("No workflow executions yet")
+        expect(response.body).to include("Workflows are created when agent runs are triggered")
       end
 
       it "limits recent workflows to 10" do

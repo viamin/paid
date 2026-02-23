@@ -15,7 +15,7 @@
           <% elsif @poll_workflow %>
             <span class="text-yellow-600"><%= @poll_workflow.status.to_s.humanize %></span>
           <% else %>
-            <span class="text-gray-500">Not started</span>
+            <span class="text-gray-500">Not connected</span>
           <% end %>
 
           <a href="<%= Paid.temporal_ui_url %>/namespaces/<%= Paid.temporal_namespace %>/workflows/github-poll-<%= @project.id %>"
@@ -71,7 +71,7 @@
         </table>
       </div>
     <% else %>
-      <p class="text-gray-600 text-sm">No workflow executions yet.</p>
+      <p class="text-gray-500 text-sm">No workflow executions yet. Workflows are created when agent runs are triggered for this project.</p>
     <% end %>
   </div>
 
