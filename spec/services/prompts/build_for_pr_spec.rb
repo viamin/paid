@@ -211,7 +211,7 @@ RSpec.describe Prompts::BuildForPr do
         body: "Implement dark mode toggle in settings.")
     end
 
-    it "includes issue requirements when issue is provided" do
+    it "includes issue requirements when a linked issue is provided" do
       prompt = described_class.call(
         project: project,
         pr_number: 42,
@@ -225,6 +225,26 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("#99")
       expect(prompt).to include("Implement dark mode toggle in settings.")
       expect(prompt).to include("Evaluate whether the current PR changes fully implement")
+    end
+
+    it "omits issue requirements when issue is the PR itself" do
+      pr_issue = create(:issue, :pull_request,
+        project: project,
+        title: "Fix authentication flow",
+        github_number: 42,
+        body: "This PR fixes the auth redirect bug.")
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        issue: pr_issue
+      )
+
+      expect(prompt).not_to include("Issue Requirements")
+      expect(prompt).to include("# Task")
+      expect(prompt).to include("This PR fixes the auth redirect bug.")
     end
   end
 
