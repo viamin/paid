@@ -72,6 +72,11 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       expect(result[:pull_request_number]).to eq(42)
     end
 
+    it "enqueues ProcessRunQueueJob" do
+      expect { activity.execute(agent_run_id: agent_run.id) }
+        .to have_enqueued_job(ProcessRunQueueJob)
+    end
+
     it "handles comment failure gracefully" do
       allow(github_client).to receive(:add_comment)
         .and_raise(GithubClient::ApiError.new("forbidden", status: 403))

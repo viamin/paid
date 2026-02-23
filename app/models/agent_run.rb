@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  STATUSES = %w[pending running completed failed cancelled timeout].freeze
+  STATUSES = %w[queued pending running completed failed cancelled timeout].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
 
   belongs_to :project
@@ -32,6 +32,7 @@ class AgentRun < ApplicationRecord
   validate :has_prompt_source, on: :create
 
   scope :by_status, ->(status) { where(status: status) }
+  scope :queued, -> { where(status: "queued") }
   scope :pending, -> { where(status: "pending") }
   scope :running, -> { where(status: "running") }
   scope :completed, -> { where(status: "completed") }
@@ -49,8 +50,37 @@ class AgentRun < ApplicationRecord
     (end_time - started_at).to_i
   end
 
+  def self.has_run_capacity?
+    active.count < Rails.application.config.x.max_concurrent_runs
+  end
+
+  def self.next_queued_run
+    queued.order(created_at: :asc).first
+  end
+
+  # Atomically claims the oldest queued run by transitioning it to pending
+  # inside a transaction with FOR UPDATE SKIP LOCKED. Returns nil if no
+  # queued run is available or another process already claimed it.
+  #
+  # Note: if the transaction commits but the subsequent workflow start fails,
+  # the run stays "pending" without an associated workflow. ProcessRunQueueJob
+  # handles this by marking such runs as failed in its rescue block.
+  def self.claim_next_queued_run
+    transaction do
+      run = queued.order(created_at: :asc).lock("FOR UPDATE SKIP LOCKED").first
+      return nil unless run
+
+      run.update!(status: "pending")
+      run
+    end
+  end
+
   def existing_pr?
     source_pull_request_number.present?
+  end
+
+  def queued?
+    status == "queued"
   end
 
   def running?

@@ -82,6 +82,7 @@ module Activities
       else "wall_clock"
       end
       agent_run.timeout!(error: "#{timeout_type}_timeout: #{e.message}")
+      ProcessRunQueueJob.perform_later
       raise Temporalio::Error::ApplicationError.new(e.message, type: "AgentTimeout")
     end
 

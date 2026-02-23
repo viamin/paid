@@ -2,6 +2,7 @@
 
 module ApplicationHelper
   AGENT_RUN_STATUS_STYLES = {
+    "queued" => { bg: "bg-indigo-100", text: "text-indigo-700", label: "Queued" },
     "pending" => { bg: "bg-yellow-100", text: "text-yellow-800", label: "Pending" },
     "running" => { bg: "bg-blue-100", text: "text-blue-700", label: "Running" },
     "completed" => { bg: "bg-green-100", text: "text-green-700", label: "Completed" },
