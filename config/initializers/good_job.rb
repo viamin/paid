@@ -29,6 +29,10 @@ Rails.application.configure do
     log_retention: {
       cron: "0 3 * * *",
       class: "LogRetentionJob"
+    },
+    poll_workflow_health_check: {
+      cron: "*/5 * * * *",
+      class: "PollWorkflowHealthCheckJob"
     }
   }
 end
