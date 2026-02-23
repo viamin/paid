@@ -667,5 +667,117 @@ RSpec.describe Containers::Provision do
         expect(error.message).to eq("Operation timed out")
       end
     end
+
+    describe "StartupTimeoutError" do
+      it "has a default message" do
+        error = Containers::Provision::StartupTimeoutError.new
+        expect(error.message).to eq("No output received within startup timeout")
+      end
+
+      it "is a subclass of TimeoutError" do
+        expect(Containers::Provision::StartupTimeoutError.new).to be_a(Containers::Provision::TimeoutError)
+      end
+    end
+
+    describe "IdleTimeoutError" do
+      it "has a default message" do
+        error = Containers::Provision::IdleTimeoutError.new
+        expect(error.message).to eq("No output received within idle timeout")
+      end
+
+      it "is a subclass of TimeoutError" do
+        expect(Containers::Provision::IdleTimeoutError.new).to be_a(Containers::Provision::TimeoutError)
+      end
+    end
+  end
+
+  describe "watchdog timeouts" do
+    # The watchdog stops the container to unblock exec. We use a flag
+    # to simulate the container being stopped mid-exec.
+    let(:container_stopped) { Concurrent::AtomicBoolean.new(false) }
+
+    before do
+      service.provision
+      # When the watchdog calls container.stop, set the flag so the
+      # exec mock can unblock.
+      allow(mock_container).to receive(:stop) do |**_opts|
+        container_stopped.make_true
+      end
+    end
+
+    context "with startup timeout" do
+      it "fires when exec produces no output" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.1 until container_stopped.true?
+          [ [], [], 137 ]
+        end
+
+        expect {
+          service.execute("slow_command", timeout: 10, startup_timeout: 1)
+        }.to raise_error(described_class::StartupTimeoutError)
+      end
+
+      it "does not fire when output arrives before deadline" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "output\n") if block
+          [ [ "output\n" ], [], 0 ]
+        end
+
+        result = service.execute("fast_command", timeout: 10, startup_timeout: 2)
+        expect(result).to be_success
+      end
+    end
+
+    context "with idle timeout" do
+      it "fires when output stops mid-stream" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          sleep 0.1 until container_stopped.true?
+          [ [ "initial output\n" ], [], 137 ]
+        end
+
+        expect {
+          service.execute("stalling_command", timeout: 10, idle_timeout: 1)
+        }.to raise_error(described_class::IdleTimeoutError)
+      end
+
+      it "does not fire when output flows continuously" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          3.times do
+            block.call(:stdout, "chunk\n") if block
+            sleep 0.2
+          end
+          [ [ "chunk\nchunk\nchunk\n" ], [], 0 ]
+        end
+
+        result = service.execute("chatty_command", timeout: 10, idle_timeout: 2)
+        expect(result).to be_success
+      end
+    end
+
+    context "with startup timeout when exec raises Docker error" do
+      it "detects the watchdog reason through the Docker error" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.1 until container_stopped.true?
+          raise Docker::Error::ServerError, "connection closed"
+        end
+
+        expect {
+          service.execute("slow_command", timeout: 10, startup_timeout: 1)
+        }.to raise_error(described_class::StartupTimeoutError)
+      end
+    end
+
+    context "without watchdog timeouts" do
+      it "succeeds without watchdog when neither timeout is passed" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "output\n") if block
+          [ [ "output\n" ], [], 0 ]
+        end
+
+        result = service.execute("normal_command", timeout: 10)
+        expect(result).to be_success
+      end
+    end
   end
 end

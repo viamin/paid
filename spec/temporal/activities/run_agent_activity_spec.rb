@@ -125,7 +125,7 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
-    context "when agent times out" do
+    context "when agent times out (wall clock)" do
       before do
         allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
         allow(container_service).to receive(:execute)
@@ -138,14 +138,68 @@ RSpec.describe Activities::RunAgentActivity do
         }.to raise_error(Temporalio::Error::ApplicationError, /timed out/i)
       end
 
-      it "marks the agent run as timed out" do
+      it "marks the agent run as timed out with wall_clock type" do
         begin
           activity.execute(agent_run_id: agent_run.id)
         rescue Temporalio::Error::ApplicationError
           # expected
         end
 
-        expect(agent_run.reload.status).to eq("timeout")
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("wall_clock_timeout")
+      end
+    end
+
+    context "when agent hits startup timeout" do
+      before do
+        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(container_service).to receive(:execute)
+          .and_raise(Containers::Provision::StartupTimeoutError)
+      end
+
+      it "marks the agent run as timed out with startup type" do
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("startup_timeout")
+      end
+
+      it "raises an ApplicationError" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /startup timeout/i)
+      end
+    end
+
+    context "when agent hits idle timeout" do
+      before do
+        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(container_service).to receive(:execute)
+          .and_raise(Containers::Provision::IdleTimeoutError)
+      end
+
+      it "marks the agent run as timed out with idle type" do
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("idle_timeout")
+      end
+
+      it "raises an ApplicationError" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /idle timeout/i)
       end
     end
 
