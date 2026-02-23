@@ -1,5 +1,7 @@
 <% content_for(:title) { "#{@project.name} - Projects - Paid" } %>
 
+<%= turbo_stream_from @project, :project_updates %>
+
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
   <div class="mb-6">
     <%= link_to projects_path, class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
@@ -96,116 +98,11 @@
     </details>
   </div>
 
-  <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
-    <div class="flex flex-wrap items-center divide-x divide-gray-200 text-sm">
-      <div class="flex items-center gap-1.5 px-4 py-3">
-        <span class="font-medium text-gray-500">Runs:</span>
-        <span class="font-semibold text-gray-900"><%= @project.agent_runs.count %></span>
-      </div>
-      <div class="flex items-center gap-1.5 px-4 py-3">
-        <span class="font-medium text-gray-500">Completed:</span>
-        <span class="font-semibold text-green-600"><%= @project.agent_runs.completed.count %></span>
-      </div>
-      <div class="flex items-center gap-1.5 px-4 py-3">
-        <span class="font-medium text-gray-500">Cost:</span>
-        <span class="font-semibold text-gray-900">$<%= format("%.2f", @project.total_cost_cents / 100.0) %></span>
-      </div>
-      <div class="flex items-center gap-1.5 px-4 py-3">
-        <span class="font-medium text-gray-500">Tokens:</span>
-        <span class="font-semibold text-gray-900"><%= number_with_delimiter(@project.total_tokens_used) %></span>
-      </div>
-    </div>
-  </div>
+  <%= render "projects/stats", project: @project %>
 
-  <div class="mt-8">
-    <h2 class="text-lg font-medium text-gray-900">Synced Issues</h2>
+  <%= render "projects/issues", project: @project, issues: @issues, show_actions: policy(@project).run_agent? %>
 
-    <% if @issues.any? %>
-      <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
-        <div class="max-h-96 overflow-y-auto">
-          <ul role="list" class="divide-y divide-gray-200">
-            <% @issues.each do |issue| %>
-              <li class="flex items-center justify-between px-4 py-3">
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center space-x-2">
-                    <%= link_to "##{issue.github_number}",
-                          issue.github_url,
-                          target: "_blank",
-                          rel: "noopener noreferrer",
-                          class: "flex-shrink-0 text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
-                    <span class="truncate text-sm text-gray-900"><%= issue.title %></span>
-                  </div>
-                  <% if issue.labels.any? %>
-                    <div class="mt-1 flex flex-wrap gap-1">
-                      <% issue.labels.each do |label| %>
-                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"><%= label %></span>
-                      <% end %>
-                    </div>
-                  <% end %>
-                </div>
-                <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
-                  <%= paid_state_badge(issue.paid_state) %>
-                  <% if policy(@project).run_agent? %>
-                    <%= link_to "Run", new_project_agent_run_path(@project, issue_id: issue.id), class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
-                  <% end %>
-                </div>
-              </li>
-            <% end %>
-          </ul>
-        </div>
-      </div>
-    <% else %>
-      <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-8">
-        <h3 class="text-sm font-semibold text-gray-900">No synced issues</h3>
-        <p class="mt-1 text-sm text-gray-500">Issues will appear here once they are synced from GitHub.</p>
-      </div>
-    <% end %>
-  </div>
-
-  <div class="mt-8">
-    <h2 class="text-lg font-medium text-gray-900">Synced Pull Requests</h2>
-
-    <% if @pull_requests.any? %>
-      <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
-        <div class="max-h-96 overflow-y-auto">
-          <ul role="list" class="divide-y divide-gray-200">
-            <% @pull_requests.each do |pr| %>
-              <li class="flex items-center justify-between px-4 py-3">
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center space-x-2">
-                    <%= link_to "##{pr.github_number}",
-                          pr.github_url,
-                          target: "_blank",
-                          rel: "noopener noreferrer",
-                          class: "flex-shrink-0 text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
-                    <span class="truncate text-sm text-gray-900"><%= pr.title %></span>
-                  </div>
-                  <% if pr.labels.any? %>
-                    <div class="mt-1 flex flex-wrap gap-1">
-                      <% pr.labels.each do |label| %>
-                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"><%= label %></span>
-                      <% end %>
-                    </div>
-                  <% end %>
-                </div>
-                <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
-                  <%= paid_state_badge(pr.paid_state) %>
-                  <% if policy(@project).run_agent? %>
-                    <%= link_to "Run", new_project_agent_run_path(@project, pull_request_id: pr.id), class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
-                  <% end %>
-                </div>
-              </li>
-            <% end %>
-          </ul>
-        </div>
-      </div>
-    <% else %>
-      <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-8">
-        <h3 class="text-sm font-semibold text-gray-900">No synced pull requests</h3>
-        <p class="mt-1 text-sm text-gray-500">Pull requests will appear here once they are synced from GitHub.</p>
-      </div>
-    <% end %>
-  </div>
+  <%= render "projects/pull_requests", project: @project, pull_requests: @pull_requests, show_actions: policy(@project).run_agent? %>
 
   <div class="mt-8">
     <h2 class="text-lg font-medium text-gray-900">Workflow Status</h2>
@@ -216,112 +113,7 @@
     </div>
   </div>
 
-  <div class="mt-8">
-    <div class="sm:flex sm:items-center sm:justify-between">
-      <h2 class="text-lg font-medium text-gray-900">
-        <%= link_to "Recent Agent Runs", project_agent_runs_path(@project), class: "hover:text-indigo-600" %>
-      </h2>
-      <% if policy(@project).run_agent? %>
-        <%= link_to new_project_agent_run_path(@project), class: "mt-4 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 sm:mt-0" do %>
-          <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM9.555 7.168A1 1 0 0 0 8 8v4a1 1 0 0 0 1.555.832l3-2a1 1 0 0 0 0-1.664l-3-2Z" clip-rule="evenodd" />
-          </svg>
-          Trigger Run
-        <% end %>
-      <% end %>
-    </div>
-
-    <% if @recent_agent_runs.any? %>
-      <div class="mt-4 flow-root">
-        <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
-          <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
-            <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
-              <table class="min-w-full divide-y divide-gray-300">
-                <thead class="bg-gray-50">
-                  <tr>
-                    <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Status</th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Agent</th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Branch</th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Duration</th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Tokens</th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Cost</th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Started</th>
-                    <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                      <span class="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200 bg-white">
-                  <% @recent_agent_runs.each do |run| %>
-                    <tr>
-                      <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
-                        <%= agent_run_status_badge(run.status) %>
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <%= run.agent_type.titleize %>
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <% if run.branch_name.present? %>
-                          <code class="rounded bg-gray-100 px-1 py-0.5 text-xs"><%= run.branch_name %></code>
-                        <% else %>
-                          <span class="text-gray-400">-</span>
-                        <% end %>
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <% if run.duration_seconds.present? %>
-                          <%= run.duration_seconds %>s
-                        <% elsif run.running? && run.started_at.present? %>
-                          <%= (Time.current - run.started_at).to_i %>s
-                        <% else %>
-                          <span class="text-gray-400">-</span>
-                        <% end %>
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <% if run.tokens_input.present? || run.tokens_output.present? %>
-                          <%= number_with_delimiter((run.tokens_input || 0) + (run.tokens_output || 0)) %>
-                        <% else %>
-                          <span class="text-gray-400">-</span>
-                        <% end %>
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <% if run.cost_cents.present? && run.cost_cents > 0 %>
-                          $<%= format("%.2f", run.cost_cents / 100.0) %>
-                        <% else %>
-                          <span class="text-gray-400">-</span>
-                        <% end %>
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <% if run.started_at.present? %>
-                          <%= time_ago_in_words(run.started_at) %> ago
-                        <% else %>
-                          <%= time_ago_in_words(run.created_at) %> ago
-                        <% end %>
-                      </td>
-                      <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                        <%= link_to "View", project_agent_run_path(@project, run), class: "text-indigo-600 hover:text-indigo-900" %>
-                        <% if run.pull_request_url.present? %>
-                          &middot;
-                          <%= link_to "PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
-                        <% end %>
-                      </td>
-                    </tr>
-                  <% end %>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    <% else %>
-      <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-12">
-        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-        <h3 class="mt-2 text-sm font-semibold text-gray-900">No agent runs yet</h3>
-        <p class="mt-1 text-sm text-gray-500">Agent runs will appear here once the workflow execution is enabled.</p>
-      </div>
-    <% end %>
-  </div>
+  <%= render "projects/agent_runs", project: @project, recent_agent_runs: @recent_agent_runs, show_actions: policy(@project).run_agent? %>
 
   <% if policy(@project).destroy? %>
     <div class="mt-8 bg-white shadow sm:rounded-lg">

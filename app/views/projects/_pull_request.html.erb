@@ -1,0 +1,25 @@
+<li id="<%= dom_id(pull_request) %>" class="flex items-center justify-between px-4 py-3">
+  <div class="min-w-0 flex-1">
+    <div class="flex items-center space-x-2">
+      <%= link_to "##{pull_request.github_number}",
+            pull_request.github_url,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            class: "flex-shrink-0 text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
+      <span class="truncate text-sm text-gray-900"><%= pull_request.title %></span>
+    </div>
+    <% if pull_request.labels.any? %>
+      <div class="mt-1 flex flex-wrap gap-1">
+        <% pull_request.labels.each do |label| %>
+          <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"><%= label %></span>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+  <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
+    <%= paid_state_badge(pull_request.paid_state) %>
+    <% if show_actions %>
+      <%= link_to "Run", new_project_agent_run_path(project, pull_request_id: pull_request.id), class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+    <% end %>
+  </div>
+</li>

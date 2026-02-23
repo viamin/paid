@@ -1,0 +1,20 @@
+<div id="<%= dom_id(project, :issues) %>" class="mt-8">
+  <h2 class="text-lg font-medium text-gray-900">Synced Issues</h2>
+
+  <% if issues.any? %>
+    <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
+      <div class="max-h-96 overflow-y-auto">
+        <ul role="list" class="divide-y divide-gray-200">
+          <% issues.each do |issue| %>
+            <%= render "projects/issue", issue: issue, project: project, show_actions: show_actions %>
+          <% end %>
+        </ul>
+      </div>
+    </div>
+  <% else %>
+    <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-8">
+      <h3 class="text-sm font-semibold text-gray-900">No synced issues</h3>
+      <p class="mt-1 text-sm text-gray-500">Issues will appear here once they are synced from GitHub.</p>
+    </div>
+  <% end %>
+</div>
