@@ -34,16 +34,8 @@
                 <% end %>
               </select>
             <% else %>
-              <p class="mt-1 text-sm text-gray-500">No actionable open issues found. Sync issues first or enter a URL below.</p>
+              <p class="mt-1 text-sm text-gray-500">No actionable open issues found. Sync issues first.</p>
             <% end %>
-          </div>
-
-          <div class="mt-4 rounded-lg border border-gray-200 p-4">
-            <label for="issue_url" class="block text-sm font-medium text-gray-700">Or enter issue URL directly:</label>
-            <input type="text" name="issue_url" id="issue_url"
-                   placeholder="https://github.com/<%= @project.full_name %>/issues/123"
-                   class="mt-1 block w-full rounded-md border-gray-300 font-mono text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-            <p class="mt-1 text-xs text-gray-500">Paste a GitHub issue URL from this repository. The issue must already be synced.</p>
           </div>
         </div>
 
@@ -63,16 +55,8 @@
                 <% end %>
               </select>
             <% else %>
-              <p class="mt-1 text-sm text-gray-500">No open pull requests found. Sync PRs first or enter a URL below.</p>
+              <p class="mt-1 text-sm text-gray-500">No open pull requests found. Sync PRs first.</p>
             <% end %>
-          </div>
-
-          <div class="mt-4 rounded-lg border border-gray-200 p-4">
-            <label for="pull_request_url" class="block text-sm font-medium text-gray-700">Or enter PR URL directly:</label>
-            <input type="text" name="pull_request_url" id="pull_request_url"
-                   placeholder="https://github.com/<%= @project.full_name %>/pull/123"
-                   class="mt-1 block w-full rounded-md border-gray-300 font-mono text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-            <p class="mt-1 text-xs text-gray-500">Paste a GitHub pull request URL for unsynced PRs. The agent will check out the PR's branch and push updates to it.</p>
           </div>
         </div>
 
@@ -91,22 +75,14 @@
 
         <div>
           <h2 class="text-base font-semibold text-gray-900">Agent Type</h2>
-          <div class="mt-4 grid grid-cols-2 gap-4">
-            <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-indigo-500 has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
-              <input type="radio" name="agent_type" value="claude_code" checked class="sr-only">
-              <div>
-                <div class="text-sm font-semibold text-gray-900">Claude Code</div>
-                <p class="mt-1 text-xs text-gray-500">Anthropic's Claude-powered coding agent</p>
-              </div>
-            </label>
-
-            <label class="relative flex rounded-lg border border-gray-200 p-4 opacity-50 cursor-not-allowed" title="Coming soon">
-              <input type="radio" name="agent_type" value="aider" disabled class="sr-only">
-              <div>
-                <div class="text-sm font-semibold text-gray-900">Aider</div>
-                <p class="mt-1 text-xs text-gray-500">AI pair programming (coming soon)</p>
-              </div>
-            </label>
+          <div class="mt-4">
+            <select name="agent_type" id="agent_type" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+              <% AgentRun::AGENT_TYPES.each do |type| %>
+                <option value="<%= type %>" <%= "selected" if type == "claude_code" %>>
+                  <%= type.titleize %>
+                </option>
+              <% end %>
+            </select>
           </div>
         </div>
 

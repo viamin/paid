@@ -31,22 +31,12 @@ class AgentRunsController < ApplicationController
     authorize @project, :run_agent?
 
     custom_prompt = params[:custom_prompt]&.strip.presence
-    issue, error = resolve_issue
-    source_pr_number, pr_error = resolve_pull_request
-
-    if error
-      redirect_to new_project_agent_run_path(@project), alert: error
-      return
-    end
-
-    if pr_error
-      redirect_to new_project_agent_run_path(@project), alert: pr_error
-      return
-    end
+    issue = resolve_issue
+    source_pr_number = resolve_pull_request
 
     unless issue || custom_prompt || source_pr_number
       redirect_to new_project_agent_run_path(@project),
-        alert: "Please select an issue, enter an issue URL, provide a custom prompt, or enter a pull request URL."
+        alert: "Please select an issue, provide a custom prompt, or select a pull request."
       return
     end
 
@@ -87,72 +77,17 @@ class AgentRunsController < ApplicationController
     @agent_run = @project.agent_runs.find(params[:id])
   end
 
-  # Returns [issue, error_message]. If error_message is present, issue is nil.
   def resolve_issue
-    if params[:issue_id].present?
-      [ @project.issues.find(params[:issue_id]), nil ]
-    elsif params[:issue_url].present?
-      fetch_issue_from_url(params[:issue_url])
-    else
-      [ nil, nil ]
-    end
+    return nil if params[:issue_id].blank?
+
+    @project.issues.find(params[:issue_id])
   end
 
-  # Returns [pr_number, error_message]. If error_message is present, pr_number is nil.
   def resolve_pull_request
-    if params[:pull_request_id].present?
-      pr = @project.issues.pull_requests_only.find(params[:pull_request_id])
-      [ pr.github_number, nil ]
-    elsif params[:pull_request_url].present?
-      fetch_pull_request_from_url(params[:pull_request_url])
-    else
-      [ nil, nil ]
-    end
-  end
+    return nil if params[:pull_request_id].blank?
 
-  def fetch_pull_request_from_url(url)
-    uri = begin
-      URI.parse(url)
-    rescue URI::InvalidURIError
-      nil
-    end
-
-    unless uri&.host&.match?(/\A(www\.)?github\.com\z/)
-      return [ nil, "Pull request URL must be a github.com URL." ]
-    end
-
-    match = uri.path.match(%r{\A/([^/]+)/([^/]+)/pull/(\d+)\z})
-    unless match && match[1] == @project.owner && match[2] == @project.repo
-      return [ nil, "Pull request URL must be from #{@project.full_name}." ]
-    end
-
-    [ match[3].to_i, nil ]
-  end
-
-  def fetch_issue_from_url(url)
-    uri = begin
-      URI.parse(url)
-    rescue URI::InvalidURIError
-      nil
-    end
-
-    unless uri&.host&.match?(/\A(www\.)?github\.com\z/)
-      return [ nil, "Issue URL must be a github.com URL." ]
-    end
-
-    match = uri.path.match(%r{\A/([^/]+)/([^/]+)/issues/(\d+)\z})
-    unless match && match[1] == @project.owner && match[2] == @project.repo
-      return [ nil, "Issue URL must be from #{@project.full_name}." ]
-    end
-
-    issue_number = match[3].to_i
-    issue = @project.issues.find_by(github_number: issue_number)
-
-    if issue
-      [ issue, nil ]
-    else
-      [ nil, "Issue ##{issue_number} not found. Issues must be synced before triggering a run." ]
-    end
+    pr = @project.issues.pull_requests_only.find(params[:pull_request_id])
+    pr.github_number
   end
 
   # Creates the AgentRun record with "queued" status.
