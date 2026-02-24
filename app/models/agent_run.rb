@@ -12,8 +12,7 @@ class AgentRun < ApplicationRecord
 
   before_create :generate_proxy_token
 
-  after_create_commit :broadcast_project_updates
-  after_update_commit :broadcast_project_updates
+  after_commit :broadcast_project_updates, on: [ :create, :update ]
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }

@@ -844,14 +844,10 @@ RSpec.describe AgentRun do
       allow(project).to receive(:broadcast_stats_update)
       agent_run = create(:agent_run, project: project)
 
-      # Reset to track only update broadcasts
-      allow(project).to receive(:broadcast_agent_runs_update)
-      allow(project).to receive(:broadcast_stats_update)
+      expect(project).to receive(:broadcast_agent_runs_update).once
+      expect(project).to receive(:broadcast_stats_update).once
 
       agent_run.update!(status: "running", started_at: Time.current)
-
-      expect(project).to have_received(:broadcast_agent_runs_update)
-      expect(project).to have_received(:broadcast_stats_update)
     end
   end
 end

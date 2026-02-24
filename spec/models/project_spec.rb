@@ -399,15 +399,6 @@ RSpec.describe Project do
           locals: hash_including(project: project, show_actions: false)
         )
       end
-
-      it "does not include show_actions: true to avoid authorization leaks" do
-        project.broadcast_agent_runs_update
-
-        expect(project).to have_received(:broadcast_replace_to).with(
-          anything, anything,
-          hash_including(locals: hash_including(show_actions: false))
-        )
-      end
     end
 
     describe "#broadcast_issues_update" do
@@ -421,15 +412,6 @@ RSpec.describe Project do
           locals: hash_including(project: project, show_actions: false)
         )
       end
-
-      it "does not include show_actions: true to avoid authorization leaks" do
-        project.broadcast_issues_update
-
-        expect(project).to have_received(:broadcast_replace_to).with(
-          anything, anything,
-          hash_including(locals: hash_including(show_actions: false))
-        )
-      end
     end
 
     describe "#broadcast_pull_requests_update" do
@@ -441,15 +423,6 @@ RSpec.describe Project do
           target: "pull_requests_project_#{project.id}",
           partial: "projects/pull_requests",
           locals: hash_including(project: project, show_actions: false)
-        )
-      end
-
-      it "does not include show_actions: true to avoid authorization leaks" do
-        project.broadcast_pull_requests_update
-
-        expect(project).to have_received(:broadcast_replace_to).with(
-          anything, anything,
-          hash_including(locals: hash_including(show_actions: false))
         )
       end
     end

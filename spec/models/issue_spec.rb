@@ -289,13 +289,10 @@ RSpec.describe Issue do
         allow(project).to receive(:broadcast_pull_requests_update)
         issue = create(:issue, project: project)
 
-        allow(project).to receive(:broadcast_issues_update)
-        allow(project).to receive(:broadcast_pull_requests_update)
+        expect(project).to receive(:broadcast_issues_update).once
+        expect(project).not_to receive(:broadcast_pull_requests_update)
 
         issue.update!(title: "Updated title")
-
-        expect(project).to have_received(:broadcast_issues_update)
-        expect(project).not_to have_received(:broadcast_pull_requests_update)
       end
 
       it "broadcasts pull requests update for a pull request" do
@@ -303,13 +300,10 @@ RSpec.describe Issue do
         allow(project).to receive(:broadcast_pull_requests_update)
         pr = create(:issue, :pull_request, project: project)
 
-        allow(project).to receive(:broadcast_issues_update)
-        allow(project).to receive(:broadcast_pull_requests_update)
+        expect(project).not_to receive(:broadcast_issues_update)
+        expect(project).to receive(:broadcast_pull_requests_update).once
 
         pr.update!(title: "Updated PR title")
-
-        expect(project).not_to have_received(:broadcast_issues_update)
-        expect(project).to have_received(:broadcast_pull_requests_update)
       end
 
       it "broadcasts both sections when is_pull_request changes" do
@@ -317,13 +311,10 @@ RSpec.describe Issue do
         allow(project).to receive(:broadcast_pull_requests_update)
         issue = create(:issue, project: project, is_pull_request: false)
 
-        allow(project).to receive(:broadcast_issues_update)
-        allow(project).to receive(:broadcast_pull_requests_update)
+        expect(project).to receive(:broadcast_issues_update).once
+        expect(project).to receive(:broadcast_pull_requests_update).once
 
         issue.update!(is_pull_request: true)
-
-        expect(project).to have_received(:broadcast_issues_update)
-        expect(project).to have_received(:broadcast_pull_requests_update)
       end
     end
 
@@ -333,13 +324,10 @@ RSpec.describe Issue do
         allow(project).to receive(:broadcast_pull_requests_update)
         issue = create(:issue, project: project)
 
-        allow(project).to receive(:broadcast_issues_update)
-        allow(project).to receive(:broadcast_pull_requests_update)
+        expect(project).to receive(:broadcast_issues_update).once
+        expect(project).not_to receive(:broadcast_pull_requests_update)
 
         issue.destroy!
-
-        expect(project).to have_received(:broadcast_issues_update)
-        expect(project).not_to have_received(:broadcast_pull_requests_update)
       end
 
       it "broadcasts pull requests update for a pull request" do
@@ -347,13 +335,10 @@ RSpec.describe Issue do
         allow(project).to receive(:broadcast_pull_requests_update)
         pr = create(:issue, :pull_request, project: project)
 
-        allow(project).to receive(:broadcast_issues_update)
-        allow(project).to receive(:broadcast_pull_requests_update)
+        expect(project).not_to receive(:broadcast_issues_update)
+        expect(project).to receive(:broadcast_pull_requests_update).once
 
         pr.destroy!
-
-        expect(project).not_to have_received(:broadcast_issues_update)
-        expect(project).to have_received(:broadcast_pull_requests_update)
       end
     end
   end
