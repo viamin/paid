@@ -97,6 +97,18 @@ module Activities
       elsif existing.active? && existing.agent_run_id == agent_run.id
         # Temporal retry — the previous attempt already created this record.
         existing
+      elsif existing.active? && existing.agent_run&.finished?
+        # The owning agent run finished (failed/completed) but cleanup never
+        # marked the worktree as cleaned. Reclaim the stale record.
+        existing.update!(
+          agent_run: agent_run,
+          path: "/workspace",
+          base_commit: agent_run.base_commit_sha,
+          pushed: false,
+          cleaned_at: nil,
+          created_at: Time.current
+        )
+        existing
       elsif existing.active?
         raise Temporalio::Error::ApplicationError.new(
           "Branch #{agent_run.branch_name} has an active worktree from agent run #{existing.agent_run_id}",
