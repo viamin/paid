@@ -234,7 +234,10 @@ module Containers
         return false
       end
 
-      raise Error, "Rebase failed: #{error_with_stderr(result)}" if result.failure?
+      if result.failure?
+        abort_rebase
+        raise Error, "Rebase failed: #{error_with_stderr(result)}"
+      end
 
       true
     end
@@ -242,7 +245,8 @@ module Containers
     private
 
     def rebase_conflict?(result)
-      result.failure? && result[:stderr].to_s.include?("CONFLICT")
+      result.failure? &&
+        (result[:stdout].to_s.include?("CONFLICT") || result[:stderr].to_s.include?("CONFLICT"))
     end
 
     def abort_rebase
