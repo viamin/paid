@@ -83,7 +83,7 @@ module Containers
 
     WORKSPACE_ROOT = ENV.fetch("WORKSPACE_ROOT", "/var/paid/workspaces")
 
-    attr_reader :agent_run, :worktree_path, :container, :options, :workspace_dir
+    attr_reader :agent_run, :worktree_path, :container, :options, :workspace_volume
 
     # @param agent_run [AgentRun] The agent run to associate logs with
     # @param worktree_path [String, nil] Path to an existing worktree to bind-mount.
@@ -105,7 +105,7 @@ module Containers
       end
       @agent_run = agent_run
       @worktree_path = worktree_path
-      @workspace_dir = nil
+      @workspace_volume = nil
       @options = DEFAULTS.merge(options)
       @container = nil
     end
@@ -297,7 +297,7 @@ module Containers
         end
       ensure
         @container = nil
-        cleanup_workspace_dir
+        cleanup_workspace_volume
       end
     end
 
@@ -404,25 +404,26 @@ module Containers
       log_system("container.workspace_chown_failed", error: e.message)
     end
 
-    # Sets up the workspace directory for the container.
-    # When worktree_path is provided, validates it exists (legacy bind mount).
-    # When nil, creates a fresh per-run directory for in-container git clone.
+    # Sets up the workspace for the container.
+    # When worktree_path is provided, validates it exists (bind mount from host).
+    # When nil, creates a Docker named volume for in-container git clone.
+    # Docker volumes live on the overlay2 disk, bypassing the VM root filesystem.
     def prepare_workspace!
       if worktree_path.present?
         raise ProvisionError, "Worktree path does not exist: #{worktree_path}" unless File.directory?(worktree_path)
       else
-        @workspace_dir = File.join(WORKSPACE_ROOT, "runs", agent_run.id.to_s)
-        FileUtils.mkdir_p(@workspace_dir)
-        @worktree_path = @workspace_dir
+        @workspace_volume = "paid-workspace-#{agent_run.id}"
+        Docker::Volume.create(@workspace_volume)
       end
     end
 
-    def cleanup_workspace_dir
-      return unless @workspace_dir
-      return unless Dir.exist?(@workspace_dir)
+    def cleanup_workspace_volume
+      return unless @workspace_volume
 
-      FileUtils.rm_rf(@workspace_dir)
-      @workspace_dir = nil
+      Docker::Volume.get(@workspace_volume).remove
+      @workspace_volume = nil
+    rescue Docker::Error::NotFoundError
+      @workspace_volume = nil
     rescue => e
       Rails.logger.warn(
         message: "container_manager.workspace_cleanup_failed",
@@ -471,7 +472,11 @@ module Containers
 
     def host_config
       binds = []
-      binds << "#{worktree_path}:#{options[:workspace_mount]}:rw" if worktree_path.present?
+      if @workspace_volume
+        binds << "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
+      elsif worktree_path.present?
+        binds << "#{worktree_path}:#{options[:workspace_mount]}:rw"
+      end
 
       # Mount the host's Claude config as read-only at a staging path.
       # Credentials are copied into the writable /home/agent/.claude tmpfs

@@ -23,9 +23,12 @@ RSpec.describe Containers::Provision do
 
   let(:mock_network) { instance_double(Docker::Network) }
 
+  let(:mock_volume) { instance_double(Docker::Volume, remove: true) }
+
   before do
     allow(Docker::Container).to receive(:create).and_return(mock_container)
     allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
+    allow(Docker::Volume).to receive_messages(create: mock_volume, get: mock_volume)
     allow(NetworkPolicy).to receive_messages(ensure_network!: mock_network, apply_firewall_rules: nil)
   end
 
@@ -197,15 +200,24 @@ RSpec.describe Containers::Provision do
     end
 
     context "when worktree path is invalid" do
-      it "auto-creates workspace directory for blank path" do
-        allow(FileUtils).to receive(:mkdir_p).and_call_original
-        allow(FileUtils).to receive(:mkdir_p).with(a_string_matching(%r{runs/})).and_return(nil)
+      it "auto-creates workspace volume for blank path" do
         service = described_class.new(agent_run: agent_run, worktree_path: "")
 
         result = service.provision
 
         expect(result).to be_success
-        expect(service.workspace_dir).to be_present
+        expect(Docker::Volume).to have_received(:create).with("paid-workspace-#{agent_run.id}")
+        expect(service.workspace_volume).to eq("paid-workspace-#{agent_run.id}")
+      end
+
+      it "mounts workspace volume in container binds for blank path" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds).to include("paid-workspace-#{agent_run.id}:/workspace:rw")
+          mock_container
+        end
+
+        described_class.new(agent_run: agent_run, worktree_path: "").provision
       end
 
       it "raises ProvisionError for non-existent path" do
