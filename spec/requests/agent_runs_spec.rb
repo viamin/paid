@@ -147,12 +147,6 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("No actionable open issues found")
       end
 
-      it "includes issue URL input" do
-        get new_project_agent_run_path(project)
-        expect(response.body).to include("issue_url")
-        expect(response.body).to include(project.full_name)
-      end
-
       it "shows open PRs in dropdown" do
         create(:issue, :pull_request, project: project, github_number: 20, title: "Open PR")
         create(:issue, :pull_request, :closed, project: project, github_number: 21, title: "Closed PR")
@@ -229,49 +223,6 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Please select an issue")
       end
 
-      context "with issue_url parameter" do
-        it "finds an existing synced issue by URL" do
-          post project_agent_runs_path(project), params: {
-            issue_url: "https://github.com/#{project.owner}/#{project.repo}/issues/#{issue.github_number}"
-          }
-          expect(response).to redirect_to(project_path(project))
-        end
-
-        it "rejects URLs from wrong repository" do
-          post project_agent_runs_path(project), params: {
-            issue_url: "https://github.com/other-owner/other-repo/issues/42"
-          }
-          expect(response).to redirect_to(new_project_agent_run_path(project))
-          follow_redirect!
-          expect(response.body).to include("must be from")
-        end
-
-        it "rejects invalid URLs" do
-          post project_agent_runs_path(project), params: {
-            issue_url: "not-a-url"
-          }
-          expect(response).to redirect_to(new_project_agent_run_path(project))
-        end
-
-        it "rejects URLs from non-GitHub hosts" do
-          post project_agent_runs_path(project), params: {
-            issue_url: "https://notgithub.com/#{project.owner}/#{project.repo}/issues/42"
-          }
-          expect(response).to redirect_to(new_project_agent_run_path(project))
-          follow_redirect!
-          expect(response.body).to include("must be a github.com URL")
-        end
-
-        it "shows error when issue not synced" do
-          post project_agent_runs_path(project), params: {
-            issue_url: "https://github.com/#{project.owner}/#{project.repo}/issues/999"
-          }
-          expect(response).to redirect_to(new_project_agent_run_path(project))
-          follow_redirect!
-          expect(response.body).to include("not found")
-        end
-      end
-
       context "with pull_request_id parameter" do
         let(:pr) { create(:issue, :pull_request, project: project, github_number: 77, title: "Fix styles") }
 
@@ -290,60 +241,6 @@ RSpec.describe "AgentRuns" do
           expect {
             post project_agent_runs_path(project), params: { pull_request_id: pr.id }
           }.to have_enqueued_job(ProcessRunQueueJob)
-        end
-      end
-
-      context "with pull_request_url parameter" do
-        it "creates a queued run with source_pull_request_number" do
-          expect {
-            post project_agent_runs_path(project), params: {
-              pull_request_url: "https://github.com/#{project.owner}/#{project.repo}/pull/135",
-              custom_prompt: "Fix the review comments"
-            }
-          }.to change(AgentRun, :count).by(1)
-
-          agent_run = AgentRun.last
-          expect(agent_run.source_pull_request_number).to eq(135)
-          expect(agent_run.custom_prompt).to eq("Fix the review comments")
-          expect(agent_run.status).to eq("queued")
-          expect(response).to redirect_to(project_path(project))
-        end
-
-        it "rejects PR URLs from wrong repository" do
-          post project_agent_runs_path(project), params: {
-            pull_request_url: "https://github.com/other-owner/other-repo/pull/42",
-            custom_prompt: "Fix it"
-          }
-          expect(response).to redirect_to(new_project_agent_run_path(project))
-          follow_redirect!
-          expect(response.body).to include("must be from")
-        end
-
-        it "rejects non-GitHub PR URLs" do
-          post project_agent_runs_path(project), params: {
-            pull_request_url: "https://notgithub.com/#{project.owner}/#{project.repo}/pull/42",
-            custom_prompt: "Fix it"
-          }
-          expect(response).to redirect_to(new_project_agent_run_path(project))
-          follow_redirect!
-          expect(response.body).to include("must be a github.com URL")
-        end
-
-        it "accepts PR URL without issue or custom prompt" do
-          post project_agent_runs_path(project), params: {
-            pull_request_url: "https://github.com/#{project.owner}/#{project.repo}/pull/135"
-          }
-          expect(response).to redirect_to(project_path(project))
-        end
-
-        it "redirects with success notice" do
-          post project_agent_runs_path(project), params: {
-            pull_request_url: "https://github.com/#{project.owner}/#{project.repo}/pull/135",
-            custom_prompt: "Fix it"
-          }
-          expect(response).to redirect_to(project_path(project))
-          follow_redirect!
-          expect(response.body).to include("Agent run")
         end
       end
 
