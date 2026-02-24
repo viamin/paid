@@ -81,13 +81,11 @@ module Containers
       workspace_mount: "/workspace"
     }.freeze
 
-    WORKSPACE_ROOT = ENV.fetch("WORKSPACE_ROOT", "/var/paid/workspaces")
-
     attr_reader :agent_run, :worktree_path, :container, :options, :workspace_volume
 
     # @param agent_run [AgentRun] The agent run to associate logs with
     # @param worktree_path [String, nil] Path to an existing worktree to bind-mount.
-    #   When nil, an empty per-run directory is auto-created for in-container git clone.
+    #   When nil, a Docker named volume is created for in-container git clone.
     # @param options [Hash] Override default container options
     # @option options [Integer] :memory_bytes Memory limit in bytes
     # @option options [Integer] :cpu_quota CPU quota (100_000 per CPU)
@@ -131,10 +129,12 @@ module Containers
     rescue Docker::Error::DockerError => e
       log_system("container.provision.failed", error: e.message)
       cleanup
+      cleanup_workspace_volume
       raise ProvisionError, "Docker error: #{e.message}"
     rescue StandardError => e
       log_system("container.provision.failed", error: e.message)
       cleanup
+      cleanup_workspace_volume
       raise
     end
 
@@ -413,23 +413,30 @@ module Containers
         raise ProvisionError, "Worktree path does not exist: #{worktree_path}" unless File.directory?(worktree_path)
       else
         @workspace_volume = "paid-workspace-#{agent_run.id}"
-        Docker::Volume.create(@workspace_volume)
+        begin
+          Docker::Volume.get(@workspace_volume)
+        rescue Docker::Error::NotFoundError
+          Docker::Volume.create(@workspace_volume)
+        end
       end
     end
 
     def cleanup_workspace_volume
-      return unless @workspace_volume
+      volume_name = @workspace_volume
+      volume_name ||= "paid-workspace-#{agent_run.id}" if worktree_path.blank?
+      return unless volume_name
 
-      Docker::Volume.get(@workspace_volume).remove
-      @workspace_volume = nil
+      Docker::Volume.get(volume_name).remove
     rescue Docker::Error::NotFoundError
-      @workspace_volume = nil
+      # Volume already removed
     rescue => e
       Rails.logger.warn(
         message: "container_manager.workspace_cleanup_failed",
         agent_run_id: agent_run.id,
         error: e.message
       )
+    ensure
+      @workspace_volume = nil
     end
 
     def create_container
