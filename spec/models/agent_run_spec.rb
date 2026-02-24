@@ -218,6 +218,28 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#active?" do
+      it "returns true for pending status" do
+        expect(build(:agent_run).active?).to be true
+      end
+
+      it "returns true for running status" do
+        expect(build(:agent_run, :running).active?).to be true
+      end
+
+      it "returns false for queued status" do
+        expect(build(:agent_run, :queued).active?).to be false
+      end
+
+      it "returns false for completed status" do
+        expect(build(:agent_run, :completed).active?).to be false
+      end
+
+      it "returns false for failed status" do
+        expect(build(:agent_run, :failed).active?).to be false
+      end
+    end
+
     describe "#running?" do
       it "returns true when status is running" do
         agent_run = build(:agent_run, :running)
