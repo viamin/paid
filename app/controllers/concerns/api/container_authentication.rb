@@ -32,7 +32,7 @@ module Api
 
       @agent_run = AgentRun.find_by(id: @agent_run_id)
 
-      render json: { error: "Invalid or inactive agent run" }, status: :forbidden unless @agent_run&.running?
+      render json: { error: "Invalid or inactive agent run" }, status: :forbidden unless @agent_run&.active?
     end
 
     def verify_proxy_token
