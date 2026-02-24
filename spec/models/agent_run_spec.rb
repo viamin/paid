@@ -553,9 +553,12 @@ RSpec.describe AgentRun do
         )
       end
 
+      let(:mock_volume) { instance_double(Docker::Volume, remove: true) }
+
       before do
         allow(Docker::Container).to receive(:create).and_return(mock_container)
         allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
+        allow(Docker::Volume).to receive_messages(create: mock_volume, get: mock_volume)
         allow(NetworkPolicy).to receive_messages(ensure_network!: instance_double(Docker::Network), apply_firewall_rules: nil)
       end
 
@@ -575,8 +578,6 @@ RSpec.describe AgentRun do
         end
 
         it "provisions container when worktree_path is blank" do
-          allow(FileUtils).to receive(:mkdir_p).and_call_original
-          allow(FileUtils).to receive(:mkdir_p).with(a_string_matching(%r{runs/})).and_return(nil)
           agent_run = create(:agent_run, worktree_path: nil)
 
           result = agent_run.provision_container
@@ -685,8 +686,6 @@ RSpec.describe AgentRun do
         end
 
         it "provisions container when worktree_path is blank" do
-          allow(FileUtils).to receive(:mkdir_p).and_call_original
-          allow(FileUtils).to receive(:mkdir_p).with(a_string_matching(%r{runs/})).and_return(nil)
           agent_run = create(:agent_run, worktree_path: nil)
 
           agent_run.with_container { |run| expect(run).to eq(agent_run) }

@@ -23,9 +23,13 @@ RSpec.describe Containers::Provision do
 
   let(:mock_network) { instance_double(Docker::Network) }
 
+  let(:mock_volume) { instance_double(Docker::Volume, remove: true) }
+
   before do
     allow(Docker::Container).to receive(:create).and_return(mock_container)
     allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
+    allow(Docker::Volume).to receive(:create).and_return(mock_volume)
+    allow(Docker::Volume).to receive(:get).and_raise(Docker::Error::NotFoundError)
     allow(NetworkPolicy).to receive_messages(ensure_network!: mock_network, apply_firewall_rules: nil)
   end
 
@@ -196,16 +200,42 @@ RSpec.describe Containers::Provision do
       end
     end
 
-    context "when worktree path is invalid" do
-      it "auto-creates workspace directory for blank path" do
-        allow(FileUtils).to receive(:mkdir_p).and_call_original
-        allow(FileUtils).to receive(:mkdir_p).with(a_string_matching(%r{runs/})).and_return(nil)
+    context "when worktree path is not provided" do
+      it "creates workspace volume for nil path" do
+        service = described_class.new(agent_run: agent_run)
+
+        result = service.provision
+
+        expect(result).to be_success
+        expect(service.workspace_volume).to eq("paid-workspace-#{agent_run.id}")
+      end
+
+      it "creates workspace volume for blank path" do
         service = described_class.new(agent_run: agent_run, worktree_path: "")
 
         result = service.provision
 
         expect(result).to be_success
-        expect(service.workspace_dir).to be_present
+        expect(service.workspace_volume).to eq("paid-workspace-#{agent_run.id}")
+      end
+
+      it "reuses existing volume idempotently" do
+        allow(Docker::Volume).to receive(:get).with("paid-workspace-#{agent_run.id}").and_return(mock_volume)
+        service = described_class.new(agent_run: agent_run)
+
+        service.provision
+
+        expect(Docker::Volume).not_to have_received(:create)
+      end
+
+      it "mounts workspace volume in container binds" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds).to include("paid-workspace-#{agent_run.id}:/workspace:rw")
+          mock_container
+        end
+
+        described_class.new(agent_run: agent_run).provision
       end
 
       it "raises ProvisionError for non-existent path" do
