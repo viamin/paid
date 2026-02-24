@@ -83,6 +83,10 @@ class AgentRun < ApplicationRecord
     status == "queued"
   end
 
+  def active?
+    %w[pending running].include?(status)
+  end
+
   def running?
     status == "running"
   end
