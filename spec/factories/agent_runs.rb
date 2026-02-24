@@ -7,6 +7,10 @@ FactoryBot.define do
     agent_type { "claude_code" }
     status { "pending" }
 
+    trait :queued do
+      status { "queued" }
+    end
+
     trait :with_custom_prompt do
       issue { nil }
       custom_prompt { "Make the requested changes" }

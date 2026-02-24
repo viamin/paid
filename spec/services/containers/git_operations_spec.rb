@@ -436,8 +436,8 @@ RSpec.describe Containers::GitOperations do
       let(:conflict_result) do
         Containers::Provision::Result.failure(
           error: "rebase failed",
-          stdout: "",
-          stderr: "CONFLICT (content): Merge conflict in app/model.rb\nFailed to merge in the changes.",
+          stdout: "CONFLICT (content): Merge conflict in app/model.rb",
+          stderr: "Failed to merge in the changes.",
           exit_code: 1
         )
       end
@@ -479,10 +479,22 @@ RSpec.describe Containers::GitOperations do
         allow(container_service).to receive(:execute)
           .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
           .and_return(error_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
+          .and_return(success_result)
       end
 
       it "raises Error" do
         expect { git_ops.rebase_onto("main") }.to raise_error(described_class::Error, /Rebase failed/)
+      end
+
+      it "aborts the rebase before raising" do
+        expect(container_service).to receive(:execute)
+          .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        expect { git_ops.rebase_onto("main") }.to raise_error(described_class::Error)
       end
     end
   end

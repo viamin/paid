@@ -111,5 +111,33 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(agent_run.custom_prompt).to be_nil
       end
     end
+
+    context "with agent_run_id (resuming queued run)" do
+      it "transitions a queued run to pending" do
+        queued_run = create(:agent_run, :queued, project: project, issue: issue)
+
+        result = activity.execute(agent_run_id: queued_run.id, project_id: project.id)
+
+        expect(result[:agent_run_id]).to eq(queued_run.id)
+        expect(queued_run.reload.status).to eq("pending")
+      end
+
+      it "updates issue paid_state to in_progress" do
+        queued_run = create(:agent_run, :queued, project: project, issue: issue)
+
+        activity.execute(agent_run_id: queued_run.id, project_id: project.id)
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+
+      it "does not change status if run is already pending" do
+        pending_run = create(:agent_run, project: project, issue: issue, status: "pending")
+
+        result = activity.execute(agent_run_id: pending_run.id, project_id: project.id)
+
+        expect(result[:agent_run_id]).to eq(pending_run.id)
+        expect(pending_run.reload.status).to eq("pending")
+      end
+    end
   end
 end

@@ -35,6 +35,13 @@ RSpec.describe Activities::MarkAgentRunCompleteActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
+    it "enqueues ProcessRunQueueJob" do
+      agent_run = create(:agent_run, :running, project: project)
+
+      expect { activity.execute(agent_run_id: agent_run.id) }
+        .to have_enqueued_job(ProcessRunQueueJob)
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect {
         activity.execute(agent_run_id: -1)

@@ -50,3 +50,12 @@
 
 # Session-specific working memory (ephemeral, per-developer)
 WORKLOG.md
+
+# Build artifacts (PostgreSQL, libyaml, etc.)
+/.build
+
+# npm cache
+/.npm-cache
+
+# mise/asdf version files
+.tool-versions

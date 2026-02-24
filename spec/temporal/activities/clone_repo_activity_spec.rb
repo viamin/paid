@@ -133,7 +133,23 @@ RSpec.describe Activities::CloneRepoActivity do
         expect(worktree).to be_active
       end
 
-      it "raises WorktreeConflict when an active worktree belongs to a different agent_run" do
+      it "reclaims an active worktree when the owning agent_run has finished" do
+        failed_agent_run = create(:agent_run, :failed, project: project)
+        create(:worktree, :active, project: project, agent_run: failed_agent_run,
+          branch_name: "existing-feature-branch", created_at: 3.days.ago)
+
+        freeze_time do
+          activity.execute(agent_run_id: agent_run.id)
+
+          worktree = Worktree.find_by(project: project, branch_name: "existing-feature-branch")
+          expect(worktree.agent_run).to eq(agent_run)
+          expect(worktree).to be_active
+          expect(worktree.pushed).to be(false)
+          expect(worktree.created_at).to eq(Time.current)
+        end
+      end
+
+      it "raises WorktreeConflict when an active worktree belongs to a different running agent_run" do
         other_agent_run = create(:agent_run, :running, project: project)
         create(:worktree, :active, project: project, agent_run: other_agent_run, branch_name: "existing-feature-branch")
 

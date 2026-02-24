@@ -42,7 +42,10 @@
       </div>
     </div>
 
-    <div class="border-t border-gray-200">
+    <details class="border-t border-gray-200">
+      <summary class="cursor-pointer px-4 py-4 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:px-6">
+        Configuration
+      </summary>
       <dl class="divide-y divide-gray-200">
         <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
           <dt class="text-sm font-medium text-gray-500">GitHub Token</dt>
@@ -90,32 +93,28 @@
           </dd>
         </div>
       </dl>
-    </div>
+    </details>
   </div>
 
-  <div class="mt-8">
-    <h2 class="text-lg font-medium text-gray-900">Statistics</h2>
-    <dl class="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-4">
-      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Total Runs</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= @project.agent_runs.count %></dd>
+  <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+    <div class="flex flex-wrap items-center divide-x divide-gray-200 text-sm">
+      <div class="flex items-center gap-1.5 px-4 py-3">
+        <span class="font-medium text-gray-500">Runs:</span>
+        <span class="font-semibold text-gray-900"><%= @project.agent_runs.count %></span>
       </div>
-
-      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Completed</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-green-600"><%= @project.agent_runs.completed.count %></dd>
+      <div class="flex items-center gap-1.5 px-4 py-3">
+        <span class="font-medium text-gray-500">Completed:</span>
+        <span class="font-semibold text-green-600"><%= @project.agent_runs.completed.count %></span>
       </div>
-
-      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">$<%= format("%.2f", @project.total_cost_cents / 100.0) %></dd>
+      <div class="flex items-center gap-1.5 px-4 py-3">
+        <span class="font-medium text-gray-500">Cost:</span>
+        <span class="font-semibold text-gray-900">$<%= format("%.2f", @project.total_cost_cents / 100.0) %></span>
       </div>
-
-      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Tokens Used</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= number_with_delimiter(@project.total_tokens_used) %></dd>
+      <div class="flex items-center gap-1.5 px-4 py-3">
+        <span class="font-medium text-gray-500">Tokens:</span>
+        <span class="font-semibold text-gray-900"><%= number_with_delimiter(@project.total_tokens_used) %></span>
       </div>
-    </dl>
+    </div>
   </div>
 
   <div class="mt-8">

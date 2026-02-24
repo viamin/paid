@@ -62,8 +62,8 @@ RSpec.describe Activities::RebaseBranchActivity do
         success_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
         conflict_result = Containers::Provision::Result.failure(
           error: "rebase failed",
-          stdout: "",
-          stderr: "CONFLICT (content): Merge conflict in file.rb",
+          stdout: "CONFLICT (content): Merge conflict in file.rb",
+          stderr: "Failed to merge in the changes.",
           exit_code: 1
         )
 
