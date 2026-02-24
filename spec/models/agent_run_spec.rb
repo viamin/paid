@@ -220,7 +220,7 @@ RSpec.describe AgentRun do
 
     describe "#active?" do
       it "returns true for pending status" do
-        expect(build(:agent_run).active?).to be true
+        expect(build(:agent_run, status: "pending").active?).to be true
       end
 
       it "returns true for running status" do

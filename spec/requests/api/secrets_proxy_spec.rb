@@ -264,7 +264,7 @@ RSpec.describe "Api::SecretsProxy" do
       end
     end
 
-    context "with non-running agent run" do
+    context "with finished agent run" do
       let(:completed_run) { create(:agent_run, :completed, project: project) }
 
       it "returns forbidden for completed runs" do
@@ -278,7 +278,9 @@ RSpec.describe "Api::SecretsProxy" do
 
         expect(response).to have_http_status(:forbidden)
       end
+    end
 
+    context "with pending agent run" do
       it "allows pending runs (active but not yet running)" do
         pending_run = create(:agent_run, project: project, status: "pending")
 
