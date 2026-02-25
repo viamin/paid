@@ -1,0 +1,20 @@
+<div id="<%= dom_id(project, :stats) %>" class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+  <div class="flex flex-wrap items-center divide-x divide-gray-200 text-sm">
+    <div class="flex items-center gap-1.5 px-4 py-3">
+      <span class="font-medium text-gray-500">Runs:</span>
+      <span class="font-semibold text-gray-900"><%= project.agent_runs.count %></span>
+    </div>
+    <div class="flex items-center gap-1.5 px-4 py-3">
+      <span class="font-medium text-gray-500">Completed:</span>
+      <span class="font-semibold text-green-600"><%= project.agent_runs.completed.count %></span>
+    </div>
+    <div class="flex items-center gap-1.5 px-4 py-3">
+      <span class="font-medium text-gray-500">Cost:</span>
+      <span class="font-semibold text-gray-900">$<%= format("%.2f", project.total_cost_cents / 100.0) %></span>
+    </div>
+    <div class="flex items-center gap-1.5 px-4 py-3">
+      <span class="font-medium text-gray-500">Tokens:</span>
+      <span class="font-semibold text-gray-900"><%= number_with_delimiter(project.total_tokens_used) %></span>
+    </div>
+  </div>
+</div>
