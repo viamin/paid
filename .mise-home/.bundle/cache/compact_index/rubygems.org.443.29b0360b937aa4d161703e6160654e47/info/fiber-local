@@ -1,0 +1,4 @@
+---
+0.1.0 |checksum:e03420186d9a7f267df1db1d4eccfff945024ae5655a7936d856d6153085ce77,ruby:>= 2.5.0
+1.0.0 |checksum:29379a0bc0c42792f8a06df6da82f0f2bda98aad17ac9f168bea3097c0ea3def,ruby:>= 2.5.0
+1.1.0 fiber-storage:>= 0|checksum:c885f94f210fb9b05737de65d511136ea602e00c5105953748aa0f8793489f06,ruby:>= 3.1
