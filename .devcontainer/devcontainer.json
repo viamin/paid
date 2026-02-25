@@ -33,14 +33,13 @@
   ],
 
   "remoteEnv": {
-    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin",
-    "GIT_CONFIG_COUNT": "1",
-    "GIT_CONFIG_KEY_0": "gpg.ssh.program",
-    "GIT_CONFIG_VALUE_0": "/workspaces/paid/.devcontainer/ssh-sign.sh"
+    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin"
   },
 
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  "forwardPorts": [3000, 8080],
+  // Note: Port 3000 is intentionally exposed via compose.yaml `ports` instead of here,
+  // because forwardPorts binds to 127.0.0.1 which blocks Tailscale tunnel access.
+  "forwardPorts": [8080],
 
   // Configure tool-specific properties.
   // "customizations": {},
@@ -52,7 +51,7 @@
 
   // Use 'postCreateCommand' to run commands after the container is created.
   "postCreateCommand": {
-    "ssh-sign-permissions": "chmod +x .devcontainer/ssh-sign.sh",
+    "setup-signing-key": "bash .devcontainer/setup-signing-key.sh",
     "setup": "corepack enable && corepack prepare yarn@1.22.22 --activate && bin/setup --skip-server",
     "claude-install-and-configure": "curl -fsSL https://claude.ai/install.sh | bash && bash .devcontainer/configure-claude.sh",
     "multiclaude": "go install github.com/dlorenc/multiclaude/cmd/multiclaude@latest"
