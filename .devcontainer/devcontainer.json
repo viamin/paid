@@ -60,10 +60,10 @@
 
   // Use 'postStartCommand' to run commands every time the container starts.
   "postStartCommand": {
+    "overmind-cleanup": "rm -f .overmind.sock",
     "multiclaude-start": "multiclaude start || true",
     "git-https": "git config --local remote.origin.url https://github.com/viamin/paid.git && git config --local credential.helper '!/usr/bin/gh auth git-credential'",
-    "ensure-networks": "for net in paid_internal paid_agent; do docker network inspect $net >/dev/null 2>&1 || docker network create $net --driver bridge; if ! docker network inspect $net --format '{{range .Containers}}{{.Name}}{{end}}' | grep -q paid-rails-app-1; then docker network connect --alias web --alias paid-proxy $net $(hostname); fi; done",
-    "claude-persist-state": "if [ -f \"$HOME/.claude.json\" ] && [ ! -L \"$HOME/.claude.json\" ]; then mv \"$HOME/.claude.json\" \"$HOME/.claude/claude.json\"; fi && ln -sf \"$HOME/.claude/claude.json\" \"$HOME/.claude.json\""
+    "ensure-networks": "for net in paid_internal paid_agent; do docker network inspect $net >/dev/null 2>&1 || docker network create $net --driver bridge; if ! docker network inspect $net --format '{{range .Containers}}{{.Name}}{{end}}' | grep -q paid-rails-app-1; then docker network connect --alias web --alias paid-proxy $net $(hostname); fi; done"
   },
   "customizations": {
     "vscode": {
