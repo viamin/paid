@@ -25,10 +25,16 @@ chmod 600 "$KEY_PATH"
 
 # 2. Remove stale devcontainer signing keys from GitHub
 echo "Cleaning up old signing keys from GitHub..."
-while read -r key_id; do
-  gh ssh-key delete "$key_id" --yes 2>&1 | grep -v "not found" || echo "Warning: Failed to delete key $key_id" >&2
-done < <(gh ssh-key list --json id,title \
-  | jq -r ".[] | select(.title | startswith(\"$TITLE_PREFIX\")) | .id")
+if ! key_ids=$(gh ssh-key list --json id,title \
+  | jq -r ".[] | select(.title | startswith(\"$TITLE_PREFIX\")) | .id"); then
+  echo "Warning: Failed to list existing SSH keys from GitHub; skipping cleanup of old signing keys." >&2
+else
+  if [[ -n "$key_ids" ]]; then
+    while read -r key_id; do
+      gh ssh-key delete "$key_id" --yes 2>&1 | grep -v "not found" || echo "Warning: Failed to delete key $key_id" >&2
+    done <<< "$key_ids"
+  fi
+fi
 
 # 3. Register the new public key with GitHub
 echo "Registering new signing key with GitHub..."
