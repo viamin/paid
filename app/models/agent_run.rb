@@ -334,6 +334,8 @@ class AgentRun < ApplicationRecord
 
   def broadcast_project_updates
     project.broadcast_agent_runs_update
+    project.broadcast_agent_runs_list_update
     project.broadcast_stats_update
+    project.broadcast_agent_run_detail_update(self)
   end
 end

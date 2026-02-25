@@ -829,23 +829,31 @@ RSpec.describe AgentRun do
   describe "broadcast callbacks" do
     let(:project) { create(:project) }
 
-    it "broadcasts agent runs and stats updates on create" do
+    it "broadcasts all updates on create" do
       allow(project).to receive(:broadcast_agent_runs_update)
+      allow(project).to receive(:broadcast_agent_runs_list_update)
       allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_agent_run_detail_update)
 
       create(:agent_run, project: project)
 
       expect(project).to have_received(:broadcast_agent_runs_update)
+      expect(project).to have_received(:broadcast_agent_runs_list_update)
       expect(project).to have_received(:broadcast_stats_update)
+      expect(project).to have_received(:broadcast_agent_run_detail_update)
     end
 
-    it "broadcasts agent runs and stats updates on update" do
+    it "broadcasts all updates on update" do
       allow(project).to receive(:broadcast_agent_runs_update)
+      allow(project).to receive(:broadcast_agent_runs_list_update)
       allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_agent_run_detail_update)
       agent_run = create(:agent_run, project: project)
 
       expect(project).to receive(:broadcast_agent_runs_update).once
+      expect(project).to receive(:broadcast_agent_runs_list_update).once
       expect(project).to receive(:broadcast_stats_update).once
+      expect(project).to receive(:broadcast_agent_run_detail_update).with(agent_run).once
 
       agent_run.update!(status: "running", started_at: Time.current)
     end
