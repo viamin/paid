@@ -37,8 +37,8 @@
   },
 
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  // Note: Port 3000 is intentionally exposed via compose.yaml `ports` instead of here,
-  // because forwardPorts binds to 127.0.0.1 which blocks Tailscale tunnel access.
+  // Note: If you need to expose port 3000, prefer using compose.yaml `ports` instead of
+  // forwardPorts, because forwardPorts binds to 127.0.0.1 which blocks Tailscale tunnel access.
   "forwardPorts": [8080],
 
   // Configure tool-specific properties.
