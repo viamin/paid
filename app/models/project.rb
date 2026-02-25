@@ -99,7 +99,7 @@ class Project < ApplicationRecord
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs),
       partial: "projects/agent_runs",
-      locals: { project: self, recent_agent_runs: agent_runs.recent.limit(10), show_actions: false }
+      locals: { project: self, recent_agent_runs: agent_runs.recent.limit(10) }
     )
   end
 
@@ -109,7 +109,7 @@ class Project < ApplicationRecord
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :issues),
       partial: "projects/issues",
-      locals: { project: self, issues: open_items.issues_only.limit(25), show_actions: false }
+      locals: { project: self, issues: open_items.issues_only.limit(25) }
     )
   end
 
@@ -119,7 +119,7 @@ class Project < ApplicationRecord
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :pull_requests),
       partial: "projects/pull_requests",
-      locals: { project: self, pull_requests: open_items.pull_requests_only.limit(25), show_actions: false }
+      locals: { project: self, pull_requests: open_items.pull_requests_only.limit(25) }
     )
   end
 

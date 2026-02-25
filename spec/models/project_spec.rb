@@ -396,7 +396,7 @@ RSpec.describe Project do
           project, :project_updates,
           target: "agent_runs_project_#{project.id}",
           partial: "projects/agent_runs",
-          locals: hash_including(project: project, show_actions: false)
+          locals: hash_including(project: project)
         )
       end
     end
@@ -409,7 +409,7 @@ RSpec.describe Project do
           project, :project_updates,
           target: "issues_project_#{project.id}",
           partial: "projects/issues",
-          locals: hash_including(project: project, show_actions: false)
+          locals: hash_including(project: project)
         )
       end
     end
@@ -422,7 +422,7 @@ RSpec.describe Project do
           project, :project_updates,
           target: "pull_requests_project_#{project.id}",
           partial: "projects/pull_requests",
-          locals: hash_including(project: project, show_actions: false)
+          locals: hash_including(project: project)
         )
       end
     end

@@ -98,22 +98,24 @@
     </details>
   </div>
 
-  <%= render "projects/stats", project: @project %>
+  <div data-show-actions="<%= policy(@project).run_agent? %>">
+    <%= render "projects/stats", project: @project %>
 
-  <%= render "projects/issues", project: @project, issues: @issues, show_actions: policy(@project).run_agent? %>
+    <%= render "projects/issues", project: @project, issues: @issues %>
 
-  <%= render "projects/pull_requests", project: @project, pull_requests: @pull_requests, show_actions: policy(@project).run_agent? %>
+    <%= render "projects/pull_requests", project: @project, pull_requests: @pull_requests %>
 
-  <div class="mt-8">
-    <h2 class="text-lg font-medium text-gray-900">Workflow Status</h2>
-    <div class="mt-4">
-      <%= turbo_frame_tag "workflow-status", src: project_workflow_status_path(@project), loading: :lazy do %>
-        <div class="animate-pulse bg-gray-100 h-24 rounded-lg"></div>
-      <% end %>
+    <div class="mt-8">
+      <h2 class="text-lg font-medium text-gray-900">Workflow Status</h2>
+      <div class="mt-4">
+        <%= turbo_frame_tag "workflow-status", src: project_workflow_status_path(@project), loading: :lazy do %>
+          <div class="animate-pulse bg-gray-100 h-24 rounded-lg"></div>
+        <% end %>
+      </div>
     </div>
-  </div>
 
-  <%= render "projects/agent_runs", project: @project, recent_agent_runs: @recent_agent_runs, show_actions: policy(@project).run_agent? %>
+    <%= render "projects/agent_runs", project: @project, recent_agent_runs: @recent_agent_runs %>
+  </div>
 
   <% if policy(@project).destroy? %>
     <div class="mt-8 bg-white shadow sm:rounded-lg">

@@ -6,7 +6,7 @@
       <div class="max-h-96 overflow-y-auto">
         <ul role="list" class="divide-y divide-gray-200">
           <% issues.each do |issue| %>
-            <%= render "projects/issue", issue: issue, project: project, show_actions: show_actions %>
+            <%= render "projects/issue", issue: issue, project: project %>
           <% end %>
         </ul>
       </div>
