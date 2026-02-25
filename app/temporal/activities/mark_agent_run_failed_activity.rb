@@ -16,11 +16,13 @@ module Activities
       else
         agent_run.fail!(error: error)
         agent_run.log!("system", "Agent run failed: #{error}")
-
-        # Only trigger queue processing when this activity actually transitions the run,
-        # avoiding redundant enqueues when the run was already terminal (e.g. timeout).
-        ProcessRunQueueJob.perform_later
       end
+
+      # Always trigger queue processing so remaining queued runs get claimed.
+      # This is safe because ProcessRunQueueJob is idempotent (advisory lock +
+      # SKIP LOCKED). Without this, runs that were already marked failed by
+      # RunAgentActivity would skip queue processing entirely.
+      ProcessRunQueueJob.perform_later
 
       # Always update issue state so it doesn't stay stuck in "in_progress".
       if agent_run.issue && agent_run.issue.paid_state != "failed"
