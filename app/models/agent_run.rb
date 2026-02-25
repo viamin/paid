@@ -12,6 +12,8 @@ class AgentRun < ApplicationRecord
 
   before_create :generate_proxy_token
 
+  after_commit :broadcast_project_updates, on: [ :create, :update ]
+
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :worktree_path, length: { maximum: 500 }
@@ -328,5 +330,10 @@ class AgentRun < ApplicationRecord
 
   def generate_proxy_token
     self.proxy_token ||= SecureRandom.hex(32)
+  end
+
+  def broadcast_project_updates
+    project.broadcast_agent_runs_update
+    project.broadcast_stats_update
   end
 end

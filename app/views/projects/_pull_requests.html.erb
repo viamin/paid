@@ -1,0 +1,20 @@
+<div id="<%= dom_id(project, :pull_requests) %>" class="mt-8">
+  <h2 class="text-lg font-medium text-gray-900">Synced Pull Requests</h2>
+
+  <% if pull_requests.any? %>
+    <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
+      <div class="max-h-96 overflow-y-auto">
+        <ul role="list" class="divide-y divide-gray-200">
+          <% pull_requests.each do |pr| %>
+            <%= render "projects/pull_request", pull_request: pr, project: project %>
+          <% end %>
+        </ul>
+      </div>
+    </div>
+  <% else %>
+    <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-8">
+      <h3 class="text-sm font-semibold text-gray-900">No synced pull requests</h3>
+      <p class="mt-1 text-sm text-gray-500">Pull requests will appear here once they are synced from GitHub.</p>
+    </div>
+  <% end %>
+</div>

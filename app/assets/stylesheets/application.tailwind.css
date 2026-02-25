@@ -1,1 +1,8 @@
 @import "tailwindcss";
+
+/* Hide action buttons in broadcast-replaced content when user lacks permission.
+   The ancestor data-show-actions attribute is set during initial page load and
+   survives Turbo Stream replacements, preserving correct action visibility. */
+[data-show-actions="false"] [data-action-button] {
+  display: none !important;
+}
