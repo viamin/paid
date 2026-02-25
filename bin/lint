@@ -85,8 +85,9 @@ fi
 echo "== Style: RuboCop =="
 if [ "$FILE_FILTER" = true ]; then
   if [ -n "$ruby_files" ]; then
+    # --force-exclusion ensures Exclude patterns are respected for explicitly named files
     # shellcheck disable=SC2086
-    bin/rubocop $RUBOCOP_ARGS $ruby_files
+    bin/rubocop --force-exclusion $RUBOCOP_ARGS $ruby_files
   else
     echo "  No Ruby files to lint."
   fi
