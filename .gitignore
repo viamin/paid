@@ -57,6 +57,7 @@ WORKLOG.md
 /.gem_home/
 /.mise-cache/
 /.mise-data/
+/.mise-home/
 /.bundle_path/
 /.cache/
 /.tmp/
