@@ -1,4 +1,0 @@
-[ruby]
-short = "ruby"
-full = "core:ruby"
-explicit_backend = true

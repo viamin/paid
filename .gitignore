@@ -50,3 +50,13 @@
 
 # Session-specific working memory (ephemeral, per-developer)
 WORKLOG.md
+
+# Ignore vendored gems, mise tool data, and build artifacts
+/.gems/
+/.gem-spec-cache/
+/.gem_home/
+/.mise-cache/
+/.mise-data/
+/.bundle_path/
+/.cache/
+/.tmp/
