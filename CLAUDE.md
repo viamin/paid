@@ -74,6 +74,19 @@ gem install bundler:2.7.2
 bundle _2.7.2_ install
 ```
 
+### JavaScript Package Manager
+
+This project uses **Yarn** (not npm) for JavaScript dependencies. The `package.json` specifies `"packageManager": "yarn@1.22.22"`.
+
+**Always use Yarn commands:**
+
+- `yarn install` - Install dependencies
+- `yarn add <package>` - Add a dependency
+- `yarn add -D <package>` - Add a dev dependency
+- `yarn audit` - Security audit
+
+**Never use npm commands** - they will create a conflicting `package-lock.json` file.
+
 ## Architecture
 
 The system has four main layers:

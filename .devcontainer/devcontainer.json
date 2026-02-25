@@ -28,14 +28,15 @@
     "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
     "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached",
     "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
-    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,readonly,type=bind,consistency=cached"
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,readonly,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock,target=/home/vscode/.1password/agent.sock,type=bind"
   ],
 
   "remoteEnv": {
     "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin",
     "GIT_CONFIG_COUNT": "1",
     "GIT_CONFIG_KEY_0": "gpg.ssh.program",
-    "GIT_CONFIG_VALUE_0": "/usr/bin/ssh-keygen"
+    "GIT_CONFIG_VALUE_0": "/workspaces/paid/.devcontainer/ssh-sign.sh"
   },
 
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
@@ -51,6 +52,7 @@
 
   // Use 'postCreateCommand' to run commands after the container is created.
   "postCreateCommand": {
+    "ssh-sign-permissions": "chmod +x .devcontainer/ssh-sign.sh",
     "setup": "corepack enable && corepack prepare yarn@1.22.22 --activate && bin/setup --skip-server",
     "claude-install-and-configure": "curl -fsSL https://claude.ai/install.sh | bash && bash .devcontainer/configure-claude.sh",
     "multiclaude": "go install github.com/dlorenc/multiclaude/cmd/multiclaude@latest"
@@ -58,6 +60,7 @@
 
   // Use 'postStartCommand' to run commands every time the container starts.
   "postStartCommand": {
+    "overmind-cleanup": "rm -f .overmind.sock",
     "multiclaude-start": "multiclaude start || true",
     "git-https": "git config --local remote.origin.url https://github.com/viamin/paid.git && git config --local credential.helper '!/usr/bin/gh auth git-credential'",
     "ensure-networks": "for net in paid_internal paid_agent; do docker network inspect $net >/dev/null 2>&1 || docker network create $net --driver bridge; if ! docker network inspect $net --format '{{range .Containers}}{{.Name}}{{end}}' | grep -q paid-rails-app-1; then docker network connect --alias web --alias paid-proxy $net $(hostname); fi; done"
