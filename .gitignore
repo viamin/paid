@@ -60,3 +60,4 @@ WORKLOG.md
 /.bundle_path/
 /.cache/
 /.tmp/
+/.pg/
