@@ -20,6 +20,8 @@ echo "Generating SSH signing key..."
 mkdir -p "$KEY_DIR"
 rm -f "$KEY_PATH" "$KEY_PATH.pub"
 ssh-keygen -t ed25519 -f "$KEY_PATH" -N "" -q
+chmod 700 "$KEY_DIR"
+chmod 600 "$KEY_PATH"
 
 # 2. Remove stale devcontainer signing keys from GitHub
 echo "Cleaning up old signing keys from GitHub..."
@@ -35,7 +37,7 @@ gh ssh-key add "$KEY_PATH.pub" --type signing --title "$KEY_TITLE"
 # 4. Configure git to use the key for commit signing (repo-local to avoid
 #    contaminating the host .gitconfig which is bind-mounted into the container)
 git config --local gpg.format ssh
-git config --local user.signingkey "$KEY_PATH.pub"
+git config --local user.signingkey "$KEY_PATH"
 git config --local commit.gpgsign true
 
 echo "SSH signing configured successfully!"
