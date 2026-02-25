@@ -8,6 +8,7 @@ class User < ApplicationRecord
   has_many :member_projects, through: :project_memberships, source: :project
   has_many :created_github_tokens, class_name: "GithubToken", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_many :created_projects, class_name: "Project", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
+  has_one :user_setting, dependent: :destroy
 
   # Include default devise modules. Others available are:
   # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable
@@ -116,6 +117,11 @@ class User < ApplicationRecord
     when Project
       project_memberships.find_by(project: resource)
     end
+  end
+
+  # Returns the user's settings, creating with defaults if not yet present
+  def settings
+    user_setting || create_user_setting
   end
 
   # Convenience method for getting account membership
