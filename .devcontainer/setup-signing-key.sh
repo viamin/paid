@@ -4,6 +4,9 @@
 # container creation) so we clean up stale keys from previous containers.
 set -euo pipefail
 
+# Ensure we're in the workspace root (required for git config --local)
+cd "$(git rev-parse --show-toplevel 2>/dev/null || echo /workspaces/paid)"
+
 KEY_DIR="$HOME/.ssh-signing"
 KEY_PATH="$KEY_DIR/id_ed25519"
 TITLE_PREFIX="devcontainer-signing:"
@@ -23,15 +26,25 @@ ssh-keygen -t ed25519 -f "$KEY_PATH" -N "" -q
 chmod 700 "$KEY_DIR"
 chmod 600 "$KEY_PATH"
 
-# 2. Remove stale devcontainer signing keys from GitHub
+# 2. Remove stale devcontainer signing keys from this container's hostname.
+#    Only keys matching this hostname are removed so concurrent devcontainers
+#    with different hostnames are unaffected.
 echo "Cleaning up old signing keys from GitHub..."
 if ! key_ids=$(gh ssh-key list --json id,title \
-  | jq -r ".[] | select(.title | startswith(\"$TITLE_PREFIX\")) | .id"); then
-  echo "Warning: Failed to list existing SSH keys from GitHub; skipping cleanup of old signing keys." >&2
+  | jq -r ".[] | select(.title == \"$KEY_TITLE\") | .id"); then
+  echo "WARNING: Failed to list existing SSH keys from GitHub; skipping cleanup of old signing keys." >&2
 else
   if [[ -n "$key_ids" ]]; then
     while read -r key_id; do
-      gh ssh-key delete "$key_id" --yes 2>&1 | grep -v "not found" || echo "Warning: Failed to delete key $key_id" >&2
+      if ! output=$(gh ssh-key delete "$key_id" --yes 2>&1); then
+        if echo "$output" | grep -qi "not found"; then
+          # Key is already absent; this is safe to ignore.
+          :
+        else
+          echo "$output" >&2
+          echo "WARNING: Failed to delete key $key_id" >&2
+        fi
+      fi
     done <<< "$key_ids"
   fi
 fi
