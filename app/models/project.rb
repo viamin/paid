@@ -108,7 +108,7 @@ class Project < ApplicationRecord
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs_list),
       partial: "agent_runs/table",
-      locals: { project: self, agent_runs: agent_runs.recent.limit(50) }
+      locals: { project: self, agent_runs: agent_runs.recent.includes(:issue).limit(50) }
     )
   end
 

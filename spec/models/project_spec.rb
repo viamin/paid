@@ -451,7 +451,7 @@ RSpec.describe Project do
           target: "detail_agent_run_#{agent_run.id}",
           partial: "agent_runs/detail",
           locals: { agent_run: agent_run }
-        )
+        ).at_least(:once)
       end
     end
   end

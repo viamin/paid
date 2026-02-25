@@ -835,12 +835,12 @@ RSpec.describe AgentRun do
       allow(project).to receive(:broadcast_stats_update)
       allow(project).to receive(:broadcast_agent_run_detail_update)
 
-      create(:agent_run, project: project)
+      agent_run = create(:agent_run, project: project)
 
       expect(project).to have_received(:broadcast_agent_runs_update)
       expect(project).to have_received(:broadcast_agent_runs_list_update)
       expect(project).to have_received(:broadcast_stats_update)
-      expect(project).to have_received(:broadcast_agent_run_detail_update)
+      expect(project).to have_received(:broadcast_agent_run_detail_update).with(agent_run)
     end
 
     it "broadcasts all updates on update" do
