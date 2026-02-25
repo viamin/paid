@@ -8,6 +8,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
+    <%= action_cable_meta_tag %>
 
     <%= yield :head %>
 
@@ -23,7 +24,7 @@
     <%= javascript_include_tag "application", "data-turbo-track": "reload", type: "module" %>
   </head>
 
-  <body class="min-h-screen bg-gray-50">
+  <body class="min-h-screen bg-gray-50" data-turbo-refresh-scroll="preserve">
     <nav class="bg-white shadow-sm" data-controller="mobile-menu">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div class="flex h-16 justify-between">
@@ -47,8 +48,8 @@
 
           <%# Mobile hamburger button %>
           <div class="flex items-center md:hidden">
-            <button type="button" data-action="mobile-menu#toggle" class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500" aria-expanded="false">
-              <span class="sr-only">Open main menu</span>
+            <button type="button" data-action="mobile-menu#toggle" data-mobile-menu-target="button" class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500" aria-expanded="false" aria-controls="mobile-menu">
+              <span class="sr-only">Main menu</span>
               <%# Hamburger icon %>
               <svg data-mobile-menu-target="openIcon" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
@@ -63,7 +64,7 @@
       </div>
 
       <%# Mobile dropdown menu %>
-      <div data-mobile-menu-target="menu" class="hidden md:hidden">
+      <div id="mobile-menu" data-mobile-menu-target="menu" class="hidden md:hidden" aria-hidden="true">
         <div class="space-y-1 px-4 pb-3 pt-2">
           <% if user_signed_in? %>
             <%= link_to "Dashboard", dashboard_path, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
