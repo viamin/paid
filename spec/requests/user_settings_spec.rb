@@ -34,7 +34,7 @@ RSpec.describe "UserSettings" do
 
       it "displays all setting sections" do
         get edit_user_settings_path
-        expect(response.body).to include("Polling &amp; Timing")
+        expect(response.body).to include("Polling & Timing")
         expect(response.body).to include("Agent Execution")
         expect(response.body).to include("Container Resources")
         expect(response.body).to include("Project Defaults")
@@ -92,13 +92,15 @@ RSpec.describe "UserSettings" do
         patch user_settings_path, params: {
           user_setting: {
             default_branch: "develop",
-            default_project_active: false
+            default_project_active: false,
+            default_allowed_github_usernames_csv: "alice, bob"
           }
         }
         expect(response).to redirect_to(edit_user_settings_path)
         settings = user.reload.settings
         expect(settings.default_branch).to eq("develop")
         expect(settings.default_project_active).to be(false)
+        expect(settings.default_allowed_github_usernames).to eq(%w[alice bob])
       end
 
       it "updates advanced settings" do

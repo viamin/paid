@@ -10,7 +10,14 @@ class UserSettingsController < ApplicationController
   def update
     authorize @user_setting
 
-    if @user_setting.update(user_setting_params)
+    update_params = user_setting_params
+    if params.dig(:user_setting, :default_allowed_github_usernames_csv)
+      update_params = update_params.merge(
+        default_allowed_github_usernames: parse_usernames_csv
+      )
+    end
+
+    if @user_setting.update(update_params)
       redirect_to edit_user_settings_path, notice: "Settings saved successfully."
     else
       render :edit, status: :unprocessable_content
@@ -41,5 +48,10 @@ class UserSettingsController < ApplicationController
       :retry_base_delay,
       :retry_max_delay
     )
+  end
+
+  def parse_usernames_csv
+    params.dig(:user_setting, :default_allowed_github_usernames_csv)
+      .to_s.split(",").map(&:strip).reject(&:blank?).uniq
   end
 end

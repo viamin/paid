@@ -12,6 +12,6 @@ class UserSettingPolicy < ApplicationPolicy
   private
 
   def owner?
-    user && record.user_id == user.id
+    user.present? && record.user_id == user.id
   end
 end

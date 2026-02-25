@@ -93,9 +93,14 @@ RSpec.describe UserSetting do
 
     it "sets default retry and resilience values" do
       expect(setting.circuit_breaker_failure_threshold).to eq(5)
+      expect(setting.circuit_breaker_timeout_seconds).to eq(300)
       expect(setting.retry_max_attempts).to eq(3)
       expect(setting.retry_base_delay).to eq(1.0)
       expect(setting.retry_max_delay).to eq(60.0)
+    end
+
+    it "sets default allowed github usernames" do
+      expect(setting.default_allowed_github_usernames).to eq([])
     end
   end
 end
