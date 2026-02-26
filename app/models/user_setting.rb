@@ -1,34 +1,65 @@
 # frozen_string_literal: true
 
 class UserSetting < ApplicationRecord
+  # All known providers. Validation uses this full list so that a saved default
+  # is not rejected when a provider is temporarily disabled via environment flags.
   AGENT_PROVIDERS = %w[claude cursor aider].freeze
+
+  # Max value for PostgreSQL integer columns (32-bit signed)
+  PG_INT_MAX = 2_147_483_647
+  # Reasonable upper bound for container memory (64 GB in bytes)
+  MAX_CONTAINER_MEMORY_BYTES = 64 * 1024 * 1024 * 1024
+  # Reasonable upper bound for delay settings (24 hours in seconds)
+  MAX_DELAY_SECONDS = 86_400
 
   belongs_to :user
 
   # Polling & Timing
-  validates :default_poll_interval_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60 }
-  validates :github_token_cache_ttl_minutes, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
-  validates :token_validation_stale_minutes, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+  validates :default_poll_interval_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
+  validates :github_token_cache_ttl_minutes,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: PG_INT_MAX }
+  validates :token_validation_stale_minutes,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: PG_INT_MAX }
 
   # Agent Execution
-  validates :agent_timeout_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60 }
+  validates :agent_timeout_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
   validates :default_agent_provider, inclusion: { in: AGENT_PROVIDERS }
 
   # Container Resources
   validates :container_memory_bytes,
-    numericality: { only_integer: true, greater_than_or_equal_to: 512 * 1024 * 1024 } # minimum 512MB
-  validates :container_cpu_quota, numericality: { only_integer: true, greater_than_or_equal_to: 100_000 } # minimum 1 CPU
-  validates :container_timeout_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60 }
+    numericality: { only_integer: true, greater_than_or_equal_to: 512 * 1024 * 1024,
+                    less_than_or_equal_to: MAX_CONTAINER_MEMORY_BYTES }
+  validates :container_cpu_quota,
+    numericality: { only_integer: true, greater_than_or_equal_to: 100_000, less_than_or_equal_to: PG_INT_MAX }
+  validates :container_timeout_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
 
   # Project Defaults
   validates :default_branch, presence: true
 
   # Retry & Resilience
-  validates :circuit_breaker_failure_threshold, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
-  validates :circuit_breaker_timeout_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
-  validates :retry_max_attempts, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
-  validates :retry_base_delay, numericality: { greater_than: 0 }
-  validates :retry_max_delay, numericality: { greater_than: 0 }
+  validates :circuit_breaker_failure_threshold,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: PG_INT_MAX }
+  validates :circuit_breaker_timeout_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: PG_INT_MAX }
+  validates :retry_max_attempts,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: PG_INT_MAX }
+  validates :retry_base_delay,
+    numericality: { greater_than: 0, less_than_or_equal_to: MAX_DELAY_SECONDS }
+  validates :retry_max_delay,
+    numericality: { greater_than: 0, less_than_or_equal_to: MAX_DELAY_SECONDS }
+
+  # Returns providers currently enabled at the system level. Claude is always
+  # enabled; other providers are gated by environment flags (see
+  # config/initializers/agent_harness.rb).
+  def self.enabled_agent_providers
+    providers = [ "claude" ]
+    providers << "cursor" if ENV.fetch("CURSOR_ENABLED", "false") == "true"
+    providers << "aider" if ENV.fetch("AIDER_ENABLED", "false") == "true"
+    providers
+  end
 
   # Returns default_allowed_github_usernames as a comma-separated string
   def default_allowed_github_usernames_csv

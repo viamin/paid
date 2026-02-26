@@ -11,28 +11,58 @@ RSpec.describe UserSetting do
     subject { build(:user_setting) }
 
     # Polling & Timing
-    it { is_expected.to validate_numericality_of(:default_poll_interval_seconds).only_integer.is_greater_than_or_equal_to(60) }
-    it { is_expected.to validate_numericality_of(:github_token_cache_ttl_minutes).only_integer.is_greater_than_or_equal_to(1) }
-    it { is_expected.to validate_numericality_of(:token_validation_stale_minutes).only_integer.is_greater_than_or_equal_to(1) }
+    it { is_expected.to validate_numericality_of(:default_poll_interval_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:github_token_cache_ttl_minutes).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:token_validation_stale_minutes).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
 
     # Agent Execution
-    it { is_expected.to validate_numericality_of(:agent_timeout_seconds).only_integer.is_greater_than_or_equal_to(60) }
+    it { is_expected.to validate_numericality_of(:agent_timeout_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
     it { is_expected.to validate_inclusion_of(:default_agent_provider).in_array(%w[claude cursor aider]) }
 
     # Container Resources
-    it { is_expected.to validate_numericality_of(:container_memory_bytes).only_integer.is_greater_than_or_equal_to(512 * 1024 * 1024) }
-    it { is_expected.to validate_numericality_of(:container_cpu_quota).only_integer.is_greater_than_or_equal_to(100_000) }
-    it { is_expected.to validate_numericality_of(:container_timeout_seconds).only_integer.is_greater_than_or_equal_to(60) }
+    it { is_expected.to validate_numericality_of(:container_memory_bytes).only_integer.is_greater_than_or_equal_to(512 * 1024 * 1024).is_less_than_or_equal_to(described_class::MAX_CONTAINER_MEMORY_BYTES) }
+    it { is_expected.to validate_numericality_of(:container_cpu_quota).only_integer.is_greater_than_or_equal_to(100_000).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:container_timeout_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
 
     # Project Defaults
     it { is_expected.to validate_presence_of(:default_branch) }
 
     # Retry & Resilience
-    it { is_expected.to validate_numericality_of(:circuit_breaker_failure_threshold).only_integer.is_greater_than_or_equal_to(1) }
-    it { is_expected.to validate_numericality_of(:circuit_breaker_timeout_seconds).only_integer.is_greater_than_or_equal_to(1) }
-    it { is_expected.to validate_numericality_of(:retry_max_attempts).only_integer.is_greater_than_or_equal_to(1) }
-    it { is_expected.to validate_numericality_of(:retry_base_delay).is_greater_than(0) }
-    it { is_expected.to validate_numericality_of(:retry_max_delay).is_greater_than(0) }
+    it { is_expected.to validate_numericality_of(:circuit_breaker_failure_threshold).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:circuit_breaker_timeout_seconds).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:retry_max_attempts).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:retry_base_delay).is_greater_than(0).is_less_than_or_equal_to(described_class::MAX_DELAY_SECONDS) }
+    it { is_expected.to validate_numericality_of(:retry_max_delay).is_greater_than(0).is_less_than_or_equal_to(described_class::MAX_DELAY_SECONDS) }
+  end
+
+  describe ".enabled_agent_providers" do
+    it "always includes claude" do
+      expect(described_class.enabled_agent_providers).to include("claude")
+    end
+
+    it "includes cursor when CURSOR_ENABLED is true" do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
+      expect(described_class.enabled_agent_providers).to include("cursor")
+    end
+
+    it "excludes cursor when CURSOR_ENABLED is not true" do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("false")
+      expect(described_class.enabled_agent_providers).not_to include("cursor")
+    end
+
+    it "includes aider when AIDER_ENABLED is true" do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("AIDER_ENABLED", "false").and_return("true")
+      expect(described_class.enabled_agent_providers).to include("aider")
+    end
+
+    it "excludes aider when AIDER_ENABLED is not true" do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("AIDER_ENABLED", "false").and_return("false")
+      expect(described_class.enabled_agent_providers).not_to include("aider")
+    end
   end
 
   describe "#container_memory_gb" do

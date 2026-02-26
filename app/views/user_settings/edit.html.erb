@@ -81,8 +81,9 @@
           <div>
             <%= form.label :default_agent_provider, "Default Agent Provider", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
+              <%# Only show providers enabled at the system level (see config/initializers/agent_harness.rb) %>
               <%= form.select :default_agent_provider,
-                  UserSetting::AGENT_PROVIDERS.map { |p| [p.capitalize, p] },
+                  UserSetting.enabled_agent_providers.map { |p| [p.capitalize, p] },
                   {},
                   class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
             </div>
