@@ -49,7 +49,7 @@ RSpec.describe "User Sessions" do
         expect(inline_alert.text).to include("Invalid email or password")
 
         # Layout-level flash alert is suppressed (content_for(:inline_alert) prevents it)
-        expect(doc.at_css("body > div.mx-auto .bg-red-50")).not_to be_present
+        expect(doc.at_css("div.mx-auto.max-w-7xl > div.bg-red-50")).not_to be_present
       end
     end
   end
