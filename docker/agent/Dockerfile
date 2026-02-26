@@ -85,7 +85,13 @@ RUN apt-get update && apt-get purge -y --auto-remove \
 RUN gem install --no-document bundler:2.7.2
 
 # Install Yarn via corepack (pinned to match package.json)
-RUN corepack enable && corepack prepare yarn@1.22.22 --activate
+# Set COREPACK_HOME to a shared location so the prepared Yarn version is
+# accessible to the non-root agent user without re-downloading at runtime.
+ENV COREPACK_HOME=/usr/local/share/corepack
+RUN mkdir -p "$COREPACK_HOME" \
+    && chmod 0777 "$COREPACK_HOME" \
+    && corepack enable \
+    && corepack prepare yarn@1.22.22 --activate
 
 # Install ast-grep (AST-based code search/lint)
 # https://github.com/ast-grep/ast-grep/releases
