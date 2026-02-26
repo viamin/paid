@@ -47,7 +47,11 @@ class Prompt < ApplicationRecord
   def create_version!(attributes = {})
     with_lock do
       next_version = (prompt_versions.maximum(:version) || 0) + 1
-      version = prompt_versions.create!(attributes.merge(version: next_version))
+
+      # Strip caller-supplied version keys to prevent overriding auto-increment.
+      safe_attributes = attributes.except(:version, "version")
+
+      version = prompt_versions.create!(safe_attributes.merge(version: next_version))
       update!(current_version: version)
       version
     end

@@ -166,6 +166,22 @@ RSpec.describe Prompt do
 
         expect(prompt.reload.current_version).to eq(version)
       end
+
+      it "ignores caller-supplied version keys to preserve auto-increment" do
+        prompt = create(:prompt, :global)
+
+        version = prompt.create_version!(template: "V1", version: 999)
+
+        expect(version.version).to eq(1)
+      end
+
+      it "ignores string version keys as well" do
+        prompt = create(:prompt, :global)
+
+        version = prompt.create_version!(template: "V1", "version" => 999)
+
+        expect(version.version).to eq(1)
+      end
     end
   end
 

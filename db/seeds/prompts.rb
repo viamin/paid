@@ -70,6 +70,11 @@ prompt.save!
 
 current = prompt.current_version
 
+# NOTE: A new version is only created when the template or variables actually
+# change. However, if you are iterating on the template during development,
+# each distinct change will mint a new version. This is by design — versions
+# are immutable and the history is intentional. In production the template
+# should stabilize quickly; in development you can reset with `db:seed:replant`.
 if current.nil? ||
    current.template != coding_issue_template ||
    current.variables != coding_issue_variables
