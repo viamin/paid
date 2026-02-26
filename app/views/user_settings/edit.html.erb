@@ -5,7 +5,7 @@
     <div class="px-4 py-5 sm:p-6">
       <h1 class="text-xl font-semibold text-gray-900">Settings</h1>
       <p class="mt-1 text-sm text-gray-500">
-        Configure defaults for your projects and agent behavior. These settings apply when creating new projects or starting new agent runs.
+        Configure defaults for your projects and agent behavior. These settings will apply when creating new projects or starting new agent runs.
       </p>
 
       <%= form_with model: @user_setting, url: user_settings_path, method: :patch, class: "mt-6" do |form| %>
@@ -98,19 +98,19 @@
           <p class="text-sm text-gray-500">Configure resource limits for agent execution containers.</p>
 
           <div>
-            <%= form.label :container_memory_bytes, "Container Memory (bytes)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <%= form.label :container_memory_gb, "Container Memory (GB)", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
-              <%= form.number_field :container_memory_bytes, min: 512 * 1024 * 1024, step: 1024 * 1024 * 1024, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              <%= form.number_field :container_memory_gb, min: 0.5, step: 0.5, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
             </div>
-            <p class="mt-1 text-xs text-gray-500">Memory limit for agent containers. Default is 4 GB (<%= 4 * 1024 * 1024 * 1024 %> bytes). Minimum 512 MB.</p>
+            <p class="mt-1 text-xs text-gray-500">Memory limit for agent containers in gigabytes. Default is 4 GB. Minimum 0.5 GB.</p>
           </div>
 
           <div>
-            <%= form.label :container_cpu_quota, "Container CPU Quota", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <%= form.label :container_cpus, "Container CPUs", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
-              <%= form.number_field :container_cpu_quota, min: 100_000, step: 100_000, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              <%= form.number_field :container_cpus, min: 1, step: 1, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
             </div>
-            <p class="mt-1 text-xs text-gray-500">CPU quota for agent containers. 100,000 = 1 CPU. Default is 200,000 (2 CPUs).</p>
+            <p class="mt-1 text-xs text-gray-500">Number of CPUs for agent containers. Default is 2. Minimum 1.</p>
           </div>
 
           <div>

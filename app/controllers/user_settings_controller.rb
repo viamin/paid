@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Settings infrastructure and UI for user-configurable defaults.
+# Integration with project creation and agent runs is planned for a follow-up PR.
 class UserSettingsController < ApplicationController
   before_action :set_user_setting
 
@@ -37,8 +39,8 @@ class UserSettingsController < ApplicationController
       :token_validation_stale_minutes,
       :agent_timeout_seconds,
       :default_agent_provider,
-      :container_memory_bytes,
-      :container_cpu_quota,
+      :container_memory_gb,
+      :container_cpus,
       :container_timeout_seconds,
       :default_branch,
       :default_project_active,

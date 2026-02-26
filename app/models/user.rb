@@ -119,9 +119,13 @@ class User < ApplicationRecord
     end
   end
 
-  # Returns the user's settings, creating with defaults if not yet present
+  # Returns the user's settings, creating with defaults if not yet present.
+  # Handles concurrent creation attempts by rescuing unique constraint violations
+  # and reloading the association to return the existing record.
   def settings
     user_setting || create_user_setting
+  rescue ActiveRecord::RecordNotUnique
+    reload_user_setting
   end
 
   # Convenience method for getting account membership

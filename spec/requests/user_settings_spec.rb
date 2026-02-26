@@ -76,8 +76,8 @@ RSpec.describe "UserSettings" do
       it "updates container resource settings" do
         patch user_settings_path, params: {
           user_setting: {
-            container_memory_bytes: 8 * 1024 * 1024 * 1024,
-            container_cpu_quota: 400_000,
+            container_memory_gb: 8,
+            container_cpus: 4,
             container_timeout_seconds: 3600
           }
         }
