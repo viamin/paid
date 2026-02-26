@@ -41,9 +41,15 @@ RSpec.describe "User Sessions" do
         post user_session_path, params: {
           user: { email: user.email, password: "wrongpassword" }
         }
-        # Error should appear inline in the form card, not duplicated in the layout flash area
-        body = response.body
-        expect(body.scan("Invalid email or password").count).to eq(1)
+        doc = Nokogiri::HTML(response.body)
+
+        # Error appears inside the inline alert container (within the form card)
+        inline_alert = doc.at_css("[data-turbo-temporary]")
+        expect(inline_alert).to be_present
+        expect(inline_alert.text).to include("Invalid email or password")
+
+        # Layout-level flash alert is suppressed (content_for(:inline_alert) prevents it)
+        expect(doc.at_css("body > div.mx-auto .bg-red-50")).not_to be_present
       end
     end
   end
