@@ -80,6 +80,13 @@
       </svg>
       <h3 class="mt-2 text-sm font-semibold text-gray-900">No agent runs yet</h3>
       <p class="mt-1 text-sm text-gray-500">Trigger an agent run to get started.</p>
+      <% if local_assigns.fetch(:show_trigger_button, false) %>
+        <div class="mt-6">
+          <%= link_to new_project_agent_run_path(project), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" do %>
+            Trigger Run
+          <% end %>
+        </div>
+      <% end %>
     </div>
   <% end %>
 </div>

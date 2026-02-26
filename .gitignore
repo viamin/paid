@@ -51,6 +51,9 @@
 # Session-specific working memory (ephemeral, per-developer)
 WORKLOG.md
 
+# Ignore downloaded packages
+*.deb
+
 # Ignore vendored gems, mise tool data, and build artifacts
 /.gems/
 /.gem-spec-cache/
@@ -61,3 +64,4 @@ WORKLOG.md
 /.cache/
 /.tmp/
 /.pg/
+/pgdata/
