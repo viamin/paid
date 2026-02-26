@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class CreatePromptsAndPromptVersions < ActiveRecord::Migration[8.1]
+  # NOTE: Scope consistency constraint (project_id requires account_id) is added
+  # in 20260223000001_add_scope_check_constraint_to_prompts.rb.
   def change
     create_table :prompts do |t|
       t.string :slug, limit: 100, null: false

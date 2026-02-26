@@ -4,6 +4,10 @@ module Prompts
   # Resolves the effective prompt version for a given slug and project context,
   # using inheritance: project > account > global.
   #
+  # Returns the current PromptVersion (not the Prompt) because callers typically
+  # need the renderable template. Use Prompt.resolve directly if you need the
+  # Prompt model itself.
+  #
   # @example
   #   version = Prompts::Resolve.call(slug: "coding.issue_implementation", project: project)
   #   rendered = version.render(title: issue.title, body: issue.body)

@@ -71,12 +71,17 @@ prompt.save!
 current = prompt.current_version
 
 # NOTE: A new version is only created when the template or variables actually
-# change. However, if you are iterating on the template during development,
-# each distinct change will mint a new version. This is by design — versions
-# are immutable and the history is intentional. In production the template
-# should stabilize quickly; in development you can reset with `db:seed:replant`.
+# change. To avoid version proliferation from trivial whitespace edits,
+# we compare templates using a normalized form (stripping leading/trailing
+# whitespace). However, if you are iterating on the template during development,
+# each meaningful change will still mint a new version. This is by design —
+# versions are immutable and the history is intentional. In production the
+# template should stabilize quickly; in development you can reset with
+# `db:seed:replant`.
+normalize_template = ->(template) { template.to_s.strip }
+
 if current.nil? ||
-   current.template != coding_issue_template ||
+   normalize_template.call(current.template) != normalize_template.call(coding_issue_template) ||
    current.variables != coding_issue_variables
   change_notes = if current.nil?
     "Initial version migrated from Prompts::BuildForIssue"
