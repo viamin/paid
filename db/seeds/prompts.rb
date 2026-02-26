@@ -46,7 +46,7 @@ coding_issue_variables = [
   { "name" => "body", "required" => true, "description" => "Issue body/description" },
   { "name" => "test_command", "required" => false, "description" => "Test command for the project language" },
   { "name" => "lint_command", "required" => false, "description" => "Lint command for the project language" }
-].freeze
+]
 
 prompt = Prompt.find_or_initialize_by(slug: "coding.issue_implementation", account_id: nil, project_id: nil)
 
