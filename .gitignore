@@ -52,6 +52,7 @@
 WORKLOG.md
 
 # Ignore vendored gems, mise tool data, and build artifacts
+/.gem/
 /.gems/
 /.gem-spec-cache/
 /.gem_home/
@@ -62,3 +63,6 @@ WORKLOG.md
 /.cache/
 /.tmp/
 /.pg/
+/.pgdata/
+/.rubocop-cache/
+/.local-include/

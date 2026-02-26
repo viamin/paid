@@ -1,1 +1,0 @@
-/workspace/.pg/bin/postgres "-D" "/workspace/.pgdata"
