@@ -8,6 +8,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
+    <%= action_cable_meta_tag %>
 
     <%= yield :head %>
 
@@ -18,25 +19,25 @@
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icon.png">
 
-    <%# Includes all stylesheet files in app/assets/stylesheets %>
-    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
     <%= javascript_include_tag "application", "data-turbo-track": "reload", type: "module" %>
   </head>
 
-  <body class="min-h-screen bg-gray-50">
-    <nav class="bg-white shadow-sm">
+  <body class="min-h-screen bg-gray-50" data-turbo-refresh-scroll="preserve">
+    <nav class="bg-white shadow-sm" data-controller="mobile-menu">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div class="flex h-16 justify-between">
-          <div class="flex">
-            <div class="flex flex-shrink-0 items-center">
-              <%= link_to "Paid", root_path, class: "text-xl font-bold text-indigo-600" %>
-            </div>
+          <div class="flex flex-shrink-0 items-center">
+            <%= link_to "Paid", root_path, class: "text-xl font-bold text-indigo-600" %>
           </div>
-          <div class="flex items-center space-x-4">
+
+          <%# Desktop navigation %>
+          <div class="hidden md:flex md:items-center md:space-x-4">
             <% if user_signed_in? %>
               <%= link_to "Dashboard", dashboard_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
               <%= link_to "Projects", projects_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
               <%= link_to "Tokens", github_tokens_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+              <%= link_to "Settings", edit_user_settings_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
               <span class="text-sm text-gray-700"><%= current_user.email %></span>
               <%= button_to "Sign out", destroy_user_session_path, method: :delete, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
             <% else %>
@@ -44,6 +45,39 @@
               <%= link_to "Sign up", new_user_registration_path, class: "ml-4 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
             <% end %>
           </div>
+
+          <%# Mobile hamburger button %>
+          <div class="flex items-center md:hidden">
+            <button type="button" data-action="mobile-menu#toggle" data-mobile-menu-target="button" class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500" aria-expanded="false" aria-controls="mobile-menu">
+              <span class="sr-only">Main menu</span>
+              <%# Hamburger icon %>
+              <svg data-mobile-menu-target="openIcon" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+              </svg>
+              <%# Close icon (hidden by default) %>
+              <svg data-mobile-menu-target="closeIcon" class="hidden h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <%# Mobile dropdown menu %>
+      <div id="mobile-menu" data-mobile-menu-target="menu" class="hidden md:hidden" aria-hidden="true">
+        <div class="space-y-1 px-4 pb-3 pt-2">
+          <% if user_signed_in? %>
+            <%= link_to "Dashboard", dashboard_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            <%= link_to "Projects", projects_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            <%= link_to "Tokens", github_tokens_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            <div class="border-t border-gray-200 pt-3 mt-2">
+              <p class="px-3 text-sm text-gray-700"><%= current_user.email %></p>
+              <%= button_to "Sign out", destroy_user_session_path, method: :delete, class: "mt-1 block w-full rounded-md px-3 py-2 text-left text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            </div>
+          <% else %>
+            <%= link_to "Sign in", new_user_session_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            <%= link_to "Sign up", new_user_registration_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-white bg-indigo-600 hover:bg-indigo-500" %>
+          <% end %>
         </div>
       </div>
     </nav>

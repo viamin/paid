@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_23_205823) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_25_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -306,6 +306,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_205823) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_prompts_scope_consistency"
   end
 
+  create_table "user_settings", force: :cascade do |t|
+    t.integer "agent_timeout_seconds", default: 3600, null: false
+    t.integer "circuit_breaker_failure_threshold", default: 5, null: false
+    t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
+    t.integer "container_cpu_quota", default: 200000, null: false
+    t.bigint "container_memory_bytes", default: 4294967296, null: false
+    t.integer "container_timeout_seconds", default: 1800, null: false
+    t.datetime "created_at", null: false
+    t.string "default_agent_provider", default: "claude", null: false
+    t.jsonb "default_allowed_github_usernames", default: [], null: false
+    t.string "default_branch", default: "main", null: false
+    t.integer "default_poll_interval_seconds", default: 60, null: false
+    t.boolean "default_project_active", default: true, null: false
+    t.integer "github_token_cache_ttl_minutes", default: 60, null: false
+    t.float "retry_base_delay", default: 1.0, null: false
+    t.integer "retry_max_attempts", default: 3, null: false
+    t.float "retry_max_delay", default: 60.0, null: false
+    t.integer "token_validation_stale_minutes", default: 2, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["user_id"], name: "index_user_settings_on_user_id", unique: true
+  end
+
   create_table "users", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
@@ -377,6 +400,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_23_205823) do
   add_foreign_key "prompts", "accounts", on_delete: :cascade
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify

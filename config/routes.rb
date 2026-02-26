@@ -23,6 +23,9 @@ Rails.application.routes.draw do
     post :retry_validation, on: :member
   end
 
+  # User settings (singleton resource — one per user)
+  resource :user_settings, only: [ :edit, :update ]
+
   # Projects management
   resources :projects do
     resource :workflow_status, only: [ :show ]

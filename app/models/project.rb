@@ -86,6 +86,62 @@ class Project < ApplicationRecord
     end
   end
 
+  def broadcast_stats_update
+    broadcast_replace_to(
+      self, :project_updates,
+      target: ActionView::RecordIdentifier.dom_id(self, :stats),
+      partial: "projects/stats",
+      locals: { project: self }
+    )
+  end
+
+  def broadcast_agent_runs_update
+    broadcast_replace_to(
+      self, :project_updates,
+      target: ActionView::RecordIdentifier.dom_id(self, :agent_runs),
+      partial: "projects/agent_runs",
+      locals: { project: self, recent_agent_runs: agent_runs.recent.limit(10) }
+    )
+  end
+
+  def broadcast_agent_runs_list_update
+    broadcast_replace_to(
+      self, :agent_runs_list,
+      target: ActionView::RecordIdentifier.dom_id(self, :agent_runs_list),
+      partial: "agent_runs/table",
+      locals: { project: self, agent_runs: agent_runs.recent.includes(:issue).limit(50) }
+    )
+  end
+
+  def broadcast_agent_run_detail_update(agent_run)
+    broadcast_replace_to(
+      agent_run, :detail,
+      target: ActionView::RecordIdentifier.dom_id(agent_run, :detail),
+      partial: "agent_runs/detail",
+      locals: { agent_run: agent_run }
+    )
+  end
+
+  def broadcast_issues_update
+    open_items = issues.where(github_state: "open").order(github_number: :desc)
+    broadcast_replace_to(
+      self, :project_updates,
+      target: ActionView::RecordIdentifier.dom_id(self, :issues),
+      partial: "projects/issues",
+      locals: { project: self, issues: open_items.issues_only.limit(25) }
+    )
+  end
+
+  def broadcast_pull_requests_update
+    open_items = issues.where(github_state: "open").order(github_number: :desc)
+    broadcast_replace_to(
+      self, :project_updates,
+      target: ActionView::RecordIdentifier.dom_id(self, :pull_requests),
+      partial: "projects/pull_requests",
+      locals: { project: self, pull_requests: open_items.pull_requests_only.limit(25) }
+    )
+  end
+
   private
 
   def start_github_polling

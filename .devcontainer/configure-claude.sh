@@ -7,6 +7,30 @@ set -e
 
 echo "Configuring Claude Code for devcontainer..."
 
+# Persist Claude state (~/.claude.json) across container rebuilds by
+# symlinking it into the bind-mounted ~/.claude/ directory.
+# This MUST happen before the VS Code extension launches Claude.
+CLAUDE_STATE="$HOME/.claude.json"
+CLAUDE_STATE_PERSISTENT="$HOME/.claude/claude.json"
+
+if [ -L "$CLAUDE_STATE" ]; then
+  echo "Claude state symlink already exists; skipping."
+elif [ -f "$CLAUDE_STATE" ] && [ -f "$CLAUDE_STATE_PERSISTENT" ]; then
+  # Fresh file created in this session but we have persisted data — keep persisted
+  rm "$CLAUDE_STATE"
+  ln -s "$CLAUDE_STATE_PERSISTENT" "$CLAUDE_STATE"
+  echo "Claude state restored from persistent mount (discarded fresh file)."
+elif [ -f "$CLAUDE_STATE" ]; then
+  # No persisted data yet — migrate the current file
+  mv "$CLAUDE_STATE" "$CLAUDE_STATE_PERSISTENT"
+  ln -s "$CLAUDE_STATE_PERSISTENT" "$CLAUDE_STATE"
+  echo "Claude state migrated into persistent mount."
+else
+  # No file exists yet — create symlink so Claude writes directly to the mount
+  ln -s "$CLAUDE_STATE_PERSISTENT" "$CLAUDE_STATE"
+  echo "Claude state symlink created (will be populated on first launch)."
+fi
+
 PLUGIN_DIR="/workspaces/claude-ai-toolkit"
 
 # Discover the Claude binary location

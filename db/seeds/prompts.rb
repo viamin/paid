@@ -3,7 +3,9 @@
 # Seed default prompts for coding tasks.
 # Migrates logic from Prompts::BuildForIssue into the database.
 
-CODING_ISSUE_TEMPLATE = <<~'TEMPLATE'
+# Use local variables to avoid constant-redefinition warnings when seeds
+# are loaded multiple times in the same process (e.g. tests or console).
+coding_issue_template = <<~'TEMPLATE'
   # Task
 
   You are working on the following GitHub issue:
@@ -38,7 +40,7 @@ CODING_ISSUE_TEMPLATE = <<~'TEMPLATE'
   When you're done, commit all your changes. Do not push.
 TEMPLATE
 
-CODING_ISSUE_VARIABLES = [
+coding_issue_variables = [
   { "name" => "title", "required" => true, "description" => "Issue title" },
   { "name" => "issue_number", "required" => true, "description" => "GitHub issue number" },
   { "name" => "body", "required" => true, "description" => "Issue body/description" },
@@ -47,20 +49,30 @@ CODING_ISSUE_VARIABLES = [
 ].freeze
 
 prompt = Prompt.find_or_initialize_by(slug: "coding.issue_implementation", account_id: nil, project_id: nil)
-prompt.assign_attributes(
-  name: "Issue Implementation",
-  description: "Default prompt for implementing a GitHub issue. Includes task description, instructions, and coding guidelines.",
-  category: "coding",
-  active: true
-)
+
+if prompt.new_record?
+  # On first creation, set all default attributes.
+  prompt.assign_attributes(
+    name: "Issue Implementation",
+    description: "Default prompt for implementing a GitHub issue. Includes task description, instructions, and coding guidelines.",
+    category: "coding",
+    active: true
+  )
+else
+  # For existing prompts, avoid overwriting operator changes.
+  prompt.name ||= "Issue Implementation"
+  prompt.description ||= "Default prompt for implementing a GitHub issue. Includes task description, instructions, and coding guidelines."
+  prompt.category ||= "coding"
+  prompt.active = true if prompt.active.nil?
+end
 
 prompt.save!
 
 current = prompt.current_version
 
 if current.nil? ||
-   current.template != CODING_ISSUE_TEMPLATE ||
-   current.variables != CODING_ISSUE_VARIABLES
+   current.template != coding_issue_template ||
+   current.variables != coding_issue_variables
   change_notes = if current.nil?
     "Initial version migrated from Prompts::BuildForIssue"
   else
@@ -68,8 +80,8 @@ if current.nil? ||
   end
 
   prompt.create_version!(
-    template: CODING_ISSUE_TEMPLATE,
-    variables: CODING_ISSUE_VARIABLES,
+    template: coding_issue_template,
+    variables: coding_issue_variables,
     created_by: "seed",
     change_notes: change_notes
   )

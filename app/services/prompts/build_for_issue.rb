@@ -76,14 +76,7 @@ module Prompts
     end
 
     def detected_language
-      @detected_language ||= detect_language
-    end
-
-    def detect_language
-      return project.detected_language if project.respond_to?(:detected_language) && project.detected_language.present?
-
-      # Default to Ruby when detected_language is unavailable
-      "ruby"
+      @detected_language ||= LanguageCommands.detected_language(project)
     end
   end
 end

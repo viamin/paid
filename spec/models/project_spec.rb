@@ -367,4 +367,92 @@ RSpec.describe Project do
       expect(project.created_by).to be_nil
     end
   end
+
+  describe "broadcast methods" do
+    let(:project) { create(:project) }
+
+    before do
+      allow(project).to receive(:broadcast_replace_to)
+    end
+
+    describe "#broadcast_stats_update" do
+      it "broadcasts replace to the project_updates stream with stats partial" do
+        project.broadcast_stats_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :project_updates,
+          target: "stats_project_#{project.id}",
+          partial: "projects/stats",
+          locals: { project: project }
+        )
+      end
+    end
+
+    describe "#broadcast_agent_runs_update" do
+      it "broadcasts replace to the project_updates stream with agent_runs partial" do
+        project.broadcast_agent_runs_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :project_updates,
+          target: "agent_runs_project_#{project.id}",
+          partial: "projects/agent_runs",
+          locals: hash_including(project: project)
+        )
+      end
+    end
+
+    describe "#broadcast_issues_update" do
+      it "broadcasts replace to the project_updates stream with issues partial" do
+        project.broadcast_issues_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :project_updates,
+          target: "issues_project_#{project.id}",
+          partial: "projects/issues",
+          locals: hash_including(project: project)
+        )
+      end
+    end
+
+    describe "#broadcast_pull_requests_update" do
+      it "broadcasts replace to the project_updates stream with pull_requests partial" do
+        project.broadcast_pull_requests_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :project_updates,
+          target: "pull_requests_project_#{project.id}",
+          partial: "projects/pull_requests",
+          locals: hash_including(project: project)
+        )
+      end
+    end
+
+    describe "#broadcast_agent_runs_list_update" do
+      it "broadcasts replace to the agent_runs_list stream with agent_runs/table partial" do
+        project.broadcast_agent_runs_list_update
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          project, :agent_runs_list,
+          target: "agent_runs_list_project_#{project.id}",
+          partial: "agent_runs/table",
+          locals: hash_including(project: project)
+        )
+      end
+    end
+
+    describe "#broadcast_agent_run_detail_update" do
+      it "broadcasts replace to the detail stream with agent_runs/detail partial" do
+        agent_run = build_stubbed(:agent_run, project: project)
+
+        project.broadcast_agent_run_detail_update(agent_run)
+
+        expect(project).to have_received(:broadcast_replace_to).with(
+          agent_run, :detail,
+          target: "detail_agent_run_#{agent_run.id}",
+          partial: "agent_runs/detail",
+          locals: { agent_run: agent_run }
+        ).once
+      end
+    end
+  end
 end

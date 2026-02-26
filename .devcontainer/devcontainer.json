@@ -32,14 +32,13 @@
   ],
 
   "remoteEnv": {
-    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin",
-    "GIT_CONFIG_COUNT": "1",
-    "GIT_CONFIG_KEY_0": "gpg.ssh.program",
-    "GIT_CONFIG_VALUE_0": "/usr/bin/ssh-keygen"
+    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin"
   },
 
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  "forwardPorts": [3000, 8080],
+  // Note: If you need to expose port 3000, prefer using compose.yaml `ports` instead of
+  // forwardPorts, because forwardPorts binds to 127.0.0.1 which blocks Tailscale tunnel access.
+  "forwardPorts": [8080],
 
   // Configure tool-specific properties.
   // "customizations": {},
@@ -51,6 +50,7 @@
 
   // Use 'postCreateCommand' to run commands after the container is created.
   "postCreateCommand": {
+    "setup-signing-key": "bash .devcontainer/setup-signing-key.sh",
     "setup": "corepack enable && corepack prepare yarn@1.22.22 --activate && bin/setup --skip-server",
     "claude-install-and-configure": "curl -fsSL https://claude.ai/install.sh | bash && bash .devcontainer/configure-claude.sh",
     "multiclaude": "go install github.com/dlorenc/multiclaude/cmd/multiclaude@latest"
@@ -58,6 +58,7 @@
 
   // Use 'postStartCommand' to run commands every time the container starts.
   "postStartCommand": {
+    "overmind-cleanup": "rm -f .overmind.sock",
     "multiclaude-start": "multiclaude start || true",
     "git-https": "git config --local remote.origin.url https://github.com/viamin/paid.git && git config --local credential.helper '!/usr/bin/gh auth git-credential'",
     "ensure-networks": "for net in paid_internal paid_agent; do docker network inspect $net >/dev/null 2>&1 || docker network create $net --driver bridge; if ! docker network inspect $net --format '{{range .Containers}}{{.Name}}{{end}}' | grep -q paid-rails-app-1; then docker network connect --alias web --alias paid-proxy $net $(hostname); fi; done"

@@ -110,6 +110,16 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(agent_run.prompt_version).to be_nil
         expect(agent_run.custom_prompt).to be_nil
       end
+
+      it "does not use prompt version when issue is untrusted" do
+        untrusted_issue = create(:issue, project: project, github_creator_login: "untrusted-user")
+
+        result = activity.execute(project_id: project.id, issue_id: untrusted_issue.id)
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.prompt_version).to be_nil
+        expect(agent_run.custom_prompt).to be_nil
+      end
     end
 
     context "with agent_run_id (resuming queued run)" do

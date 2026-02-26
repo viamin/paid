@@ -218,6 +218,28 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#active?" do
+      it "returns true for pending status" do
+        expect(build(:agent_run, status: "pending").active?).to be true
+      end
+
+      it "returns true for running status" do
+        expect(build(:agent_run, :running).active?).to be true
+      end
+
+      it "returns false for queued status" do
+        expect(build(:agent_run, :queued).active?).to be false
+      end
+
+      it "returns false for completed status" do
+        expect(build(:agent_run, :completed).active?).to be false
+      end
+
+      it "returns false for failed status" do
+        expect(build(:agent_run, :failed).active?).to be false
+      end
+    end
+
     describe "#running?" do
       it "returns true when status is running" do
         agent_run = build(:agent_run, :running)
@@ -531,9 +553,12 @@ RSpec.describe AgentRun do
         )
       end
 
+      let(:mock_volume) { instance_double(Docker::Volume, remove: true) }
+
       before do
         allow(Docker::Container).to receive(:create).and_return(mock_container)
         allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
+        allow(Docker::Volume).to receive_messages(create: mock_volume, get: mock_volume)
         allow(NetworkPolicy).to receive_messages(ensure_network!: instance_double(Docker::Network), apply_firewall_rules: nil)
       end
 
@@ -553,8 +578,6 @@ RSpec.describe AgentRun do
         end
 
         it "provisions container when worktree_path is blank" do
-          allow(FileUtils).to receive(:mkdir_p).and_call_original
-          allow(FileUtils).to receive(:mkdir_p).with(a_string_matching(%r{runs/})).and_return(nil)
           agent_run = create(:agent_run, worktree_path: nil)
 
           result = agent_run.provision_container
@@ -663,8 +686,6 @@ RSpec.describe AgentRun do
         end
 
         it "provisions container when worktree_path is blank" do
-          allow(FileUtils).to receive(:mkdir_p).and_call_original
-          allow(FileUtils).to receive(:mkdir_p).with(a_string_matching(%r{runs/})).and_return(nil)
           agent_run = create(:agent_run, worktree_path: nil)
 
           agent_run.with_container { |run| expect(run).to eq(agent_run) }
@@ -802,6 +823,54 @@ RSpec.describe AgentRun do
       create(:agent_run_log, agent_run: agent_run)
 
       expect { agent_run.destroy }.to change(AgentRunLog, :count).by(-2)
+    end
+  end
+
+  describe "broadcast callbacks" do
+    let(:project) { create(:project) }
+
+    it "broadcasts all updates on create (status changes)" do
+      allow(project).to receive(:broadcast_agent_runs_update)
+      allow(project).to receive(:broadcast_agent_runs_list_update)
+      allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_agent_run_detail_update)
+
+      agent_run = create(:agent_run, project: project)
+
+      expect(project).to have_received(:broadcast_agent_runs_update)
+      expect(project).to have_received(:broadcast_agent_runs_list_update)
+      expect(project).to have_received(:broadcast_stats_update)
+      expect(project).to have_received(:broadcast_agent_run_detail_update).with(agent_run)
+    end
+
+    it "broadcasts all updates on status change" do
+      allow(project).to receive(:broadcast_agent_runs_update)
+      allow(project).to receive(:broadcast_agent_runs_list_update)
+      allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_agent_run_detail_update)
+      agent_run = create(:agent_run, project: project)
+
+      expect(project).to receive(:broadcast_agent_runs_update).once
+      expect(project).to receive(:broadcast_agent_runs_list_update).once
+      expect(project).to receive(:broadcast_stats_update).once
+      expect(project).to receive(:broadcast_agent_run_detail_update).with(agent_run).once
+
+      agent_run.update!(status: "running", started_at: Time.current)
+    end
+
+    it "only broadcasts detail update on non-key attribute changes" do
+      allow(project).to receive(:broadcast_agent_runs_update)
+      allow(project).to receive(:broadcast_agent_runs_list_update)
+      allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_agent_run_detail_update)
+      agent_run = create(:agent_run, project: project, status: "running", started_at: Time.current)
+
+      expect(project).not_to receive(:broadcast_agent_runs_update)
+      expect(project).not_to receive(:broadcast_agent_runs_list_update)
+      expect(project).not_to receive(:broadcast_stats_update)
+      expect(project).to receive(:broadcast_agent_run_detail_update).with(agent_run).once
+
+      agent_run.update!(tokens_input: 1000, tokens_output: 500, cost_cents: 10)
     end
   end
 end

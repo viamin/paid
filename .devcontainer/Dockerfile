@@ -1,5 +1,5 @@
 # Use the official Ruby devcontainer base image
-ARG VARIANT=3.4-bullseye
+ARG VARIANT=3.4-bookworm
 FROM mcr.microsoft.com/devcontainers/ruby:${VARIANT}
 
 # Switch to root for system package installation
@@ -10,12 +10,26 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
   && apt-get install -y nodejs
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-  build-essential \
-  cmake \
-  chromium \
-  tmux \
-  libpq-dev \
+# Use CloudFront mirror to avoid Fastly CDN connection drops in OrbStack
+RUN set -e; \
+  sources_modified=0; \
+  if ls /etc/apt/sources.list.d/*.sources >/dev/null 2>&1; then \
+    sed -i 's|http://deb.debian.org|http://cloudfront.debian.net|g' /etc/apt/sources.list.d/*.sources && sources_modified=1; \
+  fi; \
+  if [ -f /etc/apt/sources.list ]; then \
+    sed -i 's|http://deb.debian.org|http://cloudfront.debian.net|g' /etc/apt/sources.list && sources_modified=1; \
+  fi; \
+  if [ "$sources_modified" -eq 0 ]; then \
+    echo "Info: no APT sources were updated to use the CloudFront mirror; this can be normal for some base images." >&2; \
+  fi; \
+  echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries \
+  && apt-get update -qq \
+  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install chromium separately for better layer caching (updates more frequently)
+RUN apt-get update -qq \
+  && apt-get install -y chromium \
   && rm -rf /var/lib/apt/lists/*
 
 # Install yarn

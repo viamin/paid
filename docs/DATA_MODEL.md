@@ -594,9 +594,9 @@ CREATE TABLE prompts (
 -- Partial unique indexes enforce slug uniqueness at each scope level
 CREATE UNIQUE INDEX idx_prompts_slug_global ON prompts(slug)
   WHERE account_id IS NULL AND project_id IS NULL;
-CREATE UNIQUE INDEX idx_prompts_slug_account ON prompts(account_id, slug)
+CREATE UNIQUE INDEX idx_prompts_slug_account ON prompts(slug, account_id)
   WHERE account_id IS NOT NULL AND project_id IS NULL;
-CREATE UNIQUE INDEX idx_prompts_slug_project ON prompts(project_id, slug)
+CREATE UNIQUE INDEX idx_prompts_slug_project ON prompts(slug, project_id)
   WHERE project_id IS NOT NULL;
 CREATE INDEX idx_prompts_category ON prompts(category);
 CREATE INDEX idx_prompts_account ON prompts(account_id);
