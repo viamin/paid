@@ -20,11 +20,16 @@ RUN set -e; \
     sed -i 's|http://deb.debian.org|http://cloudfront.debian.net|g' /etc/apt/sources.list && sources_modified=1; \
   fi; \
   if [ "$sources_modified" -eq 0 ]; then \
-    echo "Warning: no APT sources were updated to use the CloudFront mirror." >&2; \
+    echo "Info: no APT sources were updated to use the CloudFront mirror; this can be normal for some base images." >&2; \
   fi; \
   echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries \
   && apt-get update -qq \
-  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev chromium \
+  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install chromium separately for better layer caching (updates more frequently)
+RUN apt-get update -qq \
+  && apt-get install -y chromium \
   && rm -rf /var/lib/apt/lists/*
 
 # Install yarn
