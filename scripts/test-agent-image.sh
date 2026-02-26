@@ -77,11 +77,11 @@ if [ "$CURRENT_UID" -eq 0 ]; then
 fi
 
 if [ "$CURRENT_USER" != "agent" ]; then
-    echo "   ERROR: Running as '$CURRENT_USER', expected 'agent'"
+    echo "   ERROR: Running as ${CURRENT_USER}, expected agent"
     exit 1
 fi
 
-echo "   ✓ Running as non-root user 'agent'"
+echo "   ✓ Running as non-root user: agent"
 
 echo ""
 echo "9. Workspace directory:"

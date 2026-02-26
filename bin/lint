@@ -18,6 +18,8 @@ for arg in "$@"; do
       echo "  -A         Auto-fix all including unsafe (rubocop -A, eslint --fix, markdownlint --fix)"
       echo "  --changed  Lint only changed files (staged + unstaged vs HEAD)"
       echo "  --staged   Lint only staged files"
+      echo ""
+      echo "Linters: RuboCop, ESLint, markdownlint, ShellCheck"
       exit 0
       ;;
     *)
@@ -71,11 +73,13 @@ fi
 ruby_files=""
 js_files=""
 md_files=""
+sh_files=""
 
 if [ "$FILE_FILTER" = true ]; then
   ruby_files=$(echo "$FILES" | grep -E '\.rb$' || true)
   js_files=$(echo "$FILES" | grep -E '\.(js|ts|jsx|tsx)$' || true)
   md_files=$(echo "$FILES" | grep -E '\.md$' || true)
+  sh_files=$(echo "$FILES" | grep -E '\.sh$' || true)
 fi
 
 echo "== Style: RuboCop =="
@@ -115,6 +119,18 @@ if [ "$FILE_FILTER" = true ]; then
 else
   # shellcheck disable=SC2086
   npx markdownlint $MARKDOWNLINT_ARGS --ignore node_modules --ignore vendor '**/*.md'
+fi
+
+echo "== Shell: ShellCheck =="
+if [ "$FILE_FILTER" = true ]; then
+  if [ -n "$sh_files" ]; then
+    # shellcheck disable=SC2086
+    shellcheck $sh_files
+  else
+    echo "  No shell files to lint."
+  fi
+else
+  shellcheck scripts/*.sh .devcontainer/*.sh .githooks/* bin/audit bin/dev bin/docker-entrypoint bin/lint
 fi
 
 echo "All lint checks passed."
