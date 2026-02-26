@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
-require "simplecov"
-SimpleCov.start "rails" do
-  minimum_coverage 80
-  add_filter "/spec/"
-  add_filter "/config/"
-  add_filter "/vendor/"
+if ENV.fetch("COVERAGE", "true") != "false"
+  require "simplecov"
+  SimpleCov.start "rails" do
+    minimum_coverage 80
+    add_filter "/spec/"
+    add_filter "/config/"
+    add_filter "/vendor/"
+  end
 end
 
 RSpec.configure do |config|

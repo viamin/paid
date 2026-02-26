@@ -5,7 +5,7 @@ class AgentRunsController < ApplicationController
   before_action :set_agent_run, only: :show
 
   def index
-    @agent_runs = @project.agent_runs.recent.limit(50)
+    @agent_runs = @project.agent_runs.recent.includes(:issue).limit(50)
     authorize @project, :show?
   end
 
