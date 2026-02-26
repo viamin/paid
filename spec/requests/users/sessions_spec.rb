@@ -36,6 +36,15 @@ RSpec.describe "User Sessions" do
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.body).to include("Invalid email or password")
       end
+
+      it "displays the error inline within the login form" do
+        post user_session_path, params: {
+          user: { email: user.email, password: "wrongpassword" }
+        }
+        # Error should appear inline in the form card, not duplicated in the layout flash area
+        body = response.body
+        expect(body.scan("Invalid email or password").count).to eq(1)
+      end
     end
   end
 
