@@ -1,5 +1,5 @@
 # Use the official Ruby devcontainer base image
-ARG VARIANT=3.4-bullseye
+ARG VARIANT=3.4-bookworm
 FROM mcr.microsoft.com/devcontainers/ruby:${VARIANT}
 
 # Switch to root for system package installation
@@ -10,13 +10,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
   && apt-get install -y nodejs
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-  build-essential \
-  cmake \
-  chromium \
-  shellcheck \
-  tmux \
-  libpq-dev \
+# Use CloudFront mirror to avoid Fastly CDN connection drops in OrbStack
+RUN sed -i 's|http://deb.debian.org|http://cloudfront.debian.net|g' /etc/apt/sources.list.d/*.sources 2>/dev/null; \
+  sed -i 's|http://deb.debian.org|http://cloudfront.debian.net|g' /etc/apt/sources.list 2>/dev/null; \
+  echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries \
+  && apt-get update \
+  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev \
+  && apt-get install -y chromium \
   && rm -rf /var/lib/apt/lists/*
 
 # Install yarn
