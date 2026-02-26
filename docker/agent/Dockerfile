@@ -37,7 +37,7 @@ RUN NODE_VERSION=22.12.0 \
     && tar -xzf "${TARBALL}" -C /usr/local --strip-components=1 \
     && rm "${TARBALL}"
 
-# Install Ruby build dependencies, Python, PostgreSQL client libs, and ShellCheck
+# Install Ruby build dependencies, runtime deps, Python, PostgreSQL client libs, and ShellCheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     bison \
@@ -71,6 +71,15 @@ RUN RUBY_VERSION=3.4.8 \
     && cd .. \
     && rm -rf "ruby-${RUBY_VERSION}" "${TARBALL}"
 
+# Remove build-only dependencies to reduce image size and attack surface.
+# Keep runtime libs (libssl, libreadline, zlib, libyaml, libffi, libgdbm, libpq)
+# which are pulled in as transitive deps of the -dev packages.
+RUN apt-get update && apt-get purge -y --auto-remove \
+    autoconf \
+    bison \
+    rustc \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Bundler (pinned to match Gemfile.lock)
 RUN gem install bundler:2.7.2
 
@@ -82,12 +91,13 @@ RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 RUN AST_GREP_VERSION=0.41.0 \
     && DEB_ARCH="$(dpkg --print-architecture)" \
     && case "$DEB_ARCH" in \
-        amd64) RUST_TRIPLE="x86_64-unknown-linux-gnu" ;; \
-        arm64) RUST_TRIPLE="aarch64-unknown-linux-gnu" ;; \
+        amd64) RUST_TRIPLE="x86_64-unknown-linux-gnu"; EXPECTED_CHECKSUM="e71afdcbb2e79f7710a56d2f89662bdd0a6e9d639c4abecd5d5f129d80a38bac" ;; \
+        arm64) RUST_TRIPLE="aarch64-unknown-linux-gnu"; EXPECTED_CHECKSUM="6f089d014d5fda8fed2e63e5095acf8ebec4c4cd2e721bd663f2284ace42b623" ;; \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && ZIPFILE="app-${RUST_TRIPLE}.zip" \
-    && curl -fsSLO "https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/${ZIPFILE}" \
+    && curl -fsSL -o "${ZIPFILE}" "https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/${ZIPFILE}" \
+    && echo "${EXPECTED_CHECKSUM}  ${ZIPFILE}" | sha256sum -c - \
     && unzip -o "${ZIPFILE}" ast-grep sg -d /usr/local/bin \
     && chmod +x /usr/local/bin/ast-grep /usr/local/bin/sg \
     && rm "${ZIPFILE}"
@@ -97,12 +107,13 @@ RUN AST_GREP_VERSION=0.41.0 \
 RUN SCC_VERSION=3.6.0 \
     && DEB_ARCH="$(dpkg --print-architecture)" \
     && case "$DEB_ARCH" in \
-        amd64) SCC_ARCH="x86_64" ;; \
-        arm64) SCC_ARCH="arm64" ;; \
+        amd64) SCC_ARCH="x86_64"; EXPECTED_CHECKSUM="da923e0b94c5ce818088ba2e3d1667cdb064b3c684592e3c774c7f97b63194f6" ;; \
+        arm64) SCC_ARCH="arm64"; EXPECTED_CHECKSUM="87fd3f5d4c393c6b665d23bf9b601753b2f6f8a953e6f265d5ea1498195d082f" ;; \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && TARBALL="scc_Linux_${SCC_ARCH}.tar.gz" \
-    && curl -fsSLO "https://github.com/boyter/scc/releases/download/v${SCC_VERSION}/${TARBALL}" \
+    && curl -fsSL -o "${TARBALL}" "https://github.com/boyter/scc/releases/download/v${SCC_VERSION}/${TARBALL}" \
+    && echo "${EXPECTED_CHECKSUM}  ${TARBALL}" | sha256sum -c - \
     && tar -xzf "${TARBALL}" -C /usr/local/bin scc \
     && chmod +x /usr/local/bin/scc \
     && rm "${TARBALL}"
