@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
   build-essential \
   cmake \
   chromium \
+  shellcheck \
   tmux \
   libpq-dev \
   && rm -rf /var/lib/apt/lists/*
