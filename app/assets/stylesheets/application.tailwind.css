@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../views/**/*.erb";
 
 /* Hide action buttons in broadcast-replaced content when user lacks permission.
    The ancestor data-show-actions attribute is set during initial page load and
