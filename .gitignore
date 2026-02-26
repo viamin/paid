@@ -51,6 +51,9 @@
 # Session-specific working memory (ephemeral, per-developer)
 WORKLOG.md
 
+# Ignore downloaded packages
+*.deb
+
 # Ignore vendored gems, mise tool data, and build artifacts
 /.gem/
 /.gems/
@@ -64,5 +67,6 @@ WORKLOG.md
 /.tmp/
 /.pg/
 /.pgdata/
+/pgdata/
 /.rubocop-cache/
 /.local-include/
