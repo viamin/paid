@@ -59,11 +59,14 @@ fi
 
 # 3. Register the new public key with GitHub
 echo "Registering new signing key with GitHub..."
-if ! gh ssh-key add "$KEY_PATH.pub" --type signing --title "$KEY_TITLE"; then
+if ! output=$(gh ssh-key add "$KEY_PATH.pub" --type signing --title "$KEY_TITLE" 2>&1); then
+  echo "$output" >&2
   echo "WARNING: Failed to register signing key with GitHub." >&2
-  echo "  Commit signing will be disabled. To fix, run:" >&2
-  echo "    gh auth refresh -h github.com -s admin:ssh_signing_key" >&2
-  echo "  Then re-run: bash .devcontainer/setup-signing-key.sh" >&2
+  echo "  Commit signing will be disabled. Possible causes include:" >&2
+  echo "    - Network issues or GitHub availability problems" >&2
+  echo "    - API rate limits or other GitHub API errors" >&2
+  echo "    - A signing key with the same title already exists" >&2
+  echo "  After resolving the issue, re-run: bash .devcontainer/setup-signing-key.sh" >&2
   exit 0
 fi
 
