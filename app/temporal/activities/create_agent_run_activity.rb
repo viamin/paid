@@ -53,7 +53,7 @@ module Activities
         agent_run_id: agent_run.id,
         project_id: project_id,
         issue_id: issue_id,
-        has_custom_prompt: custom_prompt.present?,
+        custom_prompt_provided: input[:custom_prompt].present?,
         prompt_version_id: prompt_version&.id
       )
 

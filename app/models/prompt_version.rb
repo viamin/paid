@@ -21,11 +21,9 @@ class PromptVersion < ApplicationRecord
   # @param vars [Hash] Variable name-value pairs to interpolate
   # @return [String] The rendered template
   def render(vars = {})
-    result = template.dup
-    vars.each do |key, value|
-      result.gsub!("{{#{key}}}", value.to_s)
+    vars.reduce(template) do |result, (key, value)|
+      result.gsub("{{#{key}}}", value.to_s)
     end
-    result
   end
 
   private

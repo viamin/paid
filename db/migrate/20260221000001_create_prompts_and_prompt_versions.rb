@@ -56,6 +56,9 @@ class CreatePromptsAndPromptVersions < ActiveRecord::Migration[8.1]
 
     add_index :prompt_versions, [:prompt_id, :version], unique: true
 
+    # Circular FK: prompts.current_version_id <-> prompt_versions.prompt_id.
+    # on_delete: :nullify avoids delete cycles by clearing current_version_id
+    # when a version is removed.
     add_foreign_key :prompts, :prompt_versions, column: :current_version_id, on_delete: :nullify
   end
 end

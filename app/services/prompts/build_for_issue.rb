@@ -7,8 +7,6 @@ module Prompts
   #   prompt = Prompts::BuildForIssue.call(issue: issue, project: project)
   #   # => "# Task\n\nYou are working on..."
   class BuildForIssue
-    include LanguageCommands
-
     class UntrustedIssueError < StandardError; end
 
     # Kept for backwards compatibility with existing references

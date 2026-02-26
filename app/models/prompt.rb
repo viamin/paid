@@ -65,6 +65,8 @@ class Prompt < ApplicationRecord
       project_id: project.id,
       account_id: project.account_id
     ).order(
+      # Safe use of Arel.sql: no user input is interpolated into this SQL string.
+      # Prioritizes: project-level (0) > account-level (1) > global (2).
       Arel.sql("CASE WHEN project_id IS NOT NULL THEN 0 WHEN account_id IS NOT NULL THEN 1 ELSE 2 END")
     )
 
