@@ -829,7 +829,7 @@ RSpec.describe AgentRun do
   describe "broadcast callbacks" do
     let(:project) { create(:project) }
 
-    it "broadcasts all updates on create" do
+    it "broadcasts all updates on create (status changes)" do
       allow(project).to receive(:broadcast_agent_runs_update)
       allow(project).to receive(:broadcast_agent_runs_list_update)
       allow(project).to receive(:broadcast_stats_update)
@@ -843,7 +843,7 @@ RSpec.describe AgentRun do
       expect(project).to have_received(:broadcast_agent_run_detail_update).with(agent_run)
     end
 
-    it "broadcasts all updates on update" do
+    it "broadcasts all updates on status change" do
       allow(project).to receive(:broadcast_agent_runs_update)
       allow(project).to receive(:broadcast_agent_runs_list_update)
       allow(project).to receive(:broadcast_stats_update)
@@ -856,6 +856,21 @@ RSpec.describe AgentRun do
       expect(project).to receive(:broadcast_agent_run_detail_update).with(agent_run).once
 
       agent_run.update!(status: "running", started_at: Time.current)
+    end
+
+    it "only broadcasts detail update on non-key attribute changes" do
+      allow(project).to receive(:broadcast_agent_runs_update)
+      allow(project).to receive(:broadcast_agent_runs_list_update)
+      allow(project).to receive(:broadcast_stats_update)
+      allow(project).to receive(:broadcast_agent_run_detail_update)
+      agent_run = create(:agent_run, project: project, status: "running", started_at: Time.current)
+
+      expect(project).not_to receive(:broadcast_agent_runs_update)
+      expect(project).not_to receive(:broadcast_agent_runs_list_update)
+      expect(project).not_to receive(:broadcast_stats_update)
+      expect(project).to receive(:broadcast_agent_run_detail_update).with(agent_run).once
+
+      agent_run.update!(tokens_input: 1000, tokens_output: 500, cost_cents: 10)
     end
   end
 end

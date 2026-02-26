@@ -428,11 +428,11 @@ RSpec.describe Project do
     end
 
     describe "#broadcast_agent_runs_list_update" do
-      it "broadcasts replace to the project_updates stream with agent_runs/table partial" do
+      it "broadcasts replace to the agent_runs_list stream with agent_runs/table partial" do
         project.broadcast_agent_runs_list_update
 
         expect(project).to have_received(:broadcast_replace_to).with(
-          project, :project_updates,
+          project, :agent_runs_list,
           target: "agent_runs_list_project_#{project.id}",
           partial: "agent_runs/table",
           locals: hash_including(project: project)
@@ -441,13 +441,13 @@ RSpec.describe Project do
     end
 
     describe "#broadcast_agent_run_detail_update" do
-      it "broadcasts replace to the project_updates stream with agent_runs/detail partial" do
+      it "broadcasts replace to the detail stream with agent_runs/detail partial" do
         agent_run = build_stubbed(:agent_run, project: project)
 
         project.broadcast_agent_run_detail_update(agent_run)
 
         expect(project).to have_received(:broadcast_replace_to).with(
-          project, :project_updates,
+          agent_run, :detail,
           target: "detail_agent_run_#{agent_run.id}",
           partial: "agent_runs/detail",
           locals: { agent_run: agent_run }

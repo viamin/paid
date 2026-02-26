@@ -333,9 +333,12 @@ class AgentRun < ApplicationRecord
   end
 
   def broadcast_project_updates
-    project.broadcast_agent_runs_update
-    project.broadcast_agent_runs_list_update
-    project.broadcast_stats_update
+    if previous_changes.key?("status") || previous_changes.key?("issue_id") || previous_changes.key?("agent_type")
+      project.broadcast_agent_runs_update
+      project.broadcast_agent_runs_list_update
+      project.broadcast_stats_update
+    end
+
     project.broadcast_agent_run_detail_update(self)
   end
 end

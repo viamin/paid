@@ -1,6 +1,6 @@
 <% content_for(:title) { "Agent Run ##{@agent_run.id} - #{@project.name} - Paid" } %>
 
-<%= turbo_stream_from @project, :project_updates %>
+<%= turbo_stream_from @agent_run, :detail %>
 
 <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
   <div class="mb-6">

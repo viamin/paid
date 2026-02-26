@@ -105,7 +105,7 @@ class Project < ApplicationRecord
 
   def broadcast_agent_runs_list_update
     broadcast_replace_to(
-      self, :project_updates,
+      self, :agent_runs_list,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs_list),
       partial: "agent_runs/table",
       locals: { project: self, agent_runs: agent_runs.recent.includes(:issue).limit(50) }
@@ -114,7 +114,7 @@ class Project < ApplicationRecord
 
   def broadcast_agent_run_detail_update(agent_run)
     broadcast_replace_to(
-      self, :project_updates,
+      agent_run, :detail,
       target: ActionView::RecordIdentifier.dom_id(agent_run, :detail),
       partial: "agent_runs/detail",
       locals: { agent_run: agent_run }
