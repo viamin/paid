@@ -11,12 +11,20 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 
 # Install system dependencies
 # Use CloudFront mirror to avoid Fastly CDN connection drops in OrbStack
-RUN sed -i 's|http://deb.debian.org|http://cloudfront.debian.net|g' /etc/apt/sources.list.d/*.sources 2>/dev/null; \
-  sed -i 's|http://deb.debian.org|http://cloudfront.debian.net|g' /etc/apt/sources.list 2>/dev/null; \
+RUN set -e; \
+  sources_modified=0; \
+  if ls /etc/apt/sources.list.d/*.sources >/dev/null 2>&1; then \
+    sed -i 's|http://deb.debian.org|http://cloudfront.debian.net|g' /etc/apt/sources.list.d/*.sources && sources_modified=1; \
+  fi; \
+  if [ -f /etc/apt/sources.list ]; then \
+    sed -i 's|http://deb.debian.org|http://cloudfront.debian.net|g' /etc/apt/sources.list && sources_modified=1; \
+  fi; \
+  if [ "$sources_modified" -eq 0 ]; then \
+    echo "Warning: no APT sources were updated to use the CloudFront mirror." >&2; \
+  fi; \
   echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries \
-  && apt-get update \
-  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev \
-  && apt-get install -y chromium \
+  && apt-get update -qq \
+  && apt-get install -y build-essential cmake shellcheck tmux libpq-dev chromium \
   && rm -rf /var/lib/apt/lists/*
 
 # Install yarn
