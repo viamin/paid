@@ -46,6 +46,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
     context "with prompt versioning" do
       let!(:prompt) do
+        Prompt.find_by(slug: "coding.issue_implementation")&.destroy!
         p = create(:prompt, :global, slug: "coding.issue_implementation")
         p.create_version!(
           template: <<~'TEMPLATE'

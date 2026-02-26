@@ -8,6 +8,7 @@ RSpec.describe Prompts::Resolve do
 
   describe ".call" do
     it "returns the current version of the resolved prompt" do
+      Prompt.find_by(slug: "coding.issue_implementation")&.destroy!
       prompt = create(:prompt, :global, slug: "coding.issue_implementation")
       version = prompt.create_version!(template: "Do the work on {{title}}")
 

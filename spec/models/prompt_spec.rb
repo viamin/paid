@@ -64,6 +64,11 @@ RSpec.describe Prompt do
   end
 
   describe "scopes" do
+    before do
+      # Remove seeded prompts so scope tests have a clean slate
+      described_class.where(slug: "coding.issue_implementation").destroy_all
+    end
+
     describe ".active" do
       it "returns only active prompts" do
         active = create(:prompt, :global, active: true)
