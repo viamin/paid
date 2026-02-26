@@ -65,6 +65,38 @@ RSpec.describe UserSetting do
     end
   end
 
+  describe "#default_allowed_github_usernames_csv" do
+    it "returns usernames as comma-separated string" do
+      setting = build(:user_setting, default_allowed_github_usernames: %w[alice bob])
+      expect(setting.default_allowed_github_usernames_csv).to eq("alice, bob")
+    end
+
+    it "returns empty string when no usernames" do
+      setting = build(:user_setting, default_allowed_github_usernames: [])
+      expect(setting.default_allowed_github_usernames_csv).to eq("")
+    end
+  end
+
+  describe "#default_allowed_github_usernames_csv=" do
+    it "parses comma-separated string into array" do
+      setting = build(:user_setting)
+      setting.default_allowed_github_usernames_csv = "alice, bob, charlie"
+      expect(setting.default_allowed_github_usernames).to eq(%w[alice bob charlie])
+    end
+
+    it "strips whitespace and rejects blanks" do
+      setting = build(:user_setting)
+      setting.default_allowed_github_usernames_csv = " alice , , bob "
+      expect(setting.default_allowed_github_usernames).to eq(%w[alice bob])
+    end
+
+    it "deduplicates usernames" do
+      setting = build(:user_setting)
+      setting.default_allowed_github_usernames_csv = "alice, bob, alice"
+      expect(setting.default_allowed_github_usernames).to eq(%w[alice bob])
+    end
+  end
+
   describe "default values" do
     let(:user) { create(:user) }
     let(:setting) { described_class.create!(user: user) }

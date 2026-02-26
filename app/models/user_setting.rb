@@ -30,6 +30,16 @@ class UserSetting < ApplicationRecord
   validates :retry_base_delay, numericality: { greater_than: 0 }
   validates :retry_max_delay, numericality: { greater_than: 0 }
 
+  # Returns default_allowed_github_usernames as a comma-separated string
+  def default_allowed_github_usernames_csv
+    default_allowed_github_usernames.join(", ")
+  end
+
+  # Sets default_allowed_github_usernames from a comma-separated string
+  def default_allowed_github_usernames_csv=(value)
+    self.default_allowed_github_usernames = value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
+  end
+
   # Returns container memory in a human-readable format (GB)
   def container_memory_gb
     container_memory_bytes / (1024.0 * 1024 * 1024)
