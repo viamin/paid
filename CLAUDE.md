@@ -35,7 +35,7 @@ bin/rails server             # Start Rails server only
 bin/rails console            # Rails console
 
 # Code Quality
-bin/lint                     # Run linters (RuboCop, ESLint, markdownlint)
+bin/lint                     # Run linters (RuboCop, ESLint, markdownlint, ShellCheck)
 bin/lint -a                  # Run linters with safe auto-fix
 bin/lint -A                  # Run linters with auto-fix (including unsafe)
 bin/lint --changed           # Lint only changed files (staged + unstaged vs HEAD)
