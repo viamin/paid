@@ -1,0 +1,22 @@
+2026-02-26 06:58:26.398 UTC [12413] LOG:  starting PostgreSQL 16.8 on aarch64-unknown-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+2026-02-26 06:58:26.399 UTC [12413] LOG:  listening on IPv6 address "::1", port 5432
+2026-02-26 06:58:26.399 UTC [12413] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2026-02-26 06:58:26.412 UTC [12413] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+2026-02-26 06:58:26.420 UTC [12416] LOG:  database system was shut down at 2026-02-26 06:58:20 UTC
+2026-02-26 06:58:26.423 UTC [12413] LOG:  database system is ready to accept connections
+2026-02-26 07:00:20.845 UTC [13854] FATAL:  database "paid_development" does not exist
+2026-02-26 07:00:21.588 UTC [13857] FATAL:  database "paid_test" does not exist
+2026-02-26 07:00:34.522 UTC [13929] FATAL:  database "agent" does not exist
+2026-02-26 07:01:00.794 UTC [13971] FATAL:  database "agent" does not exist
+2026-02-26 07:03:26.524 UTC [12414] LOG:  checkpoint starting: time
+2026-02-26 07:03:47.599 UTC [12414] LOG:  checkpoint complete: wrote 1147 buffers (7.0%); 1 WAL file(s) added, 0 removed, 0 recycled; write=20.829 s, sync=0.201 s, total=21.075 s; sync files=464, longest=0.015 s, average=0.001 s; distance=9899 kB, estimate=9899 kB; lsn=0/1E2C3A8, redo lsn=0/1E2A960
+2026-02-26 07:03:47.599 UTC [12414] LOG:  checkpoint starting: immediate force wait
+2026-02-26 07:03:47.603 UTC [12414] LOG:  checkpoint complete: wrote 1 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.004 s; sync files=1, longest=0.001 s, average=0.001 s; distance=6 kB, estimate=8910 kB; lsn=0/1E2C458, redo lsn=0/1E2C420
+2026-02-26 07:04:45.846 UTC [14352] ERROR:  duplicate key value violates unique constraint "idx_agent_runs_unique_active_issue"
+2026-02-26 07:04:45.846 UTC [14352] DETAIL:  Key (project_id, issue_id)=(625, 1581) already exists.
+2026-02-26 07:04:45.846 UTC [14352] STATEMENT:  INSERT INTO "agent_runs" ("agent_type", "base_commit_sha", "branch_name", "completed_at", "container_id", "cost_cents", "created_at", "custom_prompt", "duration_seconds", "error_message", "issue_id", "iterations", "project_id", "proxy_token", "pull_request_number", "pull_request_url", "result_commit_sha", "source_pull_request_number", "started_at", "status", "temporal_run_id", "temporal_workflow_id", "tokens_input", "tokens_output", "updated_at", "worktree_path") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING "id"
+2026-02-26 07:05:32.344 UTC [12414] LOG:  checkpoint starting: immediate force wait
+2026-02-26 07:05:32.361 UTC [12414] LOG:  checkpoint complete: wrote 11 buffers (0.1%); 0 WAL file(s) added, 0 removed, 1 recycled; write=0.002 s, sync=0.008 s, total=0.018 s; sync files=6, longest=0.002 s, average=0.002 s; distance=10346 kB, estimate=10346 kB; lsn=0/2846E28, redo lsn=0/2846DF0
+2026-02-26 07:05:55.581 UTC [14453] ERROR:  duplicate key value violates unique constraint "idx_agent_runs_unique_active_issue"
+2026-02-26 07:05:55.581 UTC [14453] DETAIL:  Key (project_id, issue_id)=(409, 1445) already exists.
+2026-02-26 07:05:55.581 UTC [14453] STATEMENT:  INSERT INTO "agent_runs" ("agent_type", "base_commit_sha", "branch_name", "completed_at", "container_id", "cost_cents", "created_at", "custom_prompt", "duration_seconds", "error_message", "issue_id", "iterations", "project_id", "proxy_token", "pull_request_number", "pull_request_url", "result_commit_sha", "source_pull_request_number", "started_at", "status", "temporal_run_id", "temporal_workflow_id", "tokens_input", "tokens_output", "updated_at", "worktree_path") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING "id"
