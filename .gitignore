@@ -55,13 +55,19 @@ WORKLOG.md
 *.deb
 
 # Ignore vendored gems, mise tool data, and build artifacts
+/.gem/
 /.gems/
 /.gem-spec-cache/
 /.gem_home/
 /.mise-cache/
 /.mise-data/
+/.mise-home/
 /.bundle_path/
 /.cache/
 /.tmp/
 /.pg/
+/.pgdata/
 /pgdata/
+/.postgres/
+/.rubocop-cache/
+/.local-include/
