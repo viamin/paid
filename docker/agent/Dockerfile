@@ -81,7 +81,7 @@ RUN apt-get update && apt-get purge -y --auto-remove \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bundler (pinned to match Gemfile.lock)
-RUN gem install bundler:2.7.2
+RUN gem install --no-document bundler:2.7.2
 
 # Install Yarn via corepack (pinned to match package.json)
 RUN corepack enable && corepack prepare yarn@1.22.22 --activate
