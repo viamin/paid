@@ -1,6 +1,0 @@
-export PATH="/workspace/.pg_build/bin:/workspace/.rubies/arm64/bin:$PATH"
-export LD_LIBRARY_PATH="/workspace/.rubies/arm64/lib:/workspace/.libyaml_build/lib:/workspace/.pg_build/lib"
-export RUBYLIB="/workspace/.rubies/arm64/lib/ruby/3.4.0:/workspace/.rubies/arm64/lib/ruby/3.4.0/aarch64-linux"
-export GEM_HOME="/workspace/.rubies/arm64/lib/ruby/gems/3.4.0"
-export GEM_PATH="$GEM_HOME"
-export GEM_SPEC_CACHE="/workspace/.gem_cache"
