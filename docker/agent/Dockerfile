@@ -71,9 +71,10 @@ RUN RUBY_VERSION=3.4.8 \
     && cd .. \
     && rm -rf "ruby-${RUBY_VERSION}" "${TARBALL}"
 
-# Remove build-only dependencies to reduce image size and attack surface.
-# Keep runtime libs (libssl, libreadline, zlib, libyaml, libffi, libgdbm, libpq)
-# which are pulled in as transitive deps of the -dev packages.
+# Remove some build-only dependencies to reduce image size and attack surface.
+# We intentionally keep the corresponding *-dev packages (libssl-dev, libreadline-dev, zlib1g-dev,
+# libyaml-dev, libffi-dev, libgdbm-dev, libpq-dev) so native extensions (e.g., Ruby gems like pg)
+# can be compiled inside this agent image.
 RUN apt-get update && apt-get purge -y --auto-remove \
     autoconf \
     bison \
