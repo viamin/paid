@@ -37,16 +37,75 @@ RUN NODE_VERSION=22.12.0 \
     && tar -xzf "${TARBALL}" -C /usr/local --strip-components=1 \
     && rm "${TARBALL}"
 
-# Install Ruby and Python (for Rails projects and various agents/tools)
-# Note: Using Ubuntu package manager versions (Ruby 3.2.x, Python 3.12.x)
-# Exact versions depend on Ubuntu 24.04 package availability
+# Install Ruby build dependencies, Python, PostgreSQL client libs, and ShellCheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ruby-full \
-    ruby-bundler \
+    autoconf \
+    bison \
+    libssl-dev \
+    libreadline-dev \
+    zlib1g-dev \
+    libyaml-dev \
+    libffi-dev \
+    libgdbm-dev \
+    libpq-dev \
+    rustc \
+    shellcheck \
     python3 \
     python3-pip \
     python3-venv \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Ruby (pinned version for reproducible builds)
+# Checksum from official release: https://www.ruby-lang.org/en/news/2025/12/17/ruby-3-4-8-released/
+# Keep version in sync with .tool-versions
+RUN RUBY_VERSION=3.4.8 \
+    && EXPECTED_CHECKSUM="53c4ddad41fbb6189f1f5ee0db57a51d54bd1f87f8755b3d68604156a35b045b" \
+    && TARBALL="ruby-${RUBY_VERSION}.tar.gz" \
+    && curl -fsSLO "https://cache.ruby-lang.org/pub/ruby/${RUBY_VERSION%.*}/${TARBALL}" \
+    && echo "${EXPECTED_CHECKSUM}  ${TARBALL}" | sha256sum -c - \
+    && tar -xzf "${TARBALL}" \
+    && cd "ruby-${RUBY_VERSION}" \
+    && ./configure --disable-install-doc \
+    && make -j"$(nproc)" \
+    && make install \
+    && cd .. \
+    && rm -rf "ruby-${RUBY_VERSION}" "${TARBALL}"
+
+# Install Bundler (pinned to match Gemfile.lock)
+RUN gem install bundler:2.7.2
+
+# Install Yarn via corepack (pinned to match package.json)
+RUN corepack enable && corepack prepare yarn@1.22.22 --activate
+
+# Install ast-grep (AST-based code search/lint)
+# https://github.com/ast-grep/ast-grep/releases
+RUN AST_GREP_VERSION=0.41.0 \
+    && DEB_ARCH="$(dpkg --print-architecture)" \
+    && case "$DEB_ARCH" in \
+        amd64) RUST_TRIPLE="x86_64-unknown-linux-gnu" ;; \
+        arm64) RUST_TRIPLE="aarch64-unknown-linux-gnu" ;; \
+        *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
+    esac \
+    && ZIPFILE="app-${RUST_TRIPLE}.zip" \
+    && curl -fsSLO "https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/${ZIPFILE}" \
+    && unzip -o "${ZIPFILE}" ast-grep sg -d /usr/local/bin \
+    && chmod +x /usr/local/bin/ast-grep /usr/local/bin/sg \
+    && rm "${ZIPFILE}"
+
+# Install scc (code line counter)
+# https://github.com/boyter/scc/releases
+RUN SCC_VERSION=3.6.0 \
+    && DEB_ARCH="$(dpkg --print-architecture)" \
+    && case "$DEB_ARCH" in \
+        amd64) SCC_ARCH="x86_64" ;; \
+        arm64) SCC_ARCH="arm64" ;; \
+        *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
+    esac \
+    && TARBALL="scc_Linux_${SCC_ARCH}.tar.gz" \
+    && curl -fsSLO "https://github.com/boyter/scc/releases/download/v${SCC_VERSION}/${TARBALL}" \
+    && tar -xzf "${TARBALL}" -C /usr/local/bin scc \
+    && chmod +x /usr/local/bin/scc \
+    && rm "${TARBALL}"
 
 # Install Claude Code CLI (primary agent for MVP)
 # The installer places the binary under /root/.local/ which is inaccessible to the
