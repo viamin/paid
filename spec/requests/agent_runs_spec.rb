@@ -36,6 +36,39 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("No agent runs yet")
       end
 
+      it "filters agent runs using Ransack q params" do
+        create(:agent_run, :with_git_context, project: project, branch_name: "feature/alpha")
+        create(:agent_run, :with_git_context, project: project, branch_name: "fix/beta")
+
+        get agent_runs_path, params: { q: { branch_name_cont: "alpha" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("feature/alpha")
+        expect(response.body).not_to include("fix/beta")
+      end
+
+      it "sorts agent runs ascending via Ransack sort params" do
+        other_project = create(:project, account: account, github_token: github_token)
+        create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
+        create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed", created_at: 1.day.ago)
+
+        get agent_runs_path, params: { q: { s: "created_at asc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index(project.name)).to be < response.body.index(other_project.name)
+      end
+
+      it "sorts agent runs descending via Ransack sort params" do
+        other_project = create(:project, account: account, github_token: github_token)
+        create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
+        create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed", created_at: 1.day.ago)
+
+        get agent_runs_path, params: { q: { s: "created_at desc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index(other_project.name)).to be < response.body.index(project.name)
+      end
+
       it "does not show runs from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)

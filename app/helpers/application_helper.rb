@@ -50,7 +50,7 @@ module ApplicationHelper
     q_params = params.fetch(:q, {}).permit(*RANSACK_PERMITTED_KEYS).to_h
     link_to(
       safe_join([ label, arrow ].compact),
-      url_for(request.query_parameters.merge(q: q_params.merge(s: "#{attribute} #{direction}"))),
+      url_for(request.query_parameters.except(:page, "page").merge(q: q_params.merge(s: "#{attribute} #{direction}"))),
       class: "group inline-flex items-center"
     )
   end

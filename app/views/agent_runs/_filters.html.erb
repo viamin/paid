@@ -1,5 +1,5 @@
 <div class="mt-4 rounded-lg bg-white p-4 shadow ring-1 ring-black ring-opacity-5">
-  <%= search_form_for q, url: url_for(only_path: true), html: { method: :get, class: "flex flex-wrap items-end gap-4" } do |f| %>
+  <%= search_form_for q, url: request.path, html: { method: :get, class: "flex flex-wrap items-end gap-4" } do |f| %>
     <div>
       <%= f.label :status_eq, "Status", class: "block text-sm font-medium text-gray-700" %>
       <%= f.select :status_eq,
@@ -27,7 +27,7 @@
       <%= f.submit "Filter",
         class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
       <%= link_to "Clear",
-        url_for(only_path: true),
+        request.path,
         class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     </div>
   <% end %>

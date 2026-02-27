@@ -29,7 +29,7 @@
                   <%= sort_link_to "Cost", :cost_cents, q %>
                 </th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                  <%= sort_link_to "Started", :created_at, q %>
+                  <%= sort_link_to "Created", :created_at, q %>
                 </th>
                 <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
                   <span class="sr-only">Actions</span>
@@ -111,7 +111,12 @@
     <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
     </svg>
-    <h3 class="mt-2 text-sm font-semibold text-gray-900">No agent runs yet</h3>
-    <p class="mt-1 text-sm text-gray-500">No agent runs match the current filters.</p>
+    <% has_filters = params[:q].present? && params[:q].values.any?(&:present?) %>
+    <h3 class="mt-2 text-sm font-semibold text-gray-900">
+      <%= has_filters ? "No matching agent runs" : "No agent runs yet" %>
+    </h3>
+    <p class="mt-1 text-sm text-gray-500">
+      <%= has_filters ? "No agent runs match the current filters." : "Agent runs will appear here once triggered." %>
+    </p>
   </div>
 <% end %>
