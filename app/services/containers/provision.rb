@@ -225,7 +225,7 @@ module Containers
         # with a non-zero exit code when the process is killed).
         raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout)
 
-        # The watchdog polls every 1s, so exec may return between ticks with a
+        # The watchdog polls periodically, so exec may return between ticks with a
         # deadline already exceeded. Check the deadline directly in the main thread.
         check_deadline_exceeded!(watchdog_mutex, output_received, last_activity_at, startup_timeout, idle_timeout)
 
@@ -692,7 +692,7 @@ module Containers
 
       Thread.new do
         loop do
-          sleep 1
+          sleep watchdog_poll_interval
 
           should_fire = watchdog_mutex.synchronize do
             if exec_completed_ref.call
@@ -732,6 +732,12 @@ module Containers
           break
         end
       end
+    end
+
+    # How often the watchdog thread checks for timeouts, in seconds.
+    # Extracted as a method so tests can override with a shorter interval.
+    def watchdog_poll_interval
+      1
     end
 
     # Stops the watchdog thread and waits for it to exit cleanly.
