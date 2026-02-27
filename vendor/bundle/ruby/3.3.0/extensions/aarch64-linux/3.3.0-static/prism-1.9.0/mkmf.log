@@ -1,0 +1,74 @@
+find_header: checking for prism.h in /workspace/vendor/bundle/ruby/3.3.0/gems/prism-1.9.0/include... -------------------- yes
+
+LD_LIBRARY_PATH=.:/home/agent/.local/mise-data/installs/ruby/3.3.7/lib "cc -o conftest -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/aarch64-linux -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/ruby/backward -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0 -I.    -fPIC -O3 -fno-fast-math -ggdb3 -Wall -Wextra -Wdeprecated-declarations -Wdiv-by-zero -Wduplicated-cond -Wimplicit-function-declaration -Wimplicit-int -Wpointer-arith -Wwrite-strings -Wold-style-definition -Wimplicit-fallthrough=0 -Wmissing-noreturn -Wno-cast-function-type -Wno-constant-logical-operand -Wno-long-long -Wno-missing-field-initializers -Wno-overlength-strings -Wno-packed-bitfield-compat -Wno-parentheses-equality -Wno-self-assign -Wno-tautological-compare -Wno-unused-parameter -Wno-unused-value -Wsuggest-attribute=format -Wsuggest-attribute=noreturn -Wunused-variable -Wmisleading-indentation -Wundef conftest.c  -L. -L/home/agent/.local/mise-data/installs/ruby/3.3.7/lib -Wl,-rpath,/home/agent/.local/mise-data/installs/ruby/3.3.7/lib -L. -fstack-protector-strong -rdynamic -Wl,-export-dynamic     -Wl,-rpath,/home/agent/.local/mise-data/installs/ruby/3.3.7/lib -lruby-static -lrt -lrt -ldl -lcrypt -lm -lpthread   -lm -lpthread  -lc"
+checked program was:
+/* begin */
+1: #include "ruby.h"
+2: 
+3: int main(int argc, char **argv)
+4: {
+5:   return !!argv[argc];
+6: }
+/* end */
+
+LD_LIBRARY_PATH=.:/home/agent/.local/mise-data/installs/ruby/3.3.7/lib "cc -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/aarch64-linux -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/ruby/backward -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0 -I.    -fPIC -O3 -fno-fast-math -ggdb3 -Wall -Wextra -Wdeprecated-declarations -Wdiv-by-zero -Wduplicated-cond -Wimplicit-function-declaration -Wimplicit-int -Wpointer-arith -Wwrite-strings -Wold-style-definition -Wimplicit-fallthrough=0 -Wmissing-noreturn -Wno-cast-function-type -Wno-constant-logical-operand -Wno-long-long -Wno-missing-field-initializers -Wno-overlength-strings -Wno-packed-bitfield-compat -Wno-parentheses-equality -Wno-self-assign -Wno-tautological-compare -Wno-unused-parameter -Wno-unused-value -Wsuggest-attribute=format -Wsuggest-attribute=noreturn -Wunused-variable -Wmisleading-indentation -Wundef   -c conftest.c"
+conftest.c:3:10: fatal error: prism.h: No such file or directory
+    3 | #include <prism.h>
+      |          ^~~~~~~~~
+compilation terminated.
+checked program was:
+/* begin */
+1: #include "ruby.h"
+2: 
+3: #include <prism.h>
+/* end */
+
+LD_LIBRARY_PATH=.:/home/agent/.local/mise-data/installs/ruby/3.3.7/lib "cc -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/aarch64-linux -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/ruby/backward -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0 -I.    -fPIC -O3 -fno-fast-math -ggdb3 -Wall -Wextra -Wdeprecated-declarations -Wdiv-by-zero -Wduplicated-cond -Wimplicit-function-declaration -Wimplicit-int -Wpointer-arith -Wwrite-strings -Wold-style-definition -Wimplicit-fallthrough=0 -Wmissing-noreturn -Wno-cast-function-type -Wno-constant-logical-operand -Wno-long-long -Wno-missing-field-initializers -Wno-overlength-strings -Wno-packed-bitfield-compat -Wno-parentheses-equality -Wno-self-assign -Wno-tautological-compare -Wno-unused-parameter -Wno-unused-value -Wsuggest-attribute=format -Wsuggest-attribute=noreturn -Wunused-variable -Wmisleading-indentation -Wundef  -I/workspace/vendor/bundle/ruby/3.3.0/gems/prism-1.9.0/include -c conftest.c"
+checked program was:
+/* begin */
+1: #include "ruby.h"
+2: 
+3: #include <prism.h>
+/* end */
+
+--------------------
+
+find_header: checking for prism/extension.h in /workspace/vendor/bundle/ruby/3.3.0/gems/prism-1.9.0/ext... -------------------- yes
+
+LD_LIBRARY_PATH=.:/home/agent/.local/mise-data/installs/ruby/3.3.7/lib "cc -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/aarch64-linux -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/ruby/backward -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0 -I. -I/workspace/vendor/bundle/ruby/3.3.0/gems/prism-1.9.0/include    -fPIC -O3 -fno-fast-math -ggdb3 -Wall -Wextra -Wdeprecated-declarations -Wdiv-by-zero -Wduplicated-cond -Wimplicit-function-declaration -Wimplicit-int -Wpointer-arith -Wwrite-strings -Wold-style-definition -Wimplicit-fallthrough=0 -Wmissing-noreturn -Wno-cast-function-type -Wno-constant-logical-operand -Wno-long-long -Wno-missing-field-initializers -Wno-overlength-strings -Wno-packed-bitfield-compat -Wno-parentheses-equality -Wno-self-assign -Wno-tautological-compare -Wno-unused-parameter -Wno-unused-value -Wsuggest-attribute=format -Wsuggest-attribute=noreturn -Wunused-variable -Wmisleading-indentation -Wundef   -c conftest.c"
+conftest.c:3:10: fatal error: prism/extension.h: No such file or directory
+    3 | #include <prism/extension.h>
+      |          ^~~~~~~~~~~~~~~~~~~
+compilation terminated.
+checked program was:
+/* begin */
+1: #include "ruby.h"
+2: 
+3: #include <prism/extension.h>
+/* end */
+
+LD_LIBRARY_PATH=.:/home/agent/.local/mise-data/installs/ruby/3.3.7/lib "cc -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/aarch64-linux -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/ruby/backward -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0 -I. -I/workspace/vendor/bundle/ruby/3.3.0/gems/prism-1.9.0/include    -fPIC -O3 -fno-fast-math -ggdb3 -Wall -Wextra -Wdeprecated-declarations -Wdiv-by-zero -Wduplicated-cond -Wimplicit-function-declaration -Wimplicit-int -Wpointer-arith -Wwrite-strings -Wold-style-definition -Wimplicit-fallthrough=0 -Wmissing-noreturn -Wno-cast-function-type -Wno-constant-logical-operand -Wno-long-long -Wno-missing-field-initializers -Wno-overlength-strings -Wno-packed-bitfield-compat -Wno-parentheses-equality -Wno-self-assign -Wno-tautological-compare -Wno-unused-parameter -Wno-unused-value -Wsuggest-attribute=format -Wsuggest-attribute=noreturn -Wunused-variable -Wmisleading-indentation -Wundef  -I/workspace/vendor/bundle/ruby/3.3.0/gems/prism-1.9.0/ext -c conftest.c"
+checked program was:
+/* begin */
+1: #include "ruby.h"
+2: 
+3: #include <prism/extension.h>
+/* end */
+
+--------------------
+
+append_cflags: checking for whether -fvisibility=hidden is accepted as CFLAGS... -------------------- yes
+
+LD_LIBRARY_PATH=.:/home/agent/.local/mise-data/installs/ruby/3.3.7/lib "cc -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/aarch64-linux -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0/ruby/backward -I/home/agent/.local/mise-data/installs/ruby/3.3.7/include/ruby-3.3.0 -I. -I/workspace/vendor/bundle/ruby/3.3.0/gems/prism-1.9.0/include -I/workspace/vendor/bundle/ruby/3.3.0/gems/prism-1.9.0/ext    -fPIC -O3 -fno-fast-math -ggdb3 -Wall -Wextra -Wdeprecated-declarations -Wdiv-by-zero -Wduplicated-cond -Wimplicit-function-declaration -Wimplicit-int -Wpointer-arith -Wwrite-strings -Wold-style-definition -Wimplicit-fallthrough=0 -Wmissing-noreturn -Wno-cast-function-type -Wno-constant-logical-operand -Wno-long-long -Wno-missing-field-initializers -Wno-overlength-strings -Wno-packed-bitfield-compat -Wno-parentheses-equality -Wno-self-assign -Wno-tautological-compare -Wno-unused-parameter -Wno-unused-value -Wsuggest-attribute=format -Wsuggest-attribute=noreturn -Wunused-variable -Wmisleading-indentation -Wundef  -fvisibility=hidden -Werror -c conftest.c"
+checked program was:
+/* begin */
+1: #include "ruby.h"
+2: 
+3: int main(int argc, char **argv)
+4: {
+5:   return !!argv[argc];
+6: }
+/* end */
+
+--------------------
+
