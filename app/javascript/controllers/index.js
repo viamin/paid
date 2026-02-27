@@ -15,3 +15,6 @@ application.register("repository-selector", RepositorySelectorController)
 
 import MobileMenuController from "./mobile_menu_controller"
 application.register("mobile-menu", MobileMenuController)
+
+import GoalToggleController from "./goal_toggle_controller"
+application.register("goal-toggle", GoalToggleController)
