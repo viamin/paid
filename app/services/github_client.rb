@@ -166,17 +166,6 @@ class GithubClient
     handle_errors { client.create_pull_request(repo, base, head, title, body, **options) }
   end
 
-  # Creates an issue on a repository.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param title [String] Issue title
-  # @param body [String] Issue body (Markdown supported)
-  # @param labels [Array<String>] Label names to apply
-  # @return [Sawyer::Resource] The created issue
-  def create_issue(repo, title:, body: "", labels: [])
-    handle_errors { client.create_issue(repo, title, body, labels: labels) }
-  end
-
   # Lists labels for a repository.
   #
   # @param repo [String] Repository in "owner/name" format
