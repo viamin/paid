@@ -107,5 +107,17 @@ FactoryBot.define do
     trait :api do
       agent_type { "api" }
     end
+
+    trait :create_issue_goal do
+      goal { "create_issue" }
+      issue { nil }
+      custom_prompt { "Create a GitHub issue for the requested task" }
+    end
+
+    trait :with_created_issue do
+      create_issue_goal
+      created_issue_url { "https://github.com/example/repo/issues/42" }
+      created_issue_number { 42 }
+    end
   end
 end

@@ -43,7 +43,8 @@ class ProcessRunQueueJob < ApplicationJob
     workflow_input = {
       project_id: agent_run.project_id,
       agent_type: agent_run.agent_type,
-      agent_run_id: agent_run.id
+      agent_run_id: agent_run.id,
+      goal: agent_run.goal
     }
     workflow_input[:issue_id] = agent_run.issue_id if agent_run.issue_id
     workflow_input[:custom_prompt] = agent_run.custom_prompt if agent_run.custom_prompt.present?
