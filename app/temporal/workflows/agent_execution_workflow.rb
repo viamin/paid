@@ -75,9 +75,9 @@ module Workflows
         end
 
         if goal == "create_issue"
-          # Create GitHub issue from agent output (skip push/PR)
-          run_activity(Activities::CreateGithubIssueActivity,
-            { agent_run_id: agent_run_id }, timeout: 60)
+          # Issue goal: check if the agent created an issue via the proxy
+          run_activity(Activities::CompleteIssueGoalActivity,
+            { agent_run_id: agent_run_id }, timeout: 30)
         elsif agent_result[:has_changes]
           # Step 5: Push branch (inside container)
           run_activity(Activities::PushBranchActivity,
