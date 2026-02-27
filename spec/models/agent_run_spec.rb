@@ -16,6 +16,9 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_inclusion_of(:agent_type).in_array(described_class::AGENT_TYPES) }
     it { is_expected.to validate_presence_of(:status) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
+    it { is_expected.to validate_presence_of(:goal) }
+    it { is_expected.to validate_inclusion_of(:goal).in_array(described_class::GOALS) }
+    it { is_expected.to validate_length_of(:created_issue_url).is_at_most(500) }
     it { is_expected.to validate_length_of(:worktree_path).is_at_most(500) }
     it { is_expected.to validate_length_of(:branch_name).is_at_most(255) }
     it { is_expected.to validate_length_of(:base_commit_sha).is_at_most(40) }
@@ -204,6 +207,40 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#create_issue_goal?" do
+      it "returns true when goal is create_issue" do
+        agent_run = build(:agent_run, goal: "create_issue")
+
+        expect(agent_run.create_issue_goal?).to be true
+      end
+
+      it "returns false when goal is create_pr" do
+        agent_run = build(:agent_run, goal: "create_pr")
+
+        expect(agent_run.create_issue_goal?).to be false
+      end
+    end
+
+    describe "#result_url" do
+      it "returns pull_request_url when present" do
+        agent_run = build(:agent_run, pull_request_url: "https://github.com/example/repo/pull/1")
+
+        expect(agent_run.result_url).to eq("https://github.com/example/repo/pull/1")
+      end
+
+      it "returns created_issue_url when no PR url" do
+        agent_run = build(:agent_run, pull_request_url: nil, created_issue_url: "https://github.com/example/repo/issues/5")
+
+        expect(agent_run.result_url).to eq("https://github.com/example/repo/issues/5")
+      end
+
+      it "returns nil when neither is present" do
+        agent_run = build(:agent_run, pull_request_url: nil, created_issue_url: nil)
+
+        expect(agent_run.result_url).to be_nil
+      end
+    end
+
     describe "#queued?" do
       it "returns true when status is queued" do
         agent_run = build(:agent_run, :queued)
@@ -333,6 +370,24 @@ RSpec.describe AgentRun do
           expect(agent_run.pull_request_url).to eq("https://github.com/example/repo/pull/42")
           expect(agent_run.pull_request_number).to eq(42)
           expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
+        end
+      end
+    end
+
+    describe "#complete! with issue details" do
+      it "sets created_issue_url and created_issue_number", :aggregate_failures do
+        agent_run = create(:agent_run, status: "running", started_at: 5.minutes.ago, goal: "create_issue")
+
+        freeze_time do
+          agent_run.complete!(
+            issue_url: "https://github.com/example/repo/issues/10",
+            issue_number: 10
+          )
+
+          expect(agent_run.status).to eq("completed")
+          expect(agent_run.created_issue_url).to eq("https://github.com/example/repo/issues/10")
+          expect(agent_run.created_issue_number).to eq(10)
+          expect(agent_run.pull_request_url).to be_nil
         end
       end
     end
@@ -758,6 +813,10 @@ RSpec.describe AgentRun do
 
     it "defines valid AGENT_TYPES" do
       expect(described_class::AGENT_TYPES).to eq(%w[claude_code cursor codex copilot aider gemini opencode kilocode api])
+    end
+
+    it "defines valid GOALS" do
+      expect(described_class::GOALS).to eq(%w[create_pr create_issue])
     end
   end
 

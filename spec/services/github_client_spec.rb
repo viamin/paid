@@ -357,6 +357,59 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#create_issue" do
+    let(:repo) { "owner/repo" }
+
+    context "when successful" do
+      before do
+        stub_request(:post, "#{api_base}/repos/#{repo}/issues")
+          .with(
+            body: hash_including(
+              "title" => "Bug report",
+              "body" => "There is a bug",
+              "labels" => [ "paid-generated" ]
+            )
+          )
+          .to_return(
+            status: 201,
+            body: {
+              id: 1,
+              number: 10,
+              title: "Bug report",
+              state: "open",
+              html_url: "https://github.com/#{repo}/issues/10"
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "creates an issue" do
+        result = client.create_issue(
+          repo,
+          title: "Bug report",
+          body: "There is a bug",
+          labels: [ "paid-generated" ]
+        )
+
+        expect(result.number).to eq(10)
+        expect(result.title).to eq("Bug report")
+      end
+    end
+
+    context "when repository not found" do
+      before do
+        stub_request(:post, "#{api_base}/repos/#{repo}/issues")
+          .to_return(status: 404, body: { message: "Not Found" }.to_json)
+      end
+
+      it "raises NotFoundError" do
+        expect {
+          client.create_issue(repo, title: "Issue")
+        }.to raise_error(GithubClient::NotFoundError)
+      end
+    end
+  end
+
   describe "#labels" do
     let(:repo) { "owner/repo" }
 
