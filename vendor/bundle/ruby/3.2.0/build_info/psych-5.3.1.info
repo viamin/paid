@@ -1,0 +1,2 @@
+--with-libyaml-include=/home/agent/.local/usr/include
+--with-libyaml-lib=/home/agent/.local/usr/lib/aarch64-linux-gnu
