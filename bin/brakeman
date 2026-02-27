@@ -4,6 +4,7 @@
 require "rubygems"
 require "bundler/setup"
 
-ARGV.unshift("--ensure-latest")
+# Rely on Dependabot to keep brakeman up to date (weekly PRs).
+# Actual findings are enforced via --exit-on-warn/--exit-on-error in bin/audit.
 
 load Gem.bin_path("brakeman", "brakeman")
