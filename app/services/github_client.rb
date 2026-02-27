@@ -269,7 +269,7 @@ class GithubClient
   # @return [Array<Sawyer::Resource>] Comments (each has .user.login, .body, .created_at)
   def issue_comments(repo, number)
     handle_errors do
-      with_auto_paginate { client.issue_comments(repo, number) }
+      with_auto_paginate { client.issue_comments(repo, number, per_page: 100, page: 1) }
     end
   end
 

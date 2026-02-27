@@ -20,11 +20,11 @@ module Activities
 
       expected_count = input[:expected_followup_count]
       if expected_count
-        # Atomic conditional increment: only bumps if the count hasn't already
-        # been incremented (idempotent on Temporal activity retry).
-        updated = Issue.where(id: issue.id, pr_followup_count: expected_count)
-          .update_all("pr_followup_count = pr_followup_count + 1")
-        issue.reload if updated > 0
+        # Use a row lock and instance-level increment so callbacks/timestamps fire.
+        issue.with_lock do
+          issue.reload
+          issue.increment!(:pr_followup_count) if issue.pr_followup_count == expected_count
+        end
       else
         # Legacy callers without expected_count fall back to unconditional increment.
         issue.increment!(:pr_followup_count)
