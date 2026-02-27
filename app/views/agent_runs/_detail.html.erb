@@ -81,6 +81,15 @@
     </div>
   <% end %>
 
+  <% if agent_run.created_issue_url.present? %>
+    <div class="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
+      <h2 class="text-sm font-semibold text-blue-800">Issue Created</h2>
+      <p class="mt-1">
+        <%= link_to agent_run.created_issue_url, agent_run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-blue-700 hover:text-blue-900 underline" %>
+      </p>
+    </div>
+  <% end %>
+
   <% if agent_run.error_message.present? %>
     <div class="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
       <h2 class="text-sm font-semibold text-red-800">Error</h2>

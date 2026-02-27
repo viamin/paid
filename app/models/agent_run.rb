@@ -3,6 +3,7 @@
 class AgentRun < ApplicationRecord
   STATUSES = %w[queued pending running completed failed cancelled timeout].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
+  GOALS = %w[create_pr create_issue].freeze
 
   belongs_to :project
   belongs_to :issue, optional: true
@@ -17,6 +18,7 @@ class AgentRun < ApplicationRecord
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
+  validates :goal, presence: true, inclusion: { in: GOALS }
   validates :worktree_path, length: { maximum: 500 }
   validates :branch_name, length: { maximum: 255 }
   validates :base_commit_sha, length: { maximum: 40 }
@@ -82,6 +84,18 @@ class AgentRun < ApplicationRecord
     source_pull_request_number.present?
   end
 
+  def create_issue_goal?
+    goal == "create_issue"
+  end
+
+  def create_pr_goal?
+    goal == "create_pr"
+  end
+
+  def result_url
+    create_issue_goal? ? created_issue_url : pull_request_url
+  end
+
   def queued?
     status == "queued"
   end
@@ -110,13 +124,15 @@ class AgentRun < ApplicationRecord
     update!(status: "running", started_at: Time.current)
   end
 
-  def complete!(result_commit: nil, pr_url: nil, pr_number: nil)
+  def complete!(result_commit: nil, pr_url: nil, pr_number: nil, issue_url: nil, issue_number: nil)
     update!(
       status: "completed",
       completed_at: Time.current,
       result_commit_sha: result_commit,
       pull_request_url: pr_url,
       pull_request_number: pr_number,
+      created_issue_url: issue_url,
+      created_issue_number: issue_number,
       duration_seconds: duration
     )
   end

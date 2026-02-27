@@ -49,6 +49,8 @@ module Activities
         )
       end
 
+      prompt = augment_prompt_for_issue_goal(agent_run, prompt)
+
       command = command_prefix + [ prompt ]
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
@@ -146,6 +148,38 @@ module Activities
         error: e.message
       )
       false
+    end
+
+    def augment_prompt_for_issue_goal(agent_run, prompt)
+      return prompt unless agent_run.create_issue_goal?
+
+      repo = agent_run.project.full_name
+      <<~AUGMENTED
+        #{prompt}
+
+        ---
+        IMPORTANT: Your goal is to CREATE A GITHUB ISSUE, not to write code or create a PR.
+
+        You have access to the GitHub API via a proxy. Use curl to create the issue:
+
+        ```bash
+        curl -X POST "$GITHUB_API_URL/repos/#{repo}/issues" \\
+          -H "Content-Type: application/json" \\
+          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
+          -H "X-Proxy-Token: $PROXY_TOKEN" \\
+          -d '{"title": "Issue title", "body": "Issue description", "labels": []}'
+        ```
+
+        Available endpoints:
+        - GET  $GITHUB_API_URL/repos/#{repo}/issues — list issues
+        - GET  $GITHUB_API_URL/repos/#{repo}/issues/{number} — get issue
+        - POST $GITHUB_API_URL/repos/#{repo}/issues — create issue
+        - PATCH $GITHUB_API_URL/repos/#{repo}/issues/{number} — update issue
+        - POST $GITHUB_API_URL/repos/#{repo}/issues/{number}/comments — add comment
+        - POST $GITHUB_API_URL/repos/#{repo}/issues/{number}/labels — add labels
+
+        Do NOT push code or create a pull request. Only create the GitHub issue.
+      AUGMENTED
     end
 
     def reconnect_container(agent_run)

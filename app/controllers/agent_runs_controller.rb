@@ -82,6 +82,7 @@ class AgentRunsController < ApplicationController
       agent_type: @agent_run.agent_type,
       custom_prompt: @agent_run.custom_prompt,
       source_pull_request_number: @agent_run.source_pull_request_number,
+      goal: @agent_run.goal,
       status: "queued"
     )
 
@@ -129,12 +130,16 @@ class AgentRunsController < ApplicationController
     agent_type = params[:agent_type].presence || "claude_code"
     agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(agent_type)
 
+    goal = params[:goal].presence || "create_pr"
+    goal = "create_pr" unless AgentRun::GOALS.include?(goal)
+
     AgentRun.create!(
       project: @project,
       issue: issue,
       agent_type: agent_type,
       custom_prompt: custom_prompt,
       source_pull_request_number: source_pull_request_number,
+      goal: goal,
       status: "queued"
     )
   end
