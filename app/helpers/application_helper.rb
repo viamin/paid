@@ -36,6 +36,8 @@ module ApplicationHelper
     )
   end
 
+  RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq branch_name_cont s].freeze
+
   def sort_link_to(label, attribute, q)
     current_sort = q.sorts.find { |s| s.name == attribute.to_s }
     direction = current_sort&.dir == "asc" ? "desc" : "asc"
@@ -45,9 +47,10 @@ module ApplicationHelper
       tag.span(" \u2193", class: "ml-1")
     end
 
+    q_params = params.fetch(:q, {}).permit(*RANSACK_PERMITTED_KEYS).to_h
     link_to(
       safe_join([ label, arrow ].compact),
-      url_for(request.query_parameters.merge(q: params.fetch(:q, {}).permit!.to_h.merge(s: "#{attribute} #{direction}"))),
+      url_for(request.query_parameters.merge(q: q_params.merge(s: "#{attribute} #{direction}"))),
       class: "group inline-flex items-center"
     )
   end

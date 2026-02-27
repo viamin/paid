@@ -1,6 +1,6 @@
 <div id="<%= dom_id(project, :agent_runs_list) %>">
-  <% agent_runs = agent_runs.to_a %>
-  <% if agent_runs.any? %>
+  <% runs = agent_runs.to_a %>
+  <% if runs.any? %>
     <div class="mt-4 flow-root">
       <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
         <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
@@ -20,7 +20,7 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200 bg-white">
-                <% agent_runs.each do |run| %>
+                <% runs.each do |run| %>
                   <tr>
                     <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
                       <%= agent_run_status_badge(run.status) %>
