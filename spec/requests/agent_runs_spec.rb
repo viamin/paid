@@ -336,6 +336,14 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
       end
 
+      it "marks the original run as retried" do
+        agent_run = create(:agent_run, :failed, project: project)
+
+        post retry_project_agent_run_path(project, agent_run)
+
+        expect(agent_run.reload.status).to eq("retried")
+      end
+
       it "preserves custom_prompt from the original run" do
         agent_run = create(:agent_run, :failed, :with_custom_prompt, project: project)
 
