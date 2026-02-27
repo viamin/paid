@@ -80,3 +80,5 @@ WORKLOG.md
 /.postgres/
 /.rubocop-cache/
 /.local-include/
+/.local-deps/
+/.pg-data/
