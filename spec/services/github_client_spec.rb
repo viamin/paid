@@ -498,6 +498,7 @@ RSpec.describe GithubClient do
     context "when check runs exist" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/commits/#{ref}/check-runs")
+          .with(query: hash_including("per_page" => "100", "page" => "1"))
           .to_return(
             status: 200,
             body: {
@@ -524,6 +525,7 @@ RSpec.describe GithubClient do
     context "when ref does not exist" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/commits/#{ref}/check-runs")
+          .with(query: hash_including("per_page" => "100", "page" => "1"))
           .to_return(status: 404, body: { message: "Not Found" }.to_json)
       end
 
@@ -570,6 +572,7 @@ RSpec.describe GithubClient do
     context "when comments exist" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .with(query: hash_including("per_page" => "100"))
           .to_return(
             status: 200,
             body: [
@@ -592,6 +595,7 @@ RSpec.describe GithubClient do
     context "when fetching comments" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .with(query: hash_including("per_page" => "100"))
           .to_return(
             status: 200,
             body: [ { id: 1, body: "Comment", user: { login: "user" } } ].to_json,

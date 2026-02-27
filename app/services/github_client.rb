@@ -232,15 +232,28 @@ class GithubClient
   def check_runs_for_ref(repo, ref)
     handle_errors do
       all_check_runs = []
+      total_count = 0
       page = 1
 
       loop do
         response = client.check_runs_for_ref(repo, ref, per_page: 100, page: page)
+        total_count = response.total_count
         all_check_runs.concat(response.check_runs)
         break if all_check_runs.size >= response.total_count || response.check_runs.size < 100
 
         page += 1
         break if page > 10
+      end
+
+      if all_check_runs.size < total_count
+        Rails.logger.warn(
+          message: "github_client.check_runs_pagination_truncated",
+          repo: repo,
+          ref: ref,
+          total_count: total_count,
+          fetched_count: all_check_runs.size,
+          max_pages: 10
+        )
       end
 
       all_check_runs.map { |cr| { name: cr.name, conclusion: cr.conclusion } }

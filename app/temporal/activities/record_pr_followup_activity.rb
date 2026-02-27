@@ -5,7 +5,7 @@ module Activities
   # pr_followup_count and removing actionable labels. Called by the
   # workflow after the child workflow is successfully started.
   #
-  # Idempotent: uses the expected_count parameter to prevent
+  # Idempotent: uses the expected_followup_count parameter to prevent
   # double-counting on Temporal retries. The increment only applies
   # when the current count matches the expected value.
   class RecordPrFollowupActivity < BaseActivity
