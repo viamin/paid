@@ -58,6 +58,13 @@ FactoryBot.define do
       duration_seconds { 3600 }
     end
 
+    trait :retried do
+      status { "retried" }
+      started_at { 10.minutes.ago }
+      completed_at { Time.current }
+      duration_seconds { 600 }
+    end
+
     trait :with_temporal do
       temporal_workflow_id { "workflow-#{SecureRandom.uuid}" }
       temporal_run_id { "run-#{SecureRandom.uuid}" }
