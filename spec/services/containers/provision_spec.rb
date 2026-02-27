@@ -728,6 +728,8 @@ RSpec.describe Containers::Provision do
 
     before do
       service.provision
+      # Speed up watchdog polling for tests (default is 1s)
+      allow(service).to receive(:watchdog_poll_interval).and_return(0.05)
       # When the watchdog calls container.stop, set the flag so the
       # exec mock can unblock.
       allow(mock_container).to receive(:stop) do |**_opts|
@@ -738,12 +740,12 @@ RSpec.describe Containers::Provision do
     context "with startup timeout" do
       it "fires when exec produces no output" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          sleep 0.1 until container_stopped.true?
+          sleep 0.01 until container_stopped.true?
           [ [], [], 137 ]
         end
 
         expect {
-          service.execute("slow_command", timeout: 10, startup_timeout: 1)
+          service.execute("slow_command", timeout: 10, startup_timeout: 0.1)
         }.to raise_error(described_class::StartupTimeoutError)
       end
 
@@ -762,12 +764,12 @@ RSpec.describe Containers::Provision do
       it "fires when output stops mid-stream" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "initial output\n") if block
-          sleep 0.1 until container_stopped.true?
+          sleep 0.01 until container_stopped.true?
           [ [ "initial output\n" ], [], 137 ]
         end
 
         expect {
-          service.execute("stalling_command", timeout: 10, idle_timeout: 1)
+          service.execute("stalling_command", timeout: 10, idle_timeout: 0.1)
         }.to raise_error(described_class::IdleTimeoutError)
       end
 
@@ -775,7 +777,7 @@ RSpec.describe Containers::Provision do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           3.times do
             block.call(:stdout, "chunk\n") if block
-            sleep 0.2
+            sleep 0.05
           end
           [ [ "chunk\nchunk\nchunk\n" ], [], 0 ]
         end
@@ -788,12 +790,12 @@ RSpec.describe Containers::Provision do
     context "with startup timeout when exec raises Docker error" do
       it "detects the watchdog reason through the Docker error" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          sleep 0.1 until container_stopped.true?
+          sleep 0.01 until container_stopped.true?
           raise Docker::Error::ServerError, "connection closed"
         end
 
         expect {
-          service.execute("slow_command", timeout: 10, startup_timeout: 1)
+          service.execute("slow_command", timeout: 10, startup_timeout: 0.1)
         }.to raise_error(described_class::StartupTimeoutError)
       end
     end

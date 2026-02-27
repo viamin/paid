@@ -244,7 +244,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       let(:project) { create(:project, label_mappings: { "build" => "paid-build" }) }
 
       let(:page1_issues) do
-        Array.new(100) do |i|
+        Array.new(5) do |i|
           OpenStruct.new(
             id: 2000 + i,
             number: i + 1,
@@ -264,8 +264,8 @@ RSpec.describe Activities::FetchIssuesActivity do
         [
           OpenStruct.new(
             id: 3000,
-            number: 101,
-            title: "Issue 101",
+            number: 6,
+            title: "Issue 6",
             body: "Body",
             state: "open",
             labels: [ OpenStruct.new(name: "paid-build") ],
@@ -278,6 +278,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
+        stub_const("Activities::FetchIssuesActivity::PER_PAGE", 5)
         allow(github_client).to receive(:issues) do |_repo, **opts|
           label = Array(opts[:labels]).first
           page = opts[:page] || 1
@@ -293,7 +294,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       it "paginates through all pages" do
         result = activity.execute(project_id: project.id)
 
-        expect(result[:issues].size).to eq(101)
+        expect(result[:issues].size).to eq(6)
       end
     end
 
@@ -301,13 +302,16 @@ RSpec.describe Activities::FetchIssuesActivity do
       let(:project) { create(:project, label_mappings: { "build" => "paid-build" }) }
 
       before do
+        stub_const("Activities::FetchIssuesActivity::PER_PAGE", 5)
+        stub_const("Activities::FetchIssuesActivity::MAX_PAGES", 3)
+
         allow(github_client).to receive(:issues) do |_repo, **opts|
           label = Array(opts[:labels]).first
           page = opts[:page] || 1
           if label == "paid-build"
             # Return unique IDs per page to avoid deduplication
-            offset = (page - 1) * 100
-            Array.new(100) do |i|
+            offset = (page - 1) * 5
+            Array.new(5) do |i|
               OpenStruct.new(
                 id: 4000 + offset + i,
                 number: offset + i + 1,
@@ -332,7 +336,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         result = activity.execute(project_id: project.id)
 
-        expect(result[:issues].size).to eq(described_class::MAX_PAGES * 100)
+        expect(result[:issues].size).to eq(3 * 5)
         expect(Rails.logger).to have_received(:warn).with(
           hash_including(message: "github_sync.fetch_issues_page_limit")
         )

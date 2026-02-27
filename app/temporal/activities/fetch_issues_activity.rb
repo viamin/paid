@@ -7,6 +7,7 @@ module Activities
   # Handles rate limiting by re-raising as a retryable Temporal error.
   class FetchIssuesActivity < BaseActivity
     PAID_GENERATED_LABEL = "paid-generated"
+    PER_PAGE = 100
 
     def execute(input)
       project_id = input[:project_id]
@@ -71,14 +72,14 @@ module Activities
           repo_full_name,
           labels: label ? [ label ] : nil,
           state: "open",
-          per_page: 100,
+          per_page: PER_PAGE,
           page: page
         )
 
         break if page_issues.empty?
 
         issues.concat(page_issues)
-        break if page_issues.size < 100
+        break if page_issues.size < PER_PAGE
 
         page += 1
 
