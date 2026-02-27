@@ -275,8 +275,11 @@ module Containers
     end
 
     def checkout_remote_branch(branch_name, pull_request_number: nil)
-      # Use "--" to prevent branch names starting with "-" from being parsed as options
-      result = execute_git("checkout", "--", branch_name)
+      # Use "git switch" for branch switching; "git checkout -- <name>" enters
+      # pathspec (file-restore) mode and won't switch branches.
+      # "--" separates options from the branch operand so names starting with
+      # "-" are never misinterpreted as flags.
+      result = execute_git("switch", "--", branch_name)
       return if result.success?
 
       # Branch may have been deleted from the remote (e.g. after PR merge).
@@ -286,7 +289,7 @@ module Containers
       fetch_result = execute_git("fetch", "origin", "refs/pull/#{pull_request_number}/head:#{branch_name}")
       raise CloneError, "Checkout failed (branch deleted, PR fetch also failed): #{error_with_stderr(fetch_result)}" if fetch_result.failure?
 
-      checkout_result = execute_git("checkout", "--", branch_name)
+      checkout_result = execute_git("switch", "--", branch_name)
       raise CloneError, "Checkout failed after PR fetch: #{error_with_stderr(checkout_result)}" if checkout_result.failure?
     end
 

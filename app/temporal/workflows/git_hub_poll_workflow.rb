@@ -16,7 +16,7 @@ module Workflows
     workflow_signal
     def request_sync
       @sync_requested = true
-      @sleep_cancel_proc&.call(reason: "sync_requested")
+      @sleep_cancel_proc&.call
     end
 
     def execute(input)
@@ -54,9 +54,7 @@ module Workflows
           raise Temporalio::Workflow::ContinueAsNewError.new({ project_id: project_id })
         end
 
-        unless @sync_requested
-          interruptible_sleep(poll_config[:poll_interval_seconds])
-        end
+        interruptible_sleep(poll_config[:poll_interval_seconds])
       end
     end
 
@@ -64,6 +62,8 @@ module Workflows
 
     def interruptible_sleep(duration)
       cancellation, @sleep_cancel_proc = Temporalio::Cancellation.new
+      return if @sync_requested # Signal arrived before sleep — skip immediately
+
       Temporalio::Workflow.sleep(duration, cancellation: cancellation)
     rescue Temporalio::Error::CanceledError
       raise unless @sync_requested
