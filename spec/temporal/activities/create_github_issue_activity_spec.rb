@@ -91,7 +91,7 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "uses fallback title when no stdout and no custom prompt" do
+    it "falls back to custom prompt for title when no stdout and no heading" do
       no_prompt_run = create(:agent_run, :with_git_context, project: project,
         goal: "create_issue", custom_prompt: "Do analysis")
 
