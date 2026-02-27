@@ -67,6 +67,7 @@ WORKLOG.md
 /.gem/
 /.gems/
 /.gem-spec-cache/
+/.gem_cache/
 /.gem_home/
 /.mise-cache/
 /.mise-data/
@@ -81,4 +82,13 @@ WORKLOG.md
 /.rubocop-cache/
 /.local-include/
 /.local-deps/
-/.pg-data/
+/.libyaml_build/
+/.libyaml_src/
+/.pg_build/
+/.pg_data/
+/.pg_src/
+/.rubies/
+/.ruby_env.sh
+/.tmp_pg.tar.bz2
+/.tmp_ruby.tar.gz
+/.tmp_yaml.tar.gz
