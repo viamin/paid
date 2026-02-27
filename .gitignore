@@ -51,6 +51,15 @@
 # Session-specific working memory (ephemeral, per-developer)
 WORKLOG.md
 
+# Build artifacts (PostgreSQL, libyaml, etc.)
+/.build
+
+# npm cache
+/.npm-cache
+
+# mise/asdf version files
+.tool-versions
+
 # Ignore downloaded packages
 *.deb
 
@@ -72,6 +81,7 @@ WORKLOG.md
 /.postgres/
 /.rubocop-cache/
 /.local-include/
+/.local-deps/
 /.libyaml_build/
 /.libyaml_src/
 /.pg_build/
