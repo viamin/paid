@@ -89,6 +89,13 @@ class AgentRunsController < ApplicationController
 
     redirect_to project_agent_run_path(@project, new_run),
       notice: "Agent run queued as a retry of run ##{@agent_run.id}."
+  rescue ActiveRecord::RecordNotUnique => e
+    alert = if e.cause&.message&.include?("proxy_token")
+      "An unexpected error occurred. Please try again."
+    else
+      "An agent run is already queued or in progress for this issue."
+    end
+    redirect_to project_agent_run_path(@project, @agent_run), alert: alert
   end
 
   private
