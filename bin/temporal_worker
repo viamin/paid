@@ -23,7 +23,4 @@ worker = Temporalio::Worker.new(
   workflows: workflows
 )
 
-trap("INT") { worker.shutdown }
-trap("TERM") { worker.shutdown }
-
-worker.run
+worker.run(shutdown_signals: %w[INT TERM])
