@@ -172,6 +172,15 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Claude Code")
       end
 
+      it "includes goal-toggle Stimulus wiring" do
+        get new_project_agent_run_path(project)
+        body = response.body
+        expect(body).to include('data-controller="goal-toggle"')
+        expect(body).to include('data-action="change->goal-toggle#toggle"')
+        expect(body).to include('data-goal-toggle-target="issueSection"')
+        expect(body).to include('data-goal-toggle-target="prSection"')
+      end
+
       it "shows open actionable issues in dropdown" do
         create(:issue, project: project, github_number: 10, title: "Open issue", github_state: "open", paid_state: "new")
         create(:issue, project: project, github_number: 11, title: "Closed issue", github_state: "closed", paid_state: "new")
