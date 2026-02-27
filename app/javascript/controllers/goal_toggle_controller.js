@@ -11,11 +11,14 @@ export default class extends Controller {
     const selected = this.element.querySelector("input[name='goal']:checked")
     const showSections = selected && selected.value !== "create_issue"
 
-    this.issueSectionTargets.forEach((el) => {
+    ;[...this.issueSectionTargets, ...this.prSectionTargets].forEach((el) => {
       el.hidden = !showSections
-    })
-    this.prSectionTargets.forEach((el) => {
-      el.hidden = !showSections
+
+      el.querySelectorAll("input, select, textarea, button").forEach(
+        (control) => {
+          control.disabled = !showSections
+        }
+      )
     })
   }
 }
