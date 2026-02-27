@@ -19,6 +19,21 @@
     <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
       <%= form_with url: project_agent_runs_path(@project), method: :post, class: "space-y-6" do |f| %>
 
+        <fieldset>
+          <legend class="text-base font-semibold text-gray-900">Goal</legend>
+          <p class="mt-1 text-sm text-gray-500" id="goal-description">What should the agent produce?</p>
+          <div class="mt-4 flex items-center space-x-6" role="radiogroup" aria-describedby="goal-description">
+            <label class="inline-flex items-center">
+              <input type="radio" name="goal" value="create_pr" checked class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500">
+              <span class="ml-2 text-sm text-gray-700">Create Pull Request</span>
+            </label>
+            <label class="inline-flex items-center">
+              <input type="radio" name="goal" value="create_issue" class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500">
+              <span class="ml-2 text-sm text-gray-700">Create Issue</span>
+            </label>
+          </div>
+        </fieldset>
+
         <div>
           <h2 class="text-base font-semibold text-gray-900">Select Issue</h2>
 
@@ -83,21 +98,6 @@
                 </option>
               <% end %>
             </select>
-          </div>
-        </div>
-
-        <div>
-          <h2 class="text-base font-semibold text-gray-900">Goal</h2>
-          <p class="mt-1 text-sm text-gray-500">What should the agent produce?</p>
-          <div class="mt-4 space-y-3">
-            <label class="flex items-center">
-              <input type="radio" name="goal" value="create_pr" checked class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500">
-              <span class="ml-3 text-sm font-medium text-gray-700">Create a pull request</span>
-            </label>
-            <label class="flex items-center">
-              <input type="radio" name="goal" value="create_issue" class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500">
-              <span class="ml-3 text-sm font-medium text-gray-700">Create an issue</span>
-            </label>
           </div>
         </div>
 

@@ -114,12 +114,12 @@ RSpec.describe Activities::CloneRepoActivity do
         end
       end
 
-      context "when PR is merged" do
-        let(:pr_data) { double("pr_data", state: "merged", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+      context "when PR is merged (GitHub API returns state=closed for merged PRs)" do
+        let(:pr_data) { double("pr_data", state: "closed", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
 
         it "raises StalePullRequest error" do
           expect { activity.execute(agent_run_id: agent_run.id) }
-            .to raise_error(Temporalio::Error::ApplicationError, /PR #135 is merged/) do |error|
+            .to raise_error(Temporalio::Error::ApplicationError, /PR #135 is closed/) do |error|
               expect(error.type).to eq("StalePullRequest")
             end
         end

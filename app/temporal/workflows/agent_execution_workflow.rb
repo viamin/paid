@@ -44,9 +44,14 @@ module Workflows
         run_activity(Activities::ProvisionContainerActivity,
           { agent_run_id: agent_run_id }, timeout: 60)
 
-        # Step 3: Clone repo and create branch inside the container
-        run_activity(Activities::CloneRepoActivity,
-          { agent_run_id: agent_run_id }, timeout: 180)
+        # Step 3: Clone repo and create branch inside the container.
+        # Skip clone for create_issue goals without a source PR — the agent
+        # only needs the GitHub API proxy, not repository code.
+        skip_clone = goal == "create_issue" && source_pull_request_number.blank?
+        unless skip_clone
+          run_activity(Activities::CloneRepoActivity,
+            { agent_run_id: agent_run_id }, timeout: 180)
+        end
 
         # Step 3b: For existing PR runs without a custom prompt, rebase and build a rich prompt
         pr_run_without_prompt = source_pull_request_number.present? && custom_prompt.blank?
