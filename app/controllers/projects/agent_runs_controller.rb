@@ -7,7 +7,7 @@ module Projects
 
     def index
       authorize @project, :show?
-      base_scope = @project.agent_runs.includes(:issue)
+      base_scope = @project.agent_runs
       @q = base_scope.ransack(params[:q])
       @q.sorts = "created_at desc" if @q.sorts.empty?
       @pagy, @agent_runs = pagy(@q.result)

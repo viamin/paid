@@ -8,6 +8,46 @@ RSpec.describe "AgentRuns" do
   let(:github_token) { create(:github_token, account: account) }
   let(:project) { create(:project, account: account, github_token: github_token) }
 
+  describe "GET /agent_runs" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        get agent_runs_path
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "renders the index page" do
+        get agent_runs_path
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Agent Runs")
+      end
+
+      it "shows agent runs across all projects" do
+        create(:agent_run, project: project, agent_type: "claude_code", status: "completed")
+        get agent_runs_path
+        expect(response.body).to include("Claude Code")
+      end
+
+      it "shows empty state when no runs exist" do
+        get agent_runs_path
+        expect(response.body).to include("No agent runs yet")
+      end
+
+      it "does not show runs from other accounts" do
+        other_account = create(:account)
+        other_token = create(:github_token, account: other_account)
+        other_project = create(:project, account: other_account, github_token: other_token)
+        create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed")
+
+        get agent_runs_path
+        expect(response.body).not_to include(other_project.name)
+      end
+    end
+  end
+
   describe "GET /projects/:project_id/agent_runs" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
