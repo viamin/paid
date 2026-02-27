@@ -350,12 +350,12 @@ RSpec.describe Activities::FetchIssuesActivity do
         allow(github_client).to receive(:issues).and_return([])
       end
 
-      it "still fetches paid-generated issues to track existing PRs" do
+      it "fetches all open issues without label filter" do
         activity.execute(project_id: project.id)
 
         expect(github_client).to have_received(:issues).with(
           project.full_name,
-          hash_including(labels: [ "paid-generated" ])
+          hash_including(labels: nil, state: "open")
         )
       end
     end
