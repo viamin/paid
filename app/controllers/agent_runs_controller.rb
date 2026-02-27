@@ -2,7 +2,7 @@
 
 class AgentRunsController < ApplicationController
   before_action :set_project
-  before_action :set_agent_run, only: :show
+  before_action :set_agent_run, only: [ :show, :retry ]
 
   def index
     @agent_runs = @project.agent_runs.recent.includes(:issue).limit(50)
@@ -65,6 +65,37 @@ class AgentRunsController < ApplicationController
       "An agent run is already queued or in progress."
     end
     redirect_to new_project_agent_run_path(@project), alert: alert
+  end
+
+  def retry
+    authorize @agent_run
+
+    unless @agent_run.finished?
+      redirect_to project_agent_run_path(@project, @agent_run),
+        alert: "Only finished runs can be retried."
+      return
+    end
+
+    new_run = AgentRun.create!(
+      project: @project,
+      issue: @agent_run.issue,
+      agent_type: @agent_run.agent_type,
+      custom_prompt: @agent_run.custom_prompt,
+      source_pull_request_number: @agent_run.source_pull_request_number,
+      status: "queued"
+    )
+
+    ProcessRunQueueJob.perform_later
+
+    redirect_to project_agent_run_path(@project, new_run),
+      notice: "Agent run queued as a retry of run ##{@agent_run.id}."
+  rescue ActiveRecord::RecordNotUnique => e
+    alert = if e.cause&.message&.include?("proxy_token")
+      "An unexpected error occurred. Please try again."
+    else
+      "An agent run is already queued or in progress for this issue."
+    end
+    redirect_to project_agent_run_path(@project, @agent_run), alert: alert
   end
 
   private
