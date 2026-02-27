@@ -36,6 +36,21 @@ RSpec.describe "User Sessions" do
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.body).to include("Invalid email or password")
       end
+
+      it "displays the error inline within the login form" do
+        post user_session_path, params: {
+          user: { email: user.email, password: "wrongpassword" }
+        }
+        doc = Nokogiri::HTML(response.body)
+
+        # Error appears inside the inline alert container (within the form card)
+        inline_alert = doc.at_css("[data-turbo-temporary]")
+        expect(inline_alert).to be_present
+        expect(inline_alert.text).to include("Invalid email or password")
+
+        # Layout-level flash alert is suppressed (content_for(:inline_alert) prevents it)
+        expect(doc.at_css("div.mx-auto.max-w-7xl > div.bg-red-50")).not_to be_present
+      end
     end
   end
 
