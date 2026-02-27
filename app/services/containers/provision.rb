@@ -531,6 +531,7 @@ module Containers
 
       env = [
         "PAID_PROXY_URL=#{proxy_base}",
+        "GITHUB_API_URL=#{proxy_base}/api/proxy/github",
         "PROJECT_ID=#{project.id}",
         "AGENT_RUN_ID=#{agent_run.id}",
         "PROXY_TOKEN=#{agent_run.proxy_token}",
