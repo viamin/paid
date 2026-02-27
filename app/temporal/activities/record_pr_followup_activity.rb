@@ -3,10 +3,12 @@
 module Activities
   # Records that a PR follow-up was triggered by incrementing the
   # pr_followup_count and removing actionable labels. Called by the
-  # workflow after the child workflow is successfully started.
+  # polling workflow both after starting a child workflow and when
+  # no agent capacity is available (to track the follow-up attempt).
   #
-  # Idempotent: uses the workflow_id as a deduplication key to prevent
-  # double-counting on Temporal retries.
+  # Idempotent: uses the expected_followup_count parameter to prevent
+  # double-counting on Temporal retries. The increment only applies
+  # when the current count matches the expected value.
   class RecordPrFollowupActivity < BaseActivity
     activity_name "RecordPrFollowup"
 
@@ -17,7 +19,17 @@ module Activities
       issue = project.issues.find_by(id: input[:issue_id])
       return { recorded: false } unless issue
 
-      issue.increment!(:pr_followup_count)
+      expected_count = input[:expected_followup_count]
+      if expected_count
+        # Use a row lock and instance-level increment so callbacks/timestamps fire.
+        issue.with_lock do
+          issue.reload
+          issue.increment!(:pr_followup_count) if issue.pr_followup_count == expected_count
+        end
+      else
+        # Legacy callers without expected_count fall back to unconditional increment.
+        issue.increment!(:pr_followup_count)
+      end
 
       remove_labels(project, issue, input[:labels_to_remove] || [])
 

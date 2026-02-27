@@ -68,7 +68,8 @@ module Activities
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
-        labels_to_remove: labels_to_remove
+        labels_to_remove: labels_to_remove,
+        current_followup_count: issue.pr_followup_count
       }
     end
 
@@ -83,9 +84,15 @@ module Activities
       issue.pr_followup_count >= project.max_pr_followup_runs
     end
 
+    # Finds the most recent completed agent run associated with a PR.
+    # Checks both source_pull_request_number (follow-up runs) and
+    # pull_request_number (the initial run that created the PR).
     def last_completed_run(project, issue)
       project.agent_runs
-        .where(source_pull_request_number: issue.github_number)
+        .where(
+          "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+          pr_num: issue.github_number
+        )
         .completed
         .order(completed_at: :desc)
         .first
@@ -118,10 +125,12 @@ module Activities
 
       checks = client.check_runs_for_ref(project.full_name, pr_data.head.sha)
 
-      # Skip if any checks are still pending
-      return [] if checks.any? { |c| c[:conclusion].nil? }
+      # Filter to only completed checks; pending checks (conclusion nil) are ignored
+      # rather than blocking detection of failures in other completed checks.
+      completed = checks.select { |c| c[:conclusion].present? }
+      return [] if completed.empty?
 
-      failed = checks.select { |c| %w[failure cancelled timed_out].include?(c[:conclusion]) }
+      failed = completed.select { |c| %w[failure cancelled timed_out].include?(c[:conclusion]) }
       return [] if failed.empty?
 
       [ { type: "ci_failure", details: failed.map { |c| c[:name] } } ]
