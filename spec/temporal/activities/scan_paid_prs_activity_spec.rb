@@ -101,7 +101,51 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "does not trigger when checks are pending" do
+      it "does not trigger when all completed checks pass" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when some checks failed but others are still pending" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ], paid_state: "completed")
+        stub_github_for_pr(
+          checks: [
+            { name: "rspec", conclusion: "failure" },
+            { name: "deploy", conclusion: nil },
+            { name: "rubocop", conclusion: "success" }
+          ]
+        )
+      end
+
+      it "detects CI failures on completed checks without waiting for pending ones" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ci_failure")
+        expect(trigger[:triggers].first[:details]).to eq([ "rspec" ])
+      end
+    end
+
+    context "when all checks are still pending" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ], paid_state: "completed")
+        stub_github_for_pr(
+          checks: [
+            { name: "rspec", conclusion: nil },
+            { name: "rubocop", conclusion: nil }
+          ]
+        )
+      end
+
+      it "does not trigger when no checks have completed" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
@@ -374,6 +418,73 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when the initial run (not a follow-up) created the PR" do
+      let(:comment) do
+        OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "Please fix the error handling in the parser module",
+          created_at: 30.minutes.ago
+        )
+      end
+
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ], paid_state: "completed")
+        # Initial run used issue_id (not source_pull_request_number) but
+        # recorded pull_request_number on completion.
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: nil,
+          pull_request_number: 42,
+          completed_at: 1.hour.ago)
+        stub_github_for_pr(issue_comments: [ comment ])
+      end
+
+      it "uses the initial run's completed_at as cutoff for comments" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("conversation_comments")
+      end
+
+      it "ignores comments older than the initial run" do
+        old_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "This comment was posted before the agent ran successfully",
+          created_at: 2.hours.ago
+        )
+        stub_github_for_pr(issue_comments: [ old_comment ])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when returning trigger data" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ], paid_state: "completed",
+          pr_followup_count: 1)
+        stub_github_for_pr(
+          checks: [
+            { name: "rspec", conclusion: "failure" },
+            { name: "rubocop", conclusion: "success" }
+          ]
+        )
+      end
+
+      it "includes current_followup_count for idempotent recording" do
+        result = activity.execute(project_id: project.id)
+
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:current_followup_count]).to eq(1)
       end
     end
 

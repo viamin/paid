@@ -16,8 +16,7 @@ module Activities
 
       client = project.github_token.client
 
-      labels = project.label_mappings.values.compact_blank.uniq
-      labels = (labels + [ PAID_GENERATED_LABEL ]).uniq if labels.any?
+      labels = (project.label_mappings.values.compact_blank + [ PAID_GENERATED_LABEL ]).uniq
       github_issues = fetch_all_issues(client, project.full_name, labels)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }

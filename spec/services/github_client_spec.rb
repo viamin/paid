@@ -551,6 +551,7 @@ RSpec.describe GithubClient do
     context "when check runs exist" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/commits/#{ref}/check-runs")
+          .with(query: hash_including("per_page" => "100", "page" => "1"))
           .to_return(
             status: 200,
             body: {
@@ -577,11 +578,43 @@ RSpec.describe GithubClient do
     context "when ref does not exist" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/commits/#{ref}/check-runs")
+          .with(query: hash_including("per_page" => "100", "page" => "1"))
           .to_return(status: 404, body: { message: "Not Found" }.to_json)
       end
 
       it "raises NotFoundError" do
         expect { client.check_runs_for_ref(repo, ref) }.to raise_error(GithubClient::NotFoundError)
+      end
+    end
+
+    context "when check runs span multiple pages" do
+      before do
+        page1_runs = Array.new(100) { |i| { id: i + 1, name: "check-#{i + 1}", conclusion: "success" } }
+        page2_runs = [ { id: 101, name: "check-101", conclusion: "failure" } ]
+
+        stub_request(:get, "#{api_base}/repos/#{repo}/commits/#{ref}/check-runs")
+          .with(query: hash_including("per_page" => "100", "page" => "1"))
+          .to_return(
+            status: 200,
+            body: { total_count: 101, check_runs: page1_runs }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        stub_request(:get, "#{api_base}/repos/#{repo}/commits/#{ref}/check-runs")
+          .with(query: hash_including("per_page" => "100", "page" => "2"))
+          .to_return(
+            status: 200,
+            body: { total_count: 101, check_runs: page2_runs }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "paginates and collects all check runs" do
+        result = client.check_runs_for_ref(repo, ref)
+
+        expect(result.size).to eq(101)
+        expect(result.last[:name]).to eq("check-101")
+        expect(result.last[:conclusion]).to eq("failure")
       end
     end
   end
@@ -592,6 +625,7 @@ RSpec.describe GithubClient do
     context "when comments exist" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .with(query: hash_including("per_page" => "100"))
           .to_return(
             status: 200,
             body: [
@@ -608,6 +642,24 @@ RSpec.describe GithubClient do
         expect(result.size).to eq(2)
         expect(result.first.body).to eq("Looks good")
         expect(result.first.user.login).to eq("reviewer")
+      end
+    end
+
+    context "when fetching comments" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .with(query: hash_including("per_page" => "100"))
+          .to_return(
+            status: 200,
+            body: [ { id: 1, body: "Comment", user: { login: "user" } } ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "temporarily enables auto_paginate and restores it" do
+        expect(client.client.auto_paginate).to be false
+        client.issue_comments(repo, 42)
+        expect(client.client.auto_paginate).to be false
       end
     end
   end

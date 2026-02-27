@@ -96,17 +96,20 @@ module Workflows
 
       capacity = run_activity(Activities::CheckRunCapacityActivity, {}, timeout: 10)
 
+      followup_input = {
+        project_id: project_id,
+        issue_id: issue_id,
+        labels_to_remove: pr_data[:labels_to_remove] || [],
+        expected_followup_count: pr_data[:current_followup_count]
+      }
+
       unless capacity[:has_capacity]
         run_activity(Activities::QueueAgentRunActivity,
           { project_id: project_id, issue_id: issue_id,
             source_pull_request_number: pr_number }, timeout: 30)
 
         # Still record the followup even when queued
-        run_activity(Activities::RecordPrFollowupActivity, {
-          project_id: project_id,
-          issue_id: issue_id,
-          labels_to_remove: pr_data[:labels_to_remove] || []
-        }, timeout: 30)
+        run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
         return
       end
 
@@ -125,11 +128,7 @@ module Workflows
 
       # Record state mutations after child workflow starts successfully,
       # keeping the scan activity read-only and retry-safe.
-      run_activity(Activities::RecordPrFollowupActivity, {
-        project_id: project_id,
-        issue_id: issue_id,
-        labels_to_remove: pr_data[:labels_to_remove] || []
-      }, timeout: 30)
+      run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
     end
   end
 end
