@@ -20,12 +20,29 @@ module Activities
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
 
+      # Resolve and render prompt version if no custom prompt is provided.
+      # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
+      prompt_version = nil
+      if custom_prompt.blank? && issue.present? && issue.trusted?
+        prompt_version = Prompts::Resolve.call(slug: "coding.issue_implementation", project: project)
+        if prompt_version
+          custom_prompt = prompt_version.render(
+            title: issue.title,
+            issue_number: issue.github_number.to_s,
+            body: issue.body.to_s,
+            test_command: test_command_for(project),
+            lint_command: lint_command_for(project)
+          )
+        end
+      end
+
       agent_run = AgentRun.create!(
         project: project,
         issue: issue,
         agent_type: agent_type,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
+        prompt_version: prompt_version,
         status: "pending"
       )
 
@@ -36,7 +53,8 @@ module Activities
         agent_run_id: agent_run.id,
         project_id: project_id,
         issue_id: issue_id,
-        has_custom_prompt: custom_prompt.present?
+        custom_prompt_provided: input[:custom_prompt].present?,
+        prompt_version_id: prompt_version&.id
       )
 
       { agent_run_id: agent_run.id }
@@ -70,6 +88,20 @@ module Activities
       )
 
       { agent_run_id: agent_run.id }
+    end
+
+    def test_command_for(project)
+      Prompts::LanguageCommands::LANGUAGE_TEST_COMMANDS.fetch(
+        Prompts::LanguageCommands.detected_language(project),
+        "echo \"No test command configured\""
+      )
+    end
+
+    def lint_command_for(project)
+      Prompts::LanguageCommands::LANGUAGE_LINT_COMMANDS.fetch(
+        Prompts::LanguageCommands.detected_language(project),
+        "echo \"No lint command configured\""
+      )
     end
   end
 end

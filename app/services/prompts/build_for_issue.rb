@@ -9,23 +9,9 @@ module Prompts
   class BuildForIssue
     class UntrustedIssueError < StandardError; end
 
-    LANGUAGE_TEST_COMMANDS = {
-      "ruby" => "bundle exec rspec",
-      "javascript" => "npm test",
-      "typescript" => "npm test",
-      "python" => "pytest",
-      "go" => "go test ./...",
-      "rust" => "cargo test"
-    }.freeze
-
-    LANGUAGE_LINT_COMMANDS = {
-      "ruby" => "bundle exec rubocop",
-      "javascript" => "npm run lint",
-      "typescript" => "npm run lint",
-      "python" => "ruff check .",
-      "go" => "golangci-lint run",
-      "rust" => "cargo clippy"
-    }.freeze
+    # Kept for backwards compatibility with existing references
+    LANGUAGE_TEST_COMMANDS = LanguageCommands::LANGUAGE_TEST_COMMANDS
+    LANGUAGE_LINT_COMMANDS = LanguageCommands::LANGUAGE_LINT_COMMANDS
 
     attr_reader :issue, :project
 
@@ -88,14 +74,7 @@ module Prompts
     end
 
     def detected_language
-      @detected_language ||= detect_language
-    end
-
-    def detect_language
-      return project.detected_language if project.respond_to?(:detected_language) && project.detected_language.present?
-
-      # Default to Ruby when detected_language is unavailable
-      "ruby"
+      @detected_language ||= LanguageCommands.detected_language(project)
     end
   end
 end

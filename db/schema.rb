@@ -59,6 +59,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_100000) do
     t.bigint "issue_id"
     t.integer "iterations", default: 0
     t.bigint "project_id", null: false
+    t.bigint "prompt_version_id"
     t.string "proxy_token", limit: 64
     t.integer "pull_request_number"
     t.string "pull_request_url", limit: 500
@@ -74,10 +75,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_100000) do
     t.string "worktree_path", limit: 500
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
+    t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
@@ -262,6 +264,48 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_100000) do
     t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
   end
 
+  create_table "prompt_versions", force: :cascade do |t|
+    t.decimal "avg_iterations", precision: 4, scale: 2
+    t.decimal "avg_quality_score", precision: 4, scale: 2
+    t.text "change_notes"
+    t.datetime "created_at", null: false
+    t.string "created_by", limit: 50
+    t.bigint "created_by_user_id"
+    t.bigint "parent_version_id"
+    t.bigint "prompt_id", null: false
+    t.text "system_prompt"
+    t.text "template", null: false
+    t.integer "usage_count", default: 0, null: false
+    t.jsonb "variables", default: [], null: false
+    t.integer "version", null: false
+    t.index ["created_by_user_id"], name: "index_prompt_versions_on_created_by_user_id"
+    t.index ["parent_version_id"], name: "index_prompt_versions_on_parent_version_id"
+    t.index ["prompt_id", "version"], name: "index_prompt_versions_on_prompt_id_and_version", unique: true
+    t.index ["prompt_id"], name: "index_prompt_versions_on_prompt_id"
+  end
+
+  create_table "prompts", force: :cascade do |t|
+    t.bigint "account_id"
+    t.boolean "active", default: true, null: false
+    t.string "category", limit: 50, null: false
+    t.datetime "created_at", null: false
+    t.bigint "current_version_id"
+    t.text "description"
+    t.string "name", limit: 255, null: false
+    t.bigint "project_id"
+    t.string "slug", limit: 100, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_prompts_on_account_id"
+    t.index ["active"], name: "index_prompts_on_active"
+    t.index ["category"], name: "index_prompts_on_category"
+    t.index ["current_version_id"], name: "index_prompts_on_current_version_id"
+    t.index ["project_id"], name: "index_prompts_on_project_id"
+    t.index ["slug", "account_id"], name: "index_prompts_on_slug_account", unique: true, where: "((account_id IS NOT NULL) AND (project_id IS NULL))"
+    t.index ["slug", "project_id"], name: "index_prompts_on_slug_project", unique: true, where: "(project_id IS NOT NULL)"
+    t.index ["slug"], name: "index_prompts_on_slug_global", unique: true, where: "((account_id IS NULL) AND (project_id IS NULL))"
+    t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_prompts_scope_consistency"
+  end
+
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
@@ -340,6 +384,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_100000) do
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
+  add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "issues", "issues", column: "parent_issue_id"
@@ -349,6 +394,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_25_100000) do
   add_foreign_key "projects", "accounts"
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
+  add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
+  add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
+  add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "prompts", "accounts", on_delete: :cascade
+  add_foreign_key "prompts", "projects", on_delete: :cascade
+  add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"
