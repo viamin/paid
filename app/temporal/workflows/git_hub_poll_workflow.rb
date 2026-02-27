@@ -54,7 +54,9 @@ module Workflows
           raise Temporalio::Workflow::ContinueAsNewError.new({ project_id: project_id })
         end
 
-        interruptible_sleep(poll_config[:poll_interval_seconds])
+        unless @sync_requested
+          interruptible_sleep(poll_config[:poll_interval_seconds])
+        end
       end
     end
 
