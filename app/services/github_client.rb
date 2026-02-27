@@ -142,6 +142,18 @@ class GithubClient
     handle_errors { client.pull_request(repo, number) }
   end
 
+  # Creates an issue on a repository.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param title [String] Issue title
+  # @param body [String] Issue body (Markdown supported)
+  # @param labels [Array<String>] Label names to add
+  # @param options [Hash] Additional options passed to Octokit
+  # @return [Sawyer::Resource] The created issue
+  def create_issue(repo, title:, body: "", labels: [], **options)
+    handle_errors { client.create_issue(repo, title, body, labels: labels, **options) }
+  end
+
   # Creates a pull request.
   #
   # @param repo [String] Repository in "owner/name" format
