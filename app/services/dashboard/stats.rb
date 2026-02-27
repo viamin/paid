@@ -60,10 +60,10 @@ module Dashboard
         )
 
       {
-        p50: result&.dig(0).to_i,
-        p75: result&.dig(1).to_i,
-        p90: result&.dig(2).to_i,
-        avg: result&.dig(3).to_i
+        p50: result&.dig(0)&.to_i || 0,
+        p75: result&.dig(1)&.to_i || 0,
+        p90: result&.dig(2)&.to_i || 0,
+        avg: result&.dig(3)&.to_i || 0
       }
     end
 
@@ -111,7 +111,7 @@ module Dashboard
     end
 
     def runs_by_project
-      agent_runs.joins(:project)
+      agent_runs
         .group("projects.name")
         .count
         .sort_by { |_, v| -v }
