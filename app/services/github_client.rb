@@ -110,12 +110,8 @@ class GithubClient
   # @raise [RateLimitError] if rate limit is exceeded
   def repositories
     handle_errors do
-      original = client.auto_paginate
-      client.auto_paginate = true
-      repos = client.repositories
+      repos = with_auto_paginate { client.repositories }
       repos.select { |r| r.permissions&.push }
-    ensure
-      client.auto_paginate = original
     end
   end
 
@@ -227,24 +223,41 @@ class GithubClient
   end
 
   # Fetches CI check runs for a git ref (branch, tag, or SHA).
+  # Paginates to collect all check runs (repos with many workflows
+  # or matrix builds may exceed a single page).
   #
   # @param repo [String] Repository in "owner/name" format
   # @param ref [String] Git ref (branch name, tag, or SHA)
   # @return [Array<Hash>] Check runs with :name and :conclusion keys
   def check_runs_for_ref(repo, ref)
     handle_errors do
-      response = client.check_runs_for_ref(repo, ref)
-      response.check_runs.map { |cr| { name: cr.name, conclusion: cr.conclusion } }
+      all_check_runs = []
+      page = 1
+
+      loop do
+        response = client.check_runs_for_ref(repo, ref, per_page: 100, page: page)
+        all_check_runs.concat(response.check_runs)
+        break if all_check_runs.size >= response.total_count || response.check_runs.size < 100
+
+        page += 1
+        break if page > 10
+      end
+
+      all_check_runs.map { |cr| { name: cr.name, conclusion: cr.conclusion } }
     end
   end
 
-  # Fetches conversation comments on an issue or pull request.
+  # Fetches all conversation comments on an issue or pull request.
+  # Uses auto_paginate to collect all comments, since the default page
+  # size (~30) would miss newer comments on busy PRs.
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Issue or PR number
   # @return [Array<Sawyer::Resource>] Comments (each has .user.login, .body, .created_at)
   def issue_comments(repo, number)
-    handle_errors { client.issue_comments(repo, number) }
+    handle_errors do
+      with_auto_paginate { client.issue_comments(repo, number) }
+    end
   end
 
   # Fetches review threads on a pull request via GraphQL.
@@ -389,6 +402,14 @@ class GithubClient
       builder.use Octokit::Response::RaiseError
       builder.adapter Faraday.default_adapter
     end
+  end
+
+  def with_auto_paginate
+    original = client.auto_paginate
+    client.auto_paginate = true
+    yield
+  ensure
+    client.auto_paginate = original
   end
 
   def graphql_request(query, **variables)

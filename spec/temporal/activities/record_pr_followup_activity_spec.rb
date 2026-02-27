@@ -120,5 +120,69 @@ RSpec.describe Activities::RecordPrFollowupActivity do
         expect(result[:recorded]).to be true
       end
     end
+
+    context "with expected_followup_count for idempotency" do
+      let(:issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_followup_count: 1)
+      end
+
+      it "increments when expected_count matches current count" do
+        activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          expected_followup_count: 1
+        )
+
+        expect(issue.reload.pr_followup_count).to eq(2)
+      end
+
+      it "does not increment when expected_count does not match (retry scenario)" do
+        activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          expected_followup_count: 0
+        )
+
+        expect(issue.reload.pr_followup_count).to eq(1)
+      end
+
+      it "is idempotent on double execution with same expected_count" do
+        activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          expected_followup_count: 1
+        )
+        activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          expected_followup_count: 1
+        )
+
+        expect(issue.reload.pr_followup_count).to eq(2)
+      end
+    end
+
+    context "without expected_followup_count (legacy callers)" do
+      let(:issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_followup_count: 1)
+      end
+
+      it "falls back to unconditional increment" do
+        activity.execute(
+          project_id: project.id,
+          issue_id: issue.id
+        )
+
+        expect(issue.reload.pr_followup_count).to eq(2)
+      end
+    end
   end
 end
