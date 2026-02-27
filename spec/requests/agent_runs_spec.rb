@@ -299,4 +299,112 @@ RSpec.describe "AgentRuns" do
       end
     end
   end
+
+  describe "POST /projects/:project_id/agent_runs/:id/retry" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        agent_run = create(:agent_run, :failed, project: project)
+        post retry_project_agent_run_path(project, agent_run)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "creates a new queued run from a failed run" do
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to change(AgentRun, :count).by(1)
+
+        new_run = AgentRun.last
+        expect(new_run.status).to eq("queued")
+        expect(new_run.project).to eq(project)
+        expect(new_run.issue).to eq(agent_run.issue)
+        expect(new_run.agent_type).to eq("claude_code")
+        expect(response).to redirect_to(project_agent_run_path(project, new_run))
+      end
+
+      it "preserves custom_prompt from the original run" do
+        agent_run = create(:agent_run, :failed, :with_custom_prompt, project: project)
+
+        post retry_project_agent_run_path(project, agent_run)
+
+        new_run = AgentRun.last
+        expect(new_run.custom_prompt).to eq(agent_run.custom_prompt)
+      end
+
+      it "preserves source_pull_request_number from the original run" do
+        agent_run = create(:agent_run, :failed, :existing_pr, project: project)
+
+        post retry_project_agent_run_path(project, agent_run)
+
+        new_run = AgentRun.last
+        expect(new_run.source_pull_request_number).to eq(agent_run.source_pull_request_number)
+      end
+
+      it "enqueues ProcessRunQueueJob" do
+        agent_run = create(:agent_run, :failed, project: project)
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "redirects with success notice" do
+        agent_run = create(:agent_run, :failed, project: project)
+
+        post retry_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, AgentRun.last))
+        follow_redirect!
+        expect(response.body).to include("retry")
+      end
+
+      it "allows retrying a timed-out run" do
+        agent_run = create(:agent_run, :timeout, project: project)
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last.status).to eq("queued")
+      end
+
+      it "allows retrying a cancelled run" do
+        agent_run = create(:agent_run, :cancelled, project: project)
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last.status).to eq("queued")
+      end
+
+      it "rejects retrying an active run" do
+        agent_run = create(:agent_run, :running, project: project)
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("Only finished runs can be retried")
+      end
+
+      it "does not allow retrying runs from other accounts" do
+        other_account = create(:account)
+        other_token = create(:github_token, account: other_account)
+        other_project = create(:project, account: other_account, github_token: other_token)
+        other_run = create(:agent_run, :failed, project: other_project)
+
+        post retry_project_agent_run_path(other_project, other_run)
+
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+  end
 end

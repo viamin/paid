@@ -12,7 +12,7 @@
     <% end %>
   </div>
 
-  <%= render "agent_runs/detail", agent_run: @agent_run %>
+  <%= render "agent_runs/detail", agent_run: @agent_run, show_retry: policy(@agent_run.project).run_agent? %>
 
   <% if @logs.any? %>
     <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
