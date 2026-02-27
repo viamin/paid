@@ -29,4 +29,49 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       expect(policy.max_attempts).to eq(1)
     end
   end
+
+  describe "#stale_pull_request_error?" do
+    let(:workflow) { described_class.new }
+
+    def activity_error_with_cause(cause)
+      activity_err = Temporalio::Error::ActivityError.new(
+        "activity failed",
+        scheduled_event_id: 1,
+        started_event_id: 2,
+        identity: "",
+        activity_type: "CloneRepo",
+        activity_id: "1",
+        retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
+      )
+      # Use Ruby's raise/rescue to set the real cause
+      begin
+        begin
+          raise cause
+        rescue
+          raise activity_err
+        end
+      rescue => e
+        e
+      end
+    end
+
+    it "returns true for ActivityError wrapping StalePullRequest ApplicationError" do
+      cause = Temporalio::Error::ApplicationError.new("stale", type: "StalePullRequest")
+      error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:stale_pull_request_error?, error)).to be true
+    end
+
+    it "returns false for other ApplicationError types" do
+      cause = Temporalio::Error::ApplicationError.new("conflict", type: "WorktreeConflict")
+      error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:stale_pull_request_error?, error)).to be false
+    end
+
+    it "returns false for errors without a cause" do
+      error = RuntimeError.new("something went wrong")
+      expect(workflow.send(:stale_pull_request_error?, error)).to be false
+    end
+  end
 end

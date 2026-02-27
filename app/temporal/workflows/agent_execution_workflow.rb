@@ -120,6 +120,8 @@ module Workflows
         { success: true, agent_run_id: agent_run_id }
 
       rescue => e
+        request_project_resync(project_id) if stale_pull_request_error?(e)
+
         # Mark agent run as failed
         run_activity(Activities::MarkAgentRunFailedActivity,
           { agent_run_id: agent_run_id, error: e.message }, timeout: 30)
@@ -156,6 +158,24 @@ module Workflows
           )
         end
       end
+    end
+
+    private
+
+    def stale_pull_request_error?(error)
+      cause = error.respond_to?(:cause) ? error.cause : nil
+      cause.is_a?(Temporalio::Error::ApplicationError) && cause.type == "StalePullRequest"
+    end
+
+    def request_project_resync(project_id)
+      handle = Temporalio::Workflow.external_workflow_handle("github-poll-#{project_id}")
+      handle.signal("request_sync")
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.resync_signal_failed",
+        project_id: project_id,
+        error: e.message
+      )
     end
   end
 end

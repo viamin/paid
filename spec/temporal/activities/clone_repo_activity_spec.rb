@@ -54,7 +54,7 @@ RSpec.describe Activities::CloneRepoActivity do
     context "when agent_run has an existing PR" do
       let(:github_client) { instance_double(GithubClient) }
       let(:pr_head) { double("pr_head", ref: "existing-feature-branch") } # rubocop:disable RSpec/VerifiedDoubles
-      let(:pr_data) { double("pr_data", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+      let(:pr_data) { double("pr_data", state: "open", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
 
       before do
         agent_run.update!(source_pull_request_number: 135)
@@ -74,7 +74,10 @@ RSpec.describe Activities::CloneRepoActivity do
       end
 
       it "checks out the existing PR branch instead of creating a new one" do
-        expect(git_ops).to receive(:clone_and_checkout_branch).with(branch_name: "existing-feature-branch")
+        expect(git_ops).to receive(:clone_and_checkout_branch).with(
+          branch_name: "existing-feature-branch",
+          pull_request_number: 135
+        )
         expect(git_ops).not_to receive(:clone_and_setup_branch)
 
         activity.execute(agent_run_id: agent_run.id)
@@ -87,6 +90,39 @@ RSpec.describe Activities::CloneRepoActivity do
         )
 
         activity.execute(agent_run_id: agent_run.id)
+      end
+
+      context "when PR is closed" do
+        let(:pr_data) { double("pr_data", state: "closed", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+
+        it "raises StalePullRequest error" do
+          expect { activity.execute(agent_run_id: agent_run.id) }
+            .to raise_error(Temporalio::Error::ApplicationError, /PR #135 is closed/) do |error|
+              expect(error.type).to eq("StalePullRequest")
+            end
+        end
+
+        it "does not attempt clone or checkout" do
+          expect(git_ops).not_to receive(:clone_and_checkout_branch)
+          expect(git_ops).not_to receive(:clone_and_setup_branch)
+
+          begin
+            activity.execute(agent_run_id: agent_run.id)
+          rescue Temporalio::Error::ApplicationError
+            # expected
+          end
+        end
+      end
+
+      context "when PR is merged" do
+        let(:pr_data) { double("pr_data", state: "merged", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+
+        it "raises StalePullRequest error" do
+          expect { activity.execute(agent_run_id: agent_run.id) }
+            .to raise_error(Temporalio::Error::ApplicationError, /PR #135 is merged/) do |error|
+              expect(error.type).to eq("StalePullRequest")
+            end
+        end
       end
 
       it "reclaims a cleaned worktree record with the same branch name" do

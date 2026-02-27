@@ -13,11 +13,19 @@ module Workflows
   class GitHubPollWorkflow < BaseWorkflow
     MAX_ITERATIONS = 100
 
+    workflow_signal
+    def request_sync
+      @sync_requested = true
+      @sleep_cancel_proc&.call(reason: "sync_requested")
+    end
+
     def execute(input)
       project_id = input[:project_id]
       iterations = 0
 
       loop do
+        @sync_requested = false
+
         result = run_activity(Activities::FetchIssuesActivity,
           { project_id: project_id }, timeout: 60)
 
@@ -46,11 +54,21 @@ module Workflows
           raise Temporalio::Workflow::ContinueAsNewError.new({ project_id: project_id })
         end
 
-        Temporalio::Workflow.sleep(poll_config[:poll_interval_seconds])
+        interruptible_sleep(poll_config[:poll_interval_seconds])
       end
     end
 
     private
+
+    def interruptible_sleep(duration)
+      cancellation, @sleep_cancel_proc = Temporalio::Cancellation.new
+      Temporalio::Workflow.sleep(duration, cancellation: cancellation)
+    rescue Temporalio::Error::CanceledError
+      raise unless @sync_requested
+      # Signal woke us — loop will restart immediately
+    ensure
+      @sleep_cancel_proc = nil
+    end
 
     def handle_detection(detection, project_id)
       case detection[:action]
