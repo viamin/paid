@@ -49,6 +49,14 @@ class AgentRun < ApplicationRecord
   scope :finished, -> { where(status: %w[completed failed cancelled timeout]) }
   scope :recent, -> { order(created_at: :desc) }
 
+  def self.ransackable_attributes(auth_object = nil)
+    %w[status agent_type branch_name duration_seconds tokens_input tokens_output cost_cents created_at]
+  end
+
+  def self.ransackable_associations(auth_object = nil)
+    %w[project]
+  end
+
   def duration
     return nil unless started_at
 
