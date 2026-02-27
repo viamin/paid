@@ -48,6 +48,7 @@ class ProcessRunQueueJob < ApplicationJob
     workflow_input[:issue_id] = agent_run.issue_id if agent_run.issue_id
     workflow_input[:custom_prompt] = agent_run.custom_prompt if agent_run.custom_prompt.present?
     workflow_input[:source_pull_request_number] = agent_run.source_pull_request_number if agent_run.source_pull_request_number
+    workflow_input[:goal] = agent_run.goal if agent_run.goal != "create_pr"
 
     workflow_id = "queued-#{agent_run.project_id}-#{agent_run.id}-#{Time.current.to_i}"
 

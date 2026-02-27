@@ -20,6 +20,21 @@
       <%= form_with url: project_agent_runs_path(@project), method: :post, class: "space-y-6" do |f| %>
 
         <div>
+          <h2 class="text-base font-semibold text-gray-900">Goal</h2>
+          <p class="mt-1 text-sm text-gray-500">What should the agent produce?</p>
+          <div class="mt-4 flex items-center space-x-6">
+            <label class="inline-flex items-center">
+              <input type="radio" name="goal" value="create_pr" checked class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500">
+              <span class="ml-2 text-sm text-gray-700">Create Pull Request</span>
+            </label>
+            <label class="inline-flex items-center">
+              <input type="radio" name="goal" value="create_issue" class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500">
+              <span class="ml-2 text-sm text-gray-700">Create Issue</span>
+            </label>
+          </div>
+        </div>
+
+        <div>
           <h2 class="text-base font-semibold text-gray-900">Select Issue</h2>
 
           <div class="mt-4 rounded-lg border border-gray-200 p-4">

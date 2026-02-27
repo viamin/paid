@@ -24,6 +24,7 @@ module Workflows
       custom_prompt = input[:custom_prompt]
       source_pull_request_number = input[:source_pull_request_number]
       agent_run_id = input[:agent_run_id]
+      goal = input.fetch(:goal, "create_pr")
 
       Temporalio::Workflow.logger.info(
         "AgentExecutionWorkflow started for project=#{project_id} issue=#{issue_id}"
@@ -73,7 +74,11 @@ module Workflows
           )
         end
 
-        if agent_result[:has_changes]
+        if goal == "create_issue"
+          # Create GitHub issue from agent output (skip push/PR)
+          run_activity(Activities::CreateGithubIssueActivity,
+            { agent_run_id: agent_run_id }, timeout: 60)
+        elsif agent_result[:has_changes]
           # Step 5: Push branch (inside container)
           run_activity(Activities::PushBranchActivity,
             { agent_run_id: agent_run_id }, timeout: 60)
