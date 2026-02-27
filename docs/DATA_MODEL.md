@@ -6,7 +6,9 @@ This document describes the database schema for Paid. The schema is designed aro
 
 **Phase 1 tables (implemented)**: accounts, users, account_memberships, project_memberships, github_tokens, projects, issues, agent_runs, agent_run_logs, workflow_states, worktrees
 
-**Phase 2 tables (planned)**: prompts, prompt_versions, models, model_selections, model_overrides, style_guides, token_usages, cost_budgets, quality_metrics, ab_tests, ab_test_variants, ab_test_assignments
+**Phase 2 tables (implemented)**: prompts, prompt_versions
+
+**Phase 2 tables (planned)**: models, model_selections, model_overrides, style_guides, token_usages, cost_budgets, quality_metrics, ab_tests, ab_test_variants, ab_test_assignments
 
 **Implementation notes**:
 
@@ -560,20 +562,24 @@ CREATE INDEX idx_agent_run_logs_type ON agent_run_logs(agent_run_id, log_type);
 
 ### prompts
 
-Named prompt templates that can be versioned.
+Named prompt templates that can be versioned. Supports a three-level inheritance
+hierarchy: **global** (account\_id and project\_id NULL) → **account** (account\_id set,
+project\_id NULL) → **project** (both set). Resolution picks the most specific active
+prompt for a given slug.
 
 ```sql
 CREATE TABLE prompts (
   id            BIGSERIAL PRIMARY KEY,
 
   -- Identification
-  slug          VARCHAR(100) NOT NULL UNIQUE,  -- e.g., "planning.feature_decomposition"
+  slug          VARCHAR(100) NOT NULL,         -- e.g., "planning.feature_decomposition"
   name          VARCHAR(255) NOT NULL,
   description   TEXT,
-  category      VARCHAR(50) NOT NULL,          -- planning, coding, review, evolution
+  category      VARCHAR(50) NOT NULL,          -- planning, coding, review, testing
 
-  -- Scope
-  project_id    BIGINT REFERENCES projects(id), -- NULL = global
+  -- Scope (three-level hierarchy: global > account > project)
+  account_id    BIGINT REFERENCES accounts(id), -- NULL = global
+  project_id    BIGINT REFERENCES projects(id),  -- NULL = global or account-level
 
   -- Current version pointer
   current_version_id BIGINT,  -- Set after version created
@@ -585,8 +591,15 @@ CREATE TABLE prompts (
   updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_prompts_slug ON prompts(slug);
+-- Partial unique indexes enforce slug uniqueness at each scope level
+CREATE UNIQUE INDEX idx_prompts_slug_global ON prompts(slug)
+  WHERE account_id IS NULL AND project_id IS NULL;
+CREATE UNIQUE INDEX idx_prompts_slug_account ON prompts(slug, account_id)
+  WHERE account_id IS NOT NULL AND project_id IS NULL;
+CREATE UNIQUE INDEX idx_prompts_slug_project ON prompts(slug, project_id)
+  WHERE project_id IS NOT NULL;
 CREATE INDEX idx_prompts_category ON prompts(category);
+CREATE INDEX idx_prompts_account ON prompts(account_id);
 CREATE INDEX idx_prompts_project ON prompts(project_id);
 ```
 

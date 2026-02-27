@@ -24,3 +24,6 @@ unless User.exists?(email: "test@example.com")
 
   Rails.logger.info(message: "seeds.created_test_user", email: "test@example.com")
 end
+
+# Seed default prompts
+load Rails.root.join("db/seeds/prompts.rb")
