@@ -19,6 +19,7 @@ class AgentRun < ApplicationRecord
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
+  validates :created_issue_url, length: { maximum: 500 }
   validates :worktree_path, length: { maximum: 500 }
   validates :branch_name, length: { maximum: 255 }
   validates :base_commit_sha, length: { maximum: 40 }
@@ -92,10 +93,6 @@ class AgentRun < ApplicationRecord
     goal == "create_pr"
   end
 
-  def result_url
-    create_issue_goal? ? created_issue_url : pull_request_url
-  end
-
   def queued?
     status == "queued"
   end
@@ -135,6 +132,10 @@ class AgentRun < ApplicationRecord
       created_issue_number: issue_number,
       duration_seconds: duration
     )
+  end
+
+  def result_url
+    pull_request_url || created_issue_url
   end
 
   def fail!(error: nil)
