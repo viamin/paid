@@ -97,6 +97,10 @@ class AgentRun < ApplicationRecord
     goal == "create_issue"
   end
 
+  def create_pr_goal?
+    goal == "create_pr"
+  end
+
   def queued?
     status == "queued"
   end

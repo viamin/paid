@@ -83,6 +83,7 @@ module Projects
         agent_type: @agent_run.agent_type,
         custom_prompt: @agent_run.custom_prompt,
         source_pull_request_number: @agent_run.source_pull_request_number,
+        goal: @agent_run.goal,
         status: "queued"
       )
 
