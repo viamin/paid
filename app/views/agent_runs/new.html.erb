@@ -17,24 +17,24 @@
     </div>
 
     <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
-      <%= form_with url: project_agent_runs_path(@project), method: :post, class: "space-y-6" do |f| %>
+      <%= form_with url: project_agent_runs_path(@project), method: :post, class: "space-y-6", data: { controller: "goal-toggle" } do |f| %>
 
         <fieldset>
           <legend class="text-base font-semibold text-gray-900">Goal</legend>
           <p class="mt-1 text-sm text-gray-500" id="goal-description">What should the agent produce?</p>
           <div class="mt-4 flex items-center space-x-6" role="radiogroup" aria-describedby="goal-description">
             <label class="inline-flex items-center">
-              <input type="radio" name="goal" value="create_pr" checked class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500">
-              <span class="ml-2 text-sm text-gray-700">Create Pull Request</span>
+              <input type="radio" name="goal" value="create_pr" checked class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <span class="ml-2 text-sm text-gray-700">Create/Edit Pull Request</span>
             </label>
             <label class="inline-flex items-center">
-              <input type="radio" name="goal" value="create_issue" class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500">
+              <input type="radio" name="goal" value="create_issue" class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
               <span class="ml-2 text-sm text-gray-700">Create Issue</span>
             </label>
           </div>
         </fieldset>
 
-        <div>
+        <div data-goal-toggle-target="issueSection">
           <h2 class="text-base font-semibold text-gray-900">Select Issue</h2>
 
           <div class="mt-4 rounded-lg border border-gray-200 p-4">
@@ -54,7 +54,7 @@
           </div>
         </div>
 
-        <div>
+        <div data-goal-toggle-target="prSection">
           <h2 class="text-base font-semibold text-gray-900">Or Work on an Existing PR</h2>
           <p class="mt-1 text-sm text-gray-500">Push changes to an existing pull request's branch instead of creating a new one.</p>
 
@@ -76,15 +76,15 @@
         </div>
 
         <div>
-          <h2 class="text-base font-semibold text-gray-900">Or Provide a Custom Prompt</h2>
-          <p class="mt-1 text-sm text-gray-500">Run the agent with a free-form prompt instead of a GitHub issue.</p>
+          <h2 class="text-base font-semibold text-gray-900">Additional Instructions</h2>
+          <p class="mt-1 text-sm text-gray-500">Optionally provide extra context or instructions for the agent. This can be combined with an issue or PR selection above.</p>
 
           <div class="mt-4 rounded-lg border border-gray-200 p-4">
             <label for="custom_prompt" class="block text-sm font-medium text-gray-700">Custom prompt:</label>
             <textarea name="custom_prompt" id="custom_prompt" rows="6"
                       placeholder="Describe the changes you want the agent to make..."
                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
-            <p class="mt-1 text-xs text-gray-500">If provided, the agent will use this prompt directly without needing a linked issue.</p>
+            <p class="mt-1 text-xs text-gray-500">Add any additional instructions for the agent. When used alone, this serves as the primary prompt for the run.</p>
           </div>
         </div>
 
