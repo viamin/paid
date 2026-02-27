@@ -29,7 +29,9 @@ Rails.application.routes.draw do
   # Projects management
   resources :projects do
     resource :workflow_status, only: [ :show ]
-    resources :agent_runs, only: [ :index, :show, :new, :create ]
+    resources :agent_runs, only: [ :index, :show, :new, :create ] do
+      post :retry, on: :member
+    end
   end
 
   # API endpoints for agent containers
