@@ -87,6 +87,8 @@ module Projects
         status: "queued"
       )
 
+      @agent_run.retry!
+
       ProcessRunQueueJob.perform_later
 
       redirect_to project_agent_run_path(@project, new_run),

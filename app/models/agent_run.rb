@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  STATUSES = %w[queued pending running completed failed cancelled timeout].freeze
+  STATUSES = %w[queued pending running completed failed cancelled timeout retried].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   GOALS = %w[create_pr create_issue].freeze
 
@@ -45,8 +45,9 @@ class AgentRun < ApplicationRecord
   scope :failed, -> { where(status: "failed") }
   scope :cancelled, -> { where(status: "cancelled") }
   scope :timeout, -> { where(status: "timeout") }
+  scope :retried, -> { where(status: "retried") }
   scope :active, -> { where(status: %w[pending running]) }
-  scope :finished, -> { where(status: %w[completed failed cancelled timeout]) }
+  scope :finished, -> { where(status: %w[completed failed cancelled timeout retried]) }
   scope :recent, -> { order(created_at: :desc) }
 
   def self.ransackable_attributes(auth_object = nil)
@@ -114,7 +115,7 @@ class AgentRun < ApplicationRecord
   end
 
   def finished?
-    %w[completed failed cancelled timeout].include?(status)
+    %w[completed failed cancelled timeout retried].include?(status)
   end
 
   def successful?
@@ -170,6 +171,14 @@ class AgentRun < ApplicationRecord
       error_message: error,
       duration_seconds: duration
     )
+  end
+
+  def retried?
+    status == "retried"
+  end
+
+  def retry!
+    update!(status: "retried")
   end
 
   # Creates a log entry for this agent run.

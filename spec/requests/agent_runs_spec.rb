@@ -109,6 +109,27 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("No agent runs yet")
       end
 
+      it "filters agent runs using Ransack q params" do
+        create(:agent_run, :with_git_context, project: project, branch_name: "feature/gamma")
+        create(:agent_run, :with_git_context, project: project, branch_name: "fix/delta")
+
+        get project_agent_runs_path(project), params: { q: { branch_name_cont: "gamma" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("feature/gamma")
+        expect(response.body).not_to include("fix/delta")
+      end
+
+      it "sorts agent runs via Ransack sort params" do
+        create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
+        create(:agent_run, project: project, agent_type: "cursor", status: "completed", created_at: 1.day.ago)
+
+        get project_agent_runs_path(project), params: { q: { s: "created_at asc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index("Claude Code")).to be < response.body.index("Cursor")
+      end
+
       it "does not show runs from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)
@@ -407,6 +428,14 @@ RSpec.describe "AgentRuns" do
         expect(new_run.issue).to eq(agent_run.issue)
         expect(new_run.agent_type).to eq("claude_code")
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
+      end
+
+      it "marks the original run as retried" do
+        agent_run = create(:agent_run, :failed, project: project)
+
+        post retry_project_agent_run_path(project, agent_run)
+
+        expect(agent_run.reload.status).to eq("retried")
       end
 
       it "preserves custom_prompt from the original run" do

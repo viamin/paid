@@ -148,6 +148,16 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe ".retried" do
+      it "returns only retried runs" do
+        retried_run = create(:agent_run, :retried)
+        create(:agent_run)
+
+        expect(described_class.retried).to include(retried_run)
+        expect(described_class.retried.count).to eq(1)
+      end
+    end
+
     describe ".active" do
       it "includes pending and running runs but not queued" do
         pending_run = create(:agent_run)
@@ -162,16 +172,17 @@ RSpec.describe AgentRun do
     end
 
     describe ".finished" do
-      it "includes completed, failed, cancelled, and timeout runs" do
+      it "includes completed, failed, cancelled, timeout, and retried runs" do
         completed_run = create(:agent_run, :completed)
         failed_run = create(:agent_run, :failed)
         cancelled_run = create(:agent_run, :cancelled)
         timeout_run = create(:agent_run, :timeout)
+        retried_run = create(:agent_run, :retried)
         create(:agent_run)
 
         finished = described_class.finished
-        expect(finished).to include(completed_run, failed_run, cancelled_run, timeout_run)
-        expect(finished.count).to eq(4)
+        expect(finished).to include(completed_run, failed_run, cancelled_run, timeout_run, retried_run)
+        expect(finished.count).to eq(5)
       end
     end
 
@@ -308,12 +319,30 @@ RSpec.describe AgentRun do
         expect(build(:agent_run, :timeout).finished?).to be true
       end
 
+      it "returns true for retried status" do
+        expect(build(:agent_run, :retried).finished?).to be true
+      end
+
       it "returns false for pending status" do
         expect(build(:agent_run).finished?).to be false
       end
 
       it "returns false for running status" do
         expect(build(:agent_run, :running).finished?).to be false
+      end
+    end
+
+    describe "#retried?" do
+      it "returns true when status is retried" do
+        agent_run = build(:agent_run, :retried)
+
+        expect(agent_run.retried?).to be true
+      end
+
+      it "returns false when status is not retried" do
+        agent_run = build(:agent_run, :failed)
+
+        expect(agent_run.retried?).to be false
       end
     end
 
@@ -435,6 +464,16 @@ RSpec.describe AgentRun do
           expect(agent_run.completed_at).to eq(Time.current)
           expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
         end
+      end
+    end
+
+    describe "#retry!" do
+      it "sets status to retried" do
+        agent_run = create(:agent_run, :failed)
+
+        agent_run.retry!
+
+        expect(agent_run.status).to eq("retried")
       end
     end
 
@@ -808,7 +847,7 @@ RSpec.describe AgentRun do
 
   describe "constants" do
     it "defines valid STATUSES" do
-      expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout])
+      expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout retried])
     end
 
     it "defines valid AGENT_TYPES" do

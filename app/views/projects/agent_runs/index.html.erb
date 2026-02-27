@@ -24,5 +24,5 @@
 
   <%= render "agent_runs/filters", q: @q, show_project: false %>
 
-  <%= render "agent_runs/index_table", agent_runs: @agent_runs, q: @q, pagy: @pagy, show_project: false %>
+  <%= render "agent_runs/index_table", agent_runs: @agent_runs, q: @q, pagy: @pagy, show_project: false, project: @project %>
 </div>
