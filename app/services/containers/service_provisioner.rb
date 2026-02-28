@@ -49,13 +49,17 @@ module Containers
       service_containers = agent_run.project.service_containers.to_a
       return {} if service_containers.empty?
 
+      NetworkPolicy.ensure_network!
+
       env_vars = {}
       container_ids = []
 
       service_containers.each do |sc|
-        ensure_running!(sc)
-        container_ids << sc.id
-        env_vars.merge!(generate_env_vars(sc))
+        sc.with_lock do
+          ensure_running!(sc)
+          container_ids << sc.id
+          env_vars.merge!(generate_env_vars(sc))
+        end
       end
 
       agent_run.update!(
