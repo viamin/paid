@@ -90,7 +90,7 @@ module Workflows
             # Longer timeout: includes an outbound LLM call (up to 15s) for
             # title generation, plus GitHub API and DB writes.
             run_activity(Activities::CreateGithubIssueActivity,
-              { agent_run_id: agent_run_id }, timeout: 120)
+              { agent_run_id: agent_run_id }, timeout: 120, retry_policy: NO_RETRY)
           end
         elsif agent_result[:has_changes]
           # Step 5: Push branch (inside container)
