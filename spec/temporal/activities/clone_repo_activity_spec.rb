@@ -92,6 +92,13 @@ RSpec.describe Activities::CloneRepoActivity do
         activity.execute(agent_run_id: agent_run.id)
       end
 
+      it "installs artifact excludes after checking out existing PR branch" do
+        expect(git_ops).to receive(:clone_and_checkout_branch).ordered
+        expect(git_ops).to receive(:install_artifact_excludes).ordered
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
       it "installs git hooks after checking out existing PR branch" do
         expect(git_ops).to receive(:install_git_hooks).with(
           lint_command: "bundle exec rubocop",
