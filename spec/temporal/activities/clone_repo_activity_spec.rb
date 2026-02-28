@@ -18,6 +18,7 @@ RSpec.describe Activities::CloneRepoActivity do
         .with(container_service: container_service, agent_run: agent_run)
         .and_return(git_ops)
       allow(git_ops).to receive(:clone_and_setup_branch)
+      allow(git_ops).to receive(:install_artifact_excludes)
       allow(git_ops).to receive(:install_git_hooks)
 
       # Simulate what clone_and_setup_branch does to agent_run
@@ -38,6 +39,13 @@ RSpec.describe Activities::CloneRepoActivity do
       expect(Worktree.find_by(agent_run: agent_run)).to be_present
     end
 
+    it "installs artifact excludes after cloning" do
+      expect(git_ops).to receive(:clone_and_setup_branch).ordered
+      expect(git_ops).to receive(:install_artifact_excludes).ordered
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     it "installs git hooks after cloning" do
       expect(git_ops).to receive(:install_git_hooks).with(
         lint_command: "bundle exec rubocop",
@@ -54,7 +62,7 @@ RSpec.describe Activities::CloneRepoActivity do
     context "when agent_run has an existing PR" do
       let(:github_client) { instance_double(GithubClient) }
       let(:pr_head) { double("pr_head", ref: "existing-feature-branch") } # rubocop:disable RSpec/VerifiedDoubles
-      let(:pr_data) { double("pr_data", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+      let(:pr_data) { double("pr_data", state: "open", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
 
       before do
         agent_run.update!(source_pull_request_number: 135)
@@ -64,6 +72,7 @@ RSpec.describe Activities::CloneRepoActivity do
           .with(project.full_name, 135)
           .and_return(pr_data)
         allow(git_ops).to receive(:clone_and_checkout_branch)
+        allow(git_ops).to receive(:install_artifact_excludes)
         allow(git_ops).to receive(:install_git_hooks)
 
         agent_run.update!(
@@ -74,8 +83,18 @@ RSpec.describe Activities::CloneRepoActivity do
       end
 
       it "checks out the existing PR branch instead of creating a new one" do
-        expect(git_ops).to receive(:clone_and_checkout_branch).with(branch_name: "existing-feature-branch")
+        expect(git_ops).to receive(:clone_and_checkout_branch).with(
+          branch_name: "existing-feature-branch",
+          pull_request_number: 135
+        )
         expect(git_ops).not_to receive(:clone_and_setup_branch)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "installs artifact excludes after checking out existing PR branch" do
+        expect(git_ops).to receive(:clone_and_checkout_branch).ordered
+        expect(git_ops).to receive(:install_artifact_excludes).ordered
 
         activity.execute(agent_run_id: agent_run.id)
       end
@@ -87,6 +106,39 @@ RSpec.describe Activities::CloneRepoActivity do
         )
 
         activity.execute(agent_run_id: agent_run.id)
+      end
+
+      context "when PR is closed" do
+        let(:pr_data) { double("pr_data", state: "closed", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+
+        it "raises StalePullRequest error" do
+          expect { activity.execute(agent_run_id: agent_run.id) }
+            .to raise_error(Temporalio::Error::ApplicationError, /PR #135 is closed/) do |error|
+              expect(error.type).to eq("StalePullRequest")
+            end
+        end
+
+        it "does not attempt clone or checkout" do
+          expect(git_ops).not_to receive(:clone_and_checkout_branch)
+          expect(git_ops).not_to receive(:clone_and_setup_branch)
+
+          begin
+            activity.execute(agent_run_id: agent_run.id)
+          rescue Temporalio::Error::ApplicationError
+            # expected
+          end
+        end
+      end
+
+      context "when PR is merged (GitHub API returns state=closed for merged PRs)" do
+        let(:pr_data) { double("pr_data", state: "closed", head: pr_head) } # rubocop:disable RSpec/VerifiedDoubles
+
+        it "raises StalePullRequest error" do
+          expect { activity.execute(agent_run_id: agent_run.id) }
+            .to raise_error(Temporalio::Error::ApplicationError, /PR #135 is closed/) do |error|
+              expect(error.type).to eq("StalePullRequest")
+            end
+        end
       end
 
       it "reclaims a cleaned worktree record with the same branch name" do

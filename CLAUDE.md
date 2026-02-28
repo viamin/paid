@@ -14,6 +14,7 @@ Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI
 ## Git Workflow
 
 - **The `main` branch is protected** - Never commit directly to `main`. Always create a feature branch and open a pull request.
+- **Never commit build artifacts or tool caches** - Do not `git add` directories created by setup/install commands (e.g., `.corepack/`, `.pg-install/`, `.apt-cache/`, `.cache-pkg/`, `vendor/bundle/`, `.tmp-build/`, `.venv/`, `__pycache__/`). If `bin/setup`, `bundle install`, `yarn install`, or similar commands create new dotfile directories in the workspace root, those are build artifacts — not source code. Check `.gitignore` and `.git/info/exclude` before staging. When in doubt, use `git add <specific files>` rather than `git add -A`.
 
 ## GitHub Issues
 
