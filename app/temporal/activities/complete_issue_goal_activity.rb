@@ -25,20 +25,14 @@ module Activities
 
         { agent_run_id: agent_run_id, success: true }
       else
-        agent_run.fail!(error: "Agent did not create an issue")
-        agent_run.log!("system", "Failed: no issue was created by the agent")
+        agent_run.log!("system", "Agent did not create an issue directly; falling back to platform issue creation")
 
         logger.info(
-          message: "agent_execution.issue_goal_failed",
+          message: "agent_execution.issue_goal_fallback",
           agent_run_id: agent_run_id
         )
 
-        ProcessRunQueueJob.perform_later
-
-        raise Temporalio::Error::ApplicationError.new(
-          "Agent did not create an issue",
-          type: "IssueGoalNotMet"
-        )
+        { agent_run_id: agent_run_id, issue_created: false }
       end
     end
   end
