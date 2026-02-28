@@ -75,17 +75,17 @@ module Dashboard
 
       totals = agent_runs.pick(
         Arel.sql("COALESCE(SUM(cost_cents), 0)"),
-        Arel.sql("COALESCE(SUM(tokens_input + tokens_output), 0)")
+        Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)")
       )
 
       trailing_totals = trailing_30.pick(
         Arel.sql("COALESCE(SUM(cost_cents), 0)"),
-        Arel.sql("COALESCE(SUM(tokens_input + tokens_output), 0)")
+        Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)")
       )
 
       completed_totals = completed_runs.pick(
         Arel.sql("COALESCE(SUM(cost_cents), 0)"),
-        Arel.sql("COALESCE(SUM(tokens_input + tokens_output), 0)")
+        Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)")
       )
 
       {
