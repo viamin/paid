@@ -64,12 +64,13 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
-    it "returns agent_run_id and PR details" do
+    it "returns agent_run_id and PR details including review phase" do
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:agent_run_id]).to eq(agent_run.id)
       expect(result[:pull_request_url]).to eq("https://github.com/#{project.full_name}/pull/42")
       expect(result[:pull_request_number]).to eq(42)
+      expect(result[:pr_review_phase]).to eq("ready")
     end
 
     it "enqueues ProcessRunQueueJob" do

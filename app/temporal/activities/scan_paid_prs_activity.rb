@@ -64,6 +64,10 @@ module Activities
     # --- Draft phase scanning ---
 
     def scan_draft_pr(project, client, issue)
+      if project.max_draft_review_rounds.zero?
+        return ready_for_owner_trigger(issue)
+      end
+
       if issue.draft_review_count >= project.max_draft_review_rounds
         return escalate_trigger(issue)
       end
@@ -143,7 +147,8 @@ module Activities
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "ready_for_owner", details: "CI green, Copilot clean" } ],
-        phase: "draft"
+        phase: "draft",
+        owner_reviewer_login: issue.project.owner_reviewer_login
       }
     end
 
@@ -154,7 +159,9 @@ module Activities
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ],
-        phase: "draft"
+        phase: "draft",
+        current_draft_review_count: issue.draft_review_count,
+        owner_reviewer_login: issue.project.owner_reviewer_login
       }
     end
 

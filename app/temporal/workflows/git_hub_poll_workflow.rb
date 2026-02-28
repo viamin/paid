@@ -131,18 +131,7 @@ module Workflows
         { project_id: project_id, pr_number: pr_data[:pr_number],
           issue_id: pr_data[:issue_id] }, timeout: 60)
 
-      begin
-        run_activity(Activities::RequestReviewActivity,
-          { project_id: project_id, pr_number: pr_data[:pr_number],
-            reviewers: [ owner_reviewer_login(project_id) ] }, timeout: 60)
-      rescue => e
-        Temporalio::Workflow.logger.warn(
-          message: "pr_review.request_owner_review_failed",
-          project_id: project_id,
-          pr_number: pr_data[:pr_number],
-          error: e.message
-        )
-      end
+      request_owner_review(project_id, pr_data)
     end
 
     def handle_escalate_to_owner(project_id, pr_data)
@@ -150,13 +139,24 @@ module Workflows
         { issue_id: pr_data[:issue_id],
           expected_draft_review_count: pr_data[:current_draft_review_count] }, timeout: 30)
 
+      # Transition to escalated phase so the scanner stops re-emitting this trigger
+      run_activity(Activities::MarkEscalatedActivity,
+        { issue_id: pr_data[:issue_id] }, timeout: 30)
+
+      request_owner_review(project_id, pr_data)
+    end
+
+    def request_owner_review(project_id, pr_data)
+      reviewer = pr_data[:owner_reviewer_login]
+      return if reviewer.blank?
+
       begin
         run_activity(Activities::RequestReviewActivity,
           { project_id: project_id, pr_number: pr_data[:pr_number],
-            reviewers: [ owner_reviewer_login(project_id) ] }, timeout: 60)
+            reviewers: [ reviewer ] }, timeout: 60)
       rescue => e
         Temporalio::Workflow.logger.warn(
-          message: "pr_review.escalate_review_failed",
+          message: "pr_review.request_owner_review_failed",
           project_id: project_id,
           pr_number: pr_data[:pr_number],
           error: e.message
@@ -242,10 +242,6 @@ module Workflows
       )
 
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
-    end
-
-    def owner_reviewer_login(project_id)
-      Project.find(project_id).owner_reviewer_login
     end
   end
 end

@@ -105,11 +105,11 @@ module Workflows
             end
 
             # Existing PR: mark complete with existing PR details
-            run_activity(Activities::CompleteExistingPrRunActivity,
+            complete_result = run_activity(Activities::CompleteExistingPrRunActivity,
               { agent_run_id: agent_run_id }, timeout: 60)
 
             # Re-request Copilot review if still in draft phase (best-effort)
-            if draft_phase_pr?(issue_id)
+            if complete_result[:pr_review_phase] == "draft"
               request_copilot_review(project_id, source_pull_request_number)
             end
           else
@@ -178,12 +178,6 @@ module Workflows
     def stale_pull_request_error?(error)
       cause = error.respond_to?(:cause) ? error.cause : nil
       cause.is_a?(Temporalio::Error::ApplicationError) && cause.type == "StalePullRequest"
-    end
-
-    def draft_phase_pr?(issue_id)
-      Issue.find_by(id: issue_id)&.draft_phase?
-    rescue ActiveRecord::RecordNotFound
-      false
     end
 
     def request_copilot_review(project_id, pr_number)

@@ -488,6 +488,167 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    # --- Draft phase scanning ---
+
+    context "when PR is in draft phase with Copilot review threads" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "copilot" } ]
+            }
+          ]
+        )
+      end
+
+      it "detects Copilot review threads" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].first[:type]).to eq("copilot_review_threads")
+      end
+    end
+
+    context "when draft PR has CI green and no Copilot threads" do
+      before do
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: []
+        )
+      end
+
+      it "returns ready_for_owner trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+        expect(trigger[:owner_reviewer_login]).to eq("viamin")
+      end
+    end
+
+    context "when draft review limit is reached" do
+      before do
+        project.update!(max_draft_review_rounds: 3, owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 3)
+      end
+
+      it "returns escalate_to_owner trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:current_draft_review_count]).to eq(3)
+      end
+    end
+
+    context "when max_draft_review_rounds is zero (skip draft phase)" do
+      before do
+        project.update!(max_draft_review_rounds: 0, owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+      end
+
+      it "returns ready_for_owner trigger immediately" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+    end
+
+    # --- Ready phase scanning ---
+
+    context "when owner has approved the PR" do
+      before do
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "returns owner_approved trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+    end
+
+    # --- Escalated phase scanning ---
+
+    context "when PR is in escalated phase with CI failures" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "escalated",
+          paid_state: "completed")
+        stub_github_for_pr(
+          checks: [
+            { name: "rspec", conclusion: "failure" }
+          ]
+        )
+      end
+
+      it "detects triggers in escalated phase" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("escalated")
+        expect(trigger[:triggers].first[:type]).to eq("ci_failure")
+      end
+    end
+
+    context "when PR is in merged phase" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "merged",
+          github_state: "open")
+      end
+
+      it "does not scan merged PRs" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "with structured logging" do
       before do
         create(:issue, :pull_request,

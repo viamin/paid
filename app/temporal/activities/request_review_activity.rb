@@ -12,7 +12,7 @@ module Activities
     def execute(input)
       project = Project.find(input[:project_id])
       pr_number = input[:pr_number]
-      reviewers = input[:reviewers] || []
+      reviewers = Array(input[:reviewers]).filter_map { |r| r.to_s.strip.presence }
       return { requested: [] } if reviewers.empty?
 
       client = project.github_token.client

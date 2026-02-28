@@ -67,8 +67,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_130000) do
     t.integer "pull_request_number"
     t.string "pull_request_url", limit: 500
     t.string "result_commit_sha", limit: 40
-    t.jsonb "service_container_ids", default: []
-    t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
     t.datetime "started_at"
     t.string "status", limit: 50, default: "pending", null: false
@@ -81,8 +79,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_130000) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -244,16 +242,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_130000) do
     t.index ["user_id"], name: "index_project_memberships_on_user_id"
   end
 
-  create_table "project_service_containers", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.bigint "project_id", null: false
-    t.bigint "service_container_id", null: false
-    t.datetime "updated_at", null: false
-    t.index ["project_id", "service_container_id"], name: "idx_project_service_containers_unique", unique: true
-    t.index ["project_id"], name: "index_project_service_containers_on_project_id"
-    t.index ["service_container_id"], name: "index_project_service_containers_on_service_container_id"
-  end
-
   create_table "projects", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
@@ -328,21 +316,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_130000) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_prompts_scope_consistency"
   end
 
-  create_table "service_containers", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "docker_container_id"
-    t.jsonb "env", default: {}
-    t.string "image", null: false
-    t.string "name", null: false
-    t.integer "port", null: false
-    t.string "status", default: "stopped", null: false
-    t.datetime "updated_at", null: false
-    t.index ["name"], name: "index_service_containers_on_name", unique: true
-  end
-
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
-    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.integer "container_cpu_quota", default: 200000, null: false
@@ -426,8 +401,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_130000) do
   add_foreign_key "issues", "projects"
   add_foreign_key "project_memberships", "projects"
   add_foreign_key "project_memberships", "users"
-  add_foreign_key "project_service_containers", "projects", on_delete: :cascade
-  add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
   add_foreign_key "projects", "accounts"
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"

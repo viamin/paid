@@ -437,7 +437,7 @@ class GithubClient
     options = { merge_method: merge_method }
     options[:commit_title] = commit_title if commit_title
     options[:commit_message] = commit_message if commit_message
-    handle_errors { client.merge_pull_request(repo, number, "", **options) }
+    handle_errors { client.merge_pull_request(repo, number, nil, **options) }
   end
 
   # Gets the remaining rate limit.
