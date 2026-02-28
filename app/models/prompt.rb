@@ -28,6 +28,14 @@ class Prompt < ApplicationRecord
   scope :for_account, ->(account) { where(account: account, project_id: nil) }
   scope :for_project, ->(project) { where(project: project) }
 
+  def self.ransackable_attributes(auth_object = nil)
+    %w[name slug category active description created_at updated_at]
+  end
+
+  def self.ransackable_associations(auth_object = nil)
+    %w[account project]
+  end
+
   def global?
     account_id.nil? && project_id.nil?
   end
