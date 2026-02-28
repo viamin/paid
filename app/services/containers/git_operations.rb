@@ -67,7 +67,6 @@ module Containers
       # mise/asdf
       .mise-cache/
       .mise-data/
-      .tool-versions
     PATTERNS
 
     attr_reader :container_service, :agent_run
