@@ -528,6 +528,83 @@ RSpec.describe Containers::GitOperations do
     end
   end
 
+  describe "#install_artifact_excludes" do
+    it "writes exclude patterns to .git/info/exclude" do
+      expect(container_service).to receive(:execute)
+        .with(a_string_matching(/\.git\/info\/exclude/), timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.install_artifact_excludes
+    end
+
+    it "includes corepack and pg-install patterns" do
+      script = nil
+      allow(container_service).to receive(:execute) { |cmd, **|
+        script = cmd
+        success_result
+      }
+
+      git_ops.install_artifact_excludes
+
+      expect(script).to include(".corepack/")
+      expect(script).to include(".pg-install/")
+      expect(script).to include("vendor/bundle/")
+    end
+
+    it "guards with grep to prevent duplicate entries on retry" do
+      script = nil
+      allow(container_service).to receive(:execute) { |cmd, **|
+        script = cmd
+        success_result
+      }
+
+      git_ops.install_artifact_excludes
+
+      expect(script).to include("grep -qF")
+      expect(script).to include("# -- Container artifact excludes (added by Paid) --")
+    end
+
+    it "logs a warning when the script returns a failure result" do
+      allow(container_service).to receive(:execute).and_return(failure_result)
+      allow(Rails.logger).to receive(:warn)
+
+      git_ops.install_artifact_excludes
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(message: "container_git.install_excludes_failed")
+      )
+    end
+
+    it "does not raise on failure result" do
+      allow(container_service).to receive(:execute)
+        .and_return(failure_result)
+
+      expect { git_ops.install_artifact_excludes }.not_to raise_error
+    end
+
+    it "does not raise on unexpected exceptions" do
+      allow(container_service).to receive(:execute)
+        .and_raise(StandardError, "container gone")
+
+      expect { git_ops.install_artifact_excludes }.not_to raise_error
+    end
+
+    it "logs an error on unexpected exceptions" do
+      allow(container_service).to receive(:execute)
+        .and_raise(StandardError, "container gone")
+      allow(Rails.logger).to receive(:error)
+
+      git_ops.install_artifact_excludes
+
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "container_git.install_excludes_unexpected_error",
+          error_class: "StandardError"
+        )
+      )
+    end
+  end
+
   describe "#install_git_hooks" do
     let(:hook_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
     let(:hook_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }

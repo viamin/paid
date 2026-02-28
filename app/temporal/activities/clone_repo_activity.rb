@@ -28,6 +28,7 @@ module Activities
         git_ops.clone_and_setup_branch
       end
 
+      git_ops.install_artifact_excludes
       install_quality_hooks(git_ops, agent_run)
       create_worktree_record(agent_run)
 

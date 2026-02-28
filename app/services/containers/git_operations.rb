@@ -22,6 +22,52 @@ module Containers
     CLONE_TIMEOUT = 120
     PUSH_TIMEOUT = 60
 
+    # Marker comment used as a grep guard so Temporal retries don't
+    # duplicate the exclude block.  Defined once and referenced both
+    # in CONTAINER_ARTIFACT_EXCLUDES and in install_artifact_excludes.
+    CONTAINER_ARTIFACT_EXCLUDES_MARKER = "# -- Container artifact excludes (added by Paid) --"
+
+    # Patterns appended to .git/info/exclude inside agent containers.
+    # Prevents build/tool artifacts from being staged by `git add -A`
+    # even when the repo's .gitignore doesn't cover them.
+    CONTAINER_ARTIFACT_EXCLUDES = <<~PATTERNS.freeze
+      #{CONTAINER_ARTIFACT_EXCLUDES_MARKER}
+      # Node/corepack
+      .corepack/
+      # NOTE: .yarn/cache/, .yarn/unplugged/, and .pnp.* are intentionally
+      # omitted — Yarn zero-installs repos commit these by design.
+      # Ruby
+      vendor/bundle/
+      .bundle/
+      # PostgreSQL build artifacts
+      .pg-install/
+      .pg/
+      .pgdata/
+      .pg_build/
+      .pg_data/
+      .pg_src/
+      # Python
+      .venv/
+      __pycache__/
+      *.pyc
+      # APT/package caches
+      .apt-cache/
+      .cache-pkg/
+      # XDG cache (sometimes redirected into workspace)
+      .xdg-cache/
+      # Generic build/cache (wildcard to catch variants like .tmp-build)
+      .cache/
+      .tmp/
+      .tmp-*/
+      .build/
+      .*-build/
+      .*_build/
+      .npm-cache/
+      # mise/asdf
+      .mise-cache/
+      .mise-data/
+    PATTERNS
+
     attr_reader :container_service, :agent_run
 
     def initialize(container_service:, agent_run:)
@@ -122,6 +168,42 @@ module Containers
       # Unexpected failures: container gone, network error, etc.
       Rails.logger.error(
         message: "container_git.install_hooks_unexpected_error",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    # Installs local git exclude patterns for common build artifacts.
+    #
+    # Writes to .git/info/exclude, which acts like .gitignore but is local
+    # to the clone and never committed. This prevents tool installation
+    # artifacts (corepack, pg builds, vendor bundles, etc.) from being
+    # accidentally staged by `git add -A` — even if the repo's own
+    # .gitignore doesn't cover them.
+    #
+    # Idempotent: a grep guard skips the append when the marker comment
+    # is already present, so Temporal retries don't duplicate entries.
+    #
+    # @return [void]
+    def install_artifact_excludes
+      script = "mkdir -p .git/info\n" \
+               "if ! grep -qF '#{CONTAINER_ARTIFACT_EXCLUDES_MARKER}' .git/info/exclude 2>/dev/null; then\n" \
+               "cat >> .git/info/exclude << 'EXCLUDES'\n" \
+               "#{CONTAINER_ARTIFACT_EXCLUDES}" \
+               "EXCLUDES\n" \
+               "fi"
+      result = container_service.execute(script, timeout: nil, stream: false)
+      if result.failure?
+        Rails.logger.warn(
+          message: "container_git.install_excludes_failed",
+          agent_run_id: agent_run.id,
+          error: error_with_stderr(result)
+        )
+      end
+    rescue StandardError => e
+      Rails.logger.error(
+        message: "container_git.install_excludes_unexpected_error",
         agent_run_id: agent_run.id,
         error_class: e.class.name,
         error: e.message
