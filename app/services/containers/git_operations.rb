@@ -34,9 +34,8 @@ module Containers
       #{CONTAINER_ARTIFACT_EXCLUDES_MARKER}
       # Node/corepack
       .corepack/
-      .yarn/cache/
-      .yarn/unplugged/
-      .pnp.*
+      # NOTE: .yarn/cache/, .yarn/unplugged/, and .pnp.* are intentionally
+      # omitted — Yarn zero-installs repos commit these by design.
       # Ruby
       vendor/bundle/
       .bundle/
