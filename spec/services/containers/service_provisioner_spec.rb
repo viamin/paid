@@ -86,6 +86,47 @@ RSpec.describe Containers::ServiceProvisioner do
       end
     end
 
+    context "when container start fails" do
+      let(:service_container) do
+        create(:service_container,
+          image: "postgres:16",
+          name: "fail-postgres",
+          port: 5432,
+          env: { "POSTGRES_USER" => "agent", "POSTGRES_PASSWORD" => "agent", "POSTGRES_DB" => "agent_test" })
+      end
+
+      before do
+        create(:project_service_container, project: project, service_container: service_container)
+      end
+
+      it "cleans up the Docker container on failure" do
+        docker_container = instance_double(Docker::Container, id: "leak123")
+        allow(Docker::Image).to receive(:create)
+        allow(Docker::Container).to receive(:create).and_return(docker_container)
+        allow(docker_container).to receive(:start)
+        allow(provisioner).to receive(:tcp_port_open?).and_return(false)
+        allow(Docker::Container).to receive(:get).with("leak123").and_return(docker_container)
+        allow(docker_container).to receive(:stop)
+        allow(docker_container).to receive(:delete)
+
+        # wait_for_health! will time out; stub the clock to exceed deadline immediately
+        allow(provisioner).to receive(:sleep)
+        call_count = 0
+        allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) do
+          call_count += 1
+          call_count == 1 ? 0.0 : 100.0 # First call sets deadline, subsequent calls exceed it
+        end
+
+        expect { provisioner.provision(agent_run) }
+          .to raise_error(Containers::ServiceProvisioner::Error, /Failed to start/)
+
+        expect(docker_container).to have_received(:stop).with(timeout: 10)
+        expect(docker_container).to have_received(:delete).with(force: true)
+        expect(service_container.reload.status).to eq("error")
+        expect(service_container.docker_container_id).to be_nil
+      end
+    end
+
     context "with environment variable generation" do
       before do
         allow(Docker::Image).to receive(:create)

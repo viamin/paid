@@ -121,7 +121,9 @@ module Containers
         image: service_container.image,
         container_id: docker_container.id)
     rescue => e
-      service_container.update!(status: "error", docker_container_id: nil)
+      # Best-effort cleanup of Docker container that may have been created/started
+      # (e.g., if wait_for_health! times out after container.start succeeds).
+      cleanup_failed_container(docker_container, service_container)
       raise Error, "Failed to start service container #{service_container.name}: #{e.message}"
     end
 
@@ -141,6 +143,25 @@ module Containers
 
       service_container.update!(status: "stopped", docker_container_id: nil)
       log_info("service_provisioner.stopped", name: service_container.name)
+    end
+
+    def cleanup_failed_container(docker_container, service_container)
+      container_id = docker_container&.id || service_container.docker_container_id
+      if container_id.present?
+        begin
+          container = Docker::Container.get(container_id)
+          container.stop(timeout: 10)
+          container.delete(force: true)
+        rescue Docker::Error::NotFoundError
+          # Container already gone
+        rescue Docker::Error::DockerError => docker_err
+          log_warn("service_provisioner.cleanup_failed",
+            name: service_container.name,
+            container_id: container_id,
+            error: docker_err.message)
+        end
+      end
+      service_container.update!(status: "error", docker_container_id: nil)
     end
 
     def create_docker_container(service_container)

@@ -29,11 +29,17 @@ class ServiceContainer < ApplicationRecord
 
   private
 
+  # Validates image against the union of all users' allowed_service_images.
+  #
+  # This is a global union because ServiceContainer is a shared resource
+  # without a direct user/account association. Any user who adds an image
+  # to their settings expands the effective allowlist for all users.
+  # This is acceptable for single-tenant deployments. For multi-tenant,
+  # scope to the account level or use an admin-only setting.
+  # TODO(#216): Scope allowlist to account when multi-tenancy is added.
   def image_in_allowlist
     return if image.blank?
 
-    # Build a deterministic allowlist from all user settings.
-    # Treat nil/NULL values as empty arrays so they cannot bypass validation.
     allowed = UserSetting.pluck(:allowed_service_images)
       .compact
       .flatten
