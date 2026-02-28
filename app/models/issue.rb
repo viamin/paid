@@ -60,6 +60,11 @@ class Issue < ApplicationRecord
   end
 
   def update_project_last_github_activity_at
+    return unless github_updated_at_previously_changed?
+
+    project_last = project.last_github_activity_at
+    return if project_last.present? && github_updated_at <= project_last
+
     project.touch_last_github_activity_at(github_updated_at)
   end
 

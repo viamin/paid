@@ -4,11 +4,13 @@ class ProjectsController < ApplicationController
   before_action :set_project, only: [ :show, :edit, :update, :destroy ]
   skip_after_action :verify_authorized, only: :index
 
+  NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
+
   def index
     base_scope = policy_scope(Project).includes(:github_token, :agent_runs)
     @q = base_scope.ransack(params[:q])
     @q.sorts = "created_at desc" if @q.sorts.empty?
-    @projects = @q.result
+    @projects = apply_nulls_last_ordering(@q.result)
   end
 
   def show
@@ -71,6 +73,13 @@ class ProjectsController < ApplicationController
   end
 
   private
+
+  def apply_nulls_last_ordering(scope)
+    sort = @q.sorts.first
+    return scope unless sort && NULLS_LAST_SORT_ATTRIBUTES.include?(sort.name)
+
+    scope.reorder(Arel.sql("#{sort.name} #{sort.dir} NULLS LAST"))
+  end
 
   def set_project
     @project = policy_scope(Project).includes(:github_token, :created_by).find(params[:id])
