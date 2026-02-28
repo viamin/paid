@@ -94,3 +94,9 @@ group :development do
 end
 
 gem "good_job", "~> 4.13"
+
+# Pagination [https://github.com/ddnexus/pagy]
+gem "pagy", "~> 9.0"
+
+# Search and filtering [https://github.com/activerecord-hackery/ransack]
+gem "ransack"

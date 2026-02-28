@@ -8,6 +8,79 @@ RSpec.describe "AgentRuns" do
   let(:github_token) { create(:github_token, account: account) }
   let(:project) { create(:project, account: account, github_token: github_token) }
 
+  describe "GET /agent_runs" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        get agent_runs_path
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "renders the index page" do
+        get agent_runs_path
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Agent Runs")
+      end
+
+      it "shows agent runs across all projects" do
+        create(:agent_run, project: project, agent_type: "claude_code", status: "completed")
+        get agent_runs_path
+        expect(response.body).to include("Claude Code")
+      end
+
+      it "shows empty state when no runs exist" do
+        get agent_runs_path
+        expect(response.body).to include("No agent runs yet")
+      end
+
+      it "filters agent runs using Ransack q params" do
+        create(:agent_run, :with_git_context, project: project, branch_name: "feature/alpha")
+        create(:agent_run, :with_git_context, project: project, branch_name: "fix/beta")
+
+        get agent_runs_path, params: { q: { branch_name_cont: "alpha" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("feature/alpha")
+        expect(response.body).not_to include("fix/beta")
+      end
+
+      it "sorts agent runs ascending via Ransack sort params" do
+        other_project = create(:project, account: account, github_token: github_token)
+        create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
+        create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed", created_at: 1.day.ago)
+
+        get agent_runs_path, params: { q: { s: "created_at asc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index(project.name)).to be < response.body.index(other_project.name)
+      end
+
+      it "sorts agent runs descending via Ransack sort params" do
+        other_project = create(:project, account: account, github_token: github_token)
+        create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
+        create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed", created_at: 1.day.ago)
+
+        get agent_runs_path, params: { q: { s: "created_at desc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index(other_project.name)).to be < response.body.index(project.name)
+      end
+
+      it "does not show runs from other accounts" do
+        other_account = create(:account)
+        other_token = create(:github_token, account: other_account)
+        other_project = create(:project, account: other_account, github_token: other_token)
+        create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed")
+
+        get agent_runs_path
+        expect(response.body).not_to include(other_project.name)
+      end
+    end
+  end
+
   describe "GET /projects/:project_id/agent_runs" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
@@ -34,6 +107,27 @@ RSpec.describe "AgentRuns" do
       it "shows empty state when no runs exist" do
         get project_agent_runs_path(project)
         expect(response.body).to include("No agent runs yet")
+      end
+
+      it "filters agent runs using Ransack q params" do
+        create(:agent_run, :with_git_context, project: project, branch_name: "feature/gamma")
+        create(:agent_run, :with_git_context, project: project, branch_name: "fix/delta")
+
+        get project_agent_runs_path(project), params: { q: { branch_name_cont: "gamma" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("feature/gamma")
+        expect(response.body).not_to include("fix/delta")
+      end
+
+      it "sorts agent runs via Ransack sort params" do
+        create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
+        create(:agent_run, project: project, agent_type: "cursor", status: "completed", created_at: 1.day.ago)
+
+        get project_agent_runs_path(project), params: { q: { s: "created_at asc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index("Claude Code")).to be < response.body.index("Cursor")
       end
 
       it "does not show runs from other accounts" do

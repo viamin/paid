@@ -1,0 +1,28 @@
+<% content_for(:title) { "Agent Runs - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <h1 class="text-xl font-semibold text-gray-900">Agent Runs</h1>
+    <% if policy(@project).run_agent? %>
+      <%= link_to new_project_agent_run_path(@project), class: "mt-4 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 sm:mt-0" do %>
+        <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM9.555 7.168A1 1 0 0 0 8 8v4a1 1 0 0 0 1.555.832l3-2a1 1 0 0 0 0-1.664l-3-2Z" clip-rule="evenodd" />
+        </svg>
+        Trigger Run
+      <% end %>
+    <% end %>
+  </div>
+
+  <%= render "agent_runs/filters", q: @q, show_project: false %>
+
+  <%= render "agent_runs/index_table", agent_runs: @agent_runs, q: @q, pagy: @pagy, show_project: false, project: @project %>
+</div>

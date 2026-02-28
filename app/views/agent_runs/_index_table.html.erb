@@ -1,0 +1,120 @@
+<% show_project = local_assigns.fetch(:show_project, false) %>
+<% runs = agent_runs.to_a %>
+<% if runs.any? %>
+  <div class="mt-4 flow-root">
+    <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+      <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+        <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+          <table class="min-w-full divide-y divide-gray-300">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
+                  <%= sort_link_to "Status", :status, q %>
+                </th>
+                <% if show_project %>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Project</th>
+                <% end %>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <%= sort_link_to "Agent", :agent_type, q %>
+                </th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <%= sort_link_to "Branch", :branch_name, q %>
+                </th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <%= sort_link_to "Duration", :duration_seconds, q %>
+                </th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <%= sort_link_to "Tokens", :tokens_total, q %>
+                </th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <%= sort_link_to "Cost", :cost_cents, q %>
+                </th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <%= sort_link_to "Created", :created_at, q %>
+                </th>
+                <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                  <span class="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% runs.each do |run| %>
+                <tr>
+                  <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
+                    <%= agent_run_status_badge(run.status) %>
+                  </td>
+                  <% if show_project %>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <%= link_to run.project.name, project_path(run.project), class: "text-indigo-600 hover:text-indigo-900" %>
+                    </td>
+                  <% end %>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <%= run.agent_type.titleize %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <% if run.branch_name.present? %>
+                      <code class="rounded bg-gray-100 px-1 py-0.5 text-xs"><%= run.branch_name %></code>
+                    <% else %>
+                      <span class="text-gray-400">-</span>
+                    <% end %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <% if run.duration_seconds.present? %>
+                      <%= run.duration_seconds %>s
+                    <% elsif run.running? && run.started_at.present? %>
+                      <%= (Time.current - run.started_at).to_i %>s
+                    <% else %>
+                      <span class="text-gray-400">-</span>
+                    <% end %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <% if run.tokens_input.present? || run.tokens_output.present? %>
+                      <%= number_with_delimiter((run.tokens_input || 0) + (run.tokens_output || 0)) %>
+                    <% else %>
+                      <span class="text-gray-400">-</span>
+                    <% end %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <% if run.cost_cents.present? && run.cost_cents > 0 %>
+                      $<%= format("%.2f", run.cost_cents / 100.0) %>
+                    <% else %>
+                      <span class="text-gray-400">-</span>
+                    <% end %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <%= time_ago_in_words(run.started_at || run.created_at) %> ago
+                  </td>
+                  <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                    <% project_for_run = local_assigns[:project] || run.project %>
+                    <%= link_to "View", project_agent_run_path(project_for_run, run), class: "text-indigo-600 hover:text-indigo-900" %>
+                    <% if run.pull_request_url.present? %>
+                      &middot;
+                      <%= link_to "PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <%== pagy_nav(pagy) %>
+  </div>
+<% else %>
+  <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-12">
+    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+    <% has_filters = params[:q].present? && params[:q].except("s").values.any?(&:present?) %>
+    <h3 class="mt-2 text-sm font-semibold text-gray-900">
+      <%= has_filters ? "No matching agent runs" : "No agent runs yet" %>
+    </h3>
+    <p class="mt-1 text-sm text-gray-500">
+      <%= has_filters ? "No agent runs match the current filters." : "Agent runs will appear here once triggered." %>
+    </p>
+  </div>
+<% end %>

@@ -1,0 +1,34 @@
+<div class="mt-4 rounded-lg bg-white p-4 shadow ring-1 ring-black ring-opacity-5">
+  <%= search_form_for q, url: request.path, html: { method: :get, class: "flex flex-wrap items-end gap-4" } do |f| %>
+    <div>
+      <%= f.label :status_eq, "Status", class: "block text-sm font-medium text-gray-700" %>
+      <%= f.select :status_eq,
+        options_for_select(AgentRun::STATUSES.map { |s| [s.titleize, s] }, params.dig(:q, :status_eq)),
+        { include_blank: "All Statuses" },
+        class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+    </div>
+
+    <div>
+      <%= f.label :agent_type_eq, "Agent", class: "block text-sm font-medium text-gray-700" %>
+      <%= f.select :agent_type_eq,
+        options_for_select(AgentRun::AGENT_TYPES.map { |t| [t.titleize, t] }, params.dig(:q, :agent_type_eq)),
+        { include_blank: "All Agents" },
+        class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+    </div>
+
+    <div>
+      <%= f.label :branch_name_cont, "Branch", class: "block text-sm font-medium text-gray-700" %>
+      <%= f.search_field :branch_name_cont,
+        placeholder: "Search branch...",
+        class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+    </div>
+
+    <div class="flex items-end gap-2">
+      <%= f.submit "Filter",
+        class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <%= link_to "Clear",
+        request.path,
+        class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% end %>
+</div>

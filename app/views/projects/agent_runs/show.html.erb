@@ -1,0 +1,31 @@
+<% content_for(:title) { "Agent Run ##{@agent_run.id} - #{@project.name} - Paid" } %>
+
+<%= turbo_stream_from @agent_run, :detail %>
+
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <%= render "agent_runs/detail", agent_run: @agent_run, show_retry: policy(@agent_run.project).run_agent? %>
+
+  <% if @logs.any? %>
+    <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+      <h2 class="border-b border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900">Execution Logs</h2>
+      <div class="max-h-96 overflow-auto">
+        <% @logs.each do |log| %>
+          <div class="border-b border-gray-100 px-4 py-2 font-mono text-xs last:border-b-0 <%= log.log_type == 'stderr' ? 'bg-red-50 text-red-800' : '' %> <%= log.log_type == 'system' ? 'bg-blue-50 text-blue-800' : '' %>">
+            <span class="mr-2 text-gray-400"><%= log.created_at.strftime('%H:%M:%S') %></span>
+            <span class="mr-2 rounded bg-gray-200 px-1 text-gray-600"><%= log.log_type %></span>
+            <pre class="inline whitespace-pre-wrap"><%= log.content %></pre>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

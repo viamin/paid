@@ -26,10 +26,13 @@ Rails.application.routes.draw do
   # User settings (singleton resource — one per user)
   resource :user_settings, only: [ :edit, :update ]
 
+  # All agent runs across projects
+  resources :agent_runs, only: [ :index ]
+
   # Projects management
   resources :projects do
     resource :workflow_status, only: [ :show ]
-    resources :agent_runs, only: [ :index, :show, :new, :create ] do
+    resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
       post :retry, on: :member
     end
   end
