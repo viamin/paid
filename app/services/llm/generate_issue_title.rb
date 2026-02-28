@@ -2,8 +2,8 @@
 
 module Llm
   # Generates a concise GitHub issue title from agent output using Anthropic's
-  # Haiku model. Falls back to a truncated summary on API errors so that
-  # issue creation is never blocked by LLM availability.
+  # Haiku model. On API errors, logs a warning and returns nil so callers
+  # can fall back to a default title and issue creation is never blocked.
   #
   # @example
   #   title = Llm::GenerateIssueTitle.call(summary: "# Auth Analysis\n\nThe auth system...")
@@ -45,7 +45,8 @@ module Llm
     private
 
     def request_title
-      api_key = ENV["ANTHROPIC_API_KEY"]
+      api_key = Rails.application.credentials.dig(:llm, :anthropic_api_key).presence ||
+                ENV["ANTHROPIC_API_KEY"]
       return nil if api_key.blank?
 
       response = connection.post(API_URL) do |req|

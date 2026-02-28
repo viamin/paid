@@ -7,6 +7,8 @@ RSpec.describe Llm::GenerateIssueTitle do
   let(:api_key) { "sk-ant-test-key" }
 
   before do
+    allow(Rails.application.credentials).to receive(:dig).and_call_original
+    allow(Rails.application.credentials).to receive(:dig).with(:llm, :anthropic_api_key).and_return(nil)
     allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with("ANTHROPIC_API_KEY").and_return(api_key)
     allow(ENV).to receive(:fetch).and_call_original
@@ -64,12 +66,32 @@ RSpec.describe Llm::GenerateIssueTitle do
       expect(described_class.call(summary: nil)).to be_nil
     end
 
-    it "returns nil when ANTHROPIC_API_KEY is not set" do
+    it "returns nil when no API key is configured" do
+      allow(Rails.application.credentials).to receive(:dig).with(:llm, :anthropic_api_key).and_return(nil)
       allow(ENV).to receive(:[]).with("ANTHROPIC_API_KEY").and_return(nil)
 
       title = described_class.call(summary: summary)
 
       expect(title).to be_nil
+    end
+
+    it "uses credentials API key when ENV is not set" do
+      allow(Rails.application.credentials).to receive(:dig).with(:llm, :anthropic_api_key).and_return("sk-creds-key")
+      allow(ENV).to receive(:[]).with("ANTHROPIC_API_KEY").and_return(nil)
+
+      stub = stub_request(:post, Llm::GenerateIssueTitle::API_URL)
+        .with(headers: { "x-api-key" => "sk-creds-key" })
+        .to_return(
+          status: 200,
+          headers: { "Content-Type" => "application/json" },
+          body: {
+            content: [ { type: "text", text: "Test title" } ]
+          }.to_json
+        )
+
+      described_class.call(summary: summary)
+
+      expect(stub).to have_been_requested
     end
 
     it "returns nil on API error and logs warning" do
