@@ -35,7 +35,7 @@ module Llm
       title.present? ? title.truncate(MAX_TITLE_LENGTH) : nil
     rescue Faraday::Error, JSON::ParserError, KeyError => e
       Rails.logger.warn(
-        message: "llm.generate_issue_title_failed",
+        message: "agent_execution.llm_generate_issue_title_failed",
         error_class: e.class.name,
         error: e.message
       )

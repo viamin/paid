@@ -99,7 +99,7 @@ RSpec.describe Llm::GenerateIssueTitle do
         .to_return(status: 500, body: "Internal Server Error")
 
       expect(Rails.logger).to receive(:warn).with(hash_including(
-        message: "llm.generate_issue_title_failed"
+        message: "agent_execution.llm_generate_issue_title_failed"
       ))
 
       title = described_class.call(summary: summary)
@@ -111,7 +111,7 @@ RSpec.describe Llm::GenerateIssueTitle do
       stub_request(:post, Llm::GenerateIssueTitle::API_URL).to_timeout
 
       expect(Rails.logger).to receive(:warn).with(hash_including(
-        message: "llm.generate_issue_title_failed"
+        message: "agent_execution.llm_generate_issue_title_failed"
       ))
 
       title = described_class.call(summary: summary)
