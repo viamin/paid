@@ -22,11 +22,16 @@ module Containers
     CLONE_TIMEOUT = 120
     PUSH_TIMEOUT = 60
 
+    # Marker comment used as a grep guard so Temporal retries don't
+    # duplicate the exclude block.  Defined once and referenced both
+    # in CONTAINER_ARTIFACT_EXCLUDES and in install_artifact_excludes.
+    CONTAINER_ARTIFACT_EXCLUDES_MARKER = "# -- Container artifact excludes (added by Paid) --"
+
     # Patterns appended to .git/info/exclude inside agent containers.
     # Prevents build/tool artifacts from being staged by `git add -A`
     # even when the repo's .gitignore doesn't cover them.
     CONTAINER_ARTIFACT_EXCLUDES = <<~PATTERNS.freeze
-      # -- Container artifact excludes (added by Paid) --
+      #{CONTAINER_ARTIFACT_EXCLUDES_MARKER}
       # Node/corepack
       .corepack/
       .yarn/cache/
@@ -179,9 +184,8 @@ module Containers
     #
     # @return [void]
     def install_artifact_excludes
-      marker = "# -- Container artifact excludes (added by Paid) --"
       script = "mkdir -p .git/info\n" \
-               "if ! grep -qF '#{marker}' .git/info/exclude 2>/dev/null; then\n" \
+               "if ! grep -qF '#{CONTAINER_ARTIFACT_EXCLUDES_MARKER}' .git/info/exclude 2>/dev/null; then\n" \
                "cat >> .git/info/exclude << 'EXCLUDES'\n" \
                "#{CONTAINER_ARTIFACT_EXCLUDES}" \
                "EXCLUDES\n" \

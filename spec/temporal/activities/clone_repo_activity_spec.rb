@@ -40,7 +40,8 @@ RSpec.describe Activities::CloneRepoActivity do
     end
 
     it "installs artifact excludes after cloning" do
-      expect(git_ops).to receive(:install_artifact_excludes)
+      expect(git_ops).to receive(:clone_and_setup_branch).ordered
+      expect(git_ops).to receive(:install_artifact_excludes).ordered
 
       activity.execute(agent_run_id: agent_run.id)
     end
