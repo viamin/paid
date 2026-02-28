@@ -131,7 +131,16 @@ class PromptsController < ApplicationController
 
     current.template != prompt_version_params[:template] ||
       current.system_prompt.to_s != prompt_version_params[:system_prompt].to_s ||
-      current.variables != parse_variables
+      normalize_variables(current.variables) != normalize_variables(parse_variables)
+  end
+
+  def normalize_variables(variables)
+    Array(variables).map { |v|
+      case v
+      when Hash then (v["name"] || v[:name]).to_s.strip
+      else v.to_s.strip
+      end
+    }.reject(&:blank?)
   end
 
   def parse_variables

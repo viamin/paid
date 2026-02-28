@@ -25,4 +25,11 @@ module PromptsHelper
       tag.span("Global", class: "inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700")
     end
   end
+
+  def variable_display_name(var)
+    case var
+    when Hash then (var["name"] || var[:name]).to_s
+    else var.to_s
+    end
+  end
 end

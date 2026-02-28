@@ -87,7 +87,7 @@
           <% if @version_a.variables.present? && @version_a.variables.any? %>
             <div class="flex flex-wrap gap-2">
               <% @version_a.variables.each do |var| %>
-                <code class="rounded bg-gray-100 px-2 py-1 text-xs font-mono text-gray-700">{{<%= var %>}}</code>
+                <code class="rounded bg-gray-100 px-2 py-1 text-xs font-mono text-gray-700">{{<%= variable_display_name(var) %>}}</code>
               <% end %>
             </div>
           <% else %>
@@ -98,7 +98,7 @@
           <% if @version_b.variables.present? && @version_b.variables.any? %>
             <div class="flex flex-wrap gap-2">
               <% @version_b.variables.each do |var| %>
-                <code class="rounded bg-gray-100 px-2 py-1 text-xs font-mono text-gray-700">{{<%= var %>}}</code>
+                <code class="rounded bg-gray-100 px-2 py-1 text-xs font-mono text-gray-700">{{<%= variable_display_name(var) %>}}</code>
               <% end %>
             </div>
           <% else %>

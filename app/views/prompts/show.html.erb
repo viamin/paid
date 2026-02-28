@@ -97,7 +97,7 @@
             <h3 class="text-sm font-medium text-gray-700">Variables</h3>
             <div class="mt-2 flex flex-wrap gap-2">
               <% @prompt.current_version.variables.each do |var| %>
-                <code class="rounded bg-indigo-50 px-2 py-1 text-xs font-mono text-indigo-700">{{<%= var %>}}</code>
+                <code class="rounded bg-indigo-50 px-2 py-1 text-xs font-mono text-indigo-700">{{<%= variable_display_name(var) %>}}</code>
               <% end %>
             </div>
           </div>
