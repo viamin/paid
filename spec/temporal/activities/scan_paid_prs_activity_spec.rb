@@ -365,6 +365,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           project: project, github_number: 42,
           labels: [ "paid-generated" ], paid_state: "completed",
           pr_followup_count: 3)
+        stub_github_for_pr
       end
 
       it "skips the PR" do

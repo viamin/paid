@@ -98,13 +98,16 @@ module Activities
     # --- Ready phase scanning ---
 
     def scan_ready_pr(project, client, issue)
-      if owner_approved?(client, project, issue)
+      pr_data = fetch_pr_data(client, project, issue)
+      checks = fetch_check_runs(client, project, pr_data)
+
+      if owner_approved?(client, project, issue) && all_checks_green?(checks)
         return owner_approved_trigger(issue)
       end
 
       return nil if followup_limit_reached?(project, issue)
 
-      triggers = detect_ready_triggers(project, client, issue)
+      triggers = detect_ready_triggers(project, client, issue, pr_data: pr_data)
       return nil if triggers.empty?
 
       log_triggers(project, issue, triggers)
@@ -179,9 +182,9 @@ module Activities
 
     # --- Shared detection logic ---
 
-    def detect_ready_triggers(project, client, issue)
+    def detect_ready_triggers(project, client, issue, pr_data: nil)
       last_run = last_completed_run(project, issue)
-      pr_data = fetch_pr_data(client, project, issue)
+      pr_data ||= fetch_pr_data(client, project, issue)
       triggers = []
 
       triggers.concat(check_ci_failures(client, project, issue, pr_data))
@@ -250,7 +253,7 @@ module Activities
       completed = checks.select { |c| c[:conclusion].present? }
       return [] if completed.empty?
 
-      failed = completed.select { |c| %w[failure cancelled timed_out].include?(c[:conclusion]) }
+      failed = completed.select { |c| %w[failure cancelled timed_out action_required stale].include?(c[:conclusion]) }
       return [] if failed.empty?
 
       [ { type: "ci_failure", details: failed.map { |c| c[:name] } } ]

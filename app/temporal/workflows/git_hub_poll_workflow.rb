@@ -150,6 +150,8 @@ module Workflows
         run_activity(Activities::RequestReviewActivity,
           { project_id: project_id, pr_number: pr_data[:pr_number],
             reviewers: [ reviewer ] }, timeout: 60)
+      rescue Temporalio::Error::CanceledError
+        raise
       rescue => e
         Temporalio::Workflow.logger.warn(
           message: "pr_review.request_owner_review_failed",

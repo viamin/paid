@@ -186,6 +186,8 @@ module Workflows
       run_activity(Activities::RequestReviewActivity,
         { project_id: project_id, pr_number: pr_number,
           reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
+    rescue Temporalio::Error::CanceledError
+      raise
     rescue => e
       Temporalio::Workflow.logger.warn(
         message: "agent_execution.copilot_review_request_failed",

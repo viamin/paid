@@ -71,6 +71,48 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
     end
 
+    context "when merge fails with expected error (409 conflict)" do
+      let(:pr_data) { double("pr_data", merged_at: nil) } # rubocop:disable RSpec/VerifiedDoubles
+
+      before do
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 42)
+          .and_return(pr_data)
+        allow(github_client).to receive(:merge_pull_request)
+          .and_raise(GithubClient::ApiError.new("Merge conflict", status: 409))
+      end
+
+      it "returns merged: false" do
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result[:merged]).to be false
+      end
+
+      it "does not update issue phase" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(issue.reload.pr_review_phase).to eq("ready")
+      end
+    end
+
+    context "when merge fails with unexpected error (500)" do
+      let(:pr_data) { double("pr_data", merged_at: nil) } # rubocop:disable RSpec/VerifiedDoubles
+
+      before do
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 42)
+          .and_return(pr_data)
+        allow(github_client).to receive(:merge_pull_request)
+          .and_raise(GithubClient::ApiError.new("Server error", status: 500))
+      end
+
+      it "re-raises the error" do
+        expect {
+          activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+        }.to raise_error(GithubClient::ApiError)
+      end
+    end
+
     context "with different merge methods" do
       let(:pr_data) { double("pr_data", merged_at: nil) } # rubocop:disable RSpec/VerifiedDoubles
 
