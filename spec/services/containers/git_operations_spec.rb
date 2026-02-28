@@ -121,7 +121,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(success_result)
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "checkout", "fix-bug-branch" ], timeout: nil, stream: false)
+        .with([ "git", "switch", "--", "fix-bug-branch" ], timeout: nil, stream: false)
         .and_return(success_result)
 
       git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
@@ -131,13 +131,42 @@ RSpec.describe Containers::GitOperations do
       expect(agent_run.base_commit_sha).to eq(merge_base_sha)
     end
 
-    it "raises CloneError when checkout fails" do
+    it "raises CloneError when checkout fails and no PR number given" do
       allow(container_service).to receive(:execute)
-        .with([ "git", "checkout", "nonexistent" ], timeout: nil, stream: false)
+        .with([ "git", "switch", "--", "nonexistent" ], timeout: nil, stream: false)
         .and_return(failure_result)
 
       expect { git_ops.clone_and_checkout_branch(branch_name: "nonexistent") }
         .to raise_error(described_class::CloneError, /Checkout failed/)
+    end
+
+    context "when branch is deleted but PR number is given" do
+      it "falls back to fetching the PR ref" do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false)
+          .and_return(failure_result, success_result)
+
+        expect(container_service).to receive(:execute)
+          .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42)
+
+        expect(agent_run.reload.branch_name).to eq("deleted-branch")
+      end
+
+      it "raises CloneError when PR ref fetch also fails" do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false)
+          .and_return(failure_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false)
+          .and_return(failure_result)
+
+        expect { git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42) }
+          .to raise_error(described_class::CloneError, /branch deleted, PR fetch also failed/)
+      end
     end
 
     it "falls back to HEAD SHA when merge-base fails" do

@@ -47,12 +47,17 @@ module Containers
 
     # Clones the repository and checks out an existing remote branch.
     #
+    # When the branch has been deleted from the remote (e.g. after a PR merge),
+    # falls back to fetching the PR ref (refs/pull/N/head) which GitHub
+    # preserves even after branch deletion.
+    #
     # @param branch_name [String] The remote branch to check out
+    # @param pull_request_number [Integer, nil] PR number for fallback fetch
     # @return [void]
     # @raise [CloneError] when clone or checkout fails
-    def clone_and_checkout_branch(branch_name:)
+    def clone_and_checkout_branch(branch_name:, pull_request_number: nil)
       clone_repo
-      checkout_remote_branch(branch_name)
+      checkout_remote_branch(branch_name, pull_request_number: pull_request_number)
       base_sha = record_merge_base
 
       agent_run.update!(
@@ -269,9 +274,23 @@ module Containers
       raise CloneError, "Clone failed: #{error_with_stderr(result)}" if result.failure?
     end
 
-    def checkout_remote_branch(branch_name)
-      result = execute_git("checkout", branch_name)
-      raise CloneError, "Checkout failed: #{error_with_stderr(result)}" if result.failure?
+    def checkout_remote_branch(branch_name, pull_request_number: nil)
+      # Use "git switch" for branch switching; "git checkout -- <name>" enters
+      # pathspec (file-restore) mode and won't switch branches.
+      # "--" separates options from the branch operand so names starting with
+      # "-" are never misinterpreted as flags.
+      result = execute_git("switch", "--", branch_name)
+      return if result.success?
+
+      # Branch may have been deleted from the remote (e.g. after PR merge).
+      # Fall back to fetching the PR ref which GitHub preserves.
+      raise CloneError, "Checkout failed: #{error_with_stderr(result)}" unless pull_request_number
+
+      fetch_result = execute_git("fetch", "origin", "refs/pull/#{pull_request_number}/head:#{branch_name}")
+      raise CloneError, "Checkout failed (branch deleted, PR fetch also failed): #{error_with_stderr(fetch_result)}" if fetch_result.failure?
+
+      checkout_result = execute_git("switch", "--", branch_name)
+      raise CloneError, "Checkout failed after PR fetch: #{error_with_stderr(checkout_result)}" if checkout_result.failure?
     end
 
     def record_merge_base

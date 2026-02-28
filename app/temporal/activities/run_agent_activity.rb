@@ -153,7 +153,15 @@ module Activities
     def augment_prompt_for_issue_goal(agent_run, prompt)
       return prompt unless agent_run.create_issue_goal?
 
+      # full_name is "owner/repo" from our DB (set during GitHub import).
+      # Validate format to prevent injection in the shell command example.
       repo = agent_run.project.full_name
+      unless repo.match?(%r{\A[A-Za-z0-9\-_.]+/[A-Za-z0-9\-_.]+\z})
+        raise Temporalio::Error::ApplicationError.new(
+          "Invalid repository name format: #{repo.inspect}",
+          type: "InvalidRepoName"
+        )
+      end
       <<~AUGMENTED
         #{prompt}
 
