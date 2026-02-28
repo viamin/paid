@@ -106,8 +106,104 @@ module Workflows
       return if scan_result[:prs_to_trigger].blank?
 
       scan_result[:prs_to_trigger].each do |pr_data|
+        handle_pr_trigger(project_id, pr_data)
+      end
+    end
+
+    def handle_pr_trigger(project_id, pr_data)
+      trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
+
+      if trigger_types.include?("ready_for_owner")
+        handle_ready_for_owner(project_id, pr_data)
+      elsif trigger_types.include?("escalate_to_owner")
+        handle_escalate_to_owner(project_id, pr_data)
+      elsif trigger_types.include?("owner_approved")
+        handle_owner_approved(project_id, pr_data)
+      elsif pr_data[:phase] == "draft"
+        start_draft_followup_workflow(project_id, pr_data)
+      else
         start_pr_followup_workflow(project_id, pr_data)
       end
+    end
+
+    def handle_ready_for_owner(project_id, pr_data)
+      run_activity(Activities::MarkPrReadyActivity,
+        { project_id: project_id, pr_number: pr_data[:pr_number],
+          issue_id: pr_data[:issue_id] }, timeout: 60)
+
+      begin
+        run_activity(Activities::RequestReviewActivity,
+          { project_id: project_id, pr_number: pr_data[:pr_number],
+            reviewers: [ owner_reviewer_login(project_id) ] }, timeout: 60)
+      rescue => e
+        Temporalio::Workflow.logger.warn(
+          message: "pr_review.request_owner_review_failed",
+          project_id: project_id,
+          pr_number: pr_data[:pr_number],
+          error: e.message
+        )
+      end
+    end
+
+    def handle_escalate_to_owner(project_id, pr_data)
+      run_activity(Activities::RecordDraftReviewActivity,
+        { issue_id: pr_data[:issue_id],
+          expected_draft_review_count: pr_data[:current_draft_review_count] }, timeout: 30)
+
+      begin
+        run_activity(Activities::RequestReviewActivity,
+          { project_id: project_id, pr_number: pr_data[:pr_number],
+            reviewers: [ owner_reviewer_login(project_id) ] }, timeout: 60)
+      rescue => e
+        Temporalio::Workflow.logger.warn(
+          message: "pr_review.escalate_review_failed",
+          project_id: project_id,
+          pr_number: pr_data[:pr_number],
+          error: e.message
+        )
+      end
+    end
+
+    def handle_owner_approved(project_id, pr_data)
+      run_activity(Activities::MergePullRequestActivity,
+        { project_id: project_id, pr_number: pr_data[:pr_number],
+          issue_id: pr_data[:issue_id] }, timeout: 60)
+    end
+
+    def start_draft_followup_workflow(project_id, pr_data)
+      issue_id = pr_data[:issue_id]
+      pr_number = pr_data[:pr_number]
+
+      capacity = run_activity(Activities::CheckRunCapacityActivity, {}, timeout: 10)
+
+      draft_input = {
+        issue_id: issue_id,
+        expected_draft_review_count: pr_data[:current_draft_review_count]
+      }
+
+      unless capacity[:has_capacity]
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: issue_id,
+            source_pull_request_number: pr_number }, timeout: 30)
+
+        run_activity(Activities::RecordDraftReviewActivity, draft_input, timeout: 30)
+        return
+      end
+
+      timestamp = Temporalio::Workflow.now.to_i
+      workflow_id = "draft-followup-#{project_id}-#{pr_number}-#{timestamp}"
+
+      Temporalio::Workflow.start_child_workflow(
+        Workflows::AgentExecutionWorkflow,
+        {
+          project_id: project_id,
+          issue_id: issue_id,
+          source_pull_request_number: pr_number
+        },
+        id: workflow_id
+      )
+
+      run_activity(Activities::RecordDraftReviewActivity, draft_input, timeout: 30)
     end
 
     def start_pr_followup_workflow(project_id, pr_data)
@@ -128,7 +224,6 @@ module Workflows
           { project_id: project_id, issue_id: issue_id,
             source_pull_request_number: pr_number }, timeout: 30)
 
-        # Still record the followup even when queued
         run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
         return
       end
@@ -146,9 +241,11 @@ module Workflows
         id: workflow_id
       )
 
-      # Record state mutations after child workflow starts successfully,
-      # keeping the scan activity read-only and retry-safe.
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
+    end
+
+    def owner_reviewer_login(project_id)
+      Project.find(project_id).owner_reviewer_login
     end
   end
 end

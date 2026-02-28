@@ -18,7 +18,8 @@ module Activities
         base: project.default_branch,
         head: agent_run.branch_name,
         title: pr_title(issue),
-        body: pr_body(issue, agent_run)
+        body: pr_body(issue, agent_run),
+        draft: true
       )
 
       agent_run.complete!(
@@ -26,6 +27,8 @@ module Activities
         pr_url: pr.html_url,
         pr_number: pr.number
       )
+
+      issue&.update!(pr_review_phase: "draft")
 
       add_pr_labels(client, project, pr.number, agent_run_id)
 

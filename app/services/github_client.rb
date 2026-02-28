@@ -381,6 +381,65 @@ class GithubClient
     end
   end
 
+  # Requests review from users on a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param reviewers [Array<String>] GitHub logins to request review from
+  # @return [Sawyer::Resource] The review request response
+  def request_pull_request_review(repo, number, reviewers:)
+    handle_errors { client.request_pull_request_review(repo, number, reviewers: reviewers) }
+  end
+
+  # Checks pending review requests on a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Hash] Review requests with :users and :teams keys
+  def pull_request_review_requests(repo, number)
+    handle_errors do
+      response = client.pull_request_review_requests(repo, number)
+      {
+        users: (response.users || []).map(&:login),
+        teams: (response.teams || []).map(&:slug)
+      }
+    end
+  end
+
+  # Marks a draft pull request as ready for review via GraphQL.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Hash] The response data
+  def mark_pull_request_ready(repo, number)
+    node_id = pull_request_node_id(repo, number)
+
+    query = <<~GRAPHQL
+      mutation($pullRequestId: ID!) {
+        markPullRequestAsReady(input: { pullRequestId: $pullRequestId }) {
+          pullRequest { id isDraft }
+        }
+      }
+    GRAPHQL
+
+    graphql_request(query, pullRequestId: node_id)
+  end
+
+  # Merges a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param merge_method [String] Merge method: "squash", "merge", or "rebase"
+  # @param commit_title [String, nil] Custom commit title
+  # @param commit_message [String, nil] Custom commit message
+  # @return [Sawyer::Resource] The merge response
+  def merge_pull_request(repo, number, merge_method: "squash", commit_title: nil, commit_message: nil)
+    options = { merge_method: merge_method }
+    options[:commit_title] = commit_title if commit_title
+    options[:commit_message] = commit_message if commit_message
+    handle_errors { client.merge_pull_request(repo, number, "", **options) }
+  end
+
   # Gets the remaining rate limit.
   #
   # @return [Integer] Number of requests remaining
@@ -459,6 +518,20 @@ class GithubClient
       f.response :raise_error
       f.adapter Faraday.default_adapter
     end
+  end
+
+  def pull_request_node_id(repo, number)
+    owner, name = repo.split("/", 2)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) { id }
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(query, owner: owner, name: name, number: number)
+    data.dig("data", "repository", "pullRequest", "id")
   end
 
   def parse_timestamp(value)

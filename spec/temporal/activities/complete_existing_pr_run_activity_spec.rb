@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe Activities::CompleteExistingPrRunActivity do
   let(:project) { create(:project) }
-  let(:issue) { create(:issue, project: project) }
+  let(:issue) { create(:issue, :pull_request, project: project) }
   let(:agent_run) do
     create(:agent_run, :running, project: project, issue: issue,
       source_pull_request_number: 42,
