@@ -1,0 +1,137 @@
+<%= form_with model: prompt, url: url, method: method, class: "mt-6" do |form| %>
+  <% if prompt.errors.any? %>
+    <div class="mb-6 rounded-md bg-red-50 p-4">
+      <div class="flex">
+        <div class="flex-shrink-0">
+          <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd" />
+          </svg>
+        </div>
+        <div class="ml-3">
+          <h3 class="text-sm font-medium text-red-800">
+            <%= pluralize(prompt.errors.count, "error") %> prevented this prompt from being saved:
+          </h3>
+          <div class="mt-2 text-sm text-red-700">
+            <ul class="list-disc space-y-1 pl-5">
+              <% prompt.errors.full_messages.each do |message| %>
+                <li><%= message %></li>
+              <% end %>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <div class="space-y-6">
+    <div>
+      <%= form.label :name, class: "block text-sm font-medium leading-6 text-gray-900" %>
+      <div class="mt-2">
+        <%= form.text_field :name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", required: true, placeholder: "e.g. Code Review Prompt" %>
+      </div>
+    </div>
+
+    <div>
+      <%= form.label :slug, class: "block text-sm font-medium leading-6 text-gray-900" %>
+      <div class="mt-2">
+        <%= form.text_field :slug, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 font-mono", required: true, placeholder: "e.g. review.code-quality" %>
+      </div>
+      <p class="mt-1 text-xs text-gray-500">Lowercase letters, numbers, dots, hyphens, and underscores only.</p>
+    </div>
+
+    <div>
+      <%= form.label :category, class: "block text-sm font-medium leading-6 text-gray-900" %>
+      <div class="mt-2">
+        <%= form.select :category,
+          options_for_select(Prompt::CATEGORIES.map { |c| [c.titleize, c] }, prompt.category),
+          { include_blank: "Select a category" },
+          class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", required: true %>
+      </div>
+    </div>
+
+    <div>
+      <%= form.label :description, class: "block text-sm font-medium leading-6 text-gray-900" %>
+      <div class="mt-2">
+        <%= form.text_area :description, rows: 2, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "Optional description of this prompt's purpose" %>
+      </div>
+    </div>
+
+    <div>
+      <%= form.label :project_id, "Scope", class: "block text-sm font-medium leading-6 text-gray-900" %>
+      <div class="mt-2">
+        <%= form.select :project_id,
+          options_from_collection_for_select(projects, :id, :name, prompt.project_id),
+          { include_blank: "Account-level (applies to all projects)" },
+          class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+      </div>
+      <p class="mt-1 text-xs text-gray-500">Assign to a specific project or leave blank for account-wide use.</p>
+    </div>
+
+    <div class="flex items-center">
+      <%= form.check_box :active, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+      <%= form.label :active, class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
+    </div>
+
+    <hr class="border-gray-200">
+
+    <div>
+      <h3 class="text-sm font-medium leading-6 text-gray-900">Template</h3>
+      <p class="mt-1 text-xs text-gray-500">
+        <% if prompt.persisted? && prompt.current_version %>
+          Modifying the template will create a new version. The current version (v<%= prompt.current_version.version %>) remains immutable.
+        <% else %>
+          Use <code class="rounded bg-gray-100 px-1">{{variable_name}}</code> syntax for template variables.
+        <% end %>
+      </p>
+      <div class="mt-2">
+        <%= form.text_area :template,
+          value: prompt.current_version&.template,
+          rows: 10,
+          class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 font-mono",
+          placeholder: "Enter your prompt template here...\n\nUse {{variable_name}} for dynamic values." %>
+      </div>
+    </div>
+
+    <div>
+      <%= form.label :system_prompt, "System Prompt (optional)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+      <div class="mt-2">
+        <%= form.text_area :system_prompt,
+          value: prompt.current_version&.system_prompt,
+          rows: 4,
+          class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 font-mono",
+          placeholder: "Optional system prompt..." %>
+      </div>
+    </div>
+
+    <div>
+      <%= form.label :variables_text, "Variables", class: "block text-sm font-medium leading-6 text-gray-900" %>
+      <div class="mt-2">
+        <%= form.text_field :variables_text,
+          value: prompt.current_version&.variables&.join(", "),
+          class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 font-mono",
+          placeholder: "title, description, language" %>
+      </div>
+      <p class="mt-1 text-xs text-gray-500">Comma-separated list of variable names used in the template.</p>
+    </div>
+
+    <% if prompt.persisted? %>
+      <div>
+        <%= form.label :change_notes, class: "block text-sm font-medium leading-6 text-gray-900" %>
+        <div class="mt-2">
+          <%= form.text_field :change_notes,
+            class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+            placeholder: "What changed in this version?" %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="mt-6 flex items-center justify-end gap-x-4">
+    <% if prompt.persisted? %>
+      <%= link_to "Cancel", prompt_path(prompt), class: "text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700" %>
+    <% else %>
+      <%= link_to "Cancel", prompts_path, class: "text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700" %>
+    <% end %>
+    <%= form.submit prompt.persisted? ? "Save & Create New Version" : "Create Prompt", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer" %>
+  </div>
+<% end %>
