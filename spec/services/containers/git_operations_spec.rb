@@ -528,6 +528,37 @@ RSpec.describe Containers::GitOperations do
     end
   end
 
+  describe "#install_artifact_excludes" do
+    it "writes exclude patterns to .git/info/exclude" do
+      expect(container_service).to receive(:execute)
+        .with(a_string_matching(/\.git\/info\/exclude/), timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.install_artifact_excludes
+    end
+
+    it "includes corepack and pg-install patterns" do
+      script = nil
+      allow(container_service).to receive(:execute) { |cmd, **|
+        script = cmd
+        success_result
+      }
+
+      git_ops.install_artifact_excludes
+
+      expect(script).to include(".corepack/")
+      expect(script).to include(".pg-install/")
+      expect(script).to include("vendor/bundle/")
+    end
+
+    it "does not raise on failure" do
+      allow(container_service).to receive(:execute)
+        .and_return(failure_result)
+
+      expect { git_ops.install_artifact_excludes }.not_to raise_error
+    end
+  end
+
   describe "#install_git_hooks" do
     let(:hook_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
     let(:hook_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }

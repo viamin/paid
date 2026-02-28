@@ -18,6 +18,7 @@ RSpec.describe Activities::CloneRepoActivity do
         .with(container_service: container_service, agent_run: agent_run)
         .and_return(git_ops)
       allow(git_ops).to receive(:clone_and_setup_branch)
+      allow(git_ops).to receive(:install_artifact_excludes)
       allow(git_ops).to receive(:install_git_hooks)
 
       # Simulate what clone_and_setup_branch does to agent_run
@@ -36,6 +37,12 @@ RSpec.describe Activities::CloneRepoActivity do
       expect(result[:agent_run_id]).to eq(agent_run.id)
       expect(result[:branch_name]).to eq(agent_run.branch_name)
       expect(Worktree.find_by(agent_run: agent_run)).to be_present
+    end
+
+    it "installs artifact excludes after cloning" do
+      expect(git_ops).to receive(:install_artifact_excludes)
+
+      activity.execute(agent_run_id: agent_run.id)
     end
 
     it "installs git hooks after cloning" do
@@ -64,6 +71,7 @@ RSpec.describe Activities::CloneRepoActivity do
           .with(project.full_name, 135)
           .and_return(pr_data)
         allow(git_ops).to receive(:clone_and_checkout_branch)
+        allow(git_ops).to receive(:install_artifact_excludes)
         allow(git_ops).to receive(:install_git_hooks)
 
         agent_run.update!(

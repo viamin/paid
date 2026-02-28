@@ -22,6 +22,44 @@ module Containers
     CLONE_TIMEOUT = 120
     PUSH_TIMEOUT = 60
 
+    # Patterns appended to .git/info/exclude inside agent containers.
+    # Prevents build/tool artifacts from being staged by `git add -A`
+    # even when the repo's .gitignore doesn't cover them.
+    CONTAINER_ARTIFACT_EXCLUDES = <<~PATTERNS.freeze
+      # -- Container artifact excludes (added by Paid) --
+      # Node/corepack
+      .corepack/
+      .yarn/cache/
+      .yarn/unplugged/
+      .pnp.*
+      # Ruby
+      vendor/bundle/
+      .bundle/
+      # PostgreSQL build artifacts
+      .pg-install/
+      .pg/
+      .pgdata/
+      .pg_build/
+      .pg_data/
+      .pg_src/
+      # Python
+      .venv/
+      __pycache__/
+      *.pyc
+      # APT/package caches
+      .apt-cache/
+      .cache-pkg/
+      # Generic build/cache
+      .cache/
+      .tmp/
+      .build/
+      .npm-cache/
+      # mise/asdf
+      .mise-cache/
+      .mise-data/
+      .tool-versions
+    PATTERNS
+
     attr_reader :container_service, :agent_run
 
     def initialize(container_service:, agent_run:)
@@ -124,6 +162,30 @@ module Containers
         message: "container_git.install_hooks_unexpected_error",
         agent_run_id: agent_run.id,
         error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    # Installs local git exclude patterns for common build artifacts.
+    #
+    # Writes to .git/info/exclude, which acts like .gitignore but is local
+    # to the clone and never committed. This prevents tool installation
+    # artifacts (corepack, pg builds, vendor bundles, etc.) from being
+    # accidentally staged by `git add -A` — even if the repo's own
+    # .gitignore doesn't cover them.
+    #
+    # @return [void]
+    def install_artifact_excludes
+      script = <<~SHELL
+        mkdir -p .git/info && cat >> .git/info/exclude << 'EXCLUDES'
+        #{CONTAINER_ARTIFACT_EXCLUDES}
+        EXCLUDES
+      SHELL
+      container_service.execute(script, timeout: nil, stream: false)
+    rescue Error => e
+      Rails.logger.warn(
+        message: "container_git.install_excludes_failed",
+        agent_run_id: agent_run.id,
         error: e.message
       )
     end
