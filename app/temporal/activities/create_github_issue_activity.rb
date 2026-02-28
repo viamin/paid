@@ -42,15 +42,16 @@ module Activities
 
     private
 
-    def extract_title(summary, custom_prompt)
+    def extract_title(summary, _custom_prompt = nil)
       # Try first markdown heading from agent output
       if summary.present?
         heading = summary[/^#\s+(.+)$/, 1]
         return heading.truncate(255) if heading.present?
       end
 
-      # Fall back to truncated custom prompt
-      return custom_prompt.truncate(255) if custom_prompt.present?
+      # Fall back to LLM-generated title from agent output
+      llm_title = Llm::GenerateIssueTitle.call(summary: summary)
+      return llm_title if llm_title.present?
 
       # Last resort
       "Agent analysis"
