@@ -20,6 +20,7 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
         expect(agent_run.created_issue_url).to eq("https://github.com/example/repo/issues/42")
         expect(agent_run.created_issue_number).to eq(42)
         expect(result[:success]).to be true
+        expect(result[:issue_created]).to be true
       end
 
       it "logs the completion" do
@@ -51,6 +52,7 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
 
         result = activity.execute(agent_run_id: agent_run.id)
 
+        expect(result[:success]).to be true
         expect(result[:issue_created]).to be false
         expect(agent_run.reload.status).to eq("running")
       end

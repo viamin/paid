@@ -23,7 +23,7 @@ module Activities
 
         ProcessRunQueueJob.perform_later
 
-        { agent_run_id: agent_run_id, success: true }
+        { agent_run_id: agent_run_id, success: true, issue_created: true }
       else
         agent_run.log!("system", "Agent did not create an issue directly; falling back to platform issue creation")
 
@@ -32,7 +32,7 @@ module Activities
           agent_run_id: agent_run_id
         )
 
-        { agent_run_id: agent_run_id, issue_created: false }
+        { agent_run_id: agent_run_id, success: true, issue_created: false }
       end
     end
   end
