@@ -65,6 +65,17 @@ class ProjectWorkflowManager
       start_polling(project)
     end
 
+    def signal_sync(project)
+      handle = Paid.temporal_client.workflow_handle(workflow_id_for(project))
+      handle.signal("request_sync")
+    rescue Temporalio::Error::RPCError => e
+      raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+      Rails.logger.warn(
+        message: "github_sync.signal_sync_workflow_not_found",
+        project_id: project.id
+      )
+    end
+
     def restart_all_polling(reason: "deployment")
       Project.active.where("poll_interval_seconds > 0").find_each do |project|
         restart_polling(project, reason: reason)
