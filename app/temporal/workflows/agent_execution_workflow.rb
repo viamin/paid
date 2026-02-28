@@ -41,10 +41,11 @@ module Workflows
 
       begin
         # Step 1.5: Provision service containers (database, redis, etc.)
-        if project_has_services?(project_id)
-          run_activity(Activities::ProvisionServicesActivity,
-            { agent_run_id: agent_run_id }, timeout: 120)
-        end
+        # Always run unconditionally — the activity returns {} when no services
+        # are configured. Avoids DB queries inside the workflow, which would
+        # break Temporal's deterministic replay requirement.
+        run_activity(Activities::ProvisionServicesActivity,
+          { agent_run_id: agent_run_id }, timeout: 120)
 
         # Step 2: Provision container (with empty workspace directory)
         run_activity(Activities::ProvisionContainerActivity,
@@ -185,12 +186,6 @@ module Workflows
     end
 
     private
-
-    def project_has_services?(project_id)
-      Project.find(project_id).service_containers.exists?
-    rescue ActiveRecord::RecordNotFound
-      false
-    end
 
     def stale_pull_request_error?(error)
       cause = error.respond_to?(:cause) ? error.cause : nil
