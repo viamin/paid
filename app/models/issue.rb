@@ -22,6 +22,7 @@ class Issue < ApplicationRecord
 
   after_commit :broadcast_current_section, on: [ :create, :destroy ]
   after_update_commit :broadcast_changed_sections
+  after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
   scope :root_issues, -> { where(parent_issue_id: nil) }
@@ -56,6 +57,10 @@ class Issue < ApplicationRecord
     return if parent_issue.project_id == project_id
 
     errors.add(:parent_issue, "must belong to the same project")
+  end
+
+  def update_project_last_github_activity_at
+    project.touch_last_github_activity_at(github_updated_at)
   end
 
   def broadcast_current_section

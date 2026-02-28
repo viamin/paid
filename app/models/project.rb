@@ -27,6 +27,14 @@ class Project < ApplicationRecord
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
 
+  def self.ransackable_attributes(auth_object = nil)
+    %w[name last_agent_run_at last_github_activity_at created_at]
+  end
+
+  def self.ransackable_associations(auth_object = nil)
+    %w[]
+  end
+
   after_create_commit :start_github_polling
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
   after_destroy_commit :stop_github_polling
@@ -84,6 +92,14 @@ class Project < ApplicationRecord
         total_tokens_used: total_tokens_used + tokens_used
       )
     end
+  end
+
+  def touch_last_agent_run_at(timestamp = Time.current)
+    update_column(:last_agent_run_at, timestamp)
+  end
+
+  def touch_last_github_activity_at(timestamp = Time.current)
+    update_column(:last_github_activity_at, timestamp)
   end
 
   def broadcast_stats_update

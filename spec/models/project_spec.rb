@@ -310,6 +310,42 @@ RSpec.describe Project do
     end
   end
 
+  describe ".ransackable_attributes" do
+    it "returns the allowed sortable attributes" do
+      expect(described_class.ransackable_attributes).to contain_exactly(
+        "name", "last_agent_run_at", "last_github_activity_at", "created_at"
+      )
+    end
+  end
+
+  describe ".ransackable_associations" do
+    it "returns an empty array" do
+      expect(described_class.ransackable_associations).to eq([])
+    end
+  end
+
+  describe "#touch_last_agent_run_at" do
+    it "updates the last_agent_run_at column" do
+      project = create(:project)
+      timestamp = 1.hour.ago
+
+      project.touch_last_agent_run_at(timestamp)
+
+      expect(project.reload.last_agent_run_at).to be_within(1.second).of(timestamp)
+    end
+  end
+
+  describe "#touch_last_github_activity_at" do
+    it "updates the last_github_activity_at column" do
+      project = create(:project)
+      timestamp = 2.hours.ago
+
+      project.touch_last_github_activity_at(timestamp)
+
+      expect(project.reload.last_github_activity_at).to be_within(1.second).of(timestamp)
+    end
+  end
+
   describe "label_mappings JSONB storage" do
     it "stores label mappings as JSONB" do
       mappings = {
