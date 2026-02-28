@@ -78,7 +78,9 @@ class ProjectsController < ApplicationController
     sort = @q.sorts.first
     return scope unless sort && NULLS_LAST_SORT_ATTRIBUTES.include?(sort.name)
 
-    scope.reorder(Arel.sql("#{sort.name} #{sort.dir} NULLS LAST"))
+    column = Project.arel_table[sort.name]
+    direction = sort.dir == "desc" ? column.desc : column.asc
+    scope.reorder(direction.nulls_last)
   end
 
   def set_project
