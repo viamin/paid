@@ -22,11 +22,11 @@ class CreateServiceContainers < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
-    add_index :project_service_containers, [:project_id, :service_container_id],
+    add_index :project_service_containers, [ :project_id, :service_container_id ],
       unique: true, name: "idx_project_service_containers_unique"
 
     add_column :user_settings, :allowed_service_images, :jsonb,
-      default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
+      default: [ "postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest" ], null: false
 
     add_column :agent_runs, :service_container_ids, :jsonb, default: []
     add_column :agent_runs, :service_environment, :jsonb, default: {}

@@ -32,8 +32,13 @@ class ServiceContainer < ApplicationRecord
   def image_in_allowlist
     return if image.blank?
 
-    allowed = UserSetting.pick(:allowed_service_images)
-    return if allowed.nil? # No user settings configured yet
+    # Build a deterministic allowlist from all user settings.
+    # Treat nil/NULL values as empty arrays so they cannot bypass validation.
+    allowed = UserSetting.pluck(:allowed_service_images)
+      .compact
+      .flatten
+      .uniq
+
     return if allowed.include?(image)
 
     errors.add(:image, "is not in the allowed service images list")
