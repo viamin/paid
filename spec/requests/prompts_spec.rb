@@ -275,6 +275,16 @@ RSpec.describe "Prompts" do
         }.to change(PromptVersion, :count).by(1)
       end
 
+      it "does not create a new version when only metadata changes" do
+        prompt = create(:prompt, :for_account, account: account)
+        prompt.create_version!(template: "Existing template")
+        expect {
+          patch prompt_path(prompt), params: {
+            prompt: { name: "Updated Name", template: "Existing template" }
+          }
+        }.not_to change(PromptVersion, :count)
+      end
+
       it "preserves previous versions (immutable)" do
         prompt = create(:prompt, :for_account, account: account)
         v1 = prompt.create_version!(template: "Version 1")
@@ -341,6 +351,28 @@ RSpec.describe "Prompts" do
         expect(response.body).to include("Old template")
         expect(response.body).to include("New template")
         expect(response.body).to include("Version Diff")
+      end
+
+      it "redirects when version params are missing" do
+        prompt = create(:prompt, :for_account, account: account)
+        prompt.create_version!(template: "Template")
+        get diff_prompt_path(prompt)
+        expect(response).to redirect_to(prompt_path(prompt))
+        expect(flash[:alert]).to include("two different versions")
+      end
+
+      it "redirects when both version params are the same" do
+        prompt = create(:prompt, :for_account, account: account)
+        v1 = prompt.create_version!(template: "Template")
+        get diff_prompt_path(prompt, a: v1.id, b: v1.id)
+        expect(response).to redirect_to(prompt_path(prompt))
+      end
+
+      it "returns not found when version IDs are invalid" do
+        prompt = create(:prompt, :for_account, account: account)
+        prompt.create_version!(template: "Template")
+        get diff_prompt_path(prompt, a: 0, b: 999_999)
+        expect(response).to have_http_status(:not_found)
       end
     end
   end

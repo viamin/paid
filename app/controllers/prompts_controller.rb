@@ -13,7 +13,7 @@ class PromptsController < ApplicationController
 
   def show
     authorize @prompt
-    @versions = @prompt.prompt_versions.order(version: :desc)
+    @versions = @prompt.prompt_versions.includes(:created_by_user).order(version: :desc)
   end
 
   def new
@@ -26,21 +26,23 @@ class PromptsController < ApplicationController
     @prompt = build_prompt
     authorize @prompt
 
-    if @prompt.save
-      if prompt_version_params[:template].present?
-        @prompt.create_version!(
-          template: prompt_version_params[:template],
-          system_prompt: prompt_version_params[:system_prompt],
-          variables: parse_variables,
-          change_notes: "Initial version",
-          created_by: "user",
-          created_by_user: current_user
-        )
+    ActiveRecord::Base.transaction do
+      if @prompt.save
+        if prompt_version_params[:template].present?
+          @prompt.create_version!(
+            template: prompt_version_params[:template],
+            system_prompt: prompt_version_params[:system_prompt],
+            variables: parse_variables,
+            change_notes: "Initial version",
+            created_by: "user",
+            created_by_user: current_user
+          )
+        end
+        redirect_to @prompt, notice: "Prompt was successfully created."
+      else
+        @projects = policy_scope(Project).order(:name)
+        render :new, status: :unprocessable_content
       end
-      redirect_to @prompt, notice: "Prompt was successfully created."
-    else
-      @projects = policy_scope(Project).order(:name)
-      render :new, status: :unprocessable_content
     end
   end
 
@@ -52,22 +54,24 @@ class PromptsController < ApplicationController
   def update
     authorize @prompt
 
-    if @prompt.update(prompt_params)
-      if prompt_version_params[:template].present?
-        @prompt.create_version!(
-          template: prompt_version_params[:template],
-          system_prompt: prompt_version_params[:system_prompt],
-          variables: parse_variables,
-          change_notes: prompt_version_params[:change_notes],
-          created_by: "user",
-          created_by_user: current_user,
-          parent_version: @prompt.current_version
-        )
+    ActiveRecord::Base.transaction do
+      if @prompt.update(prompt_params)
+        if version_content_changed?
+          @prompt.create_version!(
+            template: prompt_version_params[:template],
+            system_prompt: prompt_version_params[:system_prompt],
+            variables: parse_variables,
+            change_notes: prompt_version_params[:change_notes],
+            created_by: "user",
+            created_by_user: current_user,
+            parent_version: @prompt.current_version
+          )
+        end
+        redirect_to @prompt, notice: "Prompt was successfully updated."
+      else
+        @projects = policy_scope(Project).order(:name)
+        render :edit, status: :unprocessable_content
       end
-      redirect_to @prompt, notice: "Prompt was successfully updated."
-    else
-      @projects = policy_scope(Project).order(:name)
-      render :edit, status: :unprocessable_content
     end
   end
 
@@ -79,8 +83,21 @@ class PromptsController < ApplicationController
 
   def diff
     authorize @prompt, :diff?
-    @version_a = @prompt.prompt_versions.find(params[:a])
-    @version_b = @prompt.prompt_versions.find(params[:b])
+
+    a_id = params[:a]
+    b_id = params[:b]
+
+    if a_id.blank? || b_id.blank? || a_id == b_id
+      redirect_back fallback_location: @prompt, alert: "You must select two different versions to compare."
+      return
+    end
+
+    @version_a = @prompt.prompt_versions.find_by(id: a_id)
+    @version_b = @prompt.prompt_versions.find_by(id: b_id)
+
+    if @version_a.nil? || @version_b.nil?
+      head :not_found
+    end
   end
 
   private
@@ -104,6 +121,17 @@ class PromptsController < ApplicationController
 
   def prompt_version_params
     params.require(:prompt).permit(:template, :system_prompt, :variables_text, :change_notes)
+  end
+
+  def version_content_changed?
+    return false if prompt_version_params[:template].blank?
+
+    current = @prompt.current_version
+    return true if current.nil?
+
+    current.template != prompt_version_params[:template] ||
+      current.system_prompt.to_s != prompt_version_params[:system_prompt].to_s ||
+      current.variables != parse_variables
   end
 
   def parse_variables

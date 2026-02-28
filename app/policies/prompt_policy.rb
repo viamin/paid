@@ -14,6 +14,8 @@ class PromptPolicy < ApplicationPolicy
   end
 
   def create?
+    return false if record.global?
+
     has_any_account_role?(:owner, :admin)
   end
 
@@ -23,6 +25,7 @@ class PromptPolicy < ApplicationPolicy
 
   def update?
     return false unless visible?
+    return false if record.global?
 
     has_any_account_role?(:owner, :admin)
   end
@@ -41,6 +44,7 @@ class PromptPolicy < ApplicationPolicy
   private
 
   def visible?
+    return false unless user.present?
     return true if record.global?
 
     user_in_account?

@@ -45,6 +45,12 @@ RSpec.describe PromptPolicy do
 
         expect(described_class.new(user, prompt)).not_to be_show
       end
+
+      it "does not permit nil user to view global prompts" do
+        prompt = create(:prompt, :global)
+
+        expect(described_class.new(nil, prompt)).not_to be_show
+      end
     end
 
     describe "#create?" do
@@ -72,6 +78,14 @@ RSpec.describe PromptPolicy do
         prompt = build(:prompt, account: account)
 
         expect(described_class.new(member, prompt)).not_to be_create
+      end
+
+      it "does not permit creating global prompts" do
+        account = create(:account)
+        owner = create(:user, account: account)
+        prompt = build(:prompt, :global)
+
+        expect(described_class.new(owner, prompt)).not_to be_create
       end
     end
 
@@ -109,6 +123,14 @@ RSpec.describe PromptPolicy do
         prompt = create(:prompt, :for_account, account: other_account)
 
         expect(described_class.new(user, prompt)).not_to be_update
+      end
+
+      it "does not permit updating global prompts" do
+        account = create(:account)
+        owner = create(:user, account: account)
+        prompt = create(:prompt, :global)
+
+        expect(described_class.new(owner, prompt)).not_to be_update
       end
     end
 
