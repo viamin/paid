@@ -28,8 +28,6 @@ module Activities
         pr_number: pr.number
       )
 
-      issue&.update!(pr_review_phase: "draft")
-
       add_pr_labels(client, project, pr.number, agent_run_id)
 
       agent_run.log!("system", "PR created: #{pr.html_url}")

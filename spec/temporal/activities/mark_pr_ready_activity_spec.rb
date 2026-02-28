@@ -55,12 +55,13 @@ RSpec.describe Activities::MarkPrReadyActivity do
         allow(github_client).to receive(:pull_request)
           .with(project.full_name, 42)
           .and_return(pr_data)
+        allow(github_client).to receive(:mark_pull_request_ready)
       end
 
       it "skips the GitHub API call" do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
-        expect(github_client).not_to have_received(:mark_pull_request_ready) if github_client.respond_to?(:mark_pull_request_ready)
+        expect(github_client).not_to have_received(:mark_pull_request_ready)
       end
 
       it "still updates issue phase to ready" do

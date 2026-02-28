@@ -135,10 +135,6 @@ module Workflows
     end
 
     def handle_escalate_to_owner(project_id, pr_data)
-      run_activity(Activities::RecordDraftReviewActivity,
-        { issue_id: pr_data[:issue_id],
-          expected_draft_review_count: pr_data[:current_draft_review_count] }, timeout: 30)
-
       # Transition to escalated phase so the scanner stops re-emitting this trigger
       run_activity(Activities::MarkEscalatedActivity,
         { issue_id: pr_data[:issue_id] }, timeout: 30)

@@ -25,8 +25,9 @@ module Activities
 
       agent_run.log!("system", "Pushed updates to existing PR: #{pr.html_url}")
 
-      if agent_run.issue && !agent_run.issue.draft_phase?
-        agent_run.issue.update!(paid_state: "completed")
+      issue = agent_run.issue
+      if issue && !(issue.is_pull_request? && issue.draft_phase?)
+        issue.update!(paid_state: "completed")
       end
 
       logger.info(

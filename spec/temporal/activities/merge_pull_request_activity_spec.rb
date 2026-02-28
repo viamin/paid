@@ -55,12 +55,13 @@ RSpec.describe Activities::MergePullRequestActivity do
         allow(github_client).to receive(:pull_request)
           .with(project.full_name, 42)
           .and_return(pr_data)
+        allow(github_client).to receive(:merge_pull_request)
       end
 
       it "skips the merge call" do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
-        expect(github_client).not_to have_received(:merge_pull_request) if github_client.respond_to?(:merge_pull_request)
+        expect(github_client).not_to have_received(:merge_pull_request)
       end
 
       it "still updates issue phase to merged" do
