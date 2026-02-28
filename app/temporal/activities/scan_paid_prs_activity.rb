@@ -74,10 +74,11 @@ module Activities
 
       pr_data = fetch_pr_data(client, project, issue)
       copilot_triggers = check_copilot_review_threads(client, project, issue)
-      ci_triggers = check_ci_failures(client, project, issue, pr_data)
+      checks = fetch_check_runs(client, project, pr_data)
+      ci_triggers = ci_failure_triggers(checks)
 
       if copilot_triggers.empty? && ci_triggers.empty?
-        return ready_for_owner_trigger(issue) if ci_all_green?(client, project, pr_data)
+        return ready_for_owner_trigger(issue) if all_checks_green?(checks)
         return nil # CI still pending
       end
 
@@ -97,11 +98,11 @@ module Activities
     # --- Ready phase scanning ---
 
     def scan_ready_pr(project, client, issue)
-      return nil if followup_limit_reached?(project, issue)
-
       if owner_approved?(client, project, issue)
         return owner_approved_trigger(issue)
       end
+
+      return nil if followup_limit_reached?(project, issue)
 
       triggers = detect_ready_triggers(project, client, issue)
       return nil if triggers.empty?
@@ -225,9 +226,27 @@ module Activities
     # --- CI checks ---
 
     def check_ci_failures(client, project, issue, pr_data)
+      checks = fetch_check_runs(client, project, pr_data)
+      ci_failure_triggers(checks)
+    rescue GithubClient::Error => e
+      log_signal_error("ci_failures", project, issue, e)
+      []
+    end
+
+    def fetch_check_runs(client, project, pr_data)
       return [] unless pr_data
 
-      checks = client.check_runs_for_ref(project.full_name, pr_data.head.sha)
+      client.check_runs_for_ref(project.full_name, pr_data.head.sha)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_scanner.ci_check_failed",
+        project_id: project.id,
+        error: e.message
+      )
+      []
+    end
+
+    def ci_failure_triggers(checks)
       completed = checks.select { |c| c[:conclusion].present? }
       return [] if completed.empty?
 
@@ -235,25 +254,12 @@ module Activities
       return [] if failed.empty?
 
       [ { type: "ci_failure", details: failed.map { |c| c[:name] } } ]
-    rescue GithubClient::Error => e
-      log_signal_error("ci_failures", project, issue, e)
-      []
     end
 
-    def ci_all_green?(client, project, pr_data)
-      return false unless pr_data
-
-      checks = client.check_runs_for_ref(project.full_name, pr_data.head.sha)
+    def all_checks_green?(checks)
       return false if checks.empty?
 
       checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
-    rescue GithubClient::Error => e
-      logger.warn(
-        message: "pr_scanner.ci_check_failed",
-        project_id: project.id,
-        error: e.message
-      )
-      false
     end
 
     # --- Review checks ---

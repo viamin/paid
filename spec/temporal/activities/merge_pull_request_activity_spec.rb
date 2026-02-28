@@ -19,7 +19,7 @@ RSpec.describe Activities::MergePullRequestActivity do
 
   describe "#execute" do
     context "when PR is not yet merged" do
-      let(:pr_data) { double("pr_data", merged: false) } # rubocop:disable RSpec/VerifiedDoubles
+      let(:pr_data) { double("pr_data", merged_at: nil) } # rubocop:disable RSpec/VerifiedDoubles
 
       before do
         allow(github_client).to receive(:pull_request)
@@ -49,7 +49,7 @@ RSpec.describe Activities::MergePullRequestActivity do
     end
 
     context "when PR is already merged" do
-      let(:pr_data) { double("pr_data", merged: true) } # rubocop:disable RSpec/VerifiedDoubles
+      let(:pr_data) { double("pr_data", merged_at: Time.current) } # rubocop:disable RSpec/VerifiedDoubles
 
       before do
         allow(github_client).to receive(:pull_request)
@@ -72,7 +72,7 @@ RSpec.describe Activities::MergePullRequestActivity do
     end
 
     context "with different merge methods" do
-      let(:pr_data) { double("pr_data", merged: false) } # rubocop:disable RSpec/VerifiedDoubles
+      let(:pr_data) { double("pr_data", merged_at: nil) } # rubocop:disable RSpec/VerifiedDoubles
 
       before do
         project.update!(merge_method: "rebase")

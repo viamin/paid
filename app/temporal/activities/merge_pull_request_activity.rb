@@ -15,7 +15,7 @@ module Activities
       client = project.github_token.client
       pr_data = client.pull_request(project.full_name, pr_number)
 
-      if pr_data.merged
+      if pr_data.merged_at
         logger.info(
           message: "pr_review.already_merged",
           project_id: project.id,
