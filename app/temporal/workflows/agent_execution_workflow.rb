@@ -40,6 +40,12 @@ module Workflows
       agent_run_id = agent_run_result[:agent_run_id]
 
       begin
+        # Step 1.5: Provision service containers (database, redis, etc.)
+        if project_has_services?(project_id)
+          run_activity(Activities::ProvisionServicesActivity,
+            { agent_run_id: agent_run_id }, timeout: 120)
+        end
+
         # Step 2: Provision container (with empty workspace directory)
         run_activity(Activities::ProvisionContainerActivity,
           { agent_run_id: agent_run_id }, timeout: 60)
@@ -151,6 +157,19 @@ module Workflows
         end
 
         begin
+          run_activity(Activities::CleanupServicesActivity,
+            { agent_run_id: agent_run_id },
+            start_to_close_timeout: 60, retry_policy: NO_RETRY)
+        rescue => e
+          Temporalio::Workflow.logger.warn(
+            message: "agent_execution.cleanup_services_failed",
+            agent_run_id: agent_run_id,
+            error_class: e.class.name,
+            error: e.message
+          )
+        end
+
+        begin
           run_activity(Activities::CleanupWorktreeActivity,
             { agent_run_id: agent_run_id },
             start_to_close_timeout: 60, retry_policy: NO_RETRY)
@@ -166,6 +185,12 @@ module Workflows
     end
 
     private
+
+    def project_has_services?(project_id)
+      Project.find(project_id).service_containers.exists?
+    rescue ActiveRecord::RecordNotFound
+      false
+    end
 
     def stale_pull_request_error?(error)
       cause = error.respond_to?(:cause) ? error.cause : nil

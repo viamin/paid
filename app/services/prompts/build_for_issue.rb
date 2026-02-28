@@ -60,6 +60,7 @@ module Prompts
         - Focus on completing the specific task in the issue
 
         When you're done, commit all your changes. Do not push.
+        #{available_services_section}
       PROMPT
     end
 
@@ -75,6 +76,39 @@ module Prompts
 
     def detected_language
       @detected_language ||= LanguageCommands.detected_language(project)
+    end
+
+    def available_services_section
+      containers = project.service_containers.to_a
+      return "" if containers.empty?
+
+      lines = containers.map { |sc| service_description(sc) }
+
+      <<~SECTION
+
+        # Available Services
+
+        The following services are already running and available:
+        #{lines.join("\n")}
+
+        Do NOT install or build these services from source. They are already running.
+        Use the environment variables above to connect.
+      SECTION
+    end
+
+    def service_description(sc)
+      if sc.image.include?("postgres")
+        user = sc.env["POSTGRES_USER"] || "agent"
+        pass = sc.env["POSTGRES_PASSWORD"] || "agent"
+        db = sc.env["POSTGRES_DB"] || "agent_test"
+        "- PostgreSQL: host=#{sc.name}, port=#{sc.port}, user=#{user}, password=#{pass}, database=#{db}\n  DATABASE_URL is already set in your environment."
+      elsif sc.image.include?("redis")
+        "- Redis: host=#{sc.name}, port=#{sc.port}\n  REDIS_URL is already set in your environment."
+      elsif sc.image.include?("selenium") || sc.image.include?("chromium")
+        "- Selenium/Chromium: host=#{sc.name}, port=#{sc.port}\n  SELENIUM_URL is already set in your environment."
+      else
+        "- #{sc.name}: host=#{sc.name}, port=#{sc.port}"
+      end
     end
   end
 end
