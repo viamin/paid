@@ -59,6 +59,9 @@ class Issue < ApplicationRecord
     errors.add(:parent_issue, "must belong to the same project")
   end
 
+  # During bulk sync (e.g. FetchIssuesActivity), this fires per-issue, but the
+  # atomic WHERE clause ensures only the issue with the latest github_updated_at
+  # actually modifies the project row — the rest are cheap no-op index lookups.
   def update_project_last_github_activity_at
     return unless github_updated_at_previously_changed?
 
