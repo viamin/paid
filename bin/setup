@@ -38,6 +38,9 @@ FileUtils.chdir APP_ROOT do
   system! "bin/rails db:prepare"
   system! "bin/rails db:reset" if ARGV.include?("--reset")
 
+  puts "\n== Building agent container image =="
+  system! "docker compose --profile setup up agent-image --build"
+
   puts "\n== Removing old logs and tempfiles =="
   FileUtils.rm_f(Dir["log/*.log"])
   FileUtils.rm_rf(%w[tmp/cache tmp/pids tmp/sockets tmp/screenshots tmp/storage])
