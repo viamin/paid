@@ -48,7 +48,7 @@ module ApplicationHelper
       tag.span(" \u2193", class: "ml-1")
     end
 
-    q_params = params.fetch(:q, {}).permit(*RANSACK_PERMITTED_KEYS).to_h
+    q_params = params[:q]&.permit(*RANSACK_PERMITTED_KEYS)&.to_h || {}
     link_to(
       safe_join([ label, arrow ].compact),
       url_for(request.query_parameters.except(:page, "page").merge(q: q_params.merge(s: "#{attribute} #{direction}"))),
