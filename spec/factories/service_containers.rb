@@ -8,6 +8,12 @@ FactoryBot.define do
     env { { "POSTGRES_USER" => "agent", "POSTGRES_PASSWORD" => "agent", "POSTGRES_DB" => "agent_test" } }
     status { "stopped" }
 
+    after(:build) do
+      if UserSetting.where.not(allowed_service_images: nil).none?
+        create(:user_setting)
+      end
+    end
+
     trait :running do
       status { "running" }
       docker_container_id { SecureRandom.hex(32) }

@@ -10,6 +10,10 @@ RSpec.describe Containers::ServiceProvisioner do
     let(:issue) { create(:issue, project: project) }
     let(:agent_run) { create(:agent_run, project: project, issue: issue) }
 
+    before do
+      allow(NetworkPolicy).to receive(:ensure_network!)
+    end
+
     context "when project has no service containers" do
       it "returns empty hash" do
         result = provisioner.provision(agent_run)
