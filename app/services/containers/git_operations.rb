@@ -174,18 +174,31 @@ module Containers
     # accidentally staged by `git add -A` — even if the repo's own
     # .gitignore doesn't cover them.
     #
+    # Idempotent: a grep guard skips the append when the marker comment
+    # is already present, so Temporal retries don't duplicate entries.
+    #
     # @return [void]
     def install_artifact_excludes
-      script = <<~SHELL
-        mkdir -p .git/info && cat >> .git/info/exclude << 'EXCLUDES'
-        #{CONTAINER_ARTIFACT_EXCLUDES}
-        EXCLUDES
-      SHELL
-      container_service.execute(script, timeout: nil, stream: false)
-    rescue Error => e
-      Rails.logger.warn(
-        message: "container_git.install_excludes_failed",
+      marker = "# -- Container artifact excludes (added by Paid) --"
+      script = "mkdir -p .git/info\n" \
+               "if ! grep -qF '#{marker}' .git/info/exclude 2>/dev/null; then\n" \
+               "cat >> .git/info/exclude << 'EXCLUDES'\n" \
+               "#{CONTAINER_ARTIFACT_EXCLUDES}" \
+               "EXCLUDES\n" \
+               "fi"
+      result = container_service.execute(script, timeout: nil, stream: false)
+      if result.failure?
+        Rails.logger.warn(
+          message: "container_git.install_excludes_failed",
+          agent_run_id: agent_run.id,
+          error: error_with_stderr(result)
+        )
+      end
+    rescue StandardError => e
+      Rails.logger.error(
+        message: "container_git.install_excludes_unexpected_error",
         agent_run_id: agent_run.id,
+        error_class: e.class.name,
         error: e.message
       )
     end
