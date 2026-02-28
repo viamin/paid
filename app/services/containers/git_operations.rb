@@ -54,10 +54,15 @@ module Containers
       # APT/package caches
       .apt-cache/
       .cache-pkg/
-      # Generic build/cache
+      # XDG cache (sometimes redirected into workspace)
+      .xdg-cache/
+      # Generic build/cache (wildcard to catch variants like .tmp-build)
       .cache/
       .tmp/
+      .tmp-*/
       .build/
+      .*-build/
+      .*_build/
       .npm-cache/
       # mise/asdf
       .mise-cache/

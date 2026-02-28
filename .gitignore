@@ -51,8 +51,11 @@
 # Session-specific working memory (ephemeral, per-developer)
 WORKLOG.md
 
-# Build artifacts (PostgreSQL, libyaml, etc.)
+# Build artifacts (PostgreSQL, libyaml, ruby-build, etc.)
 /.build
+/.tmp-*/
+/.*-build/
+/.*_build/
 
 # npm cache
 /.npm-cache
@@ -72,6 +75,9 @@ WORKLOG.md
 # APT cache and cached package extracts (created during container setup)
 /.apt-cache/
 /.cache-pkg/
+
+# XDG cache (redirected into workspace by some container setups)
+/.xdg-cache/
 
 # Vendored gems (created by bundle install --path vendor/bundle)
 /vendor/bundle/
