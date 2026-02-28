@@ -82,7 +82,7 @@
                     <% end %>
                   </td>
                   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                    <%= time_ago_in_words(run.created_at) %> ago
+                    <%= time_ago_in_words(run.started_at || run.created_at) %> ago
                   </td>
                   <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                     <% project_for_run = local_assigns[:project] || run.project %>
