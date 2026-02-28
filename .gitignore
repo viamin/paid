@@ -7,6 +7,9 @@
 # Ignore bundler config.
 /.bundle
 
+# Ignore vendored gems
+/vendor/bundle
+
 # Ignore all environment files except the example.
 /.env*
 !/.env.example
@@ -85,6 +88,7 @@ WORKLOG.md
 # Ignore vendored gems, mise tool data, and build artifacts
 /.gem/
 /.gems/
+/.gem-home/
 /.gem-spec-cache/
 /.gem_cache/
 /.gem_home/
@@ -101,6 +105,8 @@ WORKLOG.md
 /.rubocop-cache/
 /.local-include/
 /.local-deps/
+/.libyaml-build/
+/.libyaml-src/
 /.libyaml_build/
 /.libyaml_src/
 /.pg_build/
