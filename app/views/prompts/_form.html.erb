@@ -85,7 +85,6 @@
       </p>
       <div class="mt-2">
         <%= form.text_area :template,
-          value: prompt.current_version&.template,
           rows: 10,
           class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 font-mono",
           placeholder: "Enter your prompt template here...\n\nUse {{variable_name}} for dynamic values." %>
@@ -96,7 +95,6 @@
       <%= form.label :system_prompt, "System Prompt (optional)", class: "block text-sm font-medium leading-6 text-gray-900" %>
       <div class="mt-2">
         <%= form.text_area :system_prompt,
-          value: prompt.current_version&.system_prompt,
           rows: 4,
           class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 font-mono",
           placeholder: "Optional system prompt..." %>
@@ -107,7 +105,6 @@
       <%= form.label :variables_text, "Variables", class: "block text-sm font-medium leading-6 text-gray-900" %>
       <div class="mt-2">
         <%= form.text_field :variables_text,
-          value: prompt.current_version&.variables&.map { |v| variable_display_name(v) }&.join(", "),
           class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 font-mono",
           placeholder: "title, description, language" %>
       </div>

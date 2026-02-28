@@ -216,6 +216,21 @@ RSpec.describe "Prompts" do
           post prompts_path, params: { prompt: { name: "", slug: "", category: "" } }
           expect(response).to have_http_status(:unprocessable_content)
         end
+
+        it "preserves user-entered version fields on validation error" do
+          post prompts_path, params: {
+            prompt: {
+              name: "", slug: "", category: "",
+              template: "Preserve this template {{var}}",
+              system_prompt: "Preserve this system prompt",
+              variables_text: "var, other"
+            }
+          }
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.body).to include("Preserve this template {{var}}")
+          expect(response.body).to include("Preserve this system prompt")
+          expect(response.body).to include("var, other")
+        end
       end
     end
   end
@@ -300,6 +315,22 @@ RSpec.describe "Prompts" do
         patch prompt_path(prompt), params: { prompt: { name: "Updated" } }
         expect(response).to redirect_to(prompt_path(prompt))
         expect(flash[:notice]).to include("successfully updated")
+      end
+
+      it "preserves user-entered version fields on validation error" do
+        prompt = create(:prompt, :for_account, :with_version, account: account)
+        patch prompt_path(prompt), params: {
+          prompt: {
+            name: "",
+            template: "Updated template content",
+            system_prompt: "Updated system prompt",
+            variables_text: "foo, bar"
+          }
+        }
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("Updated template content")
+        expect(response.body).to include("Updated system prompt")
+        expect(response.body).to include("foo, bar")
       end
     end
   end

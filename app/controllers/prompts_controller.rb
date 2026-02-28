@@ -41,6 +41,7 @@ class PromptsController < ApplicationController
         redirect_to @prompt, notice: "Prompt was successfully created."
       else
         @projects = policy_scope(Project).order(:name)
+        assign_version_attrs_from_params
         render :new, status: :unprocessable_content
       end
     end
@@ -49,6 +50,7 @@ class PromptsController < ApplicationController
   def edit
     authorize @prompt
     @projects = policy_scope(Project).order(:name)
+    assign_version_attrs_from_current
   end
 
   def update
@@ -70,6 +72,7 @@ class PromptsController < ApplicationController
         redirect_to @prompt, notice: "Prompt was successfully updated."
       else
         @projects = policy_scope(Project).order(:name)
+        assign_version_attrs_from_params
         render :edit, status: :unprocessable_content
       end
     end
@@ -148,5 +151,21 @@ class PromptsController < ApplicationController
     return [] if text.blank?
 
     text.split(",").map(&:strip).reject(&:blank?)
+  end
+
+  def assign_version_attrs_from_params
+    @prompt.template = prompt_version_params[:template]
+    @prompt.system_prompt = prompt_version_params[:system_prompt]
+    @prompt.variables_text = prompt_version_params[:variables_text]
+    @prompt.change_notes = prompt_version_params[:change_notes]
+  end
+
+  def assign_version_attrs_from_current
+    version = @prompt.current_version
+    return unless version
+
+    @prompt.template = version.template
+    @prompt.system_prompt = version.system_prompt
+    @prompt.variables_text = normalize_variables(version.variables).join(", ")
   end
 end

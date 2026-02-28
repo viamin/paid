@@ -3,6 +3,8 @@
 class Prompt < ApplicationRecord
   CATEGORIES = %w[planning coding review testing].freeze
 
+  attr_accessor :template, :system_prompt, :variables_text, :change_notes
+
   belongs_to :account, optional: true
   belongs_to :project, optional: true
 
