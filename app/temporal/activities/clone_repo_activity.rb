@@ -20,11 +20,15 @@ module Activities
 
       if agent_run.existing_pr?
         branch_name = fetch_pr_branch(agent_run)
-        git_ops.clone_and_checkout_branch(branch_name: branch_name)
+        git_ops.clone_and_checkout_branch(
+          branch_name: branch_name,
+          pull_request_number: agent_run.source_pull_request_number
+        )
       else
         git_ops.clone_and_setup_branch
       end
 
+      git_ops.install_artifact_excludes
       install_quality_hooks(git_ops, agent_run)
       create_worktree_record(agent_run)
 
@@ -57,6 +61,15 @@ module Activities
       project = agent_run.project
       client = project.github_token.client
       pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
+
+      unless pr.state == "open"
+        raise Temporalio::Error::ApplicationError.new(
+          "PR ##{agent_run.source_pull_request_number} is #{pr.state}; project resync needed",
+          type: "StalePullRequest",
+          non_retryable: true
+        )
+      end
+
       pr.head.ref
     end
 

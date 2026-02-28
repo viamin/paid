@@ -69,6 +69,7 @@ module Api
 
     def proxy_to_github(path, github_token)
       target_url = "https://api.github.com/#{path}"
+      target_url = "#{target_url}?#{request.query_string}" if request.query_string.present?
 
       build_connection.run_request(
         request.method.downcase.to_sym,

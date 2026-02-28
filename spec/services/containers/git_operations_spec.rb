@@ -121,7 +121,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(success_result)
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "checkout", "fix-bug-branch" ], timeout: nil, stream: false)
+        .with([ "git", "switch", "--", "fix-bug-branch" ], timeout: nil, stream: false)
         .and_return(success_result)
 
       git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
@@ -131,13 +131,42 @@ RSpec.describe Containers::GitOperations do
       expect(agent_run.base_commit_sha).to eq(merge_base_sha)
     end
 
-    it "raises CloneError when checkout fails" do
+    it "raises CloneError when checkout fails and no PR number given" do
       allow(container_service).to receive(:execute)
-        .with([ "git", "checkout", "nonexistent" ], timeout: nil, stream: false)
+        .with([ "git", "switch", "--", "nonexistent" ], timeout: nil, stream: false)
         .and_return(failure_result)
 
       expect { git_ops.clone_and_checkout_branch(branch_name: "nonexistent") }
         .to raise_error(described_class::CloneError, /Checkout failed/)
+    end
+
+    context "when branch is deleted but PR number is given" do
+      it "falls back to fetching the PR ref" do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false)
+          .and_return(failure_result, success_result)
+
+        expect(container_service).to receive(:execute)
+          .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42)
+
+        expect(agent_run.reload.branch_name).to eq("deleted-branch")
+      end
+
+      it "raises CloneError when PR ref fetch also fails" do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false)
+          .and_return(failure_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false)
+          .and_return(failure_result)
+
+        expect { git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42) }
+          .to raise_error(described_class::CloneError, /branch deleted, PR fetch also failed/)
+      end
     end
 
     it "falls back to HEAD SHA when merge-base fails" do
@@ -496,6 +525,83 @@ RSpec.describe Containers::GitOperations do
 
         expect { git_ops.rebase_onto("main") }.to raise_error(described_class::Error)
       end
+    end
+  end
+
+  describe "#install_artifact_excludes" do
+    it "writes exclude patterns to .git/info/exclude" do
+      expect(container_service).to receive(:execute)
+        .with(a_string_matching(/\.git\/info\/exclude/), timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.install_artifact_excludes
+    end
+
+    it "includes corepack and pg-install patterns" do
+      script = nil
+      allow(container_service).to receive(:execute) { |cmd, **|
+        script = cmd
+        success_result
+      }
+
+      git_ops.install_artifact_excludes
+
+      expect(script).to include(".corepack/")
+      expect(script).to include(".pg-install/")
+      expect(script).to include("vendor/bundle/")
+    end
+
+    it "guards with grep to prevent duplicate entries on retry" do
+      script = nil
+      allow(container_service).to receive(:execute) { |cmd, **|
+        script = cmd
+        success_result
+      }
+
+      git_ops.install_artifact_excludes
+
+      expect(script).to include("grep -qF")
+      expect(script).to include("# -- Container artifact excludes (added by Paid) --")
+    end
+
+    it "logs a warning when the script returns a failure result" do
+      allow(container_service).to receive(:execute).and_return(failure_result)
+      allow(Rails.logger).to receive(:warn)
+
+      git_ops.install_artifact_excludes
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(message: "container_git.install_excludes_failed")
+      )
+    end
+
+    it "does not raise on failure result" do
+      allow(container_service).to receive(:execute)
+        .and_return(failure_result)
+
+      expect { git_ops.install_artifact_excludes }.not_to raise_error
+    end
+
+    it "does not raise on unexpected exceptions" do
+      allow(container_service).to receive(:execute)
+        .and_raise(StandardError, "container gone")
+
+      expect { git_ops.install_artifact_excludes }.not_to raise_error
+    end
+
+    it "logs an error on unexpected exceptions" do
+      allow(container_service).to receive(:execute)
+        .and_raise(StandardError, "container gone")
+      allow(Rails.logger).to receive(:error)
+
+      git_ops.install_artifact_excludes
+
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "container_git.install_excludes_unexpected_error",
+          error_class: "StandardError"
+        )
+      )
     end
   end
 

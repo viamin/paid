@@ -52,8 +52,11 @@
 # Session-specific working memory (ephemeral, per-developer)
 WORKLOG.md
 
-# Build artifacts (PostgreSQL, libyaml, etc.)
+# Build artifacts (PostgreSQL, libyaml, ruby-build, etc.)
 /.build
+/.tmp-*/
+/.*-build/
+/.*_build/
 
 # npm cache
 /.npm-cache
@@ -63,6 +66,22 @@ WORKLOG.md
 
 # Ignore downloaded packages
 *.deb
+
+# Node corepack cache (created by corepack enable / yarn install)
+/.corepack/
+
+# PostgreSQL installation directory (created by bin/setup on some hosts)
+/.pg-install/
+
+# APT cache and cached package extracts (created during container setup)
+/.apt-cache/
+/.cache-pkg/
+
+# XDG cache (redirected into workspace by some container setups)
+/.xdg-cache/
+
+# Vendored gems (created by bundle install --path vendor/bundle)
+/vendor/bundle/
 
 # Ignore vendored gems, mise tool data, and build artifacts
 /.gem/
