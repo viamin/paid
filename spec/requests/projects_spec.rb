@@ -108,6 +108,26 @@ RSpec.describe "Projects" do
         expect(response.body.index(new_project.name)).to be < response.body.index(old_project.name)
       end
 
+      it "sorts projects with NULL last_agent_run_at to the end in descending order" do
+        null_project = create(:project, account: account, github_token: github_token, name: "No Activity", last_agent_run_at: nil)
+        active_project = create(:project, account: account, github_token: github_token, name: "Has Activity", last_agent_run_at: 1.hour.ago)
+
+        get projects_path, params: { q: { s: "last_agent_run_at desc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index(active_project.name)).to be < response.body.index(null_project.name)
+      end
+
+      it "sorts projects with NULL last_github_activity_at to the end in ascending order" do
+        null_project = create(:project, account: account, github_token: github_token, name: "No GH Activity", last_github_activity_at: nil)
+        active_project = create(:project, account: account, github_token: github_token, name: "Has GH Activity", last_github_activity_at: 1.hour.ago)
+
+        get projects_path, params: { q: { s: "last_github_activity_at asc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index(active_project.name)).to be < response.body.index(null_project.name)
+      end
+
       it "defaults to created_at desc when no sort is specified" do
         old_project = create(:project, account: account, github_token: github_token, name: "Older Project", created_at: 2.days.ago)
         new_project = create(:project, account: account, github_token: github_token, name: "Newer Project", created_at: 1.hour.ago)

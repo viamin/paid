@@ -62,10 +62,10 @@ class Issue < ApplicationRecord
   def update_project_last_github_activity_at
     return unless github_updated_at_previously_changed?
 
-    project_last = project.last_github_activity_at
-    return if project_last.present? && github_updated_at <= project_last
-
-    project.touch_last_github_activity_at(github_updated_at)
+    Project
+      .where(id: project_id)
+      .where("last_github_activity_at IS NULL OR last_github_activity_at < ?", github_updated_at)
+      .update_all(last_github_activity_at: github_updated_at, updated_at: Time.current)
   end
 
   def broadcast_current_section

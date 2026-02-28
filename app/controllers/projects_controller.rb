@@ -80,7 +80,7 @@ class ProjectsController < ApplicationController
 
     column = Project.arel_table[sort.name]
     direction = sort.dir == "desc" ? column.desc : column.asc
-    scope.reorder(direction.nulls_last)
+    scope.reorder(direction.nulls_last, Project.arel_table[:created_at].desc)
   end
 
   def set_project

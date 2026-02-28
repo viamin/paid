@@ -373,7 +373,10 @@ class AgentRun < ApplicationRecord
   end
 
   def update_project_last_agent_run_at
-    project.touch_last_agent_run_at(created_at)
+    Project
+      .where(id: project_id)
+      .where("last_agent_run_at IS NULL OR last_agent_run_at < ?", created_at)
+      .update_all(last_agent_run_at: created_at, updated_at: Time.current)
   end
 
   def broadcast_project_updates
