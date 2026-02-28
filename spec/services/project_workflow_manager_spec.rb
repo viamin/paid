@@ -106,6 +106,44 @@ RSpec.describe ProjectWorkflowManager do
     end
   end
 
+  describe ".signal_sync" do
+    let(:workflow_handle) { double("workflow_handle") } # rubocop:disable RSpec/VerifiedDoubles
+
+    it "signals the poll workflow with request_sync" do
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:signal)
+
+      described_class.signal_sync(project)
+
+      expect(temporal_client).to have_received(:workflow_handle).with("github-poll-#{project.id}")
+      expect(workflow_handle).to have_received(:signal).with("request_sync")
+    end
+
+    it "handles missing workflow gracefully" do
+      allow(temporal_client).to receive(:workflow_handle).and_raise(
+        Temporalio::Error::RPCError.new(
+          "workflow not found",
+          code: Temporalio::Error::RPCError::Code::NOT_FOUND,
+          raw_grpc_status: nil
+        )
+      )
+
+      expect { described_class.signal_sync(project) }.not_to raise_error
+    end
+
+    it "re-raises non-NOT_FOUND RPC errors" do
+      allow(temporal_client).to receive(:workflow_handle).and_raise(
+        Temporalio::Error::RPCError.new(
+          "unavailable",
+          code: Temporalio::Error::RPCError::Code::UNAVAILABLE,
+          raw_grpc_status: nil
+        )
+      )
+
+      expect { described_class.signal_sync(project) }.to raise_error(Temporalio::Error::RPCError)
+    end
+  end
+
   describe ".restart_polling" do
     let(:workflow_handle) { double("workflow_handle") } # rubocop:disable RSpec/VerifiedDoubles
 
