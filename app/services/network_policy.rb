@@ -75,14 +75,23 @@ class NetworkPolicy
     # @param proxy_host [String] hostname or IPv4 address of the secrets proxy
     # @return [void]
     # @raise [Error] if applying rules fails
-    def apply_firewall_rules(container, github_ips: nil, proxy_host: nil)
+    # @param container [Docker::Container] running container to apply rules to
+    # @param github_ips [Array<String>] GitHub CIDR ranges to allow
+    # @param proxy_host [String] hostname or IPv4 address of the secrets proxy
+    # @param service_destinations [Array<Hash>] service containers to allow,
+    #   each with :ip and :port keys (e.g., { ip: "172.28.0.5", port: 5432 })
+    def apply_firewall_rules(container, github_ips: nil, proxy_host: nil, service_destinations: [])
       github_ips ||= DEFAULT_GITHUB_IPS
       proxy_host ||= default_proxy_host
 
       validated_ips = github_ips.map { |cidr| validate_cidr!(cidr) }
       validated_host = validate_host!(proxy_host)
 
-      script = build_firewall_script(github_ips: validated_ips, proxy_host: validated_host)
+      script = build_firewall_script(
+        github_ips: validated_ips,
+        proxy_host: validated_host,
+        service_destinations: service_destinations
+      )
 
       _stdout, stderr, exit_code = container.exec([ "sh", "-c", script ])
 
@@ -165,12 +174,16 @@ class NetworkPolicy
       "paid-proxy"
     end
 
-    def build_firewall_script(github_ips:, proxy_host:)
+    def build_firewall_script(github_ips:, proxy_host:, service_destinations: [])
       github_rules = github_ips.flat_map do |cidr|
         [
           "iptables -A OUTPUT -d #{cidr} -p tcp --dport 443 -j ACCEPT",
           "iptables -A OUTPUT -d #{cidr} -p tcp --dport 22 -j ACCEPT"
         ]
+      end
+
+      service_rules = service_destinations.map do |dest|
+        "iptables -A OUTPUT -d #{validate_host!(dest[:ip])} -p tcp --dport #{dest[:port].to_i} -j ACCEPT"
       end
 
       <<~SCRIPT
@@ -192,6 +205,8 @@ class NetworkPolicy
 
         # Allow GitHub
         #{github_rules.join("\n")}
+
+        #{service_rules.any? ? "# Allow service containers\n#{service_rules.join("\n")}" : ""}
 
         # Log and drop everything else
         iptables -A OUTPUT -j LOG --log-prefix "PAID_AGENT_BLOCK: " --log-level 4
