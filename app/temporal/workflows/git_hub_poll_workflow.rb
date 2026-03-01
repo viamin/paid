@@ -39,10 +39,13 @@ module Workflows
         end
 
         # Scan paid-generated PRs for follow-up work
-        scan_result = run_activity(Activities::ScanPaidPrsActivity,
-          { project_id: project_id }, timeout: 120)
+        # TODO(#220): Remove patch guard after all pre-v220 workflows have continued-as-new
+        if Temporalio::Workflow.patched("add-scan-paid-prs-v1")
+          scan_result = run_activity(Activities::ScanPaidPrsActivity,
+            { project_id: project_id }, timeout: 120)
 
-        handle_pr_scan_results(scan_result, project_id)
+          handle_pr_scan_results(scan_result, project_id)
+        end
 
         poll_config = run_activity(Activities::GetPollIntervalActivity,
           { project_id: project_id }, timeout: 10)

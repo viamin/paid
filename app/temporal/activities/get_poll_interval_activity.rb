@@ -10,6 +10,8 @@ module Activities
       project = Project.find_by(id: project_id)
       return { poll_interval_seconds: 0, project_missing: true } unless project
 
+      project.touch_last_polled_at
+
       { poll_interval_seconds: project.poll_interval_seconds }
     end
   end
