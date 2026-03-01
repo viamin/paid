@@ -57,9 +57,14 @@ class NetworkPolicy
     # Returns true when Claude CLI config is available for
     # subscription-based authentication (e.g. from `claude login`).
     #
+    # Mirrors the detection logic in Containers::Provision#subscription_auth?
+    # so that service containers are always placed on the same network as the
+    # agent container. Checks CLAUDE_CONFIG_DIR first, then auto-detects a
+    # standard Claude config mount (for DooD/devcontainer setups).
+    #
     # @return [Boolean]
     def subscription_auth?
-      ENV["CLAUDE_CONFIG_DIR"].present?
+      claude_config_dir.present?
     end
 
     # Ensures the agent Docker network exists. Creates it if missing.
@@ -142,6 +147,27 @@ class NetworkPolicy
     end
 
     private
+
+    # Returns the Claude config directory path, checking the explicit
+    # environment variable first, then auto-detecting a standard mount.
+    def claude_config_dir
+      # Prefer explicit config dir when provided…
+      config_dir = ENV["CLAUDE_CONFIG_DIR"].presence
+
+      # …but also auto-detect a standard Claude config mount when the
+      # environment variable is unset, so networking stays consistent
+      # with Containers::Provision#subscription_auth?.
+      if config_dir.blank?
+        home = ENV["HOME"].presence || (Dir.respond_to?(:home) ? Dir.home : nil)
+
+        if home.present?
+          default_dir = File.join(home, ".config", "claude")
+          config_dir = default_dir if Dir.exist?(default_dir)
+        end
+      end
+
+      config_dir
+    end
 
     def create_network
       Rails.logger.info(
