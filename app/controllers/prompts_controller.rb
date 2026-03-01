@@ -99,7 +99,7 @@ class PromptsController < ApplicationController
     @version_b = @prompt.prompt_versions.find_by(id: b_id)
 
     if @version_a.nil? || @version_b.nil?
-      head :not_found
+      head :not_found and return
     end
   end
 
