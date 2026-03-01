@@ -149,24 +149,27 @@ class NetworkPolicy
     private
 
     # Returns the Claude config directory path, checking the explicit
-    # environment variable first, then auto-detecting a standard mount.
+    # environment variable first, then auto-detecting standard locations.
+    #
+    # Mirrors Containers::Provision#subscription_auth? detection:
+    # - ENV["CLAUDE_CONFIG_DIR"] (explicit override)
+    # - $HOME/.claude (DooD/devcontainer mount from host)
+    # - $HOME/.config/claude (standard Claude CLI config on Linux)
     def claude_config_dir
-      # Prefer explicit config dir when provided…
-      config_dir = ENV["CLAUDE_CONFIG_DIR"].presence
+      return ENV["CLAUDE_CONFIG_DIR"] if ENV["CLAUDE_CONFIG_DIR"].present?
 
-      # …but also auto-detect a standard Claude config mount when the
-      # environment variable is unset, so networking stays consistent
-      # with Containers::Provision#subscription_auth?.
-      if config_dir.blank?
-        home = ENV["HOME"].presence || (Dir.respond_to?(:home) ? Dir.home : nil)
+      home = ENV["HOME"].presence || (Dir.respond_to?(:home) ? Dir.home : nil)
+      return unless home.present?
 
-        if home.present?
-          default_dir = File.join(home, ".config", "claude")
-          config_dir = default_dir if Dir.exist?(default_dir)
-        end
-      end
+      # Check $HOME/.claude first — in DooD setups the host mounts ~/.claude
+      # into the devcontainer, which Containers::Provision detects via Docker
+      # mount introspection. We check the filesystem equivalent here.
+      dot_claude = File.join(home, ".claude")
+      return dot_claude if Dir.exist?(dot_claude)
 
-      config_dir
+      # Fall back to standard Claude CLI config location on Linux.
+      config_claude = File.join(home, ".config", "claude")
+      config_claude if Dir.exist?(config_claude)
     end
 
     def create_network
