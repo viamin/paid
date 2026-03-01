@@ -38,14 +38,7 @@ module Workflows
           handle_detection(detection, project_id)
         end
 
-        # Scan paid-generated PRs for follow-up work
-        # TODO(#220): Remove patch guard after all pre-v220 workflows have continued-as-new
-        if Temporalio::Workflow.patched("add-scan-paid-prs-v1")
-          scan_result = run_activity(Activities::ScanPaidPrsActivity,
-            { project_id: project_id }, timeout: 120)
-
-          handle_pr_scan_results(scan_result, project_id)
-        end
+        maybe_scan_paid_prs(project_id)
 
         poll_config = run_activity(Activities::GetPollIntervalActivity,
           { project_id: project_id }, timeout: 10)
@@ -73,6 +66,17 @@ module Workflows
       # Signal woke us — loop will restart immediately
     ensure
       @sleep_cancel_proc = nil
+    end
+
+    # Scan paid-generated PRs for follow-up work.
+    # TODO(#220): Remove patch guard after all pre-v220 workflows have continued-as-new
+    def maybe_scan_paid_prs(project_id)
+      return unless Temporalio::Workflow.patched("add-scan-paid-prs-v1")
+
+      scan_result = run_activity(Activities::ScanPaidPrsActivity,
+        { project_id: project_id }, timeout: 120)
+
+      handle_pr_scan_results(scan_result, project_id)
     end
 
     def handle_detection(detection, project_id)
