@@ -232,14 +232,6 @@ module Activities
 
     # --- CI checks ---
 
-    def check_ci_failures(client, project, issue, pr_data)
-      checks = fetch_check_runs(client, project, pr_data)
-      ci_failure_triggers(checks)
-    rescue GithubClient::Error => e
-      log_signal_error("ci_failures", project, issue, e)
-      []
-    end
-
     def fetch_check_runs(client, project, pr_data)
       return [] unless pr_data
 

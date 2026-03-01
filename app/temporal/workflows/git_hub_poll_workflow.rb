@@ -127,9 +127,11 @@ module Workflows
     end
 
     def handle_ready_for_owner(project_id, pr_data)
-      run_activity(Activities::MarkPrReadyActivity,
+      result = run_activity(Activities::MarkPrReadyActivity,
         { project_id: project_id, pr_number: pr_data[:pr_number],
           issue_id: pr_data[:issue_id] }, timeout: 60)
+
+      return unless result[:marked_ready]
 
       request_owner_review(project_id, pr_data)
     end

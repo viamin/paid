@@ -56,6 +56,10 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, anything)
+        .and_return({ marked_ready: true })
+
       pr_data = {
         issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
         triggers: [ { type: "ready_for_owner" } ]
@@ -67,6 +71,22 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::MarkPrReadyActivity, hash_including(pr_number: 42), anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), anything)
+    end
+
+    it "skips owner review when MarkPrReadyActivity returns marked_ready: false" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, anything)
+        .and_return({ marked_ready: false })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
+        triggers: [ { type: "ready_for_owner" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, anything)
     end
 
     it "routes escalate_to_owner to MarkEscalatedActivity and RequestReviewActivity" do
@@ -128,6 +148,10 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "skips owner review request when owner_reviewer_login is blank" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, anything)
+        .and_return({ marked_ready: true })
+
       pr_data = {
         issue_id: 10, pr_number: 42, owner_reviewer_login: nil,
         triggers: [ { type: "ready_for_owner" } ]
