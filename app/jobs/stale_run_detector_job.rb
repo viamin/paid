@@ -17,7 +17,7 @@ class StaleRunDetectorJob < ApplicationJob
   GRACE_PERIOD = 10.minutes
 
   def perform
-    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    job_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     timeout_threshold = agent_timeout_with_grace.ago
     resolved = 0
 
@@ -41,7 +41,7 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
-    duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+    duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - job_started_at) * 1000).round
     Rails.logger.info(
       message: "stale_run_detector.completed",
       resolved: resolved,
