@@ -68,6 +68,45 @@ module Projects
       redirect_to new_project_agent_run_path(@project), alert: alert
     end
 
+    def quick_create
+      authorize @project, :run_agent?
+
+      issue = resolve_issue
+      source_pr_number = resolve_pull_request
+
+      unless issue || source_pr_number
+        redirect_to project_path(@project),
+          alert: "Please select an issue or pull request."
+        return
+      end
+
+      AgentRun.create!(
+        project: @project,
+        issue: issue,
+        agent_type: "claude_code",
+        source_pull_request_number: source_pr_number,
+        goal: "create_pr",
+        status: "queued"
+      )
+
+      ProcessRunQueueJob.perform_later
+
+      notice = if AgentRun.has_run_capacity? && AgentRun.queued.count <= 1
+        "Agent run created and will start momentarily."
+      else
+        "Agent run queued. It will start automatically when a slot opens."
+      end
+
+      redirect_to project_path(@project), notice: notice
+    rescue ActiveRecord::RecordNotUnique => e
+      alert = if e.cause&.message&.include?("proxy_token")
+        "An unexpected error occurred. Please try again."
+      else
+        "An agent run is already queued or in progress."
+      end
+      redirect_to project_path(@project), alert: alert
+    end
+
     def retry
       authorize @agent_run
 
