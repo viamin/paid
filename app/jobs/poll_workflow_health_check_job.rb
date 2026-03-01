@@ -1,15 +1,23 @@
 # frozen_string_literal: true
 
-# Monitors Temporal poll workflows and restarts any that are not running.
+# Monitors Temporal poll workflows and restarts any that are not running
+# or appear stuck (RUNNING but not completing poll cycles).
 #
 # Catches failures caused by:
-# - Nondeterminism errors after deploys
+# - Nondeterminism errors after deploys (workflow RUNNING but stuck replaying)
 # - Uncaught bugs in workflow code
 # - Crashed workers or connection issues
+#
+# Staleness detection: even if a workflow reports RUNNING, it may be stuck
+# (e.g., nondeterminism errors during replay). Each successful poll cycle
+# updates `project.last_polled_at`; if that timestamp exceeds
+# `3 * poll_interval + 3 minutes`, the workflow is restarted.
 #
 # Scheduled via GoodJob cron every 5 minutes.
 class PollWorkflowHealthCheckJob < ApplicationJob
   queue_as :maintenance
+
+  STALENESS_BUFFER = 3.minutes
 
   def perform
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -48,7 +56,11 @@ class PollWorkflowHealthCheckJob < ApplicationJob
 
   def check_and_heal(project)
     status = ProjectWorkflowManager.workflow_status(project)
-    return if status[:running]
+
+    if status[:running]
+      return check_stale_running(project)
+    end
+
     return unless RESTARTABLE_STATUSES.include?(status[:status])
 
     # Re-check to reduce race conditions with other lifecycle operations
@@ -56,13 +68,34 @@ class PollWorkflowHealthCheckJob < ApplicationJob
     return if latest_status[:running]
     return unless RESTARTABLE_STATUSES.include?(latest_status[:status])
 
+    restart_workflow(project, reason: "health check: was #{latest_status[:status]}")
+  end
+
+  def check_stale_running(project)
+    return unless project.last_polled_at
+
+    staleness_threshold = (3 * project.poll_interval_seconds).seconds + STALENESS_BUFFER
+    return unless project.last_polled_at < staleness_threshold.ago
+
+    # Double-check after reload to avoid race with a just-completed poll
+    project.reload
+    return unless project.last_polled_at < staleness_threshold.ago
+
+    restart_workflow(
+      project,
+      reason: "health check: stale RUNNING (last polled #{project.last_polled_at})",
+      log_message: "temporal_worker.poll_workflow_stale_running"
+    )
+  end
+
+  def restart_workflow(project, reason:, log_message: "temporal_worker.poll_workflow_not_running")
     Rails.logger.warn(
-      message: "temporal_worker.poll_workflow_not_running",
+      message: log_message,
       project_id: project.id,
-      workflow_status: latest_status[:status]
+      reason: reason
     )
 
-    ProjectWorkflowManager.restart_polling(project, reason: "health check: was #{latest_status[:status]}")
+    ProjectWorkflowManager.restart_polling(project, reason: reason)
 
     Rails.logger.info(
       message: "temporal_worker.poll_workflow_restarted",

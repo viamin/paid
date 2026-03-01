@@ -119,7 +119,10 @@ module Projects
       end
 
       provider = @agent_run.auth_provider&.to_sym || :claude
-      AgentHarness.refresh_auth(provider, code: code)
+
+      if AgentHarness.respond_to?(:refresh_auth)
+        AgentHarness.refresh_auth(provider, code: code)
+      end
 
       new_run = AgentRun.create!(
         project: @project,
@@ -144,6 +147,13 @@ module Projects
       )
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication failed: #{e.message}"
+    rescue ActiveRecord::RecordNotUnique => e
+      alert = if e.cause&.message&.include?("proxy_token")
+        "An unexpected error occurred. Please try again."
+      else
+        "An agent run is already queued or in progress for this issue."
+      end
+      redirect_to project_agent_run_path(@project, @agent_run), alert: alert
     end
 
     private
