@@ -79,15 +79,18 @@ class PollWorkflowHealthCheckJob < ApplicationJob
 
     # Double-check after reload to avoid race with a just-completed poll
     project.reload
-    staleness_threshold = (3 * project.poll_interval_seconds).seconds + STALENESS_BUFFER
     return unless project.last_polled_at < staleness_threshold.ago
 
-    restart_workflow(project, reason: "health check: stale RUNNING (last polled #{project.last_polled_at})")
+    restart_workflow(
+      project,
+      reason: "health check: stale RUNNING (last polled #{project.last_polled_at})",
+      log_message: "temporal_worker.poll_workflow_stale_running"
+    )
   end
 
-  def restart_workflow(project, reason:)
+  def restart_workflow(project, reason:, log_message: "temporal_worker.poll_workflow_not_running")
     Rails.logger.warn(
-      message: "temporal_worker.poll_workflow_not_running",
+      message: log_message,
       project_id: project.id,
       reason: reason
     )
