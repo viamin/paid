@@ -104,6 +104,7 @@ WORKLOG.md
 /pgdata/
 /.postgres/
 /.rubocop-cache/
+/.local/
 /.local-include/
 /.local-deps/
 /.libyaml-build/
