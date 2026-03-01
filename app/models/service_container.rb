@@ -31,12 +31,12 @@ class ServiceContainer < ApplicationRecord
 
   # Validates image against a global, admin-controlled allowlist.
   #
-  # The allowlist is configured via the SERVICE_CONTAINER_ALLOWED_IMAGES
-  # environment variable (comma-separated list of allowed image names).
-  # Falls back to per-user settings if the env var is not set.
-  # This avoids deriving the allowlist solely from per-user settings,
-  # which could let one user expand the effective allowlist for all
-  # users in a multi-tenant deployment.
+  # The allowlist is sourced from (in priority order):
+  # 1. SERVICE_CONTAINER_ALLOWED_IMAGES env var (comma-separated)
+  # 2. allowed_service_images from account admin/owner UserSettings
+  #
+  # The settings fallback is scoped to admin/owner roles to prevent
+  # non-admin users from expanding the effective allowlist.
   def image_in_allowlist
     return if image.blank?
 
@@ -53,8 +53,13 @@ class ServiceContainer < ApplicationRecord
     raw.split(",").map(&:strip).reject(&:blank?).uniq
   end
 
+  # Restricts the fallback allowlist to settings from account admins/owners
+  # to prevent non-admin users from expanding the effective allowlist.
   def allowed_images_from_settings
-    UserSetting.pluck(:allowed_service_images)
+    admin_user_ids = AccountMembership.where(role: [ :admin, :owner ]).select(:user_id)
+
+    UserSetting.where(user_id: admin_user_ids)
+      .pluck(:allowed_service_images)
       .compact
       .flatten
       .uniq
