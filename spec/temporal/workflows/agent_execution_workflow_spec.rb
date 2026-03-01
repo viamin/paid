@@ -30,6 +30,50 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "create_issue fallback" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_issue" } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(600)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    def stub_issue_activities(issue_created:)
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true }
+        when "Activities::CompleteIssueGoalActivity"
+          { agent_run_id: 42, success: true, issue_created: issue_created }
+        when "Activities::CreateGithubIssueActivity"
+          { agent_run_id: 42, issue_url: "https://github.com/o/r/issues/1", issue_number: 1 }
+        else {}
+        end
+      end
+    end
+
+    it "runs CreateGithubIssueActivity when CompleteIssueGoalActivity returns issue_created: false" do
+      stub_issue_activities(issue_created: false)
+
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be true
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CreateGithubIssueActivity, { agent_run_id: 42 },
+              timeout: 120, retry_policy: described_class::NO_RETRY)
+    end
+
+    it "skips CreateGithubIssueActivity when CompleteIssueGoalActivity returns issue_created: true" do
+      stub_issue_activities(issue_created: true)
+
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be true
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreateGithubIssueActivity, anything, anything)
+    end
+  end
+
   describe "#stale_pull_request_error?" do
     let(:workflow) { described_class.new }
 

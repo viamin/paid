@@ -93,7 +93,8 @@ RSpec.describe Activities::CreateGithubIssueActivity do
 
     it "falls back to LLM-generated title when no heading" do
       agent_run.log!("stdout", "The auth system uses JWT tokens.")
-      allow(Llm::GenerateIssueTitle).to receive(:call).and_return("JWT authentication analysis")
+      harness_response = instance_double(AgentHarness::Response, success?: true, output: "JWT authentication analysis")
+      allow(AgentHarness).to receive(:send_message).and_return(harness_response)
 
       expect(github_client).to receive(:create_issue).with(
         anything,
@@ -103,9 +104,10 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "falls back to default title when LLM returns nil" do
+    it "falls back to default title when LLM returns a failed response" do
       agent_run.log!("stdout", "The auth system uses JWT tokens.")
-      allow(Llm::GenerateIssueTitle).to receive(:call).and_return(nil)
+      harness_response = instance_double(AgentHarness::Response, success?: false, output: "")
+      allow(AgentHarness).to receive(:send_message).and_return(harness_response)
 
       expect(github_client).to receive(:create_issue).with(
         anything,
@@ -118,7 +120,6 @@ RSpec.describe Activities::CreateGithubIssueActivity do
     it "falls back to default title when no stdout output" do
       no_prompt_run = create(:agent_run, :with_git_context, project: project,
         goal: "create_issue", custom_prompt: "Do analysis")
-      allow(Llm::GenerateIssueTitle).to receive(:call).and_return(nil)
 
       expect(github_client).to receive(:create_issue).with(
         anything,
