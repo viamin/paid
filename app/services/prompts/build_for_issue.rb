@@ -98,16 +98,13 @@ module Prompts
 
     def service_description(sc)
       if sc.image.include?("postgres")
-        user = sc.env["POSTGRES_USER"] || "agent"
-        pass = sc.env["POSTGRES_PASSWORD"] || "agent"
-        db = sc.env["POSTGRES_DB"] || "agent_test"
-        "- PostgreSQL: host=#{sc.name}, port=#{sc.port}, user=#{user}, password=#{pass}, database=#{db}\n  DATABASE_URL is already set in your environment."
+        "- PostgreSQL is available via the `DATABASE_URL` environment variable."
       elsif sc.image.include?("redis")
-        "- Redis: host=#{sc.name}, port=#{sc.port}\n  REDIS_URL is already set in your environment."
+        "- Redis is available via the `REDIS_URL` environment variable."
       elsif sc.image.include?("selenium") || sc.image.include?("chromium")
-        "- Selenium/Chromium: host=#{sc.name}, port=#{sc.port}\n  SELENIUM_URL is already set in your environment."
+        "- Selenium/Chromium is available via the `SELENIUM_URL` environment variable."
       else
-        "- #{sc.name}: host=#{sc.name}, port=#{sc.port}"
+        "- #{sc.name} is available at host `#{sc.name}` on port #{sc.port}."
       end
     end
   end

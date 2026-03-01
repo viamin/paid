@@ -45,6 +45,23 @@ class NetworkPolicy
   SECRETS_PROXY_PORT = ENV.fetch("PAID_PROXY_PORT", "3000").to_i
 
   class << self
+    # Returns the network name that agent containers should use.
+    # Subscription-auth containers use the infrastructure network (paid_internal)
+    # for outbound HTTPS access; API-key containers use the restricted network.
+    #
+    # @return [String] Docker network name
+    def agent_network
+      subscription_auth? ? INFRA_NETWORK_NAME : NETWORK_NAME
+    end
+
+    # Returns true when Claude CLI config is available for
+    # subscription-based authentication (e.g. from `claude login`).
+    #
+    # @return [Boolean]
+    def subscription_auth?
+      ENV["CLAUDE_CONFIG_DIR"].present?
+    end
+
     # Ensures the agent Docker network exists. Creates it if missing.
     #
     # @return [Docker::Network] the agent network
