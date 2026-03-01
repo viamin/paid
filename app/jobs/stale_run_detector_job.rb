@@ -22,8 +22,7 @@ class StaleRunDetectorJob < ApplicationJob
     resolved = 0
 
     stale_running_runs(timeout_threshold).find_each do |agent_run|
-      resolve_stale_run(agent_run)
-      resolved += 1
+      resolved += 1 if resolve_stale_run(agent_run)
     rescue => e
       Rails.logger.error(
         message: "stale_run_detector.resolve_failed",
@@ -33,8 +32,7 @@ class StaleRunDetectorJob < ApplicationJob
     end
 
     stale_pending_runs(timeout_threshold).find_each do |agent_run|
-      resolve_stale_run(agent_run)
-      resolved += 1
+      resolved += 1 if resolve_stale_run(agent_run)
     rescue => e
       Rails.logger.error(
         message: "stale_run_detector.resolve_failed",
@@ -73,7 +71,7 @@ class StaleRunDetectorJob < ApplicationJob
   def resolve_stale_run(agent_run)
     agent_run.with_lock do
       agent_run.reload
-      return if agent_run.finished?
+      return false if agent_run.finished?
 
       agent_run.timeout!(error: "Stale run detected: stuck in '#{agent_run.status}' beyond timeout threshold")
       agent_run.log!("system", "Run marked as timed out by stale run detector")
@@ -91,5 +89,7 @@ class StaleRunDetectorJob < ApplicationJob
         created_at: agent_run.created_at
       )
     end
+
+    true
   end
 end
