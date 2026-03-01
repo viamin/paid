@@ -70,7 +70,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       expect(result[:success]).to be true
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::CreateGithubIssueActivity, anything, anything)
+        .with(Activities::CreateGithubIssueActivity, anything,
+              timeout: anything, retry_policy: anything)
     end
   end
 

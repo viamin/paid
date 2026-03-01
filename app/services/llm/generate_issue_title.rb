@@ -59,7 +59,19 @@ module Llm
     def clean_title(text)
       return nil if text.blank?
 
-      text.strip.delete_prefix('"').delete_suffix('"').strip.presence
+      cleaned = text.strip
+
+      # LLMs sometimes wrap titles in quotes despite being told not to.
+      # Strip common quote pairs: ASCII double/single, backticks, curly quotes.
+      quote_pairs = [ [ '"', '"' ], [ "'", "'" ], [ "`", "`" ], [ "\u201C", "\u201D" ], [ "\u2018", "\u2019" ] ]
+      quote_pairs.each do |left, right|
+        if cleaned.start_with?(left) && cleaned.end_with?(right) && cleaned.length >= left.length + right.length
+          cleaned = cleaned[left.length..-(right.length + 1)].strip
+          break
+        end
+      end
+
+      cleaned.presence
     end
   end
 end

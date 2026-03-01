@@ -21,8 +21,35 @@ RSpec.describe Llm::GenerateIssueTitle do
       )
     end
 
-    it "strips quotes from the generated title" do
+    it "strips double quotes from the generated title" do
       response = instance_double(AgentHarness::Response, success?: true, output: '"JWT authentication system review"')
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      title = described_class.call(summary: summary)
+
+      expect(title).to eq("JWT authentication system review")
+    end
+
+    it "strips single quotes from the generated title" do
+      response = instance_double(AgentHarness::Response, success?: true, output: "'JWT authentication system review'")
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      title = described_class.call(summary: summary)
+
+      expect(title).to eq("JWT authentication system review")
+    end
+
+    it "strips backticks from the generated title" do
+      response = instance_double(AgentHarness::Response, success?: true, output: "`JWT authentication system review`")
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      title = described_class.call(summary: summary)
+
+      expect(title).to eq("JWT authentication system review")
+    end
+
+    it "strips curly quotes from the generated title" do
+      response = instance_double(AgentHarness::Response, success?: true, output: "\u201CJWT authentication system review\u201D")
       allow(AgentHarness).to receive(:send_message).and_return(response)
 
       title = described_class.call(summary: summary)
