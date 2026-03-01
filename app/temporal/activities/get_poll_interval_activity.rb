@@ -1,7 +1,11 @@
 # frozen_string_literal: true
 
 module Activities
-  # Retrieves the configured poll interval for a project.
+  # Retrieves the configured poll interval for a project and records a
+  # heartbeat by updating `last_polled_at`. This runs at the end of each
+  # poll cycle, so the timestamp serves as a reliable indicator that the
+  # full cycle completed (used by PollWorkflowHealthCheckJob to detect
+  # stale RUNNING workflows).
   #
   # Extracted as an activity because workflows cannot perform I/O directly.
   class GetPollIntervalActivity < BaseActivity
