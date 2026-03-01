@@ -256,7 +256,7 @@ module Activities
     end
 
     def all_checks_green?(checks)
-      return false if checks.empty?
+      return true if checks.empty?
 
       checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
     end
