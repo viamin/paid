@@ -29,6 +29,11 @@ Rails.application.routes.draw do
   # All agent runs across projects
   resources :agent_runs, only: [ :index ]
 
+  # Prompt management
+  resources :prompts do
+    get :diff, on: :member
+  end
+
   # Projects management
   resources :projects do
     resource :workflow_status, only: [ :show ]
