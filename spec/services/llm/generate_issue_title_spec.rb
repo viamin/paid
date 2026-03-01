@@ -16,6 +16,7 @@ RSpec.describe Llm::GenerateIssueTitle do
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_matching(/Generate a concise GitHub issue title/),
         provider: :claude,
+        model: described_class::MODEL,
         timeout: described_class::TIMEOUT
       )
     end
