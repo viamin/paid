@@ -21,6 +21,10 @@ class AgentRunPolicy < ApplicationPolicy
     run_agent?
   end
 
+  def refresh_auth?
+    run_agent?
+  end
+
   private
 
   def run_agent?
