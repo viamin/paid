@@ -14,6 +14,20 @@ RSpec.describe Activities::GetPollIntervalActivity do
       expect(result[:poll_interval_seconds]).to eq(120)
     end
 
+    it "updates last_polled_at on the project" do
+      freeze_time do
+        activity.execute(project_id: project.id)
+
+        expect(project.reload.last_polled_at).to eq(Time.current)
+      end
+    end
+
+    it "does not update last_polled_at when project is missing" do
+      result = activity.execute(project_id: -1)
+
+      expect(result[:project_missing]).to be true
+    end
+
     context "with default interval" do
       let(:project) { create(:project) }
 

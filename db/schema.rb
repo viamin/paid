@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_01_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_01_205144) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -269,6 +269,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_01_000000) do
     t.jsonb "label_mappings", default: {}, null: false
     t.datetime "last_agent_run_at"
     t.datetime "last_github_activity_at"
+    t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_pr_followup_runs", default: 3, null: false
     t.string "merge_method", default: "squash", null: false
