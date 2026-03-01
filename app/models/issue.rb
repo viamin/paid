@@ -2,6 +2,7 @@
 
 class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed].freeze
+  PR_REVIEW_PHASES = %w[draft ready merged escalated].freeze
 
   belongs_to :project
   belongs_to :parent_issue, class_name: "Issue", optional: true
@@ -18,6 +19,7 @@ class Issue < ApplicationRecord
   validates :github_created_at, presence: true
   validates :github_updated_at, presence: true
   validates :paid_state, presence: true, inclusion: { in: PAID_STATES }
+  validates :pr_review_phase, inclusion: { in: PR_REVIEW_PHASES }, if: :is_pull_request?
   validate :parent_issue_belongs_to_same_project, if: -> { parent_issue.present? }
 
   after_commit :broadcast_current_section, on: [ :create, :destroy ]
@@ -48,6 +50,22 @@ class Issue < ApplicationRecord
 
   def sub_issue?
     parent_issue_id.present? || parent_issue.present?
+  end
+
+  def draft_phase?
+    pr_review_phase == "draft"
+  end
+
+  def ready_phase?
+    pr_review_phase == "ready"
+  end
+
+  def escalated_phase?
+    pr_review_phase == "escalated"
+  end
+
+  def merged_phase?
+    pr_review_phase == "merged"
   end
 
   private

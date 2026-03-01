@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_28_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_02_28_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -207,6 +207,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_120000) do
   create_table "issues", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
+    t.integer "draft_review_count", default: 0, null: false
     t.datetime "github_created_at", null: false
     t.string "github_creator_login"
     t.bigint "github_issue_id", null: false
@@ -218,6 +219,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_120000) do
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
     t.integer "pr_followup_count", default: 0, null: false
+    t.string "pr_review_phase", default: "draft", null: false
     t.bigint "project_id", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
@@ -226,6 +228,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_120000) do
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
+    t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id"], name: "index_issues_on_project_id"
   end
 
@@ -263,9 +266,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_120000) do
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
     t.jsonb "label_mappings", default: {}, null: false
+    t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_pr_followup_runs", default: 3, null: false
+    t.string "merge_method", default: "squash", null: false
     t.string "name", null: false
     t.string "owner", null: false
+    t.string "owner_reviewer_login"
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.string "repo", null: false
@@ -336,7 +342,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_120000) do
 
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
-    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
+    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"], null: false
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.integer "container_cpu_quota", default: 200000, null: false

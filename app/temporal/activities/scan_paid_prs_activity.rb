@@ -5,13 +5,11 @@ module Activities
   # that require follow-up agent work. Runs after FetchIssuesActivity in
   # the GitHubPollWorkflow poll cycle.
   #
-  # Signals detected:
-  #   1. CI failures (failed/cancelled/timed_out check runs)
-  #   2. Unresolved review threads from trusted users
-  #   3. Conversation comments from trusted users after last agent run
-  #   4. Changes-requested PR reviews from trusted users
-  #   5. Actionable labels matching project.pr_action_labels
-  #   6. Merge conflicts (when auto_fix_merge_conflicts is enabled)
+  # Phase-aware routing:
+  #   - draft: Copilot review loop (CI + Copilot threads only)
+  #   - ready: Owner review phase (all trigger types)
+  #   - escalated: Owner intervention needed (same as ready, no auto-merge)
+  #   - merged: No scanning
   #
   # Returns a list of PRs needing follow-up with trigger reasons.
   class ScanPaidPrsActivity < BaseActivity
@@ -50,27 +48,167 @@ module Activities
         .where("labels @> ?", [ PAID_GENERATED_LABEL ].to_json)
     end
 
-    # Returns trigger data without performing side effects. State mutations
-    # (incrementing pr_followup_count, removing labels) are handled by the
-    # workflow after child workflows start, ensuring idempotency on retry.
     def scan_pr(project, client, issue)
       return nil if active_run_exists?(project, issue)
-      return nil if followup_limit_reached?(project, issue)
 
-      triggers = detect_triggers(project, client, issue)
-      return nil if triggers.empty?
+      case issue.pr_review_phase
+      when "draft"
+        scan_draft_pr(project, client, issue)
+      when "ready"
+        scan_ready_pr(project, client, issue)
+      when "escalated"
+        scan_escalated_pr(project, client, issue)
+      end
+    end
 
+    # --- Draft phase scanning ---
+
+    def scan_draft_pr(project, client, issue)
+      if project.max_draft_review_rounds.zero?
+        return ready_for_owner_trigger(issue)
+      end
+
+      if issue.draft_review_count >= project.max_draft_review_rounds
+        return escalate_trigger(issue)
+      end
+
+      pr_data = fetch_pr_data(client, project, issue)
+      copilot_triggers = check_copilot_review_threads(client, project, issue)
+      checks = fetch_check_runs(client, project, pr_data)
+      ci_triggers = ci_failure_triggers(checks || [])
+
+      if copilot_triggers.empty? && ci_triggers.empty?
+        # If we couldn't fetch PR data, don't prematurely advance the phase.
+        return nil if pr_data.nil?
+
+        # Only auto-advance when we have at least one check and all are green.
+        return ready_for_owner_trigger(issue) if checks.present? && all_checks_green?(checks)
+
+        return nil # CI still pending or checks unavailable
+      end
+
+      triggers = copilot_triggers + ci_triggers
       log_triggers(project, issue, triggers)
-
-      labels_to_remove = extract_actionable_labels(triggers)
 
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
-        labels_to_remove: labels_to_remove,
+        phase: "draft",
+        labels_to_remove: [],
+        current_draft_review_count: issue.draft_review_count
+      }
+    end
+
+    # --- Ready phase scanning ---
+
+    def scan_ready_pr(project, client, issue)
+      pr_data = fetch_pr_data(client, project, issue)
+      checks = fetch_check_runs(client, project, pr_data)
+      reviews = fetch_reviews(client, project, issue)
+      mergeable = pr_data && pr_data[:mergeable]
+
+      if pr_data.present? &&
+          owner_approved_from_reviews?(project, reviews) &&
+          checks.present? &&
+          all_checks_green?(checks) &&
+          mergeable == true
+        return owner_approved_trigger(issue)
+      end
+
+      return nil if followup_limit_reached?(project, issue)
+
+      triggers = detect_ready_triggers(project, client, issue,
+        pr_data: pr_data, checks: checks, reviews: reviews)
+      return nil if triggers.empty?
+
+      log_triggers(project, issue, triggers)
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: triggers,
+        phase: "ready",
+        labels_to_remove: extract_actionable_labels(triggers),
         current_followup_count: issue.pr_followup_count
       }
+    end
+
+    # --- Escalated phase scanning ---
+
+    def scan_escalated_pr(project, client, issue)
+      return nil if followup_limit_reached?(project, issue)
+
+      triggers = detect_ready_triggers(project, client, issue)
+      return nil if triggers.empty?
+
+      log_triggers(project, issue, triggers)
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: triggers,
+        phase: "escalated",
+        labels_to_remove: extract_actionable_labels(triggers),
+        current_followup_count: issue.pr_followup_count
+      }
+    end
+
+    # --- Special trigger builders ---
+
+    def ready_for_owner_trigger(issue)
+      log_triggers(issue.project, issue, [ { type: "ready_for_owner" } ])
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: [ { type: "ready_for_owner", details: "CI green, Copilot clean" } ],
+        phase: "draft",
+        owner_reviewer_login: issue.project.owner_reviewer_login
+      }
+    end
+
+    def escalate_trigger(issue)
+      log_triggers(issue.project, issue, [ { type: "escalate_to_owner" } ])
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ],
+        phase: "draft",
+        current_draft_review_count: issue.draft_review_count,
+        owner_reviewer_login: issue.project.owner_reviewer_login
+      }
+    end
+
+    def owner_approved_trigger(issue)
+      log_triggers(issue.project, issue, [ { type: "owner_approved" } ])
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: [ { type: "owner_approved", details: "Owner approved PR" } ],
+        phase: "ready"
+      }
+    end
+
+    # --- Shared detection logic ---
+
+    def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil)
+      last_run = last_completed_run(project, issue)
+      pr_data ||= fetch_pr_data(client, project, issue)
+      checks ||= fetch_check_runs(client, project, pr_data)
+      reviews ||= fetch_reviews(client, project, issue)
+      triggers = []
+
+      triggers.concat(ci_failure_triggers(checks))
+      triggers.concat(check_review_threads(client, project, issue))
+      triggers.concat(check_conversation_comments(client, project, issue, last_run))
+      triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
+      triggers.concat(check_actionable_labels(project, issue))
+      triggers.concat(check_merge_conflicts(project, pr_data))
+
+      triggers
     end
 
     def active_run_exists?(project, issue)
@@ -84,9 +222,6 @@ module Activities
       issue.pr_followup_count >= project.max_pr_followup_runs
     end
 
-    # Finds the most recent completed agent run associated with a PR.
-    # Checks both source_pull_request_number (follow-up runs) and
-    # pull_request_number (the initial run that created the PR).
     def last_completed_run(project, issue)
       project.agent_runs
         .where(
@@ -98,21 +233,6 @@ module Activities
         .first
     end
 
-    def detect_triggers(project, client, issue)
-      last_run = last_completed_run(project, issue)
-      pr_data = fetch_pr_data(client, project, issue)
-      triggers = []
-
-      triggers.concat(check_ci_failures(client, project, issue, pr_data))
-      triggers.concat(check_review_threads(client, project, issue))
-      triggers.concat(check_conversation_comments(client, project, issue, last_run))
-      triggers.concat(check_changes_requested(client, project, issue, last_run))
-      triggers.concat(check_actionable_labels(project, issue))
-      triggers.concat(check_merge_conflicts(project, pr_data))
-
-      triggers
-    end
-
     def fetch_pr_data(client, project, issue)
       client.pull_request(project.full_name, issue.github_number)
     rescue GithubClient::Error => e
@@ -120,24 +240,38 @@ module Activities
       nil
     end
 
-    def check_ci_failures(client, project, issue, pr_data)
+    # --- CI checks ---
+
+    def fetch_check_runs(client, project, pr_data)
       return [] unless pr_data
 
-      checks = client.check_runs_for_ref(project.full_name, pr_data.head.sha)
+      client.check_runs_for_ref(project.full_name, pr_data.head.sha)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_scanner.ci_check_failed",
+        project_id: project.id,
+        error: e.message
+      )
+      []
+    end
 
-      # Filter to only completed checks; pending checks (conclusion nil) are ignored
-      # rather than blocking detection of failures in other completed checks.
+    def ci_failure_triggers(checks)
       completed = checks.select { |c| c[:conclusion].present? }
       return [] if completed.empty?
 
-      failed = completed.select { |c| %w[failure cancelled timed_out].include?(c[:conclusion]) }
+      failed = completed.select { |c| %w[failure cancelled timed_out action_required stale].include?(c[:conclusion]) }
       return [] if failed.empty?
 
       [ { type: "ci_failure", details: failed.map { |c| c[:name] } } ]
-    rescue GithubClient::Error => e
-      log_signal_error("ci_failures", project, issue, e)
-      []
     end
+
+    def all_checks_green?(checks)
+      return true if checks.empty?
+
+      checks.all? { |c| %w[success skipped neutral].include?(c[:conclusion]) }
+    end
+
+    # --- Review checks ---
 
     def check_review_threads(client, project, issue)
       threads = client.review_threads(project.full_name, issue.github_number)
@@ -154,6 +288,22 @@ module Activities
       [ { type: "review_threads", details: "#{trusted_threads.size} unresolved thread(s)" } ]
     rescue GithubClient::Error => e
       log_signal_error("review_threads", project, issue, e)
+      []
+    end
+
+    def check_copilot_review_threads(client, project, issue)
+      threads = client.review_threads(project.full_name, issue.github_number)
+      unresolved = threads.reject { |t| t[:is_resolved] }
+
+      copilot_threads = unresolved.select do |thread|
+        thread[:comments].any? { |c| copilot_user?(c[:author]) }
+      end
+
+      return [] if copilot_threads.empty?
+
+      [ { type: "copilot_review_threads", details: "#{copilot_threads.size} unresolved Copilot thread(s)" } ]
+    rescue GithubClient::Error => e
+      log_signal_error("copilot_review_threads", project, issue, e)
       []
     end
 
@@ -179,11 +329,16 @@ module Activities
       []
     end
 
-    def check_changes_requested(client, project, issue, last_run)
-      reviews = client.pull_request_reviews(project.full_name, issue.github_number)
+    def fetch_reviews(client, project, issue)
+      client.pull_request_reviews(project.full_name, issue.github_number)
+    rescue GithubClient::Error => e
+      log_signal_error("fetch_reviews", project, issue, e)
+      []
+    end
+
+    def changes_requested_from_reviews(project, reviews, last_run)
       cutoff = last_run&.completed_at
 
-      # Group reviews by user to find the latest review per user
       latest_by_user = reviews
         .select { |r| project.trusted_github_user?(r[:user_login]) && !bot_user?(r[:user_login]) }
         .group_by { |r| r[:user_login]&.downcase }
@@ -199,9 +354,6 @@ module Activities
       return [] if changes_requested.empty?
 
       [ { type: "changes_requested", details: changes_requested.map { |r| r[:user_login] } } ]
-    rescue GithubClient::Error => e
-      log_signal_error("changes_requested", project, issue, e)
-      []
     end
 
     def check_actionable_labels(project, issue)
@@ -217,11 +369,31 @@ module Activities
     def check_merge_conflicts(project, pr_data)
       return [] unless project.auto_fix_merge_conflicts
       return [] unless pr_data
-
-      # GitHub's mergeable field can be nil while computing; treat nil as "not ready"
       return [] if pr_data.mergeable.nil? || pr_data.mergeable
 
       [ { type: "merge_conflicts", details: "PR has merge conflicts" } ]
+    end
+
+    # --- Owner approval check ---
+
+    def owner_approved_from_reviews?(project, reviews)
+      owner_login = project.owner_reviewer_login
+      return false if owner_login.blank?
+
+      owner_reviews = reviews.select { |r| r[:user_login]&.downcase == owner_login.downcase }
+      return false if owner_reviews.empty?
+
+      latest = owner_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+      latest[:state] == "APPROVED"
+    end
+
+    # --- Helpers ---
+
+    def copilot_user?(login)
+      return false if login.blank?
+
+      normalized = login.downcase
+      normalized == "copilot" || normalized == "copilot[bot]"
     end
 
     def extract_actionable_labels(triggers)
