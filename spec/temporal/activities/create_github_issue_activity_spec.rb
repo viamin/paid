@@ -91,6 +91,17 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    it "strips trailing markdown closing hashes from headings" do
+      agent_run.log!("stdout", "## Security Audit Results ##\n\nFindings listed below.")
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(title: "Security Audit Results")
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     it "falls back to LLM-generated title when no heading" do
       agent_run.log!("stdout", "The auth system uses JWT tokens.")
       harness_response = instance_double(AgentHarness::Response, success?: true, output: "JWT authentication analysis")

@@ -48,7 +48,7 @@ module Llm
     end
 
     def prompt
-      truncated = @summary.truncate(MAX_SUMMARY_INPUT)
+      truncated = @summary.truncate(MAX_SUMMARY_INPUT, omission: "")
       <<~PROMPT.strip
         Generate a concise GitHub issue title for the following agent output. Respond with ONLY the title text — no quotes, no prefix, no explanation. Keep it under #{MAX_TITLE_LENGTH} characters.
 
