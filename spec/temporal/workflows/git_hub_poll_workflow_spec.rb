@@ -51,22 +51,25 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     let(:workflow) { described_class.new }
 
     before do
-      allow(workflow).to receive(:run_activity).and_return({})
+      allow(workflow).to receive(:run_activity).and_return({ prs_to_trigger: [] })
     end
 
     it "runs ScanPaidPrsActivity when patched returns true" do
       allow(Temporalio::Workflow).to receive(:patched).with("add-scan-paid-prs-v1").and_return(true)
 
-      workflow.send(:handle_pr_scan_results, { prs_to_trigger: [] }, 1)
+      workflow.send(:maybe_scan_paid_prs, 1)
 
-      # Verify the patch guard would allow the activity to run by checking the conditional
-      expect(Temporalio::Workflow.patched("add-scan-paid-prs-v1")).to be true
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
     end
 
     it "skips ScanPaidPrsActivity when patched returns false" do
       allow(Temporalio::Workflow).to receive(:patched).with("add-scan-paid-prs-v1").and_return(false)
 
-      expect(Temporalio::Workflow.patched("add-scan-paid-prs-v1")).to be false
+      workflow.send(:maybe_scan_paid_prs, 1)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, anything)
     end
   end
 
