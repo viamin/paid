@@ -46,7 +46,7 @@ module Activities
       # Try first markdown heading (any level) from agent output
       if summary.present?
         heading = summary[/^#+\s+(.+)$/, 1]&.sub(/\s*#+\s*$/, "")&.strip
-        return heading.truncate(255) if heading.present?
+        return heading.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH) if heading.present?
       end
 
       # Fall back to LLM-generated title from agent output
