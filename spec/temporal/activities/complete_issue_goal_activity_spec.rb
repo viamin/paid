@@ -20,6 +20,7 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
         expect(agent_run.created_issue_url).to eq("https://github.com/example/repo/issues/42")
         expect(agent_run.created_issue_number).to eq(42)
         expect(result[:success]).to be true
+        expect(result[:issue_created]).to be true
       end
 
       it "logs the completion" do
@@ -46,38 +47,33 @@ RSpec.describe Activities::CompleteIssueGoalActivity do
     end
 
     context "when the agent did not create an issue" do
-      it "marks the agent run as failed" do
+      it "returns issue_created: false without failing the run" do
         agent_run = create(:agent_run, :running, project: project)
 
-        expect {
-          activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, "Agent did not create an issue")
+        result = activity.execute(agent_run_id: agent_run.id)
 
-        expect(agent_run.reload.status).to eq("failed")
-        expect(agent_run.error_message).to eq("Agent did not create an issue")
+        expect(result[:success]).to be true
+        expect(result[:issue_created]).to be false
+        expect(agent_run.reload.status).to eq("running")
       end
 
-      it "logs the failure" do
+      it "logs the fallback message" do
         agent_run = create(:agent_run, :running, project: project)
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError)
+        }.to change(AgentRunLog, :count).by(1)
 
         log = agent_run.agent_run_logs.last
-        expect(log.content).to include("no issue was created")
+        expect(log.content).to include("falling back to platform issue creation")
       end
 
-      it "enqueues ProcessRunQueueJob" do
+      it "does not enqueue ProcessRunQueueJob" do
         agent_run = create(:agent_run, :running, project: project)
 
         expect {
-          begin
-            activity.execute(agent_run_id: agent_run.id)
-          rescue Temporalio::Error::ApplicationError
-            # expected
-          end
-        }.to have_enqueued_job(ProcessRunQueueJob)
+          activity.execute(agent_run_id: agent_run.id)
+        }.not_to have_enqueued_job(ProcessRunQueueJob)
       end
     end
 
