@@ -147,10 +147,28 @@ class PromptsController < ApplicationController
   end
 
   def parse_variables
-    text = prompt_version_params[:variables_text].to_s.strip
-    return [] if text.blank?
+    names = prompt_version_params[:variables_text].to_s.strip
+                                                  .split(",").map(&:strip).reject(&:blank?)
+    return [] if names.empty?
 
-    text.split(",").map(&:strip).reject(&:blank?)
+    # Preserve metadata (e.g. required, description) from existing variable
+    # hashes in the current version. Seeded prompts store variables as hashes
+    # like { "name" => "title", "required" => true }; without this merge,
+    # editing such a prompt would drop that metadata.
+    existing_by_name = {}
+    if defined?(@prompt) && @prompt&.current_version
+      Array(@prompt.current_version.variables).each do |v|
+        next unless v.is_a?(Hash)
+        name = (v["name"] || v[:name]).to_s.strip
+        next if name.blank?
+        existing_by_name[name] = v
+      end
+    end
+
+    names.map do |name|
+      existing = existing_by_name[name]
+      existing.is_a?(Hash) ? existing.merge("name" => name) : { "name" => name }
+    end
   end
 
   def assign_version_attrs_from_params
