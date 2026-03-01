@@ -3,8 +3,8 @@
 require "rails_helper"
 
 RSpec.describe StaleRunDetectorJob do
-  # Default agent_timeout is 3600s + 10min grace = 4200s total
-  let(:stale_threshold) { Rails.application.config.x.agent_timeout + 600 }
+  # agent_timeout + GRACE_PERIOD = total threshold before a run is considered stale
+  let(:stale_threshold) { Rails.application.config.x.agent_timeout + described_class::GRACE_PERIOD.to_i }
 
   describe "#perform" do
     it "times out runs stuck in running beyond the threshold" do
@@ -51,7 +51,7 @@ RSpec.describe StaleRunDetectorJob do
       expect { described_class.perform_now }.not_to change { AgentRun.where(status: "timeout").count }
     end
 
-    it "updates the issue paid_state to errored" do
+    it "updates the issue paid_state to failed" do
       stale_run = create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago)
       stale_run.issue.update!(paid_state: "in_progress")
 

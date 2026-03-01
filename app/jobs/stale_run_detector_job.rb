@@ -71,20 +71,25 @@ class StaleRunDetectorJob < ApplicationJob
   end
 
   def resolve_stale_run(agent_run)
-    agent_run.timeout!(error: "Stale run detected: stuck in '#{agent_run.status}' beyond timeout threshold")
-    agent_run.log!("system", "Run marked as timed out by stale run detector")
+    agent_run.with_lock do
+      agent_run.reload
+      return if agent_run.finished?
 
-    if agent_run.issue
-      agent_run.issue.update!(paid_state: "failed")
+      agent_run.timeout!(error: "Stale run detected: stuck in '#{agent_run.status}' beyond timeout threshold")
+      agent_run.log!("system", "Run marked as timed out by stale run detector")
+
+      if (issue = agent_run.issue)
+        issue.update!(paid_state: "failed") unless issue.paid_state == "failed"
+      end
+
+      Rails.logger.warn(
+        message: "stale_run_detector.resolved_stale_run",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id,
+        previous_status: agent_run.status_before_last_save,
+        started_at: agent_run.started_at,
+        created_at: agent_run.created_at
+      )
     end
-
-    Rails.logger.warn(
-      message: "stale_run_detector.resolved_stale_run",
-      agent_run_id: agent_run.id,
-      project_id: agent_run.project_id,
-      previous_status: "#{agent_run.status_before_last_save}",
-      started_at: agent_run.started_at,
-      created_at: agent_run.created_at
-    )
   end
 end
