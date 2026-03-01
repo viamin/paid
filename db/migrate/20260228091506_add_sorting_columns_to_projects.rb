@@ -30,7 +30,7 @@ class AddSortingColumnsToProjects < ActiveRecord::Migration[8.1]
       end
     end
 
-    add_index :projects, :last_agent_run_at
-    add_index :projects, :last_github_activity_at
+    add_index :projects, [ :account_id, :last_agent_run_at ]
+    add_index :projects, [ :account_id, :last_github_activity_at ]
   end
 end
