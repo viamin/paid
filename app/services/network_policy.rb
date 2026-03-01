@@ -45,6 +45,28 @@ class NetworkPolicy
   SECRETS_PROXY_PORT = ENV.fetch("PAID_PROXY_PORT", "3000").to_i
 
   class << self
+    # Returns the network name that agent containers should use.
+    # Subscription-auth containers use the infrastructure network (paid_internal)
+    # for outbound HTTPS access; API-key containers use the restricted network.
+    #
+    # @return [String] Docker network name
+    def agent_network
+      subscription_auth? ? INFRA_NETWORK_NAME : NETWORK_NAME
+    end
+
+    # Returns true when Claude CLI config is available for
+    # subscription-based authentication (e.g. from `claude login`).
+    #
+    # Mirrors the detection logic in Containers::Provision#subscription_auth?
+    # so that service containers are always placed on the same network as the
+    # agent container. Checks CLAUDE_CONFIG_DIR first, then auto-detects a
+    # standard Claude config mount (for DooD/devcontainer setups).
+    #
+    # @return [Boolean]
+    def subscription_auth?
+      claude_config_dir.present?
+    end
+
     # Ensures the agent Docker network exists. Creates it if missing.
     #
     # @return [Docker::Network] the agent network
@@ -75,14 +97,23 @@ class NetworkPolicy
     # @param proxy_host [String] hostname or IPv4 address of the secrets proxy
     # @return [void]
     # @raise [Error] if applying rules fails
-    def apply_firewall_rules(container, github_ips: nil, proxy_host: nil)
+    # @param container [Docker::Container] running container to apply rules to
+    # @param github_ips [Array<String>] GitHub CIDR ranges to allow
+    # @param proxy_host [String] hostname or IPv4 address of the secrets proxy
+    # @param service_destinations [Array<Hash>] service containers to allow,
+    #   each with :ip and :port keys (e.g., { ip: "172.28.0.5", port: 5432 })
+    def apply_firewall_rules(container, github_ips: nil, proxy_host: nil, service_destinations: [])
       github_ips ||= DEFAULT_GITHUB_IPS
       proxy_host ||= default_proxy_host
 
       validated_ips = github_ips.map { |cidr| validate_cidr!(cidr) }
       validated_host = validate_host!(proxy_host)
 
-      script = build_firewall_script(github_ips: validated_ips, proxy_host: validated_host)
+      script = build_firewall_script(
+        github_ips: validated_ips,
+        proxy_host: validated_host,
+        service_destinations: service_destinations
+      )
 
       _stdout, stderr, exit_code = container.exec([ "sh", "-c", script ])
 
@@ -116,6 +147,36 @@ class NetworkPolicy
     end
 
     private
+
+    # Returns the Claude config directory path, checking the explicit
+    # environment variable first, then auto-detecting standard locations.
+    #
+    # Mirrors Containers::Provision#subscription_auth? detection:
+    # - ENV["CLAUDE_CONFIG_DIR"] (explicit override)
+    # - $HOME/.claude (DooD/devcontainer mount from host)
+    # - $HOME/.config/claude (standard Claude CLI config on Linux)
+    def claude_config_dir
+      return ENV["CLAUDE_CONFIG_DIR"] if ENV["CLAUDE_CONFIG_DIR"].present?
+
+      home = ENV["HOME"].presence || (Dir.respond_to?(:home) ? Dir.home : nil)
+
+      if home.present?
+        # Check $HOME/.claude first — in DooD setups the host mounts ~/.claude
+        # into the devcontainer, which Containers::Provision detects via Docker
+        # mount introspection. We check the filesystem equivalent here.
+        dot_claude = File.join(home, ".claude")
+        return dot_claude if Dir.exist?(dot_claude)
+
+        # Fall back to standard Claude CLI config location on Linux.
+        config_claude = File.join(home, ".config", "claude")
+        return config_claude if Dir.exist?(config_claude)
+      end
+
+      # Last-resort check matching Containers::Provision's Docker mount
+      # detection of a /.claude destination. Without $HOME we cannot build
+      # a path, but /.claude may exist as a direct mount point.
+      "/.claude" if Dir.exist?("/.claude")
+    end
 
     def create_network
       Rails.logger.info(
@@ -165,12 +226,16 @@ class NetworkPolicy
       "paid-proxy"
     end
 
-    def build_firewall_script(github_ips:, proxy_host:)
+    def build_firewall_script(github_ips:, proxy_host:, service_destinations: [])
       github_rules = github_ips.flat_map do |cidr|
         [
           "iptables -A OUTPUT -d #{cidr} -p tcp --dport 443 -j ACCEPT",
           "iptables -A OUTPUT -d #{cidr} -p tcp --dport 22 -j ACCEPT"
         ]
+      end
+
+      service_rules = service_destinations.map do |dest|
+        "iptables -A OUTPUT -d #{validate_host!(dest[:ip])} -p tcp --dport #{dest[:port].to_i} -j ACCEPT"
       end
 
       <<~SCRIPT
@@ -192,6 +257,8 @@ class NetworkPolicy
 
         # Allow GitHub
         #{github_rules.join("\n")}
+
+        #{service_rules.any? ? "# Allow service containers\n#{service_rules.join("\n")}" : ""}
 
         # Log and drop everything else
         iptables -A OUTPUT -j LOG --log-prefix "PAID_AGENT_BLOCK: " --log-level 4

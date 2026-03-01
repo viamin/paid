@@ -40,6 +40,13 @@ module Workflows
       agent_run_id = agent_run_result[:agent_run_id]
 
       begin
+        # Step 1.5: Provision service containers (database, redis, etc.)
+        # Always run unconditionally — the activity returns {} when no services
+        # are configured. Avoids DB queries inside the workflow, which would
+        # break Temporal's deterministic replay requirement.
+        run_activity(Activities::ProvisionServicesActivity,
+          { agent_run_id: agent_run_id }, timeout: 120)
+
         # Step 2: Provision container (with empty workspace directory)
         run_activity(Activities::ProvisionContainerActivity,
           { agent_run_id: agent_run_id }, timeout: 60)
@@ -161,6 +168,19 @@ module Workflows
         rescue => e
           Temporalio::Workflow.logger.warn(
             message: "agent_execution.cleanup_container_failed",
+            agent_run_id: agent_run_id,
+            error_class: e.class.name,
+            error: e.message
+          )
+        end
+
+        begin
+          run_activity(Activities::CleanupServicesActivity,
+            { agent_run_id: agent_run_id },
+            start_to_close_timeout: 60, retry_policy: NO_RETRY)
+        rescue => e
+          Temporalio::Workflow.logger.warn(
+            message: "agent_execution.cleanup_services_failed",
             agent_run_id: agent_run_id,
             error_class: e.class.name,
             error: e.message

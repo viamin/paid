@@ -20,5 +20,6 @@ FactoryBot.define do
     retry_max_attempts { 3 }
     retry_base_delay { 1.0 }
     retry_max_delay { 60.0 }
+    allowed_service_images { [ "postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest" ] }
   end
 end
