@@ -346,6 +346,27 @@ RSpec.describe Project do
     end
   end
 
+  describe "#touch_last_polled_at" do
+    it "updates the last_polled_at column" do
+      project = create(:project)
+      timestamp = 30.minutes.ago
+
+      project.touch_last_polled_at(timestamp)
+
+      expect(project.reload.last_polled_at).to be_within(1.second).of(timestamp)
+    end
+
+    it "defaults to current time" do
+      project = create(:project)
+
+      freeze_time do
+        project.touch_last_polled_at
+
+        expect(project.reload.last_polled_at).to eq(Time.current)
+      end
+    end
+  end
+
   describe "label_mappings JSONB storage" do
     it "stores label mappings as JSONB" do
       mappings = {
