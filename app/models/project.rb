@@ -109,6 +109,10 @@ class Project < ApplicationRecord
     update_column(:last_github_activity_at, timestamp)
   end
 
+  def touch_last_polled_at(timestamp = Time.current)
+    update_column(:last_polled_at, timestamp)
+  end
+
   def broadcast_stats_update
     broadcast_replace_to(
       self, :project_updates,
