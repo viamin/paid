@@ -104,18 +104,15 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
         allow(docker_container).to receive(:start)
-        allow(provisioner).to receive(:tcp_port_open?).and_return(false)
         allow(Docker::Container).to receive(:get).with("leak123").and_return(docker_container)
         allow(docker_container).to receive(:stop)
         allow(docker_container).to receive(:delete)
 
-        # wait_for_health! will time out; stub the clock to exceed deadline immediately
-        allow(provisioner).to receive(:sleep)
-        call_count = 0
-        allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) do
-          call_count += 1
-          call_count == 1 ? 0.0 : 100.0 # First call sets deadline, subsequent calls exceed it
-        end
+        # Simulate health check timeout by raising directly from wait_for_health!
+        allow(provisioner).to receive(:wait_for_health!).and_raise(
+          Containers::ServiceProvisioner::Error,
+          "Health check timeout for fail-postgres:5432"
+        )
 
         expect { provisioner.provision(agent_run) }
           .to raise_error(Containers::ServiceProvisioner::Error, /Failed to start/)

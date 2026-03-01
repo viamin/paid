@@ -55,10 +55,15 @@ module Containers
       container_ids = []
 
       service_containers.each do |sc|
-        sc.with_lock do
-          ensure_running!(sc)
-          container_ids << sc.id
-          env_vars.merge!(generate_env_vars(sc))
+        begin
+          sc.with_lock do
+            ensure_running!(sc)
+            container_ids << sc.id
+            env_vars.merge!(generate_env_vars(sc))
+          end
+        rescue Error
+          sc.update!(status: "error", docker_container_id: nil)
+          raise
         end
       end
 
@@ -161,7 +166,8 @@ module Containers
             error: docker_err.message)
         end
       end
-      service_container.update!(status: "error", docker_container_id: nil)
+      # DB status update is handled by the caller outside the with_lock
+      # transaction to ensure it is not rolled back.
     end
 
     def create_docker_container(service_container)
