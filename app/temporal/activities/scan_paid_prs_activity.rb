@@ -75,11 +75,16 @@ module Activities
       pr_data = fetch_pr_data(client, project, issue)
       copilot_triggers = check_copilot_review_threads(client, project, issue)
       checks = fetch_check_runs(client, project, pr_data)
-      ci_triggers = ci_failure_triggers(checks)
+      ci_triggers = ci_failure_triggers(checks || [])
 
       if copilot_triggers.empty? && ci_triggers.empty?
-        return ready_for_owner_trigger(issue) if all_checks_green?(checks)
-        return nil # CI still pending
+        # If we couldn't fetch PR data, don't prematurely advance the phase.
+        return nil if pr_data.nil?
+
+        # Only auto-advance when we have at least one check and all are green.
+        return ready_for_owner_trigger(issue) if checks.present? && all_checks_green?(checks)
+
+        return nil # CI still pending or checks unavailable
       end
 
       triggers = copilot_triggers + ci_triggers
