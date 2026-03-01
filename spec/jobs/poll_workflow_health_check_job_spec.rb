@@ -94,6 +94,26 @@ RSpec.describe PollWorkflowHealthCheckJob do
       expect(workflow_handle).not_to have_received(:terminate)
     end
 
+    it "does not restart workflow if last_polled_at becomes fresh after reload" do
+      project = create(:project, poll_interval_seconds: 60, last_polled_at: 10.minutes.ago)
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::RUNNING) # rubocop:disable RSpec/VerifiedDoubles
+
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:describe).and_return(desc)
+      allow(workflow_handle).to receive(:terminate)
+
+      # Simulate a concurrent successful poll updating last_polled_at between check and reload
+      allow_any_instance_of(Project).to receive(:reload).and_wrap_original do |method, *args| # rubocop:disable RSpec/AnyInstance
+        project.update_column(:last_polled_at, Time.current)
+        method.call(*args)
+      end
+
+      described_class.perform_now
+
+      expect(workflow_handle).not_to have_received(:terminate)
+    end
+
     it "restarts terminated workflows" do
       project = create(:project)
       workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
