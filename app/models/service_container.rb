@@ -53,10 +53,23 @@ class ServiceContainer < ApplicationRecord
     raw.split(",").map(&:strip).reject(&:blank?).uniq
   end
 
-  # Restricts the fallback allowlist to settings from account admins/owners
-  # to prevent non-admin users from expanding the effective allowlist.
+  # Restricts the fallback allowlist to settings from account admins/owners.
+  # When the service container is already associated with projects, the
+  # lookup is scoped to those projects' accounts to prevent an admin in one
+  # account from expanding the allowlist for another account in multi-tenant
+  # deployments. For new records (not yet associated), falls back to all
+  # admin/owner settings.
   def allowed_images_from_settings
-    admin_user_ids = AccountMembership.where(role: [ :admin, :owner ]).select(:user_id)
+    admin_user_ids = if persisted? && project_service_containers.any?
+      account_ids = projects.select(:account_id)
+      AccountMembership
+        .where(account_id: account_ids, role: [ :admin, :owner ])
+        .select(:user_id)
+    else
+      AccountMembership
+        .where(role: [ :admin, :owner ])
+        .select(:user_id)
+    end
 
     UserSetting.where(user_id: admin_user_ids)
       .pluck(:allowed_service_images)

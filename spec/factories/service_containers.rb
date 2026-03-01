@@ -10,7 +10,8 @@ FactoryBot.define do
 
     after(:build) do
       if UserSetting.where.not(allowed_service_images: nil).none?
-        create(:user_setting)
+        user_setting = create(:user_setting)
+        user_setting.user.add_role(:admin, user_setting.user.account)
       end
     end
 

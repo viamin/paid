@@ -25,14 +25,16 @@ RSpec.describe ServiceContainer do
     end
 
     it "validates image is in allowlist" do
-      create(:user_setting, allowed_service_images: [ "postgres:16" ])
+      admin = create(:user, :admin)
+      create(:user_setting, user: admin, allowed_service_images: [ "postgres:16" ])
       container = build(:service_container, image: "malicious:latest")
       expect(container).not_to be_valid
       expect(container.errors[:image]).to include("is not in the allowed service images list")
     end
 
     it "allows images in the allowlist" do
-      create(:user_setting, allowed_service_images: [ "postgres:16" ])
+      admin = create(:user, :admin)
+      create(:user_setting, user: admin, allowed_service_images: [ "postgres:16" ])
       container = build(:service_container, image: "postgres:16")
       expect(container).to be_valid
     end
