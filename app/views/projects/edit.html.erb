@@ -113,6 +113,33 @@
             </div>
           </div>
 
+          <div>
+            <%= form.label :owner_reviewer_login, "Owner Reviewer Login", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.text_field :owner_reviewer_login, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "github-username" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">GitHub username to request review from when the PR is ready. Must be in trusted usernames above.</p>
+          </div>
+
+          <div>
+            <%= form.label :merge_method, "Merge Method", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.select :merge_method,
+                  options_for_select(Project::MERGE_METHODS.map { |m| [m.capitalize, m] }, @project.merge_method),
+                  {},
+                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">How to merge pull requests when auto-merging on owner approval.</p>
+          </div>
+
+          <div>
+            <%= form.label :max_draft_review_rounds, "Max Draft Review Rounds", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :max_draft_review_rounds, min: 0, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum Copilot review rounds before escalating to the owner (0 to skip draft review phase).</p>
+          </div>
+
           <div class="flex items-center">
             <%= form.check_box :active, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
             <%= form.label :active, "Active", class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
