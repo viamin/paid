@@ -18,9 +18,7 @@ module Activities
 
       if pr_data.draft
         result = client.mark_pull_request_ready(project.full_name, pr_number)
-        is_draft = result["isDraft"]
-
-        if is_draft
+        unless result["isDraft"] == false
           logger.warn(
             message: "pr_review.mark_ready_failed",
             project_id: project.id,
