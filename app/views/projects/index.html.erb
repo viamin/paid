@@ -17,7 +17,19 @@
   </div>
 
   <% if @projects.any? %>
-    <div class="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="mt-6 flex items-center gap-3 text-sm text-gray-500">
+      <span class="font-medium text-gray-700">Sort by:</span>
+      <% sort_options = [
+        ["Paid Activity", :last_agent_run_at],
+        ["GitHub Activity", :last_github_activity_at],
+        ["Name", :name],
+        ["Created", :created_at]
+      ] %>
+      <% sort_options.each do |label, attribute| %>
+        <%= sort_link_to label, attribute, @q %>
+      <% end %>
+    </div>
+    <div class="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
       <% @projects.each do |project| %>
         <div class="overflow-hidden rounded-lg bg-white shadow">
           <div class="p-5">
