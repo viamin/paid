@@ -135,7 +135,7 @@ module Activities
       count = stale_issues.count
 
       if count > 0
-        stale_issues.update_all(github_state: "closed")
+        stale_issues.update_all(github_state: "closed", updated_at: Time.current)
 
         # update_all bypasses ActiveRecord callbacks, so manually broadcast
         # the updated lists to remove closed items from connected browsers.

@@ -493,15 +493,19 @@ RSpec.describe Activities::FetchIssuesActivity do
       it "broadcasts updated lists after closing stale items" do
         create(:issue, project: project, github_issue_id: 5000, github_number: 50, github_state: "open")
 
-        allow(project).to receive(:broadcast_issues_update)
-        allow(project).to receive(:broadcast_pull_requests_update)
-        allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
+        allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
 
         activity.execute(project_id: project.id)
 
-        # Called at least twice: once from sync_issue callbacks, once from close_stale_issues
-        expect(project).to have_received(:broadcast_issues_update).at_least(:twice)
-        expect(project).to have_received(:broadcast_pull_requests_update).at_least(:once)
+        issues_target = ActionView::RecordIdentifier.dom_id(project, :issues)
+        pull_requests_target = ActionView::RecordIdentifier.dom_id(project, :pull_requests)
+
+        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
+          .with(anything, :project_updates, hash_including(target: issues_target))
+          .at_least(:once)
+        expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
+          .with(anything, :project_updates, hash_including(target: pull_requests_target))
+          .at_least(:once)
       end
     end
 
