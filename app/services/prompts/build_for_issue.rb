@@ -60,6 +60,7 @@ module Prompts
         - Focus on completing the specific task in the issue
 
         When you're done, commit all your changes. Do not push.
+        #{available_services_section}
       PROMPT
     end
 
@@ -75,6 +76,36 @@ module Prompts
 
     def detected_language
       @detected_language ||= LanguageCommands.detected_language(project)
+    end
+
+    def available_services_section
+      containers = project.service_containers.to_a
+      return "" if containers.empty?
+
+      lines = containers.map { |sc| service_description(sc) }
+
+      <<~SECTION
+
+        # Available Services
+
+        The following services are already running and available:
+        #{lines.join("\n")}
+
+        Do NOT install or build these services from source. They are already running.
+        Use the environment variables above to connect.
+      SECTION
+    end
+
+    def service_description(sc)
+      if sc.image.include?("postgres")
+        "- PostgreSQL is available via the `DATABASE_URL` environment variable."
+      elsif sc.image.include?("redis")
+        "- Redis is available via the `REDIS_URL` environment variable."
+      elsif sc.image.include?("selenium") || sc.image.include?("chromium")
+        "- Selenium/Chromium is available via the `SELENIUM_URL` environment variable."
+      else
+        "- #{sc.name} is available at host `#{sc.name}` on port #{sc.port}."
+      end
     end
   end
 end
