@@ -80,24 +80,61 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "falls back to custom prompt for title when no heading" do
-      agent_run.log!("stdout", "The auth system uses JWT tokens.")
+    it "uses level-2 markdown heading as title" do
+      agent_run.log!("stdout", "## Security Audit Results\n\nFindings listed below.")
 
       expect(github_client).to receive(:create_issue).with(
         anything,
-        hash_including(title: "Analyze the auth system")
+        hash_including(title: "Security Audit Results")
       ).and_return(issue_response)
 
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "falls back to custom prompt for title when no stdout and no heading" do
+    it "strips trailing markdown closing hashes from headings" do
+      agent_run.log!("stdout", "## Security Audit Results ##\n\nFindings listed below.")
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(title: "Security Audit Results")
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "falls back to LLM-generated title when no heading" do
+      agent_run.log!("stdout", "The auth system uses JWT tokens.")
+      harness_response = instance_double(AgentHarness::Response, success?: true, output: "JWT authentication analysis")
+      allow(AgentHarness).to receive(:send_message).and_return(harness_response)
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(title: "JWT authentication analysis")
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "falls back to default title when LLM returns a failed response" do
+      agent_run.log!("stdout", "The auth system uses JWT tokens.")
+      harness_response = instance_double(AgentHarness::Response, success?: false, output: "")
+      allow(AgentHarness).to receive(:send_message).and_return(harness_response)
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(title: "Agent analysis")
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "falls back to default title when no stdout output" do
       no_prompt_run = create(:agent_run, :with_git_context, project: project,
         goal: "create_issue", custom_prompt: "Do analysis")
 
       expect(github_client).to receive(:create_issue).with(
         anything,
-        hash_including(title: "Do analysis")
+        hash_including(title: "Agent analysis")
       ).and_return(issue_response)
 
       activity.execute(agent_run_id: no_prompt_run.id)
