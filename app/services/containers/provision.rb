@@ -603,7 +603,7 @@ module Containers
     def docker_container_ip(docker_id)
       info = Docker::Container.get(docker_id).info
       networks = info.dig("NetworkSettings", "Networks") || {}
-      network_info = networks[NetworkPolicy::NETWORK_NAME]
+      network_info = networks[container_network]
       network_info&.dig("IPAddress")
     rescue Docker::Error::DockerError
       nil

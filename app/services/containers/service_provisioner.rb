@@ -7,8 +7,9 @@ module Containers
   # Manages Docker lifecycle for service containers (PostgreSQL, Redis, etc.)
   # that agents need for running tests and setup commands.
   #
-  # Service containers run on the `paid_agent` network only, ensuring they
-  # are accessible to agents but cannot reach Paid infrastructure.
+  # Service containers are attached to the same Docker network as the agent
+  # container (paid_agent for API-key mode, paid_internal for subscription-auth)
+  # so they are always reachable from the agent.
   #
   # @example Provision services for an agent run
   #   provisioner = Containers::ServiceProvisioner.new
@@ -43,22 +44,32 @@ module Containers
 
     # Provisions all service containers needed by an agent run's project.
     #
+    # Records the run→container association before starting containers so
+    # that concurrent cleanup decisions (via active_agent_run_count) count
+    # this run even if provisioning is still in progress.
+    #
     # @param agent_run [AgentRun] The agent run to provision services for
+    # @param network [String] Docker network to attach service containers to.
+    #   Defaults to NETWORK_NAME (paid_agent). Callers should pass the same
+    #   network the agent container will use so services are reachable.
     # @return [Hash] Environment variables hash for the agent container
-    def provision(agent_run)
+    def provision(agent_run, network: NetworkPolicy::NETWORK_NAME)
       service_containers = agent_run.project.service_containers.to_a
       return {} if service_containers.empty?
 
+      @network = network
       NetworkPolicy.ensure_network!
 
+      # Record association early so concurrent cleanup counts this run.
+      container_ids = service_containers.map(&:id)
+      agent_run.update!(service_container_ids: container_ids)
+
       env_vars = {}
-      container_ids = []
 
       service_containers.each do |sc|
         begin
           sc.with_lock do
             ensure_running!(sc)
-            container_ids << sc.id
             env_vars.merge!(generate_env_vars(sc))
           end
         rescue Error
@@ -67,10 +78,7 @@ module Containers
         end
       end
 
-      agent_run.update!(
-        service_container_ids: container_ids,
-        service_environment: env_vars
-      )
+      agent_run.update!(service_environment: env_vars)
 
       env_vars
     end
@@ -176,11 +184,11 @@ module Containers
         "name" => service_container.name,
         "Env" => service_container.env.map { |k, v| "#{k}=#{v}" },
         "HostConfig" => {
-          "NetworkMode" => NetworkPolicy::NETWORK_NAME
+          "NetworkMode" => @network
         },
         "NetworkingConfig" => {
           "EndpointsConfig" => {
-            NetworkPolicy::NETWORK_NAME => {
+            @network => {
               "Aliases" => [ service_container.name ]
             }
           }

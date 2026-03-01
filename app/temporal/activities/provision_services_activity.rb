@@ -13,7 +13,7 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
 
       provisioner = Containers::ServiceProvisioner.new
-      env_vars = provisioner.provision(agent_run)
+      env_vars = provisioner.provision(agent_run, network: NetworkPolicy.agent_network)
 
       logger.info(
         message: "agent_execution.services_provisioned",
