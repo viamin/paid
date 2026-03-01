@@ -282,11 +282,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_130000) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "active"], name: "index_projects_on_account_id_and_active"
     t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true
+    t.index ["account_id", "last_agent_run_at"], name: "index_projects_on_account_id_and_last_agent_run_at"
+    t.index ["account_id", "last_github_activity_at"], name: "index_projects_on_account_id_and_last_github_activity_at"
     t.index ["account_id"], name: "index_projects_on_account_id"
     t.index ["created_by_id"], name: "index_projects_on_created_by_id"
     t.index ["github_token_id"], name: "index_projects_on_github_token_id"
-    t.index ["account_id", "last_agent_run_at"], name: "index_projects_on_account_id_and_last_agent_run_at"
-    t.index ["account_id", "last_github_activity_at"], name: "index_projects_on_account_id_and_last_github_activity_at"
     t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
   end
 
