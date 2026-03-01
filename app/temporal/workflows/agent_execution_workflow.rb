@@ -87,8 +87,8 @@ module Workflows
           # Fallback: if the agent didn't create an issue directly, create one
           # from the agent's output using the platform's GitHub integration.
           if issue_result[:issue_created] == false
-            # Longer timeout: includes an outbound LLM call (up to 15s) for
-            # title generation, plus GitHub API and DB writes.
+            # Longer timeout: includes an agent_harness LLM call for title
+            # generation, plus GitHub API and DB writes.
             run_activity(Activities::CreateGithubIssueActivity,
               { agent_run_id: agent_run_id }, timeout: 120, retry_policy: NO_RETRY)
           end
