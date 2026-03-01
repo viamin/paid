@@ -1,22 +1,17 @@
 # frozen_string_literal: true
 
 module Llm
-  # Generates a concise GitHub issue title from agent output using Anthropic's
-  # Haiku model. On API errors, logs a warning and returns nil so callers
+  # Generates a concise GitHub issue title from agent output using
+  # agent_harness. On errors, logs a warning and returns nil so callers
   # can fall back to a default title and issue creation is never blocked.
   #
   # @example
   #   title = Llm::GenerateIssueTitle.call(summary: "# Auth Analysis\n\nThe auth system...")
   #   # => "Authentication system security review"
   class GenerateIssueTitle
-    API_URL = "https://api.anthropic.com/v1/messages"
-    MODEL = "claude-haiku-4-5-20251001"
     MAX_TITLE_LENGTH = 255
     MAX_SUMMARY_INPUT = 4000
-
-    SYSTEM_PROMPT = <<~PROMPT.strip
-      You generate concise GitHub issue titles. Respond with ONLY the title text — no quotes, no prefix, no explanation. Keep it under 80 characters.
-    PROMPT
+    TIMEOUT = 30
 
     class << self
       def call(summary:)
@@ -33,7 +28,7 @@ module Llm
 
       title = request_title
       title.present? ? title.truncate(MAX_TITLE_LENGTH) : nil
-    rescue Faraday::Error, JSON::ParserError, KeyError => e
+    rescue AgentHarness::Error => e
       Rails.logger.warn(
         message: "agent_execution.llm_generate_issue_title_failed",
         error_class: e.class.name,
@@ -45,45 +40,25 @@ module Llm
     private
 
     def request_title
-      api_key = Rails.application.credentials.dig(:llm, :anthropic_api_key).presence ||
-                ENV["ANTHROPIC_API_KEY"]
-      return nil if api_key.blank?
+      response = AgentHarness.send_message(prompt, provider: :claude, timeout: TIMEOUT)
+      return nil unless response.success?
 
-      response = connection.post(API_URL) do |req|
-        req.headers["x-api-key"] = api_key
-        req.headers["anthropic-version"] = "2023-06-01"
-        req.body = {
-          model: MODEL,
-          max_tokens: 100,
-          system: SYSTEM_PROMPT,
-          messages: [
-            { role: "user", content: user_prompt }
-          ]
-        }
-      end
-
-      extract_text(response.body)
+      clean_title(response.output)
     end
 
-    def user_prompt
+    def prompt
       truncated = @summary.truncate(MAX_SUMMARY_INPUT)
-      "Generate a concise GitHub issue title for the following agent output:\n\n#{truncated}"
+      <<~PROMPT.strip
+        Generate a concise GitHub issue title for the following agent output. Respond with ONLY the title text — no quotes, no prefix, no explanation. Keep it under 80 characters.
+
+        #{truncated}
+      PROMPT
     end
 
-    def extract_text(body)
-      text = body.dig("content", 0, "text")
-      text&.strip&.delete_prefix('"')&.delete_suffix('"')&.strip
-    end
+    def clean_title(text)
+      return nil if text.blank?
 
-    def connection
-      @connection ||= Faraday.new do |f|
-        f.request :json
-        f.response :json
-        f.response :raise_error
-        f.options.timeout = 15
-        f.options.open_timeout = 5
-        f.adapter Faraday.default_adapter
-      end
+      text.strip.delete_prefix('"').delete_suffix('"').strip.presence
     end
   end
 end
