@@ -9,6 +9,7 @@ module Llm
   #   title = Llm::GenerateIssueTitle.call(summary: "# Auth Analysis\n\nThe auth system...")
   #   # => "Authentication system security review"
   class GenerateIssueTitle
+    MODEL = "claude-haiku-4-5-20251001"
     MAX_TITLE_LENGTH = 255
     MAX_SUMMARY_INPUT = 4000
     TIMEOUT = 30
@@ -40,7 +41,7 @@ module Llm
     private
 
     def request_title
-      response = AgentHarness.send_message(prompt, provider: :claude, timeout: TIMEOUT)
+      response = AgentHarness.send_message(prompt, provider: :claude, model: MODEL, timeout: TIMEOUT)
       return nil unless response.success?
 
       clean_title(response.output)
@@ -49,7 +50,7 @@ module Llm
     def prompt
       truncated = @summary.truncate(MAX_SUMMARY_INPUT)
       <<~PROMPT.strip
-        Generate a concise GitHub issue title for the following agent output. Respond with ONLY the title text — no quotes, no prefix, no explanation. Keep it under 80 characters.
+        Generate a concise GitHub issue title for the following agent output. Respond with ONLY the title text — no quotes, no prefix, no explanation. Keep it under #{MAX_TITLE_LENGTH} characters.
 
         #{truncated}
       PROMPT

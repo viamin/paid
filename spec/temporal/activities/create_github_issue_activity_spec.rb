@@ -80,6 +80,17 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    it "uses level-2 markdown heading as title" do
+      agent_run.log!("stdout", "## Security Audit Results\n\nFindings listed below.")
+
+      expect(github_client).to receive(:create_issue).with(
+        anything,
+        hash_including(title: "Security Audit Results")
+      ).and_return(issue_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     it "falls back to LLM-generated title when no heading" do
       agent_run.log!("stdout", "The auth system uses JWT tokens.")
       allow(Llm::GenerateIssueTitle).to receive(:call).and_return("JWT authentication analysis")
