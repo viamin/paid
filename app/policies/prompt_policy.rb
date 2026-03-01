@@ -51,7 +51,7 @@ class PromptPolicy < ApplicationPolicy
   end
 
   def account_for_record
-    record.account || user&.account
+    record.account || record.project&.account
   end
 
   class Scope
