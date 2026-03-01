@@ -79,6 +79,7 @@ class PollWorkflowHealthCheckJob < ApplicationJob
 
     # Double-check after reload to avoid race with a just-completed poll
     project.reload
+    staleness_threshold = (3 * project.poll_interval_seconds).seconds + STALENESS_BUFFER
     return unless project.last_polled_at < staleness_threshold.ago
 
     restart_workflow(project, reason: "health check: stale RUNNING (last polled #{project.last_polled_at})")
