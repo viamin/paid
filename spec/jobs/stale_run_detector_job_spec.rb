@@ -29,7 +29,7 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "does not touch running runs within the threshold" do
-      recent_run = create(:agent_run, :running, started_at: 10.minutes.ago)
+      recent_run = create(:agent_run, :running, started_at: (stale_threshold - 60).seconds.ago)
 
       described_class.perform_now
 
@@ -37,7 +37,7 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "does not touch pending runs within the threshold" do
-      recent_run = create(:agent_run, status: "pending", created_at: 10.minutes.ago)
+      recent_run = create(:agent_run, status: "pending", created_at: (stale_threshold - 60).seconds.ago)
 
       described_class.perform_now
 
