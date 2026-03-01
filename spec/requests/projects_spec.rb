@@ -58,6 +58,85 @@ RSpec.describe "Projects" do
         expect(response.body).to include(">3</span> runs")
         expect(response.body).to include("$15.00")
       end
+
+      it "shows sort controls" do
+        create(:project, account: account, github_token: github_token)
+        get projects_path
+        expect(response.body).to include("Sort by:")
+        expect(response.body).to include("Paid Activity")
+        expect(response.body).to include("GitHub Activity")
+        expect(response.body).to include("Name")
+      end
+
+      it "sorts projects by name ascending via Ransack sort params" do
+        create(:project, account: account, github_token: github_token, name: "Zebra")
+        create(:project, account: account, github_token: github_token, name: "Alpha")
+
+        get projects_path, params: { q: { s: "name asc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index("Alpha")).to be < response.body.index("Zebra")
+      end
+
+      it "sorts projects by name descending via Ransack sort params" do
+        create(:project, account: account, github_token: github_token, name: "Alpha")
+        create(:project, account: account, github_token: github_token, name: "Zebra")
+
+        get projects_path, params: { q: { s: "name desc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index("Zebra")).to be < response.body.index("Alpha")
+      end
+
+      it "sorts projects by last_agent_run_at via Ransack sort params" do
+        old_project = create(:project, account: account, github_token: github_token, name: "Old Project", last_agent_run_at: 2.days.ago)
+        new_project = create(:project, account: account, github_token: github_token, name: "New Project", last_agent_run_at: 1.hour.ago)
+
+        get projects_path, params: { q: { s: "last_agent_run_at desc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index(new_project.name)).to be < response.body.index(old_project.name)
+      end
+
+      it "sorts projects by last_github_activity_at via Ransack sort params" do
+        old_project = create(:project, account: account, github_token: github_token, name: "Old GH Project", last_github_activity_at: 3.days.ago)
+        new_project = create(:project, account: account, github_token: github_token, name: "New GH Project", last_github_activity_at: 1.hour.ago)
+
+        get projects_path, params: { q: { s: "last_github_activity_at desc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index(new_project.name)).to be < response.body.index(old_project.name)
+      end
+
+      it "sorts projects with NULL last_agent_run_at to the end in descending order" do
+        null_project = create(:project, account: account, github_token: github_token, name: "No Activity", last_agent_run_at: nil)
+        active_project = create(:project, account: account, github_token: github_token, name: "Has Activity", last_agent_run_at: 1.hour.ago)
+
+        get projects_path, params: { q: { s: "last_agent_run_at desc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index(active_project.name)).to be < response.body.index(null_project.name)
+      end
+
+      it "sorts projects with NULL last_github_activity_at to the end in ascending order" do
+        null_project = create(:project, account: account, github_token: github_token, name: "No GH Activity", last_github_activity_at: nil)
+        active_project = create(:project, account: account, github_token: github_token, name: "Has GH Activity", last_github_activity_at: 1.hour.ago)
+
+        get projects_path, params: { q: { s: "last_github_activity_at asc" } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index(active_project.name)).to be < response.body.index(null_project.name)
+      end
+
+      it "defaults to created_at desc when no sort is specified" do
+        old_project = create(:project, account: account, github_token: github_token, name: "Older Project", created_at: 2.days.ago)
+        new_project = create(:project, account: account, github_token: github_token, name: "Newer Project", created_at: 1.hour.ago)
+
+        get projects_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body.index(new_project.name)).to be < response.body.index(old_project.name)
+      end
     end
   end
 
