@@ -10,7 +10,7 @@ class ServiceContainer < ApplicationRecord
   validates :name, presence: true, uniqueness: true
   validates :port, presence: true, numericality: { only_integer: true, greater_than: 0, less_than: 65_536 }
   validates :status, presence: true, inclusion: { in: STATUSES }
-  validate :image_in_allowlist
+  validate :image_in_allowlist, on: :create
 
   scope :running, -> { where(status: "running") }
   scope :stopped, -> { where(status: "stopped") }
@@ -29,21 +29,25 @@ class ServiceContainer < ApplicationRecord
 
   private
 
-  # Validates image against a global, admin-controlled allowlist.
+  # Validates image against a global allowlist sourced from the
+  # SERVICE_CONTAINER_ALLOWED_IMAGES env var (comma-separated).
   #
-  # The allowlist is sourced from (in priority order):
-  # 1. SERVICE_CONTAINER_ALLOWED_IMAGES env var (comma-separated)
-  # 2. allowed_service_images from account admin/owner UserSettings
+  # Falls back to UserSettings from account admins/owners when the
+  # env var is not set.
   #
-  # The settings fallback is scoped to admin/owner roles to prevent
-  # non-admin users from expanding the effective allowlist.
+  # Only runs on :create — status updates (stop/start) must not
+  # re-validate the image.
   def image_in_allowlist
     return if image.blank?
 
-    allowed = allowed_images_from_env || allowed_images_from_settings
+    allowed = allowed_images
     return if allowed.include?(image)
 
     errors.add(:image, "is not in the allowed service images list")
+  end
+
+  def allowed_images
+    allowed_images_from_env || allowed_images_from_settings
   end
 
   def allowed_images_from_env
@@ -53,12 +57,9 @@ class ServiceContainer < ApplicationRecord
     raw.split(",").map(&:strip).reject(&:blank?).uniq
   end
 
-  # Restricts the fallback allowlist to settings from account admins/owners.
-  # When the service container is already associated with projects, the
-  # lookup is scoped to those projects' accounts to prevent an admin in one
-  # account from expanding the allowlist for another account in multi-tenant
-  # deployments. For new records (not yet associated), falls back to all
-  # admin/owner settings.
+  # Falls back to settings from account admins/owners when no env var is set.
+  # Scoped to associated projects' accounts when possible to prevent
+  # cross-account allowlist expansion in multi-tenant deployments.
   def allowed_images_from_settings
     admin_user_ids = if persisted? && project_service_containers.any?
       account_ids = projects.select(:account_id)

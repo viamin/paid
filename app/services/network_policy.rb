@@ -159,17 +159,23 @@ class NetworkPolicy
       return ENV["CLAUDE_CONFIG_DIR"] if ENV["CLAUDE_CONFIG_DIR"].present?
 
       home = ENV["HOME"].presence || (Dir.respond_to?(:home) ? Dir.home : nil)
-      return unless home.present?
 
-      # Check $HOME/.claude first — in DooD setups the host mounts ~/.claude
-      # into the devcontainer, which Containers::Provision detects via Docker
-      # mount introspection. We check the filesystem equivalent here.
-      dot_claude = File.join(home, ".claude")
-      return dot_claude if Dir.exist?(dot_claude)
+      if home.present?
+        # Check $HOME/.claude first — in DooD setups the host mounts ~/.claude
+        # into the devcontainer, which Containers::Provision detects via Docker
+        # mount introspection. We check the filesystem equivalent here.
+        dot_claude = File.join(home, ".claude")
+        return dot_claude if Dir.exist?(dot_claude)
 
-      # Fall back to standard Claude CLI config location on Linux.
-      config_claude = File.join(home, ".config", "claude")
-      config_claude if Dir.exist?(config_claude)
+        # Fall back to standard Claude CLI config location on Linux.
+        config_claude = File.join(home, ".config", "claude")
+        return config_claude if Dir.exist?(config_claude)
+      end
+
+      # Last-resort check matching Containers::Provision's Docker mount
+      # detection of a /.claude destination. Without $HOME we cannot build
+      # a path, but /.claude may exist as a direct mount point.
+      "/.claude" if Dir.exist?("/.claude")
     end
 
     def create_network
