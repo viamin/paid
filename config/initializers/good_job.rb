@@ -33,6 +33,10 @@ Rails.application.configure do
     poll_workflow_health_check: {
       cron: "*/5 * * * *",
       class: "PollWorkflowHealthCheckJob"
+    },
+    stale_run_detector: {
+      cron: "*/5 * * * *",
+      class: "StaleRunDetectorJob"
     }
   }
 end

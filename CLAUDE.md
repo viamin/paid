@@ -99,6 +99,10 @@ The system has four main layers:
 
 Key architectural decisions are documented in `docs/rdrs/` (Recommendation Decision Records).
 
+### LLM Usage
+
+**All LLM calls must go through `agent_harness`** — never call AI provider APIs directly (e.g., no raw Faraday/HTTP calls to `api.anthropic.com` or `api.openai.com`). The `agent_harness` gem is the single interface for all LLM interactions in the application. The secrets proxy (`SecretsProxyController`) exists only to forward authenticated requests from containers — it is infrastructure, not an application-level LLM interface.
+
 ### Directory Structure
 
 ```
