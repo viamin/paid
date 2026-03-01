@@ -106,8 +106,11 @@ module Activities
       pr_data = fetch_pr_data(client, project, issue)
       checks = fetch_check_runs(client, project, pr_data)
       reviews = fetch_reviews(client, project, issue)
+      mergeable = pr_data[:mergeable]
 
-      if owner_approved_from_reviews?(project, reviews) && all_checks_green?(checks)
+      if owner_approved_from_reviews?(project, reviews) &&
+          all_checks_green?(checks) &&
+          mergeable == true
         return owner_approved_trigger(issue)
       end
 
