@@ -215,6 +215,36 @@ RSpec.describe AgentRuns::Execute do
       end
     end
 
+    context "when agent-harness raises an authentication error" do
+      before do
+        allow(AgentHarness).to receive(:send_message)
+          .and_raise(AgentHarness::AuthenticationError.new("OAuth session expired"))
+      end
+
+      it "marks the agent run as auth_expired" do
+        described_class.call(agent_run: agent_run, prompt: prompt)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("auth_expired")
+        expect(agent_run.error_message).to eq("OAuth session expired")
+        expect(agent_run.auth_provider).to eq("claude")
+      end
+
+      it "returns a failure result" do
+        result = described_class.call(agent_run: agent_run, prompt: prompt)
+
+        expect(result).to be_failure
+        expect(result.error).to be_a(AgentHarness::AuthenticationError)
+      end
+
+      it "logs the authentication expiry" do
+        described_class.call(agent_run: agent_run, prompt: prompt)
+
+        system_logs = agent_run.agent_run_logs.where(log_type: "system")
+        expect(system_logs.pluck(:content)).to include("Authentication expired for claude")
+      end
+    end
+
     context "with unsupported agent type" do
       let(:agent_run) { create(:agent_run, project: project, agent_type: "api") }
 
