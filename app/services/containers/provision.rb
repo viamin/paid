@@ -554,6 +554,11 @@ module Containers
         ])
       end
 
+      # Append service container environment variables (DATABASE_URL, REDIS_URL, etc.)
+      if agent_run.service_environment.present?
+        env.concat(agent_run.service_environment.map { |k, v| "#{k}=#{v}" })
+      end
+
       env
     end
 
@@ -580,6 +585,30 @@ module Containers
       nil
     end
 
+    # Resolves running service container IPs for firewall rules.
+    def resolve_service_destinations
+      container_ids = agent_run.service_container_ids
+      return [] if container_ids.blank?
+
+      ServiceContainer.where(id: container_ids, status: "running").filter_map do |sc|
+        next if sc.docker_container_id.blank?
+
+        ip = docker_container_ip(sc.docker_container_id)
+        next if ip.blank?
+
+        { ip: ip, port: sc.port }
+      end
+    end
+
+    def docker_container_ip(docker_id)
+      info = Docker::Container.get(docker_id).info
+      networks = info.dig("NetworkSettings", "Networks") || {}
+      network_info = networks[container_network]
+      network_info&.dig("IPAddress")
+    rescue Docker::Error::DockerError
+      nil
+    end
+
     def container_name
       "paid-#{agent_run.project_id}-#{agent_run.id}-#{SecureRandom.hex(4)}"
     end
@@ -600,7 +629,10 @@ module Containers
       # outbound access to Anthropic. Firewall rules would block this.
       return if subscription_auth?
 
-      NetworkPolicy.apply_firewall_rules(container)
+      NetworkPolicy.apply_firewall_rules(
+        container,
+        service_destinations: resolve_service_destinations
+      )
       log_system("container.firewall.applied", container_id: container.id)
     rescue NetworkPolicy::Error => e
       log_system("container.firewall.failed", error: e.message)
