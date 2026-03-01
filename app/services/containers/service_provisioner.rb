@@ -226,7 +226,7 @@ module Containers
     end
 
     def tcp_port_open?(host, port)
-      socket = TCPSocket.new(host, port)
+      socket = Socket.tcp(host, port, connect_timeout: HEALTH_CHECK_INTERVAL)
       socket.close
       true
     rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ETIMEDOUT, SocketError
