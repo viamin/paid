@@ -10,7 +10,7 @@ class ServiceContainer < ApplicationRecord
   validates :name, presence: true, uniqueness: true
   validates :port, presence: true, numericality: { only_integer: true, greater_than: 0, less_than: 65_536 }
   validates :status, presence: true, inclusion: { in: STATUSES }
-  validate :image_in_allowlist, on: :create
+  validate :image_in_allowlist, if: :validate_image?
 
   scope :running, -> { where(status: "running") }
   scope :stopped, -> { where(status: "stopped") }
@@ -29,14 +29,17 @@ class ServiceContainer < ApplicationRecord
 
   private
 
+  # Only validate image on create or when the image is actually changing.
+  # Status-only updates (stop/start/error) must not re-validate.
+  def validate_image?
+    new_record? || will_save_change_to_image?
+  end
+
   # Validates image against a global allowlist sourced from the
   # SERVICE_CONTAINER_ALLOWED_IMAGES env var (comma-separated).
   #
   # Falls back to UserSettings from account admins/owners when the
   # env var is not set.
-  #
-  # Only runs on :create — status updates (stop/start) must not
-  # re-validate the image.
   def image_in_allowlist
     return if image.blank?
 
@@ -58,8 +61,9 @@ class ServiceContainer < ApplicationRecord
   end
 
   # Falls back to settings from account admins/owners when no env var is set.
-  # Scoped to associated projects' accounts when possible to prevent
-  # cross-account allowlist expansion in multi-tenant deployments.
+  # Scoped to associated projects' accounts when the container already
+  # belongs to projects (i.e. on image update). On create the record is
+  # not yet persisted, so falls back to all admin/owner settings.
   def allowed_images_from_settings
     admin_user_ids = if persisted? && project_service_containers.any?
       account_ids = projects.select(:account_id)
