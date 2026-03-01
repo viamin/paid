@@ -112,8 +112,13 @@ module Workflows
             end
 
             # Existing PR: mark complete with existing PR details
-            run_activity(Activities::CompleteExistingPrRunActivity,
+            complete_result = run_activity(Activities::CompleteExistingPrRunActivity,
               { agent_run_id: agent_run_id }, timeout: 60)
+
+            # Re-request Copilot review if still in draft phase (best-effort)
+            if complete_result[:pr_review_phase] == "draft"
+              request_copilot_review(project_id, source_pull_request_number)
+            end
           else
             # Step 6: Create PR
             pr_result = run_activity(Activities::CreatePullRequestActivity,
@@ -122,6 +127,9 @@ module Workflows
             # Step 7: Update issue with PR link
             run_activity(Activities::UpdateIssueWithPrActivity,
               { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
+
+            # Step 8: Request Copilot review on the new draft PR (best-effort)
+            request_copilot_review(project_id, pr_result[:pull_request_number])
           end
         else
           # No changes - mark as completed without PR
@@ -190,6 +198,23 @@ module Workflows
     def stale_pull_request_error?(error)
       cause = error.respond_to?(:cause) ? error.cause : nil
       cause.is_a?(Temporalio::Error::ApplicationError) && cause.type == "StalePullRequest"
+    end
+
+    def request_copilot_review(project_id, pr_number)
+      return unless pr_number
+
+      run_activity(Activities::RequestReviewActivity,
+        { project_id: project_id, pr_number: pr_number,
+          reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.copilot_review_request_failed",
+        project_id: project_id,
+        pr_number: pr_number,
+        error: e.message
+      )
     end
 
     def request_project_resync(project_id)
