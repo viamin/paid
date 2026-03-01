@@ -489,6 +489,20 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(closed.reload.github_state).to eq("closed")
       end
+
+      it "broadcasts updated lists after closing stale items" do
+        create(:issue, project: project, github_issue_id: 5000, github_number: 50, github_state: "open")
+
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
+
+        activity.execute(project_id: project.id)
+
+        # Called at least twice: once from sync_issue callbacks, once from close_stale_issues
+        expect(project).to have_received(:broadcast_issues_update).at_least(:twice)
+        expect(project).to have_received(:broadcast_pull_requests_update).at_least(:once)
+      end
     end
 
     context "when fetch returns empty results with existing open issues" do

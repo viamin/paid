@@ -137,6 +137,11 @@ module Activities
       if count > 0
         stale_issues.update_all(github_state: "closed")
 
+        # update_all bypasses ActiveRecord callbacks, so manually broadcast
+        # the updated lists to remove closed items from connected browsers.
+        project.broadcast_issues_update
+        project.broadcast_pull_requests_update
+
         logger.info(
           message: "github_sync.closed_stale_issues",
           project_id: project.id,
