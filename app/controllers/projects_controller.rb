@@ -75,7 +75,9 @@ class ProjectsController < ApplicationController
 
   def project_params
     params.require(:project).permit(:github_token_id, :owner, :repo, :name, :active,
-      :poll_interval_seconds, :github_id, :default_branch, allowed_github_usernames: [])
+      :poll_interval_seconds, :github_id, :default_branch,
+      :owner_reviewer_login, :merge_method, :max_draft_review_rounds,
+      allowed_github_usernames: [])
   end
 
   def parse_usernames_csv

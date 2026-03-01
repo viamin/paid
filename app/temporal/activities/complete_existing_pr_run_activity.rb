@@ -25,8 +25,9 @@ module Activities
 
       agent_run.log!("system", "Pushed updates to existing PR: #{pr.html_url}")
 
-      if agent_run.issue
-        agent_run.issue.update!(paid_state: "completed")
+      issue = agent_run.issue
+      if issue && !(issue.is_pull_request? && issue.draft_phase?)
+        issue.update!(paid_state: "completed")
       end
 
       logger.info(
@@ -37,7 +38,8 @@ module Activities
 
       ProcessRunQueueJob.perform_later
 
-      { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number }
+      { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number,
+        pr_review_phase: agent_run.issue&.pr_review_phase }
     end
 
     private

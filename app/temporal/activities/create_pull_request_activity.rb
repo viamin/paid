@@ -18,7 +18,8 @@ module Activities
         base: project.default_branch,
         head: agent_run.branch_name,
         title: pr_title(issue),
-        body: pr_body(issue, agent_run)
+        body: pr_body(issue, agent_run),
+        draft: true
       )
 
       agent_run.complete!(
