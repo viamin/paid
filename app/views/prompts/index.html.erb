@@ -1,0 +1,114 @@
+<% content_for(:title) { "Prompts - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Prompts</h1>
+      <p class="mt-1 text-sm text-gray-500">Manage prompt templates used by AI agents.</p>
+    </div>
+    <% if policy(Prompt.new(account: current_account)).create? %>
+      <div class="mt-4 sm:mt-0">
+        <%= link_to new_prompt_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" do %>
+          <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+          </svg>
+          New Prompt
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+
+  <%= render "prompts/filters", q: @q %>
+
+  <% if @prompts.any? %>
+    <div class="mt-6 overflow-hidden bg-white shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+      <table class="min-w-full divide-y divide-gray-300">
+        <thead class="bg-gray-50">
+          <tr>
+            <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
+              <%= sort_link_to "Name", :name, @q %>
+            </th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+              <%= sort_link_to "Category", :category, @q %>
+            </th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+              Scope
+            </th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+              Version
+            </th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+              <%= sort_link_to "Status", :active, @q %>
+            </th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+              <%= sort_link_to "Updated", :updated_at, @q %>
+            </th>
+            <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+              <span class="sr-only">View</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 bg-white">
+          <% @prompts.each do |prompt| %>
+            <tr>
+              <td class="whitespace-nowrap py-4 pl-4 pr-3 sm:pl-6">
+                <div class="text-sm font-medium text-gray-900">
+                  <%= link_to prompt.name, prompt_path(prompt), class: "hover:text-indigo-600" %>
+                </div>
+                <div class="text-xs text-gray-500 font-mono"><%= prompt.slug %></div>
+              </td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm">
+                <%= prompt_category_badge(prompt.category) %>
+              </td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm">
+                <%= prompt_scope_badge(prompt) %>
+              </td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                <% if prompt.current_version %>
+                  v<%= prompt.current_version.version %>
+                <% else %>
+                  <span class="text-gray-400">-</span>
+                <% end %>
+              </td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm">
+                <% if prompt.active? %>
+                  <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Active</span>
+                <% else %>
+                  <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">Inactive</span>
+                <% end %>
+              </td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                <%= prompt.updated_at.strftime("%b %d, %Y") %>
+              </td>
+              <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                <%= link_to "View", prompt_path(prompt), class: "text-indigo-600 hover:text-indigo-900" %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-4">
+      <%== pagy_nav(@pagy) %>
+    </div>
+  <% else %>
+    <div class="mt-8 text-center">
+      <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+      </svg>
+      <h3 class="mt-2 text-sm font-semibold text-gray-900">No prompts</h3>
+      <p class="mt-1 text-sm text-gray-500">Get started by creating a new prompt template.</p>
+      <% if policy(Prompt.new(account: current_account)).create? %>
+        <div class="mt-6">
+          <%= link_to new_prompt_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" do %>
+            <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+            </svg>
+            New Prompt
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+</div>
