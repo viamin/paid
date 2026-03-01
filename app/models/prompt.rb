@@ -3,6 +3,8 @@
 class Prompt < ApplicationRecord
   CATEGORIES = %w[planning coding review testing].freeze
 
+  attr_accessor :template, :system_prompt, :variables_text, :change_notes
+
   belongs_to :account, optional: true
   belongs_to :project, optional: true
 
@@ -27,6 +29,14 @@ class Prompt < ApplicationRecord
   scope :global, -> { where(account_id: nil, project_id: nil) }
   scope :for_account, ->(account) { where(account: account, project_id: nil) }
   scope :for_project, ->(project) { where(project: project) }
+
+  def self.ransackable_attributes(auth_object = nil)
+    %w[name slug category active description created_at updated_at]
+  end
+
+  def self.ransackable_associations(auth_object = nil)
+    %w[account project]
+  end
 
   def global?
     account_id.nil? && project_id.nil?
