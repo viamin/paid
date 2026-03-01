@@ -20,6 +20,7 @@ FactoryBot.define do
 
     trait :pull_request do
       is_pull_request { true }
+      pr_review_phase { "ready" }
     end
 
     trait :planning do

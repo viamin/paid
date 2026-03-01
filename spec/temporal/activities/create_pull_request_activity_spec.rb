@@ -23,7 +23,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
         base: project.default_branch,
         head: agent_run.branch_name,
         title: "Fix ##{issue.github_number}: #{issue.title}",
-        body: a_string_including("Closes ##{issue.github_number}")
+        body: a_string_including("Closes ##{issue.github_number}"),
+        draft: true
       ).and_return(pr_response)
 
       result = activity.execute(agent_run_id: agent_run.id)

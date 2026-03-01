@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Project < ApplicationRecord
+  MERGE_METHODS = %w[squash merge rebase].freeze
+
   belongs_to :account
   belongs_to :github_token
   belongs_to :created_by, class_name: "User", optional: true
@@ -21,7 +23,10 @@ class Project < ApplicationRecord
   validates :github_id, presence: true, uniqueness: { scope: :account_id }
   validates :poll_interval_seconds, numericality: { greater_than_or_equal_to: 60 }
   validates :max_pr_followup_runs, numericality: { greater_than_or_equal_to: 0 }
+  validates :merge_method, inclusion: { in: MERGE_METHODS }
+  validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validate :allowed_github_usernames_not_empty
+  validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
   validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
@@ -184,6 +189,12 @@ class Project < ApplicationRecord
     return if github_token.active?
 
     errors.add(:github_token, "must be active (not revoked or expired)")
+  end
+
+  def owner_reviewer_login_is_trusted
+    return if trusted_github_user?(owner_reviewer_login)
+
+    errors.add(:owner_reviewer_login, "must be in trusted GitHub usernames")
   end
 
   def allowed_github_usernames_not_empty
