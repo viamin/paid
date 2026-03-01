@@ -553,7 +553,6 @@ RSpec.describe "AgentRuns" do
 
       it "creates a new queued run and marks original as retried on success" do
         agent_run = create(:agent_run, :auth_expired, project: project, agent_type: "claude_code")
-        allow(AgentHarness).to receive(:refresh_auth)
 
         expect {
           post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
@@ -570,7 +569,6 @@ RSpec.describe "AgentRuns" do
 
       it "enqueues ProcessRunQueueJob on success" do
         agent_run = create(:agent_run, :auth_expired, project: project)
-        allow(AgentHarness).to receive(:refresh_auth)
 
         expect {
           post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
@@ -579,8 +577,10 @@ RSpec.describe "AgentRuns" do
 
       it "redirects with alert on AgentHarness::AuthenticationError" do
         agent_run = create(:agent_run, :auth_expired, project: project)
-        allow(AgentHarness).to receive(:refresh_auth)
-          .and_raise(AgentHarness::AuthenticationError, "Invalid code")
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:refresh_auth)
+            .and_raise(AgentHarness::AuthenticationError, "Invalid code")
+        end
 
         post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "bad-code" }
 
@@ -592,8 +592,10 @@ RSpec.describe "AgentRuns" do
 
       it "redirects with alert on AgentHarness::Error" do
         agent_run = create(:agent_run, :auth_expired, project: project)
-        allow(AgentHarness).to receive(:refresh_auth)
-          .and_raise(AgentHarness::Error, "Provider unavailable")
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:refresh_auth)
+            .and_raise(AgentHarness::Error, "Provider unavailable")
+        end
 
         post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "some-code" }
 

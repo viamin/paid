@@ -31,14 +31,83 @@ RSpec.describe PollWorkflowHealthCheckJob do
       ).at_least(:once)
     end
 
-    it "skips workflows that are running" do
-      create(:project)
+    it "skips workflows that are running and fresh" do
+      create(:project, last_polled_at: 1.minute.ago)
       workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
       desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::RUNNING) # rubocop:disable RSpec/VerifiedDoubles
 
       allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
       allow(workflow_handle).to receive(:describe).and_return(desc)
       allow(workflow_handle).to receive(:terminate)
+
+      described_class.perform_now
+
+      expect(workflow_handle).not_to have_received(:terminate)
+    end
+
+    it "skips running workflows with nil last_polled_at (first poll not yet completed)" do
+      create(:project, last_polled_at: nil)
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::RUNNING) # rubocop:disable RSpec/VerifiedDoubles
+
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:describe).and_return(desc)
+      allow(workflow_handle).to receive(:terminate)
+
+      described_class.perform_now
+
+      expect(workflow_handle).not_to have_received(:terminate)
+    end
+
+    it "restarts stale RUNNING workflows" do
+      project = create(:project, poll_interval_seconds: 60, last_polled_at: 10.minutes.ago)
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::RUNNING) # rubocop:disable RSpec/VerifiedDoubles
+
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:describe).and_return(desc)
+      allow(workflow_handle).to receive(:terminate)
+
+      described_class.perform_now
+
+      expect(workflow_handle).to have_received(:terminate)
+      expect(temporal_client).to have_received(:start_workflow).with(
+        Workflows::GitHubPollWorkflow,
+        { project_id: project.id },
+        id: "github-poll-#{project.id}",
+        task_queue: "paid-tasks"
+      ).at_least(:once)
+    end
+
+    it "uses per-project poll interval for staleness threshold" do
+      # Project with a long poll interval (600s) — last_polled_at 10 min ago is NOT stale
+      create(:project, poll_interval_seconds: 600, last_polled_at: 10.minutes.ago)
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::RUNNING) # rubocop:disable RSpec/VerifiedDoubles
+
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:describe).and_return(desc)
+      allow(workflow_handle).to receive(:terminate)
+
+      described_class.perform_now
+
+      expect(workflow_handle).not_to have_received(:terminate)
+    end
+
+    it "does not restart workflow if last_polled_at becomes fresh after reload" do
+      project = create(:project, poll_interval_seconds: 60, last_polled_at: 10.minutes.ago)
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      desc = double("description", status: Temporalio::Client::WorkflowExecutionStatus::RUNNING) # rubocop:disable RSpec/VerifiedDoubles
+
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:describe).and_return(desc)
+      allow(workflow_handle).to receive(:terminate)
+
+      # Simulate a concurrent successful poll updating last_polled_at between check and reload
+      allow_any_instance_of(Project).to receive(:reload).and_wrap_original do |method, *args| # rubocop:disable RSpec/AnyInstance
+        project.update_column(:last_polled_at, Time.current)
+        method.call(*args)
+      end
 
       described_class.perform_now
 
