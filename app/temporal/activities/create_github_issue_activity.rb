@@ -43,9 +43,9 @@ module Activities
     private
 
     def extract_title(summary, _custom_prompt = nil)
-      # Try first markdown heading from agent output
+      # Try first markdown heading (any level) from agent output
       if summary.present?
-        heading = summary[/^#\s+(.+)$/, 1]
+        heading = summary[/^#+\s+(.+)$/, 1]&.strip
         return heading.truncate(255) if heading.present?
       end
 
