@@ -162,7 +162,8 @@ RSpec.describe Containers::ServiceProvisioner do
       end
 
       it "generates generic vars for unknown images" do
-        create(:user_setting, allowed_service_images: [ "custom:1.0" ])
+        admin = create(:user, :admin)
+        create(:user_setting, user: admin, allowed_service_images: [ "custom:1.0" ])
         sc = create(:service_container, image: "custom:1.0", name: "my-svc", port: 8080)
         create(:project_service_container, project: project, service_container: sc)
 
