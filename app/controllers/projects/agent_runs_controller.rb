@@ -135,7 +135,13 @@ module Projects
 
       redirect_to project_agent_run_path(@project, new_run),
         notice: "Authentication refreshed. Agent run queued for retry."
-    rescue AgentHarness::AuthenticationError => e
+    rescue AgentHarness::AuthenticationError, AgentHarness::Error => e
+      Rails.logger.error(
+        message: "agent_execution.refresh_auth_failed",
+        agent_run_id: @agent_run.id,
+        error_class: e.class.name,
+        error_message: e.message
+      )
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication failed: #{e.message}"
     end
