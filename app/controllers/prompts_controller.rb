@@ -156,7 +156,7 @@ class PromptsController < ApplicationController
     # like { "name" => "title", "required" => true }; without this merge,
     # editing such a prompt would drop that metadata.
     existing_by_name = {}
-    if defined?(@prompt) && @prompt&.current_version
+    if @prompt&.current_version
       Array(@prompt.current_version.variables).each do |v|
         next unless v.is_a?(Hash)
         name = (v["name"] || v[:name]).to_s.strip
