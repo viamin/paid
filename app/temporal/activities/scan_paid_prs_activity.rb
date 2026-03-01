@@ -100,14 +100,16 @@ module Activities
     def scan_ready_pr(project, client, issue)
       pr_data = fetch_pr_data(client, project, issue)
       checks = fetch_check_runs(client, project, pr_data)
+      reviews = fetch_reviews(client, project, issue)
 
-      if owner_approved?(client, project, issue) && all_checks_green?(checks)
+      if owner_approved_from_reviews?(project, reviews) && all_checks_green?(checks)
         return owner_approved_trigger(issue)
       end
 
       return nil if followup_limit_reached?(project, issue)
 
-      triggers = detect_ready_triggers(project, client, issue, pr_data: pr_data)
+      triggers = detect_ready_triggers(project, client, issue,
+        pr_data: pr_data, checks: checks, reviews: reviews)
       return nil if triggers.empty?
 
       log_triggers(project, issue, triggers)
@@ -182,15 +184,17 @@ module Activities
 
     # --- Shared detection logic ---
 
-    def detect_ready_triggers(project, client, issue, pr_data: nil)
+    def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil)
       last_run = last_completed_run(project, issue)
       pr_data ||= fetch_pr_data(client, project, issue)
+      checks ||= fetch_check_runs(client, project, pr_data)
+      reviews ||= fetch_reviews(client, project, issue)
       triggers = []
 
-      triggers.concat(check_ci_failures(client, project, issue, pr_data))
+      triggers.concat(ci_failure_triggers(checks))
       triggers.concat(check_review_threads(client, project, issue))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
-      triggers.concat(check_changes_requested(client, project, issue, last_run))
+      triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
       triggers.concat(check_merge_conflicts(project, pr_data))
 
@@ -323,8 +327,14 @@ module Activities
       []
     end
 
-    def check_changes_requested(client, project, issue, last_run)
-      reviews = client.pull_request_reviews(project.full_name, issue.github_number)
+    def fetch_reviews(client, project, issue)
+      client.pull_request_reviews(project.full_name, issue.github_number)
+    rescue GithubClient::Error => e
+      log_signal_error("fetch_reviews", project, issue, e)
+      []
+    end
+
+    def changes_requested_from_reviews(project, reviews, last_run)
       cutoff = last_run&.completed_at
 
       latest_by_user = reviews
@@ -342,9 +352,6 @@ module Activities
       return [] if changes_requested.empty?
 
       [ { type: "changes_requested", details: changes_requested.map { |r| r[:user_login] } } ]
-    rescue GithubClient::Error => e
-      log_signal_error("changes_requested", project, issue, e)
-      []
     end
 
     def check_actionable_labels(project, issue)
@@ -367,19 +374,15 @@ module Activities
 
     # --- Owner approval check ---
 
-    def owner_approved?(client, project, issue)
+    def owner_approved_from_reviews?(project, reviews)
       owner_login = project.owner_reviewer_login
       return false if owner_login.blank?
 
-      reviews = client.pull_request_reviews(project.full_name, issue.github_number)
       owner_reviews = reviews.select { |r| r[:user_login]&.downcase == owner_login.downcase }
       return false if owner_reviews.empty?
 
       latest = owner_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
       latest[:state] == "APPROVED"
-    rescue GithubClient::Error => e
-      log_signal_error("owner_approved", project, issue, e)
-      false
     end
 
     # --- Helpers ---

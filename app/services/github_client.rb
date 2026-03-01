@@ -413,6 +413,7 @@ class GithubClient
   # @return [Hash] The response data
   def mark_pull_request_ready(repo, number)
     node_id = pull_request_node_id(repo, number)
+    raise ApiError.new("Could not find PR node ID for #{repo}##{number}") unless node_id
 
     query = <<~GRAPHQL
       mutation($pullRequestId: ID!) {
@@ -422,7 +423,16 @@ class GithubClient
       }
     GRAPHQL
 
-    graphql_request(query, pullRequestId: node_id)
+    response = graphql_request(query, pullRequestId: node_id)
+
+    if response["errors"].present?
+      raise ApiError.new(response["errors"].map { |e| e["message"] }.join(", "))
+    end
+
+    pr_result = response.dig("data", "markPullRequestAsReady", "pullRequest")
+    raise ApiError.new("Unexpected response from markPullRequestAsReady") unless pr_result
+
+    pr_result
   end
 
   # Merges a pull request.

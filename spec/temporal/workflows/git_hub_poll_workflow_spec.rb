@@ -46,4 +46,99 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow.instance_variable_get(:@sync_requested)).to be true
     end
   end
+
+  describe "#handle_pr_trigger" do
+    let(:workflow) { described_class.new }
+    let(:project_id) { 1 }
+
+    before do
+      allow(workflow).to receive(:run_activity).and_return({})
+    end
+
+    it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
+        triggers: [ { type: "ready_for_owner" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkPrReadyActivity, hash_including(pr_number: 42), anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), anything)
+    end
+
+    it "routes escalate_to_owner to MarkEscalatedActivity and RequestReviewActivity" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
+        triggers: [ { type: "escalate_to_owner" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkEscalatedActivity, hash_including(issue_id: 10), anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), anything)
+    end
+
+    it "routes owner_approved to MergePullRequestActivity" do
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [ { type: "owner_approved" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MergePullRequestActivity, hash_including(pr_number: 42), anything)
+    end
+
+    it "routes draft phase triggers to draft followup workflow" do
+      allow(Temporalio::Workflow).to receive(:start_child_workflow)
+      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 1,
+        triggers: [ { type: "ci_failure" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, anything)
+    end
+
+    it "routes ready phase triggers to PR followup workflow" do
+      allow(Temporalio::Workflow).to receive(:start_child_workflow)
+      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "ready",
+        current_followup_count: 0,
+        triggers: [ { type: "ci_failure" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, anything)
+    end
+
+    it "skips owner review request when owner_reviewer_login is blank" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: nil,
+        triggers: [ { type: "ready_for_owner" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, anything)
+    end
+  end
 end

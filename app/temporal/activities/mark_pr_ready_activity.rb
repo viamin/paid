@@ -3,7 +3,8 @@
 module Activities
   # Marks a draft pull request as ready for review and updates the
   # issue's pr_review_phase to "ready". Idempotent: checks if PR
-  # is already non-draft before calling the GitHub API.
+  # is already non-draft before calling the GitHub API. Only updates
+  # the issue phase when GitHub confirms the PR is non-draft.
   class MarkPrReadyActivity < BaseActivity
     activity_name "MarkPrReady"
 
@@ -16,7 +17,18 @@ module Activities
       pr_data = client.pull_request(project.full_name, pr_number)
 
       if pr_data.draft
-        client.mark_pull_request_ready(project.full_name, pr_number)
+        result = client.mark_pull_request_ready(project.full_name, pr_number)
+        is_draft = result["isDraft"]
+
+        if is_draft
+          logger.warn(
+            message: "pr_review.mark_ready_failed",
+            project_id: project.id,
+            pr_number: pr_number
+          )
+          return { marked_ready: false, pr_number: pr_number }
+        end
+
         logger.info(
           message: "pr_review.marked_ready",
           project_id: project.id,
