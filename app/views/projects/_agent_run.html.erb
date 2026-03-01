@@ -6,6 +6,15 @@
     <%= agent_run.agent_type.titleize %>
   </td>
   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+    <% if agent_run.create_pr_goal? %>
+      PR
+    <% elsif agent_run.create_issue_goal? %>
+      Issue
+    <% else %>
+      <span class="text-gray-400"><%= agent_run.goal.humanize %></span>
+    <% end %>
+  </td>
+  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
     <% if agent_run.branch_name.present? %>
       <code class="rounded bg-gray-100 px-1 py-0.5 text-xs"><%= agent_run.branch_name %></code>
     <% else %>
