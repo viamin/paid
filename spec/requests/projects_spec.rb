@@ -383,17 +383,18 @@ RSpec.describe "Projects" do
 
       it "shows the Goal column with PR label for create_pr runs" do
         project = create(:project, account: account, github_token: github_token)
-        create(:agent_run, project: project, status: "completed", goal: "create_pr")
+        agent_run = create(:agent_run, project: project, status: "completed", goal: "create_pr")
         get project_path(project)
         expect(response.body).to include(">Goal</th>")
-        expect(response.body).to match(/>\s*PR\s*</)
+        expect(response.body).to match(/<tr[^>]*id="agent_run_#{agent_run.id}"[^>]*>.*?<td[^>]*>\s*PR\s*<\/td>/m)
       end
 
       it "shows the Goal column with Issue label for create_issue runs" do
         project = create(:project, account: account, github_token: github_token)
-        create(:agent_run, :create_issue_goal, project: project, status: "completed")
+        agent_run = create(:agent_run, :create_issue_goal, project: project, status: "completed")
         get project_path(project)
-        expect(response.body).to match(/>\s*Issue\s*</)
+        expect(response.body).to include(">Goal</th>")
+        expect(response.body).to match(/<tr[^>]*id="agent_run_#{agent_run.id}"[^>]*>.*?<td[^>]*>\s*Issue\s*<\/td>/m)
       end
 
       it "shows empty state when no agent runs exist" do
