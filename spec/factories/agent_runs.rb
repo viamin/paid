@@ -65,6 +65,15 @@ FactoryBot.define do
       duration_seconds { 600 }
     end
 
+    trait :auth_expired do
+      status { "auth_expired" }
+      started_at { 10.minutes.ago }
+      completed_at { Time.current }
+      duration_seconds { 600 }
+      error_message { "OAuth session expired" }
+      auth_provider { "claude" }
+    end
+
     trait :with_temporal do
       temporal_workflow_id { "workflow-#{SecureRandom.uuid}" }
       temporal_run_id { "run-#{SecureRandom.uuid}" }

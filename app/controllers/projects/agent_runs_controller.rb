@@ -3,7 +3,7 @@
 module Projects
   class AgentRunsController < ApplicationController
     before_action :set_project
-    before_action :set_agent_run, only: [ :show, :retry ]
+    before_action :set_agent_run, only: [ :show, :retry, :refresh_auth ]
 
     def index
       authorize @project, :show?
@@ -100,6 +100,44 @@ module Projects
         "An agent run is already queued or in progress for this issue."
       end
       redirect_to project_agent_run_path(@project, @agent_run), alert: alert
+    end
+
+    def refresh_auth
+      authorize @agent_run
+
+      unless @agent_run.auth_expired?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Only runs with expired authentication can be re-authenticated."
+        return
+      end
+
+      code = params[:auth_code]&.strip
+      if code.blank?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Please provide an authentication code."
+        return
+      end
+
+      provider = @agent_run.auth_provider&.to_sym || :claude
+      AgentHarness.refresh_auth(provider, code: code)
+
+      new_run = AgentRun.create!(
+        project: @project,
+        issue: @agent_run.issue,
+        agent_type: @agent_run.agent_type,
+        custom_prompt: @agent_run.custom_prompt,
+        source_pull_request_number: @agent_run.source_pull_request_number,
+        goal: @agent_run.goal,
+        status: "queued"
+      )
+      @agent_run.retry!
+      ProcessRunQueueJob.perform_later
+
+      redirect_to project_agent_run_path(@project, new_run),
+        notice: "Authentication refreshed. Agent run queued for retry."
+    rescue AgentHarness::AuthenticationError => e
+      redirect_to project_agent_run_path(@project, @agent_run),
+        alert: "Re-authentication failed: #{e.message}"
     end
 
     private

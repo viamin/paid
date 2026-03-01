@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_02_28_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_01_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -47,6 +47,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_02_28_130000) do
 
   create_table "agent_runs", force: :cascade do |t|
     t.string "agent_type", limit: 50, null: false
+    t.string "auth_provider", limit: 50
     t.string "base_commit_sha", limit: 40
     t.string "branch_name", limit: 255
     t.datetime "completed_at"

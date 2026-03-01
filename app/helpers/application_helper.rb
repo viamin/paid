@@ -10,7 +10,8 @@ module ApplicationHelper
     "failed" => { bg: "bg-red-100", text: "text-red-700", label: "Failed" },
     "cancelled" => { bg: "bg-gray-100", text: "text-gray-600", label: "Cancelled" },
     "timeout" => { bg: "bg-orange-100", text: "text-orange-700", label: "Timeout" },
-    "retried" => { bg: "bg-purple-100", text: "text-purple-700", label: "Retried" }
+    "retried" => { bg: "bg-purple-100", text: "text-purple-700", label: "Retried" },
+    "auth_expired" => { bg: "bg-amber-100", text: "text-amber-700", label: "Auth Expired" }
   }.freeze
 
   def agent_run_status_badge(status)
