@@ -19,7 +19,8 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "times out runs stuck in pending beyond the threshold" do
-      stale_run = create(:agent_run, status: "pending", created_at: (stale_threshold + 60).seconds.ago)
+      stale_run = create(:agent_run, status: "pending")
+      stale_run.update_columns(updated_at: (stale_threshold + 60).seconds.ago)
 
       described_class.perform_now
 
@@ -37,7 +38,8 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "does not touch pending runs within the threshold" do
-      recent_run = create(:agent_run, status: "pending", created_at: (stale_threshold - 60).seconds.ago)
+      recent_run = create(:agent_run, status: "pending")
+      recent_run.update_columns(updated_at: (stale_threshold - 60).seconds.ago)
 
       described_class.perform_now
 
