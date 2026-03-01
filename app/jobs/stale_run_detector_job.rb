@@ -62,10 +62,11 @@ class StaleRunDetectorJob < ApplicationJob
     AgentRun.running.where("started_at < ?", threshold)
   end
 
-  # Runs stuck in "pending" that were created before the threshold.
-  # These never got picked up by a Temporal worker.
+  # Runs stuck in "pending" whose last update was before the threshold.
+  # Uses updated_at to approximate when the run entered "pending", since a run
+  # may have spent a long time in "queued" before transitioning to "pending".
   def stale_pending_runs(threshold)
-    AgentRun.pending.where("created_at < ?", threshold)
+    AgentRun.pending.where("updated_at < ?", threshold)
   end
 
   def resolve_stale_run(agent_run)
