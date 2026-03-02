@@ -132,14 +132,14 @@ module Dashboard
           median: result["median_runs"]&.to_f&.round(1) || 0.0
         },
         time_to_merge: {
-          avg_seconds: result["avg_wall_seconds"]&.to_i || 0,
-          p50_seconds: result["p50_wall_seconds"]&.to_i || 0,
-          p90_seconds: result["p90_wall_seconds"]&.to_i || 0
+          avg_seconds: result["avg_wall_seconds"]&.to_f&.round || 0,
+          p50_seconds: result["p50_wall_seconds"]&.to_f&.round || 0,
+          p90_seconds: result["p90_wall_seconds"]&.to_f&.round || 0
         },
         agent_run_seconds: {
-          avg_seconds: result["avg_run_seconds"]&.to_i || 0,
-          p50_seconds: result["p50_run_seconds"]&.to_i || 0,
-          p90_seconds: result["p90_run_seconds"]&.to_i || 0
+          avg_seconds: result["avg_run_seconds"]&.to_f&.round || 0,
+          p50_seconds: result["p50_run_seconds"]&.to_f&.round || 0,
+          p90_seconds: result["p90_run_seconds"]&.to_f&.round || 0
         }
       }
     end
