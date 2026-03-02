@@ -47,7 +47,7 @@
           <p class="mt-1 text-sm text-gray-500">
             <%= number_with_delimiter(@style_guide.compressed_content.length) %> characters
             <% if @style_guide.compression_metadata["compression_ratio"] %>
-              (<%= (@style_guide.compression_metadata["compression_ratio"] * 100).round %>%% of original)
+              (<%= (@style_guide.compression_metadata["compression_ratio"] * 100).round %>% of original)
             <% end %>
           </p>
         <% else %>
@@ -72,11 +72,20 @@
           <dl class="divide-y divide-gray-200">
             <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt class="text-sm font-medium text-gray-500">Compressed at</dt>
-              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= Time.parse(@style_guide.compression_metadata["compressed_at"]).strftime("%b %d, %Y %H:%M UTC") %></dd>
+              <% compressed_at = begin
+                   Time.zone.parse(@style_guide.compression_metadata["compressed_at"].to_s)
+                 rescue ArgumentError, TypeError
+                   nil
+                 end %>
+              <% if compressed_at %>
+                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= compressed_at.strftime("%b %d, %Y %H:%M UTC") %></dd>
+              <% else %>
+                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= @style_guide.compression_metadata["compressed_at"] %></dd>
+              <% end %>
             </div>
             <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt class="text-sm font-medium text-gray-500">Compression ratio</dt>
-              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= (@style_guide.compression_metadata["compression_ratio"].to_f * 100).round %>%%</dd>
+              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= (@style_guide.compression_metadata["compression_ratio"].to_f * 100).round %>%</dd>
             </div>
             <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt class="text-sm font-medium text-gray-500">Raw length</dt>
