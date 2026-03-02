@@ -11,6 +11,13 @@ namespace :dev do
     end
 
     puts "  Resolved #{count} stale agent run(s)" if count > 0
-    ProcessRunQueueJob.perform_later if count > 0
+
+    # Always process the queue — queued runs may be stranded if the job was
+    # never re-enqueued after a restart (no cron schedule for this job).
+    queued = AgentRun.queued.count
+    if count > 0 || queued > 0
+      ProcessRunQueueJob.perform_later
+      puts "  Processing run queue (#{queued} queued)" if queued > 0
+    end
   end
 end

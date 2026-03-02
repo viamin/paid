@@ -69,7 +69,13 @@ RSpec.describe "dev:cleanup" do
     expect { task.invoke }.to have_enqueued_job(ProcessRunQueueJob)
   end
 
-  it "does not trigger ProcessRunQueueJob when no runs are resolved" do
+  it "triggers ProcessRunQueueJob when queued runs exist but no stale runs" do
+    create(:agent_run, :queued)
+
+    expect { task.invoke }.to have_enqueued_job(ProcessRunQueueJob)
+  end
+
+  it "does not trigger ProcessRunQueueJob when nothing needs processing" do
     expect { task.invoke }.not_to have_enqueued_job(ProcessRunQueueJob)
   end
 
