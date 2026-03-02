@@ -94,14 +94,20 @@
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
       <h2 class="text-sm font-semibold text-amber-800">Authentication Expired</h2>
       <p class="mt-1 text-sm text-amber-700">
-        The <%= agent_run.auth_provider&.titleize || agent_run.agent_type.titleize %> authentication token has expired.
+        <% auth_provider_display_name =
+             case agent_run.auth_provider
+             when "github_copilot" then "GitHub Copilot"
+             when "github" then "GitHub"
+             else agent_run.auth_provider.presence&.titleize || agent_run.agent_type.titleize
+             end %>
+        The <%= auth_provider_display_name %> authentication token has expired.
         <% if agent_run.error_message.present? %>
           <br><span class="text-amber-600"><%= agent_run.error_message %></span>
         <% end %>
       </p>
       <% if local_assigns.fetch(:show_retry, false) && AgentHarness.respond_to?(:auth_url) %>
         <div class="mt-3">
-          <% auth_url = AgentHarness.auth_url(agent_run.auth_provider&.to_sym || :claude) %>
+          <% auth_url = AgentHarness.auth_url(agent_run.auth_provider.presence&.to_sym || :claude) %>
           <% if auth_url.present? %>
             <p class="text-sm text-amber-700">
               1. Visit the login URL to re-authenticate:
