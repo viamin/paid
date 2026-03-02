@@ -397,6 +397,14 @@ RSpec.describe "Projects" do
         expect(response.body).to match(/<tr[^>]*id="agent_run_#{agent_run.id}"[^>]*>.*?<td[^>]*>\s*Issue\s*<\/td>/m)
       end
 
+      it "shows issue link when created_issue_url is present" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:agent_run, :with_created_issue, :completed, project: project)
+        get project_path(project)
+        expect(response.body).to include("Issue #42")
+        expect(response.body).to include("https://github.com/example/repo/issues/42")
+      end
+
       it "shows empty state when no agent runs exist" do
         project = create(:project, account: account, github_token: github_token)
         get project_path(project)

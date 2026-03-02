@@ -66,7 +66,8 @@
                       <% end %>
                       <% if run.created_issue_url.present? %>
                         &middot;
-                        <%= link_to "Issue ##{run.created_issue_number}", run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+                        <% issue_link_text = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue" %>
+                        <%= link_to issue_link_text, run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
                       <% end %>
                     </td>
                   </tr>
