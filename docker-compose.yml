@@ -60,6 +60,7 @@ services:
       # When unset, falls back to API key mode (set ANTHROPIC_API_KEY in Rails credentials).
       CLAUDE_CONFIG_DIR: ${CLAUDE_CONFIG_DIR:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      QDRANT_URL: http://qdrant:6333
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,6 +123,22 @@ services:
     stdin_open: true
     tty: true
 
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - paid_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:6333/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   worker:
     build:
       context: .
@@ -145,6 +162,7 @@ services:
       - PAID_PROXY_PORT=3000
       - CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - QDRANT_URL=http://qdrant:6333
     networks:
       - paid_internal
       - paid_agent
@@ -181,6 +199,7 @@ services:
 volumes:
   postgres-data:
   bundle-cache:
+  qdrant-data:
 
 networks:
   # Internal network for Paid infrastructure services.
