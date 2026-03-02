@@ -38,7 +38,8 @@ module Prompts
 
         # Instructions
 
-        1. Set up the project first — install dependencies (`bundle install`, `npm install`, etc.)
+        1. Install dependencies (`bundle install`, `yarn install`, etc.)
+        #{setup_database_instruction}
         2. Analyze the issue and understand what needs to be done
         3. Make the necessary code changes
         4. Run lint and fix any violations: `#{lint_command}`
@@ -60,7 +61,7 @@ module Prompts
         - Focus on completing the specific task in the issue
 
         When you're done, commit all your changes. Do not push.
-        #{available_services_section}
+        #{available_services_section}#{no_infrastructure_section}
       PROMPT
     end
 
@@ -76,6 +77,29 @@ module Prompts
 
     def detected_language
       @detected_language ||= LanguageCommands.detected_language(project)
+    end
+
+    def setup_database_instruction
+      if project.service_containers.any?
+        "   Run `bin/rails db:prepare` to set up the database (DATABASE_URL is already configured)."
+      else
+        "   Do NOT run `bin/setup`, `db:prepare`, or `db:migrate` — no database is available in this environment."
+      end
+    end
+
+    def no_infrastructure_section
+      return "" if project.service_containers.any?
+
+      <<~SECTION
+
+        # Environment Constraints
+
+        You are running in an isolated container WITHOUT database services.
+        Do NOT attempt to install PostgreSQL, Redis, or any other infrastructure service.
+        Do NOT run `bin/setup`, `bin/rails db:prepare`, `bin/rails db:migrate`, or `initdb`.
+        If a task requires database access and none is available, implement the code changes
+        and write tests that use mocks or factories, but do not attempt to start a database server.
+      SECTION
     end
 
     def available_services_section
