@@ -3,6 +3,12 @@
 
 require_relative "../config/environment"
 
+# Eagerly load routes before spawning worker threads to avoid a race condition
+# with Rails 8.1's lazy route loading (LazyRouteSet). Turbo broadcasts triggered
+# by activities render partials that use route helpers; without eager loading,
+# concurrent threads can hit method_missing simultaneously and fail.
+Rails.application.reload_routes!
+
 Dir[Rails.root.join("app/temporal/activities/**/*.rb")].each { |f| require f }
 Dir[Rails.root.join("app/temporal/workflows/**/*.rb")].each { |f| require f }
 
