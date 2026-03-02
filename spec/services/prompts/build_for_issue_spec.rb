@@ -201,6 +201,24 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
+    context "when project has running non-database service containers" do
+      let!(:redis_container) { create(:service_container, :running, :redis) }
+
+      before do
+        project.service_containers << redis_container
+      end
+
+      it "shows available services but still warns about missing database" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).to include("Available Services")
+        expect(prompt).to include("REDIS_URL")
+        expect(prompt).to include("Environment Constraints")
+        expect(prompt).to include("Do NOT attempt to install PostgreSQL")
+        expect(prompt).not_to include("DATABASE_URL is already configured")
+      end
+    end
+
     context "when project has only stopped service containers" do
       let!(:stopped_container) { create(:service_container, status: "stopped") }
 

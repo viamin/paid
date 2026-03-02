@@ -80,7 +80,7 @@ module Prompts
     end
 
     def setup_database_instruction
-      if running_service_containers.any?
+      if has_database_container?
         if detected_language == "ruby"
           "   Run `bin/rails db:prepare` to set up the database (DATABASE_URL is already configured)."
         else
@@ -93,7 +93,7 @@ module Prompts
     end
 
     def no_infrastructure_section
-      return "" if running_service_containers.any?
+      return "" if has_database_container?
 
       <<~SECTION
 
@@ -133,6 +133,10 @@ module Prompts
 
     def running_service_containers
       @running_service_containers ||= project.service_containers.running.to_a
+    end
+
+    def has_database_container?
+      running_service_containers.any? { |sc| sc.image.include?("postgres") }
     end
 
     def service_description(sc)
