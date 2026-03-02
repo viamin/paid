@@ -4,6 +4,7 @@ class AgentRun < ApplicationRecord
   STATUSES = %w[queued pending running completed failed cancelled timeout retried auth_expired].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   GOALS = %w[create_pr create_issue].freeze
+  TRIGGER_TYPES = %w[manual automatic].freeze
 
   belongs_to :project
   belongs_to :issue, optional: true
@@ -20,6 +21,7 @@ class AgentRun < ApplicationRecord
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
+  validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
   validates :created_issue_url, length: { maximum: 500 }
   validates :worktree_path, length: { maximum: 500 }
   validates :branch_name, length: { maximum: 255 }
@@ -58,7 +60,7 @@ class AgentRun < ApplicationRecord
   end
 
   def self.ransackable_attributes(auth_object = nil)
-    %w[status agent_type branch_name duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at]
+    %w[status agent_type branch_name trigger_type duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at]
   end
 
   def self.ransackable_associations(auth_object = nil)
@@ -107,6 +109,14 @@ class AgentRun < ApplicationRecord
 
   def create_pr_goal?
     goal == "create_pr"
+  end
+
+  def manual?
+    trigger_type == "manual"
+  end
+
+  def automatic?
+    trigger_type == "automatic"
   end
 
   def queued?

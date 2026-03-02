@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_01_205144) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_01_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -77,6 +77,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_01_205144) do
     t.string "temporal_workflow_id", limit: 255
     t.integer "tokens_input", default: 0
     t.integer "tokens_output", default: 0
+    t.string "trigger_type", limit: 50, default: "automatic", null: false
     t.datetime "updated_at", null: false
     t.string "worktree_path", limit: 500
     t.index ["created_at"], name: "index_agent_runs_on_created_at"

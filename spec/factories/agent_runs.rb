@@ -124,6 +124,14 @@ FactoryBot.define do
       agent_type { "api" }
     end
 
+    trait :manual do
+      trigger_type { "manual" }
+    end
+
+    trait :automatic do
+      trigger_type { "automatic" }
+    end
+
     trait :create_issue_goal do
       goal { "create_issue" }
       issue { nil }
