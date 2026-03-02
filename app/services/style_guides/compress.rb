@@ -52,7 +52,21 @@ module StyleGuides
         provider: :claude,
         dangerous_mode: false
       )
+
+      validate_response!(response)
       response.output
+    end
+
+    def validate_response!(response)
+      success = !response.respond_to?(:success?) || response.success?
+      output = response.output
+
+      return if success && output.present?
+
+      details = [ "success=#{success}" ]
+      details << "exit_code=#{response.exit_code.inspect}" if response.respond_to?(:exit_code)
+
+      raise StandardError, "LLM compression failed or returned empty output (#{details.join(', ')})"
     end
 
     def build_metadata(compressed)

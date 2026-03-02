@@ -43,9 +43,10 @@ class StyleGuidesController < ApplicationController
   def update
     authorize @style_guide
 
-    if @style_guide.update(style_guide_params)
-      detect_language_if_blank
-      @style_guide.save if @style_guide.changed?
+    @style_guide.assign_attributes(style_guide_params)
+    detect_language_if_blank
+
+    if @style_guide.save
       redirect_to @style_guide, notice: "Style guide was successfully updated."
     else
       @projects = policy_scope(Project).order(:name)
