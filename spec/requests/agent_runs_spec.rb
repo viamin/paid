@@ -403,6 +403,93 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/quick_create" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        post quick_create_project_agent_runs_path(project), params: { issue_id: 1 }
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      let(:issue) { create(:issue, project: project, github_number: 42, title: "Fix the bug") }
+
+      before { sign_in user }
+
+      it "creates a queued run with hardcoded defaults and redirects" do
+        expect {
+          post quick_create_project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.to change(AgentRun, :count).by(1)
+
+        agent_run = AgentRun.last
+        expect(agent_run.project).to eq(project)
+        expect(agent_run.issue).to eq(issue)
+        expect(agent_run.agent_type).to eq("claude_code")
+        expect(agent_run.goal).to eq("create_pr")
+        expect(agent_run.status).to eq("queued")
+        expect(agent_run.custom_prompt).to be_nil
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      it "enqueues ProcessRunQueueJob" do
+        expect {
+          post quick_create_project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "redirects with error when no issue or pull request selected" do
+        post quick_create_project_agent_runs_path(project)
+        expect(response).to redirect_to(project_path(project))
+        follow_redirect!
+        expect(response.body).to include("Please select an issue or pull request")
+      end
+
+      context "with pull_request_id parameter" do
+        let(:pr) { create(:issue, :pull_request, project: project, github_number: 77, title: "Fix styles") }
+
+        it "creates a queued run with source_pull_request_number" do
+          expect {
+            post quick_create_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+          }.to change(AgentRun, :count).by(1)
+
+          agent_run = AgentRun.last
+          expect(agent_run.source_pull_request_number).to eq(77)
+          expect(agent_run.agent_type).to eq("claude_code")
+          expect(agent_run.goal).to eq("create_pr")
+          expect(agent_run.status).to eq("queued")
+          expect(response).to redirect_to(project_path(project))
+        end
+      end
+
+      it "ignores agent_type and goal params and still uses quick-run defaults" do
+        expect {
+          post quick_create_project_agent_runs_path(project), params: {
+            issue_id: issue.id,
+            agent_type: "different_agent",
+            goal: "different_goal"
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        agent_run = AgentRun.last
+        expect(agent_run.project).to eq(project)
+        expect(agent_run.issue).to eq(issue)
+        expect(agent_run.agent_type).to eq("claude_code")
+        expect(agent_run.goal).to eq("create_pr")
+        expect(agent_run.status).to eq("queued")
+      end
+
+      it "handles duplicate queued run via DB constraint" do
+        create(:agent_run, :queued, project: project, issue: issue)
+
+        post quick_create_project_agent_runs_path(project), params: { issue_id: issue.id }
+
+        expect(response).to redirect_to(project_path(project))
+        follow_redirect!
+        expect(response.body).to include("already queued or in progress")
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/:id/retry" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
