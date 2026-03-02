@@ -64,6 +64,10 @@
                         &middot;
                         <%= link_to "PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
                       <% end %>
+                      <% if run.created_issue_url.present? %>
+                        &middot;
+                        <%= link_to "Issue ##{run.created_issue_number}", run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+                      <% end %>
                     </td>
                   </tr>
                 <% end %>
