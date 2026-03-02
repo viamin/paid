@@ -44,28 +44,12 @@ module Projects
         return
       end
 
-      create_agent_run(
+      create_run_and_redirect(
+        on_error_path: new_project_agent_run_path(@project),
         issue: issue,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pr_number
       )
-
-      ProcessRunQueueJob.perform_later
-
-      notice = if AgentRun.has_run_capacity? && AgentRun.queued.count <= 1
-        "Agent run created and will start momentarily."
-      else
-        "Agent run queued. It will start automatically when a slot opens."
-      end
-
-      redirect_to project_path(@project), notice: notice
-    rescue ActiveRecord::RecordNotUnique => e
-      alert = if e.cause&.message&.include?("proxy_token")
-        "An unexpected error occurred. Please try again."
-      else
-        "An agent run is already queued or in progress."
-      end
-      redirect_to new_project_agent_run_path(@project), alert: alert
     end
 
     def quick_create
@@ -80,31 +64,11 @@ module Projects
         return
       end
 
-      AgentRun.create!(
-        project: @project,
+      create_run_and_redirect(
+        on_error_path: project_path(@project),
         issue: issue,
-        agent_type: "claude_code",
-        source_pull_request_number: source_pr_number,
-        goal: "create_pr",
-        status: "queued"
+        source_pull_request_number: source_pr_number
       )
-
-      ProcessRunQueueJob.perform_later
-
-      notice = if AgentRun.has_run_capacity? && AgentRun.queued.count <= 1
-        "Agent run created and will start momentarily."
-      else
-        "Agent run queued. It will start automatically when a slot opens."
-      end
-
-      redirect_to project_path(@project), notice: notice
-    rescue ActiveRecord::RecordNotUnique => e
-      alert = if e.cause&.message&.include?("proxy_token")
-        "An unexpected error occurred. Please try again."
-      else
-        "An agent run is already queued or in progress."
-      end
-      redirect_to project_path(@project), alert: alert
     end
 
     def retry
@@ -180,6 +144,26 @@ module Projects
         goal: goal,
         status: "queued"
       )
+    end
+
+    def create_run_and_redirect(on_error_path:, **attrs)
+      create_agent_run(**attrs)
+      ProcessRunQueueJob.perform_later
+
+      notice = if AgentRun.has_run_capacity? && AgentRun.queued.count <= 1
+        "Agent run created and will start momentarily."
+      else
+        "Agent run queued. It will start automatically when a slot opens."
+      end
+
+      redirect_to project_path(@project), notice: notice
+    rescue ActiveRecord::RecordNotUnique => e
+      alert = if e.cause&.message&.include?("proxy_token")
+        "An unexpected error occurred. Please try again."
+      else
+        "An agent run is already queued or in progress."
+      end
+      redirect_to on_error_path, alert: alert
     end
   end
 end
