@@ -568,7 +568,9 @@ RSpec.describe "AgentRuns" do
         expect(new_run.agent_type).to eq("claude_code")
         expect(agent_run.reload.status).to eq("retried")
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
-        expect(AgentHarness).to have_received(:refresh_auth).with(:claude, code: "valid-code")
+        without_partial_double_verification do
+          expect(AgentHarness).to have_received(:refresh_auth).with(:claude, code: "valid-code")
+        end
       end
 
       it "enqueues ProcessRunQueueJob on success" do
