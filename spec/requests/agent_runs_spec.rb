@@ -566,6 +566,7 @@ RSpec.describe "AgentRuns" do
         expect(new_run.project).to eq(project)
         expect(new_run.issue).to eq(agent_run.issue)
         expect(new_run.agent_type).to eq("claude_code")
+        expect(new_run.trigger_type).to eq("manual")
         expect(agent_run.reload.status).to eq("retried")
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
         without_partial_double_verification do
@@ -582,6 +583,16 @@ RSpec.describe "AgentRuns" do
         expect {
           post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
         }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "redirects with alert when auth_provider is missing" do
+        agent_run = create(:agent_run, :auth_expired, project: project, auth_provider: nil)
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("Unable to determine authentication provider")
       end
 
       it "redirects with alert when refresh_auth is not supported" do

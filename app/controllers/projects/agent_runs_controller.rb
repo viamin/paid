@@ -119,7 +119,17 @@ module Projects
         return
       end
 
-      provider = @agent_run.auth_provider.presence&.to_sym || :claude
+      provider = @agent_run.auth_provider.presence&.to_sym
+      if provider.nil?
+        Rails.logger.error(
+          message: "agent_execution.missing_auth_provider",
+          agent_run_id: @agent_run.id,
+          agent_type: @agent_run.agent_type
+        )
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Unable to determine authentication provider for this run."
+        return
+      end
 
       unless AgentHarness.respond_to?(:refresh_auth)
         Rails.logger.error(
@@ -140,6 +150,7 @@ module Projects
         custom_prompt: @agent_run.custom_prompt,
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
+        trigger_type: "manual",
         status: "queued"
       )
       @agent_run.retry!
