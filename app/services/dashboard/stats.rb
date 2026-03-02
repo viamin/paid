@@ -18,7 +18,8 @@ module Dashboard
         duration_percentiles: duration_percentiles,
         cost_and_tokens: cost_and_tokens,
         runs_by_agent_type: runs_by_agent_type,
-        runs_by_project: runs_by_project
+        runs_by_project: runs_by_project,
+        issue_completion: issue_completion
       }
     end
 
@@ -116,6 +117,73 @@ module Dashboard
         .count
         .sort_by { |_, v| -v }
         .first(5)
+    end
+
+    def issue_completion
+      result = merged_pr_aggregate
+      return empty_issue_completion if result.nil? || result["merged_count"].to_i.zero?
+
+      {
+        merged_count: result["merged_count"].to_i,
+        runs_per_issue: {
+          avg: result["avg_runs"]&.to_f&.round(1) || 0.0,
+          min: result["min_runs"]&.to_i || 0,
+          max: result["max_runs"]&.to_i || 0,
+          median: result["median_runs"]&.to_f&.round(1) || 0.0
+        },
+        time_to_merge: {
+          avg_seconds: result["avg_wall_seconds"]&.to_i || 0,
+          p50_seconds: result["p50_wall_seconds"]&.to_i || 0,
+          p90_seconds: result["p90_wall_seconds"]&.to_i || 0
+        },
+        agent_run_minutes: {
+          avg_seconds: result["avg_run_seconds"]&.to_i || 0,
+          p50_seconds: result["p50_run_seconds"]&.to_i || 0,
+          p90_seconds: result["p90_run_seconds"]&.to_i || 0
+        }
+      }
+    end
+
+    def empty_issue_completion
+      {
+        merged_count: 0,
+        runs_per_issue: { avg: 0.0, min: 0, max: 0, median: 0.0 },
+        time_to_merge: { avg_seconds: 0, p50_seconds: 0, p90_seconds: 0 },
+        agent_run_minutes: { avg_seconds: 0, p50_seconds: 0, p90_seconds: 0 }
+      }
+    end
+
+    def merged_pr_aggregate
+      project_ids_sql = Project.where(account_id: account.id).select(:id).to_sql
+
+      sql = <<~SQL.squish
+        WITH per_issue AS (
+          SELECT issues.id,
+                 COUNT(agent_runs.id) AS run_count,
+                 EXTRACT(EPOCH FROM issues.github_updated_at - MIN(agent_runs.created_at)) AS wall_seconds,
+                 COALESCE(SUM(agent_runs.duration_seconds), 0) AS total_run_seconds
+          FROM issues
+          INNER JOIN agent_runs ON agent_runs.issue_id = issues.id
+          WHERE issues.is_pull_request = true
+            AND issues.pr_review_phase = 'merged'
+            AND issues.project_id IN (#{project_ids_sql})
+          GROUP BY issues.id, issues.github_updated_at
+        )
+        SELECT COUNT(*) AS merged_count,
+               AVG(run_count) AS avg_runs,
+               MIN(run_count) AS min_runs,
+               MAX(run_count) AS max_runs,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY run_count) AS median_runs,
+               AVG(wall_seconds) AS avg_wall_seconds,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY wall_seconds) AS p50_wall_seconds,
+               percentile_cont(0.9) WITHIN GROUP (ORDER BY wall_seconds) AS p90_wall_seconds,
+               AVG(total_run_seconds) AS avg_run_seconds,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY total_run_seconds) AS p50_run_seconds,
+               percentile_cont(0.9) WITHIN GROUP (ORDER BY total_run_seconds) AS p90_run_seconds
+        FROM per_issue
+      SQL
+
+      ActiveRecord::Base.connection.select_one(sql)
     end
   end
 end
