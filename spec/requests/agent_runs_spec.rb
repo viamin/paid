@@ -553,6 +553,9 @@ RSpec.describe "AgentRuns" do
 
       it "creates a new queued run and marks original as retried on success" do
         agent_run = create(:agent_run, :auth_expired, project: project, agent_type: "claude_code")
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:refresh_auth)
+        end
 
         expect {
           post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
@@ -565,14 +568,28 @@ RSpec.describe "AgentRuns" do
         expect(new_run.agent_type).to eq("claude_code")
         expect(agent_run.reload.status).to eq("retried")
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
+        expect(AgentHarness).to have_received(:refresh_auth).with(:claude, code: "valid-code")
       end
 
       it "enqueues ProcessRunQueueJob on success" do
         agent_run = create(:agent_run, :auth_expired, project: project)
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:refresh_auth)
+        end
 
         expect {
           post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
         }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "redirects with alert when refresh_auth is not supported" do
+        agent_run = create(:agent_run, :auth_expired, project: project)
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("Re-authentication is not supported")
       end
 
       it "redirects with alert on AgentHarness::AuthenticationError" do

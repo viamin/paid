@@ -118,11 +118,19 @@ module Projects
         return
       end
 
-      provider = @agent_run.auth_provider&.to_sym || :claude
+      provider = @agent_run.auth_provider.presence&.to_sym || :claude
 
-      if AgentHarness.respond_to?(:refresh_auth)
-        AgentHarness.refresh_auth(provider, code: code)
+      unless AgentHarness.respond_to?(:refresh_auth)
+        Rails.logger.error(
+          message: "agent_execution.refresh_auth_unsupported",
+          agent_run_id: @agent_run.id
+        )
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Re-authentication is not supported for this agent."
+        return
       end
+
+      AgentHarness.refresh_auth(provider, code: code)
 
       new_run = AgentRun.create!(
         project: @project,
