@@ -156,11 +156,16 @@ module Dashboard
     def merged_pr_aggregate
       project_ids_sql = Project.where(account_id: account.id).select(:id).to_sql
 
+      # NOTE: github_updated_at is a proxy for merge time since there is no
+      # dedicated merged_at column yet. It can drift when a PR is updated
+      # after merge (comments, labels, etc.). A future migration should add
+      # issues.merged_at populated by MergePullRequestActivity (#230).
       sql = <<~SQL.squish
         WITH per_issue AS (
           SELECT issues.id,
                  COUNT(agent_runs.id) AS run_count,
-                 EXTRACT(EPOCH FROM issues.github_updated_at - MIN(agent_runs.created_at)) AS wall_seconds,
+                 EXTRACT(EPOCH FROM issues.github_updated_at
+                   - MIN(COALESCE(agent_runs.started_at, agent_runs.created_at))) AS wall_seconds,
                  COALESCE(SUM(agent_runs.duration_seconds), 0) AS total_run_seconds
           FROM issues
           INNER JOIN agent_runs ON agent_runs.issue_id = issues.id
@@ -168,7 +173,7 @@ module Dashboard
             AND issues.pr_review_phase = 'merged'
             AND issues.project_id IN (#{project_ids_sql})
             AND agent_runs.goal = 'create_pr'
-            AND agent_runs.created_at <= issues.github_updated_at
+            AND COALESCE(agent_runs.started_at, agent_runs.created_at) <= issues.github_updated_at
           GROUP BY issues.id, issues.github_updated_at
         )
         SELECT COUNT(*) AS merged_count,

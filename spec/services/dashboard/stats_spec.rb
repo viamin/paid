@@ -177,11 +177,11 @@ RSpec.describe Dashboard::Stats do
 
       before do
         create(:agent_run, :completed, project: project, issue: merged_issue,
-          duration_seconds: 300, created_at: 4.days.ago)
+          duration_seconds: 300, created_at: 4.days.ago, started_at: 4.days.ago)
         create(:agent_run, :completed, project: project, issue: merged_issue,
-          duration_seconds: 200, created_at: 3.days.ago)
+          duration_seconds: 200, created_at: 3.days.ago, started_at: 3.days.ago)
         create(:agent_run, :completed, project: project, issue: merged_issue,
-          duration_seconds: 100, created_at: 2.days.ago)
+          duration_seconds: 100, created_at: 2.days.ago, started_at: 2.days.ago)
       end
 
       it "counts merged PRs" do
@@ -198,7 +198,7 @@ RSpec.describe Dashboard::Stats do
 
       it "calculates time to merge as wall clock seconds" do
         ttm = stats[:issue_completion][:time_to_merge]
-        # Wall clock: github_updated_at (1.day.ago) - first run created_at (4.days.ago) = 3 days
+        # Wall clock: github_updated_at (1.day.ago) - first run started_at (4.days.ago) = 3 days
         expected_seconds = (merged_issue.github_updated_at - 4.days.ago).to_i
         expect(ttm[:avg_seconds]).to be_within(5).of(expected_seconds)
         expect(ttm[:p50_seconds]).to be_within(5).of(expected_seconds)
@@ -227,16 +227,16 @@ RSpec.describe Dashboard::Stats do
       end
 
       before do
-        # Issue A: 1 run, 120s duration, created 9 days ago
+        # Issue A: 1 run, 120s duration, started 9 days ago
         create(:agent_run, :completed, project: project, issue: issue_a,
-          duration_seconds: 120, created_at: 9.days.ago)
-        # Issue B: 3 runs, total 900s duration, first created 4 days ago
+          duration_seconds: 120, created_at: 9.days.ago, started_at: 9.days.ago)
+        # Issue B: 3 runs, total 900s duration, first started 4 days ago
         create(:agent_run, :completed, project: project, issue: issue_b,
-          duration_seconds: 300, created_at: 4.days.ago)
+          duration_seconds: 300, created_at: 4.days.ago, started_at: 4.days.ago)
         create(:agent_run, :completed, project: project, issue: issue_b,
-          duration_seconds: 300, created_at: 3.days.ago)
+          duration_seconds: 300, created_at: 3.days.ago, started_at: 3.days.ago)
         create(:agent_run, :completed, project: project, issue: issue_b,
-          duration_seconds: 300, created_at: 2.days.ago)
+          duration_seconds: 300, created_at: 2.days.ago, started_at: 2.days.ago)
       end
 
       it "counts all merged PRs" do
