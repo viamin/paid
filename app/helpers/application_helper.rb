@@ -21,6 +21,19 @@ module ApplicationHelper
     )
   end
 
+  TRIGGER_TYPE_STYLES = {
+    "manual" => { bg: "bg-sky-100", text: "text-sky-700", label: "Manual" },
+    "automatic" => { bg: "bg-amber-100", text: "text-amber-700", label: "Auto" }
+  }.freeze
+
+  def agent_run_trigger_badge(trigger_type)
+    styles = TRIGGER_TYPE_STYLES[trigger_type] || TRIGGER_TYPE_STYLES["automatic"]
+    tag.span(
+      styles[:label],
+      class: "inline-flex items-center rounded-md #{styles[:bg]} px-2 py-1 text-xs font-medium #{styles[:text]}"
+    )
+  end
+
   PAID_STATE_STYLES = {
     "new" => { bg: "bg-gray-100", text: "text-gray-700", label: "New" },
     "planning" => { bg: "bg-purple-100", text: "text-purple-700", label: "Planning" },
@@ -37,7 +50,7 @@ module ApplicationHelper
     )
   end
 
-  RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq branch_name_cont category_eq active_eq name_cont s].freeze
+  RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq branch_name_cont category_eq active_eq name_cont s].freeze
 
   def sort_link_to(label, attribute, q)
     current_sort = q.sorts.find { |s| s.name == attribute.to_s }
