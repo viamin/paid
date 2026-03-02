@@ -18,6 +18,8 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
     it { is_expected.to validate_presence_of(:goal) }
     it { is_expected.to validate_inclusion_of(:goal).in_array(described_class::GOALS) }
+    it { is_expected.to validate_presence_of(:trigger_type) }
+    it { is_expected.to validate_inclusion_of(:trigger_type).in_array(described_class::TRIGGER_TYPES) }
     it { is_expected.to validate_length_of(:created_issue_url).is_at_most(500) }
     it { is_expected.to validate_length_of(:worktree_path).is_at_most(500) }
     it { is_expected.to validate_length_of(:branch_name).is_at_most(255) }
@@ -249,6 +251,34 @@ RSpec.describe AgentRun do
         agent_run = build(:agent_run, pull_request_url: nil, created_issue_url: nil)
 
         expect(agent_run.result_url).to be_nil
+      end
+    end
+
+    describe "#manual?" do
+      it "returns true when trigger_type is manual" do
+        agent_run = build(:agent_run, trigger_type: "manual")
+
+        expect(agent_run.manual?).to be true
+      end
+
+      it "returns false when trigger_type is automatic" do
+        agent_run = build(:agent_run, trigger_type: "automatic")
+
+        expect(agent_run.manual?).to be false
+      end
+    end
+
+    describe "#automatic?" do
+      it "returns true when trigger_type is automatic" do
+        agent_run = build(:agent_run, trigger_type: "automatic")
+
+        expect(agent_run.automatic?).to be true
+      end
+
+      it "returns false when trigger_type is manual" do
+        agent_run = build(:agent_run, trigger_type: "manual")
+
+        expect(agent_run.automatic?).to be false
       end
     end
 
@@ -857,6 +887,10 @@ RSpec.describe AgentRun do
     it "defines valid GOALS" do
       expect(described_class::GOALS).to eq(%w[create_pr create_issue])
     end
+
+    it "defines valid TRIGGER_TYPES" do
+      expect(described_class::TRIGGER_TYPES).to eq(%w[manual automatic])
+    end
   end
 
   describe "defaults" do
@@ -883,6 +917,11 @@ RSpec.describe AgentRun do
     it "defaults cost_cents to 0" do
       agent_run = create(:agent_run)
       expect(agent_run.cost_cents).to eq(0)
+    end
+
+    it "defaults trigger_type to automatic" do
+      agent_run = create(:agent_run)
+      expect(agent_run.trigger_type).to eq("automatic")
     end
   end
 
