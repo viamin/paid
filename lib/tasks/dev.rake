@@ -10,6 +10,7 @@ namespace :dev do
     AgentRun.active.find_each do |run|
       run.timeout!(error: "Marked stale on startup: process was restarted")
       run.log!("system", "Run marked as timed out during startup cleanup")
+      run.issue&.update!(paid_state: "failed") unless run.issue&.paid_state == "failed"
       count += 1
     end
 

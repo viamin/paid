@@ -47,6 +47,15 @@ RSpec.describe "dev:cleanup" do
     expect(log.content).to include("startup cleanup")
   end
 
+  it "updates the associated issue paid_state to failed" do
+    running_run = create(:agent_run, :running)
+    running_run.issue.update!(paid_state: "in_progress")
+
+    task.invoke
+
+    expect(running_run.issue.reload.paid_state).to eq("failed")
+  end
+
   it "does not touch finished runs" do
     completed = create(:agent_run, :completed)
     failed = create(:agent_run, :failed)
