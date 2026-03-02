@@ -104,13 +104,13 @@ RSpec.describe "dev:cleanup" do
 
   it "stops orphaned agent containers" do
     allow_any_instance_of(Kernel).to receive(:`).with('docker ps -q --filter "label=paid.agent_run_id" 2>/dev/null').and_return("abc123\n") # rubocop:disable RSpec/AnyInstance
-    expect_any_instance_of(Kernel).to receive(:system).with("docker stop abc123 >/dev/null 2>&1") # rubocop:disable RSpec/AnyInstance
+    expect_any_instance_of(Kernel).to receive(:system).with("docker", "stop", "abc123", out: File::NULL, err: File::NULL) # rubocop:disable RSpec/AnyInstance
 
     task.invoke
   end
 
   it "does not call docker stop when no orphaned containers exist" do
-    expect_any_instance_of(Kernel).not_to receive(:system).with(a_string_matching(/docker stop/)) # rubocop:disable RSpec/AnyInstance
+    expect_any_instance_of(Kernel).not_to receive(:system).with("docker", "stop", any_args) # rubocop:disable RSpec/AnyInstance
 
     task.invoke
   end
