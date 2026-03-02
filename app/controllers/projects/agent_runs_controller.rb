@@ -44,28 +44,33 @@ module Projects
         return
       end
 
-      create_agent_run(
+      create_run_and_redirect(
+        on_error_path: new_project_agent_run_path(@project),
         issue: issue,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pr_number
       )
+    end
 
-      ProcessRunQueueJob.perform_later
+    def quick_create
+      authorize @project, :run_agent?
 
-      notice = if AgentRun.has_run_capacity? && AgentRun.queued.count <= 1
-        "Agent run created and will start momentarily."
-      else
-        "Agent run queued. It will start automatically when a slot opens."
+      issue = resolve_issue
+      source_pr_number = resolve_pull_request
+
+      unless issue || source_pr_number
+        redirect_to project_path(@project),
+          alert: "Please select an issue or pull request."
+        return
       end
 
-      redirect_to project_path(@project), notice: notice
-    rescue ActiveRecord::RecordNotUnique => e
-      alert = if e.cause&.message&.include?("proxy_token")
-        "An unexpected error occurred. Please try again."
-      else
-        "An agent run is already queued or in progress."
-      end
-      redirect_to new_project_agent_run_path(@project), alert: alert
+      create_run_and_redirect(
+        on_error_path: project_path(@project),
+        issue: issue,
+        agent_type: "claude_code",
+        goal: "create_pr",
+        source_pull_request_number: source_pr_number
+      )
     end
 
     def retry
@@ -199,11 +204,11 @@ module Projects
       pr.github_number
     end
 
-    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil)
-      agent_type = params[:agent_type].presence || "claude_code"
+    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, goal: nil)
+      agent_type ||= params[:agent_type].presence || "claude_code"
       agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(agent_type)
 
-      goal = params[:goal].presence || "create_pr"
+      goal ||= params[:goal].presence || "create_pr"
       goal = "create_pr" unless AgentRun::GOALS.include?(goal)
 
       AgentRun.create!(
@@ -216,6 +221,26 @@ module Projects
         trigger_type: "manual",
         status: "queued"
       )
+    end
+
+    def create_run_and_redirect(on_error_path:, **attrs)
+      create_agent_run(**attrs)
+      ProcessRunQueueJob.perform_later
+
+      notice = if AgentRun.has_run_capacity? && AgentRun.queued.count <= 1
+        "Agent run created and will start momentarily."
+      else
+        "Agent run queued. It will start automatically when a slot opens."
+      end
+
+      redirect_to project_path(@project), notice: notice
+    rescue ActiveRecord::RecordNotUnique => e
+      alert = if e.cause&.message&.include?("proxy_token")
+        "An unexpected error occurred. Please try again."
+      else
+        "An agent run is already queued or in progress."
+      end
+      redirect_to on_error_path, alert: alert
     end
   end
 end
