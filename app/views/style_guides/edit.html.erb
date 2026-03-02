@@ -1,0 +1,11 @@
+<% content_for(:title) { "Edit #{@style_guide.name} - Style Guides - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to "&larr; Back to Style Guide".html_safe, style_guide_path(@style_guide), class: "text-sm text-indigo-600 hover:text-indigo-900" %>
+  </div>
+
+  <h1 class="text-2xl font-bold text-gray-900">Edit Style Guide</h1>
+
+  <%= render "form", style_guide: @style_guide, url: style_guide_path(@style_guide), method: :patch, projects: @projects %>
+</div>

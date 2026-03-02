@@ -43,7 +43,9 @@ module Prompts
       sections << conversation_section if trusted_comments.any?
       sections << instructions_section
       sections << rules_section
-      sections.join("\n")
+      base_prompt = sections.join("\n")
+
+      StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
     end
 
     private

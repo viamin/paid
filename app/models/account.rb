@@ -10,6 +10,7 @@ class Account < ApplicationRecord
   has_many :github_tokens, dependent: :destroy
   has_many :prompts, -> { where(project_id: nil) }, dependent: :destroy
   has_many :all_prompts, class_name: "Prompt"
+  has_many :style_guides, -> { where(project_id: nil) }, dependent: :destroy
 
   validates :name, presence: true
   validates :slug, presence: true, uniqueness: true,
