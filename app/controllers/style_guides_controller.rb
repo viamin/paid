@@ -65,7 +65,7 @@ class StyleGuidesController < ApplicationController
 
     StyleGuides::Compress.call(style_guide: @style_guide)
     redirect_to @style_guide, notice: "Style guide was successfully compressed."
-  rescue AgentHarness::Error => e
+  rescue AgentHarness::Error, StyleGuides::CompressionError => e
     redirect_to @style_guide, alert: "Compression failed: #{e.message}"
   end
 

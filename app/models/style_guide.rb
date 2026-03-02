@@ -50,19 +50,27 @@ class StyleGuide < ApplicationRecord
   end
 
   # Resolves applicable style guides for a given project, using inheritance:
-  # project > account > global. Returns all applicable style guides merged
-  # by most-specific-wins ordering.
+  # project > account > global. Returns applicable style guides deduplicated
+  # by name with most-specific-wins ordering.
   #
   # @param project [Project] The project context
   # @return [ActiveRecord::Relation] Style guides ordered by specificity
   def self.resolve_for(project)
-    active.where(
-      "project_id = :project_id OR (account_id = :account_id AND project_id IS NULL) OR (account_id IS NULL AND project_id IS NULL)",
-      project_id: project.id,
-      account_id: project.account_id
-    ).order(
-      Arel.sql("CASE WHEN project_id IS NOT NULL THEN 0 WHEN account_id IS NOT NULL THEN 1 ELSE 2 END")
+    specificity_order = Arel.sql(
+      "CASE WHEN project_id IS NOT NULL THEN 0 WHEN account_id IS NOT NULL THEN 1 ELSE 2 END"
     )
+
+    deduped_ids = active
+      .where(
+        "project_id = :project_id OR (account_id = :account_id AND project_id IS NULL) OR " \
+        "(account_id IS NULL AND project_id IS NULL)",
+        project_id: project.id,
+        account_id: project.account_id
+      )
+      .select("DISTINCT ON (name) id")
+      .order(Arel.sql("name"), specificity_order)
+
+    where(id: deduped_ids).order(specificity_order)
   end
 
   # Returns compressed content for injection into agent prompts.

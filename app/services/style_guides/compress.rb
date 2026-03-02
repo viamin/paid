@@ -7,6 +7,8 @@ module StyleGuides
   #
   # @example
   #   StyleGuides::Compress.call(style_guide: style_guide)
+  class CompressionError < StandardError; end
+
   class Compress
     COMPRESSION_PROMPT = <<~PROMPT
       You are a technical writing assistant. Compress the following coding style guide into a concise, LLM-friendly format.
@@ -66,7 +68,7 @@ module StyleGuides
       details = [ "success=#{success}" ]
       details << "exit_code=#{response.exit_code.inspect}" if response.respond_to?(:exit_code)
 
-      raise StandardError, "LLM compression failed or returned empty output (#{details.join(', ')})"
+      raise CompressionError, "LLM compression failed or returned empty output (#{details.join(', ')})"
     end
 
     def build_metadata(compressed)
