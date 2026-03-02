@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_01_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_02_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -82,8 +82,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_01_210000) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -346,6 +346,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_01_210000) do
     t.index ["name"], name: "index_service_containers_on_name", unique: true
   end
 
+  create_table "style_guides", force: :cascade do |t|
+    t.bigint "account_id"
+    t.boolean "active", default: true, null: false
+    t.text "compressed_content"
+    t.jsonb "compression_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "language", limit: 50
+    t.string "name", limit: 255, null: false
+    t.bigint "project_id"
+    t.text "raw_content", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_style_guides_on_account_id"
+    t.index ["active"], name: "index_style_guides_on_active"
+    t.index ["language"], name: "index_style_guides_on_language"
+    t.index ["name", "account_id"], name: "index_style_guides_on_name_account", unique: true, where: "((account_id IS NOT NULL) AND (project_id IS NULL))"
+    t.index ["name", "project_id"], name: "index_style_guides_on_name_project", unique: true, where: "(project_id IS NOT NULL)"
+    t.index ["name"], name: "index_style_guides_on_name_global", unique: true, where: "((account_id IS NULL) AND (project_id IS NULL))"
+    t.index ["project_id"], name: "index_style_guides_on_project_id"
+    t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_style_guides_scope_consistency"
+  end
+
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
     t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"], null: false
@@ -443,6 +464,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_01_210000) do
   add_foreign_key "prompts", "accounts", on_delete: :cascade
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "style_guides", "accounts", on_delete: :cascade
+  add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"

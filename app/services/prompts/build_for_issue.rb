@@ -27,7 +27,7 @@ module Prompts
     def build
       raise UntrustedIssueError, "Cannot build prompt for issue from untrusted user: #{issue.github_creator_login}" unless issue.trusted?
 
-      <<~PROMPT
+      base_prompt = <<~PROMPT
         # Task
 
         You are working on the following GitHub issue:
@@ -62,6 +62,8 @@ module Prompts
         When you're done, commit all your changes. Do not push.
         #{available_services_section}
       PROMPT
+
+      StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
     end
 
     private

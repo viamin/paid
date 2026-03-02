@@ -1,0 +1,94 @@
+<% content_for(:title) { "#{@style_guide.name} - Style Guides - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to "&larr; Back to Style Guides".html_safe, style_guides_path, class: "text-sm text-indigo-600 hover:text-indigo-900" %>
+  </div>
+
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900"><%= @style_guide.name %></h1>
+      <div class="mt-1 flex items-center gap-2">
+        <%= style_guide_scope_badge(@style_guide) %>
+        <%= style_guide_language_badge(@style_guide.language) %>
+        <% if @style_guide.active? %>
+          <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Active</span>
+        <% else %>
+          <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">Inactive</span>
+        <% end %>
+      </div>
+    </div>
+    <div class="mt-4 flex gap-2 sm:mt-0">
+      <% if policy(@style_guide).update? %>
+        <%= link_to "Edit", edit_style_guide_path(@style_guide), class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+        <%= button_to "Compress", compress_style_guide_path(@style_guide), method: :post, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" %>
+      <% end %>
+      <% if policy(@style_guide).destroy? %>
+        <%= button_to "Delete", style_guide_path(@style_guide), method: :delete, data: { turbo_confirm: "Are you sure you want to delete this style guide?" }, class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="mt-8 space-y-8">
+    <div class="overflow-hidden bg-white shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+      <div class="px-4 py-5 sm:px-6">
+        <h3 class="text-base font-semibold leading-6 text-gray-900">Raw Content</h3>
+        <p class="mt-1 text-sm text-gray-500"><%= number_with_delimiter(@style_guide.raw_content.length) %> characters</p>
+      </div>
+      <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+        <pre class="whitespace-pre-wrap text-sm text-gray-700 font-mono bg-gray-50 rounded-md p-4 max-h-96 overflow-y-auto"><%= @style_guide.raw_content %></pre>
+      </div>
+    </div>
+
+    <div class="overflow-hidden bg-white shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+      <div class="px-4 py-5 sm:px-6">
+        <h3 class="text-base font-semibold leading-6 text-gray-900">Compressed Content</h3>
+        <% if @style_guide.compressed? %>
+          <p class="mt-1 text-sm text-gray-500">
+            <%= number_with_delimiter(@style_guide.compressed_content.length) %> characters
+            <% if @style_guide.compression_metadata["compression_ratio"] %>
+              (<%= (@style_guide.compression_metadata["compression_ratio"] * 100).round %>%% of original)
+            <% end %>
+          </p>
+        <% else %>
+          <p class="mt-1 text-sm text-gray-500">Not yet compressed. Click "Compress" to generate an LLM-friendly version.</p>
+        <% end %>
+      </div>
+      <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+        <% if @style_guide.compressed? %>
+          <pre class="whitespace-pre-wrap text-sm text-gray-700 font-mono bg-gray-50 rounded-md p-4 max-h-96 overflow-y-auto"><%= @style_guide.compressed_content %></pre>
+        <% else %>
+          <p class="text-sm text-gray-400 italic">No compressed content available.</p>
+        <% end %>
+      </div>
+    </div>
+
+    <% if @style_guide.compression_metadata.present? && @style_guide.compression_metadata["compressed_at"] %>
+      <div class="overflow-hidden bg-white shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+          <h3 class="text-base font-semibold leading-6 text-gray-900">Compression Metadata</h3>
+        </div>
+        <div class="border-t border-gray-200">
+          <dl class="divide-y divide-gray-200">
+            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <dt class="text-sm font-medium text-gray-500">Compressed at</dt>
+              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= Time.parse(@style_guide.compression_metadata["compressed_at"]).strftime("%b %d, %Y %H:%M UTC") %></dd>
+            </div>
+            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <dt class="text-sm font-medium text-gray-500">Compression ratio</dt>
+              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= (@style_guide.compression_metadata["compression_ratio"].to_f * 100).round %>%%</dd>
+            </div>
+            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <dt class="text-sm font-medium text-gray-500">Raw length</dt>
+              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= number_with_delimiter(@style_guide.compression_metadata["raw_length"]) %> characters</dd>
+            </div>
+            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <dt class="text-sm font-medium text-gray-500">Compressed length</dt>
+              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= number_with_delimiter(@style_guide.compression_metadata["compressed_length"]) %> characters</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>
