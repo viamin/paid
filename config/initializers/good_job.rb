@@ -7,25 +7,9 @@ Rails.application.configure do
   )
 
   config.good_job.cron = {
-    prompt_evolution: {
-      cron: "0 2 * * *",
-      class: "PromptEvolutionJob"
-    },
-    disk_cleanup: {
-      cron: "0 * * * *",
-      class: "DiskCleanupJob"
-    },
     worktree_cleanup: {
       cron: "0 */6 * * *",
       class: "WorktreeOrphanCleanupJob"
-    },
-    container_cleanup: {
-      cron: "*/30 * * * *",
-      class: "ContainerCleanupJob"
-    },
-    log_retention: {
-      cron: "0 3 * * *",
-      class: "LogRetentionJob"
     },
     poll_workflow_health_check: {
       cron: "*/5 * * * *",
