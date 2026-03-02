@@ -128,9 +128,9 @@ RSpec.describe "Projects" do
         expect(response.body.index(active_project.name)).to be < response.body.index(null_project.name)
       end
 
-      it "defaults to created_at desc when no sort is specified" do
-        old_project = create(:project, account: account, github_token: github_token, name: "Older Project", created_at: 2.days.ago)
-        new_project = create(:project, account: account, github_token: github_token, name: "Newer Project", created_at: 1.hour.ago)
+      it "defaults to last_agent_run_at desc when no sort is specified" do
+        old_project = create(:project, account: account, github_token: github_token, name: "Older Project", last_agent_run_at: 2.days.ago)
+        new_project = create(:project, account: account, github_token: github_token, name: "Newer Project", last_agent_run_at: 1.hour.ago)
 
         get projects_path
 
