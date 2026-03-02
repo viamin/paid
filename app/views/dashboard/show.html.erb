@@ -127,18 +127,7 @@
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500"><%= label %></dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-            <% seconds = @stats[:duration_percentiles][key] %>
-            <% if seconds && seconds > 0 %>
-              <% if seconds >= 3600 %>
-                <%= seconds / 3600 %>h <%= (seconds % 3600) / 60 %>m
-              <% elsif seconds >= 60 %>
-                <%= seconds / 60 %>m <%= seconds % 60 %>s
-              <% else %>
-                <%= seconds %>s
-              <% end %>
-            <% else %>
-              --
-            <% end %>
+            <%= format_duration(@stats[:duration_percentiles][key]) %>
           </dd>
         </div>
       <% end %>
@@ -169,37 +158,13 @@
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Avg Time to Merge</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-            <% seconds = ic[:time_to_merge][:avg_seconds] %>
-            <% if seconds > 0 %>
-              <% if seconds >= 86400 %>
-                <%= seconds / 86400 %>d <%= (seconds % 86400) / 3600 %>h
-              <% elsif seconds >= 3600 %>
-                <%= seconds / 3600 %>h <%= (seconds % 3600) / 60 %>m
-              <% elsif seconds >= 60 %>
-                <%= seconds / 60 %>m <%= seconds % 60 %>s
-              <% else %>
-                <%= seconds %>s
-              <% end %>
-            <% else %>
-              --
-            <% end %>
+            <%= format_duration(ic[:time_to_merge][:avg_seconds]) %>
           </dd>
         </div>
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Avg Agent Time / Issue</dt>
           <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-            <% seconds = ic[:agent_run_minutes][:avg_seconds] %>
-            <% if seconds > 0 %>
-              <% if seconds >= 3600 %>
-                <%= seconds / 3600 %>h <%= (seconds % 3600) / 60 %>m
-              <% elsif seconds >= 60 %>
-                <%= seconds / 60 %>m <%= seconds % 60 %>s
-              <% else %>
-                <%= seconds %>s
-              <% end %>
-            <% else %>
-              --
-            <% end %>
+            <%= format_duration(ic[:agent_run_seconds][:avg_seconds]) %>
           </dd>
         </div>
       </div>
@@ -211,21 +176,8 @@
             <% { "p50" => :p50_seconds, "p90" => :p90_seconds }.each do |label, key| %>
               <div>
                 <span class="text-gray-500"><%= label %>:</span>
-                <% seconds = ic[:time_to_merge][key] %>
                 <span class="font-semibold text-gray-900">
-                  <% if seconds > 0 %>
-                    <% if seconds >= 86400 %>
-                      <%= seconds / 86400 %>d <%= (seconds % 86400) / 3600 %>h
-                    <% elsif seconds >= 3600 %>
-                      <%= seconds / 3600 %>h <%= (seconds % 3600) / 60 %>m
-                    <% elsif seconds >= 60 %>
-                      <%= seconds / 60 %>m <%= seconds % 60 %>s
-                    <% else %>
-                      <%= seconds %>s
-                    <% end %>
-                  <% else %>
-                    --
-                  <% end %>
+                  <%= format_duration(ic[:time_to_merge][key]) %>
                 </span>
               </div>
             <% end %>
@@ -237,19 +189,8 @@
             <% { "p50" => :p50_seconds, "p90" => :p90_seconds }.each do |label, key| %>
               <div>
                 <span class="text-gray-500"><%= label %>:</span>
-                <% seconds = ic[:agent_run_minutes][key] %>
                 <span class="font-semibold text-gray-900">
-                  <% if seconds > 0 %>
-                    <% if seconds >= 3600 %>
-                      <%= seconds / 3600 %>h <%= (seconds % 3600) / 60 %>m
-                    <% elsif seconds >= 60 %>
-                      <%= seconds / 60 %>m <%= seconds % 60 %>s
-                    <% else %>
-                      <%= seconds %>s
-                    <% end %>
-                  <% else %>
-                    --
-                  <% end %>
+                  <%= format_duration(ic[:agent_run_seconds][key]) %>
                 </span>
               </div>
             <% end %>
