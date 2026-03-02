@@ -141,9 +141,15 @@ RSpec.describe Prompts::BuildForIssue do
 
         expect(prompt).not_to include("Available Services")
       end
+
+      it "includes guidance for running tests without a database" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).to include("run whatever subset of tests can pass without a database")
+      end
     end
 
-    context "when project has service containers" do
+    context "when project has running service containers" do
       let!(:service_container) { create(:service_container, :running) }
 
       before do
@@ -164,11 +170,49 @@ RSpec.describe Prompts::BuildForIssue do
         expect(prompt).not_to include("Do NOT attempt to install PostgreSQL")
       end
 
-      it "tells the agent to run db:prepare" do
+      it "tells a Ruby project to run db:prepare" do
         prompt = described_class.call(issue: issue, project: project)
 
         expect(prompt).to include("Run `bin/rails db:prepare`")
         expect(prompt).to include("DATABASE_URL is already configured")
+      end
+
+      context "with a non-Ruby project" do
+        let(:python_project) do
+          proj = create(:project)
+          proj.define_singleton_method(:detected_language) { "python" }
+          proj
+        end
+        let(:python_issue) do
+          create(:issue, project: python_project, title: "Fix bug", github_number: 50, body: "A bug")
+        end
+
+        before do
+          python_project.service_containers << service_container
+        end
+
+        it "gives language-agnostic database setup instruction" do
+          prompt = described_class.call(issue: python_issue, project: python_project)
+
+          expect(prompt).to include("DATABASE_URL")
+          expect(prompt).to include("Use your framework's standard command")
+          expect(prompt).not_to include("bin/rails db:prepare")
+        end
+      end
+    end
+
+    context "when project has only stopped service containers" do
+      let!(:stopped_container) { create(:service_container, status: "stopped") }
+
+      before do
+        project.service_containers << stopped_container
+      end
+
+      it "treats stopped containers as unavailable" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).to include("Environment Constraints")
+        expect(prompt).not_to include("Available Services")
       end
     end
 
