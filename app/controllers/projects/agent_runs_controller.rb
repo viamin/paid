@@ -67,6 +67,8 @@ module Projects
       create_run_and_redirect(
         on_error_path: project_path(@project),
         issue: issue,
+        agent_type: "claude_code",
+        goal: "create_pr",
         source_pull_request_number: source_pr_number
       )
     end
@@ -128,11 +130,11 @@ module Projects
       pr.github_number
     end
 
-    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil)
-      agent_type = params[:agent_type].presence || "claude_code"
+    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, goal: nil)
+      agent_type ||= params[:agent_type].presence || "claude_code"
       agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(agent_type)
 
-      goal = params[:goal].presence || "create_pr"
+      goal ||= params[:goal].presence || "create_pr"
       goal = "create_pr" unless AgentRun::GOALS.include?(goal)
 
       AgentRun.create!(
