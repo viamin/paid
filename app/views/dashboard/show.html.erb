@@ -145,6 +145,107 @@
     </div>
   </div>
 
+  <%# Issue Completion %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Issue Completion</h2>
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Total Issues</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= number_with_delimiter(@stats[:issue_completion][:total_issues]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Completed</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-green-600">
+          <%= number_with_delimiter(@stats[:issue_completion][:completed_count]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Failed</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-red-600">
+          <%= number_with_delimiter(@stats[:issue_completion][:failed_count]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Completion Rate</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= @stats[:issue_completion][:completion_rate] %>%
+        </dd>
+      </div>
+    </div>
+
+    <%# Runs per Issue %>
+    <div class="mt-4">
+      <h3 class="text-sm font-medium text-gray-500">Agent Runs per Completed Issue</h3>
+      <div class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <% { "Average" => :avg, "Median" => :median, "Min" => :min, "Max" => :max }.each do |label, key| %>
+          <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500"><%= label %></dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+              <% value = @stats[:issue_completion][:runs_per_issue][key] %>
+              <%= value > 0 ? value : "--" %>
+            </dd>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <%# Time-to-Merge %>
+    <div class="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <div>
+        <h3 class="text-sm font-medium text-gray-500">Wall Clock Time to Merge</h3>
+        <div class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <% { "Average" => :avg, "Median (p50)" => :p50, "p90" => :p90 }.each do |label, key| %>
+            <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+              <dt class="truncate text-sm font-medium text-gray-500"><%= label %></dt>
+              <dd class="mt-1 text-2xl font-semibold tracking-tight text-gray-900">
+                <% seconds = @stats[:issue_completion][:time_to_merge][key] %>
+                <% if seconds > 0 %>
+                  <% if seconds >= 86400 %>
+                    <%= seconds / 86400 %>d <%= (seconds % 86400) / 3600 %>h
+                  <% elsif seconds >= 3600 %>
+                    <%= seconds / 3600 %>h <%= (seconds % 3600) / 60 %>m
+                  <% elsif seconds >= 60 %>
+                    <%= seconds / 60 %>m <%= seconds % 60 %>s
+                  <% else %>
+                    <%= seconds %>s
+                  <% end %>
+                <% else %>
+                  --
+                <% end %>
+              </dd>
+            </div>
+          <% end %>
+        </div>
+      </div>
+      <div>
+        <h3 class="text-sm font-medium text-gray-500">Agent Execution Time per Issue</h3>
+        <div class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <% { "Average" => :avg, "Median (p50)" => :p50, "p90" => :p90 }.each do |label, key| %>
+            <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+              <dt class="truncate text-sm font-medium text-gray-500"><%= label %></dt>
+              <dd class="mt-1 text-2xl font-semibold tracking-tight text-gray-900">
+                <% seconds = @stats[:issue_completion][:agent_minutes][key] %>
+                <% if seconds > 0 %>
+                  <% if seconds >= 3600 %>
+                    <%= seconds / 3600 %>h <%= (seconds % 3600) / 60 %>m
+                  <% elsif seconds >= 60 %>
+                    <%= seconds / 60 %>m <%= seconds % 60 %>s
+                  <% else %>
+                    <%= seconds %>s
+                  <% end %>
+                <% else %>
+                  --
+                <% end %>
+              </dd>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
     <%# Runs by Agent Type %>
     <div>
