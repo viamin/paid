@@ -37,6 +37,14 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:runs_by_agent_type]).to be_empty
         expect(stats[:runs_by_project]).to be_empty
       end
+
+      it "returns zero issue completion stats" do
+        ic = stats[:issue_completion]
+        expect(ic[:merged_count]).to eq(0)
+        expect(ic[:runs_per_issue]).to eq(avg: 0.0, min: 0, max: 0, median: 0.0)
+        expect(ic[:time_to_merge]).to eq(avg_seconds: 0, p50_seconds: 0, p90_seconds: 0)
+        expect(ic[:agent_run_minutes]).to eq(avg_seconds: 0, p50_seconds: 0, p90_seconds: 0)
+      end
     end
 
     context "with agent runs" do
@@ -156,6 +164,130 @@ RSpec.describe Dashboard::Stats do
         projects = stats[:runs_by_project]
         expect(projects.first).to eq([ "Active Project", 3 ])
         expect(projects.length).to be <= 5
+      end
+    end
+
+    context "with merged PRs" do
+      let(:merged_issue) do
+        create(:issue, :pull_request, :closed, project: project,
+          pr_review_phase: "merged",
+          github_created_at: 5.days.ago,
+          github_updated_at: 1.day.ago)
+      end
+
+      before do
+        create(:agent_run, :completed, project: project, issue: merged_issue,
+          duration_seconds: 300, created_at: 4.days.ago)
+        create(:agent_run, :completed, project: project, issue: merged_issue,
+          duration_seconds: 200, created_at: 3.days.ago)
+        create(:agent_run, :completed, project: project, issue: merged_issue,
+          duration_seconds: 100, created_at: 2.days.ago)
+      end
+
+      it "counts merged PRs" do
+        expect(stats[:issue_completion][:merged_count]).to eq(1)
+      end
+
+      it "calculates runs per issue" do
+        rpi = stats[:issue_completion][:runs_per_issue]
+        expect(rpi[:avg]).to eq(3.0)
+        expect(rpi[:min]).to eq(3)
+        expect(rpi[:max]).to eq(3)
+        expect(rpi[:median]).to eq(3.0)
+      end
+
+      it "calculates time to merge as wall clock seconds" do
+        ttm = stats[:issue_completion][:time_to_merge]
+        # Wall clock: github_updated_at (1.day.ago) - first run created_at (4.days.ago) = 3 days
+        expected_seconds = (merged_issue.github_updated_at - 4.days.ago).to_i
+        expect(ttm[:avg_seconds]).to be_within(5).of(expected_seconds)
+        expect(ttm[:p50_seconds]).to be_within(5).of(expected_seconds)
+      end
+
+      it "calculates agent run minutes" do
+        arm = stats[:issue_completion][:agent_run_minutes]
+        # Total: 300 + 200 + 100 = 600 seconds
+        expect(arm[:avg_seconds]).to eq(600)
+        expect(arm[:p50_seconds]).to eq(600)
+      end
+    end
+
+    context "with multiple merged PRs" do
+      let(:issue_a) do
+        create(:issue, :pull_request, :closed, project: project,
+          pr_review_phase: "merged",
+          github_created_at: 10.days.ago,
+          github_updated_at: 8.days.ago)
+      end
+      let(:issue_b) do
+        create(:issue, :pull_request, :closed, project: project,
+          pr_review_phase: "merged",
+          github_created_at: 5.days.ago,
+          github_updated_at: 1.day.ago)
+      end
+
+      before do
+        # Issue A: 1 run, 120s duration, created 9 days ago
+        create(:agent_run, :completed, project: project, issue: issue_a,
+          duration_seconds: 120, created_at: 9.days.ago)
+        # Issue B: 3 runs, total 900s duration, first created 4 days ago
+        create(:agent_run, :completed, project: project, issue: issue_b,
+          duration_seconds: 300, created_at: 4.days.ago)
+        create(:agent_run, :completed, project: project, issue: issue_b,
+          duration_seconds: 300, created_at: 3.days.ago)
+        create(:agent_run, :completed, project: project, issue: issue_b,
+          duration_seconds: 300, created_at: 2.days.ago)
+      end
+
+      it "counts all merged PRs" do
+        expect(stats[:issue_completion][:merged_count]).to eq(2)
+      end
+
+      it "calculates runs per issue across multiple issues" do
+        rpi = stats[:issue_completion][:runs_per_issue]
+        # Issue A: 1 run, Issue B: 3 runs -> avg 2.0
+        expect(rpi[:avg]).to eq(2.0)
+        expect(rpi[:min]).to eq(1)
+        expect(rpi[:max]).to eq(3)
+      end
+
+      it "calculates agent run minutes across issues" do
+        arm = stats[:issue_completion][:agent_run_minutes]
+        # Issue A: 120s, Issue B: 900s -> avg 510
+        expect(arm[:avg_seconds]).to eq(510)
+      end
+    end
+
+    context "with merged PRs from another account" do
+      let(:other_account) { create(:account) }
+      let(:other_project) { create(:project, account: other_account) }
+
+      before do
+        other_issue = create(:issue, :pull_request, :closed, project: other_project,
+          pr_review_phase: "merged",
+          github_created_at: 5.days.ago,
+          github_updated_at: 1.day.ago)
+        create(:agent_run, :completed, project: other_project, issue: other_issue,
+          duration_seconds: 300)
+      end
+
+      it "excludes merged PRs from other accounts" do
+        expect(stats[:issue_completion][:merged_count]).to eq(0)
+      end
+    end
+
+    context "with non-merged PRs" do
+      before do
+        open_pr = create(:issue, :pull_request, project: project,
+          pr_review_phase: "draft",
+          github_created_at: 5.days.ago,
+          github_updated_at: 1.day.ago)
+        create(:agent_run, :completed, project: project, issue: open_pr,
+          duration_seconds: 300)
+      end
+
+      it "does not count non-merged PRs" do
+        expect(stats[:issue_completion][:merged_count]).to eq(0)
       end
     end
   end

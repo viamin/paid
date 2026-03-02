@@ -145,6 +145,124 @@
     </div>
   </div>
 
+  <%# Issue Completion %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Issue Completion</h2>
+    <% ic = @stats[:issue_completion] %>
+    <% if ic[:merged_count] > 0 %>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Merged PRs</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-green-600">
+            <%= ic[:merged_count] %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Avg Runs / Issue</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= ic[:runs_per_issue][:avg] %>
+          </dd>
+          <dd class="mt-1 text-xs text-gray-500">
+            min <%= ic[:runs_per_issue][:min] %> / max <%= ic[:runs_per_issue][:max] %> / median <%= ic[:runs_per_issue][:median] %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Avg Time to Merge</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <% seconds = ic[:time_to_merge][:avg_seconds] %>
+            <% if seconds > 0 %>
+              <% if seconds >= 86400 %>
+                <%= seconds / 86400 %>d <%= (seconds % 86400) / 3600 %>h
+              <% elsif seconds >= 3600 %>
+                <%= seconds / 3600 %>h <%= (seconds % 3600) / 60 %>m
+              <% elsif seconds >= 60 %>
+                <%= seconds / 60 %>m <%= seconds % 60 %>s
+              <% else %>
+                <%= seconds %>s
+              <% end %>
+            <% else %>
+              --
+            <% end %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Avg Agent Time / Issue</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <% seconds = ic[:agent_run_minutes][:avg_seconds] %>
+            <% if seconds > 0 %>
+              <% if seconds >= 3600 %>
+                <%= seconds / 3600 %>h <%= (seconds % 3600) / 60 %>m
+              <% elsif seconds >= 60 %>
+                <%= seconds / 60 %>m <%= seconds % 60 %>s
+              <% else %>
+                <%= seconds %>s
+              <% end %>
+            <% else %>
+              --
+            <% end %>
+          </dd>
+        </div>
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <h3 class="text-sm font-medium text-gray-500">Time to Merge Percentiles</h3>
+          <div class="mt-3 flex flex-wrap gap-6 text-sm">
+            <% { "p50" => :p50_seconds, "p90" => :p90_seconds }.each do |label, key| %>
+              <div>
+                <span class="text-gray-500"><%= label %>:</span>
+                <% seconds = ic[:time_to_merge][key] %>
+                <span class="font-semibold text-gray-900">
+                  <% if seconds > 0 %>
+                    <% if seconds >= 86400 %>
+                      <%= seconds / 86400 %>d <%= (seconds % 86400) / 3600 %>h
+                    <% elsif seconds >= 3600 %>
+                      <%= seconds / 3600 %>h <%= (seconds % 3600) / 60 %>m
+                    <% elsif seconds >= 60 %>
+                      <%= seconds / 60 %>m <%= seconds % 60 %>s
+                    <% else %>
+                      <%= seconds %>s
+                    <% end %>
+                  <% else %>
+                    --
+                  <% end %>
+                </span>
+              </div>
+            <% end %>
+          </div>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <h3 class="text-sm font-medium text-gray-500">Agent Time Percentiles</h3>
+          <div class="mt-3 flex flex-wrap gap-6 text-sm">
+            <% { "p50" => :p50_seconds, "p90" => :p90_seconds }.each do |label, key| %>
+              <div>
+                <span class="text-gray-500"><%= label %>:</span>
+                <% seconds = ic[:agent_run_minutes][key] %>
+                <span class="font-semibold text-gray-900">
+                  <% if seconds > 0 %>
+                    <% if seconds >= 3600 %>
+                      <%= seconds / 3600 %>h <%= (seconds % 3600) / 60 %>m
+                    <% elsif seconds >= 60 %>
+                      <%= seconds / 60 %>m <%= seconds % 60 %>s
+                    <% else %>
+                      <%= seconds %>s
+                    <% end %>
+                  <% else %>
+                    --
+                  <% end %>
+                </span>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    <% else %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 text-sm text-gray-500">No merged PRs with agent runs yet.</div>
+      </div>
+    <% end %>
+  </div>
+
   <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
     <%# Runs by Agent Type %>
     <div>
