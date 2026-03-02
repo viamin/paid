@@ -48,16 +48,6 @@ FileUtils.chdir APP_ROOT do
   puts "\n== Cleaning up stale state from previous run =="
   system "bin/rails dev:cleanup"
 
-  # Stop orphaned agent and service containers left over from previous runs.
-  orphaned = [
-    `docker ps -q --filter "label=paid.agent_run_id" 2>/dev/null`,
-    `docker ps -q --filter "label=paid.service_container" 2>/dev/null`
-  ].flat_map { |out| out.strip.lines.map(&:strip) }.reject(&:empty?).uniq
-  unless orphaned.empty?
-    puts "  Stopping #{orphaned.size} orphaned container(s)"
-    system "docker stop #{orphaned.join(' ')} >/dev/null 2>&1"
-  end
-
   unless ARGV.include?("--skip-server")
     puts "\n== Starting development server =="
     STDOUT.flush # flush the output before exec(2) so that it displays

@@ -10,6 +10,10 @@ RSpec.describe "dev:cleanup" do
   before do
     Rails.application.load_tasks unless Rake::Task.task_defined?("dev:cleanup")
     task.reenable
+
+    # Stub docker commands by default so tests don't hit real docker
+    allow_any_instance_of(Kernel).to receive(:`).and_call_original # rubocop:disable RSpec/AnyInstance
+    allow_any_instance_of(Kernel).to receive(:`).with(a_string_matching(/docker ps/)).and_return("") # rubocop:disable RSpec/AnyInstance
   end
 
   it "times out runs stuck in running" do
@@ -87,6 +91,19 @@ RSpec.describe "dev:cleanup" do
 
     expect(running.reload.status).to eq("timeout")
     expect(pending_run.reload.status).to eq("timeout")
+  end
+
+  it "stops orphaned agent containers" do
+    allow_any_instance_of(Kernel).to receive(:`).with('docker ps -q --filter "label=paid.agent_run_id" 2>/dev/null').and_return("abc123\n") # rubocop:disable RSpec/AnyInstance
+    expect_any_instance_of(Kernel).to receive(:system).with("docker stop abc123 >/dev/null 2>&1") # rubocop:disable RSpec/AnyInstance
+
+    task.invoke
+  end
+
+  it "does not call docker stop when no orphaned containers exist" do
+    expect_any_instance_of(Kernel).not_to receive(:system).with(a_string_matching(/docker stop/)) # rubocop:disable RSpec/AnyInstance
+
+    task.invoke
   end
 end
 # rubocop:enable RSpec/DescribeClass
