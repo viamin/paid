@@ -43,7 +43,7 @@ RSpec.describe Dashboard::Stats do
         expect(ic[:merged_count]).to eq(0)
         expect(ic[:runs_per_issue]).to eq(avg: 0.0, min: 0, max: 0, median: 0.0)
         expect(ic[:time_to_merge]).to eq(avg_seconds: 0, p50_seconds: 0, p90_seconds: 0)
-        expect(ic[:agent_run_minutes]).to eq(avg_seconds: 0, p50_seconds: 0, p90_seconds: 0)
+        expect(ic[:agent_run_seconds]).to eq(avg_seconds: 0, p50_seconds: 0, p90_seconds: 0)
       end
     end
 
@@ -204,8 +204,8 @@ RSpec.describe Dashboard::Stats do
         expect(ttm[:p50_seconds]).to be_within(5).of(expected_seconds)
       end
 
-      it "calculates agent run minutes" do
-        arm = stats[:issue_completion][:agent_run_minutes]
+      it "calculates agent run seconds" do
+        arm = stats[:issue_completion][:agent_run_seconds]
         # Total: 300 + 200 + 100 = 600 seconds
         expect(arm[:avg_seconds]).to eq(600)
         expect(arm[:p50_seconds]).to eq(600)
@@ -251,8 +251,8 @@ RSpec.describe Dashboard::Stats do
         expect(rpi[:max]).to eq(3)
       end
 
-      it "calculates agent run minutes across issues" do
-        arm = stats[:issue_completion][:agent_run_minutes]
+      it "calculates agent run seconds across issues" do
+        arm = stats[:issue_completion][:agent_run_seconds]
         # Issue A: 120s, Issue B: 900s -> avg 510
         expect(arm[:avg_seconds]).to eq(510)
       end

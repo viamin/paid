@@ -136,7 +136,7 @@ module Dashboard
           p50_seconds: result["p50_wall_seconds"]&.to_i || 0,
           p90_seconds: result["p90_wall_seconds"]&.to_i || 0
         },
-        agent_run_minutes: {
+        agent_run_seconds: {
           avg_seconds: result["avg_run_seconds"]&.to_i || 0,
           p50_seconds: result["p50_run_seconds"]&.to_i || 0,
           p90_seconds: result["p90_run_seconds"]&.to_i || 0
@@ -149,7 +149,7 @@ module Dashboard
         merged_count: 0,
         runs_per_issue: { avg: 0.0, min: 0, max: 0, median: 0.0 },
         time_to_merge: { avg_seconds: 0, p50_seconds: 0, p90_seconds: 0 },
-        agent_run_minutes: { avg_seconds: 0, p50_seconds: 0, p90_seconds: 0 }
+        agent_run_seconds: { avg_seconds: 0, p50_seconds: 0, p90_seconds: 0 }
       }
     end
 
@@ -167,6 +167,8 @@ module Dashboard
           WHERE issues.is_pull_request = true
             AND issues.pr_review_phase = 'merged'
             AND issues.project_id IN (#{project_ids_sql})
+            AND agent_runs.goal = 'create_pr'
+            AND agent_runs.created_at <= issues.github_updated_at
           GROUP BY issues.id, issues.github_updated_at
         )
         SELECT COUNT(*) AS merged_count,
