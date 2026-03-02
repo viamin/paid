@@ -461,6 +461,23 @@ RSpec.describe "AgentRuns" do
         end
       end
 
+      it "ignores agent_type and goal params and still uses quick-run defaults" do
+        expect {
+          post quick_create_project_agent_runs_path(project), params: {
+            issue_id: issue.id,
+            agent_type: "different_agent",
+            goal: "different_goal"
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        agent_run = AgentRun.last
+        expect(agent_run.project).to eq(project)
+        expect(agent_run.issue).to eq(issue)
+        expect(agent_run.agent_type).to eq("claude_code")
+        expect(agent_run.goal).to eq("create_pr")
+        expect(agent_run.status).to eq("queued")
+      end
+
       it "handles duplicate queued run via DB constraint" do
         create(:agent_run, :queued, project: project, issue: issue)
 
