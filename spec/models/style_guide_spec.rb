@@ -207,5 +207,18 @@ RSpec.describe StyleGuide do
       result = described_class.resolve_for(project)
       expect(result).to be_empty
     end
+
+    it "deduplicates by name, keeping the most specific guide" do
+      create(:style_guide, account: nil, project: nil, name: "Ruby Guide")
+      account_guide = create(:style_guide, account: account, project: nil, name: "Ruby Guide")
+      create(:style_guide, account: nil, project: nil, name: "JS Guide")
+
+      result = described_class.resolve_for(project)
+      names = result.map(&:name)
+
+      expect(names).to include("Ruby Guide")
+      expect(names.count("Ruby Guide")).to eq(1)
+      expect(result.find { |g| g.name == "Ruby Guide" }).to eq(account_guide)
+    end
   end
 end
