@@ -69,6 +69,13 @@ RSpec.describe "AgentRuns" do
         expect(response.body.index(other_project.name)).to be < response.body.index(project.name)
       end
 
+      it "shows issue link when created_issue_url is present" do
+        create(:agent_run, :with_created_issue, :completed, project: project)
+        get agent_runs_path
+        expect(response.body).to include("Issue #42")
+        expect(response.body).to include("https://github.com/example/repo/issues/42")
+      end
+
       it "does not show runs from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)
@@ -128,6 +135,13 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to have_http_status(:ok)
         expect(response.body.index("Claude Code")).to be < response.body.index("Cursor")
+      end
+
+      it "shows issue link when created_issue_url is present" do
+        create(:agent_run, :with_created_issue, :completed, project: project)
+        get project_agent_runs_path(project)
+        expect(response.body).to include("Issue #42")
+        expect(response.body).to include("https://github.com/example/repo/issues/42")
       end
 
       it "does not show runs from other accounts" do
