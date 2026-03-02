@@ -38,6 +38,9 @@ FileUtils.chdir APP_ROOT do
   system! "bin/rails db:prepare"
   system! "bin/rails db:reset" if ARGV.include?("--reset")
 
+  puts "\n== Checking Qdrant connectivity =="
+  system "bin/rails qdrant:check"
+
   puts "\n== Building agent container image =="
   system! "docker compose --profile setup up agent-image --build"
 
