@@ -80,15 +80,20 @@ module Prompts
     end
 
     def setup_database_instruction
-      if project.service_containers.any?
-        "   Run `bin/rails db:prepare` to set up the database (DATABASE_URL is already configured)."
+      if running_service_containers.any?
+        if detected_language == "ruby"
+          "   Run `bin/rails db:prepare` to set up the database (DATABASE_URL is already configured)."
+        else
+          "   A database service is already running and available via the `DATABASE_URL` environment variable." \
+          " Use your framework's standard command to create and migrate the database schema."
+        end
       else
         "   Do NOT run `bin/setup`, `db:prepare`, or `db:migrate` — no database is available in this environment."
       end
     end
 
     def no_infrastructure_section
-      return "" if project.service_containers.any?
+      return "" if running_service_containers.any?
 
       <<~SECTION
 
@@ -97,13 +102,19 @@ module Prompts
         You are running in an isolated container WITHOUT database services.
         Do NOT attempt to install PostgreSQL, Redis, or any other infrastructure service.
         Do NOT run `bin/setup`, `bin/rails db:prepare`, `bin/rails db:migrate`, or `initdb`.
-        If a task requires database access and none is available, implement the code changes
-        and write tests that use mocks or factories, but do not attempt to start a database server.
+
+        If a task requires database access and none is available:
+        - Implement the code changes and write tests that use mocks, factories, or other
+          techniques that do not require a real database connection.
+        - Do NOT attempt to start or provision your own database server.
+        - If the default test command or pre-commit hook fails because it cannot reach the
+          database, run whatever subset of tests can pass without a database and clearly
+          explain in your final answer which tests could not be run due to missing services.
       SECTION
     end
 
     def available_services_section
-      containers = project.service_containers.to_a
+      containers = running_service_containers
       return "" if containers.empty?
 
       lines = containers.map { |sc| service_description(sc) }
@@ -118,6 +129,10 @@ module Prompts
         Do NOT install or build these services from source. They are already running.
         Use the environment variables above to connect.
       SECTION
+    end
+
+    def running_service_containers
+      @running_service_containers ||= project.service_containers.running.to_a
     end
 
     def service_description(sc)
