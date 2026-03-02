@@ -121,6 +121,57 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
+    context "when project has no service containers" do
+      it "includes environment constraints warning" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).to include("Environment Constraints")
+        expect(prompt).to include("Do NOT attempt to install PostgreSQL")
+        expect(prompt).to include("Do NOT run `bin/setup`")
+      end
+
+      it "tells the agent not to run database commands" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).to include("Do NOT run `bin/setup`, `db:prepare`, or `db:migrate`")
+      end
+
+      it "does not include available services section" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).not_to include("Available Services")
+      end
+    end
+
+    context "when project has service containers" do
+      let!(:service_container) { create(:service_container, :running) }
+
+      before do
+        project.service_containers << service_container
+      end
+
+      it "includes available services section" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).to include("Available Services")
+        expect(prompt).to include("DATABASE_URL")
+      end
+
+      it "does not include environment constraints warning" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).not_to include("Environment Constraints")
+        expect(prompt).not_to include("Do NOT attempt to install PostgreSQL")
+      end
+
+      it "tells the agent to run db:prepare" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).to include("Run `bin/rails db:prepare`")
+        expect(prompt).to include("DATABASE_URL is already configured")
+      end
+    end
+
     context "when issue body is nil" do
       let(:issue) do
         create(:issue,
