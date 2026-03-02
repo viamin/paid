@@ -8,10 +8,15 @@ namespace :dev do
     # waiting agent_timeout + 10 minutes.
     count = 0
     AgentRun.active.find_each do |run|
-      run.timeout!(error: "Marked stale on startup: process was restarted")
-      run.log!("system", "Run marked as timed out during startup cleanup")
-      run.issue&.update!(paid_state: "failed") unless run.issue&.paid_state == "failed"
-      count += 1
+      run.with_lock do
+        run.reload
+        next if run.finished?
+
+        run.timeout!(error: "Marked stale on startup: process was restarted")
+        run.log!("system", "Run marked as timed out during startup cleanup")
+        run.issue&.update!(paid_state: "failed") unless run.issue&.paid_state == "failed"
+        count += 1
+      end
     end
 
     puts "  Resolved #{count} stale agent run(s)" if count > 0
@@ -22,7 +27,7 @@ namespace :dev do
     orphaned.uniq!
     if orphaned.any?
       puts "  Stopping #{orphaned.size} orphaned container(s)"
-      system("docker stop #{orphaned.join(' ')} >/dev/null 2>&1")
+      system("docker", "stop", *orphaned, out: File::NULL, err: File::NULL)
     end
 
     # Always process the queue — queued runs may be stranded if the job was
