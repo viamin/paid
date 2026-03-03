@@ -36,6 +36,7 @@ RSpec.describe "Projects::ServiceContainers" do
           post project_project_service_containers_path(project), params: { service_container_id: sc.id }
         }.not_to change(ProjectServiceContainer, :count)
         expect(response).to redirect_to(edit_project_path(project))
+        expect(flash[:alert]).to include("already associated")
       end
 
       it "handles non-existent service container" do
@@ -47,6 +48,15 @@ RSpec.describe "Projects::ServiceContainers" do
   end
 
   describe "DELETE /projects/:project_id/project_service_containers/:id" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        sc = create(:service_container)
+        psc = create(:project_service_container, project: project, service_container: sc)
+        delete project_project_service_container_path(project, psc)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
     context "when authenticated" do
       before { sign_in user }
 

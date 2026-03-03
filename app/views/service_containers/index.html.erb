@@ -40,7 +40,7 @@
               </td>
               <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500"><%= sc.port %></td>
               <td class="whitespace-nowrap px-6 py-4 text-sm">
-                <%= render_service_container_status(sc.status) %>
+                <%= service_container_status_badge(sc.status) %>
               </td>
               <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500"><%= sc.projects.size %></td>
               <td class="whitespace-nowrap px-6 py-4 text-right text-sm font-medium">

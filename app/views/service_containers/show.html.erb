@@ -14,7 +14,7 @@
     <div class="px-4 py-5 sm:p-6">
       <div class="flex items-center justify-between">
         <h1 class="text-xl font-semibold text-gray-900"><%= @service_container.name %></h1>
-        <%= render_service_container_status(@service_container.status) %>
+        <%= service_container_status_badge(@service_container.status) %>
       </div>
 
       <dl class="mt-6 grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
@@ -51,9 +51,10 @@
         <div class="sm:col-span-2">
           <dt class="text-sm font-medium text-gray-500">Associated Projects</dt>
           <dd class="mt-1 text-sm text-gray-900">
-            <% if @service_container.projects.any? %>
+            <% visible_projects = @service_container.projects.select { |project| policy(project).show? } %>
+            <% if visible_projects.any? %>
               <ul class="list-disc space-y-1 pl-5">
-                <% @service_container.projects.each do |project| %>
+                <% visible_projects.each do |project| %>
                   <li><%= link_to project.name, project_path(project), class: "text-indigo-600 hover:text-indigo-900" %></li>
                 <% end %>
               </ul>
