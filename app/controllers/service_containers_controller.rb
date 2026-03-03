@@ -3,11 +3,9 @@
 class ServiceContainersController < ApplicationController
   before_action :set_service_container, only: [ :show, :edit, :update, :destroy ]
   skip_after_action :verify_authorized, only: :index
-  skip_after_action :verify_policy_scoped, only: :index
 
   def index
-    authorize ServiceContainer
-    @service_containers = ServiceContainer.order(created_at: :desc)
+    @service_containers = policy_scope(ServiceContainer).includes(:projects).order(created_at: :desc)
   end
 
   def show

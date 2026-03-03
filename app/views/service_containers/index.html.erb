@@ -42,7 +42,7 @@
               <td class="whitespace-nowrap px-6 py-4 text-sm">
                 <%= render_service_container_status(sc.status) %>
               </td>
-              <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500"><%= sc.projects.count %></td>
+              <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500"><%= sc.projects.size %></td>
               <td class="whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
                 <%= link_to "Edit", edit_service_container_path(sc), class: "text-indigo-600 hover:text-indigo-900" %>
               </td>
