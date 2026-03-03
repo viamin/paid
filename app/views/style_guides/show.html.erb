@@ -21,6 +21,8 @@
     <div class="mt-4 flex gap-2 sm:mt-0">
       <% if policy(@style_guide).update? %>
         <%= link_to "Edit", edit_style_guide_path(@style_guide), class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <% end %>
+      <% if policy(@style_guide).compress? %>
         <%= button_to "Compress", compress_style_guide_path(@style_guide), method: :post, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" %>
       <% end %>
       <% if policy(@style_guide).destroy? %>
@@ -78,7 +80,7 @@
                    nil
                  end %>
               <% if compressed_at %>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= compressed_at.strftime("%b %d, %Y %H:%M UTC") %></dd>
+                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= compressed_at.strftime("%b %d, %Y %H:%M %Z") %></dd>
               <% else %>
                 <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= @style_guide.compression_metadata["compressed_at"] %></dd>
               <% end %>
