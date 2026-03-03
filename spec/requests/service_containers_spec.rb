@@ -8,6 +8,7 @@ RSpec.describe "ServiceContainers" do
 
   before do
     user.add_role(:admin, account)
+    create(:user_setting, user: user)
   end
 
   describe "GET /service_containers" do

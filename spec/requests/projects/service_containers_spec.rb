@@ -45,6 +45,32 @@ RSpec.describe "Projects::ServiceContainers" do
         expect(flash[:alert]).to include("not found")
       end
     end
+
+    context "when authenticated as member" do
+      let(:member) { create(:user, :member, account: account) }
+
+      before { sign_in member }
+
+      it "redirects with authorization error" do
+        sc = create(:service_container)
+        post project_project_service_containers_path(project), params: { service_container_id: sc.id }
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+
+    context "when authenticated as viewer" do
+      let(:viewer) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer }
+
+      it "redirects with authorization error" do
+        sc = create(:service_container)
+        post project_project_service_containers_path(project), params: { service_container_id: sc.id }
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
   end
 
   describe "DELETE /projects/:project_id/project_service_containers/:id" do
@@ -68,6 +94,34 @@ RSpec.describe "Projects::ServiceContainers" do
         }.to change(ProjectServiceContainer, :count).by(-1)
         expect(response).to redirect_to(edit_project_path(project))
         expect(flash[:notice]).to include("removed")
+      end
+    end
+
+    context "when authenticated as member" do
+      let(:member) { create(:user, :member, account: account) }
+
+      before { sign_in member }
+
+      it "redirects with authorization error" do
+        sc = create(:service_container)
+        psc = create(:project_service_container, project: project, service_container: sc)
+        delete project_project_service_container_path(project, psc)
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+
+    context "when authenticated as viewer" do
+      let(:viewer) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer }
+
+      it "redirects with authorization error" do
+        sc = create(:service_container)
+        psc = create(:project_service_container, project: project, service_container: sc)
+        delete project_project_service_container_path(project, psc)
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
       end
     end
   end
