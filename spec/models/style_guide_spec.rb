@@ -164,6 +164,27 @@ RSpec.describe StyleGuide do
     end
   end
 
+  describe "callbacks" do
+    describe "clear_compression on raw_content change" do
+      it "clears compressed content when raw_content is updated" do
+        guide = create(:style_guide, :global, :compressed)
+        expect(guide.compressed?).to be true
+
+        guide.update!(raw_content: "Updated content")
+        expect(guide.compressed_content).to be_nil
+        expect(guide.compression_metadata).to eq({})
+      end
+
+      it "does not clear compressed content when other attributes change" do
+        guide = create(:style_guide, :global, :compressed)
+        original_compressed = guide.compressed_content
+
+        guide.update!(name: "Renamed Guide")
+        expect(guide.compressed_content).to eq(original_compressed)
+      end
+    end
+  end
+
   describe ".resolve_for" do
     let(:account) { create(:account) }
     let(:project) { create(:project, account: account) }

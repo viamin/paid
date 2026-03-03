@@ -10,6 +10,8 @@ module StyleGuides
   class CompressionError < StandardError; end
 
   class Compress
+    MODEL = "claude-sonnet-4-6"
+
     COMPRESSION_PROMPT = <<~PROMPT
       You are a technical writing assistant. Compress the following coding style guide into a concise, LLM-friendly format.
 
@@ -52,6 +54,7 @@ module StyleGuides
       response = AgentHarness.send_message(
         "#{COMPRESSION_PROMPT}\n\n#{style_guide.raw_content}",
         provider: :claude,
+        model: MODEL,
         dangerous_mode: false
       )
 
@@ -74,6 +77,7 @@ module StyleGuides
     def build_metadata(compressed)
       {
         compressed_at: Time.current.iso8601,
+        model: MODEL,
         raw_length: style_guide.raw_content.length,
         compressed_length: compressed.length,
         compression_ratio: (compressed.length.to_f / style_guide.raw_content.length).round(2)

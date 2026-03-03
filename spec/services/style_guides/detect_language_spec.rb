@@ -42,5 +42,11 @@ RSpec.describe StyleGuides::DetectLanguage do
       content = "Use DEF for functions. Configure RUBOCOP. Follow RAILS conventions."
       expect(described_class.call(content: content)).to eq("ruby")
     end
+
+    it "matches non-word indicators like =>" do
+      content = "Use => for arrow functions. Use const and let. Configure eslint and prettier."
+      result = described_class.call(content: content)
+      expect(result).to eq("javascript")
+    end
   end
 end

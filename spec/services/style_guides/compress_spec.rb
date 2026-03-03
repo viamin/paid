@@ -46,6 +46,7 @@ RSpec.describe StyleGuides::Compress do
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_including("Compress the following coding style guide"),
         provider: :claude,
+        model: "claude-sonnet-4-6",
         dangerous_mode: false
       )
     end

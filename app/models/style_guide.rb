@@ -7,6 +7,7 @@ class StyleGuide < ApplicationRecord
   belongs_to :project, optional: true
 
   before_validation :set_account_from_project, if: -> { project.present? && account.nil? }
+  before_update :clear_compression, if: :raw_content_changed?
 
   validates :name, presence: true, length: { maximum: 255 }
   validates :name, uniqueness: { conditions: -> { where(account_id: nil, project_id: nil) } }, if: :global?
@@ -82,6 +83,11 @@ class StyleGuide < ApplicationRecord
   end
 
   private
+
+  def clear_compression
+    self.compressed_content = nil
+    self.compression_metadata = {}
+  end
 
   def set_account_from_project
     self.account = project.account
