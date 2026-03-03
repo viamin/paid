@@ -3,7 +3,7 @@
 module Projects
   class AgentRunsController < ApplicationController
     before_action :set_project
-    before_action :set_agent_run, only: [ :show, :retry ]
+    before_action :set_agent_run, only: [ :show, :retry, :refresh_auth ]
 
     def index
       authorize @project, :show?
@@ -99,6 +99,81 @@ module Projects
 
       redirect_to project_agent_run_path(@project, new_run),
         notice: "Agent run queued as a retry of run ##{@agent_run.id}."
+    rescue ActiveRecord::RecordNotUnique => e
+      alert = if e.cause&.message&.include?("proxy_token")
+        "An unexpected error occurred. Please try again."
+      else
+        "An agent run is already queued or in progress for this issue."
+      end
+      redirect_to project_agent_run_path(@project, @agent_run), alert: alert
+    end
+
+    def refresh_auth
+      authorize @agent_run
+
+      unless @agent_run.auth_expired?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Only runs with expired authentication can be re-authenticated."
+        return
+      end
+
+      code = params[:auth_code]&.strip
+      if code.blank?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Please provide an authentication code."
+        return
+      end
+
+      provider = @agent_run.auth_provider.presence&.to_sym
+      if provider.nil?
+        Rails.logger.error(
+          message: "agent_execution.missing_auth_provider",
+          agent_run_id: @agent_run.id,
+          agent_type: @agent_run.agent_type
+        )
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Unable to determine authentication provider for this run."
+        return
+      end
+
+      unless AgentHarness.respond_to?(:refresh_auth)
+        Rails.logger.error(
+          message: "agent_execution.refresh_auth_unsupported",
+          agent_run_id: @agent_run.id
+        )
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Re-authentication is not supported for this agent."
+        return
+      end
+
+      AgentHarness.refresh_auth(provider, code: code)
+
+      new_run = AgentRun.create!(
+        project: @project,
+        issue: @agent_run.issue,
+        agent_type: @agent_run.agent_type,
+        custom_prompt: @agent_run.custom_prompt,
+        source_pull_request_number: @agent_run.source_pull_request_number,
+        goal: @agent_run.goal,
+        trigger_type: "manual",
+        status: "queued"
+      )
+      @agent_run.retry!
+      ProcessRunQueueJob.perform_later
+
+      redirect_to project_agent_run_path(@project, new_run),
+        notice: "Authentication refreshed. Agent run queued for retry."
+    # Catch all harness errors (including AuthenticationError, which is a
+    # subclass of Error) so this works even when the shim hasn't loaded yet.
+    rescue AgentHarness::Error => e
+      Rails.logger.error(
+        message: "agent_execution.refresh_auth_failed",
+        agent_run_id: @agent_run.id,
+        error_class: e.class.name,
+        error_message: e.message
+      )
+      redirect_to project_agent_run_path(@project, @agent_run),
+        alert: "Re-authentication failed: #{e.message}"
     rescue ActiveRecord::RecordNotUnique => e
       alert = if e.cause&.message&.include?("proxy_token")
         "An unexpected error occurred. Please try again."

@@ -619,4 +619,135 @@ RSpec.describe "AgentRuns" do
       end
     end
   end
+
+  describe "POST /projects/:project_id/agent_runs/:id/refresh_auth" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        agent_run = create(:agent_run, :auth_expired, project: project)
+        post refresh_auth_project_agent_run_path(project, agent_run)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "redirects when run is not auth_expired" do
+        agent_run = create(:agent_run, :failed, project: project)
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "abc123" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("Only runs with expired authentication")
+      end
+
+      it "redirects when auth code is blank" do
+        agent_run = create(:agent_run, :auth_expired, project: project)
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "  " }
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("Please provide an authentication code")
+      end
+
+      it "creates a new queued run and marks original as retried on success" do
+        agent_run = create(:agent_run, :auth_expired, project: project, agent_type: "claude_code")
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:refresh_auth)
+        end
+
+        expect {
+          post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+        }.to change(AgentRun, :count).by(1)
+
+        new_run = AgentRun.last
+        expect(new_run.status).to eq("queued")
+        expect(new_run.project).to eq(project)
+        expect(new_run.issue).to eq(agent_run.issue)
+        expect(new_run.agent_type).to eq("claude_code")
+        expect(new_run.trigger_type).to eq("manual")
+        expect(agent_run.reload.status).to eq("retried")
+        expect(response).to redirect_to(project_agent_run_path(project, new_run))
+        without_partial_double_verification do
+          expect(AgentHarness).to have_received(:refresh_auth).with(:claude, code: "valid-code")
+        end
+      end
+
+      it "enqueues ProcessRunQueueJob on success" do
+        agent_run = create(:agent_run, :auth_expired, project: project)
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:refresh_auth)
+        end
+
+        expect {
+          post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+        }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "redirects with alert when auth_provider is missing" do
+        agent_run = create(:agent_run, :auth_expired, project: project, auth_provider: nil)
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("Unable to determine authentication provider")
+      end
+
+      it "redirects with alert when refresh_auth is not supported" do
+        agent_run = create(:agent_run, :auth_expired, project: project)
+        allow(AgentHarness).to receive(:respond_to?).and_call_original
+        allow(AgentHarness).to receive(:respond_to?).with(:refresh_auth).and_return(false)
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("Re-authentication is not supported")
+      end
+
+      it "redirects with alert on AgentHarness::AuthenticationError" do
+        agent_run = create(:agent_run, :auth_expired, project: project)
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:refresh_auth)
+            .and_raise(AgentHarness::AuthenticationError, "Invalid code")
+        end
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "bad-code" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("Re-authentication failed")
+        expect(response.body).to include("Invalid code")
+      end
+
+      it "redirects with alert on AgentHarness::Error" do
+        agent_run = create(:agent_run, :auth_expired, project: project)
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:refresh_auth)
+            .and_raise(AgentHarness::Error, "Provider unavailable")
+        end
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "some-code" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("Re-authentication failed")
+        expect(response.body).to include("Provider unavailable")
+      end
+
+      it "does not allow refreshing runs from other accounts" do
+        other_account = create(:account)
+        other_token = create(:github_token, account: other_account)
+        other_project = create(:project, account: other_account, github_token: other_token)
+        other_run = create(:agent_run, :auth_expired, project: other_project)
+
+        post refresh_auth_project_agent_run_path(other_project, other_run), params: { auth_code: "abc" }
+
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+  end
 end
