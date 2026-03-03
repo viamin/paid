@@ -284,6 +284,35 @@ RSpec.describe Project do
     end
   end
 
+  describe "#has_running_database_container?" do
+    let(:project) { create(:project) }
+
+    it "returns false when no service containers exist" do
+      expect(project.has_running_database_container?).to be false
+    end
+
+    it "returns true when a running postgres container is associated" do
+      sc = create(:service_container, :running, image: "postgres:16")
+      create(:project_service_container, project: project, service_container: sc)
+
+      expect(project.has_running_database_container?).to be true
+    end
+
+    it "returns false when postgres container is stopped" do
+      sc = create(:service_container, image: "postgres:16", status: "stopped")
+      create(:project_service_container, project: project, service_container: sc)
+
+      expect(project.has_running_database_container?).to be false
+    end
+
+    it "returns false when only non-database containers are running" do
+      sc = create(:service_container, :running, :redis)
+      create(:project_service_container, project: project, service_container: sc)
+
+      expect(project.has_running_database_container?).to be false
+    end
+  end
+
   describe "#trusted_github_user?" do
     let(:project) { build(:project, allowed_github_usernames: [ "viamin", "OtherUser" ]) }
 
