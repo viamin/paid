@@ -87,7 +87,7 @@ class Project < ApplicationRecord
   end
 
   def has_running_database_container?
-    service_containers.running.any? { |sc| sc.image.include?("postgres") }
+    service_containers.running.where("image LIKE ?", "%postgres%").exists?
   end
 
   def trusted_github_user?(login)
