@@ -8,7 +8,7 @@
     name: "postgres",
     image: "postgres:16",
     port: 5432,
-    env: { "POSTGRES_USER" => "agent", "POSTGRES_PASSWORD" => SecureRandom.hex(16), "POSTGRES_DB" => "agent_db" }
+    env: { "POSTGRES_USER" => "agent", "POSTGRES_DB" => "agent_db", "POSTGRES_HOST_AUTH_METHOD" => "trust" }
   },
   {
     name: "redis",
