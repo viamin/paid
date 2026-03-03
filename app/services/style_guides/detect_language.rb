@@ -53,13 +53,23 @@ module StyleGuides
 
     def call
       scores = LANGUAGE_INDICATORS.transform_values do |indicators|
-        indicators.count { |word| content.match?(/\b#{Regexp.escape(word)}\b/) }
+        indicators.count { |word| match_indicator?(word) }
       end
 
       best = scores.max_by { |_lang, score| score }
       return nil if best.nil? || best.last.zero?
 
       best.first
+    end
+
+    private
+
+    def match_indicator?(word)
+      if word.match?(/\A\w+\z/)
+        content.match?(/\b#{Regexp.escape(word)}\b/)
+      else
+        content.include?(word)
+      end
     end
   end
 end
