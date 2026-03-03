@@ -229,6 +229,12 @@ RSpec.describe AgentRun do
 
         expect(agent_run.duration).to be_within(1).of(300)
       end
+
+      it "returns 0 instead of negative when completed_at is before started_at" do
+        agent_run = build(:agent_run, started_at: Time.current, completed_at: 1.hour.ago)
+
+        expect(agent_run.duration).to eq(0)
+      end
     end
 
     describe "#create_issue_goal?" do
@@ -423,6 +429,21 @@ RSpec.describe AgentRun do
           expect(agent_run.status).to eq("running")
           expect(agent_run.started_at).to eq(Time.current)
         end
+      end
+
+      it "raises when the run is already finished" do
+        agent_run = create(:agent_run, :failed)
+
+        expect { agent_run.start! }.to raise_error(ActiveRecord::RecordInvalid)
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
+      it "clears stale completed_at to prevent negative duration" do
+        agent_run = create(:agent_run, status: "pending", completed_at: 1.hour.ago)
+
+        agent_run.start!
+
+        expect(agent_run.completed_at).to be_nil
       end
     end
 
