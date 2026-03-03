@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "delegate"
 require "qdrant"
 
 # Thin wrapper around Qdrant::Client with error handling and health checks.
