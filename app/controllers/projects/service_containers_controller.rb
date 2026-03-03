@@ -13,7 +13,7 @@ module Projects
       redirect_to edit_project_path(@project), notice: "Service container was added to the project."
     rescue ActiveRecord::RecordNotFound
       redirect_to edit_project_path(@project), alert: "Service container not found."
-    rescue ActiveRecord::RecordInvalid
+    rescue ActiveRecord::RecordNotUnique
       redirect_to edit_project_path(@project), alert: "Service container is already associated with this project."
     end
 
