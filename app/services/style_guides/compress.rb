@@ -11,6 +11,7 @@ module StyleGuides
 
   class Compress
     MODEL = "claude-sonnet-4-6"
+    TIMEOUT = 120
 
     COMPRESSION_PROMPT = <<~PROMPT
       You are a technical writing assistant. Compress the following coding style guide into a concise, LLM-friendly format.
@@ -55,6 +56,7 @@ module StyleGuides
         "#{COMPRESSION_PROMPT}\n\n#{style_guide.raw_content}",
         provider: :claude,
         model: MODEL,
+        timeout: TIMEOUT,
         dangerous_mode: false
       )
 

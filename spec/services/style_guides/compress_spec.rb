@@ -47,6 +47,7 @@ RSpec.describe StyleGuides::Compress do
         a_string_including("Compress the following coding style guide"),
         provider: :claude,
         model: "claude-sonnet-4-6",
+        timeout: 120,
         dangerous_mode: false
       )
     end
