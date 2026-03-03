@@ -223,9 +223,40 @@ RSpec.describe Containers::GitOperations do
     it "uses --force-with-lease for existing PR branches" do
       agent_run.update!(source_pull_request_number: 42)
 
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
       expect(container_service).to receive(:execute)
         .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease" ], timeout: 60, stream: false)
         .and_return(success_result)
+
+      git_ops.push_branch
+    end
+
+    it "fetches the remote branch before pushing on existing PR branches" do
+      agent_run.update!(source_pull_request_number: 42)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease" ], timeout: 60, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease" ], timeout: 60, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      git_ops.push_branch
+    end
+
+    it "does not fetch before pushing on new branches" do
+      expect(container_service).not_to receive(:execute)
+        .with([ "git", "fetch", "origin", "paid/test-branch" ], timeout: nil, stream: false)
 
       git_ops.push_branch
     end
