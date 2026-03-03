@@ -66,7 +66,14 @@ class StyleGuidesController < ApplicationController
     StyleGuides::Compress.call(style_guide: @style_guide)
     redirect_to @style_guide, notice: "Style guide was successfully compressed."
   rescue AgentHarness::Error, StyleGuides::CompressionError => e
-    redirect_to @style_guide, alert: "Compression failed: #{e.message}"
+    Rails.logger.error(
+      message: "style_guides.compression_failed",
+      error_class: e.class.name,
+      error: e.message,
+      style_guide_id: @style_guide&.id,
+      request_id: request.request_id
+    )
+    redirect_to @style_guide, alert: "Compression failed. Please try again later."
   end
 
   private
