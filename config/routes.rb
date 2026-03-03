@@ -39,6 +39,7 @@ Rails.application.routes.draw do
     resource :workflow_status, only: [ :show ]
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
       post :retry, on: :member
+      post :refresh_auth, on: :member
       post :quick_create, on: :collection
     end
   end

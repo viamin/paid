@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  STATUSES = %w[queued pending running completed failed cancelled timeout retried].freeze
+  STATUSES = %w[queued pending running completed failed cancelled timeout retried auth_expired].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   GOALS = %w[create_pr create_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
@@ -37,6 +37,7 @@ class AgentRun < ApplicationRecord
   validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :source_pull_request_number, numericality: { greater_than: 0 }, allow_nil: true
+  validates :auth_provider, length: { maximum: 50 }
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :has_prompt_source, on: :create
 
@@ -49,8 +50,9 @@ class AgentRun < ApplicationRecord
   scope :cancelled, -> { where(status: "cancelled") }
   scope :timeout, -> { where(status: "timeout") }
   scope :retried, -> { where(status: "retried") }
+  scope :auth_expired, -> { where(status: "auth_expired") }
   scope :active, -> { where(status: %w[pending running]) }
-  scope :finished, -> { where(status: %w[completed failed cancelled timeout retried]) }
+  scope :finished, -> { where(status: %w[completed failed cancelled timeout retried auth_expired]) }
   scope :recent, -> { order(created_at: :desc) }
 
   ransacker :tokens_total, type: :integer do
@@ -130,7 +132,7 @@ class AgentRun < ApplicationRecord
   end
 
   def finished?
-    %w[completed failed cancelled timeout retried].include?(status)
+    %w[completed failed cancelled timeout retried auth_expired].include?(status)
   end
 
   def successful?
@@ -194,6 +196,20 @@ class AgentRun < ApplicationRecord
 
   def retry!
     update!(status: "retried")
+  end
+
+  def auth_expired?
+    status == "auth_expired"
+  end
+
+  def auth_expire!(error: nil, provider: nil)
+    update!(
+      status: "auth_expired",
+      completed_at: Time.current,
+      error_message: error,
+      auth_provider: provider,
+      duration_seconds: duration
+    )
   end
 
   # Creates a log entry for this agent run.
