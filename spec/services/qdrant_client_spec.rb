@@ -82,8 +82,14 @@ RSpec.describe QdrantClient do
           .and_raise(Faraday::ConnectionFailed.new("Connection refused"))
       end
 
-      it "wraps the error in ConnectionError" do
-        expect { client.collections.list }.to raise_error(QdrantClient::ConnectionError, "Connection refused")
+      it "wraps the error in ConnectionError with context" do
+        expect { client.collections.list }
+          .to raise_error(QdrantClient::ConnectionError, /Qdrant connection error during #list: Connection refused/)
+      end
+
+      it "preserves the original backtrace" do
+        expect { client.collections.list }
+          .to raise_error(QdrantClient::ConnectionError) { |e| expect(e.backtrace).not_to be_empty }
       end
     end
 
@@ -93,8 +99,9 @@ RSpec.describe QdrantClient do
           .and_raise(Faraday::TimeoutError.new("timeout"))
       end
 
-      it "wraps the error in ConnectionError" do
-        expect { client.collections.list }.to raise_error(QdrantClient::ConnectionError, "timeout")
+      it "wraps the error in ConnectionError with context" do
+        expect { client.collections.list }
+          .to raise_error(QdrantClient::ConnectionError, /Qdrant connection error during #list: timeout/)
       end
     end
 
@@ -104,9 +111,9 @@ RSpec.describe QdrantClient do
           .and_raise(Faraday::ConnectionFailed.new("Connection refused"))
       end
 
-      it "wraps the error in ConnectionError" do
+      it "wraps the error in ConnectionError with context" do
         expect { client.points.list(collection_name: "test") }
-          .to raise_error(QdrantClient::ConnectionError, "Connection refused")
+          .to raise_error(QdrantClient::ConnectionError, /Qdrant connection error during #list: Connection refused/)
       end
     end
 
@@ -116,9 +123,9 @@ RSpec.describe QdrantClient do
           .and_raise(Faraday::TimeoutError.new("timeout"))
       end
 
-      it "wraps the error in ConnectionError" do
+      it "wraps the error in ConnectionError with context" do
         expect { client.points.list(collection_name: "test") }
-          .to raise_error(QdrantClient::ConnectionError, "timeout")
+          .to raise_error(QdrantClient::ConnectionError, /Qdrant connection error during #list: timeout/)
       end
     end
   end
