@@ -41,6 +41,9 @@
               <%= link_to "Prompts", prompts_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
               <%= link_to "Tokens", github_tokens_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
               <%= link_to "Providers", providers_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+              <% if policy(ServiceContainer).index? %>
+                <%= link_to "Services", service_containers_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
+              <% end %>
               <%= link_to "Settings", edit_user_settings_path, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
               <span class="text-sm text-gray-700"><%= current_user.email %></span>
               <%= button_to "Sign out", destroy_user_session_path, method: :delete, class: "text-sm font-medium text-gray-500 hover:text-gray-700" %>
@@ -78,6 +81,9 @@
             <%= link_to "Tokens", github_tokens_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
             <%= link_to "Providers", providers_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
             <%= link_to "Settings", edit_user_settings_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            <% if policy(ServiceContainer).index? %>
+              <%= link_to "Services", service_containers_path, data: { action: "mobile-menu#close" }, class: "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>
+            <% end %>
             <div class="border-t border-gray-200 pt-3 mt-2">
               <p class="px-3 text-sm text-gray-700"><%= current_user.email %></p>
               <%= button_to "Sign out", destroy_user_session_path, method: :delete, class: "mt-1 block w-full rounded-md px-3 py-2 text-left text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700" %>

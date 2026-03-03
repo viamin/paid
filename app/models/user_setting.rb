@@ -99,6 +99,16 @@ class UserSetting < ApplicationRecord
     self.allowed_service_images = Array(value).reject(&:blank?).uniq
   end
 
+  # Returns allowed_service_images as a comma-separated string
+  def allowed_service_images_csv
+    (allowed_service_images || []).join(", ")
+  end
+
+  # Sets allowed_service_images from a comma-separated string
+  def allowed_service_images_csv=(value)
+    self.allowed_service_images = value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
+  end
+
   # Returns container CPU count (cpu_quota / 100_000)
   def container_cpus
     container_cpu_quota / 100_000
