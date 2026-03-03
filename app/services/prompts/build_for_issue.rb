@@ -7,6 +7,8 @@ module Prompts
   #   prompt = Prompts::BuildForIssue.call(issue: issue, project: project)
   #   # => "# Task\n\nYou are working on..."
   class BuildForIssue
+    include ServiceContainerSections
+
     class UntrustedIssueError < StandardError; end
 
     # Kept for backwards compatibility with existing references
@@ -38,7 +40,8 @@ module Prompts
 
         # Instructions
 
-        1. Set up the project first — install dependencies (`bundle install`, `npm install`, etc.)
+        1. Install dependencies (`bundle install`, `yarn install`, etc.)
+        #{setup_database_instruction}
         2. Analyze the issue and understand what needs to be done
         3. Make the necessary code changes
         4. Run lint and fix any violations: `#{lint_command}`
@@ -60,7 +63,7 @@ module Prompts
         - Focus on completing the specific task in the issue
 
         When you're done, commit all your changes. Do not push.
-        #{available_services_section}
+        #{available_services_section}#{no_infrastructure_section}
       PROMPT
 
       StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
@@ -80,34 +83,7 @@ module Prompts
       @detected_language ||= LanguageCommands.detected_language(project)
     end
 
-    def available_services_section
-      containers = project.service_containers.to_a
-      return "" if containers.empty?
-
-      lines = containers.map { |sc| service_description(sc) }
-
-      <<~SECTION
-
-        # Available Services
-
-        The following services are already running and available:
-        #{lines.join("\n")}
-
-        Do NOT install or build these services from source. They are already running.
-        Use the environment variables above to connect.
-      SECTION
-    end
-
-    def service_description(sc)
-      if sc.image.include?("postgres")
-        "- PostgreSQL is available via the `DATABASE_URL` environment variable."
-      elsif sc.image.include?("redis")
-        "- Redis is available via the `REDIS_URL` environment variable."
-      elsif sc.image.include?("selenium") || sc.image.include?("chromium")
-        "- Selenium/Chromium is available via the `SELENIUM_URL` environment variable."
-      else
-        "- #{sc.name} is available at host `#{sc.name}` on port #{sc.port}."
-      end
-    end
+    # Service container methods (setup_database_instruction, no_infrastructure_section,
+    # available_services_section, etc.) are provided by ServiceContainerSections
   end
 end

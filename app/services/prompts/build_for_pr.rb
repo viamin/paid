@@ -15,6 +15,8 @@ module Prompts
   #     rebase_succeeded: true
   #   )
   class BuildForPr
+    include ServiceContainerSections
+
     attr_reader :project, :pr_number, :github_client, :rebase_succeeded,
                 :lint_command, :test_command, :issue
 
@@ -43,6 +45,8 @@ module Prompts
       sections << conversation_section if trusted_comments.any?
       sections << instructions_section
       sections << rules_section
+      sections << available_services_section
+      sections << no_infrastructure_section
       base_prompt = sections.join("\n")
 
       StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
@@ -173,7 +177,8 @@ module Prompts
         #{priority_list}
 
         Steps:
-        1. Set up the project first — install dependencies (`bundle install`, `npm install`, etc.)
+        1. Install dependencies (`bundle install`, `yarn install`, etc.)
+        #{setup_database_instruction}
         2. Work through the priorities above in order
         3. Run lint and fix any violations: `#{lint_command}`
         4. Run the test suite and fix any failures: `#{test_command}`
