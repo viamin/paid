@@ -12,7 +12,7 @@ RSpec.describe StyleGuides::Compress do
         exit_code: 0,
         duration: 2.5,
         provider: :claude,
-        model: "claude-sonnet-4",
+        model: "claude-sonnet-4-6",
         tokens: { input: 500, output: 100, total: 600 }
       )
     end
