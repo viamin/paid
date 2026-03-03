@@ -67,7 +67,7 @@ class QdrantClient
   def healthy?
     collections.list
     true
-  rescue StandardError
+  rescue ConnectionError, *CONNECTION_ERRORS
     false
   end
 
@@ -80,8 +80,10 @@ class QdrantClient
   class ErrorWrappingProxy < SimpleDelegator
     def method_missing(method, ...)
       super
-    rescue Faraday::ConnectionFailed, Faraday::TimeoutError => e
-      raise QdrantClient::ConnectionError, e.message
+    rescue *CONNECTION_ERRORS => e
+      raise QdrantClient::ConnectionError,
+        "Qdrant connection error during ##{method}: #{e.message}",
+        e.backtrace
     end
   end
 end

@@ -22,10 +22,23 @@ database_available = begin
   true
 rescue ActiveRecord::PendingMigrationError => e
   abort e.to_s.strip
-rescue ActiveRecord::ConnectionNotEstablished
-  # Database not available — skip schema maintenance. Tests that need the
-  # database will fail individually; tests using only mocks can still run.
-  false
+rescue ActiveRecord::ConnectionNotEstablished => e
+  if ENV["ALLOW_DBLESS_SPECS"] == "true"
+    warn "[WARN] ActiveRecord::ConnectionNotEstablished during test schema maintenance: #{e.message}. " \
+         "Continuing because ALLOW_DBLESS_SPECS=true; transactional fixtures will be disabled."
+    false
+  else
+    abort <<~MSG
+      ActiveRecord::ConnectionNotEstablished while preparing the test database.
+      This usually means your test database is misconfigured or unavailable.
+
+      The test suite is configured to fail fast in this situation to avoid misleading
+      green runs when the database is down.
+
+      If you intentionally want to run specs without a database (for example, tests
+      that only use mocks), set ALLOW_DBLESS_SPECS=true in the environment.
+    MSG
+  end
 end
 
 RSpec.configure do |config|
