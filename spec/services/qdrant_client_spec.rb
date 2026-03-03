@@ -57,4 +57,40 @@ RSpec.describe QdrantClient do
       expect(QdrantClient::ConnectionError.new).to be_a(QdrantClient::Error)
     end
   end
+
+  describe "error wrapping" do
+    context "when Qdrant is unreachable" do
+      before do
+        allow(qdrant_client).to receive(:collections)
+          .and_raise(Faraday::ConnectionFailed.new("Connection refused"))
+        allow(qdrant_client).to receive(:points)
+          .and_raise(Faraday::ConnectionFailed.new("Connection refused"))
+      end
+
+      it "wraps Faraday::ConnectionFailed in ConnectionError for #collections" do
+        expect { client.collections }.to raise_error(QdrantClient::ConnectionError, "Connection refused")
+      end
+
+      it "wraps Faraday::ConnectionFailed in ConnectionError for #points" do
+        expect { client.points }.to raise_error(QdrantClient::ConnectionError, "Connection refused")
+      end
+    end
+
+    context "when Qdrant times out" do
+      before do
+        allow(qdrant_client).to receive(:collections)
+          .and_raise(Faraday::TimeoutError.new("timeout"))
+        allow(qdrant_client).to receive(:points)
+          .and_raise(Faraday::TimeoutError.new("timeout"))
+      end
+
+      it "wraps Faraday::TimeoutError in ConnectionError for #collections" do
+        expect { client.collections }.to raise_error(QdrantClient::ConnectionError, "timeout")
+      end
+
+      it "wraps Faraday::TimeoutError in ConnectionError for #points" do
+        expect { client.points }.to raise_error(QdrantClient::ConnectionError, "timeout")
+      end
+    end
+  end
 end
