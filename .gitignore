@@ -100,6 +100,7 @@ WORKLOG.md
 /.cache/
 /.tmp/
 /.pg/
+/.pg-data/
 /.pgdata/
 /pgdata/
 /.postgres/
