@@ -36,6 +36,19 @@ RSpec.describe "Health" do
       end
     end
 
+    context "when healthy? raises an unexpected exception" do
+      before { allow(qdrant_client).to receive(:healthy?).and_raise(StandardError, "unexpected") }
+
+      it "returns 503 with degraded status" do
+        get "/health/services"
+
+        expect(response).to have_http_status(:service_unavailable)
+        body = response.parsed_body
+        expect(body["status"]).to eq("degraded")
+        expect(body["services"]["qdrant"]).to eq("unavailable")
+      end
+    end
+
     it "does not require authentication" do
       allow(qdrant_client).to receive(:healthy?).and_return(true)
 
