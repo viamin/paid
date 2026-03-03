@@ -698,6 +698,8 @@ RSpec.describe "AgentRuns" do
 
       it "redirects with alert when refresh_auth is not supported" do
         agent_run = create(:agent_run, :auth_expired, project: project)
+        allow(AgentHarness).to receive(:respond_to?).and_call_original
+        allow(AgentHarness).to receive(:respond_to?).with(:refresh_auth).and_return(false)
 
         post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
 
