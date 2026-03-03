@@ -1,0 +1,30 @@
+<% content_for(:title) { "Edit #{@service_container.name} - Service Containers - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to service_container_path(@service_container), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @service_container.name %>
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:p-6">
+      <h1 class="text-xl font-semibold text-gray-900">Edit Service Container</h1>
+      <p class="mt-1 text-sm text-gray-500">
+        Update settings for <strong><%= @service_container.name %></strong>.
+      </p>
+
+      <%= form_with model: @service_container, url: service_container_path(@service_container), method: :patch, class: "mt-6" do |form| %>
+        <%= render "form", form: form, service_container: @service_container %>
+
+        <div class="mt-6 flex items-center justify-end gap-x-4">
+          <%= link_to "Cancel", service_container_path(@service_container), class: "text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700" %>
+          <%= form.submit "Save Changes", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 cursor-pointer" %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

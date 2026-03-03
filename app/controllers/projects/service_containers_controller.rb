@@ -1,0 +1,35 @@
+# frozen_string_literal: true
+
+module Projects
+  class ServiceContainersController < ApplicationController
+    before_action :set_project
+
+    def create
+      authorize @project, :update?
+
+      service_container = ServiceContainer.find(params[:service_container_id])
+      @project.project_service_containers.find_or_create_by!(service_container: service_container)
+
+      redirect_to edit_project_path(@project), notice: "Service container was added to the project."
+    rescue ActiveRecord::RecordNotFound
+      redirect_to edit_project_path(@project), alert: "Service container not found."
+    rescue ActiveRecord::RecordInvalid
+      redirect_to edit_project_path(@project), alert: "Service container is already associated with this project."
+    end
+
+    def destroy
+      authorize @project, :update?
+
+      project_service_container = @project.project_service_containers.find(params[:id])
+      project_service_container.destroy!
+
+      redirect_to edit_project_path(@project), notice: "Service container was removed from the project."
+    end
+
+    private
+
+    def set_project
+      @project = policy_scope(Project).find(params[:project_id])
+    end
+  end
+end
