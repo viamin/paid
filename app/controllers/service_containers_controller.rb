@@ -2,6 +2,7 @@
 
 class ServiceContainersController < ApplicationController
   before_action :set_service_container, only: [ :show, :edit, :update, :destroy ]
+
   def index
     authorize ServiceContainer
     @service_containers = policy_scope(ServiceContainer).includes(:projects).order(created_at: :desc)
