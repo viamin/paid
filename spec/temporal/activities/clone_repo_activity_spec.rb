@@ -46,7 +46,7 @@ RSpec.describe Activities::CloneRepoActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "installs lint-only git hooks when no database container is running" do
+    it "installs lint-only git hooks for Ruby projects when no database container is running" do
       expect(git_ops).to receive(:install_git_hooks).with(
         lint_command: "bundle exec rubocop",
         test_command: "true"
@@ -65,6 +65,21 @@ RSpec.describe Activities::CloneRepoActivity do
         expect(git_ops).to receive(:install_git_hooks).with(
           lint_command: "bundle exec rubocop",
           test_command: "bundle exec rspec"
+        )
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when project uses a non-DB-dependent language without database container" do
+      before do
+        allow(activity).to receive(:detect_language).and_return("javascript")
+      end
+
+      it "keeps the test hook for non-DB-dependent languages" do
+        expect(git_ops).to receive(:install_git_hooks).with(
+          lint_command: "npm run lint",
+          test_command: "npm test"
         )
 
         activity.execute(agent_run_id: agent_run.id)
@@ -115,7 +130,7 @@ RSpec.describe Activities::CloneRepoActivity do
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "installs lint-only git hooks when no database container is running" do
+      it "installs lint-only git hooks for Ruby projects when no database container is running" do
         expect(git_ops).to receive(:install_git_hooks).with(
           lint_command: "bundle exec rubocop",
           test_command: "true"
