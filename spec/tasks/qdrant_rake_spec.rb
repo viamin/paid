@@ -26,12 +26,30 @@ RSpec.describe "qdrant:check" do
   context "when Qdrant is unreachable" do
     before { allow(qdrant_client).to receive(:healthy?).and_return(false) }
 
+    it "exits with non-zero status" do
+      expect {
+        task.invoke
+      }.to raise_error(SystemExit) { |error| expect(error.status).to eq(1) }
+    end
+
     it "prints a warning message" do
-      expect { task.invoke }.to output(/WARNING.*not responding/).to_stdout
+      expect {
+        begin
+          task.invoke
+        rescue SystemExit
+          # expected — abort raises SystemExit after printing
+        end
+      }.to output(/WARNING.*not responding/).to_stderr
     end
 
     it "suggests starting Qdrant with docker compose" do
-      expect { task.invoke }.to output(/docker compose up qdrant/).to_stdout
+      expect {
+        begin
+          task.invoke
+        rescue SystemExit
+          # expected
+        end
+      }.to output(/docker compose up qdrant/).to_stderr
     end
   end
 end
