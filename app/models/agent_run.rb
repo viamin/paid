@@ -144,11 +144,15 @@ class AgentRun < ApplicationRecord
   end
 
   def start!
-    # Guard: don't resurrect a run already marked finished by
-    # StaleRunDetectorJob or another process.
-    raise ActiveRecord::RecordInvalid, self if finished?
+    with_lock do
+      reload
 
-    update!(status: "running", started_at: Time.current, completed_at: nil)
+      # Guard: don't resurrect a run already marked finished by
+      # StaleRunDetectorJob or another process.
+      raise ActiveRecord::RecordInvalid, self if finished?
+
+      update!(status: "running", started_at: Time.current, completed_at: nil)
+    end
   end
 
   def complete!(result_commit: nil, pr_url: nil, pr_number: nil, issue_url: nil, issue_number: nil)
