@@ -8,9 +8,13 @@ module Projects
       authorize @project, :update?
 
       service_container = ServiceContainer.find(params[:service_container_id])
-      @project.project_service_containers.find_or_create_by!(service_container: service_container)
+      project_service_container = @project.project_service_containers.find_or_create_by!(service_container: service_container)
 
-      redirect_to edit_project_path(@project), notice: "Service container was added to the project."
+      if project_service_container.previously_new_record?
+        redirect_to edit_project_path(@project), notice: "Service container was added to the project."
+      else
+        redirect_to edit_project_path(@project), alert: "Service container is already associated with this project."
+      end
     rescue ActiveRecord::RecordNotFound
       redirect_to edit_project_path(@project), alert: "Service container not found."
     rescue ActiveRecord::RecordNotUnique

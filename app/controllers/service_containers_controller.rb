@@ -2,9 +2,8 @@
 
 class ServiceContainersController < ApplicationController
   before_action :set_service_container, only: [ :show, :edit, :update, :destroy ]
-  skip_after_action :verify_authorized, only: :index
-
   def index
+    authorize ServiceContainer
     @service_containers = policy_scope(ServiceContainer).includes(:projects).order(created_at: :desc)
   end
 
@@ -52,7 +51,7 @@ class ServiceContainersController < ApplicationController
   private
 
   def set_service_container
-    @service_container = ServiceContainer.find(params[:id])
+    @service_container = policy_scope(ServiceContainer).find(params[:id])
   end
 
   def service_container_params

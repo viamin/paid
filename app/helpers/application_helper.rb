@@ -57,7 +57,7 @@ module ApplicationHelper
     "error" => { bg: "bg-red-100", text: "text-red-700", label: "Error" }
   }.freeze
 
-  def render_service_container_status(status)
+  def service_container_status_badge(status)
     styles = SERVICE_CONTAINER_STATUS_STYLES[status] || SERVICE_CONTAINER_STATUS_STYLES["stopped"]
     tag.span(
       styles[:label],

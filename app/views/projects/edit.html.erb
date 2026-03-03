@@ -186,7 +186,7 @@
                   </td>
                   <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= psc.service_container.port %></td>
                   <td class="whitespace-nowrap px-4 py-2 text-sm">
-                    <%= render_service_container_status(psc.service_container.status) %>
+                    <%= service_container_status_badge(psc.service_container.status) %>
                   </td>
                   <td class="whitespace-nowrap px-4 py-2 text-right text-sm">
                     <%= button_to "Remove", project_project_service_container_path(@project, psc), method: :delete, class: "text-red-600 hover:text-red-900 text-sm font-medium", data: { turbo_confirm: "Remove this service container from the project?" } %>
