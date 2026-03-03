@@ -47,6 +47,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_01_210000) do
 
   create_table "agent_runs", force: :cascade do |t|
     t.string "agent_type", limit: 50, null: false
+    t.string "auth_provider", limit: 50
     t.string "base_commit_sha", limit: 40
     t.string "branch_name", limit: 255
     t.datetime "completed_at"
@@ -82,8 +83,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_01_210000) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
