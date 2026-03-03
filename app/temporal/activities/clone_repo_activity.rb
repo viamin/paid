@@ -46,10 +46,24 @@ module Activities
       # When only one exists, the other gets a no-op fallback (true).
       return unless lint_cmd || test_cmd
 
+      # Skip the test hook when no database container is running. Most test
+      # suites require a database; without one the hook fails unconditionally,
+      # trapping the agent in a commit loop it cannot escape (hooks reject the
+      # commit, the agent can't skip hooks, and retries until timeout).
+      # The prompt already tells the agent to run tests manually and report
+      # which tests couldn't execute due to missing services.
+      unless has_database_container?(agent_run.project)
+        test_cmd = nil
+      end
+
       git_ops.install_git_hooks(
         lint_command: lint_cmd || "true",
         test_command: test_cmd || "true"
       )
+    end
+
+    def has_database_container?(project)
+      project.service_containers.running.any? { |sc| sc.image.include?("postgres") }
     end
 
     def detect_language(project)

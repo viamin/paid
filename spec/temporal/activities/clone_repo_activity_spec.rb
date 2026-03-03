@@ -46,13 +46,29 @@ RSpec.describe Activities::CloneRepoActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "installs git hooks after cloning" do
+    it "installs lint-only git hooks when no database container is running" do
       expect(git_ops).to receive(:install_git_hooks).with(
         lint_command: "bundle exec rubocop",
-        test_command: "bundle exec rspec"
+        test_command: "true"
       )
 
       activity.execute(agent_run_id: agent_run.id)
+    end
+
+    context "when project has a running database container" do
+      before do
+        sc = create(:service_container, :running, image: "postgres:16")
+        create(:project_service_container, project: project, service_container: sc)
+      end
+
+      it "installs git hooks with both lint and test commands" do
+        expect(git_ops).to receive(:install_git_hooks).with(
+          lint_command: "bundle exec rubocop",
+          test_command: "bundle exec rspec"
+        )
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
     end
 
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
@@ -99,13 +115,29 @@ RSpec.describe Activities::CloneRepoActivity do
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "installs git hooks after checking out existing PR branch" do
+      it "installs lint-only git hooks when no database container is running" do
         expect(git_ops).to receive(:install_git_hooks).with(
           lint_command: "bundle exec rubocop",
-          test_command: "bundle exec rspec"
+          test_command: "true"
         )
 
         activity.execute(agent_run_id: agent_run.id)
+      end
+
+      context "when project has a running database container" do
+        before do
+          sc = create(:service_container, :running, image: "postgres:16")
+          create(:project_service_container, project: project, service_container: sc)
+        end
+
+        it "installs git hooks with both lint and test commands" do
+          expect(git_ops).to receive(:install_git_hooks).with(
+            lint_command: "bundle exec rubocop",
+            test_command: "bundle exec rspec"
+          )
+
+          activity.execute(agent_run_id: agent_run.id)
+        end
       end
 
       context "when PR is closed" do
