@@ -71,7 +71,7 @@ class StyleGuide < ApplicationRecord
       .select("DISTINCT ON (name) id")
       .order(Arel.sql("name"), specificity_order)
 
-    where(id: deduped_ids).order(specificity_order)
+    where(id: deduped_ids).order(specificity_order, :name)
   end
 
   # Returns compressed content for injection into agent prompts.
