@@ -4,7 +4,11 @@
 # Returns aggregate status of infrastructure dependencies.
 class HealthController < ActionController::Base
   def show
-    qdrant_healthy = Paid.qdrant_client.healthy?
+    qdrant_healthy = begin
+      Paid.qdrant_client.healthy?
+    rescue StandardError
+      false
+    end
 
     status = qdrant_healthy ? :ok : :service_unavailable
 
