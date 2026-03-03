@@ -50,7 +50,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     it "includes instructions" do
-      expect(prompt).to include("Set up the project first")
+      expect(prompt).to include("Install dependencies")
       expect(prompt).to include("commit all your changes")
       expect(prompt).to include("Do not push")
     end
@@ -271,6 +271,72 @@ RSpec.describe Prompts::BuildForPr do
 
       expect(prompt).to include("ruff check .")
       expect(prompt).to include("pytest")
+    end
+  end
+
+  describe "service container sections" do
+    subject(:prompt) do
+      described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+    end
+
+    context "when project has no service containers" do
+      it "includes environment constraints warning" do
+        expect(prompt).to include("Environment Constraints")
+        expect(prompt).to include("Do NOT attempt to install PostgreSQL")
+        expect(prompt).to include("Do NOT run `bin/setup`")
+      end
+
+      it "tells the agent not to run database commands" do
+        expect(prompt).to include("Do NOT run `bin/setup`, `db:prepare`, or `db:migrate`")
+      end
+
+      it "does not include available services section" do
+        expect(prompt).not_to include("Available Services")
+      end
+    end
+
+    context "when project has running database containers" do
+      let!(:service_container) { create(:service_container, :running) }
+
+      before do
+        project.service_containers << service_container
+      end
+
+      it "includes available services section" do
+        expect(prompt).to include("Available Services")
+        expect(prompt).to include("DATABASE_URL")
+      end
+
+      it "does not include environment constraints warning" do
+        expect(prompt).not_to include("Environment Constraints")
+        expect(prompt).not_to include("Do NOT attempt to install PostgreSQL")
+      end
+
+      it "tells a Ruby project to run db:prepare" do
+        expect(prompt).to include("Run `bin/rails db:prepare`")
+        expect(prompt).to include("DATABASE_URL is already configured")
+      end
+    end
+
+    context "when project has running non-database service containers" do
+      let!(:redis_container) { create(:service_container, :running, :redis) }
+
+      before do
+        project.service_containers << redis_container
+      end
+
+      it "shows available services but still warns about missing database" do
+        expect(prompt).to include("Available Services")
+        expect(prompt).to include("REDIS_URL")
+        expect(prompt).to include("Environment Constraints")
+        expect(prompt).to include("Do NOT attempt to install PostgreSQL")
+        expect(prompt).not_to include("DATABASE_URL is already configured")
+      end
     end
   end
 
