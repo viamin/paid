@@ -86,6 +86,10 @@ class Project < ApplicationRecord
     worktree_service.push_branch(agent_run)
   end
 
+  def has_running_database_container?
+    service_containers.running.any? { |sc| sc.image.include?("postgres") }
+  end
+
   def trusted_github_user?(login)
     return false if login.blank?
 

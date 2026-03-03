@@ -8,6 +8,11 @@ module Activities
   class CloneRepoActivity < BaseActivity
     activity_name "CloneRepo"
 
+    # Languages whose standard test commands require a database connection.
+    # Pre-commit test hooks are converted to no-ops for these languages
+    # when no database container is running.
+    DB_DEPENDENT_TEST_LANGUAGES = %w[ruby].freeze
+
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
@@ -46,13 +51,15 @@ module Activities
       # When only one exists, the other gets a no-op fallback (true).
       return unless lint_cmd || test_cmd
 
-      # Skip the test hook when no database container is running. Most test
-      # suites require a database; without one the hook fails unconditionally,
-      # trapping the agent in a commit loop it cannot escape (hooks reject the
-      # commit, the agent can't skip hooks, and retries until timeout).
+      # Convert the test hook to a no-op for DB-dependent languages when no
+      # database container is running. Rails test suites (rspec) fail
+      # unconditionally without a database, trapping the agent in a commit
+      # loop it cannot escape (hooks reject the commit, the agent can't skip
+      # hooks, and retries until timeout). Non-DB languages (JS, Go, Rust)
+      # keep their test hooks since their suites typically run without postgres.
       # The prompt already tells the agent to run tests manually and report
       # which tests couldn't execute due to missing services.
-      unless has_database_container?(agent_run.project)
+      if DB_DEPENDENT_TEST_LANGUAGES.include?(language) && !agent_run.project.has_running_database_container?
         test_cmd = nil
       end
 
@@ -60,10 +67,6 @@ module Activities
         lint_command: lint_cmd || "true",
         test_command: test_cmd || "true"
       )
-    end
-
-    def has_database_container?(project)
-      project.service_containers.running.any? { |sc| sc.image.include?("postgres") }
     end
 
     def detect_language(project)

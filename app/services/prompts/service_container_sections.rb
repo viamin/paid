@@ -64,7 +64,7 @@ module Prompts
     end
 
     def has_database_container?
-      running_service_containers.any? { |sc| sc.image.include?("postgres") }
+      project.has_running_database_container?
     end
 
     def service_description(sc)
