@@ -18,7 +18,7 @@ module StyleGuides
       - Remove verbose explanations, examples that restate the rule, and motivational text
       - Use terse bullet points grouped by category
       - Preserve code snippets only when they define a pattern (e.g. preferred import style)
-      - Target roughly 30-50%% of the original length
+      - Target roughly 30-50% of the original length
       - Output plain text with markdown formatting
 
       Style guide to compress:

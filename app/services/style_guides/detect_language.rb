@@ -2,7 +2,7 @@
 
 module StyleGuides
   # Detects the programming language of a style guide based on its content.
-  # Uses keyword frequency analysis to identify the most likely language.
+  # Scores each language by how many of its indicator keywords appear in the content.
   #
   # @example
   #   language = StyleGuides::DetectLanguage.call(content: raw_text)
