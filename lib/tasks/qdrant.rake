@@ -7,8 +7,7 @@ namespace :qdrant do
     if Paid.qdrant_client.healthy?
       puts "  Qdrant is reachable at #{url}"
     else
-      puts "  WARNING: Qdrant is not responding at #{url}"
-      puts "  Run 'docker compose up qdrant -d' to start Qdrant"
+      abort "  WARNING: Qdrant is not responding at #{url}\n  Run 'docker compose up qdrant -d' to start Qdrant"
     end
   end
 end
