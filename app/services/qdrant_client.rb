@@ -6,6 +6,8 @@ require "qdrant"
 #
 # Translates low-level network exceptions (Faraday::ConnectionFailed, etc.)
 # into QdrantClient::ConnectionError so callers can rescue a single hierarchy.
+# Error wrapping applies to all method calls on returned resource objects
+# (e.g. client.collections.list), not just the accessor itself.
 #
 # @example
 #   client = QdrantClient.new(url: "http://localhost:6333")
@@ -25,35 +27,45 @@ class QdrantClient
     Faraday::TimeoutError
   ].freeze
 
+  # Default timeout in seconds for Qdrant HTTP requests.
+  DEFAULT_TIMEOUT = 5
+
+  # Default timeout in seconds for opening a connection to Qdrant.
+  DEFAULT_OPEN_TIMEOUT = 3
+
   # @param url [String] Qdrant REST API URL
   # @param api_key [String, nil] Optional API key for authentication
-  def initialize(url:, api_key: nil)
+  # @param timeout [Integer] Read timeout in seconds (default: 5)
+  # @param open_timeout [Integer] Connection open timeout in seconds (default: 3)
+  def initialize(url:, api_key: nil, timeout: DEFAULT_TIMEOUT, open_timeout: DEFAULT_OPEN_TIMEOUT)
     @client = Qdrant::Client.new(url: url, api_key: api_key)
+    @client.connection.options.timeout = timeout
+    @client.connection.options.open_timeout = open_timeout
   end
 
-  # Delegates to {Qdrant::Client#collections}, wrapping connection errors.
+  # Returns a proxy around {Qdrant::Client#collections} that wraps connection
+  # errors on any subsequent method call (e.g. .list, .create).
   #
+  # @return [ErrorWrappingProxy] proxy around Qdrant::Collections
   # @raise [ConnectionError] if Qdrant is unreachable
   def collections
-    client.collections
-  rescue *CONNECTION_ERRORS => e
-    raise ConnectionError, e.message
+    ErrorWrappingProxy.new(client.collections)
   end
 
-  # Delegates to {Qdrant::Client#points}, wrapping connection errors.
+  # Returns a proxy around {Qdrant::Client#points} that wraps connection
+  # errors on any subsequent method call (e.g. .upsert, .search).
   #
+  # @return [ErrorWrappingProxy] proxy around Qdrant::Points
   # @raise [ConnectionError] if Qdrant is unreachable
   def points
-    client.points
-  rescue *CONNECTION_ERRORS => e
-    raise ConnectionError, e.message
+    ErrorWrappingProxy.new(client.points)
   end
 
   # Checks whether the Qdrant service is reachable and responsive.
   #
   # @return [Boolean] true if Qdrant responds to a collection list request
   def healthy?
-    client.collections.list
+    collections.list
     true
   rescue StandardError
     false
@@ -62,4 +74,14 @@ class QdrantClient
   private
 
   attr_reader :client
+
+  # Delegates all method calls to the wrapped object while catching
+  # Faraday connection errors and re-raising as QdrantClient::ConnectionError.
+  class ErrorWrappingProxy < SimpleDelegator
+    def method_missing(method, ...)
+      super
+    rescue Faraday::ConnectionFailed, Faraday::TimeoutError => e
+      raise QdrantClient::ConnectionError, e.message
+    end
+  end
 end

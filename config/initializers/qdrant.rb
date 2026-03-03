@@ -6,7 +6,7 @@ module Paid
   class << self
     # Returns a QdrantClient instance. Connection is established lazily
     # on first call, not during Rails initialization. Thread-safe via Mutex
-    # to prevent duplicate instances under concurrent Puma workers.
+    # to prevent duplicate instances under concurrent threads/requests in a single process.
     #
     # @return [QdrantClient] Configured Qdrant client wrapper
     def qdrant_client
