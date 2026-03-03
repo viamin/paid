@@ -28,6 +28,8 @@ module Projects
       project_service_container.destroy!
 
       redirect_to edit_project_path(@project), notice: "Service container was removed from the project."
+    rescue ActiveRecord::RecordNotFound
+      redirect_to edit_project_path(@project), alert: "Service container not found."
     end
 
     private

@@ -163,7 +163,8 @@
         Associate service containers with this project. Agents will receive connection environment variables (e.g. <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">DATABASE_URL</code>) during runs.
       </p>
 
-      <% if @project.service_containers.any? %>
+      <% project_service_containers = @project.project_service_containers.includes(:service_container).to_a %>
+      <% if project_service_containers.any? %>
         <div class="mt-4">
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
@@ -176,7 +177,7 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 bg-white">
-              <% @project.project_service_containers.includes(:service_container).each do |psc| %>
+              <% project_service_containers.each do |psc| %>
                 <tr>
                   <td class="whitespace-nowrap px-4 py-2 text-sm font-medium text-gray-900">
                     <%= link_to psc.service_container.name, service_container_path(psc.service_container), class: "text-indigo-600 hover:text-indigo-900" %>
@@ -208,7 +209,7 @@
           </div>
           <%= f.submit "Add", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
         <% end %>
-      <% elsif @project.service_containers.empty? %>
+      <% elsif project_service_containers.empty? %>
         <div class="mt-4 text-sm text-gray-500">
           No service containers available. <%= link_to "Create one", new_service_container_path, class: "text-indigo-600 hover:text-indigo-900" %> first.
         </div>
