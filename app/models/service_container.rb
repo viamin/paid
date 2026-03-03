@@ -15,6 +15,18 @@ class ServiceContainer < ApplicationRecord
   scope :running, -> { where(status: "running") }
   scope :stopped, -> { where(status: "stopped") }
 
+  # Virtual attribute for editing env as JSON text
+  def env_json
+    (env || {}).to_json
+  end
+
+  def env_json=(value)
+    self.env = value.present? ? JSON.parse(value) : {}
+  rescue JSON::ParserError
+    @env_json_invalid = true
+    errors.add(:env, "must be valid JSON")
+  end
+
   def running?
     status == "running"
   end
