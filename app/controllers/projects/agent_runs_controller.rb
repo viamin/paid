@@ -163,7 +163,9 @@ module Projects
 
       redirect_to project_agent_run_path(@project, new_run),
         notice: "Authentication refreshed. Agent run queued for retry."
-    rescue AgentHarness::AuthenticationError, AgentHarness::Error => e
+    # Catch all harness errors (including AuthenticationError, which is a
+    # subclass of Error) so this works even when the shim hasn't loaded yet.
+    rescue AgentHarness::Error => e
       Rails.logger.error(
         message: "agent_execution.refresh_auth_failed",
         agent_run_id: @agent_run.id,
