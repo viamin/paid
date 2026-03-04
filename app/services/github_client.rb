@@ -417,7 +417,7 @@ class GithubClient
 
     query = <<~GRAPHQL
       mutation($pullRequestId: ID!) {
-        markPullRequestAsReady(input: { pullRequestId: $pullRequestId }) {
+        markPullRequestReadyForReview(input: { pullRequestId: $pullRequestId }) {
           pullRequest { id isDraft }
         }
       }
@@ -429,8 +429,8 @@ class GithubClient
       raise ApiError.new(response["errors"].map { |e| e["message"] }.join(", "))
     end
 
-    pr_result = response.dig("data", "markPullRequestAsReady", "pullRequest")
-    raise ApiError.new("Unexpected response from markPullRequestAsReady") unless pr_result
+    pr_result = response.dig("data", "markPullRequestReadyForReview", "pullRequest")
+    raise ApiError.new("Unexpected response from markPullRequestReadyForReview") unless pr_result
 
     pr_result
   end

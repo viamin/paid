@@ -76,8 +76,16 @@ module Activities
       copilot_triggers = check_copilot_review_threads(client, project, issue)
       checks = fetch_check_runs(client, project, pr_data)
       ci_triggers = ci_failure_triggers(checks || [])
+      human_triggers = check_review_threads(client, project, issue)
 
-      if copilot_triggers.empty? && ci_triggers.empty?
+      last_run = last_completed_run(project, issue)
+      human_triggers.concat(check_conversation_comments(client, project, issue, last_run))
+      human_triggers.concat(changes_requested_from_reviews(project,
+        fetch_reviews(client, project, issue), last_run))
+
+      all_triggers = copilot_triggers + ci_triggers + human_triggers
+
+      if all_triggers.empty?
         # If we couldn't fetch PR data, don't prematurely advance the phase.
         return nil if pr_data.nil?
 
@@ -87,7 +95,7 @@ module Activities
         return nil # CI still pending or checks unavailable
       end
 
-      triggers = copilot_triggers + ci_triggers
+      triggers = all_triggers
       log_triggers(project, issue, triggers)
 
       {
@@ -203,6 +211,7 @@ module Activities
 
       triggers.concat(ci_failure_triggers(checks))
       triggers.concat(check_review_threads(client, project, issue))
+      triggers.concat(check_copilot_review_threads(client, project, issue))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
@@ -393,7 +402,9 @@ module Activities
       return false if login.blank?
 
       normalized = login.downcase
-      normalized == "copilot" || normalized == "copilot[bot]"
+      normalized == "copilot" ||
+        normalized == "copilot[bot]" ||
+        normalized == "copilot-pull-request-reviewer"
     end
 
     def extract_actionable_labels(triggers)
