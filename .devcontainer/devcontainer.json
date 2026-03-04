@@ -18,7 +18,7 @@
 
   "containerEnv": {
     "TZ": "${localEnv:TZ:UTC}",
-    "KAMAL_REGISTRY_PASSWORD": "$KAMAL_REGISTRY_PASSWORD",
+    "KAMAL_REGISTRY_PASSWORD": "${localEnv:KAMAL_REGISTRY_PASSWORD}",
     "DB_HOST": "postgres",
     "TEMPORAL_ADDRESS": "temporal:7233",
     "TEMPORAL_NAMESPACE": "default",
