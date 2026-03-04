@@ -124,6 +124,16 @@ module Containers
     def push_branch
       validate_branch_name!
 
+      # Fetch current remote state before --force-with-lease to avoid
+      # "stale info" rejections when the branch was updated by a prior run.
+      if agent_run.existing_pr?
+        begin
+          fetch_branch(agent_run.branch_name)
+        rescue Error => e
+          raise PushError, e.message
+        end
+      end
+
       # --no-verify skips any pre-push hooks. The push is a system operation
       # that runs after the agent has exited — quality was already enforced
       # by the pre-commit hook during agent execution.
