@@ -13,7 +13,7 @@ CONTAINER_NAME="paid-rails-app-1"
 
 # Start Qdrant (creates paid_internal with proper Compose labels)
 echo "Starting Qdrant..."
-docker compose -f "$COMPOSE_FILE" up qdrant -d
+docker compose -f "$COMPOSE_FILE" up -d qdrant
 
 # Create paid_agent if it doesn't exist, matching docker-compose.yml settings
 # and applying the same Compose labels as paid_internal so Compose does not
