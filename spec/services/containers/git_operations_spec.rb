@@ -261,6 +261,16 @@ RSpec.describe Containers::GitOperations do
       git_ops.push_branch
     end
 
+    it "raises PushError when fetch fails on existing PR branch" do
+      agent_run.update!(source_pull_request_number: 42)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.push_branch }.to raise_error(described_class::PushError, /Fetch failed/)
+    end
+
     it "raises PushError when branch_name is blank" do
       agent_run.update!(branch_name: nil)
 
