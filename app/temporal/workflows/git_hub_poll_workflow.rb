@@ -180,16 +180,20 @@ module Workflows
     def start_draft_followup_workflow(project_id, pr_data)
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
-      count_as_draft_review = pr_data[:count_as_draft_review] != false
 
       capacity = run_activity(Activities::CheckRunCapacityActivity, {}, timeout: 10)
+
+      draft_input = {
+        issue_id: issue_id,
+        expected_draft_review_count: pr_data[:current_draft_review_count]
+      }
 
       unless capacity[:has_capacity]
         run_activity(Activities::QueueAgentRunActivity,
           { project_id: project_id, issue_id: issue_id,
             source_pull_request_number: pr_number }, timeout: 30)
 
-        record_draft_review(issue_id, pr_data) if count_as_draft_review
+        run_activity(Activities::RecordDraftReviewActivity, draft_input, timeout: 30)
         return
       end
 
@@ -206,14 +210,7 @@ module Workflows
         id: workflow_id
       )
 
-      record_draft_review(issue_id, pr_data) if count_as_draft_review
-    end
-
-    def record_draft_review(issue_id, pr_data)
-      run_activity(Activities::RecordDraftReviewActivity, {
-        issue_id: issue_id,
-        expected_draft_review_count: pr_data[:current_draft_review_count]
-      }, timeout: 30)
+      run_activity(Activities::RecordDraftReviewActivity, draft_input, timeout: 30)
     end
 
     def start_pr_followup_workflow(project_id, pr_data)

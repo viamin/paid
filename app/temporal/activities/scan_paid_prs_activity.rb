@@ -6,8 +6,8 @@ module Activities
   # the GitHubPollWorkflow poll cycle.
   #
   # Phase-aware routing:
-  #   - draft: All signals (CI, Copilot, human reviews). Only automated
-  #     triggers (Copilot/CI) count toward max_draft_review_rounds.
+  #   - draft: All signals (CI, Copilot, human reviews). All followups
+  #     count toward max_draft_review_rounds to prevent infinite loops.
   #   - ready: All signals (CI, Copilot, human reviews, labels, merge conflicts)
   #   - escalated: Same as ready, no auto-merge
   #   - merged: No scanning
@@ -100,19 +100,13 @@ module Activities
       triggers = all_triggers
       log_triggers(project, issue, triggers)
 
-      # Only count automated triggers (Copilot/CI) toward the draft review limit.
-      # Human-triggered followups are explicitly requested and shouldn't consume
-      # the automated review budget or cause premature escalation.
-      has_automated_triggers = copilot_triggers.any? || ci_triggers.any?
-
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
         phase: "draft",
         labels_to_remove: [],
-        current_draft_review_count: issue.draft_review_count,
-        count_as_draft_review: has_automated_triggers
+        current_draft_review_count: issue.draft_review_count
       }
     end
 
