@@ -63,17 +63,8 @@ class StyleGuidesController < ApplicationController
   def compress
     authorize @style_guide, :compress?
 
-    StyleGuides::Compress.call(style_guide: @style_guide)
-    redirect_to @style_guide, notice: "Style guide was successfully compressed."
-  rescue AgentHarness::Error, StyleGuides::CompressionError => e
-    Rails.logger.error(
-      message: "style_guides.compression_failed",
-      error_class: e.class.name,
-      error: e.message,
-      style_guide_id: @style_guide&.id,
-      request_id: request.request_id
-    )
-    redirect_to @style_guide, alert: "Compression failed. Please try again later."
+    StyleGuideCompressionJob.perform_later(@style_guide.id)
+    redirect_to @style_guide, notice: "Style guide compression has been queued and will complete shortly."
   end
 
   private

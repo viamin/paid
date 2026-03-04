@@ -74,15 +74,32 @@ class StyleGuide < ApplicationRecord
     where(id: deduped_ids).order(specificity_order, :name)
   end
 
+  # Maximum raw content bytes to inject when compression hasn't been performed.
+  # Prevents unbounded prompt growth from large uncompressed style guides.
+  MAX_RAW_PROMPT_BYTES = 8_000
+
   # Returns compressed content for injection into agent prompts.
-  # Falls back to raw content if compression has not been performed.
+  # Falls back to truncated raw content if compression has not been performed.
   #
-  # @return [String] The content suitable for prompt injection
+  # @return [String, nil] The content suitable for prompt injection
   def content_for_prompt
-    compressed_content.presence || raw_content
+    return compressed_content if compressed_content.present?
+    return if raw_content.blank?
+    return raw_content if raw_content.bytesize <= MAX_RAW_PROMPT_BYTES
+
+    truncate_to_byte_limit(raw_content, MAX_RAW_PROMPT_BYTES)
   end
 
   private
+
+  def truncate_to_byte_limit(text, max_bytes)
+    truncated = +""
+    text.each_char do |char|
+      break if truncated.bytesize + char.bytesize > max_bytes
+      truncated << char
+    end
+    truncated
+  end
 
   def clear_compression
     self.compressed_content = nil
