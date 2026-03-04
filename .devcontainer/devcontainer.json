@@ -99,7 +99,7 @@
     "overmind-cleanup": "rm -f .overmind.sock",
     "multiclaude-start": "multiclaude start || true",
     "git-https": "git config --local remote.origin.url https://github.com/viamin/paid.git && git config --local credential.helper '!/usr/bin/gh auth git-credential'",
-    "ensure-networks-and-qdrant": "docker compose -f /workspaces/paid/docker-compose.yml up qdrant -d && for net in paid_internal paid_agent; do docker network inspect $net >/dev/null 2>&1 || docker network create $net --driver bridge; if ! docker network inspect $net --format '{{range .Containers}}{{.Name}}{{end}}' | grep -q paid-rails-app-1; then docker network connect --alias web --alias paid-proxy $net $(hostname); fi; done"
+    "ensure-networks-and-qdrant": "bash .devcontainer/ensure-networks-and-qdrant.sh"
   },
   "waitFor": "postStartCommand",
   "customizations": {
