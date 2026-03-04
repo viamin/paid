@@ -39,6 +39,9 @@ gem "temporalio"
 # Docker API client [https://github.com/upserve/docker-api]
 gem "docker-api"
 
+# Qdrant vector database client [https://github.com/patterns-ai-core/qdrant-ruby]
+gem "qdrant-ruby"
+
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
 gem "agent-harness"
 
