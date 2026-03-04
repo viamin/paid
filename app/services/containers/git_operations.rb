@@ -130,7 +130,7 @@ module Containers
         begin
           fetch_branch(agent_run.branch_name)
         rescue Error => e
-          raise PushError, "Fetch failed: #{e.message}"
+          raise PushError, e.message
         end
       end
 
