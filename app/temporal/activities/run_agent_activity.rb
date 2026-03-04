@@ -4,11 +4,24 @@ module Activities
   class RunAgentActivity < BaseActivity
     activity_name "RunAgent"
 
-    # Maps agent_type to the CLI command used inside the container.
+    # Maps agent_type/provider to the CLI command used inside the container.
     # Each entry is an array of command parts; the prompt is appended as the last argument.
     AGENT_COMMANDS = {
-      "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p]
+      "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
+      "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
+      "cursor" => %w[cursor-agent --message],
+      "aider" => %w[aider --yes --no-auto-commits --message]
     }.freeze
+
+    # Patterns that indicate a rate limit or quota error from provider output.
+    RATE_LIMIT_PATTERNS = [
+      /rate.?limit/i,
+      /too many requests/i,
+      /429/,
+      /quota exceeded/i,
+      /capacity/i,
+      /overloaded/i
+    ].freeze
 
     # Issue creation should complete quickly — use a shorter timeout than full PR runs.
     ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
@@ -21,46 +34,148 @@ module Activities
       prompt = agent_run.effective_prompt
       raise Temporalio::Error::ApplicationError.new("No prompt available for agent run", type: "MissingPrompt") unless prompt
 
-      pre_agent_sha = run_agent_in_container(agent_run, prompt)
+      user_settings = agent_run.project.account.owner.settings
+      providers = build_provider_order(agent_run, user_settings)
 
-      commit_uncommitted_changes(agent_run)
+      pre_agent_sha = nil
+      last_error = nil
 
-      has_changes = check_for_changes(agent_run, pre_agent_sha)
+      providers.each_with_index do |provider, index|
+        # Skip unavailable providers
+        if provider_unavailable?(user_settings, provider)
+          agent_run.record_provider_attempt(provider, success: false, error_type: "unavailable")
+          next
+        end
 
-      {
-        agent_run_id: agent_run_id,
-        success: true,
-        has_changes: has_changes
-      }
+        # Log provider switch
+        if index > 0
+          previous_provider = providers[index - 1]
+          agent_run.log_provider_switch!(previous_provider, provider, last_error || "fallback")
+        end
+
+        begin
+          pre_agent_sha = run_agent_with_provider(agent_run, provider, prompt)
+
+          # Success - record and update final provider
+          record_provider_success(user_settings, provider)
+          agent_run.record_provider_attempt(provider, success: true)
+          agent_run.update!(final_provider: provider)
+
+          commit_uncommitted_changes(agent_run)
+          has_changes = check_for_changes(agent_run, pre_agent_sha)
+
+          return {
+            agent_run_id: agent_run_id,
+            success: true,
+            has_changes: has_changes,
+            final_provider: provider
+          }
+        rescue ProviderRateLimitError => e
+          last_error = "rate_limited"
+          persist_rate_limit(user_settings, provider, e.reset_at)
+          agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
+          logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
+        rescue ProviderExecutionError => e
+          last_error = "error"
+          record_provider_failure(user_settings, provider)
+          agent_run.record_provider_attempt(provider, success: false, error_type: "error")
+          logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
+        end
+      end
+
+      # All providers exhausted
+      agent_run.fail!(error: "All providers exhausted: #{providers.join(', ')}")
+      raise Temporalio::Error::ApplicationError.new(
+        "All providers exhausted",
+        type: "AllProvidersExhausted"
+      )
     end
+
+    # Custom error classes for provider-specific failures
+    class ProviderRateLimitError < StandardError
+      attr_reader :reset_at
+
+      def initialize(message, reset_at: nil)
+        super(message)
+        @reset_at = reset_at
+      end
+    end
+
+    class ProviderExecutionError < StandardError; end
 
     private
 
-    # Runs the agent CLI inside the container and returns the pre-agent HEAD SHA.
+    # Builds the ordered list of providers to attempt.
+    # Uses fallback providers if enabled, otherwise just the agent's type.
     #
-    # Captures HEAD before the agent executes so callers can detect whether
-    # the agent made any new changes (vs. commits from prior runs).
+    # @return [Array<String>] Provider names in priority order
+    def build_provider_order(agent_run, user_settings)
+      return [ agent_run.agent_type ] unless user_settings.fallback_enabled
+
+      # Start with the agent's type, then add fallbacks
+      providers = [ agent_run.agent_type ]
+
+      user_settings.fallback_providers.each do |fallback|
+        providers << fallback unless providers.include?(fallback)
+      end
+
+      providers.select { |p| AGENT_COMMANDS.key?(p) }
+    end
+
+    # Checks if a provider is currently unavailable (rate limited or circuit open).
     #
-    # @return [String, nil] the HEAD SHA before the agent ran, or nil on capture failure
-    def run_agent_in_container(agent_run, prompt)
+    # @return [Boolean] true if provider should be skipped
+    def provider_unavailable?(user_settings, provider)
+      state = user_settings.user.provider_states.find_by(provider_name: provider)
+      return false unless state
+
+      # Check for circuit recovery before deciding
+      state.check_circuit_recovery!(timeout: user_settings.circuit_breaker_timeout_seconds)
+
+      state.unavailable?
+    end
+
+    # Records a rate limit for a provider.
+    def persist_rate_limit(user_settings, provider, reset_at = nil)
+      state = user_settings.provider_state_for(provider)
+      state.mark_rate_limited!(reset_at: reset_at)
+    end
+
+    # Records a successful provider execution.
+    def record_provider_success(user_settings, provider)
+      state = user_settings.user.provider_states.find_by(provider_name: provider)
+      state&.record_success!
+    end
+
+    # Records a failed provider execution.
+    def record_provider_failure(user_settings, provider)
+      state = user_settings.provider_state_for(provider)
+      state.record_failure!(threshold: user_settings.circuit_breaker_failure_threshold)
+    end
+
+    # Runs the agent with a specific provider.
+    # Raises ProviderRateLimitError or ProviderExecutionError on failure.
+    #
+    # @return [String, nil] the HEAD SHA before the agent ran
+    def run_agent_with_provider(agent_run, provider, prompt)
       container_service = reconnect_container(agent_run)
 
-      command_prefix = AGENT_COMMANDS[agent_run.agent_type]
+      command_prefix = AGENT_COMMANDS[provider]
       unless command_prefix
-        raise Temporalio::Error::ApplicationError.new(
-          "Unsupported agent type for container execution: #{agent_run.agent_type}",
-          type: "UnsupportedAgentType"
-        )
+        raise ProviderExecutionError, "Unsupported provider: #{provider}"
       end
 
       prompt = augment_prompt_for_issue_goal(agent_run, prompt)
-
       command = command_prefix + [ prompt ]
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
-      agent_run.start!
-      agent_run.log!("system", "Starting #{agent_run.agent_type} agent in container")
+      # Only start! on first provider attempt
+      unless agent_run.running?
+        agent_run.start!
+      end
+
+      agent_run.log!("system", "Starting #{provider} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
 
       effective_timeout = agent_run.create_issue_goal? ? ISSUE_GOAL_TIMEOUT : agent_timeout
@@ -69,21 +184,20 @@ module Activities
       result = container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
 
       if result.success?
-        # Stay in running status — the run is only marked completed after
-        # push/PR activities succeed. Marking it completed here would cause
-        # the container auth middleware to reject subsequent git-push requests.
-        agent_run.log!("system", "Agent execution succeeded")
-      else
-        output = (result[:stderr].presence || result[:stdout]).to_s.strip.truncate(500)
-        error_msg = "Agent exited with code #{result[:exit_code]}: #{output}"
-        agent_run.fail!(error: error_msg)
-        raise Temporalio::Error::ApplicationError.new(
-          "Agent execution failed: #{error_msg}",
-          type: "AgentExecutionFailed"
-        )
+        agent_run.log!("system", "Agent execution succeeded with #{provider}")
+        return pre_agent_sha
       end
 
-      pre_agent_sha
+      output = (result[:stderr].presence || result[:stdout]).to_s.strip
+
+      # Check if this is a rate limit error
+      if rate_limit_error?(output)
+        reset_at = parse_rate_limit_reset(output)
+        raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+      end
+
+      # Other execution error
+      raise ProviderExecutionError, "Agent exited with code #{result[:exit_code]}: #{output.truncate(500)}"
     rescue Containers::Provision::TimeoutError => e
       timeout_type = case e
       when Containers::Provision::StartupTimeoutError then "startup"
@@ -93,6 +207,28 @@ module Activities
       agent_run.timeout!(error: "#{timeout_type}_timeout: #{e.message}")
       ProcessRunQueueJob.perform_later
       raise Temporalio::Error::ApplicationError.new(e.message, type: "AgentTimeout")
+    end
+
+    # Checks if the output indicates a rate limit error.
+    def rate_limit_error?(output)
+      return false if output.blank?
+
+      RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+    end
+
+    # Attempts to parse a rate limit reset time from the output.
+    # Returns nil if not parseable.
+    def parse_rate_limit_reset(output)
+      # Try to find common patterns like "retry after X seconds" or timestamps
+      if match = output.match(/retry.?after:?\s*(\d+)/i)
+        match[1].to_i.seconds.from_now
+      elsif match = output.match(/reset.?at:?\s*(\d+)/i)
+        Time.at(match[1].to_i)
+      else
+        60.seconds.from_now # Default to 60 seconds
+      end
+    rescue
+      60.seconds.from_now
     end
 
     def capture_head_sha(container_service, agent_run)
