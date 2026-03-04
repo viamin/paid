@@ -47,6 +47,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_02_090000) do
 
   create_table "agent_runs", force: :cascade do |t|
     t.string "agent_type", limit: 50, null: false
+    t.string "auth_provider", limit: 50
     t.string "base_commit_sha", limit: 40
     t.string "branch_name", limit: 255
     t.datetime "completed_at"
