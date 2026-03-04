@@ -1,7 +1,9 @@
 #!/bin/bash
 # Configure LLM CLI tools to run in auto-approve/dangerous mode inside devcontainer
 # This script runs during postCreateCommand to set up container-specific shell aliases
-# and wrapper functions that enable dangerous mode without affecting host configs
+# and wrapper functions that enable dangerous mode. Note: because devcontainers bind-mount
+# host configuration directories (e.g., ~/.claude, ~/.config), CLI state and configs written
+# inside the container may persist back to the host. Use only in isolated/dev environments.
 
 set -euo pipefail
 
