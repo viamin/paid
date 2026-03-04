@@ -80,7 +80,7 @@
     // LLM CLI Tools - Installation
     "claude-code": "curl -fsSL https://claude.ai/install.sh | bash",
     "multiclaude": "go install github.com/dlorenc/multiclaude/cmd/multiclaude@latest",
-    "cursor-agent": "curl https://cursor.com/install -fsS | bash",
+    "cursor-agent": "curl -fsSL https://cursor.com/install | bash",
     "codex": "npm install -g @openai/codex",
     "gemini-cli": "npm install -g @google/gemini-cli",
     "github-copilot-cli": "npm install -g @github/copilot",
