@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_01_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_04_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -204,6 +204,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_01_210000) do
     t.index ["priority", "scheduled_at"], name: "index_good_jobs_on_priority_scheduled_at_unfinished_unlocked", where: "((finished_at IS NULL) AND (locked_by_id IS NULL))"
     t.index ["queue_name", "scheduled_at"], name: "index_good_jobs_on_queue_name_and_scheduled_at", where: "(finished_at IS NULL)"
     t.index ["scheduled_at"], name: "index_good_jobs_on_scheduled_at", where: "(finished_at IS NULL)"
+  end
+
+  create_table "issue_dependencies", force: :cascade do |t|
+    t.bigint "depends_on_issue_id", null: false
+    t.bigint "issue_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["depends_on_issue_id"], name: "index_issue_dependencies_on_depends_on_issue_id"
+    t.index ["issue_id", "depends_on_issue_id"], name: "idx_issue_dependencies_unique", unique: true
+    t.index ["issue_id"], name: "index_issue_dependencies_on_issue_id"
   end
 
   create_table "issues", force: :cascade do |t|
@@ -429,6 +439,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_01_210000) do
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
+  add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
+  add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
   add_foreign_key "project_memberships", "projects"
