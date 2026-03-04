@@ -75,6 +75,55 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "activity timeout for create_issue goal" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_issue" } }
+
+    before do
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    it "uses shorter start_to_close_timeout for create_issue goals" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity"
+          expected_timeout = Activities::RunAgentActivity::ISSUE_GOAL_TIMEOUT + 300
+          expect(opts[:start_to_close_timeout]).to eq(expected_timeout)
+          { success: true }
+        when "Activities::CompleteIssueGoalActivity"
+          { agent_run_id: 42, success: true, issue_created: true }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+    end
+  end
+
+  describe "activity timeout for create_pr goal" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    it "uses default agent_timeout for create_pr goals" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity"
+          expect(opts[:start_to_close_timeout]).to eq(3900) # 3600 + 300
+          { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+    end
+  end
+
   describe "#unwrap_error_message" do
     let(:workflow) { described_class.new }
 
