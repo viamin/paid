@@ -34,7 +34,7 @@ RSpec.describe Activities::RunAgentActivity do
 
         expect(container_service).to receive(:execute).with(
           array_including("claude", "--print", "--output-format=text", "--dangerously-skip-permissions", "-p"),
-          timeout: anything
+          hash_including(timeout: anything)
         ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
@@ -255,6 +255,54 @@ RSpec.describe Activities::RunAgentActivity do
       expect {
         activity.execute(agent_run_id: unsupported_run.id)
       }.to raise_error(Temporalio::Error::ApplicationError, /Unsupported agent type/)
+    end
+
+    context "when goal is create_issue" do
+      let(:agent_run) do
+        create(:agent_run, :create_issue_goal, :with_git_context,
+          project: project, container_id: "abc123")
+      end
+
+      before do
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+      end
+
+      it "uses the shorter issue goal timeout" do
+        expect(container_service).to receive(:execute).with(
+          anything,
+          timeout: described_class::ISSUE_GOAL_TIMEOUT,
+          idle_timeout: described_class::ISSUE_GOAL_IDLE_TIMEOUT
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "includes curl timeouts in the augmented prompt" do
+        expect(container_service).to receive(:execute) do |command, **_opts|
+          prompt = command.last
+          expect(prompt).to include("--connect-timeout 10")
+          expect(prompt).to include("--max-time 30")
+          exec_success
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when goal is create_pr" do
+      it "uses the default agent timeout without idle_timeout" do
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          timeout: Rails.application.config.x.agent_timeout,
+          idle_timeout: nil
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
     end
   end
 end
