@@ -157,9 +157,25 @@ RSpec.describe StyleGuide do
         expect(guide.content_for_prompt).to eq(guide.compressed_content)
       end
 
-      it "falls back to raw content when not compressed" do
-        guide = build(:style_guide, :global)
+      it "falls back to raw content when not compressed and within byte limit" do
+        guide = build(:style_guide, :global, raw_content: "Short content")
         expect(guide.content_for_prompt).to eq(guide.raw_content)
+      end
+
+      it "truncates raw content that exceeds the byte limit" do
+        long_content = "x" * 10_000
+        guide = build(:style_guide, :global, raw_content: long_content)
+
+        result = guide.content_for_prompt
+        expect(result.bytesize).to be <= StyleGuide::MAX_RAW_PROMPT_BYTES
+        expect(result.bytesize).to eq(StyleGuide::MAX_RAW_PROMPT_BYTES)
+      end
+
+      it "returns nil when raw content is blank" do
+        guide = build(:style_guide, :global)
+        guide.raw_content = ""
+        # Skip validation since raw_content presence is required
+        expect(guide.content_for_prompt).to be_nil
       end
     end
   end
