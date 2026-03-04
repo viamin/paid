@@ -75,6 +75,57 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "#unwrap_error_message" do
+    let(:workflow) { described_class.new }
+
+    def activity_error_with_cause(cause)
+      activity_err = Temporalio::Error::ActivityError.new(
+        "activity failed",
+        scheduled_event_id: 1,
+        started_event_id: 2,
+        identity: "",
+        activity_type: "PushBranch",
+        activity_id: "1",
+        retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
+      )
+      begin
+        begin
+          raise cause
+        rescue
+          raise activity_err
+        end
+      rescue => e
+        e
+      end
+    end
+
+    it "extracts ApplicationError message from wrapped ActivityError" do
+      cause = Temporalio::Error::ApplicationError.new("Push failed: rejected by remote", type: "PushError")
+      error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:unwrap_error_message, error)).to eq("Push failed: rejected by remote")
+    end
+
+    it "returns the error message directly when no ApplicationError cause" do
+      error = RuntimeError.new("something went wrong")
+
+      expect(workflow.send(:unwrap_error_message, error)).to eq("something went wrong")
+    end
+
+    it "returns the error message when cause is not an ApplicationError" do
+      outer = StandardError.new("outer error")
+      begin
+        begin
+          raise RuntimeError, "inner error"
+        rescue
+          raise outer
+        end
+      rescue => e
+        expect(workflow.send(:unwrap_error_message, e)).to eq("outer error")
+      end
+    end
+  end
+
   describe "#stale_pull_request_error?" do
     let(:workflow) { described_class.new }
 

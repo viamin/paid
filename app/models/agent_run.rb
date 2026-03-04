@@ -71,7 +71,7 @@ class AgentRun < ApplicationRecord
     return nil unless started_at
 
     end_time = completed_at || Time.current
-    (end_time - started_at).to_i
+    [ (end_time - started_at).to_i, 0 ].max
   end
 
   def self.has_run_capacity?
@@ -144,7 +144,18 @@ class AgentRun < ApplicationRecord
   end
 
   def start!
-    update!(status: "running", started_at: Time.current)
+    with_lock do
+      reload
+
+      # Guard: don't resurrect a run already marked finished by
+      # StaleRunDetectorJob or another process.
+      if finished?
+        errors.add(:base, "cannot start a finished agent run")
+        raise ActiveRecord::RecordInvalid, self
+      end
+
+      update!(status: "running", started_at: Time.current, completed_at: nil)
+    end
   end
 
   def complete!(result_commit: nil, pr_url: nil, pr_number: nil, issue_url: nil, issue_number: nil)

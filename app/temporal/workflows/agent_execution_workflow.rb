@@ -151,9 +151,12 @@ module Workflows
       rescue => e
         request_project_resync(project_id) if stale_pull_request_error?(e)
 
-        # Mark agent run as failed
+        # Mark agent run as failed.
+        # Temporal wraps activity errors in ActivityError — unwrap to get the
+        # actual error message from our ApplicationError. Without this, every
+        # failure is recorded as the opaque "Activity task failed".
         run_activity(Activities::MarkAgentRunFailedActivity,
-          { agent_run_id: agent_run_id, error: e.message }, timeout: 30)
+          { agent_run_id: agent_run_id, error: unwrap_error_message(e) }, timeout: 30)
 
         raise
 
@@ -203,6 +206,20 @@ module Workflows
     end
 
     private
+
+    # Extracts the meaningful error message from a Temporal exception.
+    #
+    # When an activity raises ApplicationError, the Temporal SDK wraps it
+    # in an ActivityError whose message is the generic "Activity task failed".
+    # This method unwraps to the cause's message so we record the actual error.
+    def unwrap_error_message(error)
+      cause = error.respond_to?(:cause) ? error.cause : nil
+      if cause.is_a?(Temporalio::Error::ApplicationError)
+        cause.message
+      else
+        error.message
+      end
+    end
 
     def stale_pull_request_error?(error)
       cause = error.respond_to?(:cause) ? error.cause : nil
