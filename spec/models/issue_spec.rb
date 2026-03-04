@@ -8,6 +8,10 @@ RSpec.describe Issue do
     it { is_expected.to belong_to(:parent_issue).class_name("Issue").optional }
     it { is_expected.to have_many(:sub_issues).class_name("Issue").with_foreign_key(:parent_issue_id).dependent(:nullify) }
     it { is_expected.to have_many(:agent_runs).dependent(:nullify) }
+    it { is_expected.to have_many(:issue_dependencies).dependent(:destroy) }
+    it { is_expected.to have_many(:dependencies).through(:issue_dependencies) }
+    it { is_expected.to have_many(:reverse_issue_dependencies).class_name("IssueDependency").dependent(:destroy) }
+    it { is_expected.to have_many(:dependents).through(:reverse_issue_dependencies) }
   end
 
   describe "validations" do
@@ -109,6 +113,51 @@ RSpec.describe Issue do
         expect(described_class.pull_requests_only).not_to include(issue)
       end
     end
+
+    describe ".ready_for_work" do
+      let(:project) { create(:project) }
+
+      it "returns open issues with no dependencies" do
+        issue = create(:issue, project: project)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
+
+      it "excludes issues with open dependencies" do
+        dep = create(:issue, project: project, github_state: "open")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
+
+      it "includes issues whose dependencies are all closed" do
+        dep = create(:issue, project: project, github_state: "closed")
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+        expect(described_class.ready_for_work(project)).to include(issue)
+      end
+
+      it "excludes closed issues" do
+        issue = create(:issue, project: project, github_state: "closed")
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
+
+      it "excludes pull requests" do
+        pr = create(:issue, :pull_request, project: project)
+
+        expect(described_class.ready_for_work(project)).not_to include(pr)
+      end
+
+      it "excludes issues from other projects" do
+        other_project = create(:project)
+        issue = create(:issue, project: other_project)
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
+    end
   end
 
   describe "instance methods" do
@@ -160,6 +209,58 @@ RSpec.describe Issue do
 
         expect(issue.sub_issue?).to be false
       end
+    end
+  end
+
+  describe "#ready_to_work?" do
+    let(:project) { create(:project) }
+
+    it "returns true when issue has no dependencies" do
+      issue = create(:issue, project: project)
+
+      expect(issue.ready_to_work?).to be true
+    end
+
+    it "returns false when issue has open dependencies" do
+      dep = create(:issue, project: project, github_state: "open")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      expect(issue.ready_to_work?).to be false
+    end
+
+    it "returns true when all dependencies are closed" do
+      dep = create(:issue, project: project, github_state: "closed")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      expect(issue.ready_to_work?).to be true
+    end
+  end
+
+  describe "#blocking_issues" do
+    let(:project) { create(:project) }
+
+    it "returns only open dependencies" do
+      open_dep = create(:issue, project: project, github_state: "open")
+      closed_dep = create(:issue, project: project, github_state: "closed")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: open_dep)
+      create(:issue_dependency, issue: issue, depends_on_issue: closed_dep)
+
+      expect(issue.blocking_issues).to contain_exactly(open_dep)
+    end
+  end
+
+  describe "#dependent_issues" do
+    let(:project) { create(:project) }
+
+    it "returns issues that depend on this issue" do
+      issue = create(:issue, project: project)
+      dependent = create(:issue, project: project)
+      create(:issue_dependency, issue: dependent, depends_on_issue: issue)
+
+      expect(issue.dependent_issues).to contain_exactly(dependent)
     end
   end
 

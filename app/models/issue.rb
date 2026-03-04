@@ -11,6 +11,14 @@ class Issue < ApplicationRecord
                         inverse_of: :parent_issue, dependent: :nullify
   has_many :agent_runs, dependent: :nullify
 
+  has_many :issue_dependencies, dependent: :destroy
+  has_many :dependencies, through: :issue_dependencies, source: :depends_on_issue
+  has_many :reverse_issue_dependencies, class_name: "IssueDependency",
+                                        foreign_key: :depends_on_issue_id,
+                                        dependent: :destroy,
+                                        inverse_of: :depends_on_issue
+  has_many :dependents, through: :reverse_issue_dependencies, source: :issue
+
   validates :github_issue_id, presence: true, uniqueness: { scope: :project_id }
   validates :github_number, presence: true
   validates :title, presence: true, length: { maximum: 1000 }
@@ -31,6 +39,15 @@ class Issue < ApplicationRecord
   scope :sub_issues_only, -> { where.not(parent_issue_id: nil) }
   scope :issues_only, -> { where(is_pull_request: false) }
   scope :pull_requests_only, -> { where(is_pull_request: true) }
+  scope :ready_for_work, ->(project) {
+    where(project: project, github_state: "open", is_pull_request: false)
+      .where.not(
+        id: IssueDependency
+          .joins(:depends_on_issue)
+          .where(depends_on_issue: { github_state: "open" })
+          .select(:issue_id)
+      )
+  }
 
   def github_url
     path = is_pull_request? ? "pull" : "issues"
@@ -67,6 +84,18 @@ class Issue < ApplicationRecord
 
   def merged_phase?
     pr_review_phase == "merged"
+  end
+
+  def ready_to_work?
+    blocking_issues.none?
+  end
+
+  def blocking_issues
+    dependencies.where(github_state: "open")
+  end
+
+  def dependent_issues
+    dependents
   end
 
   private
