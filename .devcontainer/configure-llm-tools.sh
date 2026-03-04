@@ -1,9 +1,9 @@
 #!/bin/bash
-# Configure LLM CLI tools to run in auto-approve/dangerous mode inside devcontainer
-# This script runs during postCreateCommand to set up container-specific shell aliases
-# and wrapper functions that enable dangerous mode. Note: because devcontainers bind-mount
-# host configuration directories (e.g., ~/.claude, ~/.config), CLI state and configs written
-# inside the container may persist back to the host. Use only in isolated/dev environments.
+# Configure LLM CLI tools to run in auto-approve/dangerous mode inside devcontainer.
+# This script runs during postCreateCommand to set up container-specific wrappers
+# and configuration. Note: because devcontainers bind-mount host configuration
+# directories (e.g., ~/.claude, ~/.config), CLI state and configs written inside
+# the container may persist back to the host.
 
 set -euo pipefail
 
@@ -43,10 +43,22 @@ else
   echo "Claude state symlink created (will be populated on first launch)."
 fi
 
+# Resolve Claude binary location: prefer PATH, fall back to default install path
+CLAUDE_BIN_DEFAULT="$HOME/.local/bin/claude"
+CLAUDE_BIN_RESOLVED="$(command -v claude 2>/dev/null || true)"
+
+if [ -n "$CLAUDE_BIN_RESOLVED" ]; then
+  CLAUDE_BIN="$CLAUDE_BIN_RESOLVED"
+elif [ -f "$CLAUDE_BIN_DEFAULT" ]; then
+  CLAUDE_BIN="$CLAUDE_BIN_DEFAULT"
+else
+  echo "WARNING: Claude CLI binary not found in PATH or at $CLAUDE_BIN_DEFAULT; skipping wrapper." >&2
+  CLAUDE_BIN=""
+fi
+
 # Create Claude wrapper that adds --dangerously-skip-permissions and --plugin-dir
-echo "Creating Claude wrapper..."
-CLAUDE_BIN="$HOME/.local/bin/claude"
-if [ -f "$CLAUDE_BIN" ] && [ ! -f "$CLAUDE_BIN.real" ]; then
+if [ -n "$CLAUDE_BIN" ] && [ -f "$CLAUDE_BIN" ] && [ ! -f "$CLAUDE_BIN.real" ]; then
+  echo "Creating Claude wrapper..."
   mv "$CLAUDE_BIN" "$CLAUDE_BIN.real"
   if [ -d "$PLUGIN_DIR" ]; then
     cat << CLAUDE_EOF > "$CLAUDE_BIN"
@@ -88,11 +100,12 @@ fi
 # Aider
 # ============================================================================
 
-# Create Aider wrapper that runs in non-interactive mode
-echo "Creating Aider wrapper..."
+# Create Aider path shim (resolves install location; does not add auto-approval flags
+# since Aider does not have a global auto-approve mode)
+echo "Creating Aider path shim..."
 cat << 'EOF' | sudo tee "$WRAPPER_DIR/aider" > /dev/null
 #!/bin/bash
-# Aider wrapper for devcontainer - non-interactive mode
+# Aider path shim for devcontainer
 # Check common installation locations
 if [ -f "$HOME/.local/bin/aider" ]; then
   exec "$HOME/.local/bin/aider" "$@"
@@ -162,11 +175,12 @@ if [ -d "$PLUGIN_DIR" ]; then
 fi
 echo "  - Codex: Auto-approve mode (approval_policy=never, sandbox=danger-full-access)"
 echo "  - Gemini CLI: Auto-accept mode (autoAccept=true)"
-echo "  - Aider: Non-interactive mode (auto-approval)"
+echo "  - Aider: Path shim (no global auto-approve mode available)"
 echo "  - Cursor: Config mounted from host (~/.cursor)"
 echo "  - OpenCode: Config mounted from host (~/.config)"
 echo "  - Kilocode: Config mounted from host (~/.kilocode)"
 echo "  - GitHub Copilot CLI: Config mounted from host (~/.copilot)"
 echo ""
 echo "WARNING: These tools will auto-approve all operations inside this container."
-echo "  Host configurations remain unchanged and safe."
+echo "  Some tool state and configuration may be written back to host-mounted directories (e.g., ~/.claude, ~/.config)."
+echo "  Use only in isolated/dev environments where this behavior is acceptable."

@@ -8,8 +8,20 @@
 
 set -euo pipefail
 
-COMPOSE_FILE="/workspaces/paid/docker-compose.yml"
-CONTAINER_NAME="paid-rails-app-1"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
+
+# Preflight: if paid_internal exists without Compose labels, it will cause
+# a label mismatch error when Compose tries to use it. Detect and fix this.
+if docker network inspect paid_internal >/dev/null 2>&1; then
+  existing_label="$(docker network inspect paid_internal --format '{{ index .Labels "com.docker.compose.project" }}' 2>/dev/null || true)"
+  if [[ -z "$existing_label" || "$existing_label" == "<no value>" ]]; then
+    echo "Removing stale paid_internal network (missing Compose labels)..."
+    docker network disconnect paid_internal "$(hostname)" 2>/dev/null || true
+    docker network rm paid_internal 2>/dev/null || true
+  fi
+fi
 
 # Start Qdrant (creates paid_internal with proper Compose labels)
 echo "Starting Qdrant..."
@@ -33,7 +45,7 @@ if ! docker network inspect paid_agent >/dev/null 2>&1; then
   for label in com.docker.compose.project com.docker.compose.version \
                com.docker.compose.project.config_files com.docker.compose.project.working_dir; do
     val=$(docker network inspect paid_internal --format "{{index .Labels \"$label\"}}" 2>/dev/null || echo "")
-    if [[ -n "$val" ]]; then
+    if [[ -n "$val" && "$val" != "<no value>" ]]; then
       create_args+=(--label "${label}=${val}")
     fi
   done
@@ -44,7 +56,7 @@ fi
 
 # Connect the devcontainer to both networks if not already connected
 for net in paid_internal paid_agent; do
-  if ! docker network inspect "$net" --format '{{range .Containers}}{{.Name}}{{end}}' | grep -q "$CONTAINER_NAME"; then
+  if ! docker network inspect "$net" --format '{{range .Containers}}{{.Name}}{{end}}' | grep -q "$(hostname)"; then
     echo "Connecting devcontainer to $net..."
     docker network connect --alias web --alias paid-proxy "$net" "$(hostname)"
   fi

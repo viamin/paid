@@ -42,8 +42,10 @@
     "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,readonly,type=bind,consistency=cached",
     // LLM CLI Authentication - Claude (stores in ~/.claude)
     "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
-    // LLM CLI Authentication - Other tools in ~/.config (GitHub CLI, opencode, etc.)
-    "source=${localEnv:HOME}/.config,target=/home/vscode/.config,type=bind",
+    // LLM CLI Authentication - GitHub CLI config
+    "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached",
+    // LLM CLI Authentication - opencode config
+    "source=${localEnv:HOME}/.config/opencode,target=/home/vscode/.config/opencode,type=bind,consistency=cached",
     // GitHub CLI Extensions - Share extensions between host and container
     "source=${localEnv:HOME}/.local/share/gh,target=/home/vscode/.local/share/gh,type=bind,consistency=cached",
     // opencode Extensions - Share extensions between host and container
