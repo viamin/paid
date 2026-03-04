@@ -1,6 +1,7 @@
 // For format details, see https://containers.dev/implementors/json_reference/.
 // For config options, see the README at: https://github.com/devcontainers/templates/tree/main/src/ruby
 {
+  "$schema": "https://raw.githubusercontent.com/microsoft/vscode/main/extensions/configuration-editing/schemas/devContainer.vscode.schema.json",
   "name": "paid",
   "dockerComposeFile": "compose.yaml",
   "service": "rails-app",
@@ -16,24 +17,48 @@
   },
 
   "containerEnv": {
+    "TZ": "${localEnv:TZ:UTC}",
     "KAMAL_REGISTRY_PASSWORD": "$KAMAL_REGISTRY_PASSWORD",
     "DB_HOST": "postgres",
     "TEMPORAL_ADDRESS": "temporal:7233",
     "TEMPORAL_NAMESPACE": "default",
     "TEMPORAL_TASK_QUEUE": "paid-tasks",
-    "TEMPORAL_UI_URL": "http://localhost:8080"
+    "TEMPORAL_UI_URL": "http://localhost:8080",
+    // LLM CLI tools - dangerous/auto-approve mode (container only)
+    "CODEX_APPROVAL_POLICY": "never",
+    "CODEX_SANDBOX_MODE": "danger-full-access",
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
+  },
+
+  "remoteEnv": {
+    "AIDER_NO_BROWSER": "1",
+    "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
+    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin"
   },
 
   "mounts": [
-    "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
-    "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached",
+    // Git configuration
     "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
-    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,readonly,type=bind,consistency=cached"
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,readonly,type=bind,consistency=cached",
+    // LLM CLI Authentication - Claude (stores in ~/.claude)
+    "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
+    // LLM CLI Authentication - Other tools in ~/.config (GitHub CLI, opencode, etc.)
+    "source=${localEnv:HOME}/.config,target=/home/vscode/.config,type=bind",
+    // GitHub CLI Extensions - Share extensions between host and container
+    "source=${localEnv:HOME}/.local/share/gh,target=/home/vscode/.local/share/gh,type=bind,consistency=cached",
+    // opencode Extensions - Share extensions between host and container
+    "source=${localEnv:HOME}/.local/share/opencode,target=/home/vscode/.local/share/opencode,type=bind,consistency=cached",
+    // GitHub Copilot CLI - Share config and session data between host and container
+    "source=${localEnv:HOME}/.copilot,target=/home/vscode/.copilot,type=bind,consistency=cached",
+    // LLM CLI Authentication - Codex CLI (OpenAI)
+    "source=${localEnv:HOME}/.codex,target=/home/vscode/.codex,type=bind,consistency=cached",
+    // LLM CLI Authentication - Kilocode
+    "source=${localEnv:HOME}/.kilocode,target=/home/vscode/.kilocode,type=bind,consistency=cached",
+    // LLM CLI Authentication - Aider
+    "source=${localEnv:HOME}/.aider,target=/home/vscode/.aider,type=bind,consistency=cached",
+    // LLM CLI Authentication - Cursor
+    "source=${localEnv:HOME}/.cursor,target=/home/vscode/.cursor,type=bind,consistency=cached"
   ],
-
-  "remoteEnv": {
-    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin"
-  },
 
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
   // Note: If you need to expose port 3000, prefer using compose.yaml `ports` instead of
@@ -52,8 +77,21 @@
   "postCreateCommand": {
     "setup-signing-key": "bash .devcontainer/setup-signing-key.sh",
     "setup": "corepack enable && corepack prepare yarn@1.22.22 --activate && bin/setup --skip-server",
-    "claude-install-and-configure": "curl -fsSL https://claude.ai/install.sh | bash && bash .devcontainer/configure-claude.sh",
-    "multiclaude": "go install github.com/dlorenc/multiclaude/cmd/multiclaude@latest"
+    // LLM CLI Tools - Installation
+    "claude-code": "curl -fsSL https://claude.ai/install.sh | bash",
+    "multiclaude": "go install github.com/dlorenc/multiclaude/cmd/multiclaude@latest",
+    "cursor-agent": "curl https://cursor.com/install -fsS | bash",
+    "codex": "npm install -g @openai/codex",
+    "gemini-cli": "npm install -g @google/gemini-cli",
+    "github-copilot-cli": "npm install -g @github/copilot",
+    "opencode": "npm i -g opencode-ai@latest",
+    "kilocode": "npm i -g @kilocode/cli",
+    "aider": "curl -fsSL https://aider.chat/install.sh | bash",
+    // Dev tools
+    "markdownlint": "npm install -g markdownlint-cli",
+    "git-curate": "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH gem install git_curate",
+    // Configure LLM tools for auto-approve mode (devcontainer only)
+    "configure-llm-tools": "bash .devcontainer/configure-llm-tools.sh"
   },
 
   // Use 'postStartCommand' to run commands every time the container starts.
@@ -63,11 +101,65 @@
     "git-https": "git config --local remote.origin.url https://github.com/viamin/paid.git && git config --local credential.helper '!/usr/bin/gh auth git-credential'",
     "ensure-networks-and-qdrant": "docker compose -f /workspaces/paid/docker-compose.yml up qdrant -d && for net in paid_internal paid_agent; do docker network inspect $net >/dev/null 2>&1 || docker network create $net --driver bridge; if ! docker network inspect $net --format '{{range .Containers}}{{.Name}}{{end}}' | grep -q paid-rails-app-1; then docker network connect --alias web --alias paid-proxy $net $(hostname); fi; done"
   },
+  "waitFor": "postStartCommand",
   "customizations": {
     "vscode": {
       "extensions": [
-        "Anthropic.claude-code"
-      ]
+        // LLM CLI tools
+        "Anthropic.claude-code",
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        "sst-dev.opencode",
+        "kilocode.Kilo-Code",
+        "google.gemini-cli-vscode-ide-companion",
+        // Ruby/Rails development
+        "Shopify.ruby-lsp",
+        "testdouble.vscode-standard-ruby",
+        "noku.rails-run-spec-vscode",
+        "sporto.rails-go-to-spec",
+        // Git
+        "eamodio.gitlens",
+        "mhutchie.git-graph",
+        // Editor utilities
+        "redhat.vscode-yaml",
+        "EditorConfig.EditorConfig",
+        "DavidAnson.vscode-markdownlint",
+        "Tyriar.sort-lines",
+        "ryu1kn.partial-diff",
+        "bierner.markdown-mermaid"
+      ],
+      "settings": {
+        // Ruby
+        "ruby.lsp.enabled": true,
+        "ruby.format": "standard",
+        "editor.formatOnSave": true,
+        "[ruby]": {
+          "editor.defaultFormatter": "Shopify.ruby-lsp",
+          "editor.formatOnSave": true,
+          "editor.tabSize": 2
+        },
+        // YAML
+        "[yaml]": {
+          "editor.defaultFormatter": "redhat.vscode-yaml",
+          "editor.tabSize": 2
+        },
+        // Terminal
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.profiles.linux": {
+          "zsh": { "path": "/bin/zsh" },
+          "bash": { "path": "/bin/bash" }
+        },
+        "terminal.integrated.scrollback": 10000,
+        // Remote ports
+        "remote.autoForwardPorts": true,
+        "remote.portsAttributes": {
+          "3000": { "onAutoForward": "ignore" },
+          "*": { "requireLocalPort": true }
+        },
+        // LLM CLI Extensions - Dangerous/Auto-approve mode (devcontainer only)
+        "claude-code.dangerouslySkipPermissions": true,
+        "claude-code.useTerminal": false
+      }
     }
   }
 }
