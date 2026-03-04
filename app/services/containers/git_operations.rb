@@ -127,7 +127,11 @@ module Containers
       # Fetch current remote state before --force-with-lease to avoid
       # "stale info" rejections when the branch was updated by a prior run.
       if agent_run.existing_pr?
-        fetch_branch(agent_run.branch_name)
+        begin
+          fetch_branch(agent_run.branch_name)
+        rescue Error => e
+          raise PushError, "Fetch failed: #{e.message}"
+        end
       end
 
       # --no-verify skips any pre-push hooks. The push is a system operation

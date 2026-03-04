@@ -434,7 +434,7 @@ RSpec.describe AgentRun do
       it "raises when the run is already finished" do
         agent_run = create(:agent_run, :failed)
 
-        expect { agent_run.start! }.to raise_error(ActiveRecord::RecordInvalid)
+        expect { agent_run.start! }.to raise_error(ActiveRecord::RecordInvalid, /cannot start a finished agent run/)
         expect(agent_run.reload.status).to eq("failed")
       end
 

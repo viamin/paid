@@ -149,7 +149,10 @@ class AgentRun < ApplicationRecord
 
       # Guard: don't resurrect a run already marked finished by
       # StaleRunDetectorJob or another process.
-      raise ActiveRecord::RecordInvalid, self if finished?
+      if finished?
+        errors.add(:base, "cannot start a finished agent run")
+        raise ActiveRecord::RecordInvalid, self
+      end
 
       update!(status: "running", started_at: Time.current, completed_at: nil)
     end
