@@ -26,7 +26,7 @@ class UserSettingsController < ApplicationController
   end
 
   def user_setting_params
-    params.require(:user_setting).permit(
+    permitted = params.require(:user_setting).permit(
       :default_poll_interval_seconds,
       :github_token_cache_ttl_minutes,
       :token_validation_stale_minutes,
@@ -42,7 +42,19 @@ class UserSettingsController < ApplicationController
       :circuit_breaker_timeout_seconds,
       :retry_max_attempts,
       :retry_base_delay,
-      :retry_max_delay
+      :retry_max_delay,
+      :fallback_enabled,
+      :fallback_providers
     )
+
+    # Parse fallback_providers from JSON string (from hidden field)
+    if permitted[:fallback_providers].is_a?(String)
+      permitted[:fallback_providers] = JSON.parse(permitted[:fallback_providers])
+    end
+
+    permitted
+  rescue JSON::ParserError
+    permitted[:fallback_providers] = []
+    permitted
   end
 end
