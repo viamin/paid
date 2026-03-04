@@ -3,7 +3,7 @@
 # This script runs during postCreateCommand to set up container-specific shell aliases
 # and wrapper functions that enable dangerous mode without affecting host configs
 
-set -e
+set -euo pipefail
 
 echo "Configuring LLM CLI tools for devcontainer..."
 
