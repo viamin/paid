@@ -10,6 +10,10 @@ module Activities
       "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p]
     }.freeze
 
+    # Issue creation should complete quickly — use a shorter timeout than full PR runs.
+    ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
+    ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
+
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
@@ -59,7 +63,10 @@ module Activities
       agent_run.log!("system", "Starting #{agent_run.agent_type} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
 
-      result = container_service.execute(command, timeout: agent_timeout)
+      effective_timeout = agent_run.create_issue_goal? ? ISSUE_GOAL_TIMEOUT : agent_timeout
+      effective_idle_timeout = agent_run.create_issue_goal? ? ISSUE_GOAL_IDLE_TIMEOUT : nil
+
+      result = container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
 
       if result.success?
         # Stay in running status — the run is only marked completed after
@@ -171,7 +178,7 @@ module Activities
         You have access to the GitHub API via a proxy. Use curl to create the issue:
 
         ```bash
-        curl -X POST "$GITHUB_API_URL/repos/#{repo}/issues" \\
+        curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/issues" \\
           -H "Content-Type: application/json" \\
           -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
           -H "X-Proxy-Token: $PROXY_TOKEN" \\
