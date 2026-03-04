@@ -1,5 +1,11 @@
 # frozen_string_literal: true
 
+# Compatibility shim: ensure AuthenticationError exists for agent-harness
+# versions older than 0.4.0 that may not define it.
+if defined?(AgentHarness) && defined?(AgentHarness::Error) && !defined?(AgentHarness::AuthenticationError)
+  AgentHarness::AuthenticationError = Class.new(AgentHarness::Error)
+end
+
 module AgentRuns
   # Executes an agent run using the agent-harness gem.
   #
@@ -41,6 +47,8 @@ module AgentRuns
       response = execute_agent
       process_response(response)
       Result.new(success: true, response: response)
+    rescue AgentHarness::AuthenticationError => e
+      handle_auth_error(e)
     rescue AgentHarness::TimeoutError => e
       handle_timeout(e)
     rescue AgentHarness::Error => e
@@ -105,6 +113,14 @@ module AgentRuns
         tokens_input: input_tokens,
         tokens_output: output_tokens
       )
+    end
+
+    def handle_auth_error(error)
+      provider_name = PROVIDER_MAP[agent_run.agent_type]
+      agent_run.auth_expire!(error: error.message, provider: provider_name.to_s)
+      agent_run.log!("system", "Authentication expired for #{provider_name}")
+
+      Result.new(success: false, error: error)
     end
 
     def handle_timeout(error)

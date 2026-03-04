@@ -174,17 +174,28 @@ RSpec.describe AgentRun do
     end
 
     describe ".finished" do
-      it "includes completed, failed, cancelled, timeout, and retried runs" do
+      it "includes completed, failed, cancelled, timeout, retried, and auth_expired runs" do
         completed_run = create(:agent_run, :completed)
         failed_run = create(:agent_run, :failed)
         cancelled_run = create(:agent_run, :cancelled)
         timeout_run = create(:agent_run, :timeout)
         retried_run = create(:agent_run, :retried)
+        auth_expired_run = create(:agent_run, :auth_expired)
         create(:agent_run)
 
         finished = described_class.finished
-        expect(finished).to include(completed_run, failed_run, cancelled_run, timeout_run, retried_run)
-        expect(finished.count).to eq(5)
+        expect(finished).to include(completed_run, failed_run, cancelled_run, timeout_run, retried_run, auth_expired_run)
+        expect(finished.count).to eq(6)
+      end
+    end
+
+    describe ".auth_expired" do
+      it "returns only auth_expired runs" do
+        auth_expired_run = create(:agent_run, :auth_expired)
+        create(:agent_run)
+
+        expect(described_class.auth_expired).to include(auth_expired_run)
+        expect(described_class.auth_expired.count).to eq(1)
       end
     end
 
@@ -217,6 +228,12 @@ RSpec.describe AgentRun do
         agent_run = build(:agent_run, started_at: 5.minutes.ago, completed_at: nil)
 
         expect(agent_run.duration).to be_within(1).of(300)
+      end
+
+      it "returns 0 instead of negative when completed_at is before started_at" do
+        agent_run = build(:agent_run, started_at: Time.current, completed_at: 1.hour.ago)
+
+        expect(agent_run.duration).to eq(0)
       end
     end
 
@@ -353,6 +370,10 @@ RSpec.describe AgentRun do
         expect(build(:agent_run, :retried).finished?).to be true
       end
 
+      it "returns true for auth_expired status" do
+        expect(build(:agent_run, :auth_expired).finished?).to be true
+      end
+
       it "returns false for pending status" do
         expect(build(:agent_run).finished?).to be false
       end
@@ -408,6 +429,21 @@ RSpec.describe AgentRun do
           expect(agent_run.status).to eq("running")
           expect(agent_run.started_at).to eq(Time.current)
         end
+      end
+
+      it "raises when the run is already finished" do
+        agent_run = create(:agent_run, :failed)
+
+        expect { agent_run.start! }.to raise_error(ActiveRecord::RecordInvalid, /cannot start a finished agent run/)
+        expect(agent_run.reload.status).to eq("failed")
+      end
+
+      it "clears stale completed_at to prevent negative duration" do
+        agent_run = create(:agent_run, status: "pending", completed_at: 1.hour.ago)
+
+        agent_run.start!
+
+        expect(agent_run.completed_at).to be_nil
       end
     end
 
@@ -504,6 +540,37 @@ RSpec.describe AgentRun do
         agent_run.retry!
 
         expect(agent_run.status).to eq("retried")
+      end
+    end
+
+    describe "#auth_expired?" do
+      it "returns true when status is auth_expired" do
+        agent_run = build(:agent_run, :auth_expired)
+
+        expect(agent_run.auth_expired?).to be true
+      end
+
+      it "returns false when status is not auth_expired" do
+        agent_run = build(:agent_run, :failed)
+
+        expect(agent_run.auth_expired?).to be false
+      end
+    end
+
+    describe "#auth_expire!" do
+      it "sets status to auth_expired with error and provider" do
+        started_time = 10.minutes.ago
+        agent_run = create(:agent_run, status: "running", started_at: started_time)
+
+        freeze_time do
+          agent_run.auth_expire!(error: "OAuth session expired", provider: "claude")
+
+          expect(agent_run.status).to eq("auth_expired")
+          expect(agent_run.completed_at).to eq(Time.current)
+          expect(agent_run.error_message).to eq("OAuth session expired")
+          expect(agent_run.auth_provider).to eq("claude")
+          expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
+        end
       end
     end
 
@@ -877,7 +944,7 @@ RSpec.describe AgentRun do
 
   describe "constants" do
     it "defines valid STATUSES" do
-      expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout retried])
+      expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout retried auth_expired])
     end
 
     it "defines valid AGENT_TYPES" do
