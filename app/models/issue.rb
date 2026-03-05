@@ -43,8 +43,11 @@ class Issue < ApplicationRecord
     where(project: project, github_state: "open", is_pull_request: false)
       .where.not(
         id: IssueDependency
-          .joins(:depends_on_issue)
-          .where(depends_on_issue: { github_state: "open" })
+          .joins(:issue, :depends_on_issue)
+          .where(
+            depends_on_issue: { github_state: "open" },
+            issues: { project_id: project.id }
+          )
           .select(:issue_id)
       )
   }
