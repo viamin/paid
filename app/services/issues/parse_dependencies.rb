@@ -52,6 +52,8 @@ module Issues
           .where(github_number: referenced_numbers, is_pull_request: false)
           .index_by(&:github_number)
 
+        adjacency = load_project_adjacency
+
         referenced_numbers.each do |number|
           dep_issue = project_issues[number]
           next unless dep_issue
@@ -60,7 +62,7 @@ module Issues
           new_dep_ids << dep_issue.id
 
           next if current_dep_ids.include?(dep_issue.id)
-          next if would_create_cycle?(dep_issue)
+          next if would_create_cycle?(dep_issue, adjacency)
 
           issue.issue_dependencies.create(depends_on_issue: dep_issue)
         end
@@ -93,8 +95,16 @@ module Issues
       end
     end
 
-    def would_create_cycle?(dep_issue)
-      Issues::DetectCycle.call(from_issue: dep_issue, target_issue_id: issue.id)
+    def load_project_adjacency
+      IssueDependency
+        .where(issue_id: issue.project.issues.select(:id))
+        .pluck(:issue_id, :depends_on_issue_id)
+        .group_by(&:first)
+        .transform_values { |pairs| pairs.map(&:last) }
+    end
+
+    def would_create_cycle?(dep_issue, adjacency)
+      Issues::DetectCycle.call(from_issue: dep_issue, target_issue_id: issue.id, adjacency: adjacency)
     end
   end
 end
