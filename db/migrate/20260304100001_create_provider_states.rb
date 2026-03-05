@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class CreateProviderStates < ActiveRecord::Migration[8.0]
+class CreateProviderStates < ActiveRecord::Migration[8.1]
   def change
     create_table :provider_states do |t|
       t.bigint :user_id, null: false
