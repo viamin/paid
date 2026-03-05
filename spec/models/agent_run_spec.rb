@@ -886,9 +886,9 @@ RSpec.describe AgentRun do
           allow(Docker::Container).to receive(:get).with("gone789")
             .and_raise(Docker::Error::NotFoundError)
 
-          agent_run.cleanup_container(force: true)
+          expect(Docker::Volume).not_to receive(:get)
 
-          expect(Docker::Volume).not_to have_received(:get)
+          agent_run.cleanup_container(force: true)
           expect(agent_run.reload.container_id).to be_nil
         end
       end
