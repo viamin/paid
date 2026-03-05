@@ -17,8 +17,10 @@ class DockerVolumeCleanupJob < ApplicationJob
     volumes = list_paid_volumes
     return if volumes.empty?
 
-    agent_run_ids = volumes.map { |v| v.id.delete_prefix(VOLUME_PREFIX) }
-    active_ids = AgentRun.active.where(id: agent_run_ids).pluck(:id).map(&:to_s).to_set
+    numeric_agent_run_ids = volumes
+                             .map { |v| v.id.delete_prefix(VOLUME_PREFIX) }
+                             .select { |id| id.match?(/\A\d+\z/) }
+    active_ids = AgentRun.active.where(id: numeric_agent_run_ids).pluck(:id).map(&:to_s).to_set
 
     removed = 0
     volumes.each do |volume|
