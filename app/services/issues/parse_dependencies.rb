@@ -40,29 +40,30 @@ module Issues
     end
 
     def call
-      return if issue.body.blank?
-
-      referenced_numbers = extract_dependency_numbers
-      return if referenced_numbers.empty?
-
-      project_issues = issue.project.issues
-        .where(github_number: referenced_numbers, is_pull_request: false)
-        .index_by(&:github_number)
+      referenced_numbers = issue.body.present? ? extract_dependency_numbers : []
 
       current_dep_ids = issue.issue_dependencies.pluck(:depends_on_issue_id).to_set
+      return if referenced_numbers.empty? && current_dep_ids.empty?
+
       new_dep_ids = Set.new
 
-      referenced_numbers.each do |number|
-        dep_issue = project_issues[number]
-        next unless dep_issue
-        next if dep_issue.id == issue.id
+      if referenced_numbers.any?
+        project_issues = issue.project.issues
+          .where(github_number: referenced_numbers, is_pull_request: false)
+          .index_by(&:github_number)
 
-        new_dep_ids << dep_issue.id
+        referenced_numbers.each do |number|
+          dep_issue = project_issues[number]
+          next unless dep_issue
+          next if dep_issue.id == issue.id
 
-        next if current_dep_ids.include?(dep_issue.id)
-        next if would_create_cycle?(dep_issue)
+          new_dep_ids << dep_issue.id
 
-        issue.issue_dependencies.create(depends_on_issue: dep_issue)
+          next if current_dep_ids.include?(dep_issue.id)
+          next if would_create_cycle?(dep_issue)
+
+          issue.issue_dependencies.create(depends_on_issue: dep_issue)
+        end
       end
 
       stale_ids = current_dep_ids - new_dep_ids
