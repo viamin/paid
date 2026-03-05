@@ -15,7 +15,7 @@ module DevCleanup
 end
 
 namespace :dev do
-  desc "Mark stale agent runs as timed out, stop orphaned containers, and process the run queue"
+  desc "Mark stale agent runs as timed out, stop their containers (+ orphans when grace=0), and process the run queue"
   task cleanup: :environment do
     raw = ENV.fetch("STARTUP_CLEANUP_GRACE_PERIOD", "0")
     grace = begin
@@ -50,14 +50,16 @@ namespace :dev do
     puts "  Skipped #{skipped_count} recent run(s) for Temporal recovery" if skipped_count > 0
 
     # TODO(#284): Integrate Containers::ServiceProvisioner here so startup cleanup
-    # can clean up service containers for stale runs using its "only stop if no
-    # other active runs" logic. Currently service containers are only cleaned up
-    # in the grace=0 branch via find_orphaned_containers (which catches all
-    # labeled containers directly via the Docker CLI). In the grace>0 branch,
-    # service containers for timed-out runs are left running until the next
-    # grace=0 cleanup or manual intervention.
+    # can also stop service containers for stale runs (via its "only stop if no
+    # other active runs" logic) and identify which service containers belong to
+    # recent runs. Until then, service containers and truly orphaned containers
+    # (not referenced by any AgentRun) are only cleaned up in the grace=0 branch,
+    # because find_orphaned_containers returns ALL labeled containers and we
+    # cannot distinguish which belong to recent vs. stale runs without
+    # ServiceProvisioner / AgentRun#service_container_ids.
 
-    # Stop containers belonging to timed-out runs, or all labeled containers when grace is zero.
+    # grace=0: stop ALL labeled containers (agent + service + orphaned).
+    # grace>0: stop only containers whose IDs are persisted on timed-out runs.
     if grace.zero?
       orphaned = DevCleanup.find_orphaned_containers
       orphaned.uniq!
