@@ -390,6 +390,27 @@ RSpec.describe Activities::RunAgentActivity do
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
       end
+
+      it "preserves timeout status when timeout is followed by other failures" do
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            raise Containers::Provision::TimeoutError, "took too long"
+          else
+            exec_failure
+          end
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+          .and have_enqueued_job(ProcessRunQueueJob)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("wall_clock_timeout")
+      end
     end
 
     context "when resolving user settings" do

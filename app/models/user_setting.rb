@@ -118,8 +118,11 @@ class UserSetting < ApplicationRecord
   # @param check_circuit_recovery [Boolean] Whether to check for circuit recovery before filtering
   # @return [Array<String>] Available provider names in priority order
   def available_providers(check_circuit_recovery: true)
-    provider_priority.select do |provider|
-      state = user.provider_states.find_by(provider_name: provider)
+    priorities = provider_priority
+    states_by_name = user.provider_states.where(provider_name: priorities).index_by(&:provider_name)
+
+    priorities.select do |provider|
+      state = states_by_name[provider]
       next true unless state
 
       # Check if circuit can recover before filtering
