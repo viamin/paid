@@ -84,16 +84,19 @@ module Activities
 
       # Start with triggers that don't require extra GitHub API calls beyond
       # review threads and check runs. Only if none of these exist do we
-      # fetch conversation comments and full reviews.
+      # fetch conversation comments and, if still needed, full reviews.
       all_triggers = copilot_triggers + ci_triggers + human_triggers
 
       if all_triggers.empty?
         last_run = last_completed_run(project, issue)
         human_triggers.concat(check_conversation_comments(client, project, issue, last_run))
-        human_triggers.concat(changes_requested_from_reviews(project,
-          fetch_reviews(client, project, issue), last_run))
-
         all_triggers = copilot_triggers + ci_triggers + human_triggers
+
+        if all_triggers.empty?
+          human_triggers.concat(changes_requested_from_reviews(project,
+            fetch_reviews(client, project, issue), last_run))
+          all_triggers = copilot_triggers + ci_triggers + human_triggers
+        end
       end
 
       if all_triggers.empty?
