@@ -852,6 +852,45 @@ RSpec.describe AgentRun do
 
           expect { agent_run.cleanup_container }.not_to raise_error
         end
+
+        it "cleans up workspace volume when container is already gone" do
+          agent_run = create(:agent_run, worktree_path: nil, container_id: "gone123")
+          allow(Docker::Container).to receive(:get).with("gone123")
+            .and_raise(Docker::Error::NotFoundError)
+
+          orphan_volume = instance_double(Docker::Volume, remove: true)
+          allow(Docker::Volume).to receive(:get)
+            .with("paid-workspace-#{agent_run.id}")
+            .and_return(orphan_volume)
+
+          agent_run.cleanup_container(force: true)
+
+          expect(agent_run.reload.container_id).to be_nil
+          expect(orphan_volume).to have_received(:remove)
+        end
+
+        it "handles missing volume gracefully when container is already gone" do
+          agent_run = create(:agent_run, worktree_path: nil, container_id: "gone456")
+          allow(Docker::Container).to receive(:get).with("gone456")
+            .and_raise(Docker::Error::NotFoundError)
+          allow(Docker::Volume).to receive(:get)
+            .with("paid-workspace-#{agent_run.id}")
+            .and_raise(Docker::Error::NotFoundError)
+
+          expect { agent_run.cleanup_container(force: true) }.not_to raise_error
+          expect(agent_run.reload.container_id).to be_nil
+        end
+
+        it "skips volume cleanup for worktree-based runs when container is gone" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "gone789")
+          allow(Docker::Container).to receive(:get).with("gone789")
+            .and_raise(Docker::Error::NotFoundError)
+
+          expect(Docker::Volume).not_to receive(:get)
+
+          agent_run.cleanup_container(force: true)
+          expect(agent_run.reload.container_id).to be_nil
+        end
       end
 
       describe "#with_container" do
