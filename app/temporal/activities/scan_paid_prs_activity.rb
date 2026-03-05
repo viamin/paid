@@ -75,27 +75,30 @@ module Activities
         return escalate_trigger(issue)
       end
 
-      pr_data = fetch_pr_data(client, project, issue)
+      # Fetch review threads first — cheapest signal that often suffices.
       thread_triggers = fetch_review_thread_triggers(client, project, issue)
       copilot_triggers = thread_triggers.select { |t| t[:type] == "copilot_review_threads" }
       human_triggers = thread_triggers.select { |t| t[:type] == "review_threads" }
-      checks = fetch_check_runs(client, project, pr_data)
-      ci_triggers = ci_failure_triggers(checks || [])
 
-      # Start with triggers that don't require extra GitHub API calls beyond
-      # review threads and check runs. Only if none of these exist do we
-      # fetch conversation comments and, if still needed, full reviews.
-      all_triggers = copilot_triggers + ci_triggers + human_triggers
+      all_triggers = copilot_triggers + human_triggers
 
+      # Only fetch PR data and check runs if review threads alone aren't enough.
+      if all_triggers.empty?
+        pr_data = fetch_pr_data(client, project, issue)
+        checks = fetch_check_runs(client, project, pr_data)
+        ci_triggers = ci_failure_triggers(checks || [])
+        all_triggers.concat(ci_triggers)
+      end
+
+      # Only fetch conversation comments if still no triggers.
       if all_triggers.empty?
         last_run = last_completed_run(project, issue)
-        human_triggers.concat(check_conversation_comments(client, project, issue, last_run))
-        all_triggers = copilot_triggers + ci_triggers + human_triggers
+        all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
 
+        # Only fetch full reviews if still no triggers.
         if all_triggers.empty?
-          human_triggers.concat(changes_requested_from_reviews(project,
+          all_triggers.concat(changes_requested_from_reviews(project,
             fetch_reviews(client, project, issue), last_run))
-          all_triggers = copilot_triggers + ci_triggers + human_triggers
         end
       end
 

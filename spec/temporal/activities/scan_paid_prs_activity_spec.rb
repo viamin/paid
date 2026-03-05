@@ -629,9 +629,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           labels: [ "paid-generated" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago)
         stub_github_for_pr(
           reviews: [
-            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", submitted_at: Time.current }
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", submitted_at: 30.minutes.ago }
           ]
         )
       end
@@ -716,6 +719,34 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+    end
+
+    context "when ready PR has unresolved Copilot review threads" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "copilot-pull-request-reviewer" } ]
+            }
+          ]
+        )
+      end
+
+      it "triggers a followup for Copilot review threads in ready phase" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("ready")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("copilot_review_threads")
       end
     end
 
