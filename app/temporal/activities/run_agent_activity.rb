@@ -13,6 +13,13 @@ module Activities
       "aider" => %w[aider --yes --no-auto-commits --message]
     }.freeze
 
+    # Maps agent_type values to their canonical settings provider name.
+    # Some agent types (e.g., "claude_code") share the same underlying provider as
+    # a settings-level name ("claude"), so they should be deduplicated during fallback.
+    AGENT_TYPE_TO_PROVIDER = {
+      "claude_code" => "claude"
+    }.freeze
+
     # Patterns that indicate a rate limit or quota error from provider output.
     RATE_LIMIT_PATTERNS = [
       /rate.?limit/i,
@@ -131,11 +138,21 @@ module Activities
     def build_provider_order(agent_run, user_settings)
       return [ agent_run.agent_type ] unless user_settings.fallback_enabled
 
-      # Start with the agent's type, then add fallbacks
+      # Normalize agent_type to the canonical settings provider name so that
+      # e.g. "claude_code" is deduplicated against "claude" in the fallback list.
+      canonical = AGENT_TYPE_TO_PROVIDER.fetch(agent_run.agent_type, agent_run.agent_type)
+
+      # Start with the agent's original type (for AGENT_COMMANDS lookup), then add
+      # fallback providers that map to a different canonical name.
       providers = [ agent_run.agent_type ]
+      seen = Set.new([ canonical ])
 
       user_settings.fallback_providers.each do |fallback|
-        providers << fallback unless providers.include?(fallback)
+        fallback_canonical = AGENT_TYPE_TO_PROVIDER.fetch(fallback, fallback)
+        next if seen.include?(fallback_canonical)
+
+        seen << fallback_canonical
+        providers << fallback
       end
 
       providers.select { |p| AGENT_COMMANDS.key?(p) }
@@ -145,7 +162,8 @@ module Activities
     #
     # @return [Boolean] true if provider should be skipped
     def provider_unavailable?(user_settings, provider)
-      state = user_settings.user.provider_states.find_by(provider_name: provider)
+      canonical = canonical_provider(provider)
+      state = user_settings.user.provider_states.find_by(provider_name: canonical)
       return false unless state
 
       # Check for circuit recovery before deciding
@@ -156,20 +174,26 @@ module Activities
 
     # Records a rate limit for a provider.
     def persist_rate_limit(user_settings, provider, reset_at = nil)
-      state = user_settings.provider_state_for(provider)
+      state = user_settings.provider_state_for(canonical_provider(provider))
       state.mark_rate_limited!(reset_at: reset_at)
     end
 
     # Records a successful provider execution.
     def record_provider_success(user_settings, provider)
-      state = user_settings.user.provider_states.find_by(provider_name: provider)
+      canonical = canonical_provider(provider)
+      state = user_settings.user.provider_states.find_by(provider_name: canonical)
       state&.record_success!
     end
 
     # Records a failed provider execution.
     def record_provider_failure(user_settings, provider)
-      state = user_settings.provider_state_for(provider)
+      state = user_settings.provider_state_for(canonical_provider(provider))
       state.record_failure!(threshold: user_settings.circuit_breaker_failure_threshold)
+    end
+
+    # Returns the canonical settings-level provider name for a given agent type.
+    def canonical_provider(provider)
+      AGENT_TYPE_TO_PROVIDER.fetch(provider, provider)
     end
 
     # Runs the agent with a specific provider.
