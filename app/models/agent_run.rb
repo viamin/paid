@@ -335,6 +335,10 @@ class AgentRun < ApplicationRecord
     # Container may already be gone; clear the reference anyway
     @container_service = nil
     update!(container_id: nil)
+    # The container is gone but the workspace volume may still exist.
+    # Provision#cleanup would normally handle this in its ensure block,
+    # but we never reached it, so clean up the volume directly.
+    cleanup_orphaned_workspace_volume
   end
 
   # Executes a block with a provisioned container, ensuring cleanup.
@@ -381,6 +385,22 @@ class AgentRun < ApplicationRecord
 
   # Ensures @container_service is available, reconnecting from persisted
   # container_id if needed (e.g., when called from a different Temporal activity).
+  def cleanup_orphaned_workspace_volume
+    return if worktree_path.present? # bind-mount runs don't use named volumes
+
+    volume_name = "paid-workspace-#{id}"
+    Docker::Volume.get(volume_name).remove
+  rescue Docker::Error::NotFoundError
+    # Volume already removed, nothing to do
+  rescue Docker::Error::DockerError => e
+    Rails.logger.warn(
+      message: "container_manager.orphaned_volume_cleanup_failed",
+      agent_run_id: id,
+      volume_name: volume_name,
+      error: e.message
+    )
+  end
+
   def ensure_container_service!
     return if @container_service
 
