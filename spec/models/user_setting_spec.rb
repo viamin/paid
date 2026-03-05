@@ -165,4 +165,93 @@ RSpec.describe UserSetting do
       expect(setting.default_allowed_github_usernames).to eq([])
     end
   end
+
+  describe "#provider_priority" do
+    it "returns default provider first, then fallbacks" do
+      setting = build(:user_setting, default_agent_provider: "claude", fallback_providers: %w[cursor aider])
+      expect(setting.provider_priority).to eq(%w[claude cursor aider])
+    end
+
+    it "excludes the default provider from fallback list" do
+      setting = build(:user_setting, default_agent_provider: "claude", fallback_providers: %w[claude cursor])
+      expect(setting.provider_priority).to eq(%w[claude cursor])
+    end
+
+    it "handles empty fallback_providers" do
+      setting = build(:user_setting, default_agent_provider: "claude", fallback_providers: [])
+      expect(setting.provider_priority).to eq(%w[claude])
+    end
+
+    it "handles nil fallback_providers" do
+      setting = build(:user_setting, default_agent_provider: "claude")
+      setting.fallback_providers = nil
+      expect(setting.provider_priority).to eq(%w[claude])
+    end
+  end
+
+  describe "#available_providers" do
+    let(:user) { create(:user) }
+    let(:setting) { create(:user_setting, user: user, fallback_providers: %w[cursor aider]) }
+
+    it "returns all providers when none are unavailable" do
+      expect(setting.available_providers).to eq(%w[claude cursor aider])
+    end
+
+    it "excludes rate-limited providers" do
+      create(:provider_state, user: user, provider_name: "cursor", rate_limited_until: 1.hour.from_now)
+      expect(setting.available_providers).to eq(%w[claude aider])
+    end
+
+    it "excludes providers with open circuits" do
+      create(:provider_state, :circuit_open, user: user, provider_name: "claude")
+      expect(setting.available_providers).to eq(%w[cursor aider])
+    end
+
+    it "includes providers with half-open circuits" do
+      create(:provider_state, :circuit_half_open, user: user, provider_name: "cursor")
+      expect(setting.available_providers).to eq(%w[claude cursor aider])
+    end
+  end
+
+  describe "#provider_state_for" do
+    let(:user) { create(:user) }
+    let(:setting) { create(:user_setting, user: user) }
+
+    it "creates a new provider state if one does not exist" do
+      state = setting.provider_state_for("claude")
+      expect(state).to be_persisted
+      expect(state.provider_name).to eq("claude")
+    end
+
+    it "returns the existing provider state" do
+      existing = create(:provider_state, user: user, provider_name: "claude")
+      state = setting.provider_state_for("claude")
+      expect(state.id).to eq(existing.id)
+    end
+  end
+
+  describe "#validate_fallback_providers" do
+    it "is valid with known providers" do
+      setting = build(:user_setting, fallback_providers: %w[claude cursor])
+      expect(setting).to be_valid
+    end
+
+    it "is invalid with unknown providers" do
+      setting = build(:user_setting, fallback_providers: %w[claude unknown_provider])
+      expect(setting).not_to be_valid
+      expect(setting.errors[:fallback_providers]).to include(/invalid providers/)
+    end
+
+    it "is valid with empty array" do
+      setting = build(:user_setting, fallback_providers: [])
+      expect(setting).to be_valid
+    end
+
+    it "is invalid with non-array value" do
+      setting = build(:user_setting)
+      setting.fallback_providers = "not_an_array"
+      expect(setting).not_to be_valid
+      expect(setting.errors[:fallback_providers]).to include("must be an array")
+    end
+  end
 end

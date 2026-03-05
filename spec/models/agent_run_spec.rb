@@ -1077,4 +1077,50 @@ RSpec.describe AgentRun do
       agent_run.update!(tokens_input: 1000, tokens_output: 500, cost_cents: 10)
     end
   end
+
+  describe "#record_provider_attempt" do
+    it "appends an attempt to providers_attempted" do
+      agent_run = create(:agent_run)
+      agent_run.record_provider_attempt("claude", success: true)
+
+      agent_run.reload
+      expect(agent_run.providers_attempted.size).to eq(1)
+      expect(agent_run.providers_attempted.first["provider"]).to eq("claude")
+      expect(agent_run.providers_attempted.first["success"]).to be true
+    end
+
+    it "records error_type for failed attempts" do
+      agent_run = create(:agent_run)
+      agent_run.record_provider_attempt("claude", success: false, error_type: "rate_limited")
+
+      attempt = agent_run.reload.providers_attempted.last
+      expect(attempt["error_type"]).to eq("rate_limited")
+    end
+
+    it "accumulates multiple attempts" do
+      agent_run = create(:agent_run)
+      agent_run.record_provider_attempt("claude", success: false, error_type: "rate_limited")
+      agent_run.record_provider_attempt("cursor", success: true)
+
+      expect(agent_run.reload.providers_attempted.size).to eq(2)
+    end
+  end
+
+  describe "#log_provider_switch!" do
+    it "creates a system log entry" do
+      agent_run = create(:agent_run)
+      agent_run.log_provider_switch!("claude", "cursor", "rate_limited")
+
+      log = agent_run.agent_run_logs.last
+      expect(log.log_type).to eq("system")
+      expect(log.content).to include("claude")
+      expect(log.content).to include("cursor")
+    end
+
+    it "increments the provider_switches counter" do
+      agent_run = create(:agent_run)
+      expect { agent_run.log_provider_switch!("claude", "cursor", "rate_limited") }
+        .to change { agent_run.reload.provider_switches }.by(1)
+    end
+  end
 end

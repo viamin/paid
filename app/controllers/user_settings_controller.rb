@@ -49,7 +49,8 @@ class UserSettingsController < ApplicationController
 
     # Parse fallback_providers from JSON string (from hidden field)
     if permitted[:fallback_providers].is_a?(String)
-      permitted[:fallback_providers] = JSON.parse(permitted[:fallback_providers])
+      parsed = JSON.parse(permitted[:fallback_providers])
+      permitted[:fallback_providers] = parsed.is_a?(Array) ? parsed : []
     end
 
     permitted
