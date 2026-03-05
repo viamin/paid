@@ -47,6 +47,12 @@ RUN groupadd -f docker && usermod -aG docker vscode
 
 USER vscode
 
+# Pre-create ~/.local tree so bind mounts don't leave root-owned parents
+# (Docker creates missing mount-point parents as root, blocking vscode writes)
+RUN mkdir -p /home/vscode/.local/bin \
+             /home/vscode/.local/state \
+             /home/vscode/.local/share
+
 # Add rbenv to PATH
 ENV PATH="/home/vscode/.rbenv/shims:/home/vscode/.rbenv/bin:${PATH}"
 
