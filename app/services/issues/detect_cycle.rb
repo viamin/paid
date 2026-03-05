@@ -10,11 +10,12 @@ module Issues
   #   Issues::DetectCycle.call(from_issue: dep_issue, target_issue_id: issue.id)
   #   # => true if cycle would be created
   class DetectCycle
-    attr_reader :from_issue, :target_issue_id
+    attr_reader :from_issue, :target_issue_id, :adjacency
 
-    def initialize(from_issue:, target_issue_id:)
+    def initialize(from_issue:, target_issue_id:, adjacency: nil)
       @from_issue = from_issue
       @target_issue_id = target_issue_id
+      @adjacency = adjacency
     end
 
     def self.call(...)
@@ -22,8 +23,8 @@ module Issues
     end
 
     def call
-      adjacency = load_project_adjacency
-      reachable_iterative?(adjacency)
+      adj = adjacency || load_project_adjacency
+      reachable_iterative?(adj)
     end
 
     private
