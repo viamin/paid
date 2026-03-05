@@ -563,6 +563,120 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when draft PR has unresolved trusted review threads" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "viamin" } ]
+            }
+          ]
+        )
+      end
+
+      it "triggers a draft followup for human review threads" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("review_threads")
+      end
+    end
+
+    context "when draft PR has new conversation comments after last run" do
+      let(:comment) do
+        OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "Please fix the error handling in the parser module",
+          created_at: 30.minutes.ago
+        )
+      end
+
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago)
+        stub_github_for_pr(issue_comments: [ comment ])
+      end
+
+      it "triggers a draft followup for new conversation comments" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("conversation_comments")
+      end
+    end
+
+    context "when draft PR has changes_requested review after last run" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", submitted_at: 30.minutes.ago }
+          ]
+        )
+      end
+
+      it "triggers a draft followup for changes requested" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("changes_requested")
+      end
+    end
+
+    context "when draft PR has copilot-pull-request-reviewer threads" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "copilot-pull-request-reviewer" } ]
+            }
+          ]
+        )
+      end
+
+      it "recognizes copilot-pull-request-reviewer as a Copilot user" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("copilot_review_threads")
+      end
+    end
+
     context "when max_draft_review_rounds is zero (skip draft phase)" do
       before do
         project.update!(max_draft_review_rounds: 0, owner_reviewer_login: "viamin")
@@ -605,6 +719,34 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+    end
+
+    context "when ready PR has unresolved Copilot review threads" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "copilot-pull-request-reviewer" } ]
+            }
+          ]
+        )
+      end
+
+      it "triggers a followup for Copilot review threads in ready phase" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("ready")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("copilot_review_threads")
       end
     end
 
