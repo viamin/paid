@@ -33,16 +33,18 @@ class ProviderState < ApplicationRecord
   #
   # @param threshold [Integer] Number of failures before opening the circuit
   def record_failure!(threshold: 5)
-    new_count = failure_count + 1
+    with_lock do
+      new_count = failure_count + 1
 
-    if new_count >= threshold && circuit_state == "closed"
-      update!(
-        failure_count: new_count,
-        circuit_state: "open",
-        circuit_opened_at: Time.current
-      )
-    else
-      update!(failure_count: new_count)
+      if new_count >= threshold && circuit_state == "closed"
+        update!(
+          failure_count: new_count,
+          circuit_state: "open",
+          circuit_opened_at: Time.current
+        )
+      else
+        update!(failure_count: new_count)
+      end
     end
   end
 
