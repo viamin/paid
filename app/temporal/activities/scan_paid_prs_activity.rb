@@ -8,8 +8,10 @@ module Activities
   # Phase-aware routing:
   #   - draft: All signals (CI, Copilot, human reviews). All followups
   #     count toward max_draft_review_rounds to prevent infinite loops.
-  #   - ready: All signals (CI, Copilot, human reviews, labels, merge conflicts)
-  #   - escalated: Same as ready, no auto-merge
+  #   - ready: Owner approval takes precedence and may trigger auto-merge;
+  #     other signals (CI, Copilot, human reviews, labels, merge conflicts)
+  #     are only considered while awaiting owner approval.
+  #   - escalated: Same signal handling as ready, but no auto-merge
   #   - merged: No scanning
   #
   # Returns a list of PRs needing follow-up with trigger reasons.
@@ -80,12 +82,19 @@ module Activities
       checks = fetch_check_runs(client, project, pr_data)
       ci_triggers = ci_failure_triggers(checks || [])
 
-      last_run = last_completed_run(project, issue)
-      human_triggers.concat(check_conversation_comments(client, project, issue, last_run))
-      human_triggers.concat(changes_requested_from_reviews(project,
-        fetch_reviews(client, project, issue), last_run))
-
+      # Start with triggers that don't require extra GitHub API calls beyond
+      # review threads and check runs. Only if none of these exist do we
+      # fetch conversation comments and full reviews.
       all_triggers = copilot_triggers + ci_triggers + human_triggers
+
+      if all_triggers.empty?
+        last_run = last_completed_run(project, issue)
+        human_triggers.concat(check_conversation_comments(client, project, issue, last_run))
+        human_triggers.concat(changes_requested_from_reviews(project,
+          fetch_reviews(client, project, issue), last_run))
+
+        all_triggers = copilot_triggers + ci_triggers + human_triggers
+      end
 
       if all_triggers.empty?
         # If we couldn't fetch PR data, don't prematurely advance the phase.
@@ -302,7 +311,7 @@ module Activities
       triggers << { type: "copilot_review_threads", details: "#{copilot_threads.size} unresolved Copilot thread(s)" } if copilot_threads.any?
       triggers
     rescue GithubClient::Error => e
-      log_signal_error("review_threads", project, issue, e)
+      log_signal_error("review_thread_triggers", project, issue, e)
       []
     end
 
