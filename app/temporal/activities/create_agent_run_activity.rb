@@ -98,11 +98,7 @@ module Activities
     end
 
     def resolve_user_settings(project)
-      account = project.account
-      user = project.created_by
-      user ||= account.account_memberships.find_by(role: :owner)&.user
-      user ||= account.users.first
-      user&.settings
+      AgentRuns::UserSettingsResolver.call(project: project, strict: false)
     end
 
     def provider_attempt_count_for(agent_type, user_settings)

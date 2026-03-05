@@ -69,6 +69,7 @@ module Activities
 
       user_settings = resolve_user_settings(agent_run)
       providers = build_provider_order(agent_run, user_settings)
+      provider_states = load_provider_state_cache(user_settings.user, providers)
 
       pre_agent_sha = nil
       last_error = nil
@@ -77,7 +78,7 @@ module Activities
 
       providers.each do |provider|
         # Skip unavailable providers
-        if provider_unavailable?(user_settings, provider)
+        if provider_unavailable?(user_settings, provider, provider_states)
           agent_run.record_provider_attempt(provider, success: false, error_type: "unavailable")
           next
         end
@@ -92,7 +93,7 @@ module Activities
           pre_agent_sha = run_agent_with_provider(agent_run, provider, prompt)
 
           # Success - record and update final provider
-          record_provider_success(user_settings, provider)
+          record_provider_success(user_settings, provider, provider_states)
           agent_run.record_provider_attempt(provider, success: true)
           agent_run.update!(final_provider: provider)
 
@@ -107,20 +108,18 @@ module Activities
           }
         rescue ProviderRateLimitError => e
           last_error = "rate_limited"
-          timeout_error = nil
-          persist_rate_limit(user_settings, provider, e.reset_at)
+          persist_rate_limit(user_settings, provider, provider_states, e.reset_at)
           agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
           logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
         rescue ProviderTimeoutError => e
           last_error = "timeout"
-          timeout_error = e.message
-          record_provider_failure(user_settings, provider)
+          timeout_error ||= e.message
+          record_provider_failure(user_settings, provider, provider_states)
           agent_run.record_provider_attempt(provider, success: false, error_type: "timeout")
           logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
         rescue ProviderExecutionError => e
           last_error = "error"
-          timeout_error = nil
-          record_provider_failure(user_settings, provider)
+          record_provider_failure(user_settings, provider, provider_states)
           agent_run.record_provider_attempt(provider, success: false, error_type: "error")
           logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
         end
@@ -158,19 +157,7 @@ module Activities
     # Resolves user settings for the agent run by finding the appropriate user.
     # Tries the project creator first, then falls back to the account's owner member.
     def resolve_user_settings(agent_run)
-      project = agent_run.project
-      account = project.account
-
-      user = project.created_by
-      user ||= account.account_memberships.find_by(role: :owner)&.user
-      user ||= account.users.first
-
-      raise Temporalio::Error::ApplicationError.new(
-        "No user available for agent run settings",
-        type: "MissingUser"
-      ) unless user
-
-      user.settings
+      AgentRuns::UserSettingsResolver.call(project: agent_run.project, strict: true)
     end
 
     # Builds the ordered list of providers to attempt.
@@ -188,9 +175,9 @@ module Activities
     # Checks if a provider is currently unavailable (rate limited or circuit open).
     #
     # @return [Boolean] true if provider should be skipped
-    def provider_unavailable?(user_settings, provider)
+    def provider_unavailable?(user_settings, provider, provider_states)
       canonical = canonical_provider(provider)
-      state = user_settings.user.provider_states.find_by(provider_name: canonical)
+      state = provider_states[canonical]
       return false unless state
 
       # Check for circuit recovery before deciding
@@ -200,27 +187,37 @@ module Activities
     end
 
     # Records a rate limit for a provider.
-    def persist_rate_limit(user_settings, provider, reset_at = nil)
-      state = user_settings.provider_state_for(canonical_provider(provider))
+    def persist_rate_limit(user_settings, provider, provider_states, reset_at = nil)
+      state = provider_state_for(user_settings, provider, provider_states)
       state.mark_rate_limited!(reset_at: reset_at)
     end
 
     # Records a successful provider execution.
-    def record_provider_success(user_settings, provider)
+    def record_provider_success(user_settings, provider, provider_states = nil)
       canonical = canonical_provider(provider)
-      state = user_settings.user.provider_states.find_by(provider_name: canonical)
+      state = provider_states ? provider_states[canonical] : user_settings.user.provider_states.find_by(provider_name: canonical)
       state&.record_success!
     end
 
     # Records a failed provider execution.
-    def record_provider_failure(user_settings, provider)
-      state = user_settings.provider_state_for(canonical_provider(provider))
+    def record_provider_failure(user_settings, provider, provider_states)
+      state = provider_state_for(user_settings, provider, provider_states)
       state.record_failure!(threshold: user_settings.circuit_breaker_failure_threshold)
     end
 
     # Returns the canonical settings-level provider name for a given agent type.
     def canonical_provider(provider)
       AGENT_TYPE_TO_PROVIDER.fetch(provider, provider)
+    end
+
+    def provider_state_for(user_settings, provider, provider_states)
+      canonical = canonical_provider(provider)
+      provider_states[canonical] ||= user_settings.provider_state_for(canonical)
+    end
+
+    def load_provider_state_cache(user, providers)
+      canonical_providers = providers.map { |provider| canonical_provider(provider) }.uniq
+      user.provider_states.where(provider_name: canonical_providers).index_by(&:provider_name)
     end
 
     # Runs the agent with a specific provider.
@@ -240,10 +237,10 @@ module Activities
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
-      # Only start! on first provider attempt
-      unless agent_run.running?
-        agent_run.start!
-      end
+      raise ProviderExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
+
+      # Only start! on first provider attempt.
+      agent_run.start! unless agent_run.running?
 
       agent_run.log!("system", "Starting #{provider} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
