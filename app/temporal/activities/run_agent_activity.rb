@@ -33,7 +33,32 @@ module Activities
     # Issue creation should complete quickly — use a shorter timeout than full PR runs.
     ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
-    MAX_PROVIDER_ATTEMPTS = AGENT_COMMANDS.size
+
+    def self.provider_order(agent_type:, fallback_enabled:, fallback_providers:)
+      return [ agent_type ].select { |p| AGENT_COMMANDS.key?(p) } unless fallback_enabled
+
+      canonical = AGENT_TYPE_TO_PROVIDER.fetch(agent_type, agent_type)
+      providers = [ agent_type ]
+      seen = Set.new([ canonical ])
+
+      Array(fallback_providers).each do |fallback|
+        fallback_canonical = AGENT_TYPE_TO_PROVIDER.fetch(fallback, fallback)
+        next if seen.include?(fallback_canonical)
+
+        seen << fallback_canonical
+        providers << fallback
+      end
+
+      providers.select { |p| AGENT_COMMANDS.key?(p) }
+    end
+
+    def self.provider_attempt_count(agent_type:, fallback_enabled:, fallback_providers:)
+      provider_order(
+        agent_type: agent_type,
+        fallback_enabled: fallback_enabled,
+        fallback_providers: fallback_providers
+      ).size
+    end
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -153,26 +178,11 @@ module Activities
     #
     # @return [Array<String>] Provider names in priority order
     def build_provider_order(agent_run, user_settings)
-      return [ agent_run.agent_type ] unless user_settings.fallback_enabled
-
-      # Normalize agent_type to the canonical settings provider name so that
-      # e.g. "claude_code" is deduplicated against "claude" in the fallback list.
-      canonical = AGENT_TYPE_TO_PROVIDER.fetch(agent_run.agent_type, agent_run.agent_type)
-
-      # Start with the agent's original type (for AGENT_COMMANDS lookup), then add
-      # fallback providers that map to a different canonical name.
-      providers = [ agent_run.agent_type ]
-      seen = Set.new([ canonical ])
-
-      user_settings.fallback_providers.each do |fallback|
-        fallback_canonical = AGENT_TYPE_TO_PROVIDER.fetch(fallback, fallback)
-        next if seen.include?(fallback_canonical)
-
-        seen << fallback_canonical
-        providers << fallback
-      end
-
-      providers.select { |p| AGENT_COMMANDS.key?(p) }
+      self.class.provider_order(
+        agent_type: agent_run.agent_type,
+        fallback_enabled: user_settings.fallback_enabled,
+        fallback_providers: user_settings.fallback_providers
+      )
     end
 
     # Checks if a provider is currently unavailable (rate limited or circuit open).

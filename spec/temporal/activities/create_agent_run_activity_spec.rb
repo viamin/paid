@@ -12,6 +12,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
       expect(result[:agent_run_id]).to be_present
+      expect(result[:provider_attempt_count]).to eq(1)
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.project).to eq(project)
       expect(agent_run.issue).to eq(issue)
@@ -24,6 +25,15 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.agent_type).to eq("aider")
+      expect(result[:provider_attempt_count]).to eq(1)
+    end
+
+    it "returns deduplicated provider_attempt_count when fallback is enabled" do
+      project.created_by.settings.update!(fallback_enabled: true, fallback_providers: %w[claude cursor aider])
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
+
+      expect(result[:provider_attempt_count]).to eq(3)
     end
 
     it "updates the issue paid_state to in_progress" do
