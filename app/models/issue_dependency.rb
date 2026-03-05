@@ -11,6 +11,7 @@ class IssueDependency < ApplicationRecord
   private
 
   def not_self_referential
+    return unless issue_id && depends_on_issue_id
     return unless issue_id == depends_on_issue_id
 
     errors.add(:depends_on_issue, "cannot be the same as the issue")

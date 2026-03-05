@@ -79,10 +79,34 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue.dependencies).to be_empty
     end
 
-    it "does nothing when body is blank" do
+    it "does nothing when body is blank and no existing dependencies" do
       issue = create(:issue, project: project, body: nil)
 
       expect { described_class.call(issue: issue) }.not_to change(IssueDependency, :count)
+    end
+
+    it "removes all dependencies when body becomes blank" do
+      dep = create(:issue, project: project, github_number: 10)
+      issue = create(:issue, project: project, body: "Depends on #10")
+
+      described_class.call(issue: issue)
+      expect(issue.dependencies.reload).to contain_exactly(dep)
+
+      issue.update!(body: nil)
+      described_class.call(issue: issue)
+      expect(issue.dependencies.reload).to be_empty
+    end
+
+    it "removes all dependencies when dependency section is cleared" do
+      dep = create(:issue, project: project, github_number: 10)
+      issue = create(:issue, project: project, body: "Depends on #10")
+
+      described_class.call(issue: issue)
+      expect(issue.dependencies.reload).to contain_exactly(dep)
+
+      issue.update!(body: "No dependencies anymore")
+      described_class.call(issue: issue)
+      expect(issue.dependencies.reload).to be_empty
     end
 
     it "removes stale dependencies when body changes" do
