@@ -169,7 +169,7 @@
             </svg>
           <% end %>
           <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= attempt['success'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' %>">
-            <%= attempt['provider'].to_s.capitalize %>
+            <%= attempt['provider'].to_s.titleize %>
             <% if attempt['error_type'].present? %>
               <span class="ml-1 text-xs opacity-75">(<%= attempt['error_type'] %>)</span>
             <% end %>
@@ -178,7 +178,7 @@
       </div>
       <% if agent_run.final_provider.present? %>
         <p class="mt-2 text-xs text-amber-700">
-          Final provider: <span class="font-medium"><%= agent_run.final_provider.capitalize %></span>
+          Final provider: <span class="font-medium"><%= agent_run.final_provider.titleize %></span>
         </p>
       <% end %>
     </div>

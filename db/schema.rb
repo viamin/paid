@@ -376,7 +376,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_04_100002) do
     t.string "default_branch", default: "main", null: false
     t.integer "default_poll_interval_seconds", default: 60, null: false
     t.boolean "default_project_active", default: true, null: false
-    t.boolean "fallback_enabled", default: true, null: false
+    t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_providers", default: [], null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
     t.float "retry_base_delay", default: 1.0, null: false

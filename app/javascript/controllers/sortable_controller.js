@@ -32,8 +32,11 @@ export default class extends Controller {
     // Get all providers from the sorted list
     const providers = this.itemTargets.map(el => el.dataset.provider)
 
-    // Skip the first one (primary provider) and store the rest as fallbacks
-    const fallbacks = providers.slice(1)
+    // Exclude the configured primary provider by name, not by position.
+    const primaryProvider = this.inputTarget.dataset.primaryProvider
+    const fallbacks = primaryProvider
+      ? providers.filter(provider => provider !== primaryProvider)
+      : providers.slice(1)
 
     this.inputTarget.value = JSON.stringify(fallbacks)
   }

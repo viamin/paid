@@ -33,6 +33,7 @@ module Activities
     # Issue creation should complete quickly — use a shorter timeout than full PR runs.
     ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
+    MAX_PROVIDER_ATTEMPTS = AGENT_COMMANDS.size
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -47,6 +48,7 @@ module Activities
       pre_agent_sha = nil
       last_error = nil
       last_attempted_provider = nil
+      timeout_error = nil
 
       providers.each do |provider|
         # Skip unavailable providers
@@ -80,11 +82,19 @@ module Activities
           }
         rescue ProviderRateLimitError => e
           last_error = "rate_limited"
+          timeout_error = nil
           persist_rate_limit(user_settings, provider, e.reset_at)
           agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
           logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
+        rescue ProviderTimeoutError => e
+          last_error = "timeout"
+          timeout_error = e.message
+          record_provider_failure(user_settings, provider)
+          agent_run.record_provider_attempt(provider, success: false, error_type: "timeout")
+          logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
         rescue ProviderExecutionError => e
           last_error = "error"
+          timeout_error = nil
           record_provider_failure(user_settings, provider)
           agent_run.record_provider_attempt(provider, success: false, error_type: "error")
           logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
@@ -93,7 +103,10 @@ module Activities
 
       # All providers exhausted. Preserve any more specific terminal state
       # already set by provider execution (e.g. timeout).
-      unless agent_run.finished?
+      if timeout_error.present?
+        agent_run.timeout!(error: timeout_error) unless agent_run.finished?
+        ProcessRunQueueJob.perform_later
+      elsif !agent_run.finished?
         agent_run.fail!(error: "All providers exhausted: #{providers.join(', ')}")
       end
       raise Temporalio::Error::ApplicationError.new(
@@ -113,6 +126,7 @@ module Activities
     end
 
     class ProviderExecutionError < StandardError; end
+    class ProviderTimeoutError < StandardError; end
 
     private
 
@@ -250,9 +264,7 @@ module Activities
       when Containers::Provision::IdleTimeoutError then "idle"
       else "wall_clock"
       end
-      agent_run.timeout!(error: "#{timeout_type}_timeout: #{e.message}")
-      ProcessRunQueueJob.perform_later
-      raise ProviderExecutionError, "#{timeout_type}_timeout: #{e.message}"
+      raise ProviderTimeoutError, "#{timeout_type}_timeout: #{e.message}"
     end
 
     # Checks if the output indicates a rate limit error.
