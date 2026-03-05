@@ -142,6 +142,11 @@ class UserSetting < ApplicationRecord
   def validate_fallback_providers
     return if fallback_providers.blank?
 
+    unless fallback_providers.is_a?(Array)
+      errors.add(:fallback_providers, "must be an array")
+      return
+    end
+
     invalid = fallback_providers - AGENT_PROVIDERS
     if invalid.any?
       errors.add(:fallback_providers, "contains invalid providers: #{invalid.join(', ')}")

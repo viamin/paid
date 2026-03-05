@@ -17,10 +17,10 @@ module Activities
     RATE_LIMIT_PATTERNS = [
       /rate.?limit/i,
       /too many requests/i,
-      /429/,
+      /\b429\b/,
       /quota exceeded/i,
-      /capacity/i,
-      /overloaded/i
+      /(?:server|system)\s+(?:at\s+)?capacity/i,
+      /(?:server|api|service)\s+overloaded/i
     ].freeze
 
     # Issue creation should complete quickly — use a shorter timeout than full PR runs.
@@ -34,26 +34,27 @@ module Activities
       prompt = agent_run.effective_prompt
       raise Temporalio::Error::ApplicationError.new("No prompt available for agent run", type: "MissingPrompt") unless prompt
 
-      user_settings = agent_run.project.account.owner.settings
+      user_settings = resolve_user_settings(agent_run)
       providers = build_provider_order(agent_run, user_settings)
 
       pre_agent_sha = nil
       last_error = nil
+      last_attempted_provider = nil
 
-      providers.each_with_index do |provider, index|
+      providers.each do |provider|
         # Skip unavailable providers
         if provider_unavailable?(user_settings, provider)
           agent_run.record_provider_attempt(provider, success: false, error_type: "unavailable")
           next
         end
 
-        # Log provider switch
-        if index > 0
-          previous_provider = providers[index - 1]
-          agent_run.log_provider_switch!(previous_provider, provider, last_error || "fallback")
+        # Log provider switch when we have a previous actually-attempted provider
+        if last_attempted_provider
+          agent_run.log_provider_switch!(last_attempted_provider, provider, last_error || "fallback")
         end
 
         begin
+          last_attempted_provider = provider
           pre_agent_sha = run_agent_with_provider(agent_run, provider, prompt)
 
           # Success - record and update final provider
@@ -104,6 +105,24 @@ module Activities
     class ProviderExecutionError < StandardError; end
 
     private
+
+    # Resolves user settings for the agent run by finding the appropriate user.
+    # Tries the project creator first, then falls back to the account's owner member.
+    def resolve_user_settings(agent_run)
+      project = agent_run.project
+      account = project.account
+
+      user = project.created_by
+      user ||= account.account_memberships.find_by(role: :owner)&.user
+      user ||= account.users.first
+
+      raise Temporalio::Error::ApplicationError.new(
+        "No user available for agent run settings",
+        type: "MissingUser"
+      ) unless user
+
+      user.settings
+    end
 
     # Builds the ordered list of providers to attempt.
     # Uses fallback providers if enabled, otherwise just the agent's type.
@@ -206,7 +225,7 @@ module Activities
       end
       agent_run.timeout!(error: "#{timeout_type}_timeout: #{e.message}")
       ProcessRunQueueJob.perform_later
-      raise Temporalio::Error::ApplicationError.new(e.message, type: "AgentTimeout")
+      raise ProviderExecutionError, "#{timeout_type}_timeout: #{e.message}"
     end
 
     # Checks if the output indicates a rate limit error.
@@ -217,17 +236,17 @@ module Activities
     end
 
     # Attempts to parse a rate limit reset time from the output.
-    # Returns nil if not parseable.
+    # Falls back to 60 seconds from now if not parseable.
     def parse_rate_limit_reset(output)
       # Try to find common patterns like "retry after X seconds" or timestamps
-      if match = output.match(/retry.?after:?\s*(\d+)/i)
+      if (match = output.match(/retry.?after:?\s*(\d+)/i))
         match[1].to_i.seconds.from_now
-      elsif match = output.match(/reset.?at:?\s*(\d+)/i)
+      elsif (match = output.match(/reset.?at:?\s*(\d+)/i))
         Time.at(match[1].to_i)
       else
-        60.seconds.from_now # Default to 60 seconds
+        60.seconds.from_now
       end
-    rescue
+    rescue StandardError
       60.seconds.from_now
     end
 
