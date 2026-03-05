@@ -18,6 +18,10 @@ Rails.application.configure do
     stale_run_detector: {
       cron: "*/5 * * * *",
       class: "StaleRunDetectorJob"
+    },
+    docker_volume_cleanup: {
+      cron: "0 */4 * * *",
+      class: "DockerVolumeCleanupJob"
     }
   }
 end
