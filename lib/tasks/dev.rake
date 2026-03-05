@@ -49,10 +49,13 @@ namespace :dev do
     puts "  Resolved #{stale_count} stale agent run(s)" if stale_count > 0
     puts "  Skipped #{skipped_count} recent run(s) for Temporal recovery" if skipped_count > 0
 
-    # TODO(#284): When ServiceProvisioner is implemented, also clean up service
-    # containers for stale runs using its "only stop if no other active runs"
-    # logic. Currently service containers are only cleaned up in the grace=0
-    # branch via find_orphaned_containers (which catches all labeled containers).
+    # TODO(#284): Integrate Containers::ServiceProvisioner here so startup cleanup
+    # can clean up service containers for stale runs using its "only stop if no
+    # other active runs" logic. Currently service containers are only cleaned up
+    # in the grace=0 branch via find_orphaned_containers (which catches all
+    # labeled containers directly via the Docker CLI). In the grace>0 branch,
+    # service containers for timed-out runs are left running until the next
+    # grace=0 cleanup or manual intervention.
 
     # Stop containers belonging to timed-out runs, or all labeled containers when grace is zero.
     if grace.zero?
