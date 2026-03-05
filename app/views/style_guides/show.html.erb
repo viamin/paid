@@ -87,7 +87,12 @@
             </div>
             <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt class="text-sm font-medium text-gray-500">Compression ratio</dt>
-              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= (@style_guide.compression_metadata["compression_ratio"].to_f * 100).round %>%</dd>
+              <% compression_ratio = @style_guide.compression_metadata["compression_ratio"] %>
+              <% if compression_ratio.present? %>
+                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= (compression_ratio.to_f * 100).round %>%</dd>
+              <% else %>
+                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">N/A</dd>
+              <% end %>
             </div>
             <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt class="text-sm font-medium text-gray-500">Raw length</dt>
