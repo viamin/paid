@@ -17,13 +17,15 @@ class DockerVolumeCleanupJob < ApplicationJob
     volumes = list_paid_volumes
     return if volumes.empty?
 
+    agent_run_ids = volumes.map { |v| v.id.delete_prefix(VOLUME_PREFIX) }
+    active_ids = AgentRun.active.where(id: agent_run_ids).pluck(:id).map(&:to_s).to_set
+
     removed = 0
     volumes.each do |volume|
       agent_run_id = volume.id.delete_prefix(VOLUME_PREFIX)
-      next if active_run?(agent_run_id)
+      next if active_ids.include?(agent_run_id)
 
-      remove_volume(volume, agent_run_id)
-      removed += 1
+      removed += 1 if remove_volume(volume, agent_run_id)
     end
 
     Rails.logger.info(
@@ -45,12 +47,9 @@ class DockerVolumeCleanupJob < ApplicationJob
     []
   end
 
-  def active_run?(agent_run_id)
-    AgentRun.where(id: agent_run_id).active.exists?
-  end
-
   def remove_volume(volume, agent_run_id)
     volume.remove
+    true
   rescue Docker::Error::DockerError => e
     Rails.logger.warn(
       message: "container_manager.orphaned_volume_removal_failed",
@@ -58,5 +57,6 @@ class DockerVolumeCleanupJob < ApplicationJob
       agent_run_id: agent_run_id,
       error: e.message
     )
+    false
   end
 end

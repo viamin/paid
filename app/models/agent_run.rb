@@ -383,8 +383,8 @@ class AgentRun < ApplicationRecord
 
   private
 
-  # Ensures @container_service is available, reconnecting from persisted
-  # container_id if needed (e.g., when called from a different Temporal activity).
+  # Removes the named Docker volume for this agent run if it exists.
+  # No-op for worktree-based runs (they use bind mounts, not named volumes).
   def cleanup_orphaned_workspace_volume
     return if worktree_path.present? # bind-mount runs don't use named volumes
 
@@ -401,6 +401,8 @@ class AgentRun < ApplicationRecord
     )
   end
 
+  # Ensures @container_service is available, reconnecting from persisted
+  # container_id if needed (e.g., when called from a different Temporal activity).
   def ensure_container_service!
     return if @container_service
 
