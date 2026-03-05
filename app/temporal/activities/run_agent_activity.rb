@@ -91,8 +91,11 @@ module Activities
         end
       end
 
-      # All providers exhausted
-      agent_run.fail!(error: "All providers exhausted: #{providers.join(', ')}")
+      # All providers exhausted. Preserve any more specific terminal state
+      # already set by provider execution (e.g. timeout).
+      unless agent_run.finished?
+        agent_run.fail!(error: "All providers exhausted: #{providers.join(', ')}")
+      end
       raise Temporalio::Error::ApplicationError.new(
         "All providers exhausted",
         type: "AllProvidersExhausted"
