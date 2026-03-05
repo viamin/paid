@@ -22,20 +22,32 @@ module Issues
     end
 
     def call
-      visited = Set.new
-      reachable?(from_issue.id, visited)
+      adjacency = load_project_adjacency
+      reachable_iterative?(adjacency)
     end
 
     private
 
-    def reachable?(current_id, visited)
-      return false unless visited.add?(current_id)
+    def load_project_adjacency
+      IssueDependency
+        .where(issue_id: from_issue.project.issues.select(:id))
+        .pluck(:issue_id, :depends_on_issue_id)
+        .group_by(&:first)
+        .transform_values { |pairs| pairs.map(&:last) }
+    end
 
-      dependency_ids = IssueDependency.where(issue_id: current_id).pluck(:depends_on_issue_id)
+    def reachable_iterative?(adjacency)
+      visited = Set.new
+      stack = [ from_issue.id ]
 
-      dependency_ids.each do |dep_id|
-        return true if dep_id == target_issue_id
-        return true if reachable?(dep_id, visited)
+      while (current_id = stack.pop)
+        next unless visited.add?(current_id)
+
+        (adjacency[current_id] || []).each do |dep_id|
+          return true if dep_id == target_issue_id
+
+          stack << dep_id
+        end
       end
 
       false
