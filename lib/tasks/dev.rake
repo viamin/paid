@@ -17,7 +17,13 @@ end
 namespace :dev do
   desc "Mark stale agent runs as timed out, stop orphaned containers, and process the run queue"
   task cleanup: :environment do
-    grace = ENV.fetch("STARTUP_CLEANUP_GRACE_PERIOD", "0").to_i.seconds
+    raw = ENV.fetch("STARTUP_CLEANUP_GRACE_PERIOD", "0")
+    grace = begin
+      Integer(raw).clamp(0..).seconds
+    rescue ArgumentError
+      warn "  WARNING: Invalid STARTUP_CLEANUP_GRACE_PERIOD=#{raw.inspect}, defaulting to 0"
+      0.seconds
+    end
 
     stale_count = 0
     skipped_count = 0
@@ -43,6 +49,11 @@ namespace :dev do
     puts "  Resolved #{stale_count} stale agent run(s)" if stale_count > 0
     puts "  Skipped #{skipped_count} recent run(s) for Temporal recovery" if skipped_count > 0
 
+    # TODO(#284): When ServiceProvisioner is implemented, also clean up service
+    # containers for stale runs using its "only stop if no other active runs"
+    # logic. Currently service containers are only cleaned up in the grace=0
+    # branch via find_orphaned_containers (which catches all labeled containers).
+
     # Stop containers belonging to timed-out runs, or all labeled containers when grace is zero.
     if grace.zero?
       orphaned = DevCleanup.find_orphaned_containers
@@ -52,6 +63,7 @@ namespace :dev do
         DevCleanup.stop_containers(orphaned)
       end
     elsif stale_container_ids.any?
+      stale_container_ids.uniq!
       puts "  Stopping #{stale_container_ids.size} container(s) for stale runs"
       DevCleanup.stop_containers(stale_container_ids)
     end
