@@ -131,7 +131,8 @@ module Activities
         agent_run.timeout!(error: timeout_error) unless agent_run.finished?
         ProcessRunQueueJob.perform_later
       elsif !agent_run.finished?
-        agent_run.fail!(error: "All providers exhausted: #{providers.join(', ')}")
+        provider_list = providers.any? ? providers.join(", ") : "none"
+        agent_run.fail!(error: "All providers exhausted: #{provider_list}")
       end
       raise Temporalio::Error::ApplicationError.new(
         "All providers exhausted",
