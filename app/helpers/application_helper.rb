@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 module ApplicationHelper
-  include Pagy::Frontend
   AGENT_RUN_STATUS_STYLES = {
     "queued" => { bg: "bg-indigo-100", text: "text-indigo-700", label: "Queued" },
     "pending" => { bg: "bg-yellow-100", text: "text-yellow-800", label: "Pending" },
