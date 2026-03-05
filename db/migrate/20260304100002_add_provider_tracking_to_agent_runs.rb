@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class AddProviderTrackingToAgentRuns < ActiveRecord::Migration[8.0]
+class AddProviderTrackingToAgentRuns < ActiveRecord::Migration[8.1]
   def change
     add_column :agent_runs, :providers_attempted, :jsonb, default: [], null: false
     add_column :agent_runs, :final_provider, :string, limit: 50
