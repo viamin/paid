@@ -384,7 +384,9 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       it "raises MissingUser when no user is available" do
-        project_without_creator = create(:project, :without_creator, account: create(:account))
+        orphan_account = create(:account)
+        orphan_token = create(:github_token, :without_creator, account: orphan_account)
+        project_without_creator = create(:project, :without_creator, account: orphan_account, github_token: orphan_token)
         issue_for_orphan = create(:issue, project: project_without_creator)
         orphan_run = create(:agent_run, :with_git_context, project: project_without_creator,
           issue: issue_for_orphan, container_id: "abc123")
