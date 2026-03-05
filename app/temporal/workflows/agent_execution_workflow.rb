@@ -72,15 +72,17 @@ module Workflows
         end
 
         # Step 4: Run the agent (long timeout, no retry)
-        # Timeout = agent_timeout + 300s safety buffer so Temporal doesn't
-        # kill the activity before the in-process timeout fires.
+        # Budget for worst-case fallback chain: each provider attempt can run
+        # up to the per-provider timeout in RunAgentActivity.
+        # Add a small buffer so Temporal doesn't preempt the activity first.
         # Issue goals use a shorter timeout since they only need to create
         # a GitHub issue via curl, not write code.
-        activity_timeout = if goal == "create_issue"
-          Activities::RunAgentActivity::ISSUE_GOAL_TIMEOUT + 300
+        per_provider_timeout = if goal == "create_issue"
+          Activities::RunAgentActivity::ISSUE_GOAL_TIMEOUT
         else
-          Rails.application.config.x.agent_timeout + 300
+          Rails.application.config.x.agent_timeout
         end
+        activity_timeout = (per_provider_timeout * Activities::RunAgentActivity::MAX_PROVIDER_ATTEMPTS) + 300
         agent_result = run_activity(Activities::RunAgentActivity,
           { agent_run_id: agent_run_id },
           start_to_close_timeout: activity_timeout, retry_policy: NO_RETRY)

@@ -364,6 +364,25 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.reload.provider_switches).to eq(1)
       end
 
+      it "continues to next provider when the first provider times out" do
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            raise Containers::Provision::TimeoutError, "took too long"
+          else
+            exec_success
+          end
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+        agent_run.reload
+
+        expect(result[:success]).to be true
+        expect(result[:final_provider]).to eq("cursor")
+        expect(agent_run.status).to eq("running")
+      end
+
       it "raises AllProvidersExhausted when all fallbacks fail" do
         allow(container_service).to receive(:execute).and_return(exec_failure)
 
