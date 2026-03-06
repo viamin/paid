@@ -1,10 +1,6 @@
 # frozen_string_literal: true
 
 class UserSetting < ApplicationRecord
-  # All known providers. Validation uses this full list so that a saved default
-  # is not rejected when a provider is temporarily disabled via environment flags.
-  AGENT_PROVIDERS = %w[claude cursor aider].freeze
-
   # Max value for PostgreSQL integer columns (32-bit signed)
   PG_INT_MAX = 2_147_483_647
   # Reasonable upper bound for container memory (64 GB in bytes)
@@ -26,7 +22,7 @@ class UserSetting < ApplicationRecord
   # Agent Execution
   validates :agent_timeout_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
-  validates :default_agent_provider, inclusion: { in: AGENT_PROVIDERS }
+  validate :validate_default_agent_provider
 
   # Container Resources
   validates :container_memory_bytes,
@@ -55,14 +51,21 @@ class UserSetting < ApplicationRecord
   # Provider Fallback
   validate :validate_fallback_providers
 
-  # Returns providers currently enabled at the system level. Claude is always
-  # enabled; other providers are gated by environment flags (see
-  # config/initializers/agent_harness.rb).
-  def self.enabled_agent_providers
-    providers = [ "claude" ]
-    providers << "cursor" if ENV.fetch("CURSOR_ENABLED", "false") == "true"
-    providers << "aider" if ENV.fetch("AIDER_ENABLED", "false") == "true"
-    providers
+  # Returns providers enabled for agent runs for a user.
+  def self.enabled_agent_providers(user = nil)
+    return [ "claude" ] unless user
+    return Provider::SUPPORTED_PROVIDER_KEYS if user.new_record?
+
+    Provider.ensure_default_for(user)
+    user.providers.for_agent_runs.ordered.pluck(:provider_key)
+  end
+
+  # Returns providers that can be used as fallback for a user.
+  def self.fallback_candidate_providers(user)
+    return Provider::SUPPORTED_PROVIDER_KEYS if user.new_record?
+
+    Provider.ensure_default_for(user)
+    user.providers.for_agent_runs.for_fallback.ordered.pluck(:provider_key)
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string
@@ -109,7 +112,9 @@ class UserSetting < ApplicationRecord
   #
   # @return [Array<String>] Provider names in priority order
   def provider_priority
-    [ default_agent_provider ] + (fallback_providers || []).reject { |p| p == default_agent_provider }
+    allowed = allowed_provider_keys_for_agent_runs
+    [ default_agent_provider ] + Array(fallback_providers).reject { |p| p == default_agent_provider }
+      .select { |provider| allowed.include?(provider) }
   end
 
   # Returns providers that are currently available (not rate limited, circuit not open).
@@ -152,9 +157,23 @@ class UserSetting < ApplicationRecord
       return
     end
 
-    invalid = fallback_providers - AGENT_PROVIDERS
+    invalid = fallback_providers - allowed_provider_keys_for_fallback
     if invalid.any?
       errors.add(:fallback_providers, "contains invalid providers: #{invalid.join(', ')}")
     end
+  end
+
+  def validate_default_agent_provider
+    return if allowed_provider_keys_for_agent_runs.include?(default_agent_provider)
+
+    errors.add(:default_agent_provider, "is not an enabled provider")
+  end
+
+  def allowed_provider_keys_for_agent_runs
+    self.class.enabled_agent_providers(user)
+  end
+
+  def allowed_provider_keys_for_fallback
+    self.class.fallback_candidate_providers(user)
   end
 end

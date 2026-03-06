@@ -237,7 +237,7 @@ RSpec.describe "AgentRuns" do
         get new_project_agent_run_path(project)
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Trigger Agent Run")
-        expect(response.body).to include("Claude Code")
+        expect(response.body).to include("Claude")
       end
 
       it "includes goal-toggle Stimulus wiring" do
@@ -403,13 +403,13 @@ RSpec.describe "AgentRuns" do
         end
       end
 
-      it "defaults to claude_code agent type" do
+      it "defaults to the configured provider" do
         post project_agent_runs_path(project), params: { issue_id: issue.id }
 
         expect(AgentRun.last.agent_type).to eq("claude_code")
       end
 
-      it "ignores invalid agent types and defaults to claude_code" do
+      it "ignores invalid agent types and defaults to configured provider" do
         post project_agent_runs_path(project), params: { issue_id: issue.id, agent_type: "invalid" }
 
         expect(AgentRun.last.agent_type).to eq("claude_code")
@@ -430,7 +430,7 @@ RSpec.describe "AgentRuns" do
 
       before { sign_in user }
 
-      it "creates a queued run with hardcoded defaults and redirects" do
+      it "creates a queued run with configured defaults and redirects" do
         expect {
           post quick_create_project_agent_runs_path(project), params: { issue_id: issue.id }
         }.to change(AgentRun, :count).by(1)
@@ -475,7 +475,7 @@ RSpec.describe "AgentRuns" do
         end
       end
 
-      it "ignores agent_type and goal params and still uses quick-run defaults" do
+      it "ignores goal params and still uses quick-run defaults" do
         expect {
           post quick_create_project_agent_runs_path(project), params: {
             issue_id: issue.id,

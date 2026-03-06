@@ -61,6 +61,8 @@ RSpec.describe "UserSettings" do
       end
 
       it "updates agent execution settings" do
+        user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
+
         patch user_settings_path, params: {
           user_setting: {
             agent_timeout_seconds: 7200,
