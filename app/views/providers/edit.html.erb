@@ -1,0 +1,12 @@
+<% content_for(:title) { "Edit Provider - Paid" } %>
+
+<div class="mx-auto max-w-xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="rounded-lg bg-white p-6 shadow">
+    <h1 class="text-xl font-semibold text-gray-900">Edit Provider</h1>
+    <p class="mt-1 text-sm text-gray-500">Update where this provider can be used.</p>
+
+    <div class="mt-6">
+      <%= render "form", provider: @provider %>
+    </div>
+  </div>
+</div>
