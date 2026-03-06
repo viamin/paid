@@ -16,5 +16,6 @@ class SetAllowedServiceImagesNotNull < ActiveRecord::Migration[8.1]
 
   def down
     change_column_null :user_settings, :allowed_service_images, true
+    change_column_default :user_settings, :allowed_service_images, from: DEFAULT_IMAGES, to: nil
   end
 end

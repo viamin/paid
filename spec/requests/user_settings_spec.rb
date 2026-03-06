@@ -61,6 +61,8 @@ RSpec.describe "UserSettings" do
       end
 
       it "updates agent execution settings" do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
         user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
 
         patch user_settings_path, params: {
