@@ -17,8 +17,9 @@ class ProvidersController < ApplicationController
   def create
     @provider = current_user.providers.new(provider_params)
     authorize @provider
+    validate_provider_key_enabled!
 
-    if @provider.save
+    if @provider.errors.none? && @provider.save
       if reconcile_settings!
         redirect_to providers_path, notice: "Provider created successfully."
       else
@@ -81,6 +82,13 @@ class ProvidersController < ApplicationController
     else
       system_enabled - existing_keys
     end
+  end
+
+  def validate_provider_key_enabled!
+    return if @provider.provider_key.blank?
+    return if UserSetting.system_enabled_provider_keys.include?(@provider.provider_key)
+
+    @provider.errors.add(:provider_key, "is not currently available")
   end
 
   def reconcile_settings!
