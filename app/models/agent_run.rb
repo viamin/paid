@@ -234,7 +234,7 @@ class AgentRun < ApplicationRecord
   def log!(type, content, metadata: nil)
     agent_run_logs.create!(
       log_type: type,
-      content: content,
+      content: content.to_s.delete("\x00"),
       metadata: metadata
     )
   end
