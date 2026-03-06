@@ -48,5 +48,10 @@ RSpec.describe StyleGuides::DetectLanguage do
       result = described_class.call(content: content)
       expect(result).to eq("javascript")
     end
+
+    it "returns nil when multiple languages tie for the top score" do
+      content = "define an interface for the api"
+      expect(described_class.call(content: content)).to be_nil
+    end
   end
 end

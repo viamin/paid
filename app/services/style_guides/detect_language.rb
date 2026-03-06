@@ -56,10 +56,15 @@ module StyleGuides
         indicators.count { |word| match_indicator?(word) }
       end
 
-      best = scores.max_by { |_lang, score| score }
-      return nil if best.nil? || best.last.zero?
+      return nil if scores.empty?
 
-      best.first
+      max_score = scores.values.max
+      return nil if max_score.zero?
+
+      best_languages = scores.select { |_lang, score| score == max_score }.keys
+      return nil unless best_languages.one?
+
+      best_languages.first
     end
 
     private
