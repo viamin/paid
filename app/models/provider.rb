@@ -52,6 +52,7 @@ class Provider < ApplicationRecord
   end
 
   def prevent_destroying_claude_provider
+    return if destroyed_by_association.present?
     return unless provider_key == "claude"
 
     errors.add(:base, "Cannot delete the Claude provider")
