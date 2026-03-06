@@ -24,7 +24,7 @@ module Activities
     RATE_LIMIT_PATTERNS = [
       /rate.?limit/i,
       /too many requests/i,
-      /\b429\b/,
+      /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
       /(?:server|system)\s+(?:at\s+)?capacity/i,
       /(?:server|api|service)\s+overloaded/i
@@ -159,6 +159,11 @@ module Activities
     # Tries the project creator first, then falls back to the account's owner member.
     def resolve_user_settings(agent_run)
       AgentRuns::UserSettingsResolver.call(project: agent_run.project, strict: true)
+    rescue AgentRuns::UserSettingsResolver::MissingUserError
+      raise Temporalio::Error::ApplicationError.new(
+        "No user available for agent run settings",
+        type: "MissingUser"
+      )
     end
 
     # Builds the ordered list of providers to attempt.
@@ -289,7 +294,8 @@ module Activities
       if (match = output.match(/retry.?after:?\s*(\d+)/i))
         match[1].to_i.seconds.from_now
       elsif (match = output.match(/reset.?at:?\s*(\d+)/i))
-        Time.at(match[1].to_i)
+        reset_time = Time.at(match[1].to_i)
+        reset_time > Time.current ? reset_time : 60.seconds.from_now
       else
         60.seconds.from_now
       end
