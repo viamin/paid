@@ -235,7 +235,11 @@ module Projects
       if managed_provider_key?(agent_type_to_provider_key(resolved_agent_type))
         provider_key = agent_type_to_provider_key(resolved_agent_type)
         unless configured_providers.include?(provider_key)
-          fallback_key = configured_providers.first || default_provider || "claude"
+          fallback_key = if configured_providers.any?
+            configured_providers.first
+          else
+            "claude"
+          end
           resolved_agent_type = provider_key_to_agent_type(fallback_key)
         end
       else
