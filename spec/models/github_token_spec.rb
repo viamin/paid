@@ -412,6 +412,46 @@ RSpec.describe GithubToken do
           expect(github_token.last_used_at).to eq(Time.current)
         end
       end
+
+      it "leaves expires_at nil for classic PATs without expiration header" do
+        github_token.validate_with_github!
+        github_token.reload
+
+        expect(github_token.expires_at).to be_nil
+      end
+    end
+
+    context "when fine-grained PAT has expiration header" do
+      before do
+        stub_request(:get, "#{api_base}/user")
+          .to_return(
+            status: 200,
+            body: {
+              login: "testuser",
+              id: 12345,
+              name: "Test User",
+              email: "test@example.com"
+            }.to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-OAuth-Scopes" => "",
+              "github-authentication-token-expiration" => "2026-07-01 00:00:00 UTC"
+            }
+          )
+        stub_request(:get, %r{api\.github\.com/user/repos})
+          .to_return(
+            status: 200,
+            body: [].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "persists expires_at from the response header" do
+        github_token.validate_with_github!
+        github_token.reload
+
+        expect(github_token.expires_at).to eq(Time.parse("2026-07-01 00:00:00 UTC"))
+      end
     end
 
     context "when token is invalid" do

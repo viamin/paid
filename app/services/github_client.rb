@@ -550,8 +550,6 @@ class GithubClient
     when Time then value
     when String then Time.parse(value)
     end
-  rescue ArgumentError
-    nil
   end
 
   # Extracts the token expiration from the GitHub API response header.
@@ -561,7 +559,11 @@ class GithubClient
   # @return [Time, nil] Token expiration time, or nil if not available
   def token_expiration_from_response
     header = client.last_response&.headers&.[]("github-authentication-token-expiration")
-    parse_timestamp(header) if header.present?
+    return unless header.present?
+
+    parse_timestamp(header)
+  rescue ArgumentError
+    nil
   end
 
   def handle_errors
