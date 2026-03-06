@@ -14,6 +14,10 @@ RSpec.describe Activities::RunAgentActivity do
   let(:exec_failure) { Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: "error", exit_code: 1) }
 
   before do
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
+    allow(ENV).to receive(:fetch).with("AIDER_ENABLED", "false").and_return("true")
+
     # Ensure fallback is disabled by default so tests behave like single-provider runs
     user.settings.update!(fallback_enabled: false)
 
@@ -361,6 +365,8 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       before do
+        user.providers.find_or_create_by!(provider_key: "cursor")
+        user.providers.find_or_create_by!(provider_key: "aider")
         user.settings.update!(fallback_enabled: true, fallback_providers: %w[claude cursor aider])
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
       end
