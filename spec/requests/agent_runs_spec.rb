@@ -237,7 +237,7 @@ RSpec.describe "AgentRuns" do
         get new_project_agent_run_path(project)
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Trigger Agent Run")
-        expect(response.body).to include("Claude")
+        expect(response.body).to include("Claude Code")
       end
 
       it "includes goal-toggle Stimulus wiring" do
