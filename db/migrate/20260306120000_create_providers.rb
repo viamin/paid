@@ -76,7 +76,7 @@ class CreateProviders < ActiveRecord::Migration[8.1]
         end
       end
 
-      MigrationProvider.insert_all(records_to_insert) if records_to_insert.any?
+      MigrationProvider.insert_all(records_to_insert, unique_by: %i[user_id provider_key]) if records_to_insert.any?
     end
   end
 end

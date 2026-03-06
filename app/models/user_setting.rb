@@ -57,8 +57,7 @@ class UserSetting < ApplicationRecord
     return [ "claude" ] & system_enabled unless user
     return Provider::SUPPORTED_PROVIDER_KEYS & system_enabled if user.new_record?
 
-    provider_keys = user.providers.for_agent_runs.ordered.pluck(:provider_key) & system_enabled
-    provider_keys.presence || ([ "claude" ] & system_enabled)
+    user.providers.for_agent_runs.ordered.pluck(:provider_key) & system_enabled
   end
 
   # Returns providers that can be used as fallback for a user.
@@ -67,8 +66,7 @@ class UserSetting < ApplicationRecord
     return [ "claude" ] & system_enabled unless user
     return Provider::SUPPORTED_PROVIDER_KEYS & system_enabled if user.new_record?
 
-    provider_keys = user.providers.for_agent_runs.for_fallback.ordered.pluck(:provider_key) & system_enabled
-    provider_keys.presence || ([ "claude" ] & system_enabled)
+    user.providers.for_agent_runs.for_fallback.ordered.pluck(:provider_key) & system_enabled
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string
@@ -150,14 +148,14 @@ class UserSetting < ApplicationRecord
     user.provider_states.find_by!(provider_name: provider_name)
   end
 
-  private
-
   def self.system_enabled_provider_keys
     providers = [ "claude" ]
     providers << "cursor" if ENV.fetch("CURSOR_ENABLED", "false") == "true"
     providers << "aider" if ENV.fetch("AIDER_ENABLED", "false") == "true"
     providers
   end
+
+  private
 
   def validate_fallback_providers
     return if fallback_providers.blank?

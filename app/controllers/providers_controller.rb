@@ -2,6 +2,7 @@
 
 class ProvidersController < ApplicationController
   before_action :set_provider, only: [ :edit, :update, :destroy ]
+  before_action :load_provider_options, only: [ :new, :create, :edit, :update ]
 
   def index
     authorize Provider
@@ -68,6 +69,10 @@ class ProvidersController < ApplicationController
 
   def provider_params
     params.require(:provider).permit(:provider_key, :enabled_for_agent_runs, :enabled_for_fallback)
+  end
+
+  def load_provider_options
+    @provider_options = UserSetting.system_enabled_provider_keys
   end
 
   def reconcile_settings!

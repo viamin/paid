@@ -20,7 +20,6 @@ module Projects
 
     def new
       authorize @project, :run_agent?
-      Provider.ensure_default_for(current_user)
       @agent_run_providers = UserSetting.enabled_agent_providers(current_user)
       @issues = @project.issues
         .issues_only
