@@ -19,6 +19,8 @@ RSpec.describe ServiceContainerPolicy do
   end
 
   context "when user is an admin" do
+    before { create(:user, account: account) } # absorb owner role
+
     let(:user) { create(:user, :admin, account: account) }
 
     it { is_expected.to be_index }
@@ -29,6 +31,8 @@ RSpec.describe ServiceContainerPolicy do
   end
 
   context "when user is a member" do
+    before { create(:user, account: account) } # absorb owner role
+
     let(:user) { create(:user, :member, account: account) }
 
     it { is_expected.not_to be_index }
@@ -39,6 +43,8 @@ RSpec.describe ServiceContainerPolicy do
   end
 
   context "when user is a viewer" do
+    before { create(:user, account: account) } # absorb owner role
+
     let(:user) { create(:user, :viewer, account: account) }
 
     it { is_expected.not_to be_index }
@@ -62,6 +68,8 @@ RSpec.describe ServiceContainerPolicy do
     end
 
     context "when user is an admin" do
+      before { create(:user, account: account) } # absorb owner role
+
       let(:user) { create(:user, :admin, account: account) }
 
       it "returns all service containers" do
@@ -70,6 +78,8 @@ RSpec.describe ServiceContainerPolicy do
     end
 
     context "when user is a member" do
+      before { create(:user, account: account) } # absorb owner role
+
       let(:user) { create(:user, :member, account: account) }
 
       it "returns no service containers" do
@@ -78,6 +88,8 @@ RSpec.describe ServiceContainerPolicy do
     end
 
     context "when user is a viewer" do
+      before { create(:user, account: account) } # absorb owner role
+
       let(:user) { create(:user, :viewer, account: account) }
 
       it "returns no service containers" do
