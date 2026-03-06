@@ -50,6 +50,15 @@ RSpec.describe "Providers" do
       expect(response).to redirect_to(providers_path)
       expect(provider.reload.enabled_for_agent_runs).to be(false)
     end
+
+    it "does not allow changing provider_key after create" do
+      user.providers.create!(provider_key: "cursor")
+
+      patch provider_path(provider), params: { provider: { provider_key: "cursor" } }
+
+      expect(response).to redirect_to(providers_path)
+      expect(provider.reload.provider_key).to eq("claude")
+    end
   end
 
   describe "DELETE /providers/:id" do

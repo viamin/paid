@@ -20,7 +20,7 @@ module Projects
 
     def new
       authorize @project, :run_agent?
-      @agent_run_providers = UserSetting.enabled_agent_providers(current_user)
+      @default_agent_type = provider_key_to_agent_type(current_user.settings.default_agent_provider)
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")

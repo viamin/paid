@@ -68,7 +68,9 @@ class ProvidersController < ApplicationController
   end
 
   def provider_params
-    params.require(:provider).permit(:provider_key, :enabled_for_agent_runs, :enabled_for_fallback)
+    permitted = [ :enabled_for_agent_runs, :enabled_for_fallback ]
+    permitted << :provider_key if action_name == "create"
+    params.require(:provider).permit(*permitted)
   end
 
   def load_provider_options
