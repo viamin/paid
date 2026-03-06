@@ -25,7 +25,6 @@ class UserSettingsController < ApplicationController
 
   def set_user_setting
     @user_setting = current_user.settings
-    Provider.ensure_default_for(current_user)
   end
 
   def load_provider_lists
