@@ -19,6 +19,7 @@ module Activities
 
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
+      user_settings = resolve_user_settings(project)
 
       # Resolve and render prompt version if no custom prompt is provided.
       # Skip for untrusted issues to match the safety behavior in AgentRun#prompt_for_issue.
@@ -57,7 +58,10 @@ module Activities
         prompt_version_id: prompt_version&.id
       )
 
-      { agent_run_id: agent_run.id }
+      {
+        agent_run_id: agent_run.id,
+        provider_attempt_count: provider_attempt_count_for(agent_type, user_settings)
+      }
     end
 
     private
@@ -87,7 +91,26 @@ module Activities
         issue_id: agent_run.issue_id
       )
 
-      { agent_run_id: agent_run.id }
+      {
+        agent_run_id: agent_run.id,
+        provider_attempt_count: provider_attempt_count_for(agent_run.agent_type, resolve_user_settings(agent_run.project))
+      }
+    end
+
+    def resolve_user_settings(project)
+      AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+    end
+
+    def provider_attempt_count_for(agent_type, user_settings)
+      return 1 unless user_settings
+
+      count = Activities::RunAgentActivity.provider_attempt_count(
+        agent_type: agent_type,
+        fallback_enabled: user_settings.fallback_enabled,
+        fallback_providers: user_settings.fallback_providers
+      )
+
+      [ count, 1 ].max
     end
 
     def test_command_for(project)

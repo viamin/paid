@@ -852,6 +852,45 @@ RSpec.describe AgentRun do
 
           expect { agent_run.cleanup_container }.not_to raise_error
         end
+
+        it "cleans up workspace volume when container is already gone" do
+          agent_run = create(:agent_run, worktree_path: nil, container_id: "gone123")
+          allow(Docker::Container).to receive(:get).with("gone123")
+            .and_raise(Docker::Error::NotFoundError)
+
+          orphan_volume = instance_double(Docker::Volume, remove: true)
+          allow(Docker::Volume).to receive(:get)
+            .with("paid-workspace-#{agent_run.id}")
+            .and_return(orphan_volume)
+
+          agent_run.cleanup_container(force: true)
+
+          expect(agent_run.reload.container_id).to be_nil
+          expect(orphan_volume).to have_received(:remove)
+        end
+
+        it "handles missing volume gracefully when container is already gone" do
+          agent_run = create(:agent_run, worktree_path: nil, container_id: "gone456")
+          allow(Docker::Container).to receive(:get).with("gone456")
+            .and_raise(Docker::Error::NotFoundError)
+          allow(Docker::Volume).to receive(:get)
+            .with("paid-workspace-#{agent_run.id}")
+            .and_raise(Docker::Error::NotFoundError)
+
+          expect { agent_run.cleanup_container(force: true) }.not_to raise_error
+          expect(agent_run.reload.container_id).to be_nil
+        end
+
+        it "skips volume cleanup for worktree-based runs when container is gone" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "gone789")
+          allow(Docker::Container).to receive(:get).with("gone789")
+            .and_raise(Docker::Error::NotFoundError)
+
+          expect(Docker::Volume).not_to receive(:get)
+
+          agent_run.cleanup_container(force: true)
+          expect(agent_run.reload.container_id).to be_nil
+        end
       end
 
       describe "#with_container" do
@@ -1075,6 +1114,52 @@ RSpec.describe AgentRun do
       expect(project).to receive(:broadcast_agent_run_detail_update).with(agent_run).once
 
       agent_run.update!(tokens_input: 1000, tokens_output: 500, cost_cents: 10)
+    end
+  end
+
+  describe "#record_provider_attempt" do
+    it "appends an attempt to providers_attempted" do
+      agent_run = create(:agent_run)
+      agent_run.record_provider_attempt("claude", success: true)
+
+      agent_run.reload
+      expect(agent_run.providers_attempted.size).to eq(1)
+      expect(agent_run.providers_attempted.first["provider"]).to eq("claude")
+      expect(agent_run.providers_attempted.first["success"]).to be true
+    end
+
+    it "records error_type for failed attempts" do
+      agent_run = create(:agent_run)
+      agent_run.record_provider_attempt("claude", success: false, error_type: "rate_limited")
+
+      attempt = agent_run.reload.providers_attempted.last
+      expect(attempt["error_type"]).to eq("rate_limited")
+    end
+
+    it "accumulates multiple attempts" do
+      agent_run = create(:agent_run)
+      agent_run.record_provider_attempt("claude", success: false, error_type: "rate_limited")
+      agent_run.record_provider_attempt("cursor", success: true)
+
+      expect(agent_run.reload.providers_attempted.size).to eq(2)
+    end
+  end
+
+  describe "#log_provider_switch!" do
+    it "creates a system log entry" do
+      agent_run = create(:agent_run)
+      agent_run.log_provider_switch!("claude", "cursor", "rate_limited")
+
+      log = agent_run.agent_run_logs.last
+      expect(log.log_type).to eq("system")
+      expect(log.content).to include("claude")
+      expect(log.content).to include("cursor")
+    end
+
+    it "increments the provider_switches counter" do
+      agent_run = create(:agent_run)
+      expect { agent_run.log_provider_switch!("claude", "cursor", "rate_limited") }
+        .to change { agent_run.reload.provider_switches }.by(1)
     end
   end
 end

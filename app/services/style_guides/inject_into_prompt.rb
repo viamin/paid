@@ -25,14 +25,15 @@ module StyleGuides
       guides = StyleGuide.resolve_for(project)
       return prompt if guides.empty?
 
-      "#{prompt}\n#{style_guide_section(guides)}"
+      sections = guides.filter_map { |guide| format_guide(guide) }
+      return prompt if sections.empty?
+
+      "#{prompt}\n#{style_guide_section(sections)}"
     end
 
     private
 
-    def style_guide_section(guides)
-      sections = guides.map { |guide| format_guide(guide) }
-
+    def style_guide_section(sections)
       <<~SECTION
 
         # Style Guide
@@ -44,8 +45,16 @@ module StyleGuides
     end
 
     def format_guide(guide)
-      label = guide.project_level? ? "(project)" : guide.account_level? ? "(account)" : "(global)"
+      label =
+        if guide.project_level?
+          "(project)"
+        elsif guide.account_level?
+          "(account)"
+        else
+          "(global)"
+        end
       content = guide.content_for_prompt
+      return if content.blank?
 
       "## #{guide.name} #{label}\n\n#{content}"
     end

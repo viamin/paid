@@ -6,9 +6,12 @@ module Activities
   # the GitHubPollWorkflow poll cycle.
   #
   # Phase-aware routing:
-  #   - draft: Copilot review loop (CI + Copilot threads only)
-  #   - ready: Owner review phase (all trigger types)
-  #   - escalated: Owner intervention needed (same as ready, no auto-merge)
+  #   - draft: All signals (CI, Copilot, human reviews). All followups
+  #     count toward max_draft_review_rounds to prevent infinite loops.
+  #   - ready: Owner approval takes precedence and may trigger auto-merge;
+  #     other signals (CI, Copilot, human reviews, labels, merge conflicts)
+  #     are only considered while awaiting owner approval.
+  #   - escalated: Same signal handling as ready, but no auto-merge
   #   - merged: No scanning
   #
   # Returns a list of PRs needing follow-up with trigger reasons.
@@ -72,12 +75,34 @@ module Activities
         return escalate_trigger(issue)
       end
 
-      pr_data = fetch_pr_data(client, project, issue)
-      copilot_triggers = check_copilot_review_threads(client, project, issue)
-      checks = fetch_check_runs(client, project, pr_data)
-      ci_triggers = ci_failure_triggers(checks || [])
+      # Fetch review threads first — cheapest signal that often suffices.
+      thread_triggers = fetch_review_thread_triggers(client, project, issue)
+      copilot_triggers = thread_triggers.select { |t| t[:type] == "copilot_review_threads" }
+      human_triggers = thread_triggers.select { |t| t[:type] == "review_threads" }
 
-      if copilot_triggers.empty? && ci_triggers.empty?
+      all_triggers = copilot_triggers + human_triggers
+
+      # Only fetch PR data and check runs if review threads alone aren't enough.
+      if all_triggers.empty?
+        pr_data = fetch_pr_data(client, project, issue)
+        checks = fetch_check_runs(client, project, pr_data)
+        ci_triggers = ci_failure_triggers(checks || [])
+        all_triggers.concat(ci_triggers)
+      end
+
+      # Only fetch conversation comments if still no triggers.
+      if all_triggers.empty?
+        last_run = last_completed_run(project, issue)
+        all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
+
+        # Only fetch full reviews if still no triggers.
+        if all_triggers.empty?
+          all_triggers.concat(changes_requested_from_reviews(project,
+            fetch_reviews(client, project, issue), last_run))
+        end
+      end
+
+      if all_triggers.empty?
         # If we couldn't fetch PR data, don't prematurely advance the phase.
         return nil if pr_data.nil?
 
@@ -87,7 +112,7 @@ module Activities
         return nil # CI still pending or checks unavailable
       end
 
-      triggers = copilot_triggers + ci_triggers
+      triggers = all_triggers
       log_triggers(project, issue, triggers)
 
       {
@@ -202,7 +227,7 @@ module Activities
       triggers = []
 
       triggers.concat(ci_failure_triggers(checks))
-      triggers.concat(check_review_threads(client, project, issue))
+      triggers.concat(fetch_review_thread_triggers(client, project, issue))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
@@ -273,7 +298,7 @@ module Activities
 
     # --- Review checks ---
 
-    def check_review_threads(client, project, issue)
+    def fetch_review_thread_triggers(client, project, issue)
       threads = client.review_threads(project.full_name, issue.github_number)
       unresolved = threads.reject { |t| t[:is_resolved] }
 
@@ -283,27 +308,16 @@ module Activities
         end
       end
 
-      return [] if trusted_threads.empty?
-
-      [ { type: "review_threads", details: "#{trusted_threads.size} unresolved thread(s)" } ]
-    rescue GithubClient::Error => e
-      log_signal_error("review_threads", project, issue, e)
-      []
-    end
-
-    def check_copilot_review_threads(client, project, issue)
-      threads = client.review_threads(project.full_name, issue.github_number)
-      unresolved = threads.reject { |t| t[:is_resolved] }
-
       copilot_threads = unresolved.select do |thread|
         thread[:comments].any? { |c| copilot_user?(c[:author]) }
       end
 
-      return [] if copilot_threads.empty?
-
-      [ { type: "copilot_review_threads", details: "#{copilot_threads.size} unresolved Copilot thread(s)" } ]
+      triggers = []
+      triggers << { type: "review_threads", details: "#{trusted_threads.size} unresolved thread(s)" } if trusted_threads.any?
+      triggers << { type: "copilot_review_threads", details: "#{copilot_threads.size} unresolved Copilot thread(s)" } if copilot_threads.any?
+      triggers
     rescue GithubClient::Error => e
-      log_signal_error("copilot_review_threads", project, issue, e)
+      log_signal_error("review_thread_triggers", project, issue, e)
       []
     end
 
@@ -393,7 +407,9 @@ module Activities
       return false if login.blank?
 
       normalized = login.downcase
-      normalized == "copilot" || normalized == "copilot[bot]"
+      normalized == "copilot" ||
+        normalized == "copilot[bot]" ||
+        normalized == "copilot-pull-request-reviewer"
     end
 
     def extract_actionable_labels(triggers)

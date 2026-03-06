@@ -38,6 +38,7 @@ module Workflows
       agent_run_result = run_activity(Activities::CreateAgentRunActivity,
         create_input, timeout: 30)
       agent_run_id = agent_run_result[:agent_run_id]
+      provider_attempt_count = [ agent_run_result.fetch(:provider_attempt_count, 1), 1 ].max
 
       begin
         # Step 1.5: Provision service containers (database, redis, etc.)
@@ -72,12 +73,19 @@ module Workflows
         end
 
         # Step 4: Run the agent (long timeout, no retry)
-        # Timeout = agent_timeout + 300s safety buffer so Temporal doesn't
-        # kill the activity before the in-process timeout fires.
-        agent_timeout = Rails.application.config.x.agent_timeout
+        # Budget based on the expected provider attempts for this run
+        # (from CreateAgentRunActivity), plus a small Temporal buffer.
+        # Issue goals use a shorter timeout since they only need to create
+        # a GitHub issue via curl, not write code.
+        per_provider_timeout = if goal == "create_issue"
+          Activities::RunAgentActivity::ISSUE_GOAL_TIMEOUT
+        else
+          Rails.application.config.x.agent_timeout
+        end
+        activity_timeout = (per_provider_timeout * provider_attempt_count) + 300
         agent_result = run_activity(Activities::RunAgentActivity,
           { agent_run_id: agent_run_id },
-          start_to_close_timeout: agent_timeout + 300, retry_policy: NO_RETRY)
+          start_to_close_timeout: activity_timeout, retry_policy: NO_RETRY)
 
         unless agent_result[:success]
           raise Temporalio::Error::ApplicationError.new(
