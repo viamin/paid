@@ -138,6 +138,8 @@ class UserSetting < ApplicationRecord
   # @return [ProviderState]
   def provider_state_for(provider_name)
     user.provider_states.find_or_create_by!(provider_name: provider_name)
+  rescue ActiveRecord::RecordNotUnique
+    user.provider_states.find_by!(provider_name: provider_name)
   end
 
   private

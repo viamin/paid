@@ -228,6 +228,22 @@ RSpec.describe UserSetting do
       state = setting.provider_state_for("claude")
       expect(state.id).to eq(existing.id)
     end
+
+    it "handles concurrent creation races by finding the created row" do
+      relation = user.provider_states
+      existing = create(:provider_state, user: user, provider_name: "claude")
+
+      allow(relation).to receive(:find_or_create_by!)
+        .with(provider_name: "claude")
+        .and_raise(ActiveRecord::RecordNotUnique)
+      allow(relation).to receive(:find_by!)
+        .with(provider_name: "claude")
+        .and_return(existing)
+
+      state = setting.provider_state_for("claude")
+
+      expect(state.id).to eq(existing.id)
+    end
   end
 
   describe "#validate_fallback_providers" do
