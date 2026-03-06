@@ -52,7 +52,7 @@ class ServiceContainersController < ApplicationController
   private
 
   def set_service_container
-    @service_container = policy_scope(ServiceContainer).find(params[:id])
+    @service_container = policy_scope(ServiceContainer).includes(projects: :account).find(params[:id])
   end
 
   def service_container_params
