@@ -83,6 +83,17 @@ RSpec.describe StyleGuides::InjectIntoPrompt do
         expect(result).to eq(base_prompt)
       end
 
+      it "enforces a total byte budget and omits guides that exceed it" do
+        large_content = "x" * 20_000
+        create(:style_guide, project: project, name: "Project Guide", raw_content: large_content)
+        create(:style_guide, :global, name: "Global Guide", raw_content: large_content)
+
+        result = described_class.call(prompt: base_prompt, project: project)
+
+        expect(result).to include("Project Guide")
+        expect(result).not_to include("Global Guide")
+      end
+
       it "does not include style guides from other accounts" do
         other_account = create(:account)
         create(:style_guide, account: other_account, name: "Other Guide", raw_content: "Other rules")
