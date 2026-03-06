@@ -414,6 +414,12 @@ RSpec.describe "AgentRuns" do
 
         expect(AgentRun.last.agent_type).to eq("claude_code")
       end
+
+      it "falls back when a managed provider is requested but not enabled for the user" do
+        post project_agent_runs_path(project), params: { issue_id: issue.id, agent_type: "cursor" }
+
+        expect(AgentRun.last.agent_type).to eq("claude_code")
+      end
     end
   end
 
