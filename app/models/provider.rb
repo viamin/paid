@@ -34,6 +34,7 @@ class Provider < ApplicationRecord
   end
 
   def prevent_destroying_last_agent_run_provider
+    return if destroyed_by_association.present?
     return unless enabled_for_agent_runs?
     return if user.providers.where.not(id: id).for_agent_runs.exists?
 
