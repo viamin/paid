@@ -1,15 +1,15 @@
 # frozen_string_literal: true
 
 class CreateProviders < ActiveRecord::Migration[8.1]
-  class MigrationUser < ApplicationRecord
+  class MigrationUser < ActiveRecord::Base
     self.table_name = "users"
   end
 
-  class MigrationUserSetting < ApplicationRecord
+  class MigrationUserSetting < ActiveRecord::Base
     self.table_name = "user_settings"
   end
 
-  class MigrationProvider < ApplicationRecord
+  class MigrationProvider < ActiveRecord::Base
     self.table_name = "providers"
   end
 
@@ -27,6 +27,8 @@ class CreateProviders < ActiveRecord::Migration[8.1]
     end
 
     add_index :providers, [ :user_id, :provider_key ], unique: true
+
+    MigrationProvider.reset_column_information
 
     backfill_default_providers
   end
