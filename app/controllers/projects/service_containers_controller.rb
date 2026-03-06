@@ -7,7 +7,9 @@ module Projects
     def create
       authorize @project, :update?
 
-      service_container = ServiceContainer.find(params[:service_container_id])
+      service_container = find_service_container
+      return if service_container.nil?
+
       project_service_container = @project.project_service_containers.find_or_create_by!(service_container: service_container)
 
       if project_service_container.previously_new_record?
@@ -15,8 +17,6 @@ module Projects
       else
         redirect_to edit_project_path(@project), alert: "Service container is already associated with this project."
       end
-    rescue ActiveRecord::RecordNotFound
-      redirect_to edit_project_path(@project), alert: "Service container not found."
     rescue ActiveRecord::RecordNotUnique
       redirect_to edit_project_path(@project), alert: "Service container is already associated with this project."
     end
@@ -24,18 +24,32 @@ module Projects
     def destroy
       authorize @project, :update?
 
-      project_service_container = @project.project_service_containers.find(params[:id])
+      project_service_container = find_project_service_container
+      return if project_service_container.nil?
+
       project_service_container.destroy!
 
       redirect_to edit_project_path(@project), notice: "Service container was removed from the project."
-    rescue ActiveRecord::RecordNotFound
-      redirect_to edit_project_path(@project), alert: "Service container not found."
     end
 
     private
 
     def set_project
       @project = policy_scope(Project).find(params[:project_id])
+    end
+
+    def find_service_container
+      ServiceContainer.find(params[:service_container_id])
+    rescue ActiveRecord::RecordNotFound
+      redirect_to edit_project_path(@project), alert: "Service container not found."
+      nil
+    end
+
+    def find_project_service_container
+      @project.project_service_containers.find(params[:id])
+    rescue ActiveRecord::RecordNotFound
+      redirect_to edit_project_path(@project), alert: "Service container not found."
+      nil
     end
   end
 end
