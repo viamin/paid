@@ -42,11 +42,20 @@ RSpec.describe Provider do
       expect(provider.errors[:enabled_for_agent_runs]).to include("must keep at least one provider enabled for agent runs")
     end
 
-    it "allows disabling when another provider is enabled" do
+    it "does not allow disabling claude even when another provider is enabled" do
       allow(ENV).to receive(:fetch).and_call_original
       allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
       user.providers.create!(provider_key: "cursor")
       provider = user.providers.find_by!(provider_key: "claude")
+
+      expect(provider.update(enabled_for_agent_runs: false)).to be(false)
+      expect(provider.errors[:enabled_for_agent_runs]).to include("Claude must remain enabled for agent runs")
+    end
+
+    it "allows disabling a non-claude provider when claude remains enabled" do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
+      provider = user.providers.create!(provider_key: "cursor")
 
       expect(provider.update(enabled_for_agent_runs: false)).to be(true)
     end
