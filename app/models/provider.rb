@@ -26,7 +26,7 @@ class Provider < ApplicationRecord
 
   def must_keep_at_least_one_agent_run_provider
     return unless user
-    return unless enabled_for_agent_runs_changed?(from: true, to: false)
+    return unless will_save_change_to_enabled_for_agent_runs?(from: true, to: false)
 
     return if user.providers.where.not(id: id).for_agent_runs.exists?
 

@@ -212,12 +212,17 @@ module Projects
       configured_providers = UserSetting.enabled_agent_providers(current_user)
       default_provider = current_user.settings.default_agent_provider
 
-      provider_key = agent_type || params[:agent_type].presence || default_provider || "claude"
-      provider_key = default_provider if configured_providers.include?(default_provider) && !configured_providers.include?(provider_key)
-      provider_key = configured_providers.first if configured_providers.any? && !configured_providers.include?(provider_key)
+      requested_agent_type = agent_type || params[:agent_type].presence
+      if requested_agent_type.present? && AgentRun::AGENT_TYPES.include?(requested_agent_type)
+        agent_type = requested_agent_type
+      else
+        provider_key = requested_agent_type || default_provider || "claude"
+        provider_key = default_provider if configured_providers.include?(default_provider) && !configured_providers.include?(provider_key)
+        provider_key = configured_providers.first if configured_providers.any? && !configured_providers.include?(provider_key)
 
-      agent_type = provider_key_to_agent_type(provider_key)
-      agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(agent_type)
+        agent_type = provider_key_to_agent_type(provider_key)
+        agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(agent_type)
+      end
 
       goal ||= params[:goal].presence || "create_pr"
       goal = "create_pr" unless AgentRun::GOALS.include?(goal)
