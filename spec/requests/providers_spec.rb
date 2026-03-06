@@ -43,6 +43,8 @@ RSpec.describe "Providers" do
     before { sign_in user }
 
     it "updates provider flags" do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
       user.providers.create!(provider_key: "cursor")
 
       patch provider_path(provider), params: { provider: { enabled_for_agent_runs: false } }

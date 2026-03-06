@@ -113,9 +113,11 @@ class UserSetting < ApplicationRecord
   #
   # @return [Array<String>] Provider names in priority order
   def provider_priority
-    allowed = allowed_provider_keys_for_agent_runs
-    [ default_agent_provider ] + Array(fallback_providers).reject { |p| p == default_agent_provider }
-      .select { |provider| allowed.include?(provider) }
+    default = allowed_provider_keys_for_agent_runs.include?(default_agent_provider) ? [ default_agent_provider ] : []
+    fallback = Array(fallback_providers)
+      .reject { |provider| provider == default_agent_provider }
+      .select { |provider| allowed_provider_keys_for_fallback.include?(provider) }
+    default + fallback
   end
 
   # Returns providers that are currently available (not rate limited, circuit not open).

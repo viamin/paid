@@ -43,6 +43,8 @@ RSpec.describe Provider do
     end
 
     it "allows disabling when another provider is enabled" do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
       user.providers.create!(provider_key: "cursor")
       provider = user.providers.find_by!(provider_key: "claude")
 
