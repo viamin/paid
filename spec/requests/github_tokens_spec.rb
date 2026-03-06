@@ -85,6 +85,12 @@ RSpec.describe "GithubTokens" do
         get github_tokens_path
         expect(response.body).to include("Validation Stuck")
       end
+
+      it "does not show a Deactivate button" do
+        create(:github_token, account: account, name: "My Token")
+        get github_tokens_path
+        expect(response.body).not_to include("Deactivate")
+      end
     end
   end
 
@@ -117,6 +123,12 @@ RSpec.describe "GithubTokens" do
       it "includes a link to create a new GitHub token" do
         get new_github_token_path
         expect(response.body).to include("github.com/settings/tokens")
+      end
+
+      it "displays the optional Workflows permission hint" do
+        get new_github_token_path
+        expect(response.body).to include("Workflows")
+        expect(response.body).to include(".github/workflows/")
       end
     end
   end
@@ -257,6 +269,12 @@ RSpec.describe "GithubTokens" do
         token.update_column(:updated_at, 3.minutes.ago)
         get github_token_path(token)
         expect(response.body).to include("Validation Stuck")
+      end
+
+      it "shows Deactivate button for active tokens" do
+        token = create(:github_token, account: account)
+        get github_token_path(token)
+        expect(response.body).to include("Deactivate")
       end
     end
   end
