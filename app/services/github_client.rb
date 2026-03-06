@@ -73,7 +73,7 @@ class GithubClient
 
   # Validates the token and returns user information.
   #
-  # @return [Hash] User info with :login, :id, :name, :email, :scopes keys
+  # @return [Hash] User info with :login, :id, :name, :email, :scopes, :expires_at keys
   # @raise [AuthenticationError] if the token is invalid
   # @raise [RateLimitError] if rate limit is exceeded
   # @raise [ApiError] for other API errors
@@ -550,6 +550,8 @@ class GithubClient
     when Time then value
     when String then Time.parse(value)
     end
+  rescue ArgumentError
+    nil
   end
 
   # Extracts the token expiration from the GitHub API response header.
@@ -559,9 +561,7 @@ class GithubClient
   # @return [Time, nil] Token expiration time, or nil if not available
   def token_expiration_from_response
     header = client.last_response&.headers&.[]("github-authentication-token-expiration")
-    Time.parse(header) if header.present?
-  rescue ArgumentError
-    nil
+    parse_timestamp(header) if header.present?
   end
 
   def handle_errors
