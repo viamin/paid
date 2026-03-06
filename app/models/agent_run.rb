@@ -38,6 +38,8 @@ class AgentRun < ApplicationRecord
   validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :source_pull_request_number, numericality: { greater_than: 0 }, allow_nil: true
   validates :auth_provider, length: { maximum: 50 }
+  validates :final_provider, length: { maximum: 50 }
+  validates :provider_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :has_prompt_source, on: :create
 
@@ -283,6 +285,33 @@ class AgentRun < ApplicationRecord
   # @return [String, nil] The prompt to send to the agent
   def effective_prompt
     custom_prompt.presence || prompt_for_issue
+  end
+
+  # Records a provider attempt in the providers_attempted array.
+  #
+  # @param provider [String] The provider name
+  # @param success [Boolean] Whether the attempt succeeded
+  # @param error_type [String, nil] Type of error if failed (e.g., "rate_limited", "error")
+  def record_provider_attempt(provider, success:, error_type: nil)
+    attempt = {
+      "provider" => provider,
+      "success" => success,
+      "attempted_at" => Time.current.iso8601
+    }
+    attempt["error_type"] = error_type if error_type.present?
+
+    self.providers_attempted = (providers_attempted || []) + [ attempt ]
+    save!
+  end
+
+  # Logs a provider switch and increments the switch counter.
+  #
+  # @param from [String] The provider being switched from
+  # @param to [String] The provider being switched to
+  # @param reason [String] Why the switch occurred
+  def log_provider_switch!(from, to, reason)
+    log!("system", "Provider fallback: #{from} -> #{to} (#{reason})")
+    increment!(:provider_switches)
   end
 
   # Container management integration methods.
