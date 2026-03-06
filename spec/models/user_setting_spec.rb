@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe UserSetting do
   describe "associations" do
     it { is_expected.to belong_to(:user) }
+    it { is_expected.to have_many(:provider_states).through(:user) }
   end
 
   describe "validations" do
@@ -17,7 +18,13 @@ RSpec.describe UserSetting do
 
     # Agent Execution
     it { is_expected.to validate_numericality_of(:agent_timeout_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
-    it { is_expected.to validate_inclusion_of(:default_agent_provider).in_array(%w[claude cursor aider]) }
+
+    it "validates default_agent_provider against enabled providers" do
+      setting = build(:user_setting, default_agent_provider: "invalid")
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:default_agent_provider]).to include("is not an enabled provider")
+    end
 
     # Container Resources
     it { is_expected.to validate_numericality_of(:container_memory_bytes).only_integer.is_greater_than_or_equal_to(512 * 1024 * 1024).is_less_than_or_equal_to(described_class::MAX_CONTAINER_MEMORY_BYTES) }
@@ -36,32 +43,17 @@ RSpec.describe UserSetting do
   end
 
   describe ".enabled_agent_providers" do
-    it "always includes claude" do
-      expect(described_class.enabled_agent_providers).to include("claude")
+    let(:user) { create(:user) }
+
+    it "returns user-configured run-enabled providers" do
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
+      user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false)
+
+      expect(described_class.enabled_agent_providers(user)).to contain_exactly("claude", "cursor")
     end
 
-    it "includes cursor when CURSOR_ENABLED is true" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
-      expect(described_class.enabled_agent_providers).to include("cursor")
-    end
-
-    it "excludes cursor when CURSOR_ENABLED is not true" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("false")
-      expect(described_class.enabled_agent_providers).not_to include("cursor")
-    end
-
-    it "includes aider when AIDER_ENABLED is true" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("AIDER_ENABLED", "false").and_return("true")
-      expect(described_class.enabled_agent_providers).to include("aider")
-    end
-
-    it "excludes aider when AIDER_ENABLED is not true" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("AIDER_ENABLED", "false").and_return("false")
-      expect(described_class.enabled_agent_providers).not_to include("aider")
+    it "returns claude when no user is provided" do
+      expect(described_class.enabled_agent_providers).to eq([ "claude" ])
     end
   end
 
@@ -167,23 +159,30 @@ RSpec.describe UserSetting do
   end
 
   describe "#provider_priority" do
+    let(:user) { create(:user) }
+
+    before do
+      user.providers.create!(provider_key: "cursor")
+      user.providers.create!(provider_key: "aider")
+    end
+
     it "returns default provider first, then fallbacks" do
-      setting = build(:user_setting, default_agent_provider: "claude", fallback_providers: %w[cursor aider])
+      setting = build(:user_setting, user: user, default_agent_provider: "claude", fallback_providers: %w[cursor aider])
       expect(setting.provider_priority).to eq(%w[claude cursor aider])
     end
 
     it "excludes the default provider from fallback list" do
-      setting = build(:user_setting, default_agent_provider: "claude", fallback_providers: %w[claude cursor])
+      setting = build(:user_setting, user: user, default_agent_provider: "claude", fallback_providers: %w[claude cursor])
       expect(setting.provider_priority).to eq(%w[claude cursor])
     end
 
     it "handles empty fallback_providers" do
-      setting = build(:user_setting, default_agent_provider: "claude", fallback_providers: [])
+      setting = build(:user_setting, user: user, default_agent_provider: "claude", fallback_providers: [])
       expect(setting.provider_priority).to eq(%w[claude])
     end
 
     it "handles nil fallback_providers" do
-      setting = build(:user_setting, default_agent_provider: "claude")
+      setting = build(:user_setting, user: user, default_agent_provider: "claude")
       setting.fallback_providers = nil
       expect(setting.provider_priority).to eq(%w[claude])
     end
@@ -192,6 +191,11 @@ RSpec.describe UserSetting do
   describe "#available_providers" do
     let(:user) { create(:user) }
     let(:setting) { create(:user_setting, user: user, fallback_providers: %w[cursor aider]) }
+
+    before do
+      user.providers.create!(provider_key: "cursor")
+      user.providers.create!(provider_key: "aider")
+    end
 
     it "returns all providers when none are unavailable" do
       expect(setting.available_providers).to eq(%w[claude cursor aider])
@@ -247,24 +251,27 @@ RSpec.describe UserSetting do
   end
 
   describe "#validate_fallback_providers" do
+    let(:user) { create(:user) }
+
     it "is valid with known providers" do
-      setting = build(:user_setting, fallback_providers: %w[claude cursor])
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      setting = build(:user_setting, user: user, fallback_providers: %w[claude cursor])
       expect(setting).to be_valid
     end
 
     it "is invalid with unknown providers" do
-      setting = build(:user_setting, fallback_providers: %w[claude unknown_provider])
+      setting = build(:user_setting, user: user, fallback_providers: %w[claude unknown_provider])
       expect(setting).not_to be_valid
       expect(setting.errors[:fallback_providers]).to include(/invalid providers/)
     end
 
     it "is valid with empty array" do
-      setting = build(:user_setting, fallback_providers: [])
+      setting = build(:user_setting, user: user, fallback_providers: [])
       expect(setting).to be_valid
     end
 
     it "is invalid with non-array value" do
-      setting = build(:user_setting)
+      setting = build(:user_setting, user: user)
       setting.fallback_providers = "not_an_array"
       expect(setting).not_to be_valid
       expect(setting.errors[:fallback_providers]).to include("must be an array")

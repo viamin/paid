@@ -81,9 +81,9 @@
           <div>
             <%= form.label :default_agent_provider, "Default Agent Provider", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
-              <%# Only show providers enabled at the system level (see config/initializers/agent_harness.rb) %>
+              <%# Show providers the user has enabled for agent runs. %>
               <%= form.select :default_agent_provider,
-                  UserSetting.enabled_agent_providers.map { |p| [p.titleize, p] },
+                  @enabled_agent_providers.map { |p| [p.titleize, p] },
                   {},
                   class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
             </div>
@@ -108,9 +108,9 @@
             <p class="text-sm font-medium text-gray-700 mb-2">Drag to reorder fallback priority:</p>
             <div class="space-y-2" data-sortable-target="list">
               <% provider_states_by_name = @user_setting.user.provider_states.index_by(&:provider_name) %>
-              <% enabled_providers = UserSetting.enabled_agent_providers %>
-              <% saved_order = [@user_setting.default_agent_provider] + Array(@user_setting.fallback_providers) %>
-              <% providers_in_order = (saved_order.select { |p| enabled_providers.include?(p) } + (enabled_providers - saved_order)).uniq %>
+              <% fallback_candidates = @fallback_candidate_providers %>
+              <% saved_order = Array(@user_setting.fallback_providers) %>
+              <% providers_in_order = (saved_order.select { |p| fallback_candidates.include?(p) } + (fallback_candidates - saved_order)).uniq %>
               <% providers_in_order.each do |provider| %>
                 <% provider_state = provider_states_by_name[provider] %>
                 <div class="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm cursor-move provider-item" data-provider="<%= provider %>" data-sortable-target="item">
@@ -119,9 +119,6 @@
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
                     </svg>
                     <span class="text-sm font-medium text-gray-900"><%= provider.titleize %></span>
-                    <% if provider == @user_setting.default_agent_provider %>
-                      <span class="ml-2 inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">Primary</span>
-                    <% end %>
                   </div>
                   <div>
                     <% if provider_state&.rate_limited? %>

@@ -92,9 +92,9 @@
           <h2 class="text-base font-semibold text-gray-900">Agent Type</h2>
           <div class="mt-4">
             <select name="agent_type" id="agent_type" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-              <% AgentRun::AGENT_TYPES.each do |type| %>
-                <option value="<%= type %>" <%= "selected" if type == "claude_code" %>>
-                  <%= type.titleize %>
+              <% @agent_run_providers.each do |provider_key| %>
+                <option value="<%= provider_key %>" <%= "selected" if provider_key == current_user.settings.default_agent_provider %>>
+                  <%= provider_key.titleize %>
                 </option>
               <% end %>
             </select>
