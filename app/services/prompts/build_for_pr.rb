@@ -47,7 +47,7 @@ module Prompts
       sections << rules_section
       sections << available_services_section
       sections << no_infrastructure_section
-      base_prompt = sections.join("\n")
+      base_prompt = sections.join("\n").delete("\x00")
 
       StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
     end

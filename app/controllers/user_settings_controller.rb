@@ -7,6 +7,7 @@ class UserSettingsController < ApplicationController
 
   def edit
     authorize @user_setting
+    load_provider_lists
   end
 
   def update
@@ -15,6 +16,7 @@ class UserSettingsController < ApplicationController
     if @user_setting.update(user_setting_params)
       redirect_to edit_user_settings_path, notice: "Settings saved successfully."
     else
+      load_provider_lists
       render :edit, status: :unprocessable_content
     end
   end
@@ -23,6 +25,11 @@ class UserSettingsController < ApplicationController
 
   def set_user_setting
     @user_setting = current_user.settings
+  end
+
+  def load_provider_lists
+    @enabled_agent_providers = UserSetting.enabled_agent_providers(current_user)
+    @fallback_candidate_providers = UserSetting.fallback_candidate_providers(current_user)
   end
 
   def user_setting_params
