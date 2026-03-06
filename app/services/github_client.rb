@@ -85,7 +85,8 @@ class GithubClient
         id: response.id,
         name: response.name,
         email: response.email,
-        scopes: client.scopes
+        scopes: client.scopes,
+        expires_at: token_expiration_from_response
       }
     end
   end
@@ -549,6 +550,18 @@ class GithubClient
     when Time then value
     when String then Time.parse(value)
     end
+  end
+
+  # Extracts the token expiration from the GitHub API response header.
+  # Fine-grained PATs include a `github-authentication-token-expiration` header
+  # with a UTC timestamp. Classic PATs do not include this header.
+  #
+  # @return [Time, nil] Token expiration time, or nil if not available
+  def token_expiration_from_response
+    header = client.last_response&.headers&.[]("github-authentication-token-expiration")
+    Time.parse(header) if header.present?
+  rescue ArgumentError
+    nil
   end
 
   def handle_errors

@@ -103,7 +103,7 @@ class GithubToken < ApplicationRecord
   # @raise [GithubClient::AuthenticationError] if the token is invalid
   def validate_with_github!
     result = client.validate_token
-    update!(scopes: result[:scopes])
+    update!(scopes: result[:scopes], expires_at: result[:expires_at])
     touch_last_used!
     sync_repositories!
     result

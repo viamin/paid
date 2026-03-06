@@ -37,6 +37,12 @@
               <p class="mt-3 text-xs text-blue-600">
                 <strong>Optional:</strong> For GitHub Projects V2 integration, also add <strong>Projects: Read and write</strong> permission.
               </p>
+              <p class="mt-1 text-xs text-blue-600">
+                <strong>Optional:</strong> If your repository uses GitHub Actions and you want Paid to be able to edit workflow files
+                (<code>.github/workflows/</code>), also add the <strong>Workflows: Read and write</strong> permission.
+                For classic tokens, this is the <strong>workflow</strong> scope.
+                Without this, pushes that modify workflow files will be rejected by GitHub.
+              </p>
             </div>
           </div>
         </div>
