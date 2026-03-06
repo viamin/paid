@@ -28,8 +28,8 @@ RSpec.describe UserSetting do
     it "validates default_agent_provider against enabled providers" do
       setting = build(:user_setting, default_agent_provider: "invalid")
 
-      expect(setting).not_to be_valid
-      expect(setting.errors[:default_agent_provider]).to include("is not an enabled provider")
+      expect(setting).to be_valid
+      expect(setting.default_agent_provider).to eq("claude")
     end
 
     # Container Resources
@@ -265,10 +265,10 @@ RSpec.describe UserSetting do
       expect(setting).to be_valid
     end
 
-    it "is invalid with unknown providers" do
+    it "sanitizes unknown providers" do
       setting = build(:user_setting, user: user, fallback_providers: %w[claude unknown_provider])
-      expect(setting).not_to be_valid
-      expect(setting.errors[:fallback_providers]).to include(/invalid providers/)
+      expect(setting).to be_valid
+      expect(setting.fallback_providers).to eq([ "claude" ])
     end
 
     it "is valid with empty array" do

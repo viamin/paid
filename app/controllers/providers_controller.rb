@@ -74,13 +74,21 @@ class ProvidersController < ApplicationController
   end
 
   def load_provider_options
-    @provider_options = UserSetting.system_enabled_provider_keys
+    system_enabled = UserSetting.system_enabled_provider_keys
+    existing_keys = current_user.providers.pluck(:provider_key)
+    @provider_options = if @provider&.persisted?
+      (system_enabled - (existing_keys - [ @provider.provider_key ]))
+    else
+      system_enabled - existing_keys
+    end
   end
 
   def reconcile_settings!
     settings = current_user.settings
 
-    run_keys = UserSetting.enabled_agent_providers(current_user)
+    run_keys = ensure_run_enabled_provider_keys!
+    return false if run_keys.blank?
+
     fallback_keys = UserSetting.fallback_candidate_providers(current_user)
 
     attrs = {
@@ -97,5 +105,23 @@ class ProvidersController < ApplicationController
       errors: settings.errors.full_messages
     )
     false
+  end
+
+  def ensure_run_enabled_provider_keys!
+    run_keys = UserSetting.enabled_agent_providers(current_user)
+    return run_keys if run_keys.present?
+
+    claude = current_user.providers.find_or_initialize_by(provider_key: "claude")
+    claude.enabled_for_agent_runs = true
+    claude.enabled_for_fallback = true if claude.new_record?
+
+    return UserSetting.enabled_agent_providers(current_user) if claude.save
+
+    Rails.logger.error(
+      message: "providers.ensure_run_enabled_provider_failed",
+      user_id: current_user.id,
+      errors: claude.errors.full_messages
+    )
+    []
   end
 end
