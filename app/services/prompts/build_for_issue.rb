@@ -52,7 +52,8 @@ module Prompts
         **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
         If the commit is rejected, read the error output carefully, fix the issues, and commit again.
         Keep iterating until the commit succeeds. Do not leave uncommitted changes.
-        #{conversation_section}# Rules — you MUST follow these
+        #{conversation_section}
+        # Rules — you MUST follow these
 
         - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
         - **Never use `--no-verify`** or any flag that skips git hooks.
