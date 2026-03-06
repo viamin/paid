@@ -42,7 +42,7 @@ RSpec.describe GithubClient do
       end
     end
 
-    context "when fine-grained PAT has expiration header" do
+    context "when response includes expiration header" do
       before do
         stub_request(:get, "#{api_base}/user")
           .to_return(
