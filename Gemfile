@@ -39,6 +39,9 @@ gem "temporalio"
 # Docker API client [https://github.com/upserve/docker-api]
 gem "docker-api"
 
+# Qdrant vector database client [https://github.com/patterns-ai-core/qdrant-ruby]
+gem "qdrant-ruby"
+
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
 gem "agent-harness"
 
@@ -96,7 +99,7 @@ end
 gem "good_job", "~> 4.13"
 
 # Pagination [https://github.com/ddnexus/pagy]
-gem "pagy", "~> 9.0"
+gem "pagy", "~> 43.3"
 
 # Search and filtering [https://github.com/activerecord-hackery/ransack]
 gem "ransack"

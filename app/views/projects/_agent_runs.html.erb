@@ -1,15 +1,7 @@
 <div id="<%= dom_id(project, :agent_runs) %>" class="mt-8">
-  <div class="sm:flex sm:items-center sm:justify-between">
-    <h2 class="text-lg font-medium text-gray-900">
-      <%= link_to "Recent Agent Runs", project_agent_runs_path(project), class: "hover:text-indigo-600" %>
-    </h2>
-    <%= link_to new_project_agent_run_path(project), class: "mt-4 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 sm:mt-0", data: { action_button: true } do %>
-      <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-        <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM9.555 7.168A1 1 0 0 0 8 8v4a1 1 0 0 0 1.555.832l3-2a1 1 0 0 0 0-1.664l-3-2Z" clip-rule="evenodd" />
-      </svg>
-      Trigger Run
-    <% end %>
-  </div>
+  <h2 class="text-lg font-medium text-gray-900">
+    <%= link_to "Recent Agent Runs", project_agent_runs_path(project), class: "hover:text-indigo-600" %>
+  </h2>
 
   <% if recent_agent_runs.any? %>
     <div class="mt-4 flow-root">

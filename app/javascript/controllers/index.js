@@ -18,3 +18,6 @@ application.register("mobile-menu", MobileMenuController)
 
 import GoalToggleController from "./goal_toggle_controller"
 application.register("goal-toggle", GoalToggleController)
+
+import SortableController from "./sortable_controller"
+application.register("sortable", SortableController)

@@ -32,6 +32,16 @@ RSpec.describe "Dashboard" do
         get dashboard_path
         expect(response.body).to include("Test Company")
       end
+
+      it "includes settings in the mobile menu" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        mobile_settings_link = doc.at_css("#mobile-menu a[href='#{edit_user_settings_path}']")
+
+        expect(mobile_settings_link).to be_present
+        expect(mobile_settings_link.text.strip).to eq("Settings")
+      end
     end
   end
 end

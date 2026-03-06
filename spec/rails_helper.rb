@@ -17,10 +17,28 @@ Dir[Rails.root.join("spec/support/**/*.rb")].each { |f| require f }
 
 # Checks for pending migrations and applies them before tests are run.
 # If you are not using ActiveRecord, you can remove these lines.
-begin
+database_available = begin
   ActiveRecord::Migration.maintain_test_schema!
+  true
 rescue ActiveRecord::PendingMigrationError => e
   abort e.to_s.strip
+rescue ActiveRecord::ConnectionNotEstablished => e
+  if ENV["ALLOW_DBLESS_SPECS"] == "true"
+    warn "[WARN] ActiveRecord::ConnectionNotEstablished during test schema maintenance: #{e.message}. " \
+         "Continuing because ALLOW_DBLESS_SPECS=true; transactional fixtures will be disabled."
+    false
+  else
+    abort <<~MSG
+      ActiveRecord::ConnectionNotEstablished while preparing the test database.
+      This usually means your test database is misconfigured or unavailable.
+
+      The test suite is configured to fail fast in this situation to avoid misleading
+      green runs when the database is down.
+
+      If you intentionally want to run specs without a database (for example, tests
+      that only use mocks), set ALLOW_DBLESS_SPECS=true in the environment.
+    MSG
+  end
 end
 
 RSpec.configure do |config|
@@ -30,7 +48,7 @@ RSpec.configure do |config|
   # If you're not using ActiveRecord, or you'd prefer not to run each of your
   # examples within a transaction, remove the following line or assign false
   # instead of true.
-  config.use_transactional_fixtures = true
+  config.use_transactional_fixtures = database_available
 
   # You can uncomment this line to turn off ActiveRecord support entirely.
   # config.use_active_record = false
