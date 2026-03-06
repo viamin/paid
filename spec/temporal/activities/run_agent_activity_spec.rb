@@ -26,6 +26,40 @@ RSpec.describe Activities::RunAgentActivity do
       .and_return(git_ops)
   end
 
+  describe ".provider_order" do
+    it "returns only the primary provider when fallback is disabled" do
+      result = described_class.provider_order(
+        agent_type: "claude_code",
+        fallback_enabled: false,
+        fallback_providers: %w[cursor aider]
+      )
+
+      expect(result).to eq([ "claude_code" ])
+    end
+
+    it "deduplicates canonical providers in fallback order" do
+      result = described_class.provider_order(
+        agent_type: "claude_code",
+        fallback_enabled: true,
+        fallback_providers: %w[claude cursor aider]
+      )
+
+      expect(result).to eq(%w[claude_code cursor aider])
+    end
+  end
+
+  describe ".provider_attempt_count" do
+    it "matches provider_order size for deduplicated fallback providers" do
+      count = described_class.provider_attempt_count(
+        agent_type: "claude_code",
+        fallback_enabled: true,
+        fallback_providers: %w[claude cursor aider]
+      )
+
+      expect(count).to eq(3)
+    end
+  end
+
   describe "#execute" do
     context "when agent succeeds in container" do
       before do
