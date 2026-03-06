@@ -36,6 +36,8 @@ RSpec.describe "ServiceContainers" do
       end
 
       it "shows empty state when no service containers exist" do
+        ServiceContainer.delete_all
+
         get service_containers_path
         expect(response.body).to include("No service containers")
       end
