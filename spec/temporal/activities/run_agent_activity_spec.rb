@@ -4,7 +4,8 @@ require "rails_helper"
 
 RSpec.describe Activities::RunAgentActivity do
   let(:activity) { described_class.new }
-  let(:project) { create(:project) }
+  let(:user) { create(:user) }
+  let(:project) { create(:project, account: user.account, created_by: user) }
   let(:issue) { create(:issue, project: project) }
   let(:agent_run) { create(:agent_run, :with_git_context, project: project, issue: issue, container_id: "abc123") }
   let(:container_service) { instance_double(Containers::Provision) }
@@ -13,6 +14,9 @@ RSpec.describe Activities::RunAgentActivity do
   let(:exec_failure) { Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: "error", exit_code: 1) }
 
   before do
+    # Ensure fallback is disabled by default so tests behave like single-provider runs
+    user.settings.update!(fallback_enabled: false)
+
     allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
     allow(Containers::Provision).to receive(:reconnect)
       .with(agent_run: agent_run, container_id: "abc123")
@@ -20,6 +24,40 @@ RSpec.describe Activities::RunAgentActivity do
     allow(Containers::GitOperations).to receive(:new)
       .with(container_service: container_service, agent_run: agent_run)
       .and_return(git_ops)
+  end
+
+  describe ".provider_order" do
+    it "returns only the primary provider when fallback is disabled" do
+      result = described_class.provider_order(
+        agent_type: "claude_code",
+        fallback_enabled: false,
+        fallback_providers: %w[cursor aider]
+      )
+
+      expect(result).to eq([ "claude_code" ])
+    end
+
+    it "deduplicates canonical providers in fallback order" do
+      result = described_class.provider_order(
+        agent_type: "claude_code",
+        fallback_enabled: true,
+        fallback_providers: %w[claude cursor aider]
+      )
+
+      expect(result).to eq(%w[claude_code cursor aider])
+    end
+  end
+
+  describe ".provider_attempt_count" do
+    it "matches provider_order size for deduplicated fallback providers" do
+      count = described_class.provider_attempt_count(
+        agent_type: "claude_code",
+        fallback_enabled: true,
+        fallback_providers: %w[claude cursor aider]
+      )
+
+      expect(count).to eq(3)
+    end
   end
 
   describe "#execute" do
@@ -100,6 +138,15 @@ RSpec.describe Activities::RunAgentActivity do
         expect(result[:has_changes]).to be true
         expect(git_ops).not_to have_received(:has_changes_since?)
       end
+
+      it "records the final_provider on success" do
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:final_provider]).to eq("claude_code")
+        expect(agent_run.reload.final_provider).to eq("claude_code")
+      end
     end
 
     context "when agent fails in container" do
@@ -108,10 +155,10 @@ RSpec.describe Activities::RunAgentActivity do
         allow(container_service).to receive(:execute).and_return(exec_failure)
       end
 
-      it "raises an ApplicationError" do
+      it "raises AllProvidersExhausted when all providers fail" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /Agent execution failed/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
       end
 
       it "marks the agent run as failed" do
@@ -132,10 +179,10 @@ RSpec.describe Activities::RunAgentActivity do
           .and_raise(Containers::Provision::TimeoutError)
       end
 
-      it "raises an ApplicationError with timeout type" do
+      it "raises AllProvidersExhausted after timeout" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /timed out/i)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
       end
 
       it "marks the agent run as timed out with wall_clock type" do
@@ -177,10 +224,10 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.error_message).to include("startup_timeout")
       end
 
-      it "raises an ApplicationError" do
+      it "raises AllProvidersExhausted" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /startup timeout/i)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
       end
     end
 
@@ -203,24 +250,21 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.error_message).to include("idle_timeout")
       end
 
-      it "raises an ApplicationError" do
+      it "raises AllProvidersExhausted" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /idle timeout/i)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
       end
     end
 
     context "when no container is provisioned" do
-      let(:other_issue) { create(:issue, project: project) }
-      let(:agent_run_no_container) do
-        create(:agent_run, :with_git_context, project: project, issue: other_issue, container_id: nil)
-      end
-
       it "raises an ApplicationError" do
-        allow(AgentRun).to receive(:find).with(agent_run_no_container.id).and_return(agent_run_no_container)
+        other_issue = create(:issue, project: project)
+        run_no_container = create(:agent_run, :with_git_context, project: project, issue: other_issue, container_id: nil)
+        allow(AgentRun).to receive(:find).with(run_no_container.id).and_return(run_no_container)
 
         expect {
-          activity.execute(agent_run_id: agent_run_no_container.id)
+          activity.execute(agent_run_id: run_no_container.id)
         }.to raise_error(Temporalio::Error::ApplicationError, /No container provisioned/)
       end
     end
@@ -246,15 +290,19 @@ RSpec.describe Activities::RunAgentActivity do
     it "raises for unsupported agent types" do
       unsupported_issue = create(:issue, project: project)
       unsupported_run = create(:agent_run, project: project, issue: unsupported_issue,
-        agent_type: "cursor", container_id: "abc123")
+        agent_type: "copilot", container_id: "abc123")
       allow(AgentRun).to receive(:find).with(unsupported_run.id).and_return(unsupported_run)
       allow(Containers::Provision).to receive(:reconnect)
         .with(agent_run: unsupported_run, container_id: "abc123")
         .and_return(container_service)
+      allow(Containers::GitOperations).to receive(:new)
+        .with(container_service: container_service, agent_run: unsupported_run)
+        .and_return(git_ops)
+      allow(git_ops).to receive(:head_sha).and_return("sha123")
 
       expect {
         activity.execute(agent_run_id: unsupported_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, /Unsupported agent type/)
+      }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
     end
 
     context "when goal is create_issue" do
@@ -302,6 +350,125 @@ RSpec.describe Activities::RunAgentActivity do
         ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "with fallback enabled" do
+      let(:rate_limit_failure) do
+        Containers::Provision::Result.failure(
+          error: "rate limit", stdout: "", stderr: "rate limit exceeded", exit_code: 1
+        )
+      end
+
+      before do
+        user.settings.update!(fallback_enabled: true, fallback_providers: %w[claude cursor aider])
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+      end
+
+      it "falls back to next provider on rate limit" do
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            rate_limit_failure
+          else
+            exec_success
+          end
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(result[:final_provider]).to eq("cursor")
+      end
+
+      it "records provider switch when falling back" do
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            rate_limit_failure
+          else
+            exec_success
+          end
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(agent_run.reload.provider_switches).to eq(1)
+      end
+
+      it "continues to next provider when the first provider times out" do
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            raise Containers::Provision::TimeoutError, "took too long"
+          else
+            exec_success
+          end
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+        agent_run.reload
+
+        expect(result[:success]).to be true
+        expect(result[:final_provider]).to eq("cursor")
+        expect(agent_run.status).to eq("running")
+      end
+
+      it "raises AllProvidersExhausted when all fallbacks fail" do
+        allow(container_service).to receive(:execute).and_return(exec_failure)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+      end
+
+      it "preserves timeout status when timeout is followed by other failures" do
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            raise Containers::Provision::TimeoutError, "took too long"
+          else
+            exec_failure
+          end
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+          .and have_enqueued_job(ProcessRunQueueJob)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("wall_clock_timeout")
+      end
+    end
+
+    context "when resolving user settings" do
+      it "resolves user settings from project creator" do
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+      end
+
+      it "raises MissingUser when no user is available" do
+        orphan_account = create(:account)
+        orphan_token = create(:github_token, :without_creator, account: orphan_account)
+        project_without_creator = create(:project, :without_creator, account: orphan_account, github_token: orphan_token)
+        issue_for_orphan = create(:issue, project: project_without_creator)
+        orphan_run = create(:agent_run, :with_git_context, project: project_without_creator,
+          issue: issue_for_orphan, container_id: "abc123")
+        allow(AgentRun).to receive(:find).with(orphan_run.id).and_return(orphan_run)
+
+        expect {
+          activity.execute(agent_run_id: orphan_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /No user available/)
       end
     end
   end

@@ -13,6 +13,7 @@ class UserSetting < ApplicationRecord
   MAX_DELAY_SECONDS = 86_400
 
   belongs_to :user
+  has_many :provider_states, through: :user
 
   # Polling & Timing
   validates :default_poll_interval_seconds,
@@ -50,6 +51,9 @@ class UserSetting < ApplicationRecord
     numericality: { greater_than: 0, less_than_or_equal_to: MAX_DELAY_SECONDS }
   validates :retry_max_delay,
     numericality: { greater_than: 0, less_than_or_equal_to: MAX_DELAY_SECONDS }
+
+  # Provider Fallback
+  validate :validate_fallback_providers
 
   # Returns providers currently enabled at the system level. Claude is always
   # enabled; other providers are gated by environment flags (see
@@ -99,5 +103,58 @@ class UserSetting < ApplicationRecord
   # Sets container CPU quota from a CPU count
   def container_cpus=(value)
     self.container_cpu_quota = (value.to_i * 100_000)
+  end
+
+  # Returns the ordered list of providers to try: primary first, then fallbacks.
+  #
+  # @return [Array<String>] Provider names in priority order
+  def provider_priority
+    [ default_agent_provider ] + (fallback_providers || []).reject { |p| p == default_agent_provider }
+  end
+
+  # Returns providers that are currently available (not rate limited, circuit not open).
+  # Checks ProviderState for each provider and filters out unavailable ones.
+  #
+  # @param check_circuit_recovery [Boolean] Whether to check for circuit recovery before filtering
+  # @return [Array<String>] Available provider names in priority order
+  def available_providers(check_circuit_recovery: true)
+    priorities = provider_priority
+    states_by_name = user.provider_states.where(provider_name: priorities).index_by(&:provider_name)
+
+    priorities.select do |provider|
+      state = states_by_name[provider]
+      next true unless state
+
+      # Check if circuit can recover before filtering
+      state.check_circuit_recovery!(timeout: circuit_breaker_timeout_seconds) if check_circuit_recovery
+
+      !state.unavailable?
+    end
+  end
+
+  # Returns the ProviderState for a given provider, creating one if it doesn't exist.
+  #
+  # @param provider_name [String] The provider name
+  # @return [ProviderState]
+  def provider_state_for(provider_name)
+    user.provider_states.find_or_create_by!(provider_name: provider_name)
+  rescue ActiveRecord::RecordNotUnique
+    user.provider_states.find_by!(provider_name: provider_name)
+  end
+
+  private
+
+  def validate_fallback_providers
+    return if fallback_providers.blank?
+
+    unless fallback_providers.is_a?(Array)
+      errors.add(:fallback_providers, "must be an array")
+      return
+    end
+
+    invalid = fallback_providers - AGENT_PROVIDERS
+    if invalid.any?
+      errors.add(:fallback_providers, "contains invalid providers: #{invalid.join(', ')}")
+    end
   end
 end
