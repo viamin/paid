@@ -42,7 +42,7 @@ class ServiceContainer < ApplicationRecord
   private
 
   def env_json_valid
-    errors.add(:env, "must be valid JSON") if @env_json_invalid
+    errors.add(:env_json, "must be valid JSON") if @env_json_invalid
   end
 
   # Only validate image on create or when the image is actually changing.
