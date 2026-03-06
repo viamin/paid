@@ -515,7 +515,35 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:phase]).to eq("draft")
-        expect(trigger[:triggers].first[:type]).to eq("copilot_review_threads")
+        expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
+      end
+    end
+
+    context "when PR is in draft phase with Claude review threads" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "claude[bot]" } ]
+            }
+          ]
+        )
+      end
+
+      it "detects Claude review threads as review bot threads" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
       end
     end
 
@@ -649,7 +677,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when draft PR has copilot-pull-request-reviewer threads" do
+    context "when draft PR has review bot threads from copilot-pull-request-reviewer" do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -667,13 +695,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "recognizes copilot-pull-request-reviewer as a Copilot user" do
+      it "recognizes copilot-pull-request-reviewer as a review bot" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:phase]).to eq("draft")
-        expect(trigger[:triggers].map { |t| t[:type] }).to include("copilot_review_threads")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
     end
 
@@ -746,7 +774,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:phase]).to eq("ready")
-        expect(trigger[:triggers].map { |t| t[:type] }).to include("copilot_review_threads")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
     end
 
