@@ -15,11 +15,12 @@ module Prompts
     LANGUAGE_TEST_COMMANDS = LanguageCommands::LANGUAGE_TEST_COMMANDS
     LANGUAGE_LINT_COMMANDS = LanguageCommands::LANGUAGE_LINT_COMMANDS
 
-    attr_reader :issue, :project
+    attr_reader :issue, :project, :github_client
 
-    def initialize(issue:, project:)
+    def initialize(issue:, project:, github_client: nil)
       @issue = issue
       @project = project
+      @github_client = github_client
     end
 
     def self.call(...)
@@ -51,7 +52,7 @@ module Prompts
         **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
         If the commit is rejected, read the error output carefully, fix the issues, and commit again.
         Keep iterating until the commit succeeds. Do not leave uncommitted changes.
-
+        #{conversation_section}
         # Rules — you MUST follow these
 
         - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
@@ -68,6 +69,30 @@ module Prompts
     end
 
     private
+
+    def conversation_section
+      return "" unless trusted_comments.any?
+
+      comment_text = trusted_comments.map do |c|
+        "- **#{c.user.login}**: #{c.body}"
+      end.join("\n")
+
+      "\n# Conversation Comments\n\n" \
+        "Comments from project collaborators:\n\n" \
+        "#{comment_text}\n\n" \
+        "Address any actionable requests in these comments.\n"
+    end
+
+    def trusted_comments
+      @trusted_comments ||= begin
+        return [] unless github_client
+
+        comments = github_client.issue_comments(project.full_name, issue.github_number)
+        comments.select { |c| project.trusted_github_user?(c.user&.login) }
+      rescue GithubClient::Error
+        []
+      end
+    end
 
     def test_command
       LANGUAGE_TEST_COMMANDS.fetch(detected_language, "echo \"No test command configured\"")
