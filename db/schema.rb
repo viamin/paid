@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_06_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_06_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -376,7 +376,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_06_120000) do
 
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
-    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
+    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"], null: false
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.integer "container_cpu_quota", default: 200000, null: false

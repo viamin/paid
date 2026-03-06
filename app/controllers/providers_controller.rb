@@ -18,8 +18,11 @@ class ProvidersController < ApplicationController
     authorize @provider
 
     if @provider.save
-      reconcile_settings!
-      redirect_to providers_path, notice: "Provider created successfully."
+      if reconcile_settings!
+        redirect_to providers_path, notice: "Provider created successfully."
+      else
+        redirect_to providers_path, alert: "Provider created, but settings reconciliation failed. Please review settings."
+      end
     else
       render :new, status: :unprocessable_content
     end
@@ -33,8 +36,11 @@ class ProvidersController < ApplicationController
     authorize @provider
 
     if @provider.update(provider_params)
-      reconcile_settings!
-      redirect_to providers_path, notice: "Provider updated successfully."
+      if reconcile_settings!
+        redirect_to providers_path, notice: "Provider updated successfully."
+      else
+        redirect_to providers_path, alert: "Provider updated, but settings reconciliation failed. Please review settings."
+      end
     else
       render :edit, status: :unprocessable_content
     end
@@ -44,8 +50,11 @@ class ProvidersController < ApplicationController
     authorize @provider
 
     if @provider.destroy
-      reconcile_settings!
-      redirect_to providers_path, notice: "Provider deleted successfully."
+      if reconcile_settings!
+        redirect_to providers_path, notice: "Provider deleted successfully."
+      else
+        redirect_to providers_path, alert: "Provider deleted, but settings reconciliation failed. Please review settings."
+      end
     else
       redirect_to providers_path, alert: @provider.errors.full_messages.to_sentence
     end
@@ -73,6 +82,13 @@ class ProvidersController < ApplicationController
 
     attrs[:default_agent_provider] = run_keys.first unless run_keys.include?(settings.default_agent_provider)
 
-    settings.update!(attrs)
+    return true if settings.update(attrs)
+
+    Rails.logger.error(
+      message: "providers.reconcile_settings_failed",
+      user_id: current_user.id,
+      errors: settings.errors.full_messages
+    )
+    false
   end
 end

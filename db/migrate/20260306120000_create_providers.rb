@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class CreateProviders < ActiveRecord::Migration[8.0]
+class CreateProviders < ActiveRecord::Migration[8.1]
   class MigrationUser < ApplicationRecord
     self.table_name = "users"
   end
