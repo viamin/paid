@@ -422,6 +422,8 @@ RSpec.describe GithubToken do
     end
 
     context "when fine-grained PAT has expiration header" do
+      let(:github_token) { create(:github_token, :fine_grained) }
+
       before do
         stub_request(:get, "#{api_base}/user")
           .to_return(
