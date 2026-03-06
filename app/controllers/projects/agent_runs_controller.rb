@@ -264,6 +264,7 @@ module Projects
 
     def resolve_agent_type(requested_agent_type:)
       configured_providers = UserSetting.enabled_agent_providers(current_user)
+      priority_providers = current_user.settings.provider_priority
       default_provider = current_user.settings.default_agent_provider
       resolved_agent_type = nil
 
@@ -279,7 +280,7 @@ module Projects
       unless resolved_agent_type
         provider_key = requested_agent_type || default_provider || "claude"
         provider_key = default_provider if configured_providers.include?(default_provider) && !configured_providers.include?(provider_key)
-        provider_key = configured_providers.first if configured_providers.any? && !configured_providers.include?(provider_key)
+        provider_key = priority_providers.first if priority_providers.any? && !configured_providers.include?(provider_key)
 
         resolved_agent_type = provider_key_to_agent_type(provider_key)
         resolved_agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(resolved_agent_type)
@@ -288,7 +289,7 @@ module Projects
       if managed_provider_key?(agent_type_to_provider_key(resolved_agent_type))
         provider_key = agent_type_to_provider_key(resolved_agent_type)
         unless configured_providers.include?(provider_key)
-          fallback_key = configured_providers.any? ? configured_providers.first : "claude"
+          fallback_key = priority_providers.any? ? priority_providers.first : "claude"
           resolved_agent_type = provider_key_to_agent_type(fallback_key)
         end
       else
