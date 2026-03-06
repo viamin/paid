@@ -167,14 +167,17 @@ class UserSetting < ApplicationRecord
       return
     end
 
-    invalid = fallback_providers - allowed_provider_keys_for_fallback
-    if invalid.any?
-      errors.add(:fallback_providers, "contains invalid providers: #{invalid.join(', ')}")
-    end
+    self.fallback_providers = fallback_providers & allowed_provider_keys_for_fallback
   end
 
   def validate_default_agent_provider
-    return if allowed_provider_keys_for_agent_runs.include?(default_agent_provider)
+    allowed = allowed_provider_keys_for_agent_runs
+    return if allowed.include?(default_agent_provider)
+
+    if allowed.any?
+      self.default_agent_provider = allowed.first
+      return
+    end
 
     errors.add(:default_agent_provider, "is not an enabled provider")
   end
