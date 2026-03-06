@@ -47,7 +47,7 @@ module Prompts
       sections << rules_section
       sections << available_services_section
       sections << no_infrastructure_section
-      sections.join("\n")
+      sections.join("\n").delete("\x00")
     end
 
     private
