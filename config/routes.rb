@@ -26,6 +26,7 @@ Rails.application.routes.draw do
 
   # User settings (singleton resource — one per user)
   resource :user_settings, only: [ :edit, :update ]
+  resources :providers, except: :show
 
   # All agent runs across projects
   resources :agent_runs, only: [ :index ]

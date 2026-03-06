@@ -26,6 +26,10 @@ RSpec.describe Activities::CreateGithubIssueActivity do
   end
 
   before do
+    # These callbacks render/broadcast UI updates and are not part of this activity's behavior.
+    allow(agent_run).to receive(:broadcast_project_updates)
+    allow(agent_run).to receive(:update_project_last_agent_run_at)
+
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:create_issue).and_return(issue_response)
     allow(ProcessRunQueueJob).to receive(:perform_later)

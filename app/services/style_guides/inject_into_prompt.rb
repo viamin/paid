@@ -27,7 +27,7 @@ module StyleGuides
     end
 
     def call
-      guides = StyleGuide.resolve_for(project)
+      guides = StyleGuide.resolve_for(project).to_a
       return prompt if guides.empty?
 
       sections = collect_sections_within_budget(guides)
