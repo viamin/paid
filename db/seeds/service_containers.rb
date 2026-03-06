@@ -20,9 +20,11 @@
   sc = ServiceContainer.find_or_initialize_by(name: attrs[:name])
 
   if sc.new_record?
+    sanitized_env = attrs[:env].except("POSTGRES_PASSWORD")
+
     sc.image = attrs[:image]
     sc.port = attrs[:port]
-    sc.env = attrs[:env]
+    sc.env = sanitized_env
     sc.status = "stopped"
   end
 
