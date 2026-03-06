@@ -85,8 +85,10 @@ RSpec.describe StyleGuides::InjectIntoPrompt do
 
       it "enforces a total byte budget and omits guides that exceed it" do
         large_content = "x" * 20_000
-        create(:style_guide, project: project, name: "Project Guide", raw_content: large_content)
-        create(:style_guide, :global, name: "Global Guide", raw_content: large_content)
+        create(:style_guide, project: project, name: "Project Guide",
+          raw_content: "stub", compressed_content: large_content)
+        create(:style_guide, :global, name: "Global Guide",
+          raw_content: "stub", compressed_content: large_content)
 
         result = described_class.call(prompt: base_prompt, project: project)
 

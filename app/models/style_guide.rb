@@ -24,7 +24,7 @@ class StyleGuide < ApplicationRecord
   scope :for_account, ->(account) { where(account: account, project_id: nil) }
   scope :for_project, ->(project) { where(project: project) }
   scope :by_language, ->(language) { where(language: language) }
-  scope :compressed, -> { where.not(compressed_content: nil) }
+  scope :compressed, -> { where.not(compressed_content: [ nil, "" ]) }
 
   def self.ransackable_attributes(auth_object = nil)
     %w[name language active created_at updated_at]
