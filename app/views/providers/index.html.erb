@@ -1,0 +1,37 @@
+<% content_for(:title) { "Providers - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-gray-900">Providers</h1>
+      <p class="mt-1 text-sm text-gray-500">Configure providers available for agent runs and fallback routing.</p>
+    </div>
+    <%= link_to "Add Provider", new_provider_path, class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+  </div>
+
+  <div class="overflow-hidden rounded-lg bg-white shadow">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Provider</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Agent Runs</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Fallback</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200 bg-white">
+        <% @providers.each do |provider| %>
+          <tr>
+            <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= provider.provider_key.titleize %></td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= provider.enabled_for_agent_runs? ? "Enabled" : "Disabled" %></td>
+            <td class="px-4 py-3 text-sm text-gray-700"><%= provider.enabled_for_fallback? ? "Enabled" : "Disabled" %></td>
+            <td class="px-4 py-3 text-right text-sm">
+              <%= link_to "Edit", edit_provider_path(provider), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+              <%= button_to "Delete", provider_path(provider), method: :delete, class: "ml-3 inline text-red-600 hover:text-red-500", form: { class: "inline" } %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</div>

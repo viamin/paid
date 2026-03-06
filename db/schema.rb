@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_04_100002) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_06_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -350,6 +350,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_04_100002) do
     t.index ["user_id", "provider_name"], name: "index_provider_states_on_user_id_and_provider_name", unique: true
   end
 
+  create_table "providers", force: :cascade do |t|
+    t.jsonb "config", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.boolean "enabled_for_agent_runs", default: true, null: false
+    t.boolean "enabled_for_fallback", default: true, null: false
+    t.string "provider_key", limit: 50, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["user_id", "provider_key"], name: "index_providers_on_user_id_and_provider_key", unique: true
+    t.index ["user_id"], name: "index_providers_on_user_id"
+  end
+
   create_table "service_containers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "docker_container_id"
@@ -364,7 +376,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_04_100002) do
 
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
-    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"], null: false
+    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.integer "container_cpu_quota", default: 200000, null: false
@@ -462,6 +474,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_04_100002) do
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_states", "users", on_delete: :cascade
+  add_foreign_key "providers", "users", on_delete: :cascade
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"
