@@ -114,6 +114,18 @@ RSpec.describe "ServiceContainers" do
         post service_containers_path, params: { service_container: { name: "test", image: "postgres:16", port: 0 } }
         expect(response).to have_http_status(:unprocessable_content)
       end
+
+      it "re-renders the form when env_json is invalid JSON" do
+        post service_containers_path, params: {
+          service_container: {
+            name: "test",
+            image: "postgres:16",
+            port: 5432,
+            env_json: "not-json"
+          }
+        }
+        expect(response).to have_http_status(:unprocessable_content)
+      end
     end
   end
 
@@ -182,9 +194,13 @@ RSpec.describe "ServiceContainers" do
     end
 
     context "when user is admin (not owner)" do
+      let(:admin_only_user) { create(:user, :admin, account: account) }
+
+      before { create(:user_setting, user: admin_only_user) }
+
       it "does not allow deletion" do
         sc = create(:service_container)
-        sign_in user
+        sign_in admin_only_user
         delete service_container_path(sc)
         expect(response).to redirect_to(root_path)
         expect(flash[:alert]).to include("not authorized")
