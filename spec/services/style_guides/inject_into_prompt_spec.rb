@@ -72,6 +72,17 @@ RSpec.describe StyleGuides::InjectIntoPrompt do
         expect(result).not_to include("Inactive Guide")
       end
 
+      it "skips guides with blank content_for_prompt" do
+        create(:style_guide, :global, name: "Empty Guide", raw_content: "Has content")
+        guide = StyleGuide.last
+        allow(guide).to receive(:content_for_prompt).and_return(nil)
+        allow(StyleGuide).to receive(:resolve_for).and_return([ guide ])
+
+        result = described_class.call(prompt: base_prompt, project: project)
+
+        expect(result).to eq(base_prompt)
+      end
+
       it "does not include style guides from other accounts" do
         other_account = create(:account)
         create(:style_guide, account: other_account, name: "Other Guide", raw_content: "Other rules")

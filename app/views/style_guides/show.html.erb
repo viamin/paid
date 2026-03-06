@@ -49,7 +49,7 @@
           <p class="mt-1 text-sm text-gray-500">
             <%= number_with_delimiter(@style_guide.compressed_content.length) %> characters
             <% if @style_guide.compression_metadata["compression_ratio"] %>
-              (<%= (@style_guide.compression_metadata["compression_ratio"] * 100).round %>% of original)
+              (<%= (@style_guide.compression_metadata["compression_ratio"].to_f * 100).round %>% of original)
             <% end %>
           </p>
         <% else %>

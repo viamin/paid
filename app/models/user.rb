@@ -9,6 +9,7 @@ class User < ApplicationRecord
   has_many :created_github_tokens, class_name: "GithubToken", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_many :created_projects, class_name: "Project", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_one :user_setting, dependent: :destroy
+  has_many :provider_states, dependent: :destroy
 
   # Include default devise modules. Others available are:
   # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable
