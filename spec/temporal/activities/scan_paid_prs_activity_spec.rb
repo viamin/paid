@@ -547,6 +547,33 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when PR is in draft phase with Claude Code review threads" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "claude-code[bot]" } ]
+            }
+          ]
+        )
+      end
+
+      it "detects Claude Code review threads as review bot threads" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
+      end
+    end
     context "when draft PR has CI green and no Copilot threads" do
       before do
         project.update!(owner_reviewer_login: "viamin")
@@ -750,7 +777,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when ready PR has unresolved Copilot review threads" do
+    context "when ready PR has unresolved review bot threads" do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -768,7 +795,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "triggers a followup for Copilot review threads in ready phase" do
+      it "triggers a followup for review bot threads in ready phase" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
