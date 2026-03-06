@@ -574,6 +574,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
       end
     end
+
     context "when draft PR has CI green and no Copilot threads" do
       before do
         project.update!(owner_reviewer_login: "viamin")
