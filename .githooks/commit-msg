@@ -4,8 +4,8 @@ set -euo pipefail
 commit_msg_file="$1"
 first_line="$(head -n1 "$commit_msg_file")"
 
-# Allow merge, revert, and fixup/squash commits without Conventional Commit format.
-if [[ "$first_line" =~ ^(Merge|Revert|fixup\!|squash\!) ]]; then
+# Allow merge, revert, and fixup/squash/amend commits without Conventional Commit format.
+if [[ "$first_line" =~ ^(Merge|Revert|fixup\!|squash\!|amend\!) ]]; then
   exit 0
 fi
 
