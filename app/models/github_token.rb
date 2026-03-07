@@ -99,11 +99,14 @@ class GithubToken < ApplicationRecord
   # Validates the token against GitHub API and updates scopes.
   # Also touches last_used_at on successful validation.
   #
-  # @return [Hash] User info with :login, :id, :name, :email, :scopes keys
+  # @return [Hash] User info with :login, :id, :name, :email, :scopes, :expires_at keys
   # @raise [GithubClient::AuthenticationError] if the token is invalid
   def validate_with_github!
     result = client.validate_token
-    update!(scopes: result[:scopes])
+    expires_at = result[:expires_at]
+    attrs = { scopes: result[:scopes] }
+    attrs[:expires_at] = expires_at if expires_at
+    update!(attrs)
     touch_last_used!
     sync_repositories!
     result
