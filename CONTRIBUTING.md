@@ -168,7 +168,7 @@ Use conventional commit prefixes:
 - `test:` Adding or updating tests
 - `build:` Build tooling or dependencies
 - `ci:` CI workflow changes
-- `chore:` Build process, CI, dependency updates
+- `chore:` Maintenance tasks that don't modify src or test files
 - `revert:` Reverting prior commits
 
 Use `!` (for example, `feat!:`) or a `BREAKING CHANGE:` footer for breaking changes.
