@@ -85,14 +85,17 @@ module StyleGuides
     end
 
     def build_metadata(compressed)
+      raw_bytes = style_guide.raw_content.bytesize
+      compressed_bytes = compressed.bytesize
+
       meta = {
-        compressed_at: Time.current.iso8601,
-        model: MODEL,
-        raw_length: style_guide.raw_content.length,
-        compressed_length: compressed.length,
-        compression_ratio: (compressed.length.to_f / style_guide.raw_content.length).round(2)
+        "compressed_at" => Time.current.iso8601,
+        "model" => MODEL,
+        "raw_length" => raw_bytes,
+        "compressed_length" => compressed_bytes,
+        "compression_ratio" => (compressed_bytes.to_f / raw_bytes).round(2)
       }
-      meta[:truncated_at_bytes] = MAX_RAW_BYTES if @truncated
+      meta["truncated_at_bytes"] = MAX_RAW_BYTES if @truncated
       meta
     end
   end
