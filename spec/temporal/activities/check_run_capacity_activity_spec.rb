@@ -49,5 +49,20 @@ RSpec.describe Activities::CheckRunCapacityActivity do
       expect(result[:has_capacity]).to be true
       expect(result[:active_count]).to eq(0)
     end
+
+    context "with project_id providing user context" do
+      it "uses min of system config and user setting" do
+        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 1)
+        create(:agent_run, :running, project: project)
+
+        result = activity.execute({ project_id: project.id })
+
+        expect(result[:has_capacity]).to be false
+        expect(result[:max_concurrent_runs]).to eq(1)
+      end
+    end
   end
 end
