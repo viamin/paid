@@ -16,7 +16,7 @@ module Issues
   #   Issues::ParseDependencies.call(issue: issue)
   class ParseDependencies
     DEPENDENCY_SECTION_PATTERN = /
-      ^\#*\s*Dependenc(?:y|ies)\b[^\n]*\n  # Header line (## Dependencies, etc.)
+      ^\#+\s*Dependenc(?:y|ies)\b[^\n]*\n  # Header line (## Dependencies, etc.)
       ([\s\S]*?)                           # Section body (non-greedy, up to next heading)
       (?=^\#|\z)                           # Lookahead for next heading or end
     /xim
