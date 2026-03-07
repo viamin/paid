@@ -133,7 +133,7 @@ module Workflows
               { agent_run_id: agent_run_id }, timeout: 60)
 
             # Re-request Copilot review if still in draft phase (best-effort)
-            if complete_result[:pr_review_phase] == "draft"
+            if complete_result[:pr_review_phase].in?(%w[draft restarted])
               request_copilot_review(project_id, source_pull_request_number)
             end
           else
