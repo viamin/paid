@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+commit_msg_file="$1"
+first_line="$(head -n1 "$commit_msg_file")"
+
+# Allow merge, revert, and fixup/squash commits without Conventional Commit format.
+if [[ "$first_line" =~ ^(Merge|Revert|fixup\!|squash\!) ]]; then
+  exit 0
+fi
+
+if [[ ! "$first_line" =~ ^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?(!)?:\ .+ ]]; then
+  cat <<'ERROR'
+Invalid commit message format.
+
+Use Conventional Commits:
+  <type>[optional scope][!]: <description>
+
+Examples:
+  feat: add release workflow
+  fix(hooks): allow merge commits
+  feat(api)!: remove legacy endpoint
+ERROR
+  exit 1
+fi

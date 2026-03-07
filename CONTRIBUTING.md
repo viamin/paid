@@ -162,9 +162,18 @@ Use conventional commit prefixes:
 - `feat:` New features
 - `fix:` Bug fixes
 - `docs:` Documentation changes
+- `style:` Formatting-only changes
 - `refactor:` Code changes that neither fix bugs nor add features
+- `perf:` Performance improvements
 - `test:` Adding or updating tests
+- `build:` Build tooling or dependencies
+- `ci:` CI workflow changes
 - `chore:` Build process, CI, dependency updates
+- `revert:` Reverting prior commits
+
+Use `!` (for example, `feat!:`) or a `BREAKING CHANGE:` footer for breaking changes.
+
+This repository enforces commit message format with a local `commit-msg` git hook.
 
 ### PR Guidelines
 
