@@ -57,6 +57,12 @@ RSpec.describe Activities::MarkEscalatedActivity do
 
         expect(issue.reload.pr_review_phase).to eq("escalated")
       end
+
+      it "still returns updated: true" do
+        result = activity.execute(issue_id: issue.id)
+
+        expect(result[:updated]).to be true
+      end
     end
 
     context "when issue is missing" do
