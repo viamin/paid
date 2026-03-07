@@ -107,10 +107,12 @@ module Prompts
         "- **#{c.user.login}**: #{body}"
       end.join("\n")
 
-      "\n# Conversation Comments\n\n" \
-        "Comments from project collaborators:\n\n" \
-        "#{comment_text}\n\n" \
-        "Address any actionable requests in these comments.\n"
+      (
+        "\n# Conversation Comments\n\n" \
+          "Comments from project collaborators:\n\n" \
+          "#{comment_text}\n\n" \
+          "Address any actionable requests in these comments.\n"
+      ).delete("\u0000")
     end
 
     private
