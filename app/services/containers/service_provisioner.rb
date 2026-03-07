@@ -117,27 +117,29 @@ module Containers
 
     def start_container!(service_container)
       service_container.update!(status: "starting")
+      adopted = false
 
       pull_image(service_container.image)
       docker_container = create_or_replace_container!(service_container)
 
       # resolve_name_conflict! may adopt an already-running container,
       # updating status to "running" before returning. Skip start if so.
-      unless service_container.reload.running?
+      if service_container.reload.running?
+        adopted = true
+      else
         docker_container.start
         service_container.update!(docker_container_id: docker_container.id, status: "running")
       end
 
       wait_for_health!(service_container)
 
-      log_info("service_provisioner.started",
+      log_info(adopted ? "service_provisioner.adopted" : "service_provisioner.started",
         name: service_container.name,
         image: service_container.image,
         container_id: docker_container.id)
     rescue => e
-      # Best-effort cleanup of Docker container that may have been created/started
-      # (e.g., if wait_for_health! times out after container.start succeeds).
-      cleanup_failed_container(docker_container, service_container)
+      # Don't destroy adopted containers — they may be shared by other active runs.
+      cleanup_failed_container(docker_container, service_container) unless adopted
       raise Error, "Failed to start service container #{service_container.name}: #{e.message}"
     end
 
