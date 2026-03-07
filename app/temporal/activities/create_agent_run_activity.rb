@@ -34,6 +34,13 @@ module Activities
             test_command: test_command_for(project),
             lint_command: lint_command_for(project)
           )
+          # Append trusted issue comments so they reach the agent even when
+          # the rendered PromptVersion is stored as custom_prompt (which
+          # bypasses BuildForIssue in effective_prompt).
+          custom_prompt += Prompts::BuildForIssue.conversation_section_for(
+            project: project, issue: issue,
+            github_client: project.github_token&.client
+          )
         end
       end
 

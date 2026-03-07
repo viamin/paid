@@ -15,6 +15,11 @@ module Prompts
     LANGUAGE_TEST_COMMANDS = LanguageCommands::LANGUAGE_TEST_COMMANDS
     LANGUAGE_LINT_COMMANDS = LanguageCommands::LANGUAGE_LINT_COMMANDS
 
+    # Maximum number of trusted comments to include in the prompt
+    MAX_COMMENTS = 20
+    # Maximum character length per comment body before truncation
+    MAX_COMMENT_LENGTH = 2000
+
     attr_reader :issue, :project, :github_client
 
     def initialize(issue:, project:, github_client: nil)
@@ -68,13 +73,38 @@ module Prompts
       PROMPT
     end
 
-    private
+    # Fetches and formats trusted issue comments as a prompt section.
+    # Extracted as a class method so CreateAgentRunActivity can append
+    # this section to rendered PromptVersion custom_prompts, avoiding
+    # the effective_prompt bypass described in the review.
+    def self.conversation_section_for(project:, issue:, github_client:)
+      return "" unless github_client
 
-    def conversation_section
-      return "" unless trusted_comments.any?
+      comments = fetch_trusted_comments(
+        github_client: github_client,
+        repo: project.full_name,
+        number: issue.github_number,
+        project: project
+      )
+      format_conversation_section(comments)
+    end
 
-      comment_text = trusted_comments.map do |c|
-        "- **#{c.user.login}**: #{c.body}"
+    def self.fetch_trusted_comments(github_client:, repo:, number:, project:)
+      all_comments = github_client.issue_comments(repo, number)
+      all_comments
+        .select { |c| project.trusted_github_user?(c.user&.login) }
+        .last(MAX_COMMENTS)
+    rescue GithubClient::Error
+      []
+    end
+
+    def self.format_conversation_section(comments)
+      return "" unless comments.any?
+
+      comment_text = comments.map do |c|
+        body = c.body.to_s
+        body = "#{body[0, MAX_COMMENT_LENGTH]}… [truncated]" if body.length > MAX_COMMENT_LENGTH
+        "- **#{c.user.login}**: #{body}"
       end.join("\n")
 
       "\n# Conversation Comments\n\n" \
@@ -83,17 +113,21 @@ module Prompts
         "Address any actionable requests in these comments.\n"
     end
 
+    private
+
+    def conversation_section
+      self.class.conversation_section_for(
+        project: project, issue: issue, github_client: github_client
+      )
+    end
+
     def trusted_comments
-      @trusted_comments ||= begin
-        if github_client
-          comments = github_client.issue_comments(project.full_name, issue.github_number)
-          comments.select { |c| project.trusted_github_user?(c.user&.login) }
-        else
-          []
-        end
-      rescue GithubClient::Error
-        []
-      end
+      @trusted_comments ||= self.class.fetch_trusted_comments(
+        github_client: github_client,
+        repo: project.full_name,
+        number: issue.github_number,
+        project: project
+      )
     end
 
     def test_command

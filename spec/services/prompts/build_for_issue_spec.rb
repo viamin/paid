@@ -293,6 +293,45 @@ RSpec.describe Prompts::BuildForIssue do
           expect(prompt).to include("Fix login redirect")
         end
       end
+
+      context "when a comment body exceeds MAX_COMMENT_LENGTH" do
+        let(:long_body) { "x" * 2500 }
+        let(:long_comment) do
+          OpenStruct.new(user: OpenStruct.new(login: trusted_login), body: long_body)
+        end
+
+        before do
+          allow(github_client).to receive(:issue_comments)
+            .with(project.full_name, issue.github_number)
+            .and_return([ long_comment ])
+        end
+
+        it "truncates the comment body" do
+          prompt = described_class.call(issue: issue, project: project, github_client: github_client)
+
+          expect(prompt).to include("[truncated]")
+          expect(prompt).not_to include(long_body)
+        end
+      end
+
+      context "when there are more than MAX_COMMENTS trusted comments" do
+        before do
+          comments = (1..25).map do |i|
+            OpenStruct.new(user: OpenStruct.new(login: trusted_login), body: "Comment #{i}")
+          end
+          allow(github_client).to receive(:issue_comments)
+            .with(project.full_name, issue.github_number)
+            .and_return(comments)
+        end
+
+        it "includes only the last MAX_COMMENTS comments" do
+          prompt = described_class.call(issue: issue, project: project, github_client: github_client)
+
+          expect(prompt).to include("Comment 25")
+          expect(prompt).to include("Comment 6")
+          expect(prompt).not_to include("Comment 5")
+        end
+      end
     end
 
     context "when github_client is not provided" do
