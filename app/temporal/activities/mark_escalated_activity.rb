@@ -6,6 +6,8 @@ module Activities
   class MarkEscalatedActivity < BaseActivity
     activity_name "MarkEscalated"
 
+    PAID_ESCALATED_LABEL = "paid-escalated"
+
     def execute(input)
       issue = Issue.find_by(id: input[:issue_id])
       return { updated: false } unless issue
@@ -31,14 +33,14 @@ module Activities
       client.add_labels_to_issue(
         project.full_name,
         issue.github_number,
-        [ Activities::ScanPaidPrsActivity::PAID_ESCALATED_LABEL ]
+        [ PAID_ESCALATED_LABEL ]
       )
     rescue GithubClient::Error => e
       logger.warn(
         message: "pr_review.add_label_failed",
         project_id: project.id,
         pr_number: issue.github_number,
-        label: Activities::ScanPaidPrsActivity::PAID_ESCALATED_LABEL,
+        label: PAID_ESCALATED_LABEL,
         error: e.message
       )
     end
