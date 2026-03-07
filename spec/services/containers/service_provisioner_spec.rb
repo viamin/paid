@@ -140,7 +140,7 @@ RSpec.describe Containers::ServiceProvisioner do
       it "removes stale managed container and retries" do
         stale = instance_double(Docker::Container, id: "stale789")
         new_container = instance_double(Docker::Container, id: "new789")
-        managed_labels = { "paid.service_container" => "true", "paid.service_container_id" => "1" }
+        managed_labels = { "paid.service_container" => "true", "paid.service_container_id" => service_container.id.to_s }
 
         allow(Docker::Image).to receive(:create)
         call_count = 0
