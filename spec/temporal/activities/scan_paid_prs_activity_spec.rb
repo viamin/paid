@@ -848,6 +848,167 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    # --- Restarted phase (draft conversion detection) ---
+
+    context "when an escalated PR is converted back to draft on GitHub" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "escalated",
+          draft_review_count: 10,
+          pr_followup_count: 3)
+      end
+
+      before do
+        stub_github_for_pr(draft: true,
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "copilot" } ]
+            }
+          ])
+      end
+
+      it "resets the phase to restarted" do
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.pr_review_phase).to eq("restarted")
+      end
+
+      it "resets draft_review_count to zero" do
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.draft_review_count).to eq(0)
+      end
+
+      it "resets pr_followup_count to zero" do
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.pr_followup_count).to eq(0)
+      end
+
+      it "scans the PR as a draft and returns triggers" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger[:current_draft_review_count]).to eq(0)
+      end
+    end
+
+    context "when a ready PR is converted back to draft on GitHub" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "ready",
+          draft_review_count: 5,
+          pr_followup_count: 3)
+      end
+
+      before do
+        stub_github_for_pr(draft: true,
+          checks: [ { name: "rspec", conclusion: "failure" } ])
+      end
+
+      it "resets the phase to restarted and scans as draft" do
+        result = activity.execute(project_id: project.id)
+
+        pr_issue.reload
+        expect(pr_issue.pr_review_phase).to eq("restarted")
+        expect(pr_issue.draft_review_count).to eq(0)
+        expect(pr_issue.pr_followup_count).to eq(0)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger[:triggers].first[:type]).to eq("ci_failure")
+      end
+    end
+
+    context "when a draft PR is still draft on GitHub" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 3)
+      end
+
+      before do
+        stub_github_for_pr(draft: true,
+          checks: [ { name: "rspec", conclusion: "failure" } ])
+      end
+
+      it "does not reset counts (already in draft phase)" do
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.draft_review_count).to eq(3)
+      end
+    end
+
+    context "when an escalated PR is not draft on GitHub" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "escalated",
+          draft_review_count: 10,
+          pr_followup_count: 3)
+      end
+
+      before do
+        stub_github_for_pr(draft: false,
+          checks: [ { name: "rspec", conclusion: "failure" } ])
+      end
+
+      it "does not restart the phase" do
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload.pr_review_phase).to eq("escalated")
+      end
+
+      it "does not reset counts" do
+        activity.execute(project_id: project.id)
+
+        pr_issue.reload
+        expect(pr_issue.draft_review_count).to eq(10)
+        expect(pr_issue.pr_followup_count).to eq(3)
+      end
+    end
+
+    context "when a restarted PR has signals" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "restarted",
+          draft_review_count: 2)
+        stub_github_for_pr(
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "copilot" } ]
+            }
+          ]
+        )
+      end
+
+      it "scans as a draft phase PR" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("restarted")
+        expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
+        expect(trigger[:current_draft_review_count]).to eq(2)
+      end
+    end
+
     context "with structured logging" do
       before do
         create(:issue, :pull_request,
@@ -878,12 +1039,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   # Override specific parameters to test different signal combinations.
   def stub_github_for_pr(
     mergeable: true,
+    draft: false,
     checks: [ { name: "ci", conclusion: "success" } ],
     review_threads: [],
     issue_comments: [],
     reviews: []
   )
-    pr_data = OpenStruct.new(head: OpenStruct.new(sha: "abc123"), mergeable: mergeable)
+    pr_data = OpenStruct.new(head: OpenStruct.new(sha: "abc123"), mergeable: mergeable, draft: draft)
 
     allow(github_client).to receive(:pull_request)
       .with(project.full_name, 42)
