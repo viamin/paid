@@ -96,11 +96,11 @@
             </div>
             <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt class="text-sm font-medium text-gray-500">Raw length</dt>
-              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= number_with_delimiter(@style_guide.compression_metadata["raw_length"]) %> characters</dd>
+              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= number_with_delimiter(@style_guide.compression_metadata["raw_length"]) %> bytes</dd>
             </div>
             <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt class="text-sm font-medium text-gray-500">Compressed length</dt>
-              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= number_with_delimiter(@style_guide.compression_metadata["compressed_length"]) %> characters</dd>
+              <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= number_with_delimiter(@style_guide.compression_metadata["compressed_length"]) %> bytes</dd>
             </div>
           </dl>
         </div>

@@ -10,9 +10,12 @@ module StyleGuides
   #     project: project
   #   )
   class InjectIntoPrompt
-    # Total byte budget for all injected style guide sections combined.
-    # Guides are prioritized by specificity (project > account > global);
-    # once the budget is exhausted, remaining guides are omitted.
+    # Total byte budget (in bytes) for all injected style guide section contents
+    # combined. This limit applies only to the per-guide sections returned by
+    # `format_guide` and does not include the static wrapper/header or join
+    # separators added by `style_guide_section`. Guides are prioritized by
+    # specificity (project > account > global); once the budget is exhausted,
+    # remaining guides are omitted.
     MAX_TOTAL_BYTES = 32_000
 
     attr_reader :prompt, :project

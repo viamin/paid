@@ -29,7 +29,7 @@ RSpec.describe StyleGuideCompressionJob do
         expect(style_guide.compressed_content).to eq("- snake_case for methods")
         expect(style_guide.compression_metadata).to include(
           "model" => "claude-sonnet-4-6",
-          "raw_length" => style_guide.raw_content.length
+          "raw_length" => style_guide.raw_content.bytesize
         )
       end
     end

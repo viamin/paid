@@ -34,7 +34,7 @@ RSpec.describe StyleGuides::Compress do
       style_guide.reload
       expect(style_guide.compression_metadata).to include(
         "compressed_at" => be_present,
-        "raw_length" => style_guide.raw_content.length,
+        "raw_length" => style_guide.raw_content.bytesize,
         "compressed_length" => 48,
         "compression_ratio" => be_a(Float)
       )
