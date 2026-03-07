@@ -98,12 +98,23 @@ class AgentRun < ApplicationRecord
     return false unless global_active_count < system_max
 
     if user
-      user_project_ids = Project.where(created_by: user).select(:id)
-      user_active_count = active.where(project_id: user_project_ids).count
-      user_active_count < effective_max_concurrent_runs(user)
+      active_count_for_user(user) < effective_max_concurrent_runs(user)
     else
       true
     end
+  end
+
+  # Returns the count of active runs owned by the given user.
+  # Optionally excludes a specific run (e.g. one just claimed from the queue).
+  def self.active_count_for_user(user, exclude: nil)
+    scope = active.where(project_id: user_owned_project_ids(user))
+    scope = scope.where.not(id: exclude.id) if exclude
+    scope.count
+  end
+
+  # Returns the IDs of projects owned by the given user.
+  def self.user_owned_project_ids(user)
+    Project.where(created_by: user).select(:id)
   end
 
   # Returns the effective concurrency cap, respecting both the system-wide
