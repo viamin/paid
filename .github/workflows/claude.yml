@@ -77,12 +77,18 @@ jobs:
             echo "::error::Could not determine actor"
             exit 1
           fi
-          PERM=$(gh api "repos/${{ github.repository }}/collaborators/${ACTOR}/permission" --jq '.permission')
-          echo "User ${ACTOR} has permission: ${PERM}"
+          # Query the actor's repository permission. Handle failures and missing
+          # permissions gracefully so unauthorized users cause a no-op instead
+          # of failing the workflow.
+          if ! PERM=$(gh api "repos/${{ github.repository }}/collaborators/${ACTOR}/permission" --jq '.permission' 2>/dev/null); then
+            echo "::notice::Could not determine permission for ${ACTOR}; treating as no access"
+            PERM=""
+          fi
+          echo "User ${ACTOR} has permission: ${PERM:-<none>}"
           if [[ "$PERM" == "admin" || "$PERM" == "maintain" || "$PERM" == "write" ]]; then
             echo "allowed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::User ${ACTOR} does not have write access (has: ${PERM})"
+            echo "::notice::User ${ACTOR} does not have write access (has: ${PERM:-<none>})"
             echo "allowed=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -132,6 +138,13 @@ jobs:
 
       - name: Run Claude Code
         id: claude
+        # CodeQL flags this as an untrusted checkout (TOCTOU / untrusted-code).
+        # Mitigations in place: (1) verify job gates on author_association,
+        # (2) re-verify step above re-checks write access at execution time,
+        # (3) actions/checkout only fetches the default branch — never a PR
+        # head ref, (4) persist-credentials: false prevents token leakage.
+        # The claude-code-action itself handles PR refs internally after its
+        # own permission checks, which is outside our control.
         uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
