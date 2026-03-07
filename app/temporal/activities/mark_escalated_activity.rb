@@ -16,7 +16,7 @@ module Activities
       client = project.github_token.client
       issue.update!(pr_review_phase: "escalated")
 
-      add_phase_label(client, project, issue)
+      add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
 
       logger.info(
         message: "pr_review.marked_escalated",
@@ -25,24 +25,6 @@ module Activities
       )
 
       { updated: true }
-    end
-
-    private
-
-    def add_phase_label(client, project, issue)
-      client.add_labels_to_issue(
-        project.full_name,
-        issue.github_number,
-        [ PAID_ESCALATED_LABEL ]
-      )
-    rescue GithubClient::Error => e
-      logger.warn(
-        message: "pr_review.add_label_failed",
-        project_id: project.id,
-        pr_number: issue.github_number,
-        label: PAID_ESCALATED_LABEL,
-        error: e.message
-      )
     end
   end
 end
