@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  STATUSES = %w[queued pending running completed failed cancelled timeout retried auth_expired].freeze
+  STATUSES = %w[queued pending running completed failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   GOALS = %w[create_pr create_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
@@ -53,8 +53,9 @@ class AgentRun < ApplicationRecord
   scope :timeout, -> { where(status: "timeout") }
   scope :retried, -> { where(status: "retried") }
   scope :auth_expired, -> { where(status: "auth_expired") }
+  scope :rate_limited, -> { where(status: "rate_limited") }
   scope :active, -> { where(status: %w[pending running]) }
-  scope :finished, -> { where(status: %w[completed failed cancelled timeout retried auth_expired]) }
+  scope :finished, -> { where(status: %w[completed failed cancelled timeout retried auth_expired rate_limited]) }
   scope :recent, -> { order(created_at: :desc) }
   scope :search_by_goal, lambda { |query|
     normalized_query = query.to_s.strip
@@ -144,7 +145,7 @@ class AgentRun < ApplicationRecord
   end
 
   def finished?
-    %w[completed failed cancelled timeout retried auth_expired].include?(status)
+    %w[completed failed cancelled timeout retried auth_expired rate_limited].include?(status)
   end
 
   def successful?
@@ -231,6 +232,20 @@ class AgentRun < ApplicationRecord
       completed_at: Time.current,
       error_message: error,
       auth_provider: provider,
+      duration_seconds: duration
+    )
+  end
+
+  def rate_limited?
+    status == "rate_limited"
+  end
+
+  def rate_limit!(error: nil, reset_at: nil)
+    update!(
+      status: "rate_limited",
+      completed_at: Time.current,
+      error_message: error,
+      rate_limited_until: reset_at,
       duration_seconds: duration
     )
   end

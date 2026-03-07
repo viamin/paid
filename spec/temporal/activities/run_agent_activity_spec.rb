@@ -196,6 +196,43 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
+    context "when agent hits rate limit (single provider)" do
+      let(:rate_limit_output) do
+        Containers::Provision::Result.failure(
+          error: "rate limit", stdout: "",
+          stderr: "You're out of extra usage \u00b7 resets 5am (UTC)", exit_code: 1
+        )
+      end
+
+      before do
+        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(container_service).to receive(:execute).and_return(rate_limit_output)
+      end
+
+      it "marks the agent run as rate_limited" do
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.rate_limited_until).to be_present
+        expect(agent_run.error_message).to include("rate limited")
+      end
+
+      it "detects Claude-specific usage limit error" do
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+
+        expect(agent_run.reload.status).to eq("rate_limited")
+      end
+    end
+
     context "when agent times out (wall clock)" do
       before do
         allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
@@ -449,6 +486,18 @@ RSpec.describe Activities::RunAgentActivity do
         expect {
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+      end
+
+      it "marks run as rate_limited when all providers hit rate limits" do
+        allow(container_service).to receive(:execute).and_return(rate_limit_failure)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
       end
 
       it "preserves timeout status when timeout is followed by other failures" do
