@@ -13,6 +13,10 @@ module StyleGuides
     MODEL = "claude-sonnet-4-6"
     TIMEOUT = 120
 
+    # Maximum raw content size sent to the LLM for compression.
+    # Content beyond this limit is truncated; metadata records the truncation.
+    MAX_RAW_BYTES = 100_000
+
     COMPRESSION_PROMPT = <<~PROMPT
       You are a technical writing assistant. Compress the following coding style guide into a concise, LLM-friendly format.
 
@@ -52,8 +56,12 @@ module StyleGuides
     private
 
     def compress_content
+      raw = style_guide.raw_content
+      @truncated = raw.bytesize > MAX_RAW_BYTES
+      raw = raw.byteslice(0, MAX_RAW_BYTES).scrub("") if @truncated
+
       response = AgentHarness.send_message(
-        "#{COMPRESSION_PROMPT}\n\n#{style_guide.raw_content}",
+        "#{COMPRESSION_PROMPT}\n\n#{raw}",
         provider: :claude,
         model: MODEL,
         timeout: TIMEOUT,
@@ -77,13 +85,15 @@ module StyleGuides
     end
 
     def build_metadata(compressed)
-      {
+      meta = {
         compressed_at: Time.current.iso8601,
         model: MODEL,
         raw_length: style_guide.raw_content.length,
         compressed_length: compressed.length,
         compression_ratio: (compressed.length.to_f / style_guide.raw_content.length).round(2)
       }
+      meta[:truncated_at_bytes] = MAX_RAW_BYTES if @truncated
+      meta
     end
   end
 end
