@@ -117,9 +117,9 @@ module Activities
         # If we couldn't fetch PR data, don't prematurely advance the phase.
         return nil if pr_data.nil?
 
-        # Only auto-advance when we have at least one check, all have
-        # completed (no pending), and all conclusions are green.
-        if checks.present? && all_checks_completed?(checks) && all_checks_green?(checks)
+        # Only auto-advance when we have at least one check and all conclusions are green.
+        # all_checks_green? implicitly rejects nil conclusions (pending checks).
+        if checks.present? && all_checks_green?(checks)
           return ready_for_owner_trigger(issue)
         end
 
@@ -325,12 +325,6 @@ module Activities
       return [] if failed.empty?
 
       [ { type: "ci_failure", details: failed.map { |c| c[:name] } } ]
-    end
-
-    def all_checks_completed?(checks)
-      return true if checks.empty?
-
-      checks.all? { |c| c[:conclusion].present? }
     end
 
     def all_checks_green?(checks)
