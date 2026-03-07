@@ -5,8 +5,8 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "esbuild": "^0.27.3",
-    "eslint": "^10.0.2",
-    "markdownlint-cli": "^0.47.0"
+    "eslint": "^10.0.3",
+    "markdownlint-cli": "^0.48.0"
   },
   "scripts": {
     "build": "esbuild app/javascript/*.* --bundle --sourcemap --format=esm --outdir=app/assets/builds --public-path=/assets",
