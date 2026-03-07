@@ -121,15 +121,6 @@ module Prompts
       )
     end
 
-    def trusted_comments
-      @trusted_comments ||= self.class.fetch_trusted_comments(
-        github_client: github_client,
-        repo: project.full_name,
-        number: issue.github_number,
-        project: project
-      )
-    end
-
     def test_command
       LANGUAGE_TEST_COMMANDS.fetch(detected_language, "echo \"No test command configured\"")
     end
