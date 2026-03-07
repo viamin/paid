@@ -34,6 +34,65 @@ RSpec.describe GithubClient do
         expect(result[:name]).to eq("Test User")
         expect(result[:email]).to eq("test@example.com")
       end
+
+      it "returns nil expires_at for classic PATs without expiration header" do
+        result = client.validate_token
+
+        expect(result[:expires_at]).to be_nil
+      end
+    end
+
+    context "when response includes expiration header" do
+      before do
+        stub_request(:get, "#{api_base}/user")
+          .to_return(
+            status: 200,
+            body: {
+              login: "testuser",
+              id: 12345,
+              name: "Test User",
+              email: "test@example.com"
+            }.to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-OAuth-Scopes" => "",
+              "github-authentication-token-expiration" => "2026-07-01 00:00:00 UTC"
+            }
+          )
+      end
+
+      it "returns parsed expires_at from response header" do
+        result = client.validate_token
+
+        expect(result[:expires_at]).to be_a(Time)
+        expect(result[:expires_at]).to eq(Time.parse("2026-07-01 00:00:00 UTC"))
+      end
+    end
+
+    context "when expiration header contains an invalid value" do
+      before do
+        stub_request(:get, "#{api_base}/user")
+          .to_return(
+            status: 200,
+            body: {
+              login: "testuser",
+              id: 12345,
+              name: "Test User",
+              email: "test@example.com"
+            }.to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-OAuth-Scopes" => "",
+              "github-authentication-token-expiration" => "not-a-date"
+            }
+          )
+      end
+
+      it "returns nil expires_at" do
+        result = client.validate_token
+
+        expect(result[:expires_at]).to be_nil
+      end
     end
 
     context "when token is invalid" do
