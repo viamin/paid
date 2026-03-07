@@ -34,5 +34,17 @@ module Activities
         unique_by: :temporal_workflow_id
       )
     end
+
+    def add_phase_label(client, project, issue_number, label)
+      client.add_labels_to_issue(project.full_name, issue_number, [ label ])
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_review.add_label_failed",
+        project_id: project.id,
+        pr_number: issue_number,
+        label: label,
+        error: e.message
+      )
+    end
   end
 end

@@ -793,7 +793,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:type]).to eq("ci_failure")
       end
 
-      it "returns ready_for_owner when CI is green despite open review threads" do
+      it "ignores review threads and returns ready_for_owner when CI is green" do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success" } ],
           review_threads: [
