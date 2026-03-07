@@ -28,6 +28,9 @@ Rails.application.routes.draw do
   resource :user_settings, only: [ :edit, :update ]
   resources :providers, except: :show
 
+  # Service container management
+  resources :service_containers
+
   # All agent runs across projects
   resources :agent_runs, only: [ :index ]
 
@@ -49,6 +52,7 @@ Rails.application.routes.draw do
       post :refresh_auth, on: :member
       post :quick_create, on: :collection
     end
+    resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
   end
 
   # API endpoints for agent containers
