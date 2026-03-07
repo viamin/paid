@@ -124,6 +124,97 @@ RSpec.describe Containers::ServiceProvisioner do
       end
     end
 
+    context "when Docker container name conflicts" do
+      let(:service_container) do
+        create(:service_container,
+          image: "postgres:16",
+          name: "conflict-postgres",
+          port: 5432,
+          env: { "POSTGRES_USER" => "agent", "POSTGRES_PASSWORD" => "agent", "POSTGRES_DB" => "agent_test" })
+      end
+      let(:managed_labels) do
+        { "paid.service_container" => "true", "paid.service_container_id" => service_container.id.to_s }
+      end
+      let(:stale_json) do
+        { "Config" => { "Labels" => managed_labels }, "State" => { "Running" => false } }
+      end
+
+      before do
+        create(:project_service_container, project: project, service_container: service_container)
+      end
+
+
+      it "removes stale stopped container and retries" do
+        stale = instance_double(Docker::Container, id: "stale789")
+        new_container = instance_double(Docker::Container, id: "new789")
+
+        allow(Docker::Image).to receive(:create)
+        call_count = 0
+        allow(Docker::Container).to receive(:create) do
+          call_count += 1
+          raise Docker::Error::ServerError, "Conflict. The container name is already in use" if call_count == 1
+          new_container
+        end
+        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
+        allow(stale).to receive(:json).and_return(stale_json)
+        allow(stale).to receive(:stop)
+        allow(stale).to receive(:delete)
+        allow(new_container).to receive(:start)
+        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+
+        result = provisioner.provision(agent_run)
+
+        expect(stale).to have_received(:delete).with(force: true)
+        expect(result).to include("DATABASE_URL")
+      end
+
+      it "adopts a running container instead of deleting it" do
+        existing = instance_double(Docker::Container, id: "running789")
+        running_json = { "Config" => { "Labels" => managed_labels }, "State" => { "Running" => true } }
+
+        allow(Docker::Image).to receive(:create)
+        allow(Docker::Container).to receive(:create)
+          .and_raise(Docker::Error::ServerError, "Conflict. The container name is already in use")
+        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(existing)
+        allow(existing).to receive_messages(json: running_json, stop: nil, delete: nil)
+        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+
+        result = provisioner.provision(agent_run)
+
+        expect(existing).not_to have_received(:stop)
+        expect(existing).not_to have_received(:delete)
+        expect(service_container.reload.docker_container_id).to eq("running789")
+        expect(result).to include("DATABASE_URL")
+      end
+
+      it "raises when stale container is not managed by Paid" do
+        stale = instance_double(Docker::Container, id: "foreign789")
+
+        allow(Docker::Image).to receive(:create)
+        allow(Docker::Container).to receive(:create)
+          .and_raise(Docker::Error::ServerError, "Conflict. The container name is already in use")
+        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
+        allow(stale).to receive(:json).and_return({ "Config" => { "Labels" => {} } })
+
+        expect { provisioner.provision(agent_run) }
+          .to raise_error(Containers::ServiceProvisioner::Error, /not managed by Paid/)
+      end
+
+      it "raises when container belongs to a different service_container" do
+        stale = instance_double(Docker::Container, id: "wrong789")
+        wrong_labels = { "paid.service_container" => "true", "paid.service_container_id" => "9999" }
+
+        allow(Docker::Image).to receive(:create)
+        allow(Docker::Container).to receive(:create)
+          .and_raise(Docker::Error::ServerError, "Conflict. The container name is already in use")
+        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
+        allow(stale).to receive(:json).and_return({ "Config" => { "Labels" => wrong_labels } })
+
+        expect { provisioner.provision(agent_run) }
+          .to raise_error(Containers::ServiceProvisioner::Error, /belongs to service_container 9999/)
+      end
+    end
+
     context "with environment variable generation" do
       before do
         allow(Docker::Image).to receive(:create)
