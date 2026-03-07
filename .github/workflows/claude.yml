@@ -58,6 +58,10 @@ jobs:
         )
       )
     runs-on: ubuntu-latest
+    # Claude Code requires write access to create comments, branches, and
+    # commits. id-token:write is needed for OIDC authentication. These
+    # permissions are gated behind the author_association check above and the
+    # explicit permission verification step below, limiting exposure.
     permissions:
       contents: write
       pull-requests: write
@@ -72,8 +76,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Determine the actor based on event type
-          ACTOR="${{ github.event.comment.user.login || github.event.review.user.login || github.event.issue.user.login }}"
+          set -euo pipefail
+          # Determine the actor directly from the GitHub Actions context
+          ACTOR="${{ github.actor }}"
           if [ -z "$ACTOR" ]; then
             echo "::error::Could not determine actor"
             exit 1
