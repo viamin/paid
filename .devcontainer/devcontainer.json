@@ -6,16 +6,16 @@
   "dockerComposeFile": "compose.yaml",
   "service": "rails-app",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-
   // Features to add to the dev container. More info: https://containers.dev/features.
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/node:1": {},
     "ghcr.io/devcontainers/features/go:1": {},
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {"moby":false},
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false
+    },
     "ghcr.io/rails/devcontainer/features/postgres-client": {}
   },
-
   "containerEnv": {
     "TZ": "${localEnv:TZ:UTC}",
     "KAMAL_REGISTRY_PASSWORD": "${localEnv:KAMAL_REGISTRY_PASSWORD}",
@@ -24,18 +24,17 @@
     "TEMPORAL_NAMESPACE": "default",
     "TEMPORAL_TASK_QUEUE": "paid-tasks",
     "TEMPORAL_UI_URL": "http://localhost:8080",
+    "QDRANT_URL": "http://qdrant:6333",
     // LLM CLI tools - dangerous/auto-approve mode (container only)
     "CODEX_APPROVAL_POLICY": "never",
     "CODEX_SANDBOX_MODE": "danger-full-access",
     "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
   },
-
   "remoteEnv": {
     "AIDER_NO_BROWSER": "1",
     "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
     "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin"
   },
-
   "mounts": [
     // Git configuration
     "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
@@ -61,20 +60,17 @@
     // LLM CLI Authentication - Cursor
     "source=${localEnv:HOME}/.cursor,target=/home/vscode/.cursor,type=bind,consistency=cached"
   ],
-
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
   // Note: If you need to expose port 3000, prefer using compose.yaml `ports` instead of
   // forwardPorts, because forwardPorts binds to 127.0.0.1 which blocks Tailscale tunnel access.
-  "forwardPorts": [8080],
-
+  "forwardPorts": [
+    8080
+  ],
   // Configure tool-specific properties.
   // "customizations": {},
-
   // Uncomment to connect as root instead. More info: https://containers.dev/implementors/json_reference/#remoteUser.
   "remoteUser": "vscode",
   "containerUser": "vscode",
-
-
   // Use 'postCreateCommand' to run commands after the container is created.
   "postCreateCommand": {
     "setup-signing-key": "bash .devcontainer/setup-signing-key.sh",
@@ -95,7 +91,6 @@
     // Configure LLM tools for auto-approve mode (devcontainer only)
     "configure-llm-tools": "bash .devcontainer/configure-llm-tools.sh"
   },
-
   // Use 'postStartCommand' to run commands every time the container starts.
   "postStartCommand": {
     "overmind-cleanup": "rm -f .overmind.sock",
@@ -111,6 +106,7 @@
         "Anthropic.claude-code",
         "GitHub.copilot",
         "GitHub.copilot-chat",
+        "openai.chatgpt",
         "sst-dev.opencode",
         "kilocode.Kilo-Code",
         "google.gemini-cli-vscode-ide-companion",
@@ -148,15 +144,23 @@
         // Terminal
         "terminal.integrated.defaultProfile.linux": "zsh",
         "terminal.integrated.profiles.linux": {
-          "zsh": { "path": "/bin/zsh" },
-          "bash": { "path": "/bin/bash" }
+          "zsh": {
+            "path": "/bin/zsh"
+          },
+          "bash": {
+            "path": "/bin/bash"
+          }
         },
         "terminal.integrated.scrollback": 10000,
         // Remote ports
         "remote.autoForwardPorts": true,
         "remote.portsAttributes": {
-          "3000": { "onAutoForward": "ignore" },
-          "*": { "requireLocalPort": true }
+          "3000": {
+            "onAutoForward": "ignore"
+          },
+          "*": {
+            "requireLocalPort": true
+          }
         },
         // LLM CLI Extensions - Dangerous/Auto-approve mode (devcontainer only)
         "claude-code.dangerouslySkipPermissions": true,
