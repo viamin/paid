@@ -21,6 +21,11 @@ RSpec.describe Activities::RunAgentActivity do
     # Ensure fallback is disabled by default so tests behave like single-provider runs
     user.settings.update!(fallback_enabled: false)
 
+    # Stub github_client so effective_prompt → prompt_for_issue → BuildForIssue
+    # does not make real HTTP calls (blocked by WebMock).
+    github_client = instance_double(GithubClient, issue_comments: [])
+    allow(project.github_token).to receive(:client).and_return(github_client)
+
     allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
     allow(Containers::Provision).to receive(:reconnect)
       .with(agent_run: agent_run, container_id: "abc123")
