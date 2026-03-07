@@ -1,23 +1,21 @@
 # frozen_string_literal: true
 
 class ReplaceCpuQuotaWithMaxConcurrentRuns < ActiveRecord::Migration[8.1]
-  # Replaces container_cpu_quota with max_concurrent_runs on user_settings.
-  # Ensures the final schema is consistent: max_concurrent_runs present,
-  # container_cpu_quota removed.
+  # NO-OP shim migration.
   #
-  # NOTE: This migration was rewritten within PR #301 before merge.
-  # It has not been applied to any environment in its prior form. If it has
-  # already run (e.g. during development), re-run via:
-  #   `bin/rails db:migrate:redo VERSION=20260307130000`
+  # The actual conversion from container_cpu_quota to max_concurrent_runs
+  # is implemented in 20260307010138_replace_container_cpu_quota_with_max_concurrent_runs.
+  # This migration originally duplicated that logic and was irreversible, which
+  # made rolling back past this point impossible. It has been converted into a
+  # no-op while being kept in place to preserve migration ordering.
+  #
+  # Running this migration now has no effect on the schema. Rolling it back
+  # also has no effect; it simply moves the schema version pointer.
   def up
-    unless column_exists?(:user_settings, :max_concurrent_runs)
-      add_column :user_settings, :max_concurrent_runs, :integer, default: 2, null: false
-    end
-
-    remove_column :user_settings, :container_cpu_quota if column_exists?(:user_settings, :container_cpu_quota)
+    # Intentionally left blank: this migration is a no-op shim.
   end
 
   def down
-    raise ActiveRecord::IrreversibleMigration, "ReplaceCpuQuotaWithMaxConcurrentRuns cannot be safely reversed"
+    # Intentionally left blank: this migration is reversible as a no-op.
   end
 end
