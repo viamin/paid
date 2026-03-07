@@ -94,13 +94,27 @@ jobs:
 
   claude:
     needs: verify
-    if: needs.verify.outputs.allowed == 'true'
+    # Defense-in-depth: require both the verify job gate AND author_association
+    # checks directly on this privileged job. Even if the verify output were
+    # somehow bypassed, this condition independently rejects unauthorized actors.
+    # The author_association checks also make the authorization visible to static
+    # analysis tools (CodeQL js/actions/checkout-of-untrusted-code).
+    if: |
+      needs.verify.outputs.allowed == 'true' &&
+      (
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR' ||
+        github.event.review.author_association == 'OWNER' ||
+        github.event.review.author_association == 'MEMBER' ||
+        github.event.review.author_association == 'COLLABORATOR' ||
+        github.event.issue.author_association == 'OWNER' ||
+        github.event.issue.author_association == 'MEMBER' ||
+        github.event.issue.author_association == 'COLLABORATOR'
+      )
     runs-on: ubuntu-latest
     # Claude Code requires write access to create comments, branches, and
-    # commits. id-token:write is needed for OIDC authentication. These
-    # permissions are only granted after the verify job confirms the actor
-    # has write access, mitigating TOCTOU concerns (CodeQL
-    # js/actions/checkout-of-untrusted-code).
+    # commits. id-token:write is needed for OIDC authentication.
     permissions:
       contents: write
       pull-requests: write
@@ -142,10 +156,11 @@ jobs:
         id: claude
         # CodeQL flags this step as untrusted checkout (TOCTOU /
         # untrusted-code). Accepted risk — mitigations in place:
-        # (1) verify job gates on author_association,
-        # (2) re-verify step re-checks write access at execution time,
-        # (3) checkout uses github.sha (immutable) — never a PR head ref,
-        # (4) persist-credentials: false limits token exposure.
+        # (1) job-level author_association check (defense-in-depth),
+        # (2) verify job gates on author_association + gh API permission,
+        # (3) re-verify step re-checks write access at execution time,
+        # (4) checkout uses github.sha (immutable) — never a PR head ref,
+        # (5) persist-credentials: false limits token exposure.
         # The residual alert is inherent to claude-code-action, which
         # internally handles PR refs after its own permission checks.
         # This is outside our control and accepted per security review.
