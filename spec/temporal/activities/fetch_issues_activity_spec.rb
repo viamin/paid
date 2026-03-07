@@ -517,10 +517,11 @@ RSpec.describe Activities::FetchIssuesActivity do
         allow(github_client).to receive(:issues).and_return([])
       end
 
-      it "does not mark existing open issues as closed" do
+      it "marks existing open issues as closed" do
         activity.execute(project_id: project.id)
 
-        expect(project.issues.where(github_state: "open").count).to eq(2)
+        expect(project.issues.where(github_state: "open").count).to eq(0)
+        expect(project.issues.where(github_state: "closed").count).to eq(2)
       end
     end
 
