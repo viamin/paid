@@ -1001,11 +1001,12 @@ RSpec.describe AgentRun do
 
     context "with user context" do
       let(:user) { create(:user) }
+      let(:project) { create(:project, created_by: user, account: user.account) }
 
       it "uses min of system config and user setting when user cap is lower" do
         allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
         user.settings.update!(max_concurrent_runs: 1)
-        create(:agent_run, :running)
+        create(:agent_run, :running, project: project)
 
         expect(described_class.has_run_capacity?(user: user)).to be false
       end
@@ -1013,8 +1014,8 @@ RSpec.describe AgentRun do
       it "prevents users from raising cap above system config" do
         allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
         user.settings.update!(max_concurrent_runs: 10)
-        create(:agent_run, :running)
-        create(:agent_run)
+        create(:agent_run, :running, project: project)
+        create(:agent_run, project: project)
 
         expect(described_class.has_run_capacity?(user: user)).to be false
       end
@@ -1022,7 +1023,15 @@ RSpec.describe AgentRun do
       it "allows runs when under both caps" do
         allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
         user.settings.update!(max_concurrent_runs: 3)
-        create(:agent_run, :running)
+        create(:agent_run, :running, project: project)
+
+        expect(described_class.has_run_capacity?(user: user)).to be true
+      end
+
+      it "only counts runs from the user's projects" do
+        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+        user.settings.update!(max_concurrent_runs: 1)
+        create(:agent_run, :running) # different user's project
 
         expect(described_class.has_run_capacity?(user: user)).to be true
       end

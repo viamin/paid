@@ -29,10 +29,20 @@ class ProcessRunQueueJob < ApplicationJob
         # the loop, but the user may have a lower personal cap. If so, re-queue
         # the run; it will be retried on the next job execution when capacity
         # opens up.
+        #
+        # We exclude the just-claimed run from the count because claim already
+        # moved it to "pending" (active). We're deciding whether to actually
+        # start it, so we compare prior active count against the cap.
         user = agent_run.project.created_by
-        unless AgentRun.has_run_capacity?(user: user)
-          agent_run.update!(status: "queued")
-          break
+        if user
+          user_project_ids = Project.where(created_by: user).select(:id)
+          user_active_count = AgentRun.active.where(project_id: user_project_ids)
+            .where.not(id: agent_run.id).count
+          max = AgentRun.effective_max_concurrent_runs(user)
+          unless user_active_count < max
+            agent_run.update!(status: "queued")
+            break
+          end
         end
 
         if start_claimed_run(agent_run)

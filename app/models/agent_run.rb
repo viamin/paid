@@ -88,12 +88,16 @@ class AgentRun < ApplicationRecord
 
   # Checks whether the system has capacity for another agent run.
   #
-  # When a user is provided, the effective cap is the lesser of the system-wide
-  # MAX_CONCURRENT_RUNS env var and the user's max_concurrent_runs setting.
-  # This lets users lower their own cap but never exceed the global limit.
+  # Without a user: checks global active count against the system-wide cap.
+  # With a user: checks that user's active count against min(system cap, user cap).
   def self.has_run_capacity?(user: nil)
-    max = effective_max_concurrent_runs(user)
-    active.count < max
+    if user
+      user_project_ids = Project.where(created_by: user).select(:id)
+      user_active_count = active.where(project_id: user_project_ids).count
+      user_active_count < effective_max_concurrent_runs(user)
+    else
+      active.count < effective_max_concurrent_runs
+    end
   end
 
   # Returns the effective concurrency cap, respecting both the system-wide
