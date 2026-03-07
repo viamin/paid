@@ -130,8 +130,16 @@ module Activities
 
     def parse_dependencies(project, synced_issues)
       synced_issue_ids = synced_issues.filter_map { |si| si[:id] }
-      project.issues.where(id: synced_issue_ids, github_state: "open", is_pull_request: false).find_each do |issue|
-        Issues::ParseDependencies.call(issue: issue)
+      issues_relation = project.issues.where(
+        id: synced_issue_ids,
+        github_state: "open",
+        is_pull_request: false
+      )
+
+      adjacency = IssueDependency.project_adjacency(project)
+
+      issues_relation.find_each do |issue|
+        Issues::ParseDependencies.call(issue: issue, adjacency: adjacency)
       rescue => e
         logger.warn(
           message: "github_sync.parse_dependencies_failed",
