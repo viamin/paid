@@ -126,7 +126,7 @@ module Workflows
         handle_escalate_to_owner(project_id, pr_data)
       elsif trigger_types.include?("owner_approved")
         handle_owner_approved(project_id, pr_data)
-      elsif pr_data[:phase] == "draft"
+      elsif pr_data[:phase].in?(%w[draft restarted])
         start_draft_followup_workflow(project_id, pr_data)
       else
         start_pr_followup_workflow(project_id, pr_data)
