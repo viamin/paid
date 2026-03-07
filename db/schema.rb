@@ -285,7 +285,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_07_130000) do
     t.datetime "last_github_activity_at"
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
-    t.integer "max_pr_followup_runs", default: 8, null: false
+    t.integer "max_pr_followup_runs", default: 3, null: false
     t.string "merge_method", default: "squash", null: false
     t.string "name", null: false
     t.string "owner", null: false
