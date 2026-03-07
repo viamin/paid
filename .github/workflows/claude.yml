@@ -38,7 +38,7 @@ jobs:
       ) ||
       (
         github.event_name == 'pull_request_review' &&
-        contains(github.event.review.body, '@claude') &&
+        contains(github.event.review.body || '', '@claude') &&
         (
           github.event.review.author_association == 'OWNER' ||
           github.event.review.author_association == 'MEMBER' ||
@@ -48,7 +48,7 @@ jobs:
       (
         github.event_name == 'issues' &&
         (
-          contains(github.event.issue.body, '@claude') ||
+          contains(github.event.issue.body || '', '@claude') ||
           contains(github.event.issue.title, '@claude')
         ) &&
         (
@@ -93,6 +93,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
         with:
+          # For PR-related events, check out the PR head; otherwise fall back to github.ref.
+          ref: ${{ (github.event_name == 'issue_comment' && github.event.issue.pull_request && format('refs/pull/{0}/head', github.event.issue.number)) ||
+                  (github.event_name == 'pull_request_review' && format('refs/pull/{0}/head', github.event.pull_request.number)) ||
+                  (github.event_name == 'pull_request_review_comment' && format('refs/pull/{0}/head', github.event.pull_request.number)) ||
+                  github.ref }}
           fetch-depth: 1
 
       - name: Run Claude Code
