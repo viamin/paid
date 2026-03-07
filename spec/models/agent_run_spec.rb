@@ -225,6 +225,14 @@ RSpec.describe AgentRun do
         expect(results).to contain_exactly(matching)
       end
 
+      it "matches by goal enum value" do
+        pr_run = create(:agent_run, goal: "create_pr")
+        issue_run = create(:agent_run, goal: "create_issue")
+
+        expect(described_class.search_by_goal("create_pr")).to contain_exactly(pr_run)
+        expect(described_class.search_by_goal("create_issue")).to contain_exactly(issue_run)
+      end
+
       it "returns all runs when query is blank" do
         create(:agent_run, :with_custom_prompt, custom_prompt: "Something")
         create(:agent_run, :with_custom_prompt, custom_prompt: "Something else")
