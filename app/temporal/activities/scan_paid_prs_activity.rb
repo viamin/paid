@@ -60,14 +60,14 @@ module Activities
       when "ready"
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
-          scan_draft_pr(project, client, issue)
+          scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
       when "escalated"
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
-          scan_draft_pr(project, client, issue)
+          scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
           scan_escalated_pr(project, client, issue, pr_data: pr_data)
         end
@@ -76,7 +76,7 @@ module Activities
 
     # --- Draft phase scanning ---
 
-    def scan_draft_pr(project, client, issue)
+    def scan_draft_pr(project, client, issue, pr_data: nil)
       if project.max_draft_review_rounds.zero?
         return ready_for_owner_trigger(issue)
       end
@@ -94,7 +94,7 @@ module Activities
 
       # Only fetch PR data and check runs if review threads alone aren't enough.
       if all_triggers.empty?
-        pr_data = fetch_pr_data(client, project, issue)
+        pr_data ||= fetch_pr_data(client, project, issue)
         checks = fetch_check_runs(client, project, pr_data)
         ci_triggers = ci_failure_triggers(checks || [])
         all_triggers.concat(ci_triggers)
@@ -137,8 +137,9 @@ module Activities
 
     # --- Ready phase scanning ---
 
-    def scan_ready_pr(project, client, issue, pr_data: nil)
-      pr_data ||= fetch_pr_data(client, project, issue)
+    def scan_ready_pr(project, client, issue, pr_data:)
+      return nil if pr_data.nil?
+
       checks = fetch_check_runs(client, project, pr_data)
       reviews = fetch_reviews(client, project, issue)
       mergeable = pr_data && pr_data[:mergeable]
