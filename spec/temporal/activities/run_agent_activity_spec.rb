@@ -476,6 +476,7 @@ RSpec.describe Activities::RunAgentActivity do
         orphan_run = create(:agent_run, :with_git_context, project: project_without_creator,
           issue: issue_for_orphan, container_id: "abc123")
         allow(AgentRun).to receive(:find).with(orphan_run.id).and_return(orphan_run)
+        allow(orphan_token).to receive(:client).and_return(instance_double(GithubClient, issue_comments: []))
 
         expect {
           activity.execute(agent_run_id: orphan_run.id)
