@@ -117,5 +117,105 @@ RSpec.describe "dev:cleanup" do
 
     expect(DevCleanup).not_to have_received(:stop_containers)
   end
+
+  context "with STARTUP_CLEANUP_GRACE_PERIOD set" do
+    around do |example|
+      old_val = ENV["STARTUP_CLEANUP_GRACE_PERIOD"]
+      ENV["STARTUP_CLEANUP_GRACE_PERIOD"] = "1800"
+      example.run
+    ensure
+      ENV["STARTUP_CLEANUP_GRACE_PERIOD"] = old_val
+    end
+
+    it "skips runs updated within the grace period" do
+      recent_run = create(:agent_run, :running, updated_at: 10.minutes.ago)
+
+      task.invoke
+
+      expect(recent_run.reload.status).to eq("running")
+    end
+
+    it "times out runs older than the grace period" do
+      old_run = create(:agent_run, :running, updated_at: 60.minutes.ago)
+
+      task.invoke
+
+      expect(old_run.reload.status).to eq("timeout")
+    end
+
+    it "only stops containers belonging to stale runs" do
+      old_run = create(:agent_run, :running, updated_at: 60.minutes.ago, container_id: "stale-container")
+      create(:agent_run, :running, updated_at: 10.minutes.ago, container_id: "recent-container")
+      allow(DevCleanup).to receive(:stop_containers)
+
+      task.invoke
+
+      expect(old_run.reload.status).to eq("timeout")
+      expect(DevCleanup).to have_received(:stop_containers).with([ "stale-container" ])
+    end
+
+    it "does not stop containers when only recent runs exist" do
+      create(:agent_run, :running, updated_at: 10.minutes.ago, container_id: "recent-container")
+      allow(DevCleanup).to receive(:stop_containers)
+
+      task.invoke
+
+      expect(DevCleanup).not_to have_received(:stop_containers)
+    end
+
+    it "does not scan for all labeled containers" do
+      create(:agent_run, :running, updated_at: 60.minutes.ago)
+
+      task.invoke
+
+      expect(DevCleanup).not_to have_received(:find_orphaned_containers)
+    end
+
+    it "deduplicates container IDs before stopping" do
+      create(:agent_run, :running, updated_at: 60.minutes.ago, container_id: "same-container")
+      create(:agent_run, :running, updated_at: 60.minutes.ago, container_id: "same-container")
+      allow(DevCleanup).to receive(:stop_containers)
+
+      task.invoke
+
+      expect(DevCleanup).to have_received(:stop_containers).with([ "same-container" ])
+    end
+  end
+
+  context "with invalid STARTUP_CLEANUP_GRACE_PERIOD" do
+    around do |example|
+      old_val = ENV["STARTUP_CLEANUP_GRACE_PERIOD"]
+      ENV["STARTUP_CLEANUP_GRACE_PERIOD"] = "not_a_number"
+      example.run
+    ensure
+      ENV["STARTUP_CLEANUP_GRACE_PERIOD"] = old_val
+    end
+
+    it "falls back to zero and times out all active runs" do
+      running_run = create(:agent_run, :running)
+
+      task.invoke
+
+      expect(running_run.reload.status).to eq("timeout")
+    end
+  end
+
+  context "with negative STARTUP_CLEANUP_GRACE_PERIOD" do
+    around do |example|
+      old_val = ENV["STARTUP_CLEANUP_GRACE_PERIOD"]
+      ENV["STARTUP_CLEANUP_GRACE_PERIOD"] = "-300"
+      example.run
+    ensure
+      ENV["STARTUP_CLEANUP_GRACE_PERIOD"] = old_val
+    end
+
+    it "clamps to zero and times out all active runs" do
+      running_run = create(:agent_run, :running)
+
+      task.invoke
+
+      expect(running_run.reload.status).to eq("timeout")
+    end
+  end
 end
 # rubocop:enable RSpec/DescribeClass

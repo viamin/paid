@@ -9,6 +9,7 @@ RSpec.describe User do
     it { is_expected.to have_many(:member_accounts).through(:account_memberships).source(:account) }
     it { is_expected.to have_many(:project_memberships).dependent(:destroy) }
     it { is_expected.to have_many(:member_projects).through(:project_memberships).source(:project) }
+    it { is_expected.to have_many(:providers).dependent(:destroy) }
   end
 
   describe "validations" do

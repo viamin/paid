@@ -20,6 +20,7 @@ module Projects
 
     def new
       authorize @project, :run_agent?
+      @default_agent_type = provider_key_to_agent_type(current_user.settings.default_agent_provider)
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")
@@ -67,7 +68,7 @@ module Projects
       create_run_and_redirect(
         on_error_path: project_path(@project),
         issue: issue,
-        agent_type: "claude_code",
+        agent_type: provider_key_to_agent_type(current_user.settings.default_agent_provider),
         goal: "create_pr",
         source_pull_request_number: source_pr_number
       )
@@ -207,8 +208,8 @@ module Projects
     end
 
     def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, goal: nil)
-      agent_type ||= params[:agent_type].presence || "claude_code"
-      agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(agent_type)
+      requested_agent_type = agent_type || params[:agent_type].presence
+      resolved_agent_type = resolve_agent_type(requested_agent_type: requested_agent_type)
 
       goal ||= params[:goal].presence || "create_pr"
       goal = "create_pr" unless AgentRun::GOALS.include?(goal)
@@ -216,7 +217,7 @@ module Projects
       AgentRun.create!(
         project: @project,
         issue: issue,
-        agent_type: agent_type,
+        agent_type: resolved_agent_type,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
         goal: goal,
@@ -243,6 +244,59 @@ module Projects
         "An agent run is already queued or in progress."
       end
       redirect_to on_error_path, alert: alert
+    end
+
+    def provider_key_to_agent_type(provider_key)
+      return "claude_code" if provider_key == "claude"
+
+      provider_key
+    end
+
+    def agent_type_to_provider_key(agent_type)
+      return "claude" if agent_type == "claude_code"
+
+      agent_type
+    end
+
+    def managed_provider_key?(provider_key)
+      Provider::SUPPORTED_PROVIDER_KEYS.include?(provider_key)
+    end
+
+    def resolve_agent_type(requested_agent_type:)
+      configured_providers = UserSetting.enabled_agent_providers(current_user)
+      priority_providers = current_user.settings.provider_priority
+      default_provider = current_user.settings.default_agent_provider
+      resolved_agent_type = nil
+
+      if requested_agent_type.present? && AgentRun::AGENT_TYPES.include?(requested_agent_type)
+        requested_provider_key = agent_type_to_provider_key(requested_agent_type)
+        if managed_provider_key?(requested_provider_key) && !configured_providers.include?(requested_provider_key)
+          requested_agent_type = nil
+        else
+          resolved_agent_type = requested_agent_type
+        end
+      end
+
+      unless resolved_agent_type
+        provider_key = requested_agent_type || default_provider || "claude"
+        provider_key = default_provider if configured_providers.include?(default_provider) && !configured_providers.include?(provider_key)
+        provider_key = priority_providers.first if priority_providers.any? && !configured_providers.include?(provider_key)
+
+        resolved_agent_type = provider_key_to_agent_type(provider_key)
+        resolved_agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(resolved_agent_type)
+      end
+
+      if managed_provider_key?(agent_type_to_provider_key(resolved_agent_type))
+        provider_key = agent_type_to_provider_key(resolved_agent_type)
+        unless configured_providers.include?(provider_key)
+          fallback_key = priority_providers.any? ? priority_providers.first : "claude"
+          resolved_agent_type = provider_key_to_agent_type(fallback_key)
+        end
+      else
+        resolved_agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(resolved_agent_type)
+      end
+
+      resolved_agent_type
     end
   end
 end

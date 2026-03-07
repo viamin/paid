@@ -6,10 +6,10 @@ module Activities
   # the GitHubPollWorkflow poll cycle.
   #
   # Phase-aware routing:
-  #   - draft: All signals (CI, Copilot, human reviews). All followups
+  #   - draft: All signals (CI, review bots, human reviews). All followups
   #     count toward max_draft_review_rounds to prevent infinite loops.
   #   - ready: Owner approval takes precedence and may trigger auto-merge;
-  #     other signals (CI, Copilot, human reviews, labels, merge conflicts)
+  #     other signals (CI, review bots, human reviews, labels, merge conflicts)
   #     are only considered while awaiting owner approval.
   #   - escalated: Same signal handling as ready, but no auto-merge
   #   - merged: No scanning
@@ -77,10 +77,10 @@ module Activities
 
       # Fetch review threads first — cheapest signal that often suffices.
       thread_triggers = fetch_review_thread_triggers(client, project, issue)
-      copilot_triggers = thread_triggers.select { |t| t[:type] == "copilot_review_threads" }
+      review_bot_triggers = thread_triggers.select { |t| t[:type] == "review_bot_threads" }
       human_triggers = thread_triggers.select { |t| t[:type] == "review_threads" }
 
-      all_triggers = copilot_triggers + human_triggers
+      all_triggers = review_bot_triggers + human_triggers
 
       # Only fetch PR data and check runs if review threads alone aren't enough.
       if all_triggers.empty?
@@ -187,7 +187,7 @@ module Activities
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "ready_for_owner", details: "CI green, Copilot clean" } ],
+        triggers: [ { type: "ready_for_owner", details: "CI green, review bots clean" } ],
         phase: "draft",
         owner_reviewer_login: issue.project.owner_reviewer_login
       }
@@ -308,13 +308,13 @@ module Activities
         end
       end
 
-      copilot_threads = unresolved.select do |thread|
-        thread[:comments].any? { |c| copilot_user?(c[:author]) }
+      review_bot_threads = unresolved.select do |thread|
+        thread[:comments].any? { |c| review_bot?(c[:author]) }
       end
 
       triggers = []
       triggers << { type: "review_threads", details: "#{trusted_threads.size} unresolved thread(s)" } if trusted_threads.any?
-      triggers << { type: "copilot_review_threads", details: "#{copilot_threads.size} unresolved Copilot thread(s)" } if copilot_threads.any?
+      triggers << { type: "review_bot_threads", details: "#{review_bot_threads.size} unresolved review bot thread(s)" } if review_bot_threads.any?
       triggers
     rescue GithubClient::Error => e
       log_signal_error("review_thread_triggers", project, issue, e)
@@ -403,6 +403,10 @@ module Activities
 
     # --- Helpers ---
 
+    def review_bot?(login)
+      copilot_user?(login) || claude_user?(login)
+    end
+
     def copilot_user?(login)
       return false if login.blank?
 
@@ -410,6 +414,14 @@ module Activities
       normalized == "copilot" ||
         normalized == "copilot[bot]" ||
         normalized == "copilot-pull-request-reviewer"
+    end
+
+    def claude_user?(login)
+      return false if login.blank?
+
+      normalized = login.downcase
+      normalized == "claude[bot]" ||
+        normalized == "claude-code[bot]"
     end
 
     def extract_actionable_labels(triggers)

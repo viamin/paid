@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_04_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_06_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -59,11 +59,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_04_000000) do
     t.text "custom_prompt"
     t.integer "duration_seconds"
     t.text "error_message"
+    t.string "final_provider", limit: 50
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.bigint "issue_id"
     t.integer "iterations", default: 0
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
+    t.integer "provider_switches", default: 0, null: false
+    t.jsonb "providers_attempted", default: [], null: false
     t.string "proxy_token", limit: 64
     t.integer "pull_request_number"
     t.string "pull_request_url", limit: 500
@@ -83,8 +86,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_04_000000) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -345,6 +348,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_04_000000) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_prompts_scope_consistency"
   end
 
+  create_table "provider_states", force: :cascade do |t|
+    t.datetime "circuit_opened_at"
+    t.string "circuit_state", limit: 20, default: "closed", null: false
+    t.datetime "created_at", null: false
+    t.integer "failure_count", default: 0, null: false
+    t.string "provider_name", limit: 50, null: false
+    t.datetime "rate_limited_until"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["user_id", "provider_name"], name: "index_provider_states_on_user_id_and_provider_name", unique: true
+  end
+
+  create_table "providers", force: :cascade do |t|
+    t.jsonb "config", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.boolean "enabled_for_agent_runs", default: true, null: false
+    t.boolean "enabled_for_fallback", default: true, null: false
+    t.string "provider_key", limit: 50, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["user_id", "provider_key"], name: "index_providers_on_user_id_and_provider_key", unique: true
+    t.index ["user_id"], name: "index_providers_on_user_id"
+  end
+
   create_table "service_containers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "docker_container_id"
@@ -359,7 +386,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_04_000000) do
 
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
-    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"], null: false
+    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.integer "container_cpu_quota", default: 200000, null: false
@@ -371,6 +398,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_04_000000) do
     t.string "default_branch", default: "main", null: false
     t.integer "default_poll_interval_seconds", default: 60, null: false
     t.boolean "default_project_active", default: true, null: false
+    t.boolean "fallback_enabled", default: false, null: false
+    t.jsonb "fallback_providers", default: [], null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
@@ -456,6 +485,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_04_000000) do
   add_foreign_key "prompts", "accounts", on_delete: :cascade
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "provider_states", "users", on_delete: :cascade
+  add_foreign_key "providers", "users", on_delete: :cascade
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"

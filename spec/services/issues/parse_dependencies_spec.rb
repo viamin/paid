@@ -143,6 +143,17 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue_a.dependencies.reload).to be_empty
     end
 
+    it "parses dependencies from a section followed by another heading" do
+      dep = create(:issue, project: project, github_number: 101)
+      create(:issue, project: project, github_number: 999)
+      body = "## Dependencies\n- #101\n\n## Notes\nSome notes mentioning #999\n"
+      issue = create(:issue, project: project, body: body)
+
+      described_class.call(issue: issue)
+
+      expect(issue.dependencies).to contain_exactly(dep)
+    end
+
     it "parses checklist items with issue references" do
       dep = create(:issue, project: project, github_number: 15)
       body = "## Dependencies\n- [ ] #15 complete the setup\n"
