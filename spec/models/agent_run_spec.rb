@@ -990,6 +990,15 @@ RSpec.describe AgentRun do
 
       expect(described_class.has_run_capacity?).to be true
     end
+
+    it "uses system config regardless of UserSetting records" do
+      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
+      create(:user_setting, max_concurrent_runs: 10)
+      create(:agent_run, :running)
+      create(:agent_run)
+
+      expect(described_class.has_run_capacity?).to be false
+    end
   end
 
   describe ".next_queued_run" do
