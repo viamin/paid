@@ -74,6 +74,15 @@ FactoryBot.define do
       auth_provider { "claude" }
     end
 
+    trait :rate_limited do
+      status { "rate_limited" }
+      started_at { 10.minutes.ago }
+      completed_at { Time.current }
+      duration_seconds { 600 }
+      error_message { "All providers rate limited: claude_code" }
+      rate_limited_until { 2.hours.from_now }
+    end
+
     trait :with_temporal do
       temporal_workflow_id { "workflow-#{SecureRandom.uuid}" }
       temporal_run_id { "run-#{SecureRandom.uuid}" }

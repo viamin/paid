@@ -7,6 +7,7 @@ class ProvidersController < ApplicationController
   def index
     authorize Provider
     @providers = policy_scope(Provider).ordered
+    @provider_states = current_user.provider_states.index_by(&:provider_name)
   end
 
   def new
