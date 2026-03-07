@@ -47,6 +47,25 @@ RSpec.describe "AgentRuns" do
         expect(response.body).not_to include("fix/beta")
       end
 
+      it "filters agent runs by goal (custom_prompt)" do
+        create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
+          custom_prompt: "Fix null byte handling", branch_name: "fix/null-byte")
+        create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
+          custom_prompt: "Refactor auth module", branch_name: "refactor/auth")
+
+        get agent_runs_path, params: { goal: "null byte" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("fix/null-byte")
+        expect(response.body).not_to include("refactor/auth")
+      end
+
+      it "shows the goal filter input" do
+        get agent_runs_path
+
+        expect(response.body).to include("Search goal...")
+      end
+
       it "sorts agent runs ascending via Ransack sort params" do
         other_project = create(:project, account: account, github_token: github_token)
         create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
@@ -125,6 +144,19 @@ RSpec.describe "AgentRuns" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("feature/gamma")
         expect(response.body).not_to include("fix/delta")
+      end
+
+      it "filters agent runs by goal (custom_prompt)" do
+        create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
+          custom_prompt: "Fix null byte handling", branch_name: "fix/null-byte")
+        create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
+          custom_prompt: "Refactor auth module", branch_name: "refactor/auth")
+
+        get project_agent_runs_path(project), params: { goal: "null byte" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("fix/null-byte")
+        expect(response.body).not_to include("refactor/auth")
       end
 
       it "sorts agent runs via Ransack sort params" do
