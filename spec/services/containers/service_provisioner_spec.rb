@@ -12,7 +12,6 @@ RSpec.describe Containers::ServiceProvisioner do
 
     before do
       allow(NetworkPolicy).to receive(:ensure_network!)
-      allow(provisioner).to receive(:remove_stale_container!)
     end
 
     context "when project has no service containers" do
@@ -122,6 +121,57 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(docker_container).to have_received(:delete).with(force: true)
         expect(service_container.reload.status).to eq("error")
         expect(service_container.docker_container_id).to be_nil
+      end
+    end
+
+    context "when Docker container name conflicts" do
+      let(:service_container) do
+        create(:service_container,
+          image: "postgres:16",
+          name: "conflict-postgres",
+          port: 5432,
+          env: { "POSTGRES_USER" => "agent", "POSTGRES_PASSWORD" => "agent", "POSTGRES_DB" => "agent_test" })
+      end
+
+      before do
+        create(:project_service_container, project: project, service_container: service_container)
+      end
+
+      it "removes stale managed container and retries" do
+        stale = instance_double(Docker::Container, id: "stale789")
+        new_container = instance_double(Docker::Container, id: "new789")
+        managed_labels = { "paid.service_container" => "true", "paid.service_container_id" => "1" }
+
+        allow(Docker::Image).to receive(:create)
+        call_count = 0
+        allow(Docker::Container).to receive(:create) do
+          call_count += 1
+          raise Docker::Error::ServerError, "Conflict. The container name is already in use" if call_count == 1
+          new_container
+        end
+        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
+        allow(stale).to receive_messages(json: { "Config" => { "Labels" => managed_labels } }, stop: nil, delete: nil)
+        allow(new_container).to receive(:start)
+        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+
+        result = provisioner.provision(agent_run)
+
+        expect(stale).to have_received(:stop).with(timeout: 10)
+        expect(stale).to have_received(:delete).with(force: true)
+        expect(result).to include("DATABASE_URL")
+      end
+
+      it "raises when stale container is not managed by Paid" do
+        stale = instance_double(Docker::Container, id: "foreign789")
+
+        allow(Docker::Image).to receive(:create)
+        allow(Docker::Container).to receive(:create)
+          .and_raise(Docker::Error::ServerError, "Conflict. The container name is already in use")
+        allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
+        allow(stale).to receive(:json).and_return({ "Config" => { "Labels" => {} } })
+
+        expect { provisioner.provision(agent_run) }
+          .to raise_error(Containers::ServiceProvisioner::Error, /not managed by Paid/)
       end
     end
 

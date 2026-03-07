@@ -119,8 +119,7 @@ module Containers
       service_container.update!(status: "starting")
 
       pull_image(service_container.image)
-      remove_stale_container!(service_container.name)
-      docker_container = create_docker_container(service_container)
+      docker_container = create_or_replace_container!(service_container)
       docker_container.start
 
       service_container.update!(
@@ -179,16 +178,28 @@ module Containers
       # transaction to ensure it is not rolled back.
     end
 
+    def create_or_replace_container!(service_container)
+      create_docker_container(service_container)
+    rescue Docker::Error::ServerError => e
+      raise unless e.message&.include?("Conflict")
+
+      log_info("service_provisioner.container_name_conflict", name: service_container.name)
+      remove_stale_container!(service_container.name)
+      create_docker_container(service_container)
+    end
+
     def remove_stale_container!(name)
-      container = Docker::Container.get(name)
-      container.stop(timeout: 10) rescue nil
-      container.delete(force: true)
-      log_info("service_provisioner.stale_container_removed", name: name)
-    rescue Docker::Error::NotFoundError
-      # No stale container — nothing to do
-    rescue Docker::Error::DockerError => e
-      log_warn("service_provisioner.stale_container_removal_failed",
-        name: name, error: e.message)
+      existing = Docker::Container.get(name)
+      labels = existing.json.dig("Config", "Labels") || {}
+
+      unless labels["paid.service_container"] == "true"
+        raise Error, "Container named '#{name}' exists but is not managed by Paid"
+      end
+
+      existing.stop(timeout: 10) rescue nil
+      existing.delete(force: true)
+      log_info("service_provisioner.stale_container_removed",
+        name: name, service_container_id: labels["paid.service_container_id"])
     end
 
     def create_docker_container(service_container)
