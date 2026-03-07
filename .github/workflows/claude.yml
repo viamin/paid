@@ -1,10 +1,10 @@
 name: Claude Code
 
 # Triggers: Claude runs when @claude is mentioned in issue/PR comments,
-# PR review comments, PR reviews, or newly opened issues. The job-level
-# `if` condition filters each event to only fire when @claude appears in
-# the relevant body/title and the actor has appropriate association.
-# A separate permission verification step checks actual write access.
+# PR review comments, PR reviews, or newly opened issues. A separate
+# verify job checks actual write access with minimal permissions before
+# the main claude job runs with elevated permissions. This two-job
+# design limits exposure of write-scoped tokens to verified actors.
 on:
   issue_comment:
     types: [created]
@@ -16,7 +16,10 @@ on:
     types: [submitted]
 
 jobs:
-  claude:
+  verify:
+    # Lightweight gate: check that the actor actually has write access.
+    # Runs with read-only permissions so even if an untrusted actor
+    # somehow passes the `if` filter, no write token is exposed.
     if: |
       (
         github.event_name == 'issue_comment' &&
@@ -58,26 +61,17 @@ jobs:
         )
       )
     runs-on: ubuntu-latest
-    # Claude Code requires write access to create comments, branches, and
-    # commits. id-token:write is needed for OIDC authentication. These
-    # permissions are gated behind the author_association check above and the
-    # explicit permission verification step below, limiting exposure.
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      id-token: write
-      actions: read
+      contents: read
+    outputs:
+      allowed: ${{ steps.check-permissions.outputs.allowed }}
     steps:
-      - name: Verify write permission
-        # author_association alone doesn't reliably map to repo permissions
-        # (e.g., MEMBER can be read-only in an org). This step checks the
-        # commenter's actual repository permission level via the GitHub API.
+      - name: Check actor repository permission
+        id: check-permissions
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Determine the actor directly from the GitHub Actions context
           ACTOR="${{ github.actor }}"
           if [ -z "$ACTOR" ]; then
             echo "::error::Could not determine actor"
@@ -85,11 +79,30 @@ jobs:
           fi
           PERM=$(gh api "repos/${{ github.repository }}/collaborators/${ACTOR}/permission" --jq '.permission')
           echo "User ${ACTOR} has permission: ${PERM}"
-          if [[ "$PERM" != "admin" && "$PERM" != "maintain" && "$PERM" != "write" ]]; then
+          if [[ "$PERM" == "admin" || "$PERM" == "maintain" || "$PERM" == "write" ]]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+          else
             echo "::error::User ${ACTOR} does not have write access (has: ${PERM})"
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
+  claude:
+    needs: verify
+    if: needs.verify.outputs.allowed == 'true'
+    runs-on: ubuntu-latest
+    # Claude Code requires write access to create comments, branches, and
+    # commits. id-token:write is needed for OIDC authentication. These
+    # permissions are only granted after the verify job confirms the actor
+    # has write access, mitigating TOCTOU concerns (CodeQL
+    # js/actions/checkout-of-untrusted-code).
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
         with:

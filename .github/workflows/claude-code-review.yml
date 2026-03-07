@@ -1,5 +1,9 @@
 name: Claude Code Review
 
+# Automatic code review: this workflow runs on every non-draft, non-fork PR
+# (opened, synchronized, reopened, ready_for_review). It is intentionally
+# separate from the @claude-mention workflow in claude.yml — this provides
+# proactive review feedback without requiring a manual mention.
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
