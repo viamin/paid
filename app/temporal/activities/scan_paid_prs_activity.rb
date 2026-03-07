@@ -19,8 +19,6 @@ module Activities
     activity_name "ScanPaidPrs"
 
     PAID_GENERATED_LABEL = "paid-generated"
-    PAID_READY_LABEL = "paid-ready"
-    PAID_ESCALATED_LABEL = "paid-escalated"
     MIN_COMMENT_LENGTH = 20
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
 
