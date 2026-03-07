@@ -8,6 +8,8 @@ module Activities
   class MarkPrReadyActivity < BaseActivity
     activity_name "MarkPrReady"
 
+    PAID_READY_LABEL = "paid-ready"
+
     def execute(input)
       project = Project.find(input[:project_id])
       pr_number = input[:pr_number]
@@ -41,6 +43,8 @@ module Activities
       end
 
       issue.update!(pr_review_phase: "ready")
+
+      add_phase_label(client, project, pr_number, PAID_READY_LABEL)
 
       { marked_ready: true, pr_number: pr_number }
     end
