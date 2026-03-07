@@ -50,6 +50,21 @@ module ApplicationHelper
     )
   end
 
+  SERVICE_CONTAINER_STATUS_STYLES = {
+    "stopped" => { bg: "bg-gray-100", text: "text-gray-700", label: "Stopped" },
+    "starting" => { bg: "bg-yellow-100", text: "text-yellow-800", label: "Starting" },
+    "running" => { bg: "bg-green-100", text: "text-green-700", label: "Running" },
+    "error" => { bg: "bg-red-100", text: "text-red-700", label: "Error" }
+  }.freeze
+
+  def service_container_status_badge(status)
+    styles = SERVICE_CONTAINER_STATUS_STYLES[status] || SERVICE_CONTAINER_STATUS_STYLES["stopped"]
+    tag.span(
+      styles[:label],
+      class: "inline-flex items-center rounded-md #{styles[:bg]} px-2 py-1 text-xs font-medium #{styles[:text]}"
+    )
+  end
+
   RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq branch_name_cont category_eq active_eq name_cont s].freeze
 
   def sort_link_to(label, attribute, q)

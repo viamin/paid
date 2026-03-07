@@ -1,0 +1,66 @@
+<% if service_container.errors.any? %>
+  <div class="mb-6 rounded-md bg-red-50 p-4">
+    <div class="flex">
+      <div class="flex-shrink-0">
+        <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd" />
+        </svg>
+      </div>
+      <div class="ml-3">
+        <h3 class="text-sm font-medium text-red-800">
+          <%= pluralize(service_container.errors.count, "error") %> prevented this service container from being saved:
+        </h3>
+        <div class="mt-2 text-sm text-red-700">
+          <ul class="list-disc space-y-1 pl-5">
+            <% service_container.errors.full_messages.each do |message| %>
+              <li><%= message %></li>
+            <% end %>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<div class="space-y-6">
+  <div>
+    <%= form.label :name, "Name", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_field :name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", required: true, placeholder: "postgres-main" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">A unique name for this service container.</p>
+  </div>
+
+  <div>
+    <%= form.label :image, "Docker Image", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_field :image, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", required: true, placeholder: "postgres:16" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Docker image to use. Must be in the allowed images list (see Settings).</p>
+  </div>
+
+  <div>
+    <%= form.label :port, "Port", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.number_field :port, min: 1, max: 65535, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", required: true, placeholder: "5432" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">The port the service listens on inside the container.</p>
+  </div>
+
+  <div>
+    <%= form.label :env_json, "Environment Variables (JSON)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_area :env_json, rows: 4, class: "block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: '{"POSTGRES_USER": "agent", "POSTGRES_PASSWORD": "agent"}' %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Environment variables passed to the container as a JSON object.</p>
+  </div>
+
+  <% if service_container.persisted? %>
+    <div>
+      <label class="block text-sm font-medium leading-6 text-gray-900">Status</label>
+      <div class="mt-2">
+        <%= service_container_status_badge(service_container.status) %>
+      </div>
+    </div>
+  <% end %>
+</div>
