@@ -102,15 +102,33 @@ jobs:
       id-token: write
       actions: read
     steps:
+      - name: Re-verify actor permission
+        # Mitigates TOCTOU: re-check write access at execution time, not
+        # just at the verify-job gate. If permissions were revoked between
+        # jobs, this step fails the workflow before any write-scoped action
+        # runs. (Addresses CodeQL js/actions/checkout-of-untrusted-code and
+        # untrusted-checkout-toctou alerts.)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ACTOR="${{ github.actor }}"
+          PERM=$(gh api "repos/${{ github.repository }}/collaborators/${ACTOR}/permission" --jq '.permission')
+          if [[ "$PERM" != "admin" && "$PERM" != "maintain" && "$PERM" != "write" ]]; then
+            echo "::error::Actor ${ACTOR} no longer has write access (has: ${PERM})"
+            exit 1
+          fi
+
       - name: Checkout repository
-        # Pin to default branch to avoid checking out untrusted PR code.
-        # The claude-code-action handles PR ref checkout internally after
+        # Checks out the default branch only — never a PR head ref.
+        # The claude-code-action handles PR ref access internally after
         # its own permission checks, so this checkout only needs the base
         # repo code for configuration files (CLAUDE.md, etc.).
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
         with:
           fetch-depth: 1
           ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
 
       - name: Run Claude Code
         id: claude
