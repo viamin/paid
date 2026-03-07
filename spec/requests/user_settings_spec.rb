@@ -61,6 +61,10 @@ RSpec.describe "UserSettings" do
       end
 
       it "updates agent execution settings" do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
+        user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
+
         patch user_settings_path, params: {
           user_setting: {
             agent_timeout_seconds: 7200,
@@ -131,7 +135,8 @@ RSpec.describe "UserSettings" do
 
       it "renders errors for invalid agent provider" do
         patch user_settings_path, params: { user_setting: { default_agent_provider: "invalid" } }
-        expect(response).to have_http_status(:unprocessable_content)
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings.default_agent_provider).to eq("claude")
       end
 
       it "renders errors for blank default branch" do

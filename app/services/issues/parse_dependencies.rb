@@ -17,9 +17,9 @@ module Issues
   class ParseDependencies
     DEPENDENCY_SECTION_PATTERN = /
       ^\#*\s*Dependenc(?:y|ies)\b[^\n]*\n  # Header line (## Dependencies, etc.)
-      ((?:[\s\S](?!\n\#))*?)               # Section body (stop at next heading)
-      (?=\n\#|\z)                           # Lookahead for next heading or end
-    /xi
+      ([\s\S]*?)                           # Section body (non-greedy, up to next heading)
+      (?=^\#|\z)                           # Lookahead for next heading or end
+    /xim
 
     INLINE_DEPENDS_PATTERN = /
       \b(?:depends?\s+on|blocked?\s+by)\b   # Keyword
@@ -29,10 +29,11 @@ module Issues
 
     ISSUE_REF_PATTERN = /\#(\d+)/
 
-    attr_reader :issue
+    attr_reader :issue, :adjacency
 
-    def initialize(issue:)
+    def initialize(issue:, adjacency: nil)
       @issue = issue
+      @adjacency = adjacency
     end
 
     def self.call(...)
@@ -52,7 +53,7 @@ module Issues
           .where(github_number: referenced_numbers, is_pull_request: false)
           .index_by(&:github_number)
 
-        adjacency = load_project_adjacency
+        adj = adjacency || IssueDependency.project_adjacency(issue.project)
 
         referenced_numbers.each do |number|
           dep_issue = project_issues[number]
@@ -62,9 +63,9 @@ module Issues
           new_dep_ids << dep_issue.id
 
           next if current_dep_ids.include?(dep_issue.id)
-          next if would_create_cycle?(dep_issue, adjacency)
+          next if would_create_cycle?(dep_issue, adj)
 
-          issue.issue_dependencies.create(depends_on_issue: dep_issue)
+          issue.issue_dependencies.create!(depends_on_issue: dep_issue)
         end
       end
 
@@ -93,14 +94,6 @@ module Issues
       issue.body.scan(INLINE_DEPENDS_PATTERN) do |refs|
         refs[0].scan(ISSUE_REF_PATTERN) { |match| numbers << match[0].to_i }
       end
-    end
-
-    def load_project_adjacency
-      IssueDependency
-        .where(issue_id: issue.project.issues.select(:id))
-        .pluck(:issue_id, :depends_on_issue_id)
-        .group_by(&:first)
-        .transform_values { |pairs| pairs.map(&:last) }
     end
 
     def would_create_cycle?(dep_issue, adjacency)

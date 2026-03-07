@@ -38,6 +38,8 @@ class AgentRun < ApplicationRecord
   validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :source_pull_request_number, numericality: { greater_than: 0 }, allow_nil: true
   validates :auth_provider, length: { maximum: 50 }
+  validates :final_provider, length: { maximum: 50 }
+  validates :provider_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :has_prompt_source, on: :create
 
@@ -232,7 +234,7 @@ class AgentRun < ApplicationRecord
   def log!(type, content, metadata: nil)
     agent_run_logs.create!(
       log_type: type,
-      content: content,
+      content: content.to_s.delete("\x00"),
       metadata: metadata
     )
   end
@@ -285,6 +287,33 @@ class AgentRun < ApplicationRecord
     custom_prompt.presence || prompt_for_issue
   end
 
+  # Records a provider attempt in the providers_attempted array.
+  #
+  # @param provider [String] The provider name
+  # @param success [Boolean] Whether the attempt succeeded
+  # @param error_type [String, nil] Type of error if failed (e.g., "rate_limited", "error")
+  def record_provider_attempt(provider, success:, error_type: nil)
+    attempt = {
+      "provider" => provider,
+      "success" => success,
+      "attempted_at" => Time.current.iso8601
+    }
+    attempt["error_type"] = error_type if error_type.present?
+
+    self.providers_attempted = (providers_attempted || []) + [ attempt ]
+    save!
+  end
+
+  # Logs a provider switch and increments the switch counter.
+  #
+  # @param from [String] The provider being switched from
+  # @param to [String] The provider being switched to
+  # @param reason [String] Why the switch occurred
+  def log_provider_switch!(from, to, reason)
+    log!("system", "Provider fallback: #{from} -> #{to} (#{reason})")
+    increment!(:provider_switches)
+  end
+
   # Container management integration methods.
   # These delegate to Containers::Provision for actual implementation.
 
@@ -335,6 +364,10 @@ class AgentRun < ApplicationRecord
     # Container may already be gone; clear the reference anyway
     @container_service = nil
     update!(container_id: nil)
+    # The container is gone but the workspace volume may still exist.
+    # Provision#cleanup would normally handle this in its ensure block,
+    # but we never reached it, so clean up the volume directly.
+    cleanup_orphaned_workspace_volume
   end
 
   # Executes a block with a provisioned container, ensuring cleanup.
@@ -378,6 +411,24 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  # Removes the named Docker volume for this agent run if it exists.
+  # No-op for worktree-based runs (they use bind mounts, not named volumes).
+  def cleanup_orphaned_workspace_volume
+    return if worktree_path.present? # bind-mount runs don't use named volumes
+
+    volume_name = "paid-workspace-#{id}"
+    Docker::Volume.get(volume_name).remove
+  rescue Docker::Error::NotFoundError
+    # Volume already removed, nothing to do
+  rescue Docker::Error::DockerError => e
+    Rails.logger.warn(
+      message: "container_manager.orphaned_volume_cleanup_failed",
+      agent_run_id: id,
+      volume_name: volume_name,
+      error: e.message
+    )
+  end
 
   # Ensures @container_service is available, reconnecting from persisted
   # container_id if needed (e.g., when called from a different Temporal activity).

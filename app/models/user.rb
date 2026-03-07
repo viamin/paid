@@ -9,6 +9,8 @@ class User < ApplicationRecord
   has_many :created_github_tokens, class_name: "GithubToken", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_many :created_projects, class_name: "Project", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_one :user_setting, dependent: :destroy
+  has_many :provider_states, dependent: :destroy
+  has_many :providers, dependent: :destroy
 
   # Include default devise modules. Others available are:
   # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable
@@ -18,6 +20,7 @@ class User < ApplicationRecord
   validates :account, presence: true
 
   after_create :assign_owner_role_if_first_user
+  after_create :ensure_default_provider
 
   # Role Management API
   # These methods provide a compatible interface with the previous Rolify implementation
@@ -144,6 +147,10 @@ class User < ApplicationRecord
     return unless account.users.count == 1
 
     add_role(:owner, account)
+  end
+
+  def ensure_default_provider
+    Provider.ensure_default_for(self)
   end
 
   # Normalize role names between old Rolify format and new enum format

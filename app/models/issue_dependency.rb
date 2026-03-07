@@ -8,6 +8,16 @@ class IssueDependency < ApplicationRecord
   validate :not_self_referential
   validate :issues_belong_to_same_project
 
+  # Builds an adjacency map { issue_id => [depends_on_issue_id, ...] }
+  # for all dependencies within a project. Used by ParseDependencies and
+  # DetectCycle to avoid repeated full-table queries during batch syncs.
+  def self.project_adjacency(project)
+    where(issue_id: project.issues.select(:id))
+      .pluck(:issue_id, :depends_on_issue_id)
+      .group_by(&:first)
+      .transform_values { |pairs| pairs.map(&:last) }
+  end
+
   private
 
   def not_self_referential

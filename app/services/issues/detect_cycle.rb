@@ -23,19 +23,11 @@ module Issues
     end
 
     def call
-      adj = adjacency || load_project_adjacency
+      adj = adjacency || IssueDependency.project_adjacency(from_issue.project)
       reachable_iterative?(adj)
     end
 
     private
-
-    def load_project_adjacency
-      IssueDependency
-        .where(issue_id: from_issue.project.issues.select(:id))
-        .pluck(:issue_id, :depends_on_issue_id)
-        .group_by(&:first)
-        .transform_values { |pairs| pairs.map(&:last) }
-    end
 
     def reachable_iterative?(adjacency)
       visited = Set.new
