@@ -154,4 +154,66 @@
       <% end %>
     </div>
   </div>
+
+  <%# Service Containers section %>
+  <div class="mt-6 bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:p-6">
+      <h2 class="text-lg font-semibold text-gray-900">Service Containers</h2>
+      <p class="mt-1 text-sm text-gray-500">
+        Associate service containers with this project. Agents will receive connection environment variables (e.g. <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">DATABASE_URL</code>) during runs.
+      </p>
+
+      <% project_service_containers = @project.project_service_containers.includes(:service_container).to_a %>
+      <% if project_service_containers.any? %>
+        <div class="mt-4">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Image</th>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Port</th>
+                <th scope="col" class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+                <th scope="col" class="relative px-4 py-2"><span class="sr-only">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% project_service_containers.each do |psc| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm font-medium text-gray-900">
+                    <%= link_to psc.service_container.name, service_container_path(psc.service_container), class: "text-indigo-600 hover:text-indigo-900" %>
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500">
+                    <code class="rounded bg-gray-100 px-1.5 py-0.5 text-xs"><%= psc.service_container.image %></code>
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-500"><%= psc.service_container.port %></td>
+                  <td class="whitespace-nowrap px-4 py-2 text-sm">
+                    <%= service_container_status_badge(psc.service_container.status) %>
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-2 text-right text-sm">
+                    <%= button_to "Remove", project_project_service_container_path(@project, psc), method: :delete, class: "text-red-600 hover:text-red-900 text-sm font-medium", data: { turbo_confirm: "Remove this service container from the project?" } %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% end %>
+
+      <% if @available_service_containers.any? %>
+        <%= form_with url: project_project_service_containers_path(@project), method: :post, class: "mt-4 flex items-end gap-x-3" do |f| %>
+          <div>
+            <%= f.label :service_container_id, "Add Service Container", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-1">
+              <%= f.select :service_container_id, @available_service_containers.map { |sc| ["#{sc.name} (#{sc.image})", sc.id] }, {}, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+          </div>
+          <%= f.submit "Add", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+        <% end %>
+      <% elsif project_service_containers.empty? %>
+        <div class="mt-4 text-sm text-gray-500">
+          No service containers available. <%= link_to "Create one", new_service_container_path, class: "text-indigo-600 hover:text-indigo-900" %> first.
+        </div>
+      <% end %>
+    </div>
+  </div>
 </div>

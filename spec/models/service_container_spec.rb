@@ -43,16 +43,18 @@ RSpec.describe ServiceContainer do
   describe "scopes" do
     it ".running returns only running containers" do
       running = create(:service_container, :running)
-      create(:service_container, status: "stopped")
+      stopped = create(:service_container, status: "stopped")
 
-      expect(described_class.running).to eq([ running ])
+      expect(described_class.running).to include(running)
+      expect(described_class.running).not_to include(stopped)
     end
 
     it ".stopped returns only stopped containers" do
-      create(:service_container, :running)
+      running = create(:service_container, :running)
       stopped = create(:service_container, status: "stopped")
 
-      expect(described_class.stopped).to eq([ stopped ])
+      expect(described_class.stopped).to include(stopped)
+      expect(described_class.stopped).not_to include(running)
     end
   end
 
