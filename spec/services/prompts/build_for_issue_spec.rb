@@ -244,6 +244,14 @@ RSpec.describe Prompts::BuildForIssue do
     end
 
     context "when project has only stopped service containers" do
+      let(:service_containers_relation) do
+        # The .running scope returns empty even though containers exist —
+        # simulates containers that were provisioned but are now stopped.
+        running_scope = OpenStruct.new(to_a: [])
+        all_scope = [ OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432) ]
+        OpenStruct.new(running: running_scope, to_a: all_scope)
+      end
+
       it "treats stopped containers as unavailable" do
         prompt = described_class.call(issue: issue, project: project)
 

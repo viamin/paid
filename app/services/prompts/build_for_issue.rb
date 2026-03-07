@@ -77,7 +77,7 @@ module Prompts
     # Extracted as a class method so CreateAgentRunActivity can append
     # this section to rendered PromptVersion custom_prompts, avoiding
     # the effective_prompt bypass described in the review.
-    def self.conversation_section_for(project:, issue:, github_client:)
+    def self.conversation_section_for(project:, issue:, github_client: nil)
       return "" unless github_client
 
       comments = fetch_trusted_comments(
