@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe Activities::CreateAgentRunActivity do
   let(:activity) { described_class.new }
@@ -135,6 +136,25 @@ RSpec.describe Activities::CreateAgentRunActivity do
         agent_run = AgentRun.find(result[:agent_run_id])
         expect(agent_run.prompt_version).to be_nil
         expect(agent_run.custom_prompt).to be_nil
+      end
+
+      it "appends trusted issue comments to the rendered custom_prompt" do
+        github_client = instance_double(GithubClient)
+        trusted_login = project.allowed_github_usernames.first
+        comment = OpenStruct.new(
+          user: OpenStruct.new(login: trusted_login),
+          body: "Please also update the docs"
+        )
+        allow(github_client).to receive(:issue_comments)
+          .with(project.full_name, issue.github_number)
+          .and_return([ comment ])
+        allow(project.github_token).to receive(:client).and_return(github_client)
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.custom_prompt).to include("Conversation Comments")
+        expect(agent_run.custom_prompt).to include("Please also update the docs")
       end
     end
 
