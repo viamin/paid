@@ -21,12 +21,8 @@ class ProcessRunQueueJob < ApplicationJob
     begin
       consecutive_failures = 0
       skipped_ids = Set.new
-      remaining_queued = AgentRun.queued.count
 
       while AgentRun.has_run_capacity?
-        # Stop once all remaining queued runs have been skipped
-        break if skipped_ids.size >= remaining_queued
-
         agent_run = AgentRun.claim_next_queued_run(exclude_ids: skipped_ids.to_a)
         break unless agent_run
 
