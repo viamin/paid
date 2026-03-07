@@ -89,14 +89,20 @@ class AgentRun < ApplicationRecord
   # Checks whether the system has capacity for another agent run.
   #
   # Without a user: checks global active count against the system-wide cap.
-  # With a user: checks that user's active count against min(system cap, user cap).
+  # With a user: checks both the global active count against the system-wide cap
+  # AND the user's active count against min(system cap, user cap).
   def self.has_run_capacity?(user: nil)
+    system_max = effective_max_concurrent_runs
+    global_active_count = active.count
+
+    return false unless global_active_count < system_max
+
     if user
       user_project_ids = Project.where(created_by: user).select(:id)
       user_active_count = active.where(project_id: user_project_ids).count
       user_active_count < effective_max_concurrent_runs(user)
     else
-      active.count < effective_max_concurrent_runs
+      true
     end
   end
 
@@ -118,12 +124,17 @@ class AgentRun < ApplicationRecord
   # inside a transaction with FOR UPDATE SKIP LOCKED. Returns nil if no
   # queued run is available or another process already claimed it.
   #
+  # @param exclude_ids [Array<Integer>] IDs to skip (e.g. runs whose owner
+  #   is already at their per-user cap this iteration)
+  #
   # Note: if the transaction commits but the subsequent workflow start fails,
   # the run stays "pending" without an associated workflow. ProcessRunQueueJob
   # handles this by marking such runs as failed in its rescue block.
-  def self.claim_next_queued_run
+  def self.claim_next_queued_run(exclude_ids: [])
     transaction do
-      run = queued.order(created_at: :asc).lock("FOR UPDATE SKIP LOCKED").first
+      scope = queued.order(created_at: :asc)
+      scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
+      run = scope.lock("FOR UPDATE SKIP LOCKED").first
       return nil unless run
 
       run.update!(status: "pending")

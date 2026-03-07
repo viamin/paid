@@ -1035,6 +1035,16 @@ RSpec.describe AgentRun do
 
         expect(described_class.has_run_capacity?(user: user)).to be true
       end
+
+      it "returns false when global cap is reached even if user has capacity" do
+        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
+        user.settings.update!(max_concurrent_runs: 5)
+        # Two runs from other users fill the global cap
+        create(:agent_run, :running)
+        create(:agent_run, :running)
+
+        expect(described_class.has_run_capacity?(user: user)).to be false
+      end
     end
   end
 
@@ -1069,6 +1079,23 @@ RSpec.describe AgentRun do
       create(:agent_run, :running)
 
       expect(described_class.claim_next_queued_run).to be_nil
+    end
+
+    it "skips excluded IDs and claims the next eligible run" do
+      older = create(:agent_run, :queued, created_at: 2.minutes.ago)
+      newer = create(:agent_run, :queued, created_at: 1.minute.ago)
+
+      claimed = described_class.claim_next_queued_run(exclude_ids: [ older.id ])
+
+      expect(claimed).to eq(newer)
+      expect(claimed.status).to eq("pending")
+      expect(older.reload.status).to eq("queued")
+    end
+
+    it "returns nil when all queued runs are excluded" do
+      queued = create(:agent_run, :queued)
+
+      expect(described_class.claim_next_queued_run(exclude_ids: [ queued.id ])).to be_nil
     end
   end
 
