@@ -12,6 +12,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
     before do
       allow(NetworkPolicy).to receive(:ensure_network!)
+      allow(provisioner).to receive(:remove_stale_container!)
     end
 
     context "when project has no service containers" do

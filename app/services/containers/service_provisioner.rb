@@ -119,6 +119,7 @@ module Containers
       service_container.update!(status: "starting")
 
       pull_image(service_container.image)
+      remove_stale_container!(service_container.name)
       docker_container = create_docker_container(service_container)
       docker_container.start
 
@@ -176,6 +177,18 @@ module Containers
       end
       # DB status update is handled by the caller outside the with_lock
       # transaction to ensure it is not rolled back.
+    end
+
+    def remove_stale_container!(name)
+      container = Docker::Container.get(name)
+      container.stop(timeout: 10) rescue nil
+      container.delete(force: true)
+      log_info("service_provisioner.stale_container_removed", name: name)
+    rescue Docker::Error::NotFoundError
+      # No stale container — nothing to do
+    rescue Docker::Error::DockerError => e
+      log_warn("service_provisioner.stale_container_removal_failed",
+        name: name, error: e.message)
     end
 
     def create_docker_container(service_container)
