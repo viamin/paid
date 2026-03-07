@@ -10,8 +10,7 @@ module Activities
       global_active_count = AgentRun.active.count
 
       if user
-        user_project_ids = Project.where(created_by: user).select(:id)
-        active_count = AgentRun.active.where(project_id: user_project_ids).count
+        active_count = AgentRun.active_count_for_user(user)
         max = AgentRun.effective_max_concurrent_runs(user)
         has_capacity = global_active_count < system_max && active_count < max
       else
