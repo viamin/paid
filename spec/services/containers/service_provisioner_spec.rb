@@ -174,12 +174,13 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Container).to receive(:create)
           .and_raise(Docker::Error::ServerError, "Conflict. The container name is already in use")
         allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(existing)
-        allow(existing).to receive(:json).and_return(running_json)
+        allow(existing).to receive_messages(json: running_json, stop: nil, delete: nil)
         allow(provisioner).to receive(:tcp_port_open?).and_return(true)
 
         result = provisioner.provision(agent_run)
 
-        expect(existing).not_to have_received(:json).with(hash_including("stop"))
+        expect(existing).not_to have_received(:stop)
+        expect(existing).not_to have_received(:delete)
         expect(service_container.reload.docker_container_id).to eq("running789")
         expect(result).to include("DATABASE_URL")
       end
