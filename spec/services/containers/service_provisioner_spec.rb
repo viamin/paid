@@ -156,7 +156,9 @@ RSpec.describe Containers::ServiceProvisioner do
           new_container
         end
         allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
-        allow(stale).to receive_messages(json: stale_json, stop: nil, delete: nil)
+        allow(stale).to receive(:json).and_return(stale_json)
+        allow(stale).to receive(:stop)
+        allow(stale).to receive(:delete)
         allow(new_container).to receive(:start)
         allow(provisioner).to receive(:tcp_port_open?).and_return(true)
 
