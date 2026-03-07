@@ -32,9 +32,7 @@ class ProcessRunQueueJob < ApplicationJob
         # from other users who may still have capacity.
         user = agent_run.project.created_by
         if user
-          user_project_ids = Project.where(created_by: user).select(:id)
-          user_active_count = AgentRun.active.where(project_id: user_project_ids)
-            .where.not(id: agent_run.id).count
+          user_active_count = AgentRun.active_count_for_user(user, exclude: agent_run)
           max = AgentRun.effective_max_concurrent_runs(user)
           unless user_active_count < max
             agent_run.update!(status: "queued")
