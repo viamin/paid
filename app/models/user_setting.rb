@@ -31,6 +31,10 @@ class UserSetting < ApplicationRecord
   validates :container_timeout_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
 
+  # Concurrency
+  validates :max_concurrent_runs,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
+
   # Project Defaults
   validates :default_branch, presence: true
 
@@ -106,10 +110,6 @@ class UserSetting < ApplicationRecord
   def allowed_service_images_csv=(value)
     self.allowed_service_images = value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
   end
-
-  # Concurrency
-  validates :max_concurrent_runs,
-    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
 
   # Returns the ordered list of providers to try: primary first, then fallbacks.
   #
