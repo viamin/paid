@@ -8,6 +8,13 @@ RSpec.describe Activities::CreateAgentRunActivity do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
 
+  before do
+    # Stub conversation_section_for so the activity does not make real HTTP
+    # calls to fetch issue comments (blocked by WebMock). Individual tests
+    # that exercise conversation section behavior override this stub.
+    allow(Prompts::BuildForIssue).to receive(:conversation_section_for).and_return("")
+  end
+
   describe "#execute" do
     it "creates an agent run for the project and issue" do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
