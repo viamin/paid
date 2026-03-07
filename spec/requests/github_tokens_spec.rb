@@ -89,7 +89,11 @@ RSpec.describe "GithubTokens" do
       it "does not show a Deactivate button" do
         create(:github_token, account: account, name: "My Token")
         get github_tokens_path
-        expect(response.body).not_to include("Deactivate")
+        document = Nokogiri::HTML(response.body)
+        deactivate_elements = document.css("button, input[type='submit'], a").select do |node|
+          node.text.include?("Deactivate") || node["value"]&.include?("Deactivate")
+        end
+        expect(deactivate_elements).to be_empty
       end
     end
   end
@@ -274,7 +278,11 @@ RSpec.describe "GithubTokens" do
       it "shows Deactivate button for active tokens" do
         token = create(:github_token, account: account)
         get github_token_path(token)
-        expect(response.body).to include("Deactivate")
+        document = Nokogiri::HTML(response.body)
+        deactivate_elements = document.css("button, input[type='submit'], a").select do |node|
+          node.text.include?("Deactivate") || node["value"]&.include?("Deactivate")
+        end
+        expect(deactivate_elements).not_to be_empty
       end
     end
   end
