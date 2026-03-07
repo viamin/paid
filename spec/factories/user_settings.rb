@@ -10,7 +10,7 @@ FactoryBot.define do
     agent_timeout_seconds { 3600 }
     default_agent_provider { "claude" }
     container_memory_bytes { 4 * 1024 * 1024 * 1024 }
-    container_cpu_quota { 200_000 }
+    max_concurrent_runs { 2 }
     container_timeout_seconds { 1800 }
     default_allowed_github_usernames { [] }
     default_branch { "main" }

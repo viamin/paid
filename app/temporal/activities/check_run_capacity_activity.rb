@@ -5,7 +5,7 @@ module Activities
     activity_name "CheckRunCapacity"
 
     def execute(input)
-      max = Rails.application.config.x.max_concurrent_runs
+      max = UserSetting.maximum(:max_concurrent_runs) || Rails.application.config.x.max_concurrent_runs
       active_count = AgentRun.active.count
       has_capacity = active_count < max
 
