@@ -61,7 +61,7 @@ class AgentRun < ApplicationRecord
 
     if normalized_query.present?
       pattern = "%#{sanitize_sql_like(normalized_query)}%"
-      where("goal = :query OR custom_prompt ILIKE :pattern", query: normalized_query, pattern: pattern)
+      where("goal ILIKE :pattern OR custom_prompt ILIKE :pattern", pattern: pattern)
     else
       all
     end

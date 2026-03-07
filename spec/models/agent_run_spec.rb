@@ -225,7 +225,7 @@ RSpec.describe AgentRun do
         expect(results).to contain_exactly(matching)
       end
 
-      it "matches by goal enum value" do
+      it "matches by goal column value" do
         pr_run = create(:agent_run, goal: "create_pr")
         issue_run = create(:agent_run, goal: "create_issue")
 
