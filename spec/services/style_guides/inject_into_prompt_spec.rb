@@ -73,10 +73,8 @@ RSpec.describe StyleGuides::InjectIntoPrompt do
       end
 
       it "skips guides with blank content_for_prompt" do
-        create(:style_guide, :global, name: "Empty Guide", raw_content: "Has content")
-        guide = StyleGuide.last
-        allow(guide).to receive(:content_for_prompt).and_return(nil)
-        allow(StyleGuide).to receive(:resolve_for).and_return([ guide ])
+        guide = create(:style_guide, :global, name: "Empty Guide", raw_content: "Has content")
+        guide.update_columns(raw_content: "", compressed_content: "")
 
         result = described_class.call(prompt: base_prompt, project: project)
 
