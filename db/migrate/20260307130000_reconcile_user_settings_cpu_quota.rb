@@ -10,8 +10,6 @@ class ReconcileUserSettingsCpuQuota < ActiveRecord::Migration[8.1]
   end
 
   def down
-    add_column :user_settings, :max_concurrent_runs, :integer, default: 3, null: false unless column_exists?(:user_settings, :max_concurrent_runs)
-
-    remove_column :user_settings, :container_cpu_quota if column_exists?(:user_settings, :container_cpu_quota)
+    raise ActiveRecord::IrreversibleMigration, "ReconcileUserSettingsCpuQuota cannot be safely reversed"
   end
 end
