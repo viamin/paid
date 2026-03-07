@@ -54,8 +54,10 @@ module Activities
     def scan_pr(project, client, issue)
       return nil if active_run_exists?(project, issue)
 
+      maybe_restart_draft(project, client, issue)
+
       case issue.pr_review_phase
-      when "draft"
+      when "draft", "restarted"
         scan_draft_pr(project, client, issue)
       when "ready"
         scan_ready_pr(project, client, issue)
@@ -119,7 +121,7 @@ module Activities
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: triggers,
-        phase: "draft",
+        phase: issue.pr_review_phase,
         labels_to_remove: [],
         current_draft_review_count: issue.draft_review_count
       }
@@ -188,7 +190,7 @@ module Activities
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "ready_for_owner", details: "CI green, review bots clean" } ],
-        phase: "draft",
+        phase: issue.pr_review_phase,
         owner_reviewer_login: issue.project.owner_reviewer_login
       }
     end
@@ -200,7 +202,7 @@ module Activities
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ],
-        phase: "draft",
+        phase: issue.pr_review_phase,
         current_draft_review_count: issue.draft_review_count,
         owner_reviewer_login: issue.project.owner_reviewer_login
       }
@@ -234,6 +236,29 @@ module Activities
       triggers.concat(check_merge_conflicts(project, pr_data))
 
       triggers
+    end
+
+    # Detect when a user converts a ready/escalated PR back to draft on GitHub.
+    # Reset counts and transition to "restarted" phase so the scanner treats it
+    # like a fresh draft PR.
+    def maybe_restart_draft(project, client, issue)
+      return unless %w[ready escalated].include?(issue.pr_review_phase)
+
+      pr_data = fetch_pr_data(client, project, issue)
+      return unless pr_data&.draft
+
+      issue.update!(
+        pr_review_phase: "restarted",
+        draft_review_count: 0,
+        pr_followup_count: 0
+      )
+
+      logger.info(
+        message: "pr_scanner.phase_restarted",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        previous_phase: issue.pr_review_phase_before_last_save
+      )
     end
 
     def active_run_exists?(project, issue)
