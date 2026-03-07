@@ -45,6 +45,7 @@ class UserSettingsController < ApplicationController
       :default_branch,
       :default_project_active,
       :default_allowed_github_usernames_csv,
+      :allowed_service_images_csv,
       :circuit_breaker_failure_threshold,
       :circuit_breaker_timeout_seconds,
       :retry_max_attempts,
