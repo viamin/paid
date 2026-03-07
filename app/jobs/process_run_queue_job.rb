@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest/md5"
+require "set"
 
 class ProcessRunQueueJob < ApplicationJob
   queue_as :default
