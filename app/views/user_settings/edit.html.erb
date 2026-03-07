@@ -171,6 +171,14 @@
             </div>
             <p class="mt-1 text-xs text-gray-500">Default timeout for container commands. Minimum 60 seconds.</p>
           </div>
+
+          <div>
+            <%= form.label :allowed_service_images_csv, "Allowed Service Images", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.text_field :allowed_service_images_csv, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "postgres:16, redis:7-alpine" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Comma-separated list of Docker images allowed for service containers. Can also be set via the <code class="rounded bg-gray-100 px-1 py-0.5">SERVICE_CONTAINER_ALLOWED_IMAGES</code> environment variable.</p>
+          </div>
         </fieldset>
 
         <hr class="my-8 border-gray-200">

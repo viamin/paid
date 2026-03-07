@@ -11,9 +11,21 @@ class ServiceContainer < ApplicationRecord
   validates :port, presence: true, numericality: { only_integer: true, greater_than: 0, less_than: 65_536 }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validate :image_in_allowlist, if: :validate_image?
+  validate :env_json_valid
 
   scope :running, -> { where(status: "running") }
   scope :stopped, -> { where(status: "stopped") }
+
+  # Virtual attribute for editing env as JSON text
+  def env_json
+    (env || {}).to_json
+  end
+
+  def env_json=(value)
+    self.env = value.present? ? JSON.parse(value) : {}
+  rescue JSON::ParserError
+    @env_json_invalid = true
+  end
 
   def running?
     status == "running"
@@ -28,6 +40,10 @@ class ServiceContainer < ApplicationRecord
   end
 
   private
+
+  def env_json_valid
+    errors.add(:env_json, "must be valid JSON") if @env_json_invalid
+  end
 
   # Only validate image on create or when the image is actually changing.
   # Status-only updates (stop/start/error) must not re-validate.
