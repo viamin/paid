@@ -116,7 +116,7 @@ module Activities
           }
         rescue ProviderRateLimitError => e
           last_error = "rate_limited"
-          rate_limit_reset_at = e.reset_at
+          rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
           persist_rate_limit(user_settings, provider, provider_states, e.reset_at)
           agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
           logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
@@ -134,17 +134,18 @@ module Activities
         end
       end
 
-      # All providers exhausted. Preserve any more specific terminal state
-      # already set by provider execution (e.g. timeout).
-      if !agent_run.finished? && last_error == "rate_limited"
+      # All providers exhausted. Timeout takes precedence over rate_limited
+      # because it indicates an actual execution attempt that should trigger
+      # ProcessRunQueueJob to re-schedule work.
+      if timeout_error.present?
+        agent_run.timeout!(error: timeout_error) unless agent_run.finished?
+        ProcessRunQueueJob.perform_later
+      elsif !agent_run.finished? && last_error == "rate_limited"
         provider_list = providers.any? ? providers.join(", ") : "none"
         agent_run.rate_limit!(
           error: "All providers rate limited: #{provider_list}",
           reset_at: rate_limit_reset_at
         )
-      elsif timeout_error.present?
-        agent_run.timeout!(error: timeout_error) unless agent_run.finished?
-        ProcessRunQueueJob.perform_later
       elsif !agent_run.finished?
         provider_list = providers.any? ? providers.join(", ") : "none"
         agent_run.fail!(error: "All providers exhausted: #{provider_list}")
