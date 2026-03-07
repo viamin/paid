@@ -21,6 +21,7 @@ module Activities
       github_issues = fetch_all_issues(client, project.full_name, labels)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
+      parse_dependencies(project, synced_issues) if synced_issues.any?
       closed_count = close_stale_issues(project, github_issues)
 
       logger.info(
@@ -125,6 +126,29 @@ module Activities
       )
 
       { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted }
+    end
+
+    def parse_dependencies(project, synced_issues)
+      synced_issue_ids = synced_issues.filter_map { |si| si[:id] }
+      issues_relation = project.issues.where(
+        id: synced_issue_ids,
+        github_state: "open",
+        is_pull_request: false
+      )
+
+      issues_relation.find_each do |issue|
+        adjacency = IssueDependency.project_adjacency(project)
+        Issues::ParseDependencies.call(issue: issue, adjacency: adjacency)
+      rescue => e
+        logger.warn(
+          message: "github_sync.parse_dependencies_failed",
+          project_id: project.id,
+          issue_id: issue.id,
+          github_number: issue.github_number,
+          error_class: e.class.name,
+          error: e.message
+        )
+      end
     end
 
     def close_stale_issues(project, github_issues)
