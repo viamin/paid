@@ -56,6 +56,16 @@ class AgentRun < ApplicationRecord
   scope :active, -> { where(status: %w[pending running]) }
   scope :finished, -> { where(status: %w[completed failed cancelled timeout retried auth_expired]) }
   scope :recent, -> { order(created_at: :desc) }
+  scope :search_by_goal, lambda { |query|
+    normalized_query = query.to_s.strip
+
+    if normalized_query.present?
+      pattern = "%#{sanitize_sql_like(normalized_query)}%"
+      where("goal ILIKE :pattern OR custom_prompt ILIKE :pattern", pattern: pattern)
+    else
+      all
+    end
+  }
 
   ransacker :tokens_total, type: :integer do
     Arel.sql("COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)")
