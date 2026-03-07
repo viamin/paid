@@ -152,7 +152,7 @@ RSpec.describe Containers::ServiceProvisioner do
         call_count = 0
         allow(Docker::Container).to receive(:create) do
           call_count += 1
-          raise Docker::Error::ServerError, "Conflict. The container name is already in use" if call_count == 1
+          raise Docker::Error::ConflictError, "Conflict. The container name is already in use" if call_count == 1
           new_container
         end
         allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
@@ -174,7 +174,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create)
-          .and_raise(Docker::Error::ServerError, "Conflict. The container name is already in use")
+          .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
         allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(existing)
         allow(existing).to receive_messages(json: running_json, stop: nil, delete: nil)
         allow(provisioner).to receive(:tcp_port_open?).and_return(true)
@@ -192,7 +192,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create)
-          .and_raise(Docker::Error::ServerError, "Conflict. The container name is already in use")
+          .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
         allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
         allow(stale).to receive(:json).and_return({ "Config" => { "Labels" => {} } })
 
@@ -206,7 +206,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create)
-          .and_raise(Docker::Error::ServerError, "Conflict. The container name is already in use")
+          .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
         allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(stale)
         allow(stale).to receive(:json).and_return({ "Config" => { "Labels" => wrong_labels } })
 
