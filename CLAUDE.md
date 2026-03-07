@@ -15,6 +15,7 @@ Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI
 
 - **The `main` branch is protected** - Never commit directly to `main`. Always create a feature branch and open a pull request.
 - **Never commit build artifacts or tool caches** - Do not `git add` directories created by setup/install commands (e.g., `.corepack/`, `.pg-install/`, `.apt-cache/`, `.cache-pkg/`, `vendor/bundle/`, `.tmp-build/`, `.venv/`, `__pycache__/`). If `bin/setup`, `bundle install`, `yarn install`, or similar commands create new dotfile directories in the workspace root, those are build artifacts — not source code. Check `.gitignore` and `.git/info/exclude` before staging. When in doubt, use `git add <specific files>` rather than `git add -A`.
+- **Conventional Commits are required** - Commits must use Conventional Commit format so release automation can generate semantic release notes correctly.
 
 ## GitHub Issues
 
@@ -134,6 +135,16 @@ Orchestration code should be mechanically simple - delegate all semantic reasoni
 ### Always Fix Forward
 
 Never skip pre-commit hooks (`--no-verify`), never disable linters, never ignore failing tests. If a check fails, fix the underlying issue. This applies to both human developers, AI agents, and system-level code. The only acceptable use of `--no-verify` is when a hook fails due to an unpatched CVE with no released fix.
+
+## Release Management
+
+- Release tagging/changelog is automated by [`.github/workflows/release-please.yml`](.github/workflows/release-please.yml) using `release-please`.
+- Semantic release notes come from Conventional Commit headers:
+  - `feat:` -> minor release
+  - `fix:` -> patch release
+  - `!` or `BREAKING CHANGE:` footer -> major release
+- Use clear scopes when useful (e.g., `feat(agent-runs): ...`).
+- Keep commit subject lines descriptive and user-facing because they appear in changelog/release notes.
 
 ### Ruby Conventions
 
