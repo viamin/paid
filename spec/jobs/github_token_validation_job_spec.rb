@@ -14,7 +14,8 @@ RSpec.describe GithubTokenValidationJob do
         allow(Octokit::Client).to receive(:new).and_return(octokit_client)
         allow(octokit_client).to receive_messages(
           user: OpenStruct.new(login: "testuser", id: 12345, name: "Test User", email: "test@example.com"),
-          scopes: [ "repo", "read:org" ]
+          scopes: [ "repo", "read:org" ],
+          last_response: OpenStruct.new(headers: {})
         )
         allow(octokit_client).to receive(:middleware=)
         allow(octokit_client).to receive_messages(auto_paginate: false, repositories: [])
