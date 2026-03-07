@@ -14,6 +14,7 @@ class Project < ApplicationRecord
   has_many :worktrees, dependent: :destroy
   has_many :workflow_states, dependent: :destroy
   has_many :prompts, dependent: :destroy
+  has_many :style_guides, dependent: :destroy
   has_many :project_service_containers, dependent: :destroy
   has_many :service_containers, through: :project_service_containers
 
