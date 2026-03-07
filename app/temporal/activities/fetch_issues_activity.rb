@@ -128,10 +128,12 @@ module Activities
     end
 
     def close_stale_issues(project, github_issues)
-      return 0 if github_issues.empty?
-
       fetched_github_ids = github_issues.map(&:id).to_set
-      stale_issues = project.issues.where(github_state: "open").where.not(github_issue_id: fetched_github_ids)
+      stale_issues = if fetched_github_ids.empty?
+        project.issues.where(github_state: "open")
+      else
+        project.issues.where(github_state: "open").where.not(github_issue_id: fetched_github_ids)
+      end
       count = stale_issues.count
 
       if count > 0
