@@ -106,15 +106,11 @@ class AgentRun < ApplicationRecord
 
   # Returns the count of active runs owned by the given user.
   # Optionally excludes a specific run (e.g. one just claimed from the queue).
+  # Uses a JOIN on projects.created_by_id to avoid a subquery per call.
   def self.active_count_for_user(user, exclude: nil)
-    scope = active.where(project_id: user_owned_project_ids(user))
+    scope = active.joins(:project).where(projects: { created_by_id: user.id })
     scope = scope.where.not(id: exclude.id) if exclude
     scope.count
-  end
-
-  # Returns the IDs of projects owned by the given user.
-  def self.user_owned_project_ids(user)
-    Project.where(created_by: user).select(:id)
   end
 
   # Returns the effective concurrency cap, respecting both the system-wide

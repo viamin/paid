@@ -20,10 +20,14 @@ class ProcessRunQueueJob < ApplicationJob
 
     begin
       consecutive_failures = 0
-      skipped_ids = []
+      skipped_ids = Set.new
+      remaining_queued = AgentRun.queued.count
 
       while AgentRun.has_run_capacity?
-        agent_run = AgentRun.claim_next_queued_run(exclude_ids: skipped_ids)
+        # Stop once all remaining queued runs have been skipped
+        break if skipped_ids.size >= remaining_queued
+
+        agent_run = AgentRun.claim_next_queued_run(exclude_ids: skipped_ids.to_a)
         break unless agent_run
 
         # Enforce per-user concurrency limit. The system-wide check above gates
@@ -36,7 +40,7 @@ class ProcessRunQueueJob < ApplicationJob
           max = AgentRun.effective_max_concurrent_runs(user)
           unless user_active_count < max
             agent_run.update!(status: "queued")
-            skipped_ids << agent_run.id
+            skipped_ids.add(agent_run.id)
             next
           end
         end
