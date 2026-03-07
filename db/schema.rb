@@ -384,6 +384,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_07_120000) do
     t.index ["name"], name: "index_service_containers_on_name", unique: true
   end
 
+  create_table "style_guides", force: :cascade do |t|
+    t.bigint "account_id"
+    t.boolean "active", default: true, null: false
+    t.text "compressed_content"
+    t.jsonb "compression_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "language", limit: 50
+    t.string "name", limit: 255, null: false
+    t.bigint "project_id"
+    t.text "raw_content", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_style_guides_on_account_id"
+    t.index ["active"], name: "index_style_guides_on_active"
+    t.index ["language"], name: "index_style_guides_on_language"
+    t.index ["name", "account_id"], name: "index_style_guides_on_name_account", unique: true, where: "((account_id IS NOT NULL) AND (project_id IS NULL))"
+    t.index ["name", "project_id"], name: "index_style_guides_on_name_project", unique: true, where: "(project_id IS NOT NULL)"
+    t.index ["name"], name: "index_style_guides_on_name_global", unique: true, where: "((account_id IS NULL) AND (project_id IS NULL))"
+    t.index ["project_id"], name: "index_style_guides_on_project_id"
+    t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_style_guides_scope_consistency"
+  end
+
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
     t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
@@ -487,6 +508,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_07_120000) do
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_states", "users", on_delete: :cascade
   add_foreign_key "providers", "users", on_delete: :cascade
+  add_foreign_key "style_guides", "accounts", on_delete: :cascade
+  add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"

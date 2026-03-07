@@ -39,6 +39,11 @@ Rails.application.routes.draw do
     get :diff, on: :member
   end
 
+  # Style guide management
+  resources :style_guides do
+    post :compress, on: :member
+  end
+
   # Projects management
   resources :projects do
     resource :workflow_status, only: [ :show ]
