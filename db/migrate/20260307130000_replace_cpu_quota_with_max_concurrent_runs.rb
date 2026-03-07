@@ -3,14 +3,14 @@
 class ReplaceCpuQuotaWithMaxConcurrentRuns < ActiveRecord::Migration[8.1]
   # NO-OP shim migration.
   #
-  # The actual conversion from container_cpu_quota to max_concurrent_runs
-  # is implemented in 20260307010138_replace_container_cpu_quota_with_max_concurrent_runs.
-  # This migration originally duplicated that logic and was irreversible, which
-  # made rolling back past this point impossible. It has been converted into a
-  # no-op while being kept in place to preserve migration ordering.
+  # This migration originally contained conversion logic from container_cpu_quota
+  # to max_concurrent_runs, but it duplicated and conflicted with
+  # 20260307010138_replace_container_cpu_quota_with_max_concurrent_runs.
+  # It has been converted into a no-op to preserve migration ordering.
   #
-  # Running this migration now has no effect on the schema. Rolling it back
-  # also has no effect; it simply moves the schema version pointer.
+  # Migration 20260307010138 serves as the idempotent "repair" migration:
+  # it uses column_exists? guards so it converges the schema correctly even
+  # on databases that previously ran the old version of this migration.
   def up
     # Intentionally left blank: this migration is a no-op shim.
   end
