@@ -7,7 +7,12 @@ module Activities
     def execute(input)
       user = find_user_from_input(input)
       max = AgentRun.effective_max_concurrent_runs(user)
-      active_count = AgentRun.active.count
+      active_count = if user
+        user_project_ids = Project.where(created_by: user).select(:id)
+        AgentRun.active.where(project_id: user_project_ids).count
+      else
+        AgentRun.active.count
+      end
       has_capacity = active_count < max
 
       logger.info(
