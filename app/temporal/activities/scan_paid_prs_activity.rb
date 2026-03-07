@@ -77,8 +77,8 @@ module Activities
     # --- Draft phase scanning ---
 
     def scan_draft_pr(project, client, issue, pr_data: nil)
-      if issue.draft_review_count >= project.max_draft_review_rounds &&
-          !project.max_draft_review_rounds.zero?
+      if project.max_draft_review_rounds.positive? &&
+          issue.draft_review_count >= project.max_draft_review_rounds
         return escalate_trigger(issue)
       end
 
@@ -328,6 +328,8 @@ module Activities
     end
 
     def all_checks_completed?(checks)
+      return true if checks.empty?
+
       checks.all? { |c| c[:conclusion].present? }
     end
 
