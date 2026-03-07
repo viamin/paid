@@ -199,6 +199,41 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe ".search_by_goal" do
+      it "returns runs with matching custom_prompt (case-insensitive)" do
+        matching = create(:agent_run, :with_custom_prompt, custom_prompt: "Fix null byte handling")
+        create(:agent_run, :with_custom_prompt, custom_prompt: "Refactor auth module")
+
+        results = described_class.search_by_goal("null byte")
+
+        expect(results).to contain_exactly(matching)
+      end
+
+      it "matches partial strings" do
+        matching = create(:agent_run, :with_custom_prompt, custom_prompt: "Add user authentication")
+
+        results = described_class.search_by_goal("auth")
+
+        expect(results).to contain_exactly(matching)
+      end
+
+      it "is case-insensitive" do
+        matching = create(:agent_run, :with_custom_prompt, custom_prompt: "Fix NULL Byte issue")
+
+        results = described_class.search_by_goal("null byte")
+
+        expect(results).to contain_exactly(matching)
+      end
+
+      it "returns all runs when query is blank" do
+        create(:agent_run, :with_custom_prompt, custom_prompt: "Something")
+        create(:agent_run, :with_custom_prompt, custom_prompt: "Something else")
+
+        expect(described_class.search_by_goal("").count).to eq(2)
+        expect(described_class.search_by_goal(nil).count).to eq(2)
+      end
+    end
+
     describe ".recent" do
       it "orders by created_at descending" do
         older_run = create(:agent_run, created_at: 1.hour.ago)
