@@ -86,11 +86,24 @@ class AgentRun < ApplicationRecord
     [ (end_time - started_at).to_i, 0 ].max
   end
 
-  # Uses system-wide config (MAX_CONCURRENT_RUNS env var) intentionally:
-  # per-user settings must not raise the global concurrency cap.
-  def self.has_run_capacity?
-    max = Rails.application.config.x.max_concurrent_runs
+  # Checks whether the system has capacity for another agent run.
+  #
+  # When a user is provided, the effective cap is the lesser of the system-wide
+  # MAX_CONCURRENT_RUNS env var and the user's max_concurrent_runs setting.
+  # This lets users lower their own cap but never exceed the global limit.
+  def self.has_run_capacity?(user: nil)
+    max = effective_max_concurrent_runs(user)
     active.count < max
+  end
+
+  # Returns the effective concurrency cap, respecting both the system-wide
+  # limit and the optional per-user setting (whichever is lower).
+  def self.effective_max_concurrent_runs(user = nil)
+    system_max = Rails.application.config.x.max_concurrent_runs
+    return system_max unless user
+
+    user_max = user.settings.max_concurrent_runs
+    [ system_max, user_max ].min
   end
 
   def self.next_queued_run

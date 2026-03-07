@@ -231,7 +231,7 @@ module Projects
       create_agent_run(**attrs)
       ProcessRunQueueJob.perform_later
 
-      notice = if AgentRun.has_run_capacity? && AgentRun.queued.count <= 1
+      notice = if AgentRun.has_run_capacity?(user: current_user) && AgentRun.queued.count <= 1
         "Agent run created and will start momentarily."
       else
         "Agent run queued. It will start automatically when a slot opens."

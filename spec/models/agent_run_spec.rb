@@ -991,13 +991,41 @@ RSpec.describe AgentRun do
       expect(described_class.has_run_capacity?).to be true
     end
 
-    it "uses system config (not per-user settings) to prevent users from raising the global cap" do
+    it "without user context, uses only system config" do
       allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
-      create(:user_setting, max_concurrent_runs: 10)
       create(:agent_run, :running)
       create(:agent_run)
 
       expect(described_class.has_run_capacity?).to be false
+    end
+
+    context "with user context" do
+      let(:user) { create(:user) }
+
+      it "uses min of system config and user setting when user cap is lower" do
+        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+        user.settings.update!(max_concurrent_runs: 1)
+        create(:agent_run, :running)
+
+        expect(described_class.has_run_capacity?(user: user)).to be false
+      end
+
+      it "prevents users from raising cap above system config" do
+        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
+        user.settings.update!(max_concurrent_runs: 10)
+        create(:agent_run, :running)
+        create(:agent_run)
+
+        expect(described_class.has_run_capacity?(user: user)).to be false
+      end
+
+      it "allows runs when under both caps" do
+        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+        user.settings.update!(max_concurrent_runs: 3)
+        create(:agent_run, :running)
+
+        expect(described_class.has_run_capacity?(user: user)).to be true
+      end
     end
   end
 
