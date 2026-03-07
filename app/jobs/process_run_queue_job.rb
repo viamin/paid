@@ -25,6 +25,16 @@ class ProcessRunQueueJob < ApplicationJob
         agent_run = AgentRun.claim_next_queued_run
         break unless agent_run
 
+        # Enforce per-user concurrency limit. The system-wide check above gates
+        # the loop, but the user may have a lower personal cap. If so, re-queue
+        # the run; it will be retried on the next job execution when capacity
+        # opens up.
+        user = agent_run.project.created_by
+        unless AgentRun.has_run_capacity?(user: user)
+          agent_run.update!(status: "queued")
+          break
+        end
+
         if start_claimed_run(agent_run)
           consecutive_failures = 0
         else

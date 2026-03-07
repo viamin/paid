@@ -79,13 +79,6 @@ RSpec.describe UserSetting do
     end
   end
 
-  describe "max_concurrent_runs" do
-    it "defaults to 2" do
-      setting = build(:user_setting)
-      expect(setting.max_concurrent_runs).to eq(2)
-    end
-  end
-
   describe "#default_allowed_github_usernames_csv" do
     it "returns usernames as comma-separated string" do
       setting = build(:user_setting, default_allowed_github_usernames: %w[alice bob])

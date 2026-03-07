@@ -94,6 +94,21 @@ RSpec.describe ProcessRunQueueJob do
       expect(good_run.reload.status).to eq("pending")
     end
 
+    it "re-queues run and stops when user concurrency limit is reached" do
+      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 1)
+      create(:agent_run, :running, project: project)
+      queued_run = create(:agent_run, :queued, project: project)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(queued_run.reload.status).to eq("queued")
+    end
+
     it "includes workflow input fields from the agent run" do
       issue = create(:issue)
       queued_run = create(:agent_run, :queued,
