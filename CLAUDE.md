@@ -136,16 +136,6 @@ Orchestration code should be mechanically simple - delegate all semantic reasoni
 
 Never skip pre-commit hooks (`--no-verify`), never disable linters, never ignore failing tests. If a check fails, fix the underlying issue. This applies to both human developers, AI agents, and system-level code. The only acceptable use of `--no-verify` is when a hook fails due to an unpatched CVE with no released fix.
 
-## Release Management
-
-- Release tagging/changelog is automated by [`.github/workflows/release-please.yml`](.github/workflows/release-please.yml) using `release-please`.
-- Semantic release notes come from Conventional Commit headers:
-  - `feat:` -> minor release
-  - `fix:` -> patch release
-  - `!` or `BREAKING CHANGE:` footer -> major release
-- Use clear scopes when useful (e.g., `feat(agent-runs): ...`).
-- Keep commit subject lines descriptive and user-facing because they appear in changelog/release notes.
-
 ### Ruby Conventions
 
 - Follow `rubocop-rails-omakase` style (StandardRB-based)
@@ -166,6 +156,16 @@ Never skip pre-commit hooks (`--no-verify`), never disable linters, never ignore
 - UUIDs for external-facing IDs, bigints for internal foreign keys
 - Always add foreign key constraints
 - Index all foreign keys and frequently queried columns
+
+## Release Management
+
+- Release tagging/changelog is automated by [`.github/workflows/release-please.yml`](.github/workflows/release-please.yml) using `release-please`.
+- Semantic release notes come from Conventional Commit headers:
+  - `feat:` -> minor release
+  - `fix:` -> patch release
+  - `!` or `BREAKING CHANGE:` footer -> major release
+- Use clear scopes when useful (e.g., `feat(agent-runs): ...`).
+- Keep commit subject lines descriptive and user-facing because they appear in changelog/release notes.
 
 ## Testing
 
