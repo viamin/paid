@@ -87,7 +87,7 @@ class AgentRun < ApplicationRecord
   end
 
   def self.has_run_capacity?
-    max = UserSetting.maximum(:max_concurrent_runs) || Rails.application.config.x.max_concurrent_runs
+    max = Rails.application.config.x.max_concurrent_runs
     active.count < max
   end
 
