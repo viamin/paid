@@ -125,6 +125,38 @@ RSpec.describe UserSetting do
     end
   end
 
+  describe "#allowed_service_images_csv" do
+    it "returns images as comma-separated string" do
+      setting = build(:user_setting, allowed_service_images: [ "postgres:16", "redis:7-alpine" ])
+      expect(setting.allowed_service_images_csv).to eq("postgres:16, redis:7-alpine")
+    end
+
+    it "returns empty string when no images" do
+      setting = build(:user_setting, allowed_service_images: [])
+      expect(setting.allowed_service_images_csv).to eq("")
+    end
+  end
+
+  describe "#allowed_service_images_csv=" do
+    it "parses comma-separated string into array" do
+      setting = build(:user_setting)
+      setting.allowed_service_images_csv = "postgres:16, redis:7-alpine, selenium/standalone-chrome:latest"
+      expect(setting.allowed_service_images).to eq([ "postgres:16", "redis:7-alpine", "selenium/standalone-chrome:latest" ])
+    end
+
+    it "strips whitespace and rejects blanks" do
+      setting = build(:user_setting)
+      setting.allowed_service_images_csv = " postgres:16 , , redis:7-alpine "
+      expect(setting.allowed_service_images).to eq([ "postgres:16", "redis:7-alpine" ])
+    end
+
+    it "deduplicates images" do
+      setting = build(:user_setting)
+      setting.allowed_service_images_csv = "postgres:16, redis:7-alpine, postgres:16"
+      expect(setting.allowed_service_images).to eq([ "postgres:16", "redis:7-alpine" ])
+    end
+  end
+
   describe "default values" do
     let(:user) { create(:user) }
     let(:setting) { described_class.create!(user: user) }

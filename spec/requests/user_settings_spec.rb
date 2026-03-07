@@ -92,6 +92,17 @@ RSpec.describe "UserSettings" do
         expect(settings.container_timeout_seconds).to eq(3600)
       end
 
+      it "updates allowed service images setting" do
+        patch user_settings_path, params: {
+          user_setting: {
+            allowed_service_images_csv: "postgres:16, redis:7-alpine"
+          }
+        }
+        expect(response).to redirect_to(edit_user_settings_path)
+        settings = user.reload.settings
+        expect(settings.allowed_service_images).to eq(%w[postgres:16 redis:7-alpine])
+      end
+
       it "updates project default settings" do
         patch user_settings_path, params: {
           user_setting: {
