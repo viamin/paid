@@ -183,7 +183,7 @@ module Containers
 
     def create_or_replace_container!(service_container)
       create_docker_container(service_container)
-    rescue Docker::Error::ServerError => e
+    rescue Docker::Error::ConflictError, Docker::Error::ServerError => e
       raise unless e.message&.include?("Conflict") && e.message&.include?("already in use")
 
       log_info("service_provisioner.container_name_conflict", name: service_container.name)
