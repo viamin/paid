@@ -63,7 +63,7 @@ RSpec.describe "AgentRuns" do
       it "shows the goal filter input" do
         get agent_runs_path
 
-        expect(response.body).to include("Search goal...")
+        expect(response.body).to include("Search goal or prompt...")
       end
 
       it "sorts agent runs ascending via Ransack sort params" do
