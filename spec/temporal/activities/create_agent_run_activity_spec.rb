@@ -139,16 +139,14 @@ RSpec.describe Activities::CreateAgentRunActivity do
       end
 
       it "appends trusted issue comments to the rendered custom_prompt" do
-        github_client = instance_double(GithubClient)
         trusted_login = project.allowed_github_usernames.first
         comment = OpenStruct.new(
           user: OpenStruct.new(login: trusted_login),
           body: "Please also update the docs"
         )
-        allow(github_client).to receive(:issue_comments)
-          .with(project.full_name, issue.github_number)
-          .and_return([ comment ])
-        allow(project.github_token).to receive(:client).and_return(github_client)
+        allow(Prompts::BuildForIssue).to receive(:conversation_section_for).and_return(
+          Prompts::BuildForIssue.format_conversation_section([ comment ])
+        )
 
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
