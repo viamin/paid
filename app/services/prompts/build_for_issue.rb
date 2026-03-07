@@ -15,11 +15,17 @@ module Prompts
     LANGUAGE_TEST_COMMANDS = LanguageCommands::LANGUAGE_TEST_COMMANDS
     LANGUAGE_LINT_COMMANDS = LanguageCommands::LANGUAGE_LINT_COMMANDS
 
-    attr_reader :issue, :project
+    # Maximum number of trusted comments to include in the prompt
+    MAX_COMMENTS = 20
+    # Maximum character length per comment body before truncation
+    MAX_COMMENT_LENGTH = 2000
 
-    def initialize(issue:, project:)
+    attr_reader :issue, :project, :github_client
+
+    def initialize(issue:, project:, github_client: nil)
       @issue = issue
       @project = project
+      @github_client = github_client
     end
 
     def self.call(...)
@@ -51,7 +57,7 @@ module Prompts
         **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
         If the commit is rejected, read the error output carefully, fix the issues, and commit again.
         Keep iterating until the commit succeeds. Do not leave uncommitted changes.
-
+        #{conversation_section}
         # Rules — you MUST follow these
 
         - **Lint and tests MUST pass before every commit.** Do not commit code that fails lint or tests.
@@ -67,7 +73,55 @@ module Prompts
       PROMPT
     end
 
+    # Fetches and formats trusted issue comments as a prompt section.
+    # Extracted as a class method so CreateAgentRunActivity can append
+    # this section to rendered PromptVersion custom_prompts, avoiding
+    # the effective_prompt bypass described in the review.
+    def self.conversation_section_for(project:, issue:, github_client: nil)
+      return "" unless github_client
+
+      comments = fetch_trusted_comments(
+        github_client: github_client,
+        repo: project.full_name,
+        number: issue.github_number,
+        project: project
+      )
+      format_conversation_section(comments)
+    end
+
+    def self.fetch_trusted_comments(github_client:, repo:, number:, project:)
+      all_comments = github_client.issue_comments(repo, number)
+      all_comments
+        .select { |c| project.trusted_github_user?(c.user&.login) }
+        .last(MAX_COMMENTS)
+    rescue GithubClient::Error
+      []
+    end
+
+    def self.format_conversation_section(comments)
+      return "" unless comments.any?
+
+      comment_text = comments.map do |c|
+        body = c.body.to_s
+        body = "#{body[0, MAX_COMMENT_LENGTH]}… [truncated]" if body.length > MAX_COMMENT_LENGTH
+        "- **#{c.user.login}**: #{body}"
+      end.join("\n")
+
+      (
+        "\n# Conversation Comments\n\n" \
+          "Comments from project collaborators:\n\n" \
+          "#{comment_text}\n\n" \
+          "Address any actionable requests in these comments.\n"
+      ).delete("\u0000")
+    end
+
     private
+
+    def conversation_section
+      self.class.conversation_section_for(
+        project: project, issue: issue, github_client: github_client
+      )
+    end
 
     def test_command
       LANGUAGE_TEST_COMMANDS.fetch(detected_language, "echo \"No test command configured\"")

@@ -1,11 +1,19 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe Activities::CreateAgentRunActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
+
+  before do
+    # Stub conversation_section_for so the activity does not make real HTTP
+    # calls to fetch issue comments (blocked by WebMock). Individual tests
+    # that exercise conversation section behavior override this stub.
+    allow(Prompts::BuildForIssue).to receive(:conversation_section_for).and_return("")
+  end
 
   describe "#execute" do
     it "creates an agent run for the project and issue" do
@@ -135,6 +143,23 @@ RSpec.describe Activities::CreateAgentRunActivity do
         agent_run = AgentRun.find(result[:agent_run_id])
         expect(agent_run.prompt_version).to be_nil
         expect(agent_run.custom_prompt).to be_nil
+      end
+
+      it "appends trusted issue comments to the rendered custom_prompt" do
+        trusted_login = project.allowed_github_usernames.first
+        comment = OpenStruct.new(
+          user: OpenStruct.new(login: trusted_login),
+          body: "Please also update the docs"
+        )
+        allow(Prompts::BuildForIssue).to receive(:conversation_section_for).and_return(
+          Prompts::BuildForIssue.format_conversation_section([ comment ])
+        )
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.custom_prompt).to include("Conversation Comments")
+        expect(agent_run.custom_prompt).to include("Please also update the docs")
       end
     end
 

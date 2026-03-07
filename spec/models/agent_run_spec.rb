@@ -664,6 +664,8 @@ RSpec.describe AgentRun do
         project = create(:project, allowed_github_usernames: [ "viamin" ])
         issue = create(:issue, project: project, title: "Fix auth", github_number: 5, github_creator_login: "viamin")
         agent_run = build(:agent_run, project: project, issue: issue)
+        github_client = instance_double(GithubClient, issue_comments: [])
+        allow(project.github_token).to receive(:client).and_return(github_client)
 
         prompt = agent_run.prompt_for_issue
 
