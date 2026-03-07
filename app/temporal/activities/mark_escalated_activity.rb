@@ -6,11 +6,17 @@ module Activities
   class MarkEscalatedActivity < BaseActivity
     activity_name "MarkEscalated"
 
+    PAID_ESCALATED_LABEL = "paid-escalated"
+
     def execute(input)
       issue = Issue.find_by(id: input[:issue_id])
       return { updated: false } unless issue
 
+      project = issue.project
+      client = project.github_token.client
       issue.update!(pr_review_phase: "escalated")
+
+      add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
 
       logger.info(
         message: "pr_review.marked_escalated",

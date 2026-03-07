@@ -77,20 +77,21 @@ module Activities
     # --- Draft phase scanning ---
 
     def scan_draft_pr(project, client, issue, pr_data: nil)
-      if project.max_draft_review_rounds.zero?
-        return ready_for_owner_trigger(issue)
-      end
-
-      if issue.draft_review_count >= project.max_draft_review_rounds
+      if project.max_draft_review_rounds.positive? &&
+          issue.draft_review_count >= project.max_draft_review_rounds
         return escalate_trigger(issue)
       end
 
-      # Fetch review threads first — cheapest signal that often suffices.
-      thread_triggers = fetch_review_thread_triggers(client, project, issue)
-      review_bot_triggers = thread_triggers.select { |t| t[:type] == "review_bot_threads" }
-      human_triggers = thread_triggers.select { |t| t[:type] == "review_threads" }
+      skip_comment_signals = project.max_draft_review_rounds.zero?
 
-      all_triggers = review_bot_triggers + human_triggers
+      # Fetch review threads first — cheapest signal that often suffices.
+      unless skip_comment_signals
+        thread_triggers = fetch_review_thread_triggers(client, project, issue)
+        review_bot_triggers = thread_triggers.select { |t| t[:type] == "review_bot_threads" }
+        human_triggers = thread_triggers.select { |t| t[:type] == "review_threads" }
+      end
+
+      all_triggers = (review_bot_triggers || []) + (human_triggers || [])
 
       # Only fetch PR data and check runs if review threads alone aren't enough.
       if all_triggers.empty?
@@ -101,7 +102,7 @@ module Activities
       end
 
       # Only fetch conversation comments if still no triggers.
-      if all_triggers.empty?
+      if all_triggers.empty? && !skip_comment_signals
         last_run = last_completed_run(project, issue)
         all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
 
@@ -116,8 +117,11 @@ module Activities
         # If we couldn't fetch PR data, don't prematurely advance the phase.
         return nil if pr_data.nil?
 
-        # Only auto-advance when we have at least one check and all are green.
-        return ready_for_owner_trigger(issue) if checks.present? && all_checks_green?(checks)
+        # Only auto-advance when we have at least one check and all conclusions are green.
+        # all_checks_green? implicitly rejects nil conclusions (pending checks).
+        if checks.present? && all_checks_green?(checks)
+          return ready_for_owner_trigger(issue)
+        end
 
         return nil # CI still pending or checks unavailable
       end
