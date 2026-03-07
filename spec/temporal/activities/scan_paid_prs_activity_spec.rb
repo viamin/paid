@@ -599,6 +599,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when draft PR has some green checks but others still pending" do
+      before do
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [
+            { name: "lint", conclusion: "success" },
+            { name: "rspec", conclusion: nil }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not advance to ready while checks are pending" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "when draft review limit is reached" do
       before do
         project.update!(max_draft_review_rounds: 3, owner_reviewer_login: "viamin")
@@ -743,12 +767,60 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft_review_count: 0)
       end
 
-      it "returns ready_for_owner trigger immediately" do
+      it "returns ready_for_owner trigger when CI is green" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: []
+        )
+
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+
+      it "does not return ready_for_owner when CI is failing" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ci_failure")
+      end
+
+      it "ignores review threads and returns ready_for_owner when CI is green" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "viamin" } ]
+            }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+
+      it "does not return ready_for_owner when CI is pending" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: nil } ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
       end
     end
 
