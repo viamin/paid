@@ -2,7 +2,7 @@
 
 class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed].freeze
-  PR_REVIEW_PHASES = %w[draft ready merged escalated].freeze
+  PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
 
   belongs_to :project
   belongs_to :parent_issue, class_name: "Issue", optional: true
@@ -54,7 +54,7 @@ class Issue < ApplicationRecord
   end
 
   def draft_phase?
-    pr_review_phase == "draft"
+    pr_review_phase.in?(%w[draft restarted])
   end
 
   def ready_phase?

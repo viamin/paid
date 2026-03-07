@@ -148,6 +148,32 @@ RSpec.describe Issue do
       end
     end
 
+    describe "#draft_phase?" do
+      it "returns true for draft phase" do
+        pr = build(:issue, :pull_request, pr_review_phase: "draft")
+
+        expect(pr.draft_phase?).to be true
+      end
+
+      it "returns true for restarted phase" do
+        pr = build(:issue, :pull_request, pr_review_phase: "restarted")
+
+        expect(pr.draft_phase?).to be true
+      end
+
+      it "returns false for ready phase" do
+        pr = build(:issue, :pull_request, pr_review_phase: "ready")
+
+        expect(pr.draft_phase?).to be false
+      end
+
+      it "returns false for escalated phase" do
+        pr = build(:issue, :pull_request, pr_review_phase: "escalated")
+
+        expect(pr.draft_phase?).to be false
+      end
+    end
+
     describe "#sub_issue?" do
       it "returns true when issue has a parent" do
         issue = build(:issue, :sub_issue)
