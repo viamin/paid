@@ -42,7 +42,24 @@ module Activities
 
       issue.update!(pr_review_phase: "ready")
 
+      add_phase_label(client, project, pr_number,
+        Activities::ScanPaidPrsActivity::PAID_READY_LABEL)
+
       { marked_ready: true, pr_number: pr_number }
+    end
+
+    private
+
+    def add_phase_label(client, project, pr_number, label)
+      client.add_labels_to_issue(project.full_name, pr_number, [ label ])
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_review.add_label_failed",
+        project_id: project.id,
+        pr_number: pr_number,
+        label: label,
+        error: e.message
+      )
     end
   end
 end
