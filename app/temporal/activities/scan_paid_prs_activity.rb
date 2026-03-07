@@ -54,15 +54,23 @@ module Activities
     def scan_pr(project, client, issue)
       return nil if active_run_exists?(project, issue)
 
-      maybe_restart_draft(project, client, issue)
-
       case issue.pr_review_phase
       when "draft", "restarted"
         scan_draft_pr(project, client, issue)
       when "ready"
-        scan_ready_pr(project, client, issue)
+        pr_data = fetch_pr_data(client, project, issue)
+        if maybe_restart_draft(project, issue, pr_data)
+          scan_draft_pr(project, client, issue)
+        else
+          scan_ready_pr(project, client, issue, pr_data: pr_data)
+        end
       when "escalated"
-        scan_escalated_pr(project, client, issue)
+        pr_data = fetch_pr_data(client, project, issue)
+        if maybe_restart_draft(project, issue, pr_data)
+          scan_draft_pr(project, client, issue)
+        else
+          scan_escalated_pr(project, client, issue, pr_data: pr_data)
+        end
       end
     end
 
@@ -129,8 +137,8 @@ module Activities
 
     # --- Ready phase scanning ---
 
-    def scan_ready_pr(project, client, issue)
-      pr_data = fetch_pr_data(client, project, issue)
+    def scan_ready_pr(project, client, issue, pr_data: nil)
+      pr_data ||= fetch_pr_data(client, project, issue)
       checks = fetch_check_runs(client, project, pr_data)
       reviews = fetch_reviews(client, project, issue)
       mergeable = pr_data && pr_data[:mergeable]
@@ -163,10 +171,10 @@ module Activities
 
     # --- Escalated phase scanning ---
 
-    def scan_escalated_pr(project, client, issue)
+    def scan_escalated_pr(project, client, issue, pr_data: nil)
       return nil if followup_limit_reached?(project, issue)
 
-      triggers = detect_ready_triggers(project, client, issue)
+      triggers = detect_ready_triggers(project, client, issue, pr_data: pr_data)
       return nil if triggers.empty?
 
       log_triggers(project, issue, triggers)
@@ -240,12 +248,9 @@ module Activities
 
     # Detect when a user converts a ready/escalated PR back to draft on GitHub.
     # Reset counts and transition to "restarted" phase so the scanner treats it
-    # like a fresh draft PR.
-    def maybe_restart_draft(project, client, issue)
-      return unless %w[ready escalated].include?(issue.pr_review_phase)
-
-      pr_data = fetch_pr_data(client, project, issue)
-      return unless pr_data&.draft
+    # like a fresh draft PR. Returns true if the phase was restarted.
+    def maybe_restart_draft(project, issue, pr_data)
+      return false unless pr_data&.draft
 
       issue.update!(
         pr_review_phase: "restarted",
@@ -259,6 +264,8 @@ module Activities
         pr_number: issue.github_number,
         previous_phase: issue.pr_review_phase_before_last_save
       )
+
+      true
     end
 
     def active_run_exists?(project, issue)
