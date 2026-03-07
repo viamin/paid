@@ -16,7 +16,7 @@ RSpec.describe Activities::CheckRunCapacityActivity do
       result = activity.execute({})
 
       expect(result[:has_capacity]).to be true
-      expect(result[:active_count]).to eq(1)
+      expect(result[:global_active_count]).to eq(1)
       expect(result[:max_concurrent_runs]).to eq(2)
     end
 
@@ -27,7 +27,7 @@ RSpec.describe Activities::CheckRunCapacityActivity do
       result = activity.execute({})
 
       expect(result[:has_capacity]).to be false
-      expect(result[:active_count]).to eq(2)
+      expect(result[:global_active_count]).to eq(2)
     end
 
     it "does not count queued runs as active" do
@@ -37,7 +37,7 @@ RSpec.describe Activities::CheckRunCapacityActivity do
       result = activity.execute({})
 
       expect(result[:has_capacity]).to be true
-      expect(result[:active_count]).to eq(1)
+      expect(result[:global_active_count]).to eq(1)
     end
 
     it "does not count finished runs as active" do
@@ -47,7 +47,7 @@ RSpec.describe Activities::CheckRunCapacityActivity do
       result = activity.execute({})
 
       expect(result[:has_capacity]).to be true
-      expect(result[:active_count]).to eq(0)
+      expect(result[:global_active_count]).to eq(0)
     end
 
     context "with project_id providing user context" do

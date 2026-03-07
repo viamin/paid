@@ -10,29 +10,34 @@ module Activities
       global_active_count = AgentRun.active.count
 
       if user
-        active_count = AgentRun.active_count_for_user(user)
-        max = AgentRun.effective_max_concurrent_runs(user)
-        has_capacity = global_active_count < system_max && active_count < max
+        user_active_count = AgentRun.active_count_for_user(user)
+        user_max = AgentRun.effective_max_concurrent_runs(user)
+        has_capacity = global_active_count < system_max && user_active_count < user_max
       else
-        active_count = global_active_count
-        max = system_max
-        has_capacity = active_count < max
+        has_capacity = global_active_count < system_max
       end
 
       logger.info(
         message: "concurrency.capacity_check",
-        active_count: active_count,
-        max_concurrent_runs: max,
+        global_active_count: global_active_count,
+        user_active_count: user_active_count,
+        max_concurrent_runs: user_max || system_max,
         has_capacity: has_capacity
       )
 
-      { has_capacity: has_capacity, active_count: active_count, max_concurrent_runs: max }
+      {
+        has_capacity: has_capacity,
+        global_active_count: global_active_count,
+        user_active_count: user_active_count,
+        max_concurrent_runs: user_max || system_max
+      }
     end
 
     private
 
+    # BaseActivity normalizes Temporal inputs to symbol-keyed hashes
     def find_user_from_input(input)
-      project_id = input[:project_id] || input["project_id"]
+      project_id = input[:project_id]
       return unless project_id
 
       Project.find_by(id: project_id)&.created_by
