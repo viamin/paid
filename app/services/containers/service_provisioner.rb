@@ -181,7 +181,7 @@ module Containers
     def create_or_replace_container!(service_container)
       create_docker_container(service_container)
     rescue Docker::Error::ServerError => e
-      raise unless e.message&.include?("Conflict")
+      raise unless e.message&.include?("Conflict") && e.message&.include?("already in use")
 
       log_info("service_provisioner.container_name_conflict", name: service_container.name)
       remove_stale_container!(service_container.name)
@@ -196,10 +196,19 @@ module Containers
         raise Error, "Container named '#{name}' exists but is not managed by Paid"
       end
 
-      existing.stop(timeout: 10) rescue nil
+      begin
+        existing.stop(timeout: 10)
+      rescue Docker::Error::NotFoundError
+        # Already gone
+      rescue Docker::Error::DockerError => e
+        log_warn("service_provisioner.stale_container_stop_failed",
+          name: name, error: e.message)
+      end
       existing.delete(force: true)
       log_info("service_provisioner.stale_container_removed",
         name: name, service_container_id: labels["paid.service_container_id"])
+    rescue Docker::Error::NotFoundError
+      # Container disappeared between conflict detection and cleanup; already removed.
     end
 
     def create_docker_container(service_container)
