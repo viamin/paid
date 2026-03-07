@@ -13,9 +13,10 @@ module Activities
       return { updated: false } unless issue
 
       project = issue.project
+      client = project.github_token.client
       issue.update!(pr_review_phase: "escalated")
 
-      add_phase_label(project, issue)
+      add_phase_label(client, project, issue)
 
       logger.info(
         message: "pr_review.marked_escalated",
@@ -28,8 +29,7 @@ module Activities
 
     private
 
-    def add_phase_label(project, issue)
-      client = project.github_token.client
+    def add_phase_label(client, project, issue)
       client.add_labels_to_issue(
         project.full_name,
         issue.github_number,
