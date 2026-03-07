@@ -70,9 +70,10 @@ jobs:
         id: check-permissions
         env:
           GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          ACTOR="${{ github.actor }}"
           if [ -z "$ACTOR" ]; then
             echo "::error::Could not determine actor"
             exit 1
@@ -80,7 +81,7 @@ jobs:
           # Query the actor's repository permission. Handle failures and missing
           # permissions gracefully so unauthorized users cause a no-op instead
           # of failing the workflow.
-          if ! PERM=$(gh api "repos/${{ github.repository }}/collaborators/${ACTOR}/permission" --jq '.permission' 2>/dev/null); then
+          if ! PERM=$(gh api "repos/${REPO}/collaborators/${ACTOR}/permission" --jq '.permission' 2>/dev/null); then
             echo "::notice::Could not determine permission for ${ACTOR}; treating as no access"
             PERM=""
           fi
@@ -130,10 +131,11 @@ jobs:
         # untrusted-checkout-toctou alerts.)
         env:
           GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          ACTOR="${{ github.actor }}"
-          PERM=$(gh api "repos/${{ github.repository }}/collaborators/${ACTOR}/permission" --jq '.permission')
+          PERM=$(gh api "repos/${REPO}/collaborators/${ACTOR}/permission" --jq '.permission')
           if [[ "$PERM" != "admin" && "$PERM" != "maintain" && "$PERM" != "write" ]]; then
             echo "::error::Actor ${ACTOR} no longer has write access (has: ${PERM})"
             exit 1
