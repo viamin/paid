@@ -29,6 +29,11 @@ RSpec.describe StyleGuides::DetectLanguage do
       expect(described_class.call(content: content)).to eq("rust")
     end
 
+    it "detects TypeScript from content" do
+      content = "Define interface types. Use readonly properties. Configure tsconfig. Use abstract classes and declare namespaces."
+      expect(described_class.call(content: content)).to eq("typescript")
+    end
+
     it "returns nil for unrecognizable content" do
       content = "This is a general document with no programming language indicators."
       expect(described_class.call(content: content)).to be_nil
