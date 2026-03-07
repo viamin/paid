@@ -1,12 +1,17 @@
 name: Claude Code
 
+# Triggers: Claude runs when @claude is mentioned in issue/PR comments,
+# PR review comments, PR reviews, or newly opened issues. The job-level
+# `if` condition filters each event to only fire when @claude appears in
+# the relevant body/title and the actor has appropriate association.
+# A separate permission verification step checks actual write access.
 on:
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
   issues:
-    types: [opened, assigned]
+    types: [opened]
   pull_request_review:
     types: [submitted]
 
@@ -60,6 +65,26 @@ jobs:
       id-token: write
       actions: read
     steps:
+      - name: Verify write permission
+        # author_association alone doesn't reliably map to repo permissions
+        # (e.g., MEMBER can be read-only in an org). This step checks the
+        # commenter's actual repository permission level via the GitHub API.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Determine the actor based on event type
+          ACTOR="${{ github.event.comment.user.login || github.event.review.user.login || github.event.issue.user.login }}"
+          if [ -z "$ACTOR" ]; then
+            echo "::error::Could not determine actor"
+            exit 1
+          fi
+          PERM=$(gh api "repos/${{ github.repository }}/collaborators/${ACTOR}/permission" --jq '.permission')
+          echo "User ${ACTOR} has permission: ${PERM}"
+          if [[ "$PERM" != "admin" && "$PERM" != "maintain" && "$PERM" != "write" ]]; then
+            echo "::error::User ${ACTOR} does not have write access (has: ${PERM})"
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
         with:
