@@ -33,7 +33,8 @@ module StyleGuides
       sections = collect_sections_within_budget(guides)
       return prompt if sections.empty?
 
-      "#{prompt}\n#{style_guide_section(sections)}"
+      combined_prompt = "#{prompt}\n#{style_guide_section(sections)}"
+      combined_prompt.delete("\x00")
     end
 
     private
