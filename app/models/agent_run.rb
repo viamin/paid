@@ -86,6 +86,8 @@ class AgentRun < ApplicationRecord
     [ (end_time - started_at).to_i, 0 ].max
   end
 
+  # Uses system-wide config (MAX_CONCURRENT_RUNS env var) intentionally:
+  # per-user settings must not raise the global concurrency cap.
   def self.has_run_capacity?
     max = Rails.application.config.x.max_concurrent_runs
     active.count < max

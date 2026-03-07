@@ -991,7 +991,7 @@ RSpec.describe AgentRun do
       expect(described_class.has_run_capacity?).to be true
     end
 
-    it "uses system config regardless of UserSetting records" do
+    it "uses system config (not per-user settings) to prevent users from raising the global cap" do
       allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
       create(:user_setting, max_concurrent_runs: 10)
       create(:agent_run, :running)
