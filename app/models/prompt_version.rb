@@ -8,6 +8,7 @@ class PromptVersion < ApplicationRecord
   belongs_to :parent_version, class_name: "PromptVersion", optional: true
 
   has_many :agent_runs, dependent: :nullify
+  has_many :ab_test_variants, dependent: :restrict_with_error
 
   validates :version, presence: true,
     numericality: { only_integer: true, greater_than: 0 },
