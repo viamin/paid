@@ -141,50 +141,14 @@ jobs:
             exit 1
           fi
 
-      - name: Resolve PR base SHA for issue_comment events
-        id: pr_base
-        # For issue_comment events on PRs, github.event.pull_request is not
-        # populated. Use the GitHub API to fetch the PR base SHA so checkout
-        # can be pinned to the PR base when applicable.
-        if: ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          set -euo pipefail
-          BASE_SHA=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.base.sha')
-          echo "sha=${BASE_SHA}" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout repository
-        # Checks out the default branch or PR base only — never a PR head ref.
-        # Uses the PR base SHA (from API for issue_comment events, or from
-        # the event payload for PR events), otherwise github.sha (the
-        # immutable SHA of the default branch at workflow trigger time) to
-        # avoid both untrusted PR code and TOCTOU from mutable branch refs.
-        # The claude-code-action handles PR ref access internally after
-        # its own permission checks, so this checkout only needs the base
-        # repo code for configuration files (CLAUDE.md, etc.).
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
-        with:
-          fetch-depth: 1
-          ref: ${{ steps.pr_base.outputs.sha || github.event.pull_request.base.sha || github.sha }}
-          persist-credentials: false
-
       - name: Run Claude Code
         id: claude
-        # CodeQL flags this step for untrusted-checkout-toctou and
-        # checkout-of-untrusted-code. Mitigations in place:
-        # (1) verify job gates on author_association + gh API permission,
-        # (2) job-level author_association check (defense-in-depth),
-        # (3) re-verify step re-checks write access immediately before this step,
-        # (4) checkout uses immutable SHAs only (PR base SHA or github.sha),
-        # (5) persist-credentials: false limits token exposure.
-        # The residual CodeQL alert cannot be resolved in this workflow:
-        # claude-code-action internally accesses PR refs to fulfill
-        # requests, which is core to its functionality. The action
-        # performs its own permission checks before accessing PR code.
-        # Accepted risk per security review.
+        # No explicit actions/checkout step — claude-code-action handles
+        # its own repository access internally, including reading config
+        # files (CLAUDE.md) and PR diffs via the GitHub API. Omitting the
+        # checkout eliminates CodeQL untrusted-checkout-toctou and
+        # checkout-of-untrusted-code alerts that arise from checking out
+        # code in a privileged issue_comment-triggered workflow.
         uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1
         with:
           # IMPORTANT: Authentication uses an OAuth token, NOT an API key.
