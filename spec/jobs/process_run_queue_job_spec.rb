@@ -135,7 +135,9 @@ RSpec.describe ProcessRunQueueJob do
         issue = create(:issue, project: project)
 
         auto_pick_service = instance_double(Issues::AutoPick)
-        allow(Issues::AutoPick).to receive(:new).with(project).and_return(auto_pick_service)
+        allow(Issues::AutoPick).to receive(:new)
+          .with(having_attributes(id: project.id))
+          .and_return(auto_pick_service)
         call_count = 0
         allow(auto_pick_service).to receive(:call) do
           call_count += 1
@@ -144,7 +146,8 @@ RSpec.describe ProcessRunQueueJob do
 
         described_class.new.perform
 
-        expect(Issues::AutoPick).to have_received(:new).with(project).at_least(:once)
+        expect(Issues::AutoPick).to have_received(:new)
+          .with(having_attributes(id: project.id)).at_least(:once)
         expect(AgentRun.last.status).to eq("pending")
       end
 
@@ -152,7 +155,9 @@ RSpec.describe ProcessRunQueueJob do
         project = create(:project, auto_pick_enabled: true)
 
         auto_pick_service = instance_double(Issues::AutoPick)
-        allow(Issues::AutoPick).to receive(:new).with(project).and_return(auto_pick_service)
+        allow(Issues::AutoPick).to receive(:new)
+          .with(having_attributes(id: project.id))
+          .and_return(auto_pick_service)
         allow(auto_pick_service).to receive(:call).and_return(nil)
 
         described_class.new.perform
