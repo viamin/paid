@@ -67,7 +67,7 @@
                         <span class="text-gray-400">-</span>
                       <% end %>
                     <% elsif run.create_issue_goal? %>
-                      <% if run.created_issue_url.present? %>
+                      <% if run.created_issue_url.present? && run.created_issue_url.start_with?("https://") %>
                         <% issue_label = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue" %>
                         <%= link_to issue_label, run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
                       <% elsif run.finished? %>
@@ -112,7 +112,7 @@
                       &middot;
                       <%= link_to "PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
                     <% end %>
-                    <% if run.created_issue_url.present? %>
+                    <% if run.created_issue_url.present? && run.created_issue_url.start_with?("https://") %>
                       &middot;
                       <% issue_link_text = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue" %>
                       <%= link_to issue_link_text, run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>

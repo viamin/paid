@@ -86,11 +86,18 @@ RSpec.describe "AgentRuns" do
         expect(response.body.index(other_project.name)).to be < response.body.index(project.name)
       end
 
-      it "shows issue link when created_issue_url is present" do
+      it "shows issue link in context column for create_issue goal runs" do
         create(:agent_run, :with_created_issue, :completed, project: project)
         get agent_runs_path
         expect(response.body).to include("Issue #42")
         expect(response.body).to include("https://github.com/example/repo/issues/42")
+      end
+
+      it "shows linked issue in context column for create_pr goal runs" do
+        issue = create(:issue, project: project, github_number: 7, title: "Context test")
+        create(:agent_run, project: project, issue: issue, goal: "create_pr")
+        get agent_runs_path
+        expect(response.body).to include("#7")
       end
 
       it "does not show runs from other accounts" do
@@ -165,11 +172,18 @@ RSpec.describe "AgentRuns" do
         expect(response.body.index("Claude Code")).to be < response.body.index("Cursor")
       end
 
-      it "shows issue link when created_issue_url is present" do
+      it "shows issue link in context column for create_issue goal runs" do
         create(:agent_run, :with_created_issue, :completed, project: project)
         get project_agent_runs_path(project)
         expect(response.body).to include("Issue #42")
         expect(response.body).to include("https://github.com/example/repo/issues/42")
+      end
+
+      it "shows linked issue in context column for create_pr goal runs" do
+        issue = create(:issue, project: project, github_number: 7, title: "Context test")
+        create(:agent_run, project: project, issue: issue, goal: "create_pr")
+        get project_agent_runs_path(project)
+        expect(response.body).to include("#7")
       end
 
       it "does not show runs from other accounts" do

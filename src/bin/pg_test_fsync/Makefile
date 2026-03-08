@@ -1,1 +1,0 @@
-/tmp/postgresql-16.3/src/bin/pg_test_fsync/Makefile

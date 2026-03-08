@@ -18,8 +18,12 @@
 
     <div>
       <%= f.label :goal_eq, "Goal", class: "block text-sm font-medium text-gray-700" %>
+      <% goal_labels = {
+        "create_pr" => "Create PR",
+        "create_issue" => "Create Issue"
+      } %>
       <%= f.select :goal_eq,
-        options_for_select(AgentRun::GOALS.map { |g| [g.titleize, g] }, params.dig(:q, :goal_eq)),
+        options_for_select(AgentRun::GOALS.map { |g| [goal_labels.fetch(g, g.titleize), g] }, params.dig(:q, :goal_eq)),
         { include_blank: "All Goals" },
         class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
     </div>
