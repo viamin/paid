@@ -81,16 +81,19 @@ class ProcessRunQueueJob < ApplicationJob
   # agent runs. Returns true if any runs were created so the main loop
   # can process them through the normal claim-and-start flow.
   def auto_pick_unblocked_issues
-    return false if @auto_picked
+    # If the last auto-pick pass created no runs, skip further attempts to
+    # avoid spinning when no eligible issues exist.
+    if defined?(@auto_pick_last_created_any) && @auto_pick_last_created_any == false
+      return false
+    end
 
-    @auto_picked = true
     created_any = false
 
     Project.active.where(auto_pick_enabled: true).find_each do |project|
       created_any = true if Issues::AutoPick.new(project).call
     end
 
-    created_any
+    @auto_pick_last_created_any = created_any
   end
 
   def start_claimed_run(agent_run)
