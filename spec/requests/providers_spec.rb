@@ -30,9 +30,6 @@ RSpec.describe "Providers" do
     before { sign_in user }
 
     it "creates a provider" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
-
       post providers_path, params: { provider: { provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
       expect(response).to redirect_to(providers_path)
@@ -40,8 +37,6 @@ RSpec.describe "Providers" do
     end
 
     it "handles an empty run-provider list during settings reconciliation" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("AIDER_ENABLED", "false").and_return("true")
       allow(UserSetting).to receive(:enabled_agent_providers).with(user).and_return([], [ "claude" ])
 
       post providers_path, params: { provider: { provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
@@ -49,8 +44,8 @@ RSpec.describe "Providers" do
       expect(response).to redirect_to(providers_path)
     end
 
-    it "rejects providers that are system-disabled" do
-      post providers_path, params: { provider: { provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true } }
+    it "rejects unsupported providers" do
+      post providers_path, params: { provider: { provider_key: "gemini", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("is not currently available")
@@ -61,8 +56,6 @@ RSpec.describe "Providers" do
     before { sign_in user }
 
     it "does not offer provider keys already configured for the user" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
       user.providers.create!(provider_key: "cursor")
 
       get new_provider_path
@@ -76,8 +69,6 @@ RSpec.describe "Providers" do
     before { sign_in user }
 
     it "updates provider flags" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
       provider = user.providers.create!(provider_key: "cursor")
 
       patch provider_path(provider), params: { provider: { enabled_for_agent_runs: false } }
