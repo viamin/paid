@@ -15,6 +15,9 @@ on:
   pull_request_review:
     types: [submitted]
 
+# Minimal default permissions — each job declares only what it needs.
+permissions: {}
+
 jobs:
   verify:
     # Lightweight gate: check that the actor actually has write access.
@@ -166,7 +169,7 @@ jobs:
 
           echo "allowed=false" >> "${GITHUB_OUTPUT}"
           echo "permission=${PERM}" >> "${GITHUB_OUTPUT}"
-          echo "::error::Actor ${ACTOR} no longer has write access (has: ${PERM}); skipping Claude run."
+          echo "::warning::Actor ${ACTOR} no longer has write access (has: ${PERM}); skipping Claude run."
           exit 0
 
       - name: Run Claude Code
