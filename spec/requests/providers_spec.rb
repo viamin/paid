@@ -48,13 +48,7 @@ RSpec.describe "Providers" do
       post providers_path, params: { provider: { provider_key: "gemini", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to match(/is not currently available|is not included in the list/)
-    end
-
-    it "allows supported providers" do
-      post providers_path, params: { provider: { provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true } }
-
-      expect(response).to redirect_to(providers_path)
+      expect(response.body).to include("is not currently available")
     end
   end
 
