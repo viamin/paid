@@ -27,7 +27,9 @@ module Activities
       /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
       /(?:server|system)\s+(?:at\s+)?capacity/i,
-      /(?:server|api|service)\s+overloaded/i
+      /(?:server|api|service)\s+overloaded/i,
+      /out of (?:extra )?usage/i,
+      /usage limit/i
     ].freeze
 
     # Issue creation should complete quickly — use a shorter timeout than full PR runs.
@@ -75,11 +77,17 @@ module Activities
       last_error = nil
       last_attempted_provider = nil
       timeout_error = nil
+      rate_limit_reset_at = nil
+      skipped_rate_limited_count = 0
 
       providers.each do |provider|
-        # Skip unavailable providers
+        # Skip unavailable providers, tracking rate-limited skips separately
         if provider_unavailable?(user_settings, provider, provider_states)
-          agent_run.record_provider_attempt(provider, success: false, error_type: "unavailable")
+          canonical = canonical_provider(provider)
+          state = provider_states[canonical]
+          error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
+          skipped_rate_limited_count += 1 if error_type == "rate_limited"
+          agent_run.record_provider_attempt(provider, success: false, error_type: error_type)
           next
         end
 
@@ -113,6 +121,7 @@ module Activities
           }
         rescue ProviderRateLimitError => e
           last_error = "rate_limited"
+          rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
           persist_rate_limit(user_settings, provider, provider_states, e.reset_at)
           agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
           logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
@@ -130,11 +139,29 @@ module Activities
         end
       end
 
-      # All providers exhausted. Preserve any more specific terminal state
-      # already set by provider execution (e.g. timeout).
+      # When all providers were skipped due to cached rate-limit state (no
+      # attempts made), compute the earliest reset time from provider states.
+      all_skipped_rate_limited = providers.any? && skipped_rate_limited_count == providers.size
+      if rate_limit_reset_at.nil? && all_skipped_rate_limited
+        reset_candidates = providers.filter_map do |provider|
+          state = provider_states[canonical_provider(provider)]
+          state&.rate_limited_until
+        end
+        rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
+      end
+
+      # All providers exhausted. Timeout takes precedence over rate_limited
+      # because it indicates an actual execution attempt that should trigger
+      # ProcessRunQueueJob to re-schedule work.
       if timeout_error.present?
         agent_run.timeout!(error: timeout_error) unless agent_run.finished?
         ProcessRunQueueJob.perform_later
+      elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
+        provider_list = providers.any? ? providers.join(", ") : "none"
+        agent_run.rate_limit!(
+          error: "All providers rate limited: #{provider_list}",
+          reset_at: rate_limit_reset_at
+        )
       elsif !agent_run.finished?
         provider_list = providers.any? ? providers.join(", ") : "none"
         agent_run.fail!(error: "All providers exhausted: #{provider_list}")
@@ -294,19 +321,37 @@ module Activities
     end
 
     # Attempts to parse a rate limit reset time from the output.
-    # Falls back to 60 seconds from now if not parseable.
+    # Falls back to 1 hour from now if not parseable.
+    #
+    # Supported patterns:
+    #   - "retry after 60" (seconds)
+    #   - "reset at 1234567890" (unix timestamp)
+    #   - "resets 5am (UTC)" or "resets 5:00am (UTC)"
     def parse_rate_limit_reset(output)
-      # Try to find common patterns like "retry after X seconds" or timestamps
       if (match = output.match(/retry.?after:?\s*(\d+)/i))
         match[1].to_i.seconds.from_now
       elsif (match = output.match(/reset.?at:?\s*(\d+)/i))
         reset_time = Time.at(match[1].to_i)
-        reset_time > Time.current ? reset_time : 60.seconds.from_now
+        reset_time > Time.current ? reset_time : 1.hour.from_now
+      elsif (match = output.match(/resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i))
+        hour = match[1].to_i
+        minute = (match[2] || "0").to_i
+        period = match[3].downcase
+
+        hour = if period == "am"
+          hour == 12 ? 0 : hour
+        else
+          hour == 12 ? 12 : hour + 12
+        end
+
+        reset_time = Time.current.utc.change(hour: hour, min: minute, sec: 0)
+        reset_time += 1.day if reset_time <= Time.current.utc
+        reset_time
       else
-        60.seconds.from_now
+        1.hour.from_now
       end
     rescue StandardError
-      60.seconds.from_now
+      1.hour.from_now
     end
 
     def capture_head_sha(container_service, agent_run)

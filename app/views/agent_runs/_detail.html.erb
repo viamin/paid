@@ -90,7 +90,25 @@
     </div>
   <% end %>
 
-  <% if agent_run.auth_expired? %>
+  <% if agent_run.rate_limited? %>
+    <div class="mt-6 rounded-lg border border-orange-200 bg-orange-50 p-4">
+      <h2 class="text-sm font-semibold text-orange-800">Rate Limited</h2>
+      <p class="mt-1 text-sm text-orange-700">
+        The provider hit a rate limit.
+        <% if agent_run.rate_limited_until.present? %>
+          <br>Expected reset: <strong><%= agent_run.rate_limited_until.utc.strftime("%B %d, %Y %l:%M %p UTC") %></strong>
+          <% if agent_run.rate_limited_until > Time.current %>
+            (<%= distance_of_time_in_words(Time.current, agent_run.rate_limited_until) %> remaining)
+          <% else %>
+            (reset time has passed)
+          <% end %>
+        <% end %>
+        <% if agent_run.error_message.present? %>
+          <br><span class="text-orange-600"><%= agent_run.error_message %></span>
+        <% end %>
+      </p>
+    </div>
+  <% elsif agent_run.auth_expired? %>
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
       <h2 class="text-sm font-semibold text-amber-800">Authentication Expired</h2>
       <p class="mt-1 text-sm text-amber-700">
