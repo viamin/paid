@@ -500,6 +500,29 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.error_message).to include("rate limited")
       end
 
+      it "marks run as rate_limited when all providers are already rate limited in ProviderState" do
+        reset_time = 2.hours.from_now
+
+        # Pre-set all provider states as rate limited so provider_unavailable? skips them
+        %w[claude cursor aider].each do |provider_name|
+          user.provider_states.find_or_create_by!(provider_name: provider_name).tap do |state|
+            state.update!(rate_limited_until: reset_time)
+          end
+        end
+
+        # No container execution should occur since all providers are skipped
+        expect(container_service).not_to receive(:execute)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.rate_limited_until).to be_present
+      end
+
       it "preserves timeout status when timeout is followed by other failures" do
         call_count = 0
         allow(container_service).to receive(:execute) do |_cmd, **_opts|

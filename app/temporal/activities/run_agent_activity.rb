@@ -78,11 +78,16 @@ module Activities
       last_attempted_provider = nil
       timeout_error = nil
       rate_limit_reset_at = nil
+      skipped_rate_limited_count = 0
 
       providers.each do |provider|
-        # Skip unavailable providers
+        # Skip unavailable providers, tracking rate-limited skips separately
         if provider_unavailable?(user_settings, provider, provider_states)
-          agent_run.record_provider_attempt(provider, success: false, error_type: "unavailable")
+          canonical = canonical_provider(provider)
+          state = provider_states[canonical]
+          error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
+          skipped_rate_limited_count += 1 if error_type == "rate_limited"
+          agent_run.record_provider_attempt(provider, success: false, error_type: error_type)
           next
         end
 
@@ -134,13 +139,24 @@ module Activities
         end
       end
 
+      # When all providers were skipped due to cached rate-limit state (no
+      # attempts made), compute the earliest reset time from provider states.
+      all_skipped_rate_limited = providers.any? && skipped_rate_limited_count == providers.size
+      if rate_limit_reset_at.nil? && all_skipped_rate_limited
+        reset_candidates = providers.filter_map do |provider|
+          state = provider_states[canonical_provider(provider)]
+          state&.rate_limited_until
+        end
+        rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
+      end
+
       # All providers exhausted. Timeout takes precedence over rate_limited
       # because it indicates an actual execution attempt that should trigger
       # ProcessRunQueueJob to re-schedule work.
       if timeout_error.present?
         agent_run.timeout!(error: timeout_error) unless agent_run.finished?
         ProcessRunQueueJob.perform_later
-      elsif !agent_run.finished? && last_error == "rate_limited"
+      elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
         provider_list = providers.any? ? providers.join(", ") : "none"
         agent_run.rate_limit!(
           error: "All providers rate limited: #{provider_list}",
