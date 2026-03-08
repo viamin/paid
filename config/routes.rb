@@ -46,6 +46,7 @@ Rails.application.routes.draw do
 
   # Projects management
   resources :projects do
+    post :toggle_auto_pick, on: :member
     resource :workflow_status, only: [ :show ]
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
       post :retry, on: :member
