@@ -73,7 +73,7 @@ class AgentRun < ApplicationRecord
   end
 
   def self.ransackable_attributes(auth_object = nil)
-    %w[status agent_type branch_name trigger_type duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at]
+    %w[status agent_type branch_name trigger_type goal duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at]
   end
 
   def self.ransackable_associations(auth_object = nil)
