@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_08_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -70,11 +70,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_000001) do
     t.string "proxy_token", limit: 64
     t.integer "pull_request_number"
     t.string "pull_request_url", limit: 500
+    t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
-    t.datetime "rate_limited_until"
     t.datetime "started_at"
     t.string "status", limit: 50, default: "pending", null: false
     t.string "temporal_run_id", limit: 255
@@ -87,8 +87,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_000001) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -276,7 +276,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_000001) do
     t.boolean "active", default: true, null: false
     t.jsonb "allowed_github_usernames", default: [], null: false
     t.boolean "auto_fix_merge_conflicts", default: false, null: false
-    t.boolean "auto_pick_enabled", default: true, null: false
+    t.boolean "auto_pick_enabled", default: false, null: false
     t.boolean "auto_scan_prs", default: true, null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
@@ -413,6 +413,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_000001) do
     t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
+    t.integer "container_cpu_quota", default: 200000, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
     t.integer "container_timeout_seconds", default: 1800, null: false
     t.datetime "created_at", null: false
@@ -424,7 +425,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_000001) do
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_providers", default: [], null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
-    t.integer "max_concurrent_runs", default: 2, null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
