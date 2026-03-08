@@ -105,7 +105,8 @@ module Workflows
       Temporalio::Workflow.start_child_workflow(
         Workflows::AgentExecutionWorkflow,
         { project_id: project_id, issue_id: issue_id },
-        id: workflow_id
+        id: workflow_id,
+        parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
       )
     end
 
@@ -207,7 +208,8 @@ module Workflows
           issue_id: issue_id,
           source_pull_request_number: pr_number
         },
-        id: workflow_id
+        id: workflow_id,
+        parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
       )
 
       run_activity(Activities::RecordDraftReviewActivity, draft_input, timeout: 30)
@@ -245,7 +247,8 @@ module Workflows
           issue_id: issue_id,
           source_pull_request_number: pr_number
         },
-        id: workflow_id
+        id: workflow_id,
+        parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
       )
 
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
