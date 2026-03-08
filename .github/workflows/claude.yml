@@ -143,29 +143,32 @@ jobs:
 
       - name: Checkout repository
         # Checks out the default branch or PR base only — never a PR head ref.
-        # Uses the PR base SHA when available, otherwise the repository
-        # default branch ref, to avoid checking out untrusted PR head code.
+        # Uses the PR base SHA when available, otherwise github.sha (the
+        # immutable SHA of the default branch at workflow trigger time) to
+        # avoid both untrusted PR code and TOCTOU from mutable branch refs.
         # The claude-code-action handles PR ref access internally after
         # its own permission checks, so this checkout only needs the base
         # repo code for configuration files (CLAUDE.md, etc.).
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
         with:
           fetch-depth: 1
-          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
           persist-credentials: false
 
       - name: Run Claude Code
         id: claude
-        # CodeQL flags this step as untrusted checkout (TOCTOU /
-        # untrusted-code). Accepted risk — mitigations in place:
-        # (1) job-level author_association check (defense-in-depth),
-        # (2) verify job gates on author_association + gh API permission,
-        # (3) re-verify step re-checks write access at execution time,
-        # (4) checkout uses PR base SHA or default branch — never a PR head ref,
+        # CodeQL flags this step for untrusted-checkout-toctou and
+        # checkout-of-untrusted-code. Mitigations in place:
+        # (1) verify job gates on author_association + gh API permission,
+        # (2) job-level author_association check (defense-in-depth),
+        # (3) re-verify step re-checks write access immediately before this step,
+        # (4) checkout uses immutable SHAs only (PR base SHA or github.sha),
         # (5) persist-credentials: false limits token exposure.
-        # The residual alert is inherent to claude-code-action, which
-        # internally handles PR refs after its own permission checks.
-        # This is outside our control and accepted per security review.
+        # The residual CodeQL alert cannot be resolved in this workflow:
+        # claude-code-action internally accesses PR refs to fulfill
+        # requests, which is core to its functionality. The action
+        # performs its own permission checks before accessing PR code.
+        # Accepted risk per security review.
         uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1
         with:
           # Authentication uses an OAuth token (not an API key).
