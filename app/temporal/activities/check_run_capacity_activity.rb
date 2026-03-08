@@ -8,6 +8,8 @@ module Activities
       user = find_user_from_input(input)
       system_max = AgentRun.effective_max_concurrent_runs
       global_active_count = AgentRun.active.count
+      user_active_count = nil
+      user_max = nil
 
       if user
         user_active_count = AgentRun.active_count_for_user(user)
