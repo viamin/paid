@@ -85,8 +85,9 @@ config.log
 # XDG cache (redirected into workspace by some container setups)
 /.xdg-cache/
 
-# Vendored gems (created by bundle install --path vendor/bundle)
+# Vendored gems (created by bundle install --path vendor/bundle or vendor/gems)
 /vendor/bundle/
+/vendor/gems/
 
 # Ignore vendored gems, mise tool data, and build artifacts
 /.gem/
