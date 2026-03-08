@@ -1075,7 +1075,7 @@ RSpec.describe AgentRun do
 
   describe "constants" do
     it "defines valid STATUSES" do
-      expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout retried auth_expired])
+      expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout retried auth_expired rate_limited])
     end
 
     it "defines valid AGENT_TYPES" do
