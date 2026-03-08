@@ -105,12 +105,13 @@ class AgentRun < ApplicationRecord
   end
 
   # Returns the count of active runs owned by the given user.
-  # Optionally excludes a specific run (e.g. one just claimed from the queue).
   # Uses a JOIN on projects.created_by_id to avoid a subquery per call.
-  def self.active_count_for_user(user, exclude: nil)
-    scope = active.joins(:project).where(projects: { created_by_id: user.id })
-    scope = scope.where.not(id: exclude.id) if exclude
-    scope.count
+  #
+  # Projects with nil created_by_id are not counted toward any user's cap.
+  # Callers should use Project#effective_owner to resolve a fallback user
+  # so orphaned projects are still subject to per-user limits.
+  def self.active_count_for_user(user)
+    active.joins(:project).where(projects: { created_by_id: user.id }).count
   end
 
   # Returns the effective concurrency cap, respecting both the system-wide
@@ -127,21 +128,27 @@ class AgentRun < ApplicationRecord
     queued.order(created_at: :asc).first
   end
 
-  # Atomically claims the oldest queued run by transitioning it to pending
-  # inside a transaction with FOR UPDATE SKIP LOCKED. Returns nil if no
-  # queued run is available or another process already claimed it.
+  # Returns the next queued run without claiming it.
+  # Used to check per-user capacity before acquiring the lock.
+  def self.peek_next_queued_run(exclude_ids: [])
+    scope = queued.order(created_at: :asc)
+    scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
+    scope.first
+  end
+
+  # Atomically claims a queued run by transitioning it to pending inside a
+  # transaction with FOR UPDATE SKIP LOCKED. Returns nil if the run is no
+  # longer queued or another process already claimed it.
   #
-  # @param exclude_ids [Array<Integer>] IDs to skip (e.g. runs whose owner
-  #   is already at their per-user cap this iteration)
+  # @param target_id [Integer] the specific run to claim (identified by a
+  #   prior peek_next_queued_run call)
   #
   # Note: if the transaction commits but the subsequent workflow start fails,
   # the run stays "pending" without an associated workflow. ProcessRunQueueJob
   # handles this by marking such runs as failed in its rescue block.
-  def self.claim_next_queued_run(exclude_ids: [])
+  def self.claim_next_queued_run(target_id:)
     transaction do
-      scope = queued.order(created_at: :asc)
-      scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
-      run = scope.lock("FOR UPDATE SKIP LOCKED").first
+      run = queued.where(id: target_id).lock("FOR UPDATE SKIP LOCKED").first
       return nil unless run
 
       run.update!(status: "pending")

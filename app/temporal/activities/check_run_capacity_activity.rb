@@ -40,7 +40,7 @@ module Activities
       project_id = input[:project_id]
       return unless project_id
 
-      Project.find_by(id: project_id)&.created_by
+      Project.find_by(id: project_id)&.effective_owner
     end
   end
 end
