@@ -37,15 +37,33 @@ module Issues
 
       agent_run
     rescue ActiveRecord::RecordNotUnique => e
-      raise unless e.message.include?("idx_agent_runs_unique_active_issue")
+      message = e.cause&.message || e.message
+      raise unless message&.include?("idx_agent_runs_unique_active_issue")
 
-      # Another process already created a run for this issue
-      Rails.logger.info(
-        message: "auto_pick.duplicate_skipped",
-        project_id: @project.id,
-        issue_id: issue&.id
+      # Another process already created a run for this issue.
+      # Re-query for the existing active/queued run so callers can use it.
+      existing_run = AgentRun.find_by(
+        project: @project,
+        issue: issue,
+        status: %w[queued pending running]
       )
-      nil
+
+      if existing_run
+        Rails.logger.info(
+          message: "auto_pick.duplicate_existing_run",
+          project_id: @project.id,
+          issue_id: issue&.id,
+          agent_run_id: existing_run.id
+        )
+        existing_run
+      else
+        Rails.logger.info(
+          message: "auto_pick.duplicate_skipped",
+          project_id: @project.id,
+          issue_id: issue&.id
+        )
+        nil
+      end
     end
 
     private
