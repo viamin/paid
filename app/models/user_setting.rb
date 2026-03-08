@@ -161,10 +161,7 @@ class UserSetting < ApplicationRecord
   end
 
   def self.system_enabled_provider_keys
-    providers = [ "claude" ]
-    providers << "cursor" if ENV.fetch("CURSOR_ENABLED", "false") == "true"
-    providers << "aider" if ENV.fetch("AIDER_ENABLED", "false") == "true"
-    providers
+    Provider::SUPPORTED_PROVIDER_KEYS
   end
 
   private
