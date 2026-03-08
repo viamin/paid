@@ -45,6 +45,7 @@ class Project < ApplicationRecord
 
   after_create_commit :start_github_polling
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
+  after_update_commit :trigger_auto_pick, if: :auto_pick_just_enabled?
   after_destroy_commit :stop_github_polling
 
   def full_name
@@ -183,6 +184,14 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def auto_pick_just_enabled?
+    saved_change_to_auto_pick_enabled? && auto_pick_enabled?
+  end
+
+  def trigger_auto_pick
+    ProcessRunQueueJob.perform_later
+  end
 
   def start_github_polling
     return unless active?
