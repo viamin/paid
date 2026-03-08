@@ -263,8 +263,6 @@ module Activities
 
       if result.success?
         output_present = result[:stdout].present? || result[:stderr].present?
-        agent_run.log!("stdout", result[:stdout]) if result[:stdout].present?
-        agent_run.log!("stderr", result[:stderr]) if result[:stderr].present?
         agent_run.log!("system", "Agent execution succeeded with #{provider}")
         return { pre_agent_sha: pre_agent_sha, output_present: output_present }
       end
