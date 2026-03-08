@@ -159,6 +159,52 @@ RSpec.describe Issues::AutoPick do
       expect(result).to be_nil
     end
 
+    it "returns existing run when RecordNotUnique is raised and active run exists" do
+      issue = create(:issue, project: project)
+      existing_run = create(:agent_run, :queued, project: project, issue: issue)
+
+      service = described_class.new(project)
+      allow(AgentRun).to receive(:create!).and_raise(
+        ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
+      )
+      allow(Rails.logger).to receive(:info)
+
+      result = service.call
+
+      expect(result).to eq(existing_run)
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(message: "auto_pick.duplicate_existing_run", agent_run_id: existing_run.id)
+      )
+    end
+
+    it "returns nil when RecordNotUnique is raised but no active run exists" do
+      create(:issue, project: project)
+
+      service = described_class.new(project)
+      allow(AgentRun).to receive(:create!).and_raise(
+        ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
+      )
+      allow(Rails.logger).to receive(:info)
+
+      result = service.call
+
+      expect(result).to be_nil
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(message: "auto_pick.duplicate_skipped")
+      )
+    end
+
+    it "re-raises RecordNotUnique for unrelated constraints" do
+      create(:issue, project: project)
+
+      service = described_class.new(project)
+      allow(AgentRun).to receive(:create!).and_raise(
+        ActiveRecord::RecordNotUnique.new("some_other_index")
+      )
+
+      expect { service.call }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
     it "logs the auto-pick event" do
       issue = create(:issue, project: project)
 

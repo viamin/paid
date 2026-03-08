@@ -86,7 +86,7 @@ class ProcessRunQueueJob < ApplicationJob
     @auto_picked = true
     created_any = false
 
-    Project.active.find_each do |project|
+    Project.active.where(auto_pick_enabled: true).find_each do |project|
       created_any = true if Issues::AutoPick.new(project).call
     end
 
