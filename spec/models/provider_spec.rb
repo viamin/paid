@@ -43,8 +43,6 @@ RSpec.describe Provider do
     end
 
     it "does not allow disabling claude even when another provider is enabled" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
       user.providers.create!(provider_key: "cursor")
       provider = user.providers.find_by!(provider_key: "claude")
 
@@ -53,8 +51,6 @@ RSpec.describe Provider do
     end
 
     it "allows disabling a non-claude provider when claude remains enabled" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
       provider = user.providers.create!(provider_key: "cursor")
 
       expect(provider.update(enabled_for_agent_runs: false)).to be(true)

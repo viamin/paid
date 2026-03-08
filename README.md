@@ -96,8 +96,6 @@ bin/dev                 # Start dev server (Rails + JS + CSS watchers)
 | `TEMPORAL_UI_URL` | Temporal UI base URL for monitoring links | `http://localhost:8080` |
 | `OPENAI_API_KEY` | OpenAI API key (for agents that use OpenAI) | _(none)_ |
 | `AGENT_TIMEOUT` | Agent execution timeout in seconds | `3600` |
-| `CURSOR_ENABLED` | Enable Cursor agent provider | `false` |
-| `AIDER_ENABLED` | Enable Aider agent provider | `false` |
 | `CLAUDE_CONFIG_DIR` | Host path to `~/.claude/` for Claude Code subscription auth | _(none)_ |
 | `PAID_PROXY_PORT` | Port the secrets proxy listens on (used by agent containers) | `3000` |
 | `PAID_DATABASE_PASSWORD` | Production database password | _(none)_ |

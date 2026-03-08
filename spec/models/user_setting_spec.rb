@@ -3,12 +3,6 @@
 require "rails_helper"
 
 RSpec.describe UserSetting do
-  before do
-    allow(ENV).to receive(:fetch).and_call_original
-    allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
-    allow(ENV).to receive(:fetch).with("AIDER_ENABLED", "false").and_return("true")
-  end
-
   describe "associations" do
     it { is_expected.to belong_to(:user) }
     it { is_expected.to have_many(:provider_states).through(:user) }

@@ -37,9 +37,6 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "returns deduplicated provider_attempt_count when fallback is enabled" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("CURSOR_ENABLED", "false").and_return("true")
-      allow(ENV).to receive(:fetch).with("AIDER_ENABLED", "false").and_return("true")
       project.created_by.providers.find_or_create_by!(provider_key: "cursor")
       project.created_by.providers.find_or_create_by!(provider_key: "aider")
       project.created_by.settings.update!(fallback_enabled: true, fallback_providers: %w[claude cursor aider])
