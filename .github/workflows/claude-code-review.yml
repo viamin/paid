@@ -1,0 +1,45 @@
+name: Claude Code Review
+
+# Automatic code review: this workflow runs on every non-draft, non-fork PR
+# (opened, synchronized, reopened, ready_for_review). It is intentionally
+# separate from the @claude-mention workflow in claude.yml — this provides
+# proactive review feedback without requiring a manual mention.
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+jobs:
+  claude-review:
+    if: github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        # Check out the base branch (not the PR head) so that config files
+        # (CLAUDE.md, etc.) come from trusted code. The action retrieves
+        # PR diffs via the GitHub API, so it does not need the PR ref.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1
+        with:
+          # IMPORTANT: Authentication uses an OAuth token, NOT an API key.
+          # Create the CLAUDE_CODE_OAUTH_TOKEN secret (not an Anthropic API key)
+          # in Settings > Secrets and variables > Actions before enabling.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Plugin marketplace from the claude-code repo (separate from
+          # claude-code-action). Uses main branch since this repo does not
+          # share commit SHAs with the action repo.
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
