@@ -1,0 +1,18 @@
+current directory: /workspace/vendor/gems/ruby/3.4.0/gems/racc-1.8.1/ext/racc/cparse
+/usr/local/bin/ruby extconf.rb
+creating Makefile
+
+current directory: /workspace/vendor/gems/ruby/3.4.0/gems/racc-1.8.1/ext/racc/cparse
+make DESTDIR\= sitearchdir\=./.gem.20260308-498-cyhwax sitelibdir\=./.gem.20260308-498-cyhwax clean
+
+current directory: /workspace/vendor/gems/ruby/3.4.0/gems/racc-1.8.1/ext/racc/cparse
+make DESTDIR\= sitearchdir\=./.gem.20260308-498-cyhwax sitelibdir\=./.gem.20260308-498-cyhwax
+compiling cparse.c
+linking shared-object racc/cparse.so
+
+current directory: /workspace/vendor/gems/ruby/3.4.0/gems/racc-1.8.1/ext/racc/cparse
+make DESTDIR\= sitearchdir\=./.gem.20260308-498-cyhwax sitelibdir\=./.gem.20260308-498-cyhwax install
+/usr/bin/install -c -m 0755 cparse.so ./.gem.20260308-498-cyhwax/racc
+
+current directory: /workspace/vendor/gems/ruby/3.4.0/gems/racc-1.8.1/ext/racc/cparse
+make DESTDIR\= sitearchdir\=./.gem.20260308-498-cyhwax sitelibdir\=./.gem.20260308-498-cyhwax clean
