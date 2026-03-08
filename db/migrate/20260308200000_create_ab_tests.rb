@@ -21,8 +21,7 @@ class CreateAbTests < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
-    add_foreign_key :ab_tests, :prompt_versions, column: :control_version_id, on_delete: :cascade
-    add_foreign_key :ab_tests, :ab_test_variants, column: :winner_variant_id, on_delete: :nullify
+    add_foreign_key :ab_tests, :prompt_versions, column: :control_version_id, on_delete: :restrict
 
     add_index :ab_tests, :status
     add_index :ab_tests, :control_version_id
@@ -30,7 +29,7 @@ class CreateAbTests < ActiveRecord::Migration[8.1]
 
     create_table :ab_test_variants do |t|
       t.references :ab_test, null: false, foreign_key: { on_delete: :cascade }
-      t.references :prompt_version, null: false, foreign_key: { on_delete: :cascade }
+      t.references :prompt_version, null: false, foreign_key: { on_delete: :restrict }
 
       t.boolean :is_control, default: false, null: false
       t.integer :sample_count, default: 0, null: false
@@ -41,6 +40,18 @@ class CreateAbTests < ActiveRecord::Migration[8.1]
     end
 
     add_index :ab_test_variants, [ :ab_test_id, :is_control ], name: "index_ab_test_variants_on_test_and_control"
+
+    add_index :ab_test_variants, :ab_test_id,
+      unique: true,
+      where: "is_control = true",
+      name: "index_ab_test_variants_on_control_per_test"
+
+    add_index :ab_test_variants, [ :ab_test_id, :prompt_version_id ],
+      unique: true,
+      name: "index_ab_test_variants_on_test_and_prompt_version"
+
+    # Add winner_variant FK after ab_test_variants table exists
+    add_foreign_key :ab_tests, :ab_test_variants, column: :winner_variant_id, on_delete: :nullify
 
     create_table :ab_test_assignments do |t|
       t.references :ab_test, null: false, foreign_key: { on_delete: :cascade }

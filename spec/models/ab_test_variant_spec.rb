@@ -15,11 +15,11 @@ RSpec.describe AbTestVariant do
 
       variant.record_quality_score!(0.8)
       expect(variant.sample_count).to eq(1)
-      expect(variant.avg_quality_score).to eq(0.8)
+      expect(variant.avg_quality_score.to_f).to eq(0.8)
 
       variant.record_quality_score!(0.6)
       expect(variant.sample_count).to eq(2)
-      expect(variant.avg_quality_score).to eq(0.7)
+      expect(variant.avg_quality_score.to_f).to eq(0.7)
     end
   end
 end

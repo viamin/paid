@@ -97,7 +97,8 @@ module AbTests
       denominator = ((s1**4 / (n1**2 * (n1 - 1))) + (s2**4 / (n2**2 * (n2 - 1))))
       df = denominator.zero? ? [ n1, n2 ].min - 1 : numerator / denominator
 
-      p_value = two_tailed_p_value(t.abs, [ df.floor, 1 ].max)
+      df_for_p = df > 1e-9 ? df : 1e-9
+      p_value = two_tailed_p_value(t.abs, df_for_p)
       { t: t, df: df, p_value: p_value }
     end
 
@@ -150,20 +151,30 @@ module AbTests
       tiny = 1.0e-30
 
       c = 1.0
-      d = 1.0 / [ 1.0 - x * (a + b) / (a + 1), tiny ].max.abs
+      denom = 1.0 - x * (a + b) / (a + 1)
+      denom = tiny if denom.abs < tiny
+      d = 1.0 / denom
       result = d
 
       (1..max_iter).each do |m|
         # Even step
         numerator = m * (b - m) * x / ((a + 2 * m - 1) * (a + 2 * m))
-        d = 1.0 / [ 1.0 + numerator * d, tiny ].max.abs
-        c = [ 1.0 + numerator / c, tiny ].max.abs
+        denom = 1.0 + numerator * d
+        denom = tiny if denom.abs < tiny
+        d = 1.0 / denom
+        c_denom = 1.0 + numerator / c
+        c_denom = tiny if c_denom.abs < tiny
+        c = c_denom
         result *= d * c
 
         # Odd step
         numerator = -((a + m) * (a + b + m) * x) / ((a + 2 * m) * (a + 2 * m + 1))
-        d = 1.0 / [ 1.0 + numerator * d, tiny ].max.abs
-        c = [ 1.0 + numerator / c, tiny ].max.abs
+        denom = 1.0 + numerator * d
+        denom = tiny if denom.abs < tiny
+        d = 1.0 / denom
+        c_denom = 1.0 + numerator / c
+        c_denom = tiny if c_denom.abs < tiny
+        c = c_denom
         delta = d * c
         result *= delta
 
