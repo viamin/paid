@@ -107,9 +107,13 @@ class AgentRun < ApplicationRecord
   # Returns the count of active runs owned by the given user.
   # Uses a JOIN on projects.created_by_id to avoid a subquery per call.
   #
-  # Projects with nil created_by_id are not counted toward any user's cap.
-  # Callers should use Project#effective_owner to resolve a fallback user
-  # so orphaned projects are still subject to per-user limits.
+  # Limitation: projects with nil created_by_id are not counted toward any
+  # user's per-user cap. Callers use Project#effective_owner to resolve a
+  # fallback user for capacity *limit* lookups, but the counting here only
+  # matches on created_by_id. This means orphaned-project runs bypass the
+  # per-user cap (but are still bounded by the system-wide cap checked in
+  # has_run_capacity?). Replicating the effective_owner fallback chain in
+  # SQL would add significant complexity for a rare edge case (deleted user).
   def self.active_count_for_user(user)
     active.joins(:project).where(projects: { created_by_id: user.id }).count
   end
