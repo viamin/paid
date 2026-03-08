@@ -161,12 +161,17 @@ RSpec.describe Issues::AutoPick do
 
     it "returns existing run when RecordNotUnique is raised and active run exists" do
       issue = create(:issue, project: project)
-      existing_run = create(:agent_run, :queued, project: project, issue: issue)
 
       service = described_class.new(project)
-      allow(AgentRun).to receive(:create!).and_raise(
-        ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_issue")
-      )
+      # Simulate a race: another process creates a run between our SELECT
+      # (find_next_eligible_issue) and INSERT (create_agent_run). Stub
+      # create! to insert the competing run first, then raise.
+      existing_run = nil
+      original_create = AgentRun.method(:create!)
+      allow(AgentRun).to receive(:create!) do |**attrs|
+        existing_run = original_create.call(**attrs)
+        raise ActiveRecord::RecordNotUnique, "idx_agent_runs_unique_active_issue"
+      end
       allow(Rails.logger).to receive(:info)
 
       result = service.call
@@ -203,6 +208,23 @@ RSpec.describe Issues::AutoPick do
       )
 
       expect { service.call }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
+    it "skips issues created by untrusted GitHub users" do
+      create(:issue, project: project, github_creator_login: "untrusted-user")
+      trusted_issue = create(:issue, project: project, github_creator_login: "viamin")
+
+      result = described_class.new(project).call
+
+      expect(result.issue).to eq(trusted_issue)
+    end
+
+    it "returns nil when only untrusted issues exist" do
+      create(:issue, project: project, github_creator_login: "untrusted-user")
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
     end
 
     it "logs the auto-pick event" do

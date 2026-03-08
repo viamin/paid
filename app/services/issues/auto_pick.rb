@@ -69,10 +69,14 @@ module Issues
     private
 
     def find_next_eligible_issue
-      Issue.ready_for_work(@project)
+      scope = Issue.ready_for_work(@project)
         .where(paid_state: %w[new planning failed])
         .where.not(id: issues_with_active_runs)
-        .then { |scope| exclude_labeled_issues(scope) }
+
+      trusted_usernames = Array(@project.allowed_github_usernames).presence
+      scope = scope.where(github_creator_login: trusted_usernames) if trusted_usernames
+
+      exclude_labeled_issues(scope)
         .order(github_number: :asc)
         .first
     end
