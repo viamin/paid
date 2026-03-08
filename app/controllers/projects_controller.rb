@@ -72,11 +72,13 @@ class ProjectsController < ApplicationController
     authorize @project, :update?
     @project.update!(auto_pick_enabled: !@project.auto_pick_enabled?)
 
+    partial = params[:context] == "index" ? "projects/auto_pick_toggle_index" : "projects/auto_pick_toggle"
+
     respond_to do |format|
       format.turbo_stream do
         render turbo_stream: turbo_stream.replace(
           ActionView::RecordIdentifier.dom_id(@project, :auto_pick_toggle),
-          partial: "projects/auto_pick_toggle",
+          partial: partial,
           locals: { project: @project }
         )
       end

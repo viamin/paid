@@ -66,22 +66,7 @@
               <%= link_to "View", project_path(project), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
             </div>
           </div>
-          <%= tag.div id: dom_id(project, :auto_pick_toggle), class: "border-t border-gray-200 px-5 py-3" do %>
-            <div class="flex items-center justify-between">
-              <div class="flex items-center">
-                <span class="text-sm font-medium text-gray-700">Auto-Pick</span>
-                <span class="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= project.auto_pick_enabled? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
-                  <%= project.auto_pick_enabled? ? "On" : "Off" %>
-                </span>
-              </div>
-              <% if policy(project).update? %>
-                <%= button_to toggle_auto_pick_project_path(project), method: :post, class: "group relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 #{project.auto_pick_enabled? ? 'bg-indigo-600' : 'bg-gray-200'}" do %>
-                  <span class="sr-only">Toggle auto-pick</span>
-                  <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out <%= project.auto_pick_enabled? ? 'translate-x-5' : 'translate-x-0' %>"></span>
-                <% end %>
-              <% end %>
-            </div>
-          <% end %>
+          <%= render "projects/auto_pick_toggle_index", project: project %>
         </div>
       <% end %>
     </div>
