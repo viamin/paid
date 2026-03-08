@@ -160,8 +160,11 @@ RSpec.describe UserSetting do
 
     it "sets default container resource values" do
       expect(setting.container_memory_bytes).to eq(4 * 1024 * 1024 * 1024)
-      expect(setting.max_concurrent_runs).to eq(2)
       expect(setting.container_timeout_seconds).to eq(1800)
+    end
+
+    it "sets default concurrency values" do
+      expect(setting.max_concurrent_runs).to eq(2)
     end
 
     it "sets default project values" do
