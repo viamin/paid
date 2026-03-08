@@ -141,9 +141,25 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve PR base SHA for issue_comment events
+        id: pr_base
+        # For issue_comment events on PRs, github.event.pull_request is not
+        # populated. Use the GitHub API to fetch the PR base SHA so checkout
+        # can be pinned to the PR base when applicable.
+        if: ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          BASE_SHA=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.base.sha')
+          echo "sha=${BASE_SHA}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         # Checks out the default branch or PR base only — never a PR head ref.
-        # Uses the PR base SHA when available, otherwise github.sha (the
+        # Uses the PR base SHA (from API for issue_comment events, or from
+        # the event payload for PR events), otherwise github.sha (the
         # immutable SHA of the default branch at workflow trigger time) to
         # avoid both untrusted PR code and TOCTOU from mutable branch refs.
         # The claude-code-action handles PR ref access internally after
@@ -152,7 +168,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
         with:
           fetch-depth: 1
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          ref: ${{ steps.pr_base.outputs.sha || github.event.pull_request.base.sha || github.sha }}
           persist-credentials: false
 
       - name: Run Claude Code
