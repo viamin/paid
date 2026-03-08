@@ -44,8 +44,14 @@ class ProcessRunQueueJob < ApplicationJob
         end
 
         # User has capacity — now atomically claim the run.
+        # claim_next_queued_run returns nil if another process claimed or
+        # transitioned this run between peek and claim. Skip it and continue
+        # processing the queue rather than stopping entirely.
         agent_run = AgentRun.claim_next_queued_run(target_id: next_run.id)
-        break unless agent_run
+        unless agent_run
+          skipped_ids.add(next_run.id)
+          next
+        end
 
         if start_claimed_run(agent_run)
           consecutive_failures = 0
