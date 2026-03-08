@@ -121,6 +121,21 @@ RSpec.describe Activities::RunAgentActivity do
         expect(result[:success]).to be true
       end
 
+      it "succeeds and logs an informational message when provider has no output and no changes" do
+        no_output_success = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute).and_return(no_output_success)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(result[:has_changes]).to be false
+        expect(agent_run.reload.agent_run_logs.where(
+          log_type: "system",
+          content: "Provider completed with no output and no changes"
+        )).to exist
+      end
+
       it "returns has_changes: false when container check fails" do
         allow(git_ops).to receive(:has_changes_since?).and_raise(StandardError, "container gone")
 
