@@ -59,15 +59,17 @@
                   </td>
                   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                     <% if run.create_pr_goal? %>
-                      <% if run.issue.present? %>
+                      <% if run.issue.present? && safe_github_url?(run.issue.github_url) %>
                         <%= link_to "##{run.issue.github_number}", run.issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+                      <% elsif run.issue.present? %>
+                        <span class="text-gray-700">PR #<%= run.issue.github_number %></span>
                       <% elsif run.source_pull_request_number.present? %>
                         <span class="text-gray-700">PR #<%= run.source_pull_request_number %></span>
                       <% else %>
                         <span class="text-gray-400">-</span>
                       <% end %>
                     <% elsif run.create_issue_goal? %>
-                      <% if run.created_issue_url.present? && run.created_issue_url.start_with?("https://") %>
+                      <% if safe_github_url?(run.created_issue_url) %>
                         <% issue_label = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue" %>
                         <%= link_to issue_label, run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
                       <% elsif run.finished? %>
@@ -112,7 +114,7 @@
                       &middot;
                       <%= link_to "PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
                     <% end %>
-                    <% if run.created_issue_url.present? && run.created_issue_url.start_with?("https://") %>
+                    <% if safe_github_url?(run.created_issue_url) %>
                       &middot;
                       <% issue_link_text = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue" %>
                       <%= link_to issue_link_text, run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>

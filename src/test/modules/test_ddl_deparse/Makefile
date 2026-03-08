@@ -1,1 +1,0 @@
-/tmp/postgresql-16.3/src/test/modules/test_ddl_deparse/Makefile

@@ -1,1 +1,0 @@
-/tmp/postgresql-16.3/contrib/postgres_fdw/Makefile

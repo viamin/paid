@@ -66,6 +66,10 @@ module ApplicationHelper
     )
   end
 
+  def safe_github_url?(url)
+    url.present? && url.start_with?("https://github.com/")
+  end
+
   RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
 
   def sort_link_to(label, attribute, q)
