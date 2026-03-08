@@ -5,7 +5,7 @@ class AgentRunsController < ApplicationController
   skip_after_action :verify_authorized, only: :index
 
   def index
-    base_scope = policy_scope(AgentRun).includes(:project, :issue)
+    base_scope = policy_scope(AgentRun).includes(:project, issue: :project)
     @q = base_scope.ransack(params[:q])
     @q.sorts = "created_at desc" if @q.sorts.empty?
     @pagy, @agent_runs = pagy(@q.result)

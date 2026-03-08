@@ -62,9 +62,13 @@
                       <% if run.issue.present? && safe_github_url?(run.issue.github_url) %>
                         <%= link_to "##{run.issue.github_number}", run.issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
                       <% elsif run.issue.present? %>
-                        <span class="text-gray-700">PR #<%= run.issue.github_number %></span>
+                        <span class="text-gray-700">Issue #<%= run.issue.github_number %></span>
                       <% elsif run.source_pull_request_number.present? %>
                         <span class="text-gray-700">PR #<%= run.source_pull_request_number %></span>
+                      <% elsif run.pull_request_number.present? && safe_github_url?(run.pull_request_url) %>
+                        <%= link_to "PR ##{run.pull_request_number}", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+                      <% elsif run.pull_request_number.present? %>
+                        <span class="text-gray-700">PR #<%= run.pull_request_number %></span>
                       <% else %>
                         <span class="text-gray-400">-</span>
                       <% end %>
@@ -110,7 +114,7 @@
                   <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                     <% project_for_run = local_assigns[:project] || run.project %>
                     <%= link_to "View", project_agent_run_path(project_for_run, run), class: "text-indigo-600 hover:text-indigo-900" %>
-                    <% if run.pull_request_url.present? %>
+                    <% if safe_github_url?(run.pull_request_url) %>
                       &middot;
                       <%= link_to "PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
                     <% end %>
