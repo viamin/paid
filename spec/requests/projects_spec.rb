@@ -68,6 +68,20 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Name")
       end
 
+      it "shows auto-pick toggle on project cards" do
+        create(:project, account: account, github_token: github_token, auto_pick_enabled: false)
+        get projects_path
+        expect(response.body).to include("Auto-Pick")
+        expect(response.body).to include("Off")
+      end
+
+      it "shows auto-pick enabled state on project cards" do
+        create(:project, account: account, github_token: github_token, auto_pick_enabled: true)
+        get projects_path
+        expect(response.body).to include("Auto-Pick")
+        expect(response.body).to include("On")
+      end
+
       it "sorts projects by name ascending via Ransack sort params" do
         create(:project, account: account, github_token: github_token, name: "Zebra")
         create(:project, account: account, github_token: github_token, name: "Alpha")
