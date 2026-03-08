@@ -133,16 +133,17 @@ RSpec.describe ProcessRunQueueJob do
       it "calls auto-pick and starts newly queued runs" do
         project = create(:project, auto_pick_enabled: true)
         issue = create(:issue, project: project)
-        auto_pick_run = create(:agent_run, :queued, project: project, issue: issue)
 
         auto_pick_service = instance_double(Issues::AutoPick)
         allow(Issues::AutoPick).to receive(:new).with(project).and_return(auto_pick_service)
-        allow(auto_pick_service).to receive(:call).and_return(auto_pick_run)
+        allow(auto_pick_service).to receive(:call) do
+          create(:agent_run, :queued, project: project, issue: issue)
+        end
 
         described_class.new.perform
 
         expect(Issues::AutoPick).to have_received(:new).with(project)
-        expect(auto_pick_run.reload.status).to eq("pending")
+        expect(AgentRun.last.status).to eq("pending")
       end
 
       it "only runs auto-pick once per job invocation" do
