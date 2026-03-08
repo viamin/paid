@@ -144,6 +144,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     it "routes draft phase triggers to draft followup workflow" do
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, anything)
+        .and_return({ has_capacity: true })
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
@@ -155,11 +158,19 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CheckRunCapacityActivity, anything, anything)
+      expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(project_id: project_id, issue_id: 10, source_pull_request_number: 42),
+        hash_including(parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON)
+      )
     end
 
     it "routes ready phase triggers to PR followup workflow" do
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, anything)
+        .and_return({ has_capacity: true })
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "ready",
@@ -171,6 +182,11 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CheckRunCapacityActivity, anything, anything)
+      expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(project_id: project_id, issue_id: 10, source_pull_request_number: 42),
+        hash_including(parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON)
+      )
     end
 
     it "skips owner review request when owner_reviewer_login is blank" do
