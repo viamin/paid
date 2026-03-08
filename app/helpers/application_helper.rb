@@ -66,7 +66,7 @@ module ApplicationHelper
     )
   end
 
-  RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq branch_name_cont category_eq active_eq name_cont s].freeze
+  RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
 
   def sort_link_to(label, attribute, q)
     current_sort = q.sorts.find { |s| s.name == attribute.to_s }
