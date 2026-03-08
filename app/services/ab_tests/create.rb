@@ -61,6 +61,8 @@ module AbTests
       raise ArgumentError, "prompt must have a current version" unless prompt.current_version_id
       raise ArgumentError, "at least one variant version is required" if variant_version_ids.empty?
       raise ArgumentError, "maximum #{AbTest::MAX_VARIANTS} variants allowed" if variant_version_ids.size > AbTest::MAX_VARIANTS
+      raise ArgumentError, "variant versions must be unique" if variant_version_ids.uniq.size != variant_version_ids.size
+      raise ArgumentError, "variant versions cannot include the control version" if variant_version_ids.include?(prompt.current_version_id)
       raise ArgumentError, "prompt already has a running A/B test" if prompt.ab_tests.running.exists?
     end
   end

@@ -10,9 +10,56 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_08_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "ab_test_assignments", force: :cascade do |t|
+    t.bigint "ab_test_id", null: false
+    t.bigint "ab_test_variant_id", null: false
+    t.bigint "agent_run_id", null: false
+    t.datetime "created_at", null: false
+    t.decimal "quality_score", precision: 4, scale: 2
+    t.index ["ab_test_id", "agent_run_id"], name: "index_ab_test_assignments_unique", unique: true
+    t.index ["ab_test_id"], name: "index_ab_test_assignments_on_ab_test_id"
+    t.index ["ab_test_variant_id"], name: "index_ab_test_assignments_on_ab_test_variant_id"
+    t.index ["agent_run_id"], name: "index_ab_test_assignments_on_agent_run_id"
+  end
+
+  create_table "ab_test_variants", force: :cascade do |t|
+    t.bigint "ab_test_id", null: false
+    t.decimal "avg_quality_score", precision: 4, scale: 2
+    t.datetime "created_at", null: false
+    t.boolean "is_control", default: false, null: false
+    t.bigint "prompt_version_id", null: false
+    t.integer "sample_count", default: 0, null: false
+    t.decimal "total_quality_score", precision: 10, scale: 2, default: "0.0", null: false
+    t.datetime "updated_at", null: false
+    t.index ["ab_test_id", "is_control"], name: "index_ab_test_variants_on_test_and_control"
+    t.index ["ab_test_id", "prompt_version_id"], name: "index_ab_test_variants_on_test_and_prompt_version", unique: true
+    t.index ["ab_test_id"], name: "index_ab_test_variants_on_ab_test_id"
+    t.index ["ab_test_id"], name: "index_ab_test_variants_on_control_per_test", unique: true, where: "(is_control = true)"
+    t.index ["prompt_version_id"], name: "index_ab_test_variants_on_prompt_version_id"
+  end
+
+  create_table "ab_tests", force: :cascade do |t|
+    t.datetime "completed_at"
+    t.decimal "confidence_threshold", precision: 4, scale: 2, default: "0.95", null: false
+    t.bigint "control_version_id", null: false
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.integer "min_samples_per_variant", default: 30, null: false
+    t.string "name", limit: 255, null: false
+    t.bigint "prompt_id", null: false
+    t.datetime "started_at"
+    t.string "status", limit: 50, default: "draft", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "winner_variant_id"
+    t.index ["control_version_id"], name: "index_ab_tests_on_control_version_id"
+    t.index ["prompt_id", "status"], name: "index_ab_tests_on_prompt_id_and_status"
+    t.index ["prompt_id"], name: "index_ab_tests_on_prompt_id"
+    t.index ["status"], name: "index_ab_tests_on_status"
+  end
 
   create_table "account_memberships", force: :cascade do |t|
     t.bigint "account_id", null: false
@@ -87,8 +134,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -484,6 +531,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
     t.index ["status"], name: "index_worktrees_on_status"
   end
 
+  add_foreign_key "ab_test_assignments", "ab_test_variants", on_delete: :cascade
+  add_foreign_key "ab_test_assignments", "ab_tests", on_delete: :cascade
+  add_foreign_key "ab_test_assignments", "agent_runs", on_delete: :cascade
+  add_foreign_key "ab_test_variants", "ab_tests", on_delete: :cascade
+  add_foreign_key "ab_test_variants", "prompt_versions", on_delete: :restrict
+  add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
+  add_foreign_key "ab_tests", "prompts", on_delete: :cascade
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade

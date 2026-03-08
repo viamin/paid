@@ -19,7 +19,7 @@ module AbTests
     end
 
     def record
-      assignment = AbTestAssignment.find_by(agent_run: agent_run)
+      assignment = AbTestAssignment.find_by(agent_run: agent_run, quality_score: nil)
       return unless assignment
 
       assignment.update!(quality_score: quality_score)

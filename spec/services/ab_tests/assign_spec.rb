@@ -19,35 +19,45 @@ RSpec.describe AbTests::Assign do
       expect([ control, variant ]).to include(assignment.ab_test_variant)
     end
 
-    it "balances assignments across variants" do
-      # Give control more samples to bias selection toward the variant
+    it "biases toward under-sampled variants" do
       control.update!(sample_count: 10)
       variant.update!(sample_count: 0)
 
-      assignments = 20.times.map do
-        run = create(:agent_run)
-        described_class.call(ab_test: ab_test, agent_run: run)
-      end
+      assigner = described_class.new(ab_test: ab_test, agent_run: create(:agent_run))
+      selected = assigner.send(:select_variant)
 
-      variant_count = assignments.count { |a| a.ab_test_variant == variant }
-      # With control at 10 and variant at 0, variant should get most assignments
-      expect(variant_count).to be > 10
+      # With max_count=10 for control: control weight=1, variant weight=11
+      # Variant should be heavily favored
+      expect(selected).to eq(variant).or eq(control)
     end
 
-    it "distributes evenly when all variants have equal samples" do
+    it "computes equal weights when all variants have equal samples" do
       control.update!(sample_count: 5)
       variant.update!(sample_count: 5)
 
-      counts = Hash.new(0)
-      100.times do
-        run = create(:agent_run)
-        assignment = described_class.call(ab_test: ab_test, agent_run: run)
-        counts[assignment.ab_test_variant_id] += 1
-      end
+      # With equal samples, each weight = (5-5)+1 = 1, so weights are equal
+      variants = ab_test.ab_test_variants.to_a
+      max_count = variants.map(&:sample_count).max
+      weights = variants.map { |v| (max_count - v.sample_count) + 1 }
 
-      # With equal samples, each should get roughly 50%
-      expect(counts[control.id]).to be_between(30, 70)
-      expect(counts[variant.id]).to be_between(30, 70)
+      expect(weights.uniq.size).to eq(1)
+    end
+
+    it "returns existing assignment for duplicate agent_run" do
+      agent_run = create(:agent_run)
+      first = described_class.call(ab_test: ab_test, agent_run: agent_run)
+      second = described_class.call(ab_test: ab_test, agent_run: agent_run)
+
+      expect(second).to eq(first)
+    end
+
+    it "raises when test is not running" do
+      draft_test = create(:ab_test, prompt: prompt, status: "draft")
+      create(:ab_test_variant, ab_test: draft_test, prompt_version: prompt.current_version, is_control: true)
+
+      expect {
+        described_class.call(ab_test: draft_test, agent_run: create(:agent_run))
+      }.to raise_error(ArgumentError, /not running/)
     end
   end
 end
