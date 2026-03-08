@@ -1,1 +1,0 @@
-/tmp/postgresql-16.3/src/test/modules/dummy_seclabel/Makefile

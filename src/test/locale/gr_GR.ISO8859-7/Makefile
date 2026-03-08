@@ -1,1 +1,0 @@
-/tmp/postgresql-16.3/src/test/locale/gr_GR.ISO8859-7/Makefile
