@@ -161,7 +161,9 @@ class UserSetting < ApplicationRecord
   end
 
   def self.system_enabled_provider_keys
-    Provider::SUPPORTED_PROVIDER_KEYS
+    Provider::SUPPORTED_PROVIDER_KEYS.select do |key|
+      AgentHarness.configuration.providers[key.to_sym]&.enabled
+    end
   end
 
   private
