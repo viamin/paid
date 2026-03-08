@@ -53,7 +53,7 @@ module QualityMetrics
     # Iterations: fewer is better, normalized to 0..1.
     # Formula from RDR-009: max(1.0 - (iterations - 1) * 0.1, 0.0)
     def iterations_score
-      iterations = agent_run.iterations || 0
+      iterations = [ agent_run.iterations || 0, 1 ].max
       [ 1.0 - ((iterations - 1) * 0.1), 0.0 ].max
     end
 
