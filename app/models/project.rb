@@ -191,6 +191,8 @@ class Project < ApplicationRecord
 
   def trigger_auto_pick
     ProcessRunQueueJob.perform_later
+  rescue => e
+    Rails.logger.error(message: "auto_pick.trigger_failed", project_id: id, error: e.message)
   end
 
   def start_github_polling
