@@ -60,6 +60,7 @@ WORKLOG.md
 /.tmp-*/
 /.*-build/
 /.*_build/
+config.log
 
 # npm cache
 /.npm-cache
