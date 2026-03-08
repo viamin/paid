@@ -232,7 +232,7 @@ module Activities
     end
 
     # Runs the agent with a specific provider.
-    # Raises ProviderRateLimitError or ProviderExecutionError on failure.
+    # Raises ProviderRateLimitError, ProviderTimeoutError, or ProviderExecutionError on failure.
     #
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_provider(agent_run, provider, prompt)
