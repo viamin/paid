@@ -74,6 +74,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_07_140000) do
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
+    t.datetime "rate_limited_until"
     t.datetime "started_at"
     t.string "status", limit: 50, default: "pending", null: false
     t.string "temporal_run_id", limit: 255

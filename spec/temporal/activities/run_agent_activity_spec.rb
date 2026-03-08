@@ -210,11 +210,9 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       it "marks the agent run as rate_limited" do
-        begin
+        expect {
           activity.execute(agent_run_id: agent_run.id)
-        rescue Temporalio::Error::ApplicationError
-          # expected
-        end
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
@@ -223,11 +221,9 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       it "detects Claude-specific usage limit error" do
-        begin
+        expect {
           activity.execute(agent_run_id: agent_run.id)
-        rescue Temporalio::Error::ApplicationError
-          # expected
-        end
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
 
         expect(agent_run.reload.status).to eq("rate_limited")
       end
