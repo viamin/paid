@@ -9,6 +9,7 @@ class Prompt < ApplicationRecord
   belongs_to :project, optional: true
 
   has_many :prompt_versions, dependent: :destroy
+  has_many :ab_tests, dependent: :destroy
   belongs_to :current_version, class_name: "PromptVersion", optional: true
 
   before_validation :set_account_from_project, if: -> { project.present? && account.nil? }
