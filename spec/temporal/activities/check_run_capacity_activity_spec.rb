@@ -16,7 +16,7 @@ RSpec.describe Activities::CheckRunCapacityActivity do
       result = activity.execute({})
 
       expect(result[:has_capacity]).to be true
-      expect(result[:active_count]).to eq(1)
+      expect(result[:global_active_count]).to eq(1)
       expect(result[:max_concurrent_runs]).to eq(2)
     end
 
@@ -27,7 +27,7 @@ RSpec.describe Activities::CheckRunCapacityActivity do
       result = activity.execute({})
 
       expect(result[:has_capacity]).to be false
-      expect(result[:active_count]).to eq(2)
+      expect(result[:global_active_count]).to eq(2)
     end
 
     it "does not count queued runs as active" do
@@ -37,7 +37,7 @@ RSpec.describe Activities::CheckRunCapacityActivity do
       result = activity.execute({})
 
       expect(result[:has_capacity]).to be true
-      expect(result[:active_count]).to eq(1)
+      expect(result[:global_active_count]).to eq(1)
     end
 
     it "does not count finished runs as active" do
@@ -47,7 +47,36 @@ RSpec.describe Activities::CheckRunCapacityActivity do
       result = activity.execute({})
 
       expect(result[:has_capacity]).to be true
-      expect(result[:active_count]).to eq(0)
+      expect(result[:global_active_count]).to eq(0)
+    end
+
+    context "with project_id providing user context" do
+      it "uses min of system config and user setting" do
+        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 1)
+        create(:agent_run, :running, project: project)
+
+        result = activity.execute({ project_id: project.id })
+
+        expect(result[:has_capacity]).to be false
+        expect(result[:max_concurrent_runs]).to eq(1)
+      end
+
+      it "returns false when global cap is reached even if user has capacity" do
+        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 5)
+        # Two runs from other users fill the global cap
+        create(:agent_run, :running)
+        create(:agent_run, :running)
+
+        result = activity.execute({ project_id: project.id })
+
+        expect(result[:has_capacity]).to be false
+      end
     end
   end
 end

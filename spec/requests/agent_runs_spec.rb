@@ -37,33 +37,31 @@ RSpec.describe "AgentRuns" do
       end
 
       it "filters agent runs using Ransack q params" do
-        create(:agent_run, :with_git_context, project: project, branch_name: "feature/alpha")
-        create(:agent_run, :with_git_context, project: project, branch_name: "fix/beta")
+        matching_run = create(:agent_run, :with_git_context, project: project, branch_name: "feature/alpha")
+        excluded_run = create(:agent_run, :with_git_context, project: project, branch_name: "fix/beta")
 
         get agent_runs_path, params: { q: { branch_name_cont: "alpha" } }
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("feature/alpha")
-        expect(response.body).not_to include("fix/beta")
+        expect(response.body).to include(project_agent_run_path(project, matching_run))
+        expect(response.body).not_to include(project_agent_run_path(project, excluded_run))
       end
 
-      it "filters agent runs by goal (custom_prompt)" do
-        create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
-          custom_prompt: "Fix null byte handling", branch_name: "fix/null-byte")
-        create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
-          custom_prompt: "Refactor auth module", branch_name: "refactor/auth")
+      it "filters agent runs by goal type" do
+        pr_run = create(:agent_run, project: project, goal: "create_pr")
+        issue_run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_issue")
 
-        get agent_runs_path, params: { goal: "null byte" }
+        get agent_runs_path, params: { q: { goal_eq: "create_pr" } }
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("fix/null-byte")
-        expect(response.body).not_to include("refactor/auth")
+        expect(response.body).to include(project_agent_run_path(project, pr_run))
+        expect(response.body).not_to include(project_agent_run_path(project, issue_run))
       end
 
-      it "shows the goal filter input" do
+      it "shows the goal filter dropdown" do
         get agent_runs_path
 
-        expect(response.body).to include("Search goal or prompt...")
+        expect(response.body).to include("All Goals")
       end
 
       it "sorts agent runs ascending via Ransack sort params" do
@@ -88,11 +86,18 @@ RSpec.describe "AgentRuns" do
         expect(response.body.index(other_project.name)).to be < response.body.index(project.name)
       end
 
-      it "shows issue link when created_issue_url is present" do
+      it "shows issue link in context column for create_issue goal runs" do
         create(:agent_run, :with_created_issue, :completed, project: project)
         get agent_runs_path
         expect(response.body).to include("Issue #42")
         expect(response.body).to include("https://github.com/example/repo/issues/42")
+      end
+
+      it "shows linked issue in context column for create_pr goal runs" do
+        issue = create(:issue, project: project, github_number: 7, title: "Context test")
+        create(:agent_run, project: project, issue: issue, goal: "create_pr")
+        get agent_runs_path
+        expect(response.body).to include("#7")
       end
 
       it "does not show runs from other accounts" do
@@ -136,27 +141,25 @@ RSpec.describe "AgentRuns" do
       end
 
       it "filters agent runs using Ransack q params" do
-        create(:agent_run, :with_git_context, project: project, branch_name: "feature/gamma")
-        create(:agent_run, :with_git_context, project: project, branch_name: "fix/delta")
+        matching_run = create(:agent_run, :with_git_context, project: project, branch_name: "feature/gamma")
+        excluded_run = create(:agent_run, :with_git_context, project: project, branch_name: "fix/delta")
 
         get project_agent_runs_path(project), params: { q: { branch_name_cont: "gamma" } }
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("feature/gamma")
-        expect(response.body).not_to include("fix/delta")
+        expect(response.body).to include(project_agent_run_path(project, matching_run))
+        expect(response.body).not_to include(project_agent_run_path(project, excluded_run))
       end
 
-      it "filters agent runs by goal (custom_prompt)" do
-        create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
-          custom_prompt: "Fix null byte handling", branch_name: "fix/null-byte")
-        create(:agent_run, :with_custom_prompt, :with_git_context, project: project,
-          custom_prompt: "Refactor auth module", branch_name: "refactor/auth")
+      it "filters agent runs by goal type" do
+        pr_run = create(:agent_run, project: project, goal: "create_pr")
+        issue_run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_issue")
 
-        get project_agent_runs_path(project), params: { goal: "null byte" }
+        get project_agent_runs_path(project), params: { q: { goal_eq: "create_pr" } }
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("fix/null-byte")
-        expect(response.body).not_to include("refactor/auth")
+        expect(response.body).to include(project_agent_run_path(project, pr_run))
+        expect(response.body).not_to include(project_agent_run_path(project, issue_run))
       end
 
       it "sorts agent runs via Ransack sort params" do
@@ -169,11 +172,18 @@ RSpec.describe "AgentRuns" do
         expect(response.body.index("Claude Code")).to be < response.body.index("Cursor")
       end
 
-      it "shows issue link when created_issue_url is present" do
+      it "shows issue link in context column for create_issue goal runs" do
         create(:agent_run, :with_created_issue, :completed, project: project)
         get project_agent_runs_path(project)
         expect(response.body).to include("Issue #42")
         expect(response.body).to include("https://github.com/example/repo/issues/42")
+      end
+
+      it "shows linked issue in context column for create_pr goal runs" do
+        issue = create(:issue, project: project, github_number: 7, title: "Context test")
+        create(:agent_run, project: project, issue: issue, goal: "create_pr")
+        get project_agent_runs_path(project)
+        expect(response.body).to include("#7")
       end
 
       it "does not show runs from other accounts" do

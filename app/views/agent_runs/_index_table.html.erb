@@ -21,7 +21,7 @@
                   <%= sort_link_to "Agent", :agent_type, q %>
                 </th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                  <%= sort_link_to "Branch", :branch_name, q %>
+                  Context
                 </th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                   <%= sort_link_to "Duration", :duration_seconds, q %>
@@ -58,8 +58,14 @@
                     <%= run.agent_type.titleize %>
                   </td>
                   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                    <% if run.branch_name.present? %>
-                      <code class="rounded bg-gray-100 px-1 py-0.5 text-xs"><%= run.branch_name %></code>
+                    <% context = agent_run_context(run) %>
+                    <% case context[:type] %>
+                    <% when :link %>
+                      <%= link_to context[:label], context[:url], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+                    <% when :text %>
+                      <span class="<%= context[:classes] %>"><%= context[:label] %></span>
+                    <% when :pending %>
+                      <span class="italic text-gray-500">Creating issue&hellip;</span>
                     <% else %>
                       <span class="text-gray-400">-</span>
                     <% end %>
@@ -93,11 +99,11 @@
                   <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                     <% project_for_run = local_assigns[:project] || run.project %>
                     <%= link_to "View", project_agent_run_path(project_for_run, run), class: "text-indigo-600 hover:text-indigo-900" %>
-                    <% if run.pull_request_url.present? %>
+                    <% if safe_github_url?(run.pull_request_url) %>
                       &middot;
                       <%= link_to "PR", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
                     <% end %>
-                    <% if run.created_issue_url.present? %>
+                    <% if safe_github_url?(run.created_issue_url) %>
                       &middot;
                       <% issue_link_text = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue" %>
                       <%= link_to issue_link_text, run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
@@ -120,7 +126,7 @@
     <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
     </svg>
-    <% has_filters = (params[:q].present? && params[:q].except("s").values.any?(&:present?)) || params[:goal].to_s.strip.present? %>
+    <% has_filters = params[:q].present? && params[:q].except("s").values.any?(&:present?) %>
     <h3 class="mt-2 text-sm font-semibold text-gray-900">
       <%= has_filters ? "No matching agent runs" : "No agent runs yet" %>
     </h3>

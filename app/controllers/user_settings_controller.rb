@@ -40,7 +40,7 @@ class UserSettingsController < ApplicationController
       :agent_timeout_seconds,
       :default_agent_provider,
       :container_memory_gb,
-      :container_cpus,
+      :max_concurrent_runs,
       :container_timeout_seconds,
       :default_branch,
       :default_project_active,

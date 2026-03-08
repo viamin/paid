@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_07_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -74,6 +74,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_07_130000) do
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
+    t.datetime "rate_limited_until"
     t.datetime "started_at"
     t.string "status", limit: 50, default: "pending", null: false
     t.string "temporal_run_id", limit: 255
@@ -239,6 +240,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_07_130000) do
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
+    t.index ["labels"], name: "index_issues_on_labels_gin_open_issues", where: "((is_pull_request = false) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
@@ -274,6 +276,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_07_130000) do
     t.boolean "active", default: true, null: false
     t.jsonb "allowed_github_usernames", default: [], null: false
     t.boolean "auto_fix_merge_conflicts", default: false, null: false
+    t.boolean "auto_pick_enabled", default: false, null: false
     t.boolean "auto_scan_prs", default: true, null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
@@ -410,7 +413,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_07_130000) do
     t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
-    t.integer "container_cpu_quota", default: 200000, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
     t.integer "container_timeout_seconds", default: 1800, null: false
     t.datetime "created_at", null: false
@@ -422,6 +424,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_07_130000) do
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_providers", default: [], null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
+    t.integer "max_concurrent_runs", default: 2, null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false

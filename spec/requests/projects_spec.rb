@@ -535,6 +535,73 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "POST /projects/:id/toggle_auto_pick" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        project = create(:project, account: account, github_token: github_token)
+        post toggle_auto_pick_project_path(project)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as owner" do
+      before { sign_in user }
+
+      it "enables auto_pick when currently disabled" do
+        project = create(:project, account: account, github_token: github_token, auto_pick_enabled: false)
+        post toggle_auto_pick_project_path(project)
+        expect(project.reload.auto_pick_enabled).to be true
+      end
+
+      it "disables auto_pick when currently enabled" do
+        project = create(:project, account: account, github_token: github_token, auto_pick_enabled: true)
+        post toggle_auto_pick_project_path(project)
+        expect(project.reload.auto_pick_enabled).to be false
+      end
+
+      it "redirects to the project for HTML requests" do
+        project = create(:project, account: account, github_token: github_token)
+        post toggle_auto_pick_project_path(project)
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      it "responds with turbo_stream when requested" do
+        project = create(:project, account: account, github_token: github_token, auto_pick_enabled: false)
+        post toggle_auto_pick_project_path(project), headers: { "Accept" => "text/vnd.turbo-stream.html" }
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include("turbo-stream")
+        expect(response.body).to include("auto_pick_toggle_project_#{project.id}")
+      end
+
+      it "enqueues ProcessRunQueueJob when enabling auto_pick" do
+        project = create(:project, account: account, github_token: github_token, auto_pick_enabled: false)
+        expect {
+          post toggle_auto_pick_project_path(project)
+        }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "does not enqueue ProcessRunQueueJob when disabling auto_pick" do
+        project = create(:project, account: account, github_token: github_token, auto_pick_enabled: true)
+        expect {
+          post toggle_auto_pick_project_path(project)
+        }.not_to have_enqueued_job(ProcessRunQueueJob)
+      end
+    end
+
+    context "when authenticated as viewer" do
+      let(:viewer_user) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer_user }
+
+      it "redirects with authorization error" do
+        project = create(:project, account: account, github_token: github_token)
+        post toggle_auto_pick_project_path(project)
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+  end
+
   describe "DELETE /projects/:id" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

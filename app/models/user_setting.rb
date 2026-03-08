@@ -28,10 +28,12 @@ class UserSetting < ApplicationRecord
   validates :container_memory_bytes,
     numericality: { only_integer: true, greater_than_or_equal_to: 512 * 1024 * 1024,
                     less_than_or_equal_to: MAX_CONTAINER_MEMORY_BYTES }
-  validates :container_cpu_quota,
-    numericality: { only_integer: true, greater_than_or_equal_to: 100_000, less_than_or_equal_to: PG_INT_MAX }
   validates :container_timeout_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
+
+  # Concurrency
+  validates :max_concurrent_runs,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
 
   # Project Defaults
   validates :default_branch, presence: true
@@ -107,16 +109,6 @@ class UserSetting < ApplicationRecord
   # Sets allowed_service_images from a comma-separated string
   def allowed_service_images_csv=(value)
     self.allowed_service_images = value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
-  end
-
-  # Returns container CPU count (cpu_quota / 100_000)
-  def container_cpus
-    container_cpu_quota / 100_000
-  end
-
-  # Sets container CPU quota from a CPU count
-  def container_cpus=(value)
-    self.container_cpu_quota = (value.to_i * 100_000)
   end
 
   # Returns the ordered list of providers to try: primary first, then fallbacks.

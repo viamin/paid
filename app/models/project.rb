@@ -45,6 +45,7 @@ class Project < ApplicationRecord
 
   after_create_commit :start_github_polling
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
+  after_update_commit :trigger_auto_pick, if: :auto_pick_just_enabled?
   after_destroy_commit :stop_github_polling
 
   def full_name
@@ -89,6 +90,14 @@ class Project < ApplicationRecord
 
   def has_running_database_container?
     service_containers.running.where("image LIKE ?", "%postgres%").exists?
+  end
+
+  # Returns the effective owner of this project for capacity/settings lookups.
+  # Falls back to the account owner or the first account user when
+  # the creating user has been deleted (created_by is nil).
+  # Matches the fallback order in AgentRuns::UserSettingsResolver.
+  def effective_owner
+    created_by || account.account_memberships.find_by(role: :owner)&.user || account.users.first
   end
 
   def trusted_github_user?(login)
@@ -175,6 +184,16 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def auto_pick_just_enabled?
+    saved_change_to_auto_pick_enabled? && auto_pick_enabled?
+  end
+
+  def trigger_auto_pick
+    ProcessRunQueueJob.perform_later
+  rescue => e
+    Rails.logger.error(message: "auto_pick.trigger_failed", project_id: id, error: e.message)
+  end
 
   def start_github_polling
     return unless active?

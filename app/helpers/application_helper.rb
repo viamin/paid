@@ -10,7 +10,8 @@ module ApplicationHelper
     "cancelled" => { bg: "bg-gray-100", text: "text-gray-600", label: "Cancelled" },
     "timeout" => { bg: "bg-orange-100", text: "text-orange-700", label: "Timeout" },
     "retried" => { bg: "bg-purple-100", text: "text-purple-700", label: "Retried" },
-    "auth_expired" => { bg: "bg-amber-100", text: "text-amber-700", label: "Auth Expired" }
+    "auth_expired" => { bg: "bg-amber-100", text: "text-amber-700", label: "Auth Expired" },
+    "rate_limited" => { bg: "bg-orange-100", text: "text-orange-700", label: "Rate Limited" }
   }.freeze
 
   def agent_run_status_badge(status)
@@ -65,7 +66,28 @@ module ApplicationHelper
     )
   end
 
-  RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq branch_name_cont category_eq active_eq name_cont s].freeze
+  def safe_github_url?(url)
+    return false if url.blank?
+
+    uri = URI.parse(url)
+    uri.scheme == "https" && uri.host == "github.com"
+  rescue URI::InvalidURIError
+    false
+  end
+
+  # Returns context display info for an agent run as a hash with :type and optional :label, :url, :classes.
+  # Centralizes the priority logic so the ERB template only needs a simple case statement.
+  def agent_run_context(run)
+    if run.create_pr_goal?
+      create_pr_context(run)
+    elsif run.create_issue_goal?
+      create_issue_context(run)
+    else
+      { type: :placeholder }
+    end
+  end
+
+  RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
 
   def sort_link_to(label, attribute, q)
     current_sort = q.sorts.find { |s| s.name == attribute.to_s }
@@ -82,5 +104,38 @@ module ApplicationHelper
       url_for(request.query_parameters.except(:page, "page").merge(q: q_params.merge(s: "#{attribute} #{direction}"))),
       class: "group inline-flex items-center"
     )
+  end
+
+  private
+
+  def create_pr_context(run)
+    if run.issue.present?
+      github_link_or_text("##{run.issue.github_number}", "Issue ##{run.issue.github_number}", run.issue.github_url)
+    elsif run.source_pull_request_number.present?
+      { type: :text, label: "PR ##{run.source_pull_request_number}", classes: "text-gray-700" }
+    elsif run.pull_request_number.present?
+      github_link_or_text("PR ##{run.pull_request_number}", "PR ##{run.pull_request_number}", run.pull_request_url)
+    else
+      { type: :placeholder }
+    end
+  end
+
+  def create_issue_context(run)
+    if safe_github_url?(run.created_issue_url)
+      label = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue"
+      { type: :link, label: label, url: run.created_issue_url }
+    elsif run.finished?
+      { type: :placeholder }
+    else
+      { type: :pending }
+    end
+  end
+
+  def github_link_or_text(link_label, text_label, url)
+    if safe_github_url?(url)
+      { type: :link, label: link_label, url: url }
+    else
+      { type: :text, label: text_label, classes: "text-gray-700" }
+    end
   end
 end

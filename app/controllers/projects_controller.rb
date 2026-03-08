@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ProjectsController < ApplicationController
-  before_action :set_project, only: [ :show, :edit, :update, :destroy ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -68,6 +68,22 @@ class ProjectsController < ApplicationController
     end
   end
 
+  def toggle_auto_pick
+    authorize @project, :update?
+    @project.update!(auto_pick_enabled: !@project.auto_pick_enabled?)
+
+    respond_to do |format|
+      format.turbo_stream do
+        render turbo_stream: turbo_stream.replace(
+          ActionView::RecordIdentifier.dom_id(@project, :auto_pick_toggle),
+          partial: "projects/auto_pick_toggle",
+          locals: { project: @project }
+        )
+      end
+      format.html { redirect_to @project }
+    end
+  end
+
   def destroy
     authorize @project
     @project.destroy!
@@ -92,7 +108,7 @@ class ProjectsController < ApplicationController
   def project_params
     params.require(:project).permit(:github_token_id, :owner, :repo, :name, :active,
       :poll_interval_seconds, :github_id, :default_branch,
-      :owner_reviewer_login, :merge_method, :max_draft_review_rounds,
+      :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled,
       allowed_github_usernames: [])
   end
 
