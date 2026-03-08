@@ -263,6 +263,51 @@ RSpec.describe Project do
     end
   end
 
+  describe "after_update_commit on auto_pick_enabled change" do
+    let(:temporal_client) { instance_double(Temporalio::Client) }
+
+    before do
+      allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
+      allow(temporal_client).to receive(:start_workflow)
+    end
+
+    it "enqueues ProcessRunQueueJob when auto_pick is enabled" do
+      project = create(:project, auto_pick_enabled: false)
+
+      expect {
+        project.update!(auto_pick_enabled: true)
+      }.to have_enqueued_job(ProcessRunQueueJob)
+    end
+
+    it "does not enqueue ProcessRunQueueJob when auto_pick is disabled" do
+      project = create(:project, auto_pick_enabled: true)
+
+      expect {
+        project.update!(auto_pick_enabled: false)
+      }.not_to have_enqueued_job(ProcessRunQueueJob)
+    end
+
+    it "does not enqueue ProcessRunQueueJob when other attributes change" do
+      project = create(:project, auto_pick_enabled: true)
+
+      expect {
+        project.update!(name: "new-name")
+      }.not_to have_enqueued_job(ProcessRunQueueJob)
+    end
+
+    it "logs error when ProcessRunQueueJob fails to enqueue" do
+      project = create(:project, auto_pick_enabled: false)
+      allow(ProcessRunQueueJob).to receive(:perform_later).and_raise(StandardError, "queue unavailable")
+      allow(Rails.logger).to receive(:error)
+
+      project.update!(auto_pick_enabled: true)
+
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(message: "auto_pick.trigger_failed", project_id: project.id)
+      )
+    end
+  end
+
   describe "allowed_github_usernames validation" do
     it "requires at least one trusted username" do
       project = build(:project, allowed_github_usernames: [])
