@@ -37,8 +37,9 @@ jobs:
           # Create the CLAUDE_CODE_OAUTH_TOKEN secret (not an Anthropic API key)
           # in Settings > Secrets and variables > Actions before enabling.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Pinned to the same SHA as the action to avoid supply-chain risk
-          # from floating refs. Update intentionally when upgrading the action.
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git?ref=26ec041249acb0a944c0a47b6c0c13f05dbc5b44'
+          # Plugin marketplace from the claude-code repo (separate from
+          # claude-code-action). Uses main branch since this repo does not
+          # share commit SHAs with the action repo.
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
