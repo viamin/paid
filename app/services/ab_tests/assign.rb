@@ -4,6 +4,10 @@ module AbTests
   # Assigns an agent run to an A/B test variant using weighted random selection.
   # Variants with fewer samples get higher weight to ensure balanced distribution.
   #
+  # Integration: call from AgentExecutionWorkflow where prompt_version is resolved,
+  # passing the running A/B test for the prompt. Use the returned assignment's
+  # variant prompt_version instead of the default. See also AbTests::RecordResult.
+  #
   # @example
   #   assignment = AbTests::Assign.call(ab_test: test, agent_run: run)
   #   prompt_version = assignment.ab_test_variant.prompt_version
@@ -20,12 +24,22 @@ module AbTests
     end
 
     def assign
+      raise ArgumentError, "A/B test is not running" unless ab_test.running?
+
+      existing = AbTestAssignment.find_by(ab_test: ab_test, agent_run: agent_run)
+      return existing if existing
+
       variant = select_variant
-      AbTestAssignment.create!(
-        ab_test: ab_test,
-        ab_test_variant: variant,
-        agent_run: agent_run
-      )
+
+      begin
+        AbTestAssignment.create!(
+          ab_test: ab_test,
+          ab_test_variant: variant,
+          agent_run: agent_run
+        )
+      rescue ActiveRecord::RecordNotUnique
+        AbTestAssignment.find_by!(ab_test: ab_test, agent_run: agent_run)
+      end
     end
 
     private
