@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_08_200001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -95,6 +95,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
+  end
+
+  create_table "cost_budgets", force: :cascade do |t|
+    t.integer "alert_threshold_percent", default: 80, null: false
+    t.datetime "alert_sent_at"
+    t.string "budget_type", limit: 50, null: false
+    t.datetime "created_at", null: false
+    t.integer "current_usage_cents", default: 0, null: false
+    t.integer "limit_cents", null: false
+    t.datetime "period_started_at"
+    t.bigint "project_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "budget_type"], name: "index_cost_budgets_on_project_id_and_budget_type", unique: true
+    t.index ["project_id"], name: "index_cost_budgets_on_project_id"
   end
 
   create_table "github_tokens", force: :cascade do |t|
@@ -408,6 +422,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_style_guides_scope_consistency"
   end
 
+  create_table "token_usages", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.integer "cost_cents", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.integer "input_tokens", default: 0, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.string "model_name", limit: 100
+    t.integer "output_tokens", default: 0, null: false
+    t.string "request_type", limit: 50, null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "request_type"], name: "index_token_usages_on_agent_run_id_and_request_type"
+    t.index ["agent_run_id"], name: "index_token_usages_on_agent_run_id"
+    t.index ["created_at"], name: "index_token_usages_on_created_at"
+    t.index ["model_name"], name: "index_token_usages_on_model_name"
+    t.index ["request_type"], name: "index_token_usages_on_request_type"
+  end
+
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
     t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
@@ -487,6 +518,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
+  add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
@@ -513,6 +545,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
   add_foreign_key "providers", "users", on_delete: :cascade
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
+  add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"
