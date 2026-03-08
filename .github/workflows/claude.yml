@@ -124,31 +124,68 @@ jobs:
       actions: read
     steps:
       - name: Re-verify actor permission
+        id: reverify
         # Mitigates TOCTOU: re-check write access at execution time, not
         # just at the verify-job gate. If permissions were revoked between
-        # jobs, this step fails the workflow before any write-scoped action
-        # runs. (Addresses CodeQL js/actions/checkout-of-untrusted-code and
-        # untrusted-checkout-toctou alerts.)
+        # jobs, this step prevents any write-scoped action from running.
+        # Includes retry/backoff and fail-closed behavior so transient API
+        # failures skip Claude without failing the entire workflow.
         env:
           GH_TOKEN: ${{ github.token }}
           ACTOR: ${{ github.actor }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          PERM=$(gh api "repos/${REPO}/collaborators/${ACTOR}/permission" --jq '.permission')
-          if [[ "$PERM" != "admin" && "$PERM" != "maintain" && "$PERM" != "write" ]]; then
-            echo "::error::Actor ${ACTOR} no longer has write access (has: ${PERM})"
-            exit 1
+
+          PERM=""
+          attempts=5
+
+          for i in $(seq 1 "${attempts}"); do
+            if PERM=$(gh api "repos/${REPO}/collaborators/${ACTOR}/permission" --jq '.permission' 2>/dev/null); then
+              break
+            fi
+
+            if [[ "${i}" -lt "${attempts}" ]]; then
+              # Exponential backoff: 1s, 2s, 4s, 8s...
+              sleep $((2 ** (i - 1)))
+            fi
+          done
+
+          if [[ -z "${PERM:-}" ]]; then
+            echo "allowed=false" >> "${GITHUB_OUTPUT}"
+            echo "permission=unknown" >> "${GITHUB_OUTPUT}"
+            echo "::warning::Failed to verify actor ${ACTOR} permission due to GitHub API errors; skipping Claude run."
+            exit 0
           fi
+
+          if [[ "${PERM}" == "admin" || "${PERM}" == "maintain" || "${PERM}" == "write" ]]; then
+            echo "allowed=true" >> "${GITHUB_OUTPUT}"
+            echo "permission=${PERM}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          echo "allowed=false" >> "${GITHUB_OUTPUT}"
+          echo "permission=${PERM}" >> "${GITHUB_OUTPUT}"
+          echo "::error::Actor ${ACTOR} no longer has write access (has: ${PERM}); skipping Claude run."
+          exit 0
 
       - name: Run Claude Code
         id: claude
+        if: steps.reverify.outputs.allowed == 'true'
+        # CodeQL: untrusted-checkout-toctou / checkout-of-untrusted-code
         # No explicit actions/checkout step — claude-code-action handles
         # its own repository access internally, including reading config
-        # files (CLAUDE.md) and PR diffs via the GitHub API. Omitting the
-        # checkout eliminates CodeQL untrusted-checkout-toctou and
-        # checkout-of-untrusted-code alerts that arise from checking out
-        # code in a privileged issue_comment-triggered workflow.
+        # files (CLAUDE.md) and PR diffs via the GitHub API. Residual
+        # CodeQL alerts on this step cannot be resolved in this workflow
+        # because the action internally accesses PR refs as core
+        # functionality. Mitigations in place:
+        #   1. verify job gates on author_association + gh API permission
+        #   2. Job-level author_association condition (defense-in-depth)
+        #   3. Re-verify step with retry/backoff re-checks write access
+        #      immediately before this step runs
+        #   4. persist-credentials: false on any checkout steps
+        #   5. The action performs its own permission checks before
+        #      accessing PR code
         uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1
         with:
           # IMPORTANT: Authentication uses an OAuth token, NOT an API key.
