@@ -1,0 +1,81 @@
+# frozen_string_literal: true
+
+module Issues
+  # Selects the next unblocked, eligible issue for a project and creates
+  # a queued agent run for it. Used when the run queue is empty and the
+  # system has capacity, keeping agents productive without manual intervention.
+  #
+  # Selection criteria:
+  # - Open, non-PR issues with all dependencies satisfied
+  # - No existing active (queued/pending/running) agent run
+  # - Not labeled with excluded labels (planning, research, waiting)
+  # - Ordered by github_number ascending (lowest/oldest first)
+  #
+  # Returns the created AgentRun or nil if no eligible issue is found.
+  class AutoPick
+    EXCLUDED_LABELS = %w[planning research waiting].freeze
+
+    def initialize(project)
+      @project = project
+    end
+
+    def call
+      return nil unless @project.auto_pick_enabled?
+
+      issue = find_next_eligible_issue
+      return nil unless issue
+
+      agent_run = create_agent_run(issue)
+
+      Rails.logger.info(
+        message: "auto_pick.issue_selected",
+        project_id: @project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        agent_run_id: agent_run.id
+      )
+
+      agent_run
+    rescue ActiveRecord::RecordNotUnique
+      # Another process already created a run for this issue
+      Rails.logger.info(
+        message: "auto_pick.duplicate_skipped",
+        project_id: @project.id,
+        issue_id: issue&.id
+      )
+      nil
+    end
+
+    private
+
+    def find_next_eligible_issue
+      Issue.ready_for_work(@project)
+        .where.not(id: issues_with_active_runs)
+        .then { |scope| exclude_labeled_issues(scope) }
+        .order(github_number: :asc)
+        .first
+    end
+
+    def issues_with_active_runs
+      AgentRun.where(project: @project, status: %w[queued pending running])
+        .where.not(issue_id: nil)
+        .select(:issue_id)
+    end
+
+    def exclude_labeled_issues(scope)
+      EXCLUDED_LABELS.reduce(scope) do |s, label|
+        s.where.not("labels @> ?", [ label ].to_json)
+      end
+    end
+
+    def create_agent_run(issue)
+      AgentRun.create!(
+        project: @project,
+        issue: issue,
+        agent_type: "claude_code",
+        status: "queued",
+        trigger_type: "automatic"
+      )
+    end
+  end
+end

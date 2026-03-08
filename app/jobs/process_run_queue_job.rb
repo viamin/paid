@@ -29,7 +29,17 @@ class ProcessRunQueueJob < ApplicationJob
         # an unnecessary queued -> pending -> queued status flip (and its
         # associated broadcasts/metrics) for runs that can't start yet.
         next_run = AgentRun.peek_next_queued_run(exclude_ids: skipped_ids.to_a)
-        break unless next_run
+
+        # When the queue is empty but capacity exists, auto-pick unblocked
+        # issues to keep agents productive. If new runs were created, loop
+        # back to process them through the normal claim-and-start flow.
+        unless next_run
+          if auto_pick_unblocked_issues
+            next
+          else
+            break
+          end
+        end
 
         # Enforce per-user concurrency limit. The system-wide check above
         # gates the loop, but the user may have a lower personal cap.
@@ -66,6 +76,22 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   private
+
+  # Auto-picks unblocked issues for active projects, creating new queued
+  # agent runs. Returns true if any runs were created so the main loop
+  # can process them through the normal claim-and-start flow.
+  def auto_pick_unblocked_issues
+    return false if @auto_picked
+
+    @auto_picked = true
+    created_any = false
+
+    Project.active.find_each do |project|
+      created_any = true if Issues::AutoPick.new(project).call
+    end
+
+    created_any
+  end
 
   def start_claimed_run(agent_run)
     workflow_input = {
