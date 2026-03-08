@@ -174,18 +174,29 @@ RSpec.describe AgentRun do
     end
 
     describe ".finished" do
-      it "includes completed, failed, cancelled, timeout, retried, and auth_expired runs" do
+      it "includes completed, failed, cancelled, timeout, retried, auth_expired, and rate_limited runs" do
         completed_run = create(:agent_run, :completed)
         failed_run = create(:agent_run, :failed)
         cancelled_run = create(:agent_run, :cancelled)
         timeout_run = create(:agent_run, :timeout)
         retried_run = create(:agent_run, :retried)
         auth_expired_run = create(:agent_run, :auth_expired)
+        rate_limited_run = create(:agent_run, :rate_limited)
         create(:agent_run)
 
         finished = described_class.finished
-        expect(finished).to include(completed_run, failed_run, cancelled_run, timeout_run, retried_run, auth_expired_run)
-        expect(finished.count).to eq(6)
+        expect(finished).to include(completed_run, failed_run, cancelled_run, timeout_run, retried_run, auth_expired_run, rate_limited_run)
+        expect(finished.count).to eq(7)
+      end
+    end
+
+    describe ".rate_limited" do
+      it "returns only rate_limited runs" do
+        rate_limited_run = create(:agent_run, :rate_limited)
+        create(:agent_run)
+
+        expect(described_class.rate_limited).to include(rate_limited_run)
+        expect(described_class.rate_limited.count).to eq(1)
       end
     end
 
@@ -417,6 +428,10 @@ RSpec.describe AgentRun do
         expect(build(:agent_run, :auth_expired).finished?).to be true
       end
 
+      it "returns true for rate_limited status" do
+        expect(build(:agent_run, :rate_limited).finished?).to be true
+      end
+
       it "returns false for pending status" do
         expect(build(:agent_run).finished?).to be false
       end
@@ -612,6 +627,38 @@ RSpec.describe AgentRun do
           expect(agent_run.completed_at).to eq(Time.current)
           expect(agent_run.error_message).to eq("OAuth session expired")
           expect(agent_run.auth_provider).to eq("claude")
+          expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
+        end
+      end
+    end
+
+    describe "#rate_limited?" do
+      it "returns true when status is rate_limited" do
+        agent_run = build(:agent_run, :rate_limited)
+
+        expect(agent_run.rate_limited?).to be true
+      end
+
+      it "returns false when status is not rate_limited" do
+        agent_run = build(:agent_run, :failed)
+
+        expect(agent_run.rate_limited?).to be false
+      end
+    end
+
+    describe "#rate_limit!" do
+      it "sets status to rate_limited with error and reset time" do
+        freeze_time do
+          started_time = 10.minutes.ago
+          agent_run = create(:agent_run, status: "running", started_at: started_time)
+          reset_at = 2.hours.from_now
+
+          agent_run.rate_limit!(error: "All providers rate limited", reset_at: reset_at)
+
+          expect(agent_run.status).to eq("rate_limited")
+          expect(agent_run.completed_at).to eq(Time.current)
+          expect(agent_run.error_message).to eq("All providers rate limited")
+          expect(agent_run.rate_limited_until).to be_within(1.second).of(reset_at)
           expect(agent_run.duration_seconds).to eq((Time.current - started_time).to_i)
         end
       end
@@ -1114,7 +1161,7 @@ RSpec.describe AgentRun do
 
   describe "constants" do
     it "defines valid STATUSES" do
-      expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout retried auth_expired])
+      expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout retried auth_expired rate_limited])
     end
 
     it "defines valid AGENT_TYPES" do
