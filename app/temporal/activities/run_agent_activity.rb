@@ -90,7 +90,8 @@ module Activities
 
         begin
           last_attempted_provider = provider
-          pre_agent_sha = run_agent_with_provider(agent_run, provider, prompt)
+          provider_result = run_agent_with_provider(agent_run, provider, prompt)
+          pre_agent_sha = provider_result.fetch(:pre_agent_sha)
 
           # Success - record and update final provider
           record_provider_success(user_settings, provider, provider_states)
@@ -99,6 +100,10 @@ module Activities
 
           commit_uncommitted_changes(agent_run)
           has_changes = check_for_changes(agent_run, pre_agent_sha)
+
+          if !has_changes && !provider_result.fetch(:output_present)
+            agent_run.log!("system", "Provider completed with no output and no changes")
+          end
 
           return {
             agent_run_id: agent_run_id,
@@ -227,9 +232,9 @@ module Activities
     end
 
     # Runs the agent with a specific provider.
-    # Raises ProviderRateLimitError or ProviderExecutionError on failure.
+    # Raises ProviderRateLimitError, ProviderTimeoutError, or ProviderExecutionError on failure.
     #
-    # @return [String, nil] the HEAD SHA before the agent ran
+    # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_provider(agent_run, provider, prompt)
       container_service = reconnect_container(agent_run)
 
@@ -257,8 +262,9 @@ module Activities
       result = container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
 
       if result.success?
+        output_present = result[:stdout].present? || result[:stderr].present?
         agent_run.log!("system", "Agent execution succeeded with #{provider}")
-        return pre_agent_sha
+        return { pre_agent_sha: pre_agent_sha, output_present: output_present }
       end
 
       output = (result[:stderr].presence || result[:stdout]).to_s.strip
