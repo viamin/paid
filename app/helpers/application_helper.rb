@@ -67,7 +67,12 @@ module ApplicationHelper
   end
 
   def safe_github_url?(url)
-    url.present? && url.start_with?("https://github.com/")
+    return false if url.blank?
+
+    uri = URI.parse(url)
+    uri.scheme == "https" && uri.host == "github.com"
+  rescue URI::InvalidURIError
+    false
   end
 
   RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
