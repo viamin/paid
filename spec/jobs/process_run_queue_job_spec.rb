@@ -129,6 +129,43 @@ RSpec.describe ProcessRunQueueJob do
       expect(eligible_run.reload.status).to eq("pending")
     end
 
+    context "when queue is empty with capacity available" do
+      it "calls auto-pick and starts newly queued runs" do
+        project = create(:project, auto_pick_enabled: true)
+        issue = create(:issue, project: project)
+        auto_pick_run = create(:agent_run, :queued, project: project, issue: issue)
+
+        auto_pick_service = instance_double(Issues::AutoPick)
+        allow(Issues::AutoPick).to receive(:new).with(project).and_return(auto_pick_service)
+        allow(auto_pick_service).to receive(:call).and_return(auto_pick_run)
+
+        described_class.new.perform
+
+        expect(Issues::AutoPick).to have_received(:new).with(project)
+        expect(auto_pick_run.reload.status).to eq("pending")
+      end
+
+      it "only runs auto-pick once per job invocation" do
+        project = create(:project, auto_pick_enabled: true)
+
+        auto_pick_service = instance_double(Issues::AutoPick)
+        allow(Issues::AutoPick).to receive(:new).with(project).and_return(auto_pick_service)
+        allow(auto_pick_service).to receive(:call).and_return(nil)
+
+        described_class.new.perform
+
+        expect(auto_pick_service).to have_received(:call).once
+      end
+
+      it "skips projects with auto_pick_enabled disabled" do
+        create(:project, auto_pick_enabled: false)
+
+        expect(Issues::AutoPick).not_to receive(:new)
+
+        described_class.new.perform
+      end
+    end
+
     it "includes workflow input fields from the agent run" do
       issue = create(:issue)
       queued_run = create(:agent_run, :queued,
