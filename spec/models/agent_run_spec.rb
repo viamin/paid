@@ -1063,39 +1063,52 @@ RSpec.describe AgentRun do
     end
   end
 
-  describe ".claim_next_queued_run" do
-    it "atomically claims the oldest queued run and transitions to pending" do
+  describe ".peek_next_queued_run" do
+    it "returns the oldest queued run without changing status" do
       older = create(:agent_run, :queued, created_at: 2.minutes.ago)
       create(:agent_run, :queued, created_at: 1.minute.ago)
 
-      claimed = described_class.claim_next_queued_run
+      peeked = described_class.peek_next_queued_run
 
-      expect(claimed).to eq(older)
-      expect(claimed.status).to eq("pending")
-      expect(older.reload.status).to eq("pending")
+      expect(peeked).to eq(older)
+      expect(older.reload.status).to eq("queued")
     end
 
     it "returns nil when no queued runs exist" do
       create(:agent_run, :running)
 
-      expect(described_class.claim_next_queued_run).to be_nil
+      expect(described_class.peek_next_queued_run).to be_nil
     end
 
-    it "skips excluded IDs and claims the next eligible run" do
+    it "skips excluded IDs" do
       older = create(:agent_run, :queued, created_at: 2.minutes.ago)
       newer = create(:agent_run, :queued, created_at: 1.minute.ago)
 
-      claimed = described_class.claim_next_queued_run(exclude_ids: [ older.id ])
+      peeked = described_class.peek_next_queued_run(exclude_ids: [ older.id ])
 
-      expect(claimed).to eq(newer)
+      expect(peeked).to eq(newer)
+    end
+  end
+
+  describe ".claim_next_queued_run" do
+    it "claims a specific queued run and transitions to pending" do
+      run = create(:agent_run, :queued)
+
+      claimed = described_class.claim_next_queued_run(target_id: run.id)
+
+      expect(claimed).to eq(run)
       expect(claimed.status).to eq("pending")
-      expect(older.reload.status).to eq("queued")
+      expect(run.reload.status).to eq("pending")
     end
 
-    it "returns nil when all queued runs are excluded" do
-      queued = create(:agent_run, :queued)
+    it "returns nil when the target run is no longer queued" do
+      run = create(:agent_run, :running)
 
-      expect(described_class.claim_next_queued_run(exclude_ids: [ queued.id ])).to be_nil
+      expect(described_class.claim_next_queued_run(target_id: run.id)).to be_nil
+    end
+
+    it "returns nil when the target ID does not exist" do
+      expect(described_class.claim_next_queued_run(target_id: -1)).to be_nil
     end
   end
 

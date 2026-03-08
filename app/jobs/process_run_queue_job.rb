@@ -24,23 +24,28 @@ class ProcessRunQueueJob < ApplicationJob
       skipped_ids = Set.new
 
       while AgentRun.has_run_capacity?
-        agent_run = AgentRun.claim_next_queued_run(exclude_ids: skipped_ids.to_a)
-        break unless agent_run
+        # Peek at the next queued run without claiming it, so we can check
+        # per-user capacity before transitioning to "pending". This avoids
+        # an unnecessary queued -> pending -> queued status flip (and its
+        # associated broadcasts/metrics) for runs that can't start yet.
+        next_run = AgentRun.peek_next_queued_run(exclude_ids: skipped_ids.to_a)
+        break unless next_run
 
-        # Enforce per-user concurrency limit. The system-wide check above gates
-        # the loop, but the user may have a lower personal cap. If so, re-queue
-        # the run and skip it for this iteration, continuing to process runs
-        # from other users who may still have capacity.
-        user = agent_run.project.created_by
+        # Enforce per-user concurrency limit. The system-wide check above
+        # gates the loop, but the user may have a lower personal cap.
+        user = next_run.project.effective_owner
         if user
-          user_active_count = AgentRun.active_count_for_user(user, exclude: agent_run)
+          user_active_count = AgentRun.active_count_for_user(user)
           max = AgentRun.effective_max_concurrent_runs(user)
           unless user_active_count < max
-            agent_run.update!(status: "queued")
-            skipped_ids.add(agent_run.id)
+            skipped_ids.add(next_run.id)
             next
           end
         end
+
+        # User has capacity — now atomically claim the run.
+        agent_run = AgentRun.claim_next_queued_run(target_id: next_run.id)
+        break unless agent_run
 
         if start_claimed_run(agent_run)
           consecutive_failures = 0
