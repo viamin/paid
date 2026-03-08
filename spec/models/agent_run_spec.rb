@@ -648,11 +648,11 @@ RSpec.describe AgentRun do
 
     describe "#rate_limit!" do
       it "sets status to rate_limited with error and reset time" do
-        started_time = 10.minutes.ago
-        agent_run = create(:agent_run, status: "running", started_at: started_time)
-        reset_at = 2.hours.from_now
-
         freeze_time do
+          started_time = 10.minutes.ago
+          agent_run = create(:agent_run, status: "running", started_at: started_time)
+          reset_at = 2.hours.from_now
+
           agent_run.rate_limit!(error: "All providers rate limited", reset_at: reset_at)
 
           expect(agent_run.status).to eq("rate_limited")
