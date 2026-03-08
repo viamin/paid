@@ -410,7 +410,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_07_130000) do
     t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
-    t.integer "container_cpu_quota", default: 200000, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
     t.integer "container_timeout_seconds", default: 1800, null: false
     t.datetime "created_at", null: false
@@ -422,6 +421,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_07_130000) do
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_providers", default: [], null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
+    t.integer "max_concurrent_runs", default: 2, null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false

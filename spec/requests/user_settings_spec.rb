@@ -81,14 +81,14 @@ RSpec.describe "UserSettings" do
         patch user_settings_path, params: {
           user_setting: {
             container_memory_gb: 8,
-            container_cpus: 4,
+            max_concurrent_runs: 4,
             container_timeout_seconds: 3600
           }
         }
         expect(response).to redirect_to(edit_user_settings_path)
         settings = user.reload.settings
         expect(settings.container_memory_bytes).to eq(8 * 1024 * 1024 * 1024)
-        expect(settings.container_cpu_quota).to eq(400_000)
+        expect(settings.max_concurrent_runs).to eq(4)
         expect(settings.container_timeout_seconds).to eq(3600)
       end
 

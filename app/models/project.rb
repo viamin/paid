@@ -91,6 +91,14 @@ class Project < ApplicationRecord
     service_containers.running.where("image LIKE ?", "%postgres%").exists?
   end
 
+  # Returns the effective owner of this project for capacity/settings lookups.
+  # Falls back to the account owner or the first account user when
+  # the creating user has been deleted (created_by is nil).
+  # Matches the fallback order in AgentRuns::UserSettingsResolver.
+  def effective_owner
+    created_by || account.account_memberships.find_by(role: :owner)&.user || account.users.first
+  end
+
   def trusted_github_user?(login)
     return false if login.blank?
 
