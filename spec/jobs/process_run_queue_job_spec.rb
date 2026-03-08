@@ -146,7 +146,7 @@ RSpec.describe ProcessRunQueueJob do
         expect(AgentRun.last.status).to eq("pending")
       end
 
-      it "only runs auto-pick once per job invocation" do
+      it "stops auto-picking when no new runs are created" do
         project = create(:project, auto_pick_enabled: true)
 
         auto_pick_service = instance_double(Issues::AutoPick)

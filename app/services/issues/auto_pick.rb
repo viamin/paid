@@ -88,9 +88,10 @@ module Issues
     end
 
     def exclude_labeled_issues(scope)
-      EXCLUDED_LABELS.reduce(scope) do |s, label|
-        s.where.not("labels @> ?", [ label ].to_json)
-      end
+      # Use a single JSONB label-existence predicate so PostgreSQL can
+      # leverage the GIN index on issues.labels for open non-PR issues.
+      labels_array_literal = "{#{EXCLUDED_LABELS.join(",")}}"
+      scope.where("NOT (labels ?| ?::text[])", labels_array_literal)
     end
 
     def create_agent_run(issue)
