@@ -58,29 +58,14 @@
                     <%= run.agent_type.titleize %>
                   </td>
                   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                    <% if run.create_pr_goal? %>
-                      <% if run.issue.present? && safe_github_url?(run.issue.github_url) %>
-                        <%= link_to "##{run.issue.github_number}", run.issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
-                      <% elsif run.issue.present? %>
-                        <span class="text-gray-700">Issue #<%= run.issue.github_number %></span>
-                      <% elsif run.source_pull_request_number.present? %>
-                        <span class="text-gray-700">PR #<%= run.source_pull_request_number %></span>
-                      <% elsif run.pull_request_number.present? && safe_github_url?(run.pull_request_url) %>
-                        <%= link_to "PR ##{run.pull_request_number}", run.pull_request_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
-                      <% elsif run.pull_request_number.present? %>
-                        <span class="text-gray-700">PR #<%= run.pull_request_number %></span>
-                      <% else %>
-                        <span class="text-gray-400">-</span>
-                      <% end %>
-                    <% elsif run.create_issue_goal? %>
-                      <% if safe_github_url?(run.created_issue_url) %>
-                        <% issue_label = run.created_issue_number.present? ? "Issue ##{run.created_issue_number}" : "Issue" %>
-                        <%= link_to issue_label, run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
-                      <% elsif run.finished? %>
-                        <span class="text-gray-400">-</span>
-                      <% else %>
-                        <span class="italic text-gray-500">Creating issue&hellip;</span>
-                      <% end %>
+                    <% context = agent_run_context(run) %>
+                    <% case context[:type] %>
+                    <% when :link %>
+                      <%= link_to context[:label], context[:url], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+                    <% when :text %>
+                      <span class="<%= context[:classes] %>"><%= context[:label] %></span>
+                    <% when :pending %>
+                      <span class="italic text-gray-500">Creating issue&hellip;</span>
                     <% else %>
                       <span class="text-gray-400">-</span>
                     <% end %>
