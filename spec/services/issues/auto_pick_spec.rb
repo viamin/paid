@@ -63,13 +63,16 @@ RSpec.describe Issues::AutoPick do
     end
 
     it "skips issues with open dependencies (blocked issues)" do
-      blocking = create(:issue, project: project, github_state: "open")
-      blocked = create(:issue, project: project, github_state: "open")
+      # Give blocked a lower github_number so it would be chosen first if
+      # dependency filtering were broken.
+      blocked = create(:issue, project: project, github_state: "open", github_number: 1)
+      blocking = create(:issue, project: project, github_state: "open", github_number: 2)
       create(:issue_dependency, issue: blocked, depends_on_issue: blocking)
 
       result = described_class.new(project).call
 
       expect(result.issue).to eq(blocking)
+      expect(result.issue).not_to eq(blocked)
     end
 
     it "includes issues whose dependencies are all closed" do
