@@ -92,7 +92,7 @@ module Workflows
     # will start the workflow when a slot opens. This asymmetry is intentional: queued
     # runs don't need workflow-level monitoring since the DB record tracks their state.
     def start_agent_workflow(project_id, issue_id, prefix: "agent")
-      capacity = run_activity(Activities::CheckRunCapacityActivity, {}, timeout: 10)
+      capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
 
       unless capacity[:has_capacity]
         run_activity(Activities::QueueAgentRunActivity,
@@ -182,7 +182,7 @@ module Workflows
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
 
-      capacity = run_activity(Activities::CheckRunCapacityActivity, {}, timeout: 10)
+      capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
 
       draft_input = {
         issue_id: issue_id,
@@ -219,7 +219,7 @@ module Workflows
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
 
-      capacity = run_activity(Activities::CheckRunCapacityActivity, {}, timeout: 10)
+      capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
 
       followup_input = {
         project_id: project_id,

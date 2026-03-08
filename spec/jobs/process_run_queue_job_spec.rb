@@ -94,6 +94,41 @@ RSpec.describe ProcessRunQueueJob do
       expect(good_run.reload.status).to eq("pending")
     end
 
+    it "re-queues run when user concurrency limit is reached" do
+      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 1)
+      create(:agent_run, :running, project: project)
+      queued_run = create(:agent_run, :queued, project: project)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(queued_run.reload.status).to eq("queued")
+    end
+
+    it "skips blocked user and starts runs for other users" do
+      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+
+      blocked_project = create(:project)
+      blocked_user = blocked_project.created_by
+      blocked_user.settings.update!(max_concurrent_runs: 1)
+      create(:agent_run, :running, project: blocked_project)
+      blocked_run = create(:agent_run, :queued, project: blocked_project, created_at: 2.minutes.ago)
+
+      other_project = create(:project)
+      eligible_run = create(:agent_run, :queued, project: other_project, created_at: 1.minute.ago)
+
+      expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+      described_class.new.perform
+
+      expect(blocked_run.reload.status).to eq("queued")
+      expect(eligible_run.reload.status).to eq("pending")
+    end
+
     it "includes workflow input fields from the agent run" do
       issue = create(:issue)
       queued_run = create(:agent_run, :queued,
