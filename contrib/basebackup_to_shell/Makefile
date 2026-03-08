@@ -1,1 +1,0 @@
-/tmp/postgresql-16.3/contrib/basebackup_to_shell/Makefile
