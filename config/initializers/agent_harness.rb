@@ -25,12 +25,12 @@ AgentHarness.configure do |config|
   end
 
   config.provider(:cursor) do |p|
-    p.enabled = ENV.fetch("CURSOR_ENABLED", "false") == "true"
+    p.enabled = true
     p.priority = 20
   end
 
   config.provider(:aider) do |p|
-    p.enabled = ENV.fetch("AIDER_ENABLED", "false") == "true"
+    p.enabled = true
     p.priority = 30
   end
 
