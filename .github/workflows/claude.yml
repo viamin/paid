@@ -171,9 +171,9 @@ jobs:
         # Accepted risk per security review.
         uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1
         with:
-          # Authentication uses an OAuth token (not an API key).
-          # The CLAUDE_CODE_OAUTH_TOKEN secret must be configured in the
-          # repository settings under Settings > Secrets and variables > Actions.
+          # IMPORTANT: Authentication uses an OAuth token, NOT an API key.
+          # Create the CLAUDE_CODE_OAUTH_TOKEN secret (not an Anthropic API key)
+          # in Settings > Secrets and variables > Actions before enabling this workflow.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
           additional_permissions: |
