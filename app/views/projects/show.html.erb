@@ -106,6 +106,10 @@
     </details>
   </div>
 
+  <div class="mt-6">
+    <%= render "projects/auto_pick_toggle", project: @project %>
+  </div>
+
   <div data-show-actions="<%= policy(@project).run_agent? %>">
     <%= render "projects/stats", project: @project %>
 
