@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_08_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -247,6 +247,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id"], name: "index_issues_on_project_id"
+  end
+
+  create_table "quality_metrics", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.decimal "composite_score", precision: 5, scale: 4
+    t.datetime "created_at", null: false
+    t.string "feedback_source", limit: 50
+    t.jsonb "metadata", default: {}, null: false
+    t.string "metric_type", limit: 20, null: false
+    t.bigint "prompt_version_id"
+    t.jsonb "scores", default: {}, null: false
+    t.index ["agent_run_id", "metric_type"], name: "index_quality_metrics_on_agent_run_and_type", unique: true
+    t.index ["agent_run_id"], name: "index_quality_metrics_on_agent_run_id"
+    t.index ["composite_score"], name: "index_quality_metrics_on_composite_score"
+    t.index ["created_at"], name: "index_quality_metrics_on_created_at"
+    t.index ["metric_type"], name: "index_quality_metrics_on_metric_type"
+    t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
+    t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
   end
 
   create_table "project_memberships", force: :cascade do |t|
@@ -503,6 +521,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_100000) do
   add_foreign_key "projects", "accounts"
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
+  add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
+  add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
   add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
