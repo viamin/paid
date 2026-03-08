@@ -82,6 +82,30 @@ RSpec.describe Issues::AutoPick do
       expect(result.issue).to eq(unblocked)
     end
 
+    it "skips issues with in_progress paid_state" do
+      create(:issue, :in_progress, project: project)
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
+    end
+
+    it "skips issues with completed paid_state" do
+      create(:issue, :completed, project: project)
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
+    end
+
+    it "includes issues with failed paid_state" do
+      issue = create(:issue, :failed, project: project)
+
+      result = described_class.new(project).call
+
+      expect(result.issue).to eq(issue)
+    end
+
     it "skips closed issues" do
       create(:issue, project: project, github_state: "closed")
 
@@ -138,11 +162,13 @@ RSpec.describe Issues::AutoPick do
     it "logs the auto-pick event" do
       issue = create(:issue, project: project)
 
-      expect(Rails.logger).to receive(:info).with(
-        hash_including(message: "auto_pick.issue_selected", issue_id: issue.id)
-      )
+      allow(Rails.logger).to receive(:info)
 
       described_class.new(project).call
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(message: "auto_pick.issue_selected", issue_id: issue.id)
+      )
     end
   end
 end

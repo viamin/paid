@@ -36,7 +36,9 @@ module Issues
       )
 
       agent_run
-    rescue ActiveRecord::RecordNotUnique
+    rescue ActiveRecord::RecordNotUnique => e
+      raise unless e.message.include?("idx_agent_runs_unique_active_issue")
+
       # Another process already created a run for this issue
       Rails.logger.info(
         message: "auto_pick.duplicate_skipped",
@@ -50,6 +52,7 @@ module Issues
 
     def find_next_eligible_issue
       Issue.ready_for_work(@project)
+        .where(paid_state: %w[new planning failed])
         .where.not(id: issues_with_active_runs)
         .then { |scope| exclude_labeled_issues(scope) }
         .order(github_number: :asc)
@@ -72,10 +75,18 @@ module Issues
       AgentRun.create!(
         project: @project,
         issue: issue,
-        agent_type: "claude_code",
+        agent_type: resolve_agent_type,
         status: "queued",
         trigger_type: "automatic"
       )
+    end
+
+    def resolve_agent_type
+      settings = AgentRuns::UserSettingsResolver.call(project: @project, strict: false)
+      return "claude_code" unless settings
+
+      provider_key = settings.default_agent_provider
+      provider_key == "claude" ? "claude_code" : provider_key
     end
   end
 end
