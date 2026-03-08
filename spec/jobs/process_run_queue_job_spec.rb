@@ -94,6 +94,86 @@ RSpec.describe ProcessRunQueueJob do
       expect(good_run.reload.status).to eq("pending")
     end
 
+    it "re-queues run when user concurrency limit is reached" do
+      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 1)
+      create(:agent_run, :running, project: project)
+      queued_run = create(:agent_run, :queued, project: project)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(queued_run.reload.status).to eq("queued")
+    end
+
+    it "skips blocked user and starts runs for other users" do
+      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+
+      blocked_project = create(:project)
+      blocked_user = blocked_project.created_by
+      blocked_user.settings.update!(max_concurrent_runs: 1)
+      create(:agent_run, :running, project: blocked_project)
+      blocked_run = create(:agent_run, :queued, project: blocked_project, created_at: 2.minutes.ago)
+
+      other_project = create(:project)
+      eligible_run = create(:agent_run, :queued, project: other_project, created_at: 1.minute.ago)
+
+      expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+      described_class.new.perform
+
+      expect(blocked_run.reload.status).to eq("queued")
+      expect(eligible_run.reload.status).to eq("pending")
+    end
+
+    context "when queue is empty with capacity available" do
+      it "calls auto-pick and starts newly queued runs" do
+        project = create(:project, auto_pick_enabled: true)
+        issue = create(:issue, project: project)
+
+        auto_pick_service = instance_double(Issues::AutoPick)
+        allow(Issues::AutoPick).to receive(:new)
+          .with(having_attributes(id: project.id))
+          .and_return(auto_pick_service)
+        call_count = 0
+        allow(auto_pick_service).to receive(:call) do
+          call_count += 1
+          call_count == 1 ? create(:agent_run, :queued, project: project, issue: issue) : nil
+        end
+
+        described_class.new.perform
+
+        expect(Issues::AutoPick).to have_received(:new)
+          .with(having_attributes(id: project.id)).at_least(:once)
+        expect(AgentRun.last.status).to eq("pending")
+      end
+
+      it "stops auto-picking when no new runs are created" do
+        project = create(:project, auto_pick_enabled: true)
+
+        auto_pick_service = instance_double(Issues::AutoPick)
+        allow(Issues::AutoPick).to receive(:new)
+          .with(having_attributes(id: project.id))
+          .and_return(auto_pick_service)
+        allow(auto_pick_service).to receive(:call).and_return(nil)
+
+        described_class.new.perform
+
+        expect(auto_pick_service).to have_received(:call).once
+      end
+
+      it "skips projects with auto_pick_enabled disabled" do
+        create(:project, auto_pick_enabled: false)
+
+        expect(Issues::AutoPick).not_to receive(:new)
+
+        described_class.new.perform
+      end
+    end
+
     it "includes workflow input fields from the agent run" do
       issue = create(:issue)
       queued_run = create(:agent_run, :queued,

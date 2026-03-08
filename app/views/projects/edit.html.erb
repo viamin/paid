@@ -141,6 +141,12 @@
           </div>
 
           <div class="flex items-center">
+            <%= form.check_box :auto_pick_enabled, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+            <%= form.label :auto_pick_enabled, "Auto-Pick Issues", class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
+          </div>
+          <p class="-mt-4 ml-7 text-xs text-gray-500">Automatically start working on unblocked issues when no agent runs are active.</p>
+
+          <div class="flex items-center">
             <%= form.check_box :active, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
             <%= form.label :active, "Active", class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
           </div>

@@ -1,0 +1,35 @@
+# frozen_string_literal: true
+
+class ReplaceContainerCpuQuotaWithMaxConcurrentRuns < ActiveRecord::Migration[8.1]
+  def up
+    unless column_exists?(:user_settings, :max_concurrent_runs)
+      add_column :user_settings, :max_concurrent_runs, :integer, default: 2, null: false
+    end
+
+    if column_exists?(:user_settings, :container_cpu_quota)
+      execute <<~SQL.squish
+        UPDATE user_settings
+        SET max_concurrent_runs = LEAST(GREATEST(container_cpu_quota / 100000, 1), 100)
+        WHERE container_cpu_quota IS NOT NULL
+      SQL
+
+      remove_column :user_settings, :container_cpu_quota
+    end
+  end
+
+  def down
+    unless column_exists?(:user_settings, :container_cpu_quota)
+      add_column :user_settings, :container_cpu_quota, :integer, default: 200_000, null: false
+    end
+
+    if column_exists?(:user_settings, :max_concurrent_runs)
+      execute <<~SQL.squish
+        UPDATE user_settings
+        SET container_cpu_quota = max_concurrent_runs * 100000
+        WHERE max_concurrent_runs IS NOT NULL
+      SQL
+
+      remove_column :user_settings, :max_concurrent_runs
+    end
+  end
+end
