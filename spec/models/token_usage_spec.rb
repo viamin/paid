@@ -36,7 +36,7 @@ RSpec.describe TokenUsage do
         other_run = create(:agent_run, :running, project: other_project)
         create(:token_usage, agent_run: other_run)
 
-        expect(described_class.by_project(project.id)).to eq([ usage ])
+        expect(described_class.by_project(project.id)).to contain_exactly(usage)
       end
     end
 
@@ -45,7 +45,7 @@ RSpec.describe TokenUsage do
         usage1 = create(:token_usage, model_name: "claude-3-5-sonnet-20241022")
         create(:token_usage, model_name: "gpt-4o")
 
-        expect(described_class.by_model("claude-3-5-sonnet-20241022")).to eq([ usage1 ])
+        expect(described_class.by_model("claude-3-5-sonnet-20241022")).to contain_exactly(usage1)
       end
     end
 
@@ -54,7 +54,7 @@ RSpec.describe TokenUsage do
         usage1 = create(:token_usage, request_type: "planning")
         create(:token_usage, request_type: "agent")
 
-        expect(described_class.by_request_type("planning")).to eq([ usage1 ])
+        expect(described_class.by_request_type("planning")).to contain_exactly(usage1)
       end
     end
 
@@ -63,7 +63,7 @@ RSpec.describe TokenUsage do
         usage1 = create(:token_usage, created_at: 2.days.ago)
         create(:token_usage, created_at: 10.days.ago)
 
-        expect(described_class.by_time_period(3.days.ago, Time.current)).to eq([ usage1 ])
+        expect(described_class.by_time_period(3.days.ago, Time.current)).to contain_exactly(usage1)
       end
     end
   end
