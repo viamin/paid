@@ -59,6 +59,8 @@ module AbTests
     end
 
     def determine_outcome(results)
+      return Result.new(status: :insufficient_data) if results.empty?
+
       significant_improvements = results.select { |r| r[:significant] && r[:mean_diff] > 0 }
 
       if significant_improvements.any?

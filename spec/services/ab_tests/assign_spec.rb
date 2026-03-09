@@ -19,28 +19,36 @@ RSpec.describe AbTests::Assign do
       expect([ control, variant ]).to include(assignment.ab_test_variant)
     end
 
-    it "biases toward under-sampled variants" do
-      control.update!(sample_count: 10)
-      variant.update!(sample_count: 0)
+    it "selects under-assigned variant when rand falls in its weight range" do
+      # Control has 10 assignments, variant has 0.
+      # DB order: [control, variant]. Weights: [1, 11]. Total: 12.
+      # control range: 0..1/12 (~0.083), variant range: 1/12..1 (~0.083..1)
+      # rand=0.5 falls in the variant range.
+      10.times do
+        create(:ab_test_assignment, ab_test: ab_test, ab_test_variant: control, agent_run: create(:agent_run))
+      end
 
       assigner = described_class.new(ab_test: ab_test, agent_run: create(:agent_run))
+      allow(assigner).to receive(:rand).and_return(0.5)
       selected = assigner.send(:select_variant)
 
-      # With max_count=10 for control: control weight=1, variant weight=11
-      # Variant should be heavily favored
-      expect(selected).to eq(variant).or eq(control)
+      expect(selected).to eq(variant)
     end
 
-    it "computes equal weights when all variants have equal samples" do
-      control.update!(sample_count: 5)
-      variant.update!(sample_count: 5)
+    it "selects over-assigned variant's complement when rand is very low" do
+      # Control has 10 assignments, variant has 0.
+      # DB order: [control, variant]. Weights: [1, 11]. Total: 12.
+      # control range: 0..1/12 (~0.083).
+      # rand=0.01 falls in the control range despite control being over-assigned.
+      10.times do
+        create(:ab_test_assignment, ab_test: ab_test, ab_test_variant: control, agent_run: create(:agent_run))
+      end
 
-      # With equal samples, each weight = (5-5)+1 = 1, so weights are equal
-      variants = ab_test.ab_test_variants.to_a
-      max_count = variants.map(&:sample_count).max
-      weights = variants.map { |v| (max_count - v.sample_count) + 1 }
+      assigner = described_class.new(ab_test: ab_test, agent_run: create(:agent_run))
+      allow(assigner).to receive(:rand).and_return(0.01)
+      selected = assigner.send(:select_variant)
 
-      expect(weights.uniq.size).to eq(1)
+      expect(selected).to eq(control)
     end
 
     it "returns existing assignment for duplicate agent_run" do
