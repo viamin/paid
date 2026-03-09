@@ -5,11 +5,12 @@ module AbTests
   # Optionally checks for auto-completion if sufficient samples have been gathered.
   #
   # @example
-  #   AbTests::RecordResult.call(agent_run: run, quality_score: 0.85)
+  #   AbTests::RecordResult.call(ab_test: test, agent_run: run, quality_score: 0.85)
   class RecordResult
-    attr_reader :agent_run, :quality_score
+    attr_reader :ab_test, :agent_run, :quality_score
 
-    def initialize(agent_run:, quality_score:)
+    def initialize(ab_test:, agent_run:, quality_score:)
+      @ab_test = ab_test
       @agent_run = agent_run
       @quality_score = quality_score
     end
@@ -19,16 +20,24 @@ module AbTests
     end
 
     def record
-      assignment = AbTestAssignment.find_by(agent_run: agent_run, quality_score: nil)
+      validate_quality_score!
+
+      assignment = AbTestAssignment.find_by(ab_test: ab_test, agent_run: agent_run, quality_score: nil)
       return unless assignment
 
       assignment.update!(quality_score: quality_score)
       assignment.ab_test_variant.record_quality_score!(quality_score)
 
-      check_auto_completion(assignment.ab_test)
+      check_auto_completion(ab_test)
     end
 
     private
+
+    def validate_quality_score!
+      unless quality_score.is_a?(Numeric) && quality_score >= 0 && quality_score <= 1
+        raise ArgumentError, "quality_score must be a number between 0 and 1"
+      end
+    end
 
     def check_auto_completion(ab_test)
       return unless ab_test.running?

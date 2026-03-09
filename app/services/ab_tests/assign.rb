@@ -48,9 +48,16 @@ module AbTests
       variants = ab_test.ab_test_variants.to_a
       return variants.first if variants.size == 1
 
-      # Weight inversely by sample count so under-sampled variants catch up.
-      max_count = variants.map(&:sample_count).max
-      weights = variants.map { |v| (max_count - v.sample_count) + 1 }
+      # Weight inversely by assignment count (not sample_count) so pending
+      # assignments are accounted for, avoiding skew under load.
+      assignment_counts = AbTestAssignment.where(ab_test: ab_test, ab_test_variant: variants)
+                                          .group(:ab_test_variant_id)
+                                          .count
+      max_count = variants.map { |v| assignment_counts[v.id] || 0 }.max
+      weights = variants.map do |v|
+        count = assignment_counts[v.id] || 0
+        (max_count - count) + 1
+      end
       total = weights.sum.to_f
 
       roll = rand
