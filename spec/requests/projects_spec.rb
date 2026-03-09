@@ -82,6 +82,20 @@ RSpec.describe "Projects" do
         expect(response.body).to include("bg-green-100 text-green-700")
       end
 
+      it "shows auto-pick status but no toggle controls for viewers" do
+        viewer_user = create(:user, :viewer, account: account)
+        project = create(:project, account: account, github_token: github_token, auto_pick_enabled: true)
+
+        sign_out user
+        sign_in viewer_user
+
+        get projects_path
+
+        expect(response.body).to include("Auto-Pick")
+        expect(response.body).to include("bg-green-100 text-green-700")
+        expect(response.body).not_to include(toggle_auto_pick_project_path(project))
+      end
+
       it "sorts projects by name ascending via Ransack sort params" do
         create(:project, account: account, github_token: github_token, name: "Zebra")
         create(:project, account: account, github_token: github_token, name: "Alpha")
@@ -585,6 +599,20 @@ RSpec.describe "Projects" do
         expect(response.media_type).to eq("text/vnd.turbo-stream.html")
         expect(response.body).to include("turbo-stream")
         expect(response.body).to include("auto_pick_toggle_project_#{project.id}")
+      end
+
+      it "responds with index partial for turbo_stream index context" do
+        project = create(:project, account: account, github_token: github_token, auto_pick_enabled: false)
+
+        post toggle_auto_pick_project_path(project),
+          params: { context: "index" },
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include("auto_pick_toggle_project_#{project.id}")
+        expect(response.body).to include("Auto-Pick")
+        expect(response.body).not_to include("Auto-Pick Issues")
       end
 
       it "enqueues ProcessRunQueueJob when enabling auto_pick" do
