@@ -15,7 +15,20 @@ class CostBudget < ApplicationRecord
   scope :monthly, -> { where(budget_type: "monthly") }
   scope :per_run, -> { where(budget_type: "per_run") }
   scope :exceeded, -> { where("current_usage_cents >= limit_cents") }
-  scope :active_period, -> { where("period_started_at IS NULL OR period_started_at <= ?", Time.current) }
+  scope :active_period, lambda {
+    now = Time.current
+    daily_start = now.beginning_of_day
+    monthly_start = now.beginning_of_month
+
+    where(
+      "(budget_type = ? AND (period_started_at IS NULL OR period_started_at >= ?)) OR " \
+      "(budget_type = ? AND (period_started_at IS NULL OR period_started_at >= ?)) OR " \
+      "(budget_type = ?)",
+      "daily", daily_start,
+      "monthly", monthly_start,
+      "per_run"
+    )
+  }
 
   def exceeded?
     current_usage_cents >= limit_cents

@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 module CostBudgets
+  # Checks whether a project's cost budgets allow a new agent run.
+  # Intended to be called before transitioning an AgentRun to "running"
+  # (e.g., in the run queue processor or workflow start path).
+  # Not yet wired in — will be integrated when the run orchestration
+  # layer adds pre-flight checks. See issue #141.
   class Check
     attr_reader :project
 
