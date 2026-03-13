@@ -66,6 +66,7 @@
               <%= link_to "View", project_path(project), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
             </div>
           </div>
+          <%= render "projects/auto_pick_toggle_index", project: project %>
         </div>
       <% end %>
     </div>
