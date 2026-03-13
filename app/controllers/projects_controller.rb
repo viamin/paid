@@ -5,6 +5,10 @@ class ProjectsController < ApplicationController
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
+  AUTO_PICK_PARTIALS = {
+    "index" => "projects/auto_pick_toggle_index",
+    "show" => "projects/auto_pick_toggle"
+  }.freeze
 
   def index
     base_scope = policy_scope(Project).includes(:github_token, :agent_runs)
@@ -72,11 +76,13 @@ class ProjectsController < ApplicationController
     authorize @project, :update?
     @project.update!(auto_pick_enabled: !@project.auto_pick_enabled?)
 
+    partial = AUTO_PICK_PARTIALS.fetch(params[:context], "projects/auto_pick_toggle")
+
     respond_to do |format|
       format.turbo_stream do
         render turbo_stream: turbo_stream.replace(
           ActionView::RecordIdentifier.dom_id(@project, :auto_pick_toggle),
-          partial: "projects/auto_pick_toggle",
+          partial: partial,
           locals: { project: @project }
         )
       end
