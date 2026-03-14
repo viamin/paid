@@ -33,8 +33,8 @@ class CreateAbTests < ActiveRecord::Migration[8.1]
 
       t.boolean :is_control, default: false, null: false
       t.integer :sample_count, default: 0, null: false
-      t.decimal :total_quality_score, precision: 10, scale: 2, default: 0, null: false
-      t.decimal :avg_quality_score, precision: 4, scale: 2
+      t.decimal :total_quality_score, precision: 10, scale: 4, default: 0, null: false
+      t.decimal :avg_quality_score, precision: 5, scale: 4
 
       t.timestamps
     end
@@ -58,7 +58,7 @@ class CreateAbTests < ActiveRecord::Migration[8.1]
       t.references :ab_test_variant, null: false, foreign_key: { on_delete: :cascade }
       t.references :agent_run, null: false, foreign_key: { on_delete: :cascade }
 
-      t.decimal :quality_score, precision: 4, scale: 2
+      t.decimal :quality_score, precision: 5, scale: 4
 
       t.datetime :created_at, null: false
     end
