@@ -19,9 +19,14 @@ Rails.application.configure do
       cron: "*/5 * * * *",
       class: "StaleRunDetectorJob"
     },
-    docker_volume_cleanup: {
-      cron: "0 */4 * * *",
-      class: "DockerVolumeCleanupJob"
+    docker_orphan_cleanup: {
+      cron: "*/15 * * * *",
+      class: "DockerOrphanCleanupJob"
     }
   }
+end
+
+# Run orphan cleanup once at startup to catch resources leaked while the app was down.
+Rails.application.config.after_initialize do
+  DockerOrphanCleanupJob.perform_later if Rails.application.config.good_job.enable_cron
 end

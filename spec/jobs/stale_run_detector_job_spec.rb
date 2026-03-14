@@ -90,5 +90,54 @@ RSpec.describe StaleRunDetectorJob do
       expect(stale_run1.reload.status).to eq("timeout")
       expect(stale_run2.reload.status).to eq("timeout")
     end
+
+    it "calls cleanup_container when a run is timed out" do
+      stale_run = create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago,
+        container_id: "dead-container-123")
+      container_service = instance_double(Containers::Provision, cleanup: true)
+      allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
+      allow(Containers::ServiceProvisioner).to receive(:new)
+        .and_return(instance_double(Containers::ServiceProvisioner, cleanup: nil))
+
+      described_class.perform_now
+
+      expect(container_service).to have_received(:cleanup).with(force: true)
+      expect(stale_run.reload.container_id).to be_nil
+    end
+
+    it "calls ServiceProvisioner#cleanup when a run is timed out" do
+      create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago)
+      provisioner = instance_double(Containers::ServiceProvisioner, cleanup: nil)
+      allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+
+      described_class.perform_now
+
+      expect(provisioner).to have_received(:cleanup)
+    end
+
+    it "still resolves the run when container cleanup fails" do
+      stale_run = create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago,
+        container_id: "dead-container-456")
+      allow(Containers::Provision).to receive(:reconnect)
+        .and_raise(Containers::Provision::ProvisionError, "gone")
+      allow(Docker::Volume).to receive(:get)
+        .and_raise(Docker::Error::NotFoundError, "no such volume")
+      provisioner = instance_double(Containers::ServiceProvisioner, cleanup: nil)
+      allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+
+      described_class.perform_now
+
+      expect(stale_run.reload.status).to eq("timeout")
+      expect(provisioner).to have_received(:cleanup)
+    end
+
+    it "still resolves the run when service cleanup fails" do
+      stale_run = create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago)
+      allow(Containers::ServiceProvisioner).to receive(:new).and_raise(RuntimeError, "gone")
+
+      described_class.perform_now
+
+      expect(stale_run.reload.status).to eq("timeout")
+    end
   end
 end
