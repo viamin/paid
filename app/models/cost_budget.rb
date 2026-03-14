@@ -2,7 +2,6 @@
 
 class CostBudget < ApplicationRecord
   BUDGET_TYPES = %w[daily monthly per_run].freeze
-  DEFAULT_ALERT_THRESHOLD = 80
 
   belongs_to :project
 
@@ -61,6 +60,14 @@ class CostBudget < ApplicationRecord
 
   def reset_period!
     update!(current_usage_cents: 0, period_started_at: Time.current, alert_sent_at: nil)
+  end
+
+  # Resets per_run budgets so each agent run starts with a fresh allowance.
+  # Called by CostBudgets::Check before each run.
+  def reset_for_new_run!
+    return unless budget_type == "per_run"
+
+    reset_period!
   end
 
   def mark_alert_sent!

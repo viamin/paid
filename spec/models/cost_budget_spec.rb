@@ -123,6 +123,24 @@ RSpec.describe CostBudget do
     end
   end
 
+  describe "#reset_for_new_run!" do
+    it "resets per_run budgets" do
+      budget = create(:cost_budget, :per_run, current_usage_cents: 500, alert_sent_at: 1.hour.ago)
+      budget.reset_for_new_run!
+      budget.reload
+
+      expect(budget.current_usage_cents).to eq(0)
+      expect(budget.alert_sent_at).to be_nil
+    end
+
+    it "does nothing for non-per_run budgets" do
+      budget = create(:cost_budget, budget_type: "monthly", current_usage_cents: 500, period_started_at: Time.current.beginning_of_month)
+      budget.reset_for_new_run!
+
+      expect(budget.reload.current_usage_cents).to eq(500)
+    end
+  end
+
   describe "#alert_needed?" do
     it "returns true when threshold reached and no recent alert" do
       budget = build(:cost_budget, limit_cents: 1000, current_usage_cents: 850, alert_sent_at: nil)
