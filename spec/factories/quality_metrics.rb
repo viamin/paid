@@ -13,7 +13,7 @@ FactoryBot.define do
         "tests_pass" => 1.0
       }
     end
-    composite_score { 0.98 }
+    composite_score { 0.9813 }
     feedback_source { "system" }
 
     trait :automated do

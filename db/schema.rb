@@ -249,24 +249,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200000) do
     t.index ["project_id"], name: "index_issues_on_project_id"
   end
 
-  create_table "quality_metrics", force: :cascade do |t|
-    t.bigint "agent_run_id", null: false
-    t.decimal "composite_score", precision: 5, scale: 4
-    t.datetime "created_at", null: false
-    t.string "feedback_source", limit: 50
-    t.jsonb "metadata", default: {}, null: false
-    t.string "metric_type", limit: 20, null: false
-    t.bigint "prompt_version_id"
-    t.jsonb "scores", default: {}, null: false
-    t.index ["agent_run_id", "metric_type"], name: "index_quality_metrics_on_agent_run_and_type", unique: true
-    t.index ["agent_run_id"], name: "index_quality_metrics_on_agent_run_id"
-    t.index ["composite_score"], name: "index_quality_metrics_on_composite_score"
-    t.index ["created_at"], name: "index_quality_metrics_on_created_at"
-    t.index ["metric_type"], name: "index_quality_metrics_on_metric_type"
-    t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
-    t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
-  end
-
   create_table "project_memberships", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "project_id", null: false
@@ -391,6 +373,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200000) do
     t.bigint "user_id", null: false
     t.index ["user_id", "provider_key"], name: "index_providers_on_user_id_and_provider_key", unique: true
     t.index ["user_id"], name: "index_providers_on_user_id"
+  end
+
+  create_table "quality_metrics", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.decimal "composite_score", precision: 5, scale: 4
+    t.datetime "created_at", null: false
+    t.string "feedback_source", limit: 50
+    t.jsonb "metadata", default: {}, null: false
+    t.string "metric_type", limit: 20, null: false
+    t.bigint "prompt_version_id"
+    t.jsonb "scores", default: {}, null: false
+    t.index ["agent_run_id", "metric_type"], name: "index_quality_metrics_on_agent_run_and_type", unique: true
+    t.index ["agent_run_id"], name: "index_quality_metrics_on_agent_run_id"
+    t.index ["composite_score"], name: "index_quality_metrics_on_composite_score"
+    t.index ["created_at"], name: "index_quality_metrics_on_created_at"
+    t.index ["metric_type"], name: "index_quality_metrics_on_metric_type"
+    t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
+    t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
   end
 
   create_table "service_containers", force: :cascade do |t|
@@ -521,8 +521,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200000) do
   add_foreign_key "projects", "accounts"
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
-  add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
-  add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
   add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
@@ -531,6 +529,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200000) do
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_states", "users", on_delete: :cascade
   add_foreign_key "providers", "users", on_delete: :cascade
+  add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
+  add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "user_settings", "users"
