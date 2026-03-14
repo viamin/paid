@@ -21,25 +21,37 @@ class QualityMetric < ApplicationRecord
   scope :with_scores, -> { where.not(quality_score: nil) }
 
   def calculate_composite_score!
-    scores = []
+    weighted_sum = 0.0
+    weight_sum = 0.0
 
-    scores << (ci_passed ? 1.0 : 0.0) * WEIGHTS[:ci_passed] unless ci_passed.nil?
-    scores << (pr_merged ? 1.0 : 0.0) * WEIGHTS[:pr_merged] unless pr_merged.nil?
+    unless ci_passed.nil?
+      weighted_sum += (ci_passed ? 1.0 : 0.0) * WEIGHTS[:ci_passed]
+      weight_sum += WEIGHTS[:ci_passed]
+    end
+
+    unless pr_merged.nil?
+      weighted_sum += (pr_merged ? 1.0 : 0.0) * WEIGHTS[:pr_merged]
+      weight_sum += WEIGHTS[:pr_merged]
+    end
 
     if iterations_to_complete && iterations_to_complete > 0
       iteration_score = [ 1.0 - ((iterations_to_complete - 1) * 0.1), 0.0 ].max
-      scores << iteration_score * WEIGHTS[:iterations]
+      weighted_sum += iteration_score * WEIGHTS[:iterations]
+      weight_sum += WEIGHTS[:iterations]
     end
 
-    scores << (lint_errors.zero? ? 1.0 : [ 1.0 - (lint_errors * 0.1), 0.0 ].max) * WEIGHTS[:lint_clean]
+    if lint_errors
+      weighted_sum += (lint_errors.zero? ? 1.0 : [ 1.0 - (lint_errors * 0.1), 0.0 ].max) * WEIGHTS[:lint_clean]
+      weight_sum += WEIGHTS[:lint_clean]
+    end
 
-    if review_comments_count >= 0
+    if review_comments_count && review_comments_count >= 0
       comment_score = [ 1.0 - (review_comments_count * 0.05), 0.0 ].max
-      scores << comment_score * WEIGHTS[:review_comments]
+      weighted_sum += comment_score * WEIGHTS[:review_comments]
+      weight_sum += WEIGHTS[:review_comments]
     end
 
-    total_weight = scores.sum
-    self.quality_score = total_weight.positive? ? (scores.sum / [ total_weight, 1.0 ].max).round(2) : nil
+    self.quality_score = weight_sum.positive? ? (weighted_sum / weight_sum).round(2) : nil
     save!
   end
 end
