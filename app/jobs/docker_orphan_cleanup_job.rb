@@ -18,6 +18,7 @@ class DockerOrphanCleanupJob < ApplicationJob
 
   good_job_control_concurrency_with(
     total_limit: 1,
+    enqueue_limit: 1,
     key: "docker_orphan_cleanup"
   )
 
@@ -69,7 +70,16 @@ class DockerOrphanCleanupJob < ApplicationJob
 
       if service_container.nil? || service_container.active_agent_run_count == 0
         if stop_and_remove_container(container, "service", sc_id)
-          service_container&.update!(status: "stopped", docker_container_id: nil)
+          begin
+            service_container&.update!(status: "stopped", docker_container_id: nil)
+          rescue ActiveRecord::ActiveRecordError => e
+            Rails.logger.warn(
+              message: "container_manager.service_container_db_update_failed",
+              service_container_id: sc_id,
+              error_class: e.class.name,
+              error: e.message
+            )
+          end
           removed += 1
         end
       end
