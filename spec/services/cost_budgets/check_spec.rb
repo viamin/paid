@@ -31,6 +31,16 @@ RSpec.describe CostBudgets::Check do
       end
     end
 
+    context "with a per_run budget" do
+      it "resets per_run usage before checking" do
+        budget = create(:cost_budget, :per_run, project: project, limit_cents: 1_000, current_usage_cents: 999)
+        result = described_class.call(project)
+
+        expect(result[:allowed]).to be true
+        expect(budget.reload.current_usage_cents).to eq(0)
+      end
+    end
+
     context "when approaching threshold" do
       it "logs a warning and marks alert sent" do
         budget = create(:cost_budget, project: project, limit_cents: 10_000, current_usage_cents: 8_500)

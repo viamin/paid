@@ -22,7 +22,9 @@ module CostBudgets
     def call
       return allowed_result if project.cost_budgets.none?
 
-      exceeded = project.cost_budgets.exceeded.first
+      reset_per_run_budgets
+
+      exceeded = project.cost_budgets.reload.exceeded.first
       return blocked_result(exceeded) if exceeded
 
       send_alerts_if_needed
@@ -41,6 +43,10 @@ module CostBudgets
         allowed: false,
         reason: "#{budget.budget_type} budget exceeded (#{budget.usage_percent}% of #{budget.limit_cents} cents used)"
       }
+    end
+
+    def reset_per_run_budgets
+      project.cost_budgets.per_run.each(&:reset_for_new_run!)
     end
 
     def send_alerts_if_needed
