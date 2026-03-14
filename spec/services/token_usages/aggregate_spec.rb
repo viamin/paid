@@ -8,9 +8,9 @@ RSpec.describe TokenUsages::Aggregate do
 
   before do
     create(:token_usage, agent_run: agent_run, input_tokens: 1000, output_tokens: 500,
-           cost_cents: 10, model_name: "claude-3-5-sonnet-20241022", request_type: "agent")
+           cost_cents: 10, llm_model: "claude-3-5-sonnet-20241022", request_type: "agent")
     create(:token_usage, agent_run: agent_run, input_tokens: 2000, output_tokens: 1000,
-           cost_cents: 20, model_name: "gpt-4o", request_type: "planning")
+           cost_cents: 20, llm_model: "gpt-4o", request_type: "planning")
   end
 
   describe ".call" do
