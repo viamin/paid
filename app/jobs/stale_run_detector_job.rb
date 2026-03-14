@@ -91,6 +91,32 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
+    cleanup_docker_resources(agent_run)
+
     true
+  end
+
+  def cleanup_docker_resources(agent_run)
+    begin
+      agent_run.cleanup_container(force: true)
+    rescue => e
+      Rails.logger.warn(
+        message: "stale_run_detector.container_cleanup_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    begin
+      Containers::ServiceProvisioner.new.cleanup(agent_run)
+    rescue => e
+      Rails.logger.warn(
+        message: "stale_run_detector.service_cleanup_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
   end
 end
