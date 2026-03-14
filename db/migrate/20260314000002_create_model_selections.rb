@@ -3,7 +3,7 @@
 class CreateModelSelections < ActiveRecord::Migration[8.1]
   def change
     create_table :model_selections do |t|
-      t.references :agent_run, null: false, foreign_key: { on_delete: :cascade }
+      t.references :agent_run, null: false, foreign_key: { on_delete: :cascade }, index: false
       t.references :llm_model, null: false, foreign_key: true
       t.string :selector_type, limit: 50, null: false
       t.text :reasoning

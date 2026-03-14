@@ -11,7 +11,7 @@ class AbTest < ApplicationRecord
 
   validates :name, presence: true
   validates :status, presence: true, inclusion: { in: STATUSES }
-  validates :traffic_percentage, numericality: { in: 1..100 }
+  validates :traffic_percentage, numericality: { in: 0..100 }
   validates :min_sample_size, numericality: { greater_than: 0 }
 
   scope :draft, -> { where(status: "draft") }
