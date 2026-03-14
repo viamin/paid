@@ -9,10 +9,10 @@ class TokenUsage < ApplicationRecord
   validates :input_tokens, numericality: { greater_than_or_equal_to: 0 }
   validates :output_tokens, numericality: { greater_than_or_equal_to: 0 }
   validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }
-  validates :model_name, length: { maximum: 100 }
+  validates :llm_model, length: { maximum: 100 }
 
   scope :by_project, ->(project_id) { joins(:agent_run).where(agent_runs: { project_id: project_id }) }
-  scope :by_model, ->(model_name) { where(model_name: model_name) }
+  scope :by_model, ->(llm_model) { where(llm_model: llm_model) }
   scope :by_request_type, ->(type) { where(request_type: type) }
   scope :by_time_period, ->(start_time, end_time) { where(created_at: start_time..end_time) }
 
@@ -33,7 +33,7 @@ class TokenUsage < ApplicationRecord
   end
 
   def self.cost_by_model
-    group(:model_name).sum(:cost_cents)
+    group(:llm_model).sum(:cost_cents)
   end
 
   def self.cost_by_request_type

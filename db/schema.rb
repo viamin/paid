@@ -87,8 +87,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200001) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -98,8 +98,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200001) do
   end
 
   create_table "cost_budgets", force: :cascade do |t|
-    t.integer "alert_threshold_percent", default: 80, null: false
     t.datetime "alert_sent_at"
+    t.integer "alert_threshold_percent", default: 80, null: false
     t.string "budget_type", limit: 50, null: false
     t.datetime "created_at", null: false
     t.integer "current_usage_cents", default: 0, null: false
@@ -428,14 +428,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200001) do
     t.datetime "created_at", null: false
     t.integer "input_tokens", default: 0, null: false
     t.jsonb "metadata", default: {}, null: false
-    t.string "model_name", limit: 100
+    t.string "llm_model", limit: 100
     t.integer "output_tokens", default: 0, null: false
     t.string "request_type", limit: 50, null: false
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "request_type"], name: "index_token_usages_on_agent_run_id_and_request_type"
     t.index ["agent_run_id"], name: "index_token_usages_on_agent_run_id"
     t.index ["created_at"], name: "index_token_usages_on_created_at"
-    t.index ["model_name"], name: "index_token_usages_on_model_name"
+    t.index ["llm_model"], name: "index_token_usages_on_llm_model"
     t.index ["request_type"], name: "index_token_usages_on_request_type"
   end
 
@@ -518,10 +518,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200001) do
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
-  add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
+  add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade

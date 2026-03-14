@@ -15,7 +15,7 @@ RSpec.describe TokenUsage do
     it { is_expected.to validate_numericality_of(:input_tokens).is_greater_than_or_equal_to(0) }
     it { is_expected.to validate_numericality_of(:output_tokens).is_greater_than_or_equal_to(0) }
     it { is_expected.to validate_numericality_of(:cost_cents).is_greater_than_or_equal_to(0) }
-    it { is_expected.to validate_length_of(:model_name).is_at_most(100) }
+    it { is_expected.to validate_length_of(:llm_model).is_at_most(100) }
   end
 
   describe "#total_tokens" do
@@ -42,8 +42,8 @@ RSpec.describe TokenUsage do
 
     describe ".by_model" do
       it "filters by model name" do
-        usage1 = create(:token_usage, model_name: "claude-3-5-sonnet-20241022")
-        create(:token_usage, model_name: "gpt-4o")
+        usage1 = create(:token_usage, llm_model: "claude-3-5-sonnet-20241022")
+        create(:token_usage, llm_model: "gpt-4o")
 
         expect(described_class.by_model("claude-3-5-sonnet-20241022")).to contain_exactly(usage1)
       end
@@ -70,8 +70,8 @@ RSpec.describe TokenUsage do
 
   describe "aggregation methods" do
     before do
-      create(:token_usage, input_tokens: 1000, output_tokens: 500, cost_cents: 10, model_name: "claude-3-5-sonnet-20241022", request_type: "agent")
-      create(:token_usage, input_tokens: 2000, output_tokens: 1000, cost_cents: 20, model_name: "gpt-4o", request_type: "planning")
+      create(:token_usage, input_tokens: 1000, output_tokens: 500, cost_cents: 10, llm_model: "claude-3-5-sonnet-20241022", request_type: "agent")
+      create(:token_usage, input_tokens: 2000, output_tokens: 1000, cost_cents: 20, llm_model: "gpt-4o", request_type: "planning")
     end
 
     describe ".total_cost_cents" do

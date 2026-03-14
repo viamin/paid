@@ -7,7 +7,7 @@ FactoryBot.define do
     input_tokens { 1000 }
     output_tokens { 500 }
     cost_cents { 1 }
-    model_name { "claude-3-5-sonnet-20241022" }
+    llm_model { "claude-3-5-sonnet-20241022" }
     metadata { {} }
 
     trait :planning do

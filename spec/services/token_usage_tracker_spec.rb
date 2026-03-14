@@ -66,7 +66,7 @@ RSpec.describe TokenUsageTracker do
           agent_run: agent_run,
           tokens_input: 1000,
           tokens_output: 500,
-          model_name: "claude-3-5-sonnet-20241022",
+          llm_model: "claude-3-5-sonnet-20241022",
           request_type: "agent"
         )
       }.to change(TokenUsage, :count).by(1)
@@ -75,30 +75,30 @@ RSpec.describe TokenUsageTracker do
       expect(usage.agent_run).to eq(agent_run)
       expect(usage.input_tokens).to eq(1000)
       expect(usage.output_tokens).to eq(500)
-      expect(usage.model_name).to eq("claude-3-5-sonnet-20241022")
+      expect(usage.llm_model).to eq("claude-3-5-sonnet-20241022")
       expect(usage.request_type).to eq("agent")
     end
 
     it "updates cost budgets for the project" do
-      budget = create(:cost_budget, project: project, limit_cents: 100_000)
+      budget = create(:cost_budget, project: project, limit_cents: 100_000, period_started_at: Time.current.beginning_of_month)
 
       described_class.track(agent_run: agent_run, tokens_input: 1_000_000, tokens_output: 1_000_000)
 
       expect(budget.reload.current_usage_cents).to eq(1800)
     end
 
-    it "includes model_name and request_type in the log entry" do
+    it "includes llm_model and request_type in the log entry" do
       described_class.track(
         agent_run: agent_run,
         tokens_input: 1000,
         tokens_output: 500,
-        model_name: "claude-3-5-sonnet-20241022",
+        llm_model: "claude-3-5-sonnet-20241022",
         request_type: "planning"
       )
 
       log = agent_run.agent_run_logs.where(log_type: "metric").last
       content = JSON.parse(log.content)
-      expect(content["model_name"]).to eq("claude-3-5-sonnet-20241022")
+      expect(content["llm_model"]).to eq("claude-3-5-sonnet-20241022")
       expect(content["request_type"]).to eq("planning")
     end
   end

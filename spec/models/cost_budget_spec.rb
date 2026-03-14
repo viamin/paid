@@ -82,8 +82,30 @@ RSpec.describe CostBudget do
   end
 
   describe "#record_usage!" do
-    it "increments current_usage_cents" do
-      budget = create(:cost_budget, current_usage_cents: 100)
+    it "increments current_usage_cents within current period" do
+      budget = create(:cost_budget, current_usage_cents: 100, period_started_at: Time.current.beginning_of_month)
+      budget.record_usage!(50)
+      expect(budget.reload.current_usage_cents).to eq(150)
+    end
+
+    it "resets usage when period has rolled over for daily budgets" do
+      budget = create(:cost_budget, :daily, current_usage_cents: 500, period_started_at: 2.days.ago)
+      budget.record_usage!(50)
+      budget.reload
+      expect(budget.current_usage_cents).to eq(50)
+      expect(budget.period_started_at).to be_within(1.second).of(Time.current.beginning_of_day)
+    end
+
+    it "resets usage when period has rolled over for monthly budgets" do
+      budget = create(:cost_budget, current_usage_cents: 500, period_started_at: 2.months.ago)
+      budget.record_usage!(50)
+      budget.reload
+      expect(budget.current_usage_cents).to eq(50)
+      expect(budget.period_started_at).to be_within(1.second).of(Time.current.beginning_of_month)
+    end
+
+    it "does not reset per_run budgets" do
+      budget = create(:cost_budget, :per_run, current_usage_cents: 100)
       budget.record_usage!(50)
       expect(budget.reload.current_usage_cents).to eq(150)
     end

@@ -54,6 +54,7 @@ class CostBudget < ApplicationRecord
 
   def record_usage!(cost_cents)
     with_lock do
+      rollover_period_if_needed!
       increment!(:current_usage_cents, cost_cents)
     end
   end
@@ -67,6 +68,22 @@ class CostBudget < ApplicationRecord
   end
 
   private
+
+  def rollover_period_if_needed!
+    return if budget_type == "per_run"
+
+    period_start = case budget_type
+    when "daily" then Time.current.beginning_of_day
+    when "monthly" then Time.current.beginning_of_month
+    end
+
+    if period_started_at.nil? || period_started_at < period_start
+      self.current_usage_cents = 0
+      self.period_started_at = period_start
+      self.alert_sent_at = nil
+      save!
+    end
+  end
 
   def alert_recently_sent?
     return false if alert_sent_at.nil?
