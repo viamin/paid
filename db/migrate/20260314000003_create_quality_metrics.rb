@@ -3,7 +3,7 @@
 class CreateQualityMetrics < ActiveRecord::Migration[8.1]
   def change
     create_table :quality_metrics do |t|
-      t.references :agent_run, null: false, foreign_key: { on_delete: :cascade }
+      t.references :agent_run, null: false, foreign_key: { on_delete: :cascade }, index: false
       t.references :prompt_version, foreign_key: { on_delete: :nullify }
       t.decimal :quality_score, precision: 4, scale: 2
       t.boolean :pr_merged
