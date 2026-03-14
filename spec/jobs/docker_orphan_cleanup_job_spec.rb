@@ -27,9 +27,9 @@ RSpec.describe DockerOrphanCleanupJob do
       .and_return(containers)
   end
 
-  def make_container(labels:, state: "exited")
+  def make_container(labels:)
     instance_double(Docker::Container,
-      info: { "Labels" => labels, "State" => state },
+      info: { "Labels" => labels },
       stop: true,
       delete: true)
   end
@@ -51,14 +51,25 @@ RSpec.describe DockerOrphanCleanupJob do
         expect(container).to have_received(:delete).with(force: true)
       end
 
-      it "stops running containers before removing them" do
+      it "attempts to stop containers before removing them" do
         completed_run = create(:agent_run, :completed)
-        container = make_container(labels: { "paid.agent_run_id" => completed_run.id.to_s }, state: "running")
+        container = make_container(labels: { "paid.agent_run_id" => completed_run.id.to_s })
         stub_agent_containers(container)
 
         job.perform
 
         expect(container).to have_received(:stop).with(timeout: 10)
+        expect(container).to have_received(:delete).with(force: true)
+      end
+
+      it "still removes containers when stop raises ClientError" do
+        completed_run = create(:agent_run, :completed)
+        container = make_container(labels: { "paid.agent_run_id" => completed_run.id.to_s })
+        allow(container).to receive(:stop).and_raise(Docker::Error::ClientError, "container already stopped")
+        stub_agent_containers(container)
+
+        job.perform
+
         expect(container).to have_received(:delete).with(force: true)
       end
 

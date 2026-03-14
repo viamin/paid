@@ -119,7 +119,11 @@ class DockerOrphanCleanupJob < ApplicationJob
   end
 
   def stop_and_remove_container(container, kind, resource_id)
-    container.stop(timeout: 10) if container.info.dig("State") == "running"
+    begin
+      container.stop(timeout: 10)
+    rescue Docker::Error::NotFoundError, Docker::Error::ClientError
+      # Already stopped or gone
+    end
     container.delete(force: true)
     true
   rescue Docker::Error::DockerError => e
