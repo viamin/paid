@@ -44,6 +44,19 @@ Rails.application.routes.draw do
     post :compress, on: :member
   end
 
+  # A/B testing management
+  resources :ab_tests do
+    member do
+      post :start
+      post :pause
+      post :complete
+      post :promote_winner
+    end
+  end
+
+  # Quality metrics dashboard
+  resource :quality_dashboard, only: [ :show ]
+
   # Projects management
   resources :projects do
     post :toggle_auto_pick, on: :member
