@@ -9,14 +9,15 @@ class DashboardController < ApplicationController
 
   def live
     @active_runs = account_agent_runs.active.includes(:project, :issue).recent.limit(20)
-    @recent_runs = account_agent_runs.finished.includes(:project, :issue).recent.limit(10)
+    @recent_runs = account_agent_runs.finished.includes(:project, :issue)
+      .order(Arel.sql("COALESCE(completed_at, created_at) DESC")).limit(10)
     @stats = Dashboard::LiveStats.call(account: current_account)
   end
 
   def cancel_run
     agent_run = account_agent_runs.find(params[:id])
     agent_run.cancel!
-    head :ok
+    redirect_to live_dashboard_path, status: :see_other
   end
 
   private
