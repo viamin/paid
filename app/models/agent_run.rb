@@ -12,6 +12,8 @@ class AgentRun < ApplicationRecord
 
   has_many :agent_run_logs, dependent: :destroy
   has_one :worktree, dependent: :nullify
+  has_one :quality_metric, dependent: :destroy
+  has_one :model_selection, dependent: :destroy
 
   before_create :generate_proxy_token
 
