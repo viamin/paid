@@ -21,3 +21,9 @@ application.register("goal-toggle", GoalToggleController)
 
 import SortableController from "./sortable_controller"
 application.register("sortable", SortableController)
+
+import LiveDashboardController from "./live_dashboard_controller"
+application.register("live-dashboard", LiveDashboardController)
+
+import ElapsedTimeController from "./elapsed_time_controller"
+application.register("elapsed-time", ElapsedTimeController)

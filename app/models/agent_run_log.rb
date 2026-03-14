@@ -8,6 +8,8 @@ class AgentRunLog < ApplicationRecord
   validates :log_type, presence: true, inclusion: { in: LOG_TYPES }
   validates :content, presence: true
 
+  after_create_commit :broadcast_to_agent_run
+
   scope :by_type, ->(type) { where(log_type: type) }
   scope :stdout, -> { where(log_type: "stdout") }
   scope :stderr, -> { where(log_type: "stderr") }
@@ -15,4 +17,15 @@ class AgentRunLog < ApplicationRecord
   scope :metric, -> { where(log_type: "metric") }
   scope :recent, -> { order(created_at: :desc) }
   scope :chronological, -> { order(created_at: :asc) }
+
+  private
+
+  def broadcast_to_agent_run
+    AgentRunChannel.broadcast_to(agent_run, {
+      type: "log",
+      log_type: log_type,
+      content: content,
+      created_at: created_at.iso8601
+    })
+  end
 end

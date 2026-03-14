@@ -1,0 +1,44 @@
+<%= turbo_stream_from current_account, :dashboard %>
+
+<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10" data-controller="live-dashboard">
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div class="sm:flex-auto">
+      <h1 class="text-2xl font-semibold leading-6 text-gray-900">Live Dashboard</h1>
+      <p class="mt-2 text-sm text-gray-700">
+        Real-time view of agent activity for <strong><%= current_account.name %></strong>.
+      </p>
+    </div>
+    <div class="mt-4 sm:mt-0 sm:ml-4 flex items-center gap-3">
+      <span class="relative flex h-3 w-3" id="live-indicator">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+        <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+      </span>
+      <span class="text-sm text-gray-500">Live</span>
+    </div>
+  </div>
+
+  <%# Live Stats Overview %>
+  <div id="live-stats" class="mt-8">
+    <%= render "dashboard/live_stats", stats: @stats %>
+  </div>
+
+  <%# Alert Notifications %>
+  <div id="dashboard-alerts" class="mt-6">
+  </div>
+
+  <%# Active Runs %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Active Runs</h2>
+    <div id="active-runs" class="mt-4">
+      <%= render "dashboard/active_runs", active_runs: @active_runs %>
+    </div>
+  </div>
+
+  <%# Activity Stream %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Recent Activity</h2>
+    <div id="activity-stream" class="mt-4 space-y-2">
+      <%= render "dashboard/activity_stream", recent_runs: @recent_runs %>
+    </div>
+  </div>
+</div>

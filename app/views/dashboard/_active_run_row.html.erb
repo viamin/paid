@@ -1,0 +1,29 @@
+<tr id="<%= dom_id(run, :dashboard_row) %>">
+  <td class="whitespace-nowrap px-4 py-3 text-sm">
+    <%= agent_run_status_badge(run.status) %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
+    <%= link_to run.project.full_name, project_path(run.project), class: "hover:text-indigo-600" %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
+    <% if run.issue.present? %>
+      #<%= run.issue.github_number %>
+    <% elsif run.custom_prompt.present? %>
+      Custom
+    <% end %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
+    <%= run.agent_type.titleize %>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500" data-controller="elapsed-time" data-elapsed-time-started-at-value="<%= run.started_at&.iso8601 %>">
+    <span data-elapsed-time-target="display">
+      <%= run.started_at ? format_duration(run.duration) : "--" %>
+    </span>
+  </td>
+  <td class="whitespace-nowrap px-4 py-3 text-sm text-right">
+    <%= button_to "Cancel", dashboard_cancel_run_path(run),
+      method: :post,
+      class: "inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100",
+      data: { turbo_confirm: "Cancel this agent run?" } %>
+  </td>
+</tr>

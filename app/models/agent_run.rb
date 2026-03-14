@@ -17,6 +17,7 @@ class AgentRun < ApplicationRecord
   before_create :generate_proxy_token
 
   after_commit :broadcast_project_updates, on: [ :create, :update ]
+  after_commit :broadcast_dashboard_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
@@ -560,5 +561,11 @@ class AgentRun < ApplicationRecord
     end
 
     project.broadcast_agent_run_detail_update(self)
+  end
+
+  def broadcast_dashboard_updates
+    return unless previous_changes.key?("status")
+
+    Dashboard::Broadcast.call(account: project.account, agent_run: self)
   end
 end
