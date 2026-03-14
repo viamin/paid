@@ -16,15 +16,17 @@ module AbTests
       variants = ab_test.variants.order(:id).to_a
       return insufficient_data if variants.size < 2
 
-      control = variants.first
+      # Control is the variant named "control"; falls back to lowest-id variant
+      # if no variant is explicitly named "control".
+      control = variants.find { |v| v.name == "control" } || variants.first
       best_variant = variants.max_by { |v| v.avg_quality_score.to_f }
-      worst_variant = variants.min_by { |v| v.avg_quality_score.to_f }
 
       improvement = calculate_improvement(control, best_variant)
       confidence = calculate_confidence(control, best_variant)
+      threshold = ab_test.confidence_level&.to_f || 0.95
 
       {
-        status: confidence >= 0.95 ? :significant : :not_significant,
+        status: confidence >= threshold ? :significant : :not_significant,
         winner: best_variant,
         control: control,
         confidence: confidence.round(4),
@@ -64,8 +66,10 @@ module AbTests
       ((variant.avg_quality_score.to_f - control.avg_quality_score.to_f) / control.avg_quality_score.to_f * 100)
     end
 
-    # Simplified confidence calculation using the normal approximation
-    # for the difference of two proportions/means.
+    # Simplified confidence calculation using a normal approximation heuristic.
+    # This is NOT a Welch's t-test; it uses an estimated SE based on assumed
+    # score range [0,1]. Sufficient for early-stage analysis with small samples;
+    # replace with Welch's t-test when per-observation data is available.
     def calculate_confidence(control, variant)
       return 0.0 if control == variant
       return 0.0 if control.sample_count < 2 || variant.sample_count < 2

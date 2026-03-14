@@ -37,6 +37,7 @@ class AbTestsController < ApplicationController
   def edit
     authorize @ab_test
     @prompts = policy_scope(Prompt).active.includes(:current_version).order(:name)
+    2.times { @ab_test.variants.build } if @ab_test.variants.empty?
   end
 
   def update
@@ -85,11 +86,14 @@ class AbTestsController < ApplicationController
 
     if @ab_test.winner_variant.present?
       prompt = @ab_test.prompt
+      authorize prompt, :update?
       prompt.update!(current_version: @ab_test.winner_variant.prompt_version)
       redirect_to @ab_test, notice: "Winner promoted as the current prompt version."
     else
       redirect_to @ab_test, alert: "No winner has been determined yet."
     end
+  rescue Pundit::NotAuthorizedError
+    redirect_to @ab_test, alert: "You are not authorized to update this prompt."
   end
 
   private
@@ -99,6 +103,9 @@ class AbTestsController < ApplicationController
   end
 
   def ab_test_params
-    params.require(:ab_test).permit(:name, :description, :prompt_id, :traffic_percentage, :min_sample_size)
+    params.require(:ab_test).permit(
+      :name, :description, :prompt_id, :traffic_percentage, :min_sample_size,
+      variants_attributes: [ :id, :name, :prompt_version_id, :weight, :_destroy ]
+    )
   end
 end
