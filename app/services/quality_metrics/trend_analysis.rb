@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module QualityMetrics
-  # Provides quality trend analysis with rolling averages by prompt version,
-  # project, and model. Used by A/B testing framework and prompt evolution.
+  # Provides quality trend analysis with rolling averages by prompt version
+  # and project. Used by A/B testing framework and prompt evolution.
   #
   # @example
   #   trends = QualityMetrics::TrendAnalysis.call(
