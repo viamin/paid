@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0](https://github.com/viamin/paid/compare/v0.2.0...v0.3.0) (2026-03-14)
+
+
+### Features
+
+* **projects:** add auto-pick toggle to projects index page ([8419837](https://github.com/viamin/paid/commit/8419837745464b2e82f30738e3d309f2cd6c315c)), closes [#323](https://github.com/viamin/paid/issues/323)
+
+
+### Bug Fixes
+
+* **ci:** add language runtime setup to CodeQL workflow ([cd86fd1](https://github.com/viamin/paid/commit/cd86fd126f8c59624243eba126bf3aa9c9044456))
+* **ci:** exclude vendor directory from CodeQL scanning ([73b82ab](https://github.com/viamin/paid/commit/73b82abe933eec0d6c887d82548c91e89d52a6a6))
+* **ci:** remove custom CodeQL workflow and cover index toggle behavior ([f6cd290](https://github.com/viamin/paid/commit/f6cd290c606793ba32c40b76beef371e76c1ea4c))
+* **ci:** remove vendored gems from git and address review feedback ([857bd47](https://github.com/viamin/paid/commit/857bd47deefbdd589c6aa5456f57f4bebe72374d))
+* **containers:** add comprehensive Docker orphan cleanup ([10d4cb6](https://github.com/viamin/paid/commit/10d4cb650394d4c42c1d336b7522be7474a321b3))
+* **containers:** add comprehensive Docker orphan cleanup ([33a320f](https://github.com/viamin/paid/commit/33a320f87d45b09e3868107407db992bfc897840))
+* **containers:** address PR review feedback ([7e7df7e](https://github.com/viamin/paid/commit/7e7df7ea9f946f1f0b557171677484d6c2826ed5))
+* **containers:** address second round of PR review feedback ([4d96d34](https://github.com/viamin/paid/commit/4d96d3486e10e5a4ed0bdca9ef9ff76466a3a719))
+* **projects:** use dedicated partial for index page auto-pick toggle ([6794fed](https://github.com/viamin/paid/commit/6794fed15b53fb8755a450756f5b7bfb0e1bacfc))
+
 ## [0.2.0](https://github.com/viamin/paid/compare/v0.1.0...v0.2.0) (2026-03-08)
 
 
