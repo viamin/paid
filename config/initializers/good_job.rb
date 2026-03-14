@@ -19,9 +19,20 @@ Rails.application.configure do
       cron: "*/5 * * * *",
       class: "StaleRunDetectorJob"
     },
-    docker_volume_cleanup: {
-      cron: "0 */4 * * *",
-      class: "DockerVolumeCleanupJob"
+    docker_orphan_cleanup: {
+      cron: "*/15 * * * *",
+      class: "DockerOrphanCleanupJob"
     }
   }
+end
+
+# Run orphan cleanup once at startup to catch resources leaked while the app was down.
+# Only enqueue from the server process (not console, rake, or tests) to avoid
+# duplicate startup enqueues across processes. The job's enqueue_limit: 1
+# provides a secondary guard.
+Rails.application.config.after_initialize do
+  next unless Rails.application.config.good_job.enable_cron
+  next unless defined?(Rails::Server) || ENV["GOOD_JOB_EXECUTION_MODE"] == "async_server"
+
+  DockerOrphanCleanupJob.perform_later
 end
