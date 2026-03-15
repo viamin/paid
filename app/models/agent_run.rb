@@ -87,46 +87,21 @@ class AgentRun < ApplicationRecord
     [ (end_time - started_at).to_i, 0 ].max
   end
 
-  # Checks whether the system has capacity for another agent run.
+  # Checks whether the given user has capacity for another agent run.
   #
-  # Without a user: checks global active count against the system-wide cap.
-  # With a user: checks both the global active count against the system-wide cap
-  # AND the user's active count against min(system cap, user cap).
+  # Capacity is determined solely by the user's max_concurrent_runs setting.
+  # A user argument is required; without one, returns true (callers should
+  # always resolve a user via Project#effective_owner).
   def self.has_run_capacity?(user: nil)
-    system_max = effective_max_concurrent_runs
-    global_active_count = active.count
+    return true unless user
 
-    return false unless global_active_count < system_max
-
-    if user
-      active_count_for_user(user) < effective_max_concurrent_runs(user)
-    else
-      true
-    end
+    active_count_for_user(user) < user.settings.max_concurrent_runs
   end
 
   # Returns the count of active runs owned by the given user.
   # Uses a JOIN on projects.created_by_id to avoid a subquery per call.
-  #
-  # Limitation: projects with nil created_by_id are not counted toward any
-  # user's per-user cap. Callers use Project#effective_owner to resolve a
-  # fallback user for capacity *limit* lookups, but the counting here only
-  # matches on created_by_id. This means orphaned-project runs bypass the
-  # per-user cap (but are still bounded by the system-wide cap checked in
-  # has_run_capacity?). Replicating the effective_owner fallback chain in
-  # SQL would add significant complexity for a rare edge case (deleted user).
   def self.active_count_for_user(user)
     active.joins(:project).where(projects: { created_by_id: user.id }).count
-  end
-
-  # Returns the effective concurrency cap, respecting both the system-wide
-  # limit and the optional per-user setting (whichever is lower).
-  def self.effective_max_concurrent_runs(user = nil)
-    system_max = Rails.application.config.x.max_concurrent_runs
-    return system_max unless user
-
-    user_max = user.settings.max_concurrent_runs
-    [ system_max, user_max ].min
   end
 
   def self.next_queued_run
