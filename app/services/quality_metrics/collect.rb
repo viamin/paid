@@ -11,18 +11,18 @@ module QualityMetrics
     end
 
     def call
-      metric = QualityMetric.create_or_find_by!(agent_run: agent_run) do |m|
-        m.prompt_version = agent_run.prompt_version
-        m.iterations_to_complete = agent_run.iterations
-        m.pr_merged = pr_merged?
-        m.ci_passed = ci_passed
-        m.files_changed = count_files_changed
-        m.lint_errors = count_lint_errors
-        m.test_failures = count_test_failures
-        m.review_comments_count = 0
-      end
-
-      return metric if metric.quality_score.present?
+      metric = QualityMetric.find_or_initialize_by(agent_run: agent_run)
+      metric.assign_attributes(
+        prompt_version: agent_run.prompt_version,
+        iterations_to_complete: agent_run.iterations,
+        pr_merged: pr_merged?,
+        ci_passed: ci_passed,
+        files_changed: count_files_changed,
+        lint_errors: count_lint_errors,
+        test_failures: count_test_failures,
+        review_comments_count: metric.review_comments_count || 0
+      )
+      metric.save!
 
       metric.calculate_composite_score!
       update_prompt_version_stats if agent_run.prompt_version.present?

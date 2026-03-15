@@ -2,6 +2,8 @@
 
 module AbTests
   class Analyze
+    include WelchTTest
+
     def self.call(...)
       new(...).call
     end
@@ -66,44 +68,24 @@ module AbTests
       ((variant.avg_quality_score.to_f - control.avg_quality_score.to_f) / control.avg_quality_score.to_f * 100)
     end
 
-    # Simplified confidence calculation using a normal approximation heuristic.
-    # This is NOT a Welch's t-test; it uses an estimated SE based on assumed
-    # score range [0,1]. Sufficient for early-stage analysis with small samples;
-    # replace with Welch's t-test when per-observation data is available.
     def calculate_confidence(control, variant)
       return 0.0 if control == variant
       return 0.0 if control.sample_count < 2 || variant.sample_count < 2
 
-      mean_diff = (variant.avg_quality_score.to_f - control.avg_quality_score.to_f).abs
-      return 0.0 if mean_diff.zero?
-
-      # Estimate standard error using sample size and score range
-      se_control = estimated_se(control)
-      se_variant = estimated_se(variant)
-      pooled_se = Math.sqrt(se_control**2 + se_variant**2)
-
-      return 0.0 if pooled_se.zero?
-
-      z_score = mean_diff / pooled_se
-      # Convert z-score to confidence using error function approximation
-      confidence_from_z(z_score)
+      welch_t_test_confidence(
+        variant.avg_quality_score.to_f,
+        control.avg_quality_score.to_f,
+        variant_std_dev(variant),
+        variant_std_dev(control),
+        variant.sample_count.to_f,
+        control.sample_count.to_f
+      )
     end
 
-    def estimated_se(variant)
-      # Estimate SE as score_range / sqrt(n), assuming scores in [0,1]
-      return 1.0 if variant.sample_count < 2
+    def variant_std_dev(variant)
+      return 0.25 unless variant.respond_to?(:std_dev) && variant.std_dev.present?
 
-      0.25 / Math.sqrt(variant.sample_count)
-    end
-
-    def confidence_from_z(z)
-      # Approximation of 1 - 2*(1-Phi(z)) for two-tailed test
-      # Using the complementary error function approximation
-      t = 1.0 / (1.0 + 0.2316419 * z.abs)
-      d = 0.3989422804014327
-      p = d * Math.exp(-z * z / 2.0) * t *
-        (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))))
-      z > 0 ? 1.0 - 2.0 * p : 0.0
+      variant.std_dev.to_f
     end
   end
 end

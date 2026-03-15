@@ -44,16 +44,18 @@ module QualityMetrics
 
     def merge_rate
       with_pr = metrics.where.not(pr_merged: nil)
-      return 0.0 if with_pr.count.zero?
+      total = with_pr.count
+      return 0.0 if total.zero?
 
-      (with_pr.where(pr_merged: true).count.to_f / with_pr.count * 100).round(1)
+      (with_pr.where(pr_merged: true).count.to_f / total * 100).round(1)
     end
 
     def ci_rate
       with_ci = metrics.where.not(ci_passed: nil)
-      return 0.0 if with_ci.count.zero?
+      total = with_ci.count
+      return 0.0 if total.zero?
 
-      (with_ci.where(ci_passed: true).count.to_f / with_ci.count * 100).round(1)
+      (with_ci.where(ci_passed: true).count.to_f / total * 100).round(1)
     end
 
     def by_prompt

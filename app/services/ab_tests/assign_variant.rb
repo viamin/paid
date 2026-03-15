@@ -29,6 +29,7 @@ module AbTests
       AbTest
         .running
         .where(prompt: prompt, account_id: project.account_id)
+        .order(created_at: :desc)
         .first
     end
 
