@@ -1067,7 +1067,7 @@ RSpec.describe AgentRun do
   end
 
   describe ".next_queued_run" do
-    it "returns the oldest queued run" do
+    it "returns the oldest queued run when all have the same priority" do
       older = create(:agent_run, :queued, created_at: 2.minutes.ago)
       create(:agent_run, :queued, created_at: 1.minute.ago)
 
@@ -1079,17 +1079,39 @@ RSpec.describe AgentRun do
 
       expect(described_class.next_queued_run).to be_nil
     end
+
+    it "prioritizes manual runs over automatic runs" do
+      auto = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(manual)
+    end
+
+    it "prioritizes auto-continue (PR) runs over auto-picked runs" do
+      auto_picked = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      auto_continue = create(:agent_run, :queued, trigger_type: "automatic",
+        source_pull_request_number: 42, created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(auto_continue)
+    end
+
+    it "uses FIFO within the same priority tier" do
+      newer_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
+      older_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 2.minutes.ago)
+
+      expect(described_class.next_queued_run).to eq(older_manual)
+    end
   end
 
   describe ".peek_next_queued_run" do
-    it "returns the oldest queued run without changing status" do
-      older = create(:agent_run, :queued, created_at: 2.minutes.ago)
-      create(:agent_run, :queued, created_at: 1.minute.ago)
+    it "returns the highest-priority queued run without changing status" do
+      auto = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
 
       peeked = described_class.peek_next_queued_run
 
-      expect(peeked).to eq(older)
-      expect(older.reload.status).to eq("queued")
+      expect(peeked).to eq(manual)
+      expect(manual.reload.status).to eq("queued")
     end
 
     it "returns nil when no queued runs exist" do
@@ -1099,12 +1121,12 @@ RSpec.describe AgentRun do
     end
 
     it "skips excluded IDs" do
-      older = create(:agent_run, :queued, created_at: 2.minutes.ago)
-      newer = create(:agent_run, :queued, created_at: 1.minute.ago)
+      manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 2.minutes.ago)
+      auto = create(:agent_run, :queued, trigger_type: "automatic", created_at: 1.minute.ago)
 
-      peeked = described_class.peek_next_queued_run(exclude_ids: [ older.id ])
+      peeked = described_class.peek_next_queued_run(exclude_ids: [ manual.id ])
 
-      expect(peeked).to eq(newer)
+      expect(peeked).to eq(auto)
     end
   end
 

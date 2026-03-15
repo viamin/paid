@@ -64,7 +64,7 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
     end
 
-    it "processes runs in FIFO order" do
+    it "processes runs in FIFO order within the same priority" do
       project = create(:project)
       project.created_by.settings.update!(max_concurrent_runs: 1)
       older = create(:agent_run, :queued, project: project, created_at: 3.minutes.ago)
@@ -81,6 +81,25 @@ RSpec.describe ProcessRunQueueJob do
       expect(started_ids).to eq([ older.id ])
       expect(older.reload.status).to eq("pending")
       expect(newer.reload.status).to eq("queued")
+    end
+
+    it "starts manual runs before automatic runs regardless of creation time" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 1)
+      auto = create(:agent_run, :queued, project: project, trigger_type: "automatic", created_at: 3.minutes.ago)
+      manual = create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 1.minute.ago)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids).to eq([ manual.id ])
+      expect(manual.reload.status).to eq("pending")
+      expect(auto.reload.status).to eq("queued")
     end
 
     it "marks run as failed and continues when workflow start fails" do
