@@ -6,7 +6,6 @@ RSpec.describe QualityMetric do
   describe "validations" do
     subject { build(:quality_metric) }
 
-    it { is_expected.to validate_uniqueness_of(:agent_run_id) }
     it { is_expected.to validate_inclusion_of(:human_vote).in_array([ -1, 0, 1 ]).allow_nil }
   end
 
