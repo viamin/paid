@@ -104,14 +104,27 @@ class AgentRun < ApplicationRecord
     active.joins(:project).where(projects: { created_by_id: user.id }).count
   end
 
+  # Priority ordering for the run queue:
+  #   0 = manual runs (highest)
+  #   1 = automatic runs fixing a PR (auto-continue)
+  #   2 = automatic runs from auto-pick (lowest)
+  # Within each tier, runs are processed FIFO by created_at.
+  QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
+    CASE
+      WHEN trigger_type = 'manual' THEN 0
+      WHEN trigger_type = 'automatic' AND source_pull_request_number IS NOT NULL THEN 1
+      ELSE 2
+    END
+  SQL
+
   def self.next_queued_run
-    queued.order(created_at: :asc).first
+    queued.order(QUEUE_PRIORITY_SQL, created_at: :asc).first
   end
 
   # Returns the next queued run without claiming it.
   # Used to check per-user capacity before acquiring the lock.
   def self.peek_next_queued_run(exclude_ids: [])
-    scope = queued.order(created_at: :asc)
+    scope = queued.order(QUEUE_PRIORITY_SQL, created_at: :asc)
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope.first
   end
