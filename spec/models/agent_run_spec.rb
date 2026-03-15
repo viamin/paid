@@ -1017,80 +1017,51 @@ RSpec.describe AgentRun do
   end
 
   describe ".has_run_capacity?" do
-    it "returns true when active count is below max" do
-      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
+    it "returns true without a user" do
       create(:agent_run, :running)
 
       expect(described_class.has_run_capacity?).to be true
-    end
-
-    it "returns false when active count equals max" do
-      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(1)
-      create(:agent_run, :running)
-
-      expect(described_class.has_run_capacity?).to be false
-    end
-
-    it "does not count queued runs as active" do
-      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(1)
-      create(:agent_run, :queued)
-
-      expect(described_class.has_run_capacity?).to be true
-    end
-
-    it "without user context, uses only system config" do
-      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
-      create(:agent_run, :running)
-      create(:agent_run)
-
-      expect(described_class.has_run_capacity?).to be false
     end
 
     context "with user context" do
       let(:user) { create(:user) }
       let(:project) { create(:project, created_by: user, account: user.account) }
 
-      it "uses min of system config and user setting when user cap is lower" do
-        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+      it "returns false when user's active count reaches their max" do
         user.settings.update!(max_concurrent_runs: 1)
         create(:agent_run, :running, project: project)
 
         expect(described_class.has_run_capacity?(user: user)).to be false
       end
 
-      it "prevents users from raising cap above system config" do
-        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
-        user.settings.update!(max_concurrent_runs: 10)
-        create(:agent_run, :running, project: project)
-        create(:agent_run, project: project)
-
-        expect(described_class.has_run_capacity?(user: user)).to be false
-      end
-
-      it "allows runs when under both caps" do
-        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+      it "returns true when user's active count is below their max" do
         user.settings.update!(max_concurrent_runs: 3)
         create(:agent_run, :running, project: project)
 
         expect(described_class.has_run_capacity?(user: user)).to be true
       end
 
+      it "does not count queued runs as active" do
+        user.settings.update!(max_concurrent_runs: 1)
+        create(:agent_run, :queued, project: project)
+
+        expect(described_class.has_run_capacity?(user: user)).to be true
+      end
+
       it "only counts runs from the user's projects" do
-        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
         user.settings.update!(max_concurrent_runs: 1)
         create(:agent_run, :running) # different user's project
 
         expect(described_class.has_run_capacity?(user: user)).to be true
       end
 
-      it "returns false when global cap is reached even if user has capacity" do
-        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
+      it "is not affected by other users' active runs" do
         user.settings.update!(max_concurrent_runs: 5)
-        # Two runs from other users fill the global cap
+        # Runs from other users don't count against this user
         create(:agent_run, :running)
         create(:agent_run, :running)
 
-        expect(described_class.has_run_capacity?(user: user)).to be false
+        expect(described_class.has_run_capacity?(user: user)).to be true
       end
     end
   end
