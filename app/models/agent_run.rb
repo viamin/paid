@@ -99,25 +99,38 @@ class AgentRun < ApplicationRecord
   end
 
   # Returns the count of active runs attributable to the given user.
-  # Counts runs on projects the user created, plus runs on orphaned
-  # projects (created_by_id IS NULL) in the user's account. This
-  # mirrors the fallback chain in Project#effective_owner so that
-  # orphaned-project runs are bounded by the resolved owner's cap.
+  # Counts runs on projects the user created. Also counts runs on
+  # orphaned projects (created_by_id IS NULL) in the user's account,
+  # but only when the user is the account's effective fallback owner
+  # (matching Project#effective_owner's resolution chain).
   def self.active_count_for_user(user)
-    active.joins(:project).where(
-      projects: { created_by_id: user.id }
-    ).or(
-      active.joins(:project).where(
-        projects: { created_by_id: nil, account_id: user.account_id }
+    scope = active.joins(:project).where(projects: { created_by_id: user.id })
+
+    if orphaned_project_owner?(user)
+      scope = scope.or(
+        active.joins(:project).where(
+          projects: { created_by_id: nil, account_id: user.account_id }
+        )
       )
-    ).count
+    end
+
+    scope.count
+  end
+
+  # Returns true if this user is the fallback owner for orphaned
+  # projects in their account (account owner or first user).
+  def self.orphaned_project_owner?(user)
+    account = user.account
+    owner_user = account.account_memberships.find_by(role: :owner)&.user
+    (owner_user || account.users.order(:id).first) == user
   end
 
   # Priority ordering for the run queue:
   #   0 = manual runs (highest)
   #   1 = automatic runs fixing a PR (auto-continue)
   #   2 = automatic runs from auto-pick (lowest)
-  # Within each tier, runs are processed FIFO by created_at.
+  # Within each tier, runs are processed FIFO by created_at, with id
+  # as a stable tiebreaker for runs created in the same timestamp.
   QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
     CASE
       WHEN trigger_type = 'manual' THEN 0
@@ -125,15 +138,16 @@ class AgentRun < ApplicationRecord
       ELSE 2
     END
   SQL
+  QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
 
   def self.next_queued_run
-    queued.order(QUEUE_PRIORITY_SQL, created_at: :asc).first
+    queued.order(QUEUE_ORDER).first
   end
 
   # Returns the next queued run without claiming it.
   # Used to check per-user capacity before acquiring the lock.
   def self.peek_next_queued_run(exclude_ids: [])
-    scope = queued.order(QUEUE_PRIORITY_SQL, created_at: :asc)
+    scope = queued.order(QUEUE_ORDER)
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope.first
   end
