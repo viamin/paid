@@ -30,11 +30,12 @@ class ProcessRunQueueJob < ApplicationJob
         # associated broadcasts/metrics) for runs that can't start yet.
         next_run = AgentRun.peek_next_queued_run(exclude_ids: skipped_ids.to_a)
 
-        # When the queue is empty, auto-pick unblocked issues to keep agents
-        # productive. If new runs were created, loop back to process them
-        # through the normal claim-and-start flow.
+        # When the queue is truly empty (not just all skipped), auto-pick
+        # unblocked issues to keep agents productive. Skip auto-pick when
+        # every queued run was skipped due to capacity limits — scanning
+        # projects and creating more runs would be wasteful.
         unless next_run
-          if auto_pick_unblocked_issues
+          if skipped_ids.empty? && auto_pick_unblocked_issues
             next
           else
             break
