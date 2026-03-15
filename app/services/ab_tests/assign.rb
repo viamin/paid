@@ -46,7 +46,8 @@ module AbTests
     private
 
     def select_variant
-      variants = ab_test.ab_test_variants.to_a
+      variants = ab_test.ab_test_variants.order(:id).to_a
+      raise ArgumentError, "A/B test has no variants" if variants.empty?
       return variants.first if variants.size == 1
 
       # Weight inversely by assignment count (not sample_count) so pending

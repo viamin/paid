@@ -22,15 +22,17 @@ module AbTests
     def record
       validate_quality_score!
 
-      # Use a conditional UPDATE to atomically claim the assignment, preventing
-      # double-counting if two processes record the same agent_run concurrently.
-      updated_count = AbTestAssignment
-        .where(ab_test: ab_test, agent_run: agent_run, quality_score: nil)
-        .update_all(quality_score: quality_score)
-      return unless updated_count > 0
+      ActiveRecord::Base.transaction do
+        # Use a conditional UPDATE to atomically claim the assignment, preventing
+        # double-counting if two processes record the same agent_run concurrently.
+        updated_count = AbTestAssignment
+          .where(ab_test: ab_test, agent_run: agent_run, quality_score: nil)
+          .update_all(quality_score: quality_score)
+        next unless updated_count > 0
 
-      assignment = AbTestAssignment.find_by(ab_test: ab_test, agent_run: agent_run)
-      assignment.ab_test_variant.record_quality_score!(quality_score)
+        assignment = AbTestAssignment.find_by!(ab_test: ab_test, agent_run: agent_run)
+        assignment.ab_test_variant.record_quality_score!(quality_score)
+      end
 
       check_auto_completion(ab_test)
     end

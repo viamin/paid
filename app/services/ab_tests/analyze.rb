@@ -23,7 +23,7 @@ module AbTests
     end
 
     def analyze
-      variants = ab_test.ab_test_variants.includes(:ab_test_assignments).to_a
+      variants = ab_test.ab_test_variants.order(:id).to_a
       control = variants.find(&:is_control)
 
       return Result.new(status: :insufficient_data) unless control
@@ -55,7 +55,10 @@ module AbTests
     end
 
     def scores_for(variant)
-      variant.ab_test_assignments.filter_map(&:quality_score).map(&:to_f)
+      variant.ab_test_assignments
+             .where.not(quality_score: nil)
+             .pluck(:quality_score)
+             .map(&:to_f)
     end
 
     def determine_outcome(results)
