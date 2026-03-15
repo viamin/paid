@@ -37,7 +37,7 @@ class AbTestsController < ApplicationController
   def edit
     authorize @ab_test
     @prompts = policy_scope(Prompt).active.includes(:current_version).order(:name)
-    2.times { @ab_test.variants.build } if @ab_test.variants.empty?
+    (2 - @ab_test.variants.size).times { @ab_test.variants.build }
   end
 
   def update
