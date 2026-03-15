@@ -25,7 +25,13 @@ class CreateAbTests < ActiveRecord::Migration[8.1]
 
     add_index :ab_tests, :status
     add_index :ab_tests, :control_version_id
+    add_index :ab_tests, :winner_variant_id
     add_index :ab_tests, [ :prompt_id, :status ], name: "index_ab_tests_on_prompt_id_and_status"
+
+    add_index :ab_tests, :prompt_id,
+      unique: true,
+      where: "status = 'running'",
+      name: "index_ab_tests_one_running_per_prompt"
 
     create_table :ab_test_variants do |t|
       t.references :ab_test, null: false, foreign_key: { on_delete: :cascade }

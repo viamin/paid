@@ -16,6 +16,8 @@ class AbTest < ApplicationRecord
   validates :min_samples_per_variant, numericality: { only_integer: true, greater_than: 0 }
   validates :confidence_threshold, numericality: { greater_than: 0, less_than_or_equal_to: 1 }
   validate :variant_count_within_limit
+  validate :control_version_belongs_to_prompt
+  validate :winner_variant_belongs_to_test
 
   scope :draft, -> { where(status: "draft") }
   scope :running, -> { where(status: "running") }
@@ -75,5 +77,19 @@ class AbTest < ApplicationRecord
     return if ab_test_variants.size <= MAX_VARIANTS + 1 # +1 for control
 
     errors.add(:ab_test_variants, "cannot have more than #{MAX_VARIANTS} variants plus control")
+  end
+
+  def control_version_belongs_to_prompt
+    return if control_version.nil? || prompt.nil?
+    return if control_version.prompt_id == prompt_id
+
+    errors.add(:control_version, "must belong to the same prompt")
+  end
+
+  def winner_variant_belongs_to_test
+    return if winner_variant.nil?
+    return if winner_variant.ab_test_id == id
+
+    errors.add(:winner_variant, "must belong to this A/B test")
   end
 end

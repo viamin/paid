@@ -58,7 +58,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200000) do
     t.index ["control_version_id"], name: "index_ab_tests_on_control_version_id"
     t.index ["prompt_id", "status"], name: "index_ab_tests_on_prompt_id_and_status"
     t.index ["prompt_id"], name: "index_ab_tests_on_prompt_id"
+    t.index ["prompt_id"], name: "index_ab_tests_one_running_per_prompt", unique: true, where: "((status)::text = 'running'::text)"
     t.index ["status"], name: "index_ab_tests_on_status"
+    t.index ["winner_variant_id"], name: "index_ab_tests_on_winner_variant_id"
   end
 
   create_table "account_memberships", force: :cascade do |t|
