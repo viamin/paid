@@ -74,6 +74,13 @@ class CostBudget < ApplicationRecord
     update!(alert_sent_at: Time.current)
   end
 
+  # Resets usage counters if the current period (daily/monthly) has expired.
+  # No-op for per_run budgets. Called by CostBudgets::Check before evaluating
+  # the exceeded scope to avoid blocking runs based on stale period data.
+  def rollover_if_period_expired!
+    with_lock { rollover_period_if_needed! }
+  end
+
   private
 
   def rollover_period_if_needed!
