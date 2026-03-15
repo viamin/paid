@@ -98,10 +98,19 @@ class AgentRun < ApplicationRecord
     active_count_for_user(user) < user.settings.max_concurrent_runs
   end
 
-  # Returns the count of active runs owned by the given user.
-  # Uses a JOIN on projects.created_by_id to avoid a subquery per call.
+  # Returns the count of active runs attributable to the given user.
+  # Counts runs on projects the user created, plus runs on orphaned
+  # projects (created_by_id IS NULL) in the user's account. This
+  # mirrors the fallback chain in Project#effective_owner so that
+  # orphaned-project runs are bounded by the resolved owner's cap.
   def self.active_count_for_user(user)
-    active.joins(:project).where(projects: { created_by_id: user.id }).count
+    active.joins(:project).where(
+      projects: { created_by_id: user.id }
+    ).or(
+      active.joins(:project).where(
+        projects: { created_by_id: nil, account_id: user.account_id }
+      )
+    ).count
   end
 
   # Priority ordering for the run queue:
