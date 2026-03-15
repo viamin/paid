@@ -41,6 +41,9 @@ module Paid
     # Don't generate system test files.
     config.generators.system_tests = nil
 
+    # Enable gzip compression for all text responses (HTML, CSS, JS, JSON).
+    config.middleware.insert_before ActionDispatch::Static, Rack::Deflater
+
     # Use GoodJob for background jobs across environments.
     config.active_job.queue_adapter = :good_job
   end
