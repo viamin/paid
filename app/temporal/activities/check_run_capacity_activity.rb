@@ -6,32 +6,21 @@ module Activities
 
     def execute(input)
       user = find_user_from_input(input)
-      system_max = AgentRun.effective_max_concurrent_runs
-      global_active_count = AgentRun.active.count
-      user_active_count = nil
-      user_max = nil
-
-      if user
-        user_active_count = AgentRun.active_count_for_user(user)
-        user_max = AgentRun.effective_max_concurrent_runs(user)
-        has_capacity = global_active_count < system_max && user_active_count < user_max
-      else
-        has_capacity = global_active_count < system_max
-      end
+      has_capacity = AgentRun.has_run_capacity?(user: user)
+      user_active_count = user ? AgentRun.active_count_for_user(user) : nil
+      max_concurrent_runs = user&.settings&.max_concurrent_runs
 
       logger.info(
         message: "concurrency.capacity_check",
-        global_active_count: global_active_count,
         user_active_count: user_active_count,
-        max_concurrent_runs: user_max || system_max,
+        max_concurrent_runs: max_concurrent_runs,
         has_capacity: has_capacity
       )
 
       {
         has_capacity: has_capacity,
-        global_active_count: global_active_count,
         user_active_count: user_active_count,
-        max_concurrent_runs: user_max || system_max
+        max_concurrent_runs: max_concurrent_runs
       }
     end
 

@@ -9,7 +9,6 @@ RSpec.describe ProcessRunQueueJob do
   before do
     allow(Paid).to receive_messages(temporal_client: temporal_client, task_queue: "paid-tasks")
     allow(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
-    allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
   end
 
   describe "#perform" do
@@ -28,9 +27,11 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.reload.status).to eq("pending")
     end
 
-    it "starts multiple queued runs up to capacity" do
-      older = create(:agent_run, :queued, created_at: 2.minutes.ago)
-      newer = create(:agent_run, :queued, created_at: 1.minute.ago)
+    it "starts multiple queued runs up to user capacity" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 2)
+      older = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
+      newer = create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
 
       expect(temporal_client).to receive(:start_workflow).twice.and_return(workflow_handle)
 
@@ -40,10 +41,13 @@ RSpec.describe ProcessRunQueueJob do
       expect(newer.reload.status).to eq("pending")
     end
 
-    it "stops when capacity is exhausted" do
-      create(:agent_run, :running)
-      create(:agent_run, :running)
-      queued_run = create(:agent_run, :queued)
+    it "stops when user capacity is exhausted" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 2)
+      create(:agent_run, :running, project: project)
+      create(:agent_run, :running, project: project)
+      queued_run = create(:agent_run, :queued, project: project)
 
       expect(temporal_client).not_to receive(:start_workflow)
 
@@ -61,9 +65,10 @@ RSpec.describe ProcessRunQueueJob do
     end
 
     it "processes runs in FIFO order" do
-      older = create(:agent_run, :queued, created_at: 3.minutes.ago)
-      newer = create(:agent_run, :queued, created_at: 1.minute.ago)
-      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(1)
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 1)
+      older = create(:agent_run, :queued, project: project, created_at: 3.minutes.ago)
+      newer = create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
 
       started_ids = []
       allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
@@ -95,7 +100,6 @@ RSpec.describe ProcessRunQueueJob do
     end
 
     it "re-queues run when user concurrency limit is reached" do
-      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
       project = create(:project)
       user = project.created_by
       user.settings.update!(max_concurrent_runs: 1)
@@ -110,8 +114,6 @@ RSpec.describe ProcessRunQueueJob do
     end
 
     it "skips blocked user and starts runs for other users" do
-      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
-
       blocked_project = create(:project)
       blocked_user = blocked_project.created_by
       blocked_user.settings.update!(max_concurrent_runs: 1)
