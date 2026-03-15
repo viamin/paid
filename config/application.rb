@@ -42,7 +42,9 @@ module Paid
     config.generators.system_tests = nil
 
     # Enable gzip compression for eligible responses when the client supports it.
-    config.middleware.insert 0, Rack::Deflater
+    # Inserted before ActionDispatch::Static to compress static assets without
+    # disrupting the default middleware ordering.
+    config.middleware.insert_before ActionDispatch::Static, Rack::Deflater
 
     # Use GoodJob for background jobs across environments.
     config.active_job.queue_adapter = :good_job
