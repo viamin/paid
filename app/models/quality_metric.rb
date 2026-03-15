@@ -13,7 +13,6 @@ class QualityMetric < ApplicationRecord
   belongs_to :agent_run
   belongs_to :prompt_version, optional: true
 
-  validates :agent_run_id, uniqueness: true
   validates :quality_score, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 }, allow_nil: true
   validates :human_vote, inclusion: { in: [ -1, 0, 1 ] }, allow_nil: true
 
