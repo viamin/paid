@@ -1063,6 +1063,14 @@ RSpec.describe AgentRun do
 
         expect(described_class.has_run_capacity?(user: user)).to be true
       end
+
+      it "counts orphaned-project runs against the account owner" do
+        user.settings.update!(max_concurrent_runs: 1)
+        orphaned_project = create(:project, created_by: nil, account: user.account)
+        create(:agent_run, :running, project: orphaned_project)
+
+        expect(described_class.has_run_capacity?(user: user)).to be false
+      end
     end
   end
 
