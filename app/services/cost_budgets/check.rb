@@ -23,8 +23,9 @@ module CostBudgets
       return allowed_result if project.cost_budgets.none?
 
       reset_per_run_budgets
+      rollover_expired_periods
 
-      exceeded = project.cost_budgets.reload.exceeded.first
+      exceeded = project.cost_budgets.reload.exceeded.order(:budget_type).first
       return blocked_result(exceeded) if exceeded
 
       send_alerts_if_needed
@@ -47,6 +48,10 @@ module CostBudgets
 
     def reset_per_run_budgets
       project.cost_budgets.per_run.each(&:reset_for_new_run!)
+    end
+
+    def rollover_expired_periods
+      project.cost_budgets.where(budget_type: %w[daily monthly]).find_each(&:rollover_if_period_expired!)
     end
 
     def send_alerts_if_needed

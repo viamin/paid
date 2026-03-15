@@ -141,6 +141,31 @@ RSpec.describe CostBudget do
     end
   end
 
+  describe "#rollover_if_period_expired!" do
+    it "resets usage when daily period has expired" do
+      budget = create(:cost_budget, :daily, current_usage_cents: 500, period_started_at: 2.days.ago)
+      budget.rollover_if_period_expired!
+      budget.reload
+
+      expect(budget.current_usage_cents).to eq(0)
+      expect(budget.period_started_at).to be_within(1.second).of(Time.current.beginning_of_day)
+    end
+
+    it "does nothing when daily period is current" do
+      budget = create(:cost_budget, :daily, current_usage_cents: 500, period_started_at: Time.current.beginning_of_day)
+      budget.rollover_if_period_expired!
+
+      expect(budget.reload.current_usage_cents).to eq(500)
+    end
+
+    it "is a no-op for per_run budgets" do
+      budget = create(:cost_budget, :per_run, current_usage_cents: 500)
+      budget.rollover_if_period_expired!
+
+      expect(budget.reload.current_usage_cents).to eq(500)
+    end
+  end
+
   describe "#alert_needed?" do
     it "returns true when threshold reached and no recent alert" do
       budget = build(:cost_budget, limit_cents: 1000, current_usage_cents: 850, alert_sent_at: nil)

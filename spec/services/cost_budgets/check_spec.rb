@@ -41,6 +41,34 @@ RSpec.describe CostBudgets::Check do
       end
     end
 
+    context "when a daily budget has stale usage from a previous period" do
+      it "rolls over the period before checking" do
+        budget = create(:cost_budget, :daily, project: project,
+          limit_cents: 1_000, current_usage_cents: 1_500,
+          period_started_at: 2.days.ago)
+        result = described_class.call(project)
+
+        expect(result[:allowed]).to be true
+        expect(budget.reload.current_usage_cents).to eq(0)
+      end
+    end
+
+    context "when multiple budgets are exceeded" do
+      it "returns a deterministic reason based on budget_type ordering" do
+        create(:cost_budget, project: project, budget_type: "monthly",
+          limit_cents: 10_000, current_usage_cents: 10_001,
+          period_started_at: Time.current.beginning_of_month)
+        create(:cost_budget, project: project, budget_type: "daily",
+          limit_cents: 1_000, current_usage_cents: 1_001,
+          period_started_at: Time.current.beginning_of_day)
+
+        result = described_class.call(project)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to include("daily budget exceeded")
+      end
+    end
+
     context "when approaching threshold" do
       it "logs a warning and marks alert sent" do
         budget = create(:cost_budget, project: project, limit_cents: 10_000, current_usage_cents: 8_500)
