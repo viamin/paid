@@ -23,7 +23,11 @@ module AbTests
       prompt = ab_test.prompt
       winning_version = ab_test.winner_variant.prompt_version
 
-      prompt.update!(current_version: winning_version)
+      # Use with_lock to prevent concurrent version updates (consistent with
+      # Prompt#create_version! which also locks before updating current_version).
+      prompt.with_lock do
+        prompt.update!(current_version: winning_version)
+      end
       winning_version
     end
 

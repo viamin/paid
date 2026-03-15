@@ -19,7 +19,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200000) do
     t.bigint "ab_test_variant_id", null: false
     t.bigint "agent_run_id", null: false
     t.datetime "created_at", null: false
-    t.decimal "quality_score", precision: 4, scale: 2
+    t.decimal "quality_score", precision: 5, scale: 4
     t.index ["ab_test_id", "agent_run_id"], name: "index_ab_test_assignments_unique", unique: true
     t.index ["ab_test_id"], name: "index_ab_test_assignments_on_ab_test_id"
     t.index ["ab_test_variant_id"], name: "index_ab_test_assignments_on_ab_test_variant_id"
@@ -28,12 +28,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200000) do
 
   create_table "ab_test_variants", force: :cascade do |t|
     t.bigint "ab_test_id", null: false
-    t.decimal "avg_quality_score", precision: 4, scale: 2
+    t.decimal "avg_quality_score", precision: 5, scale: 4
     t.datetime "created_at", null: false
     t.boolean "is_control", default: false, null: false
     t.bigint "prompt_version_id", null: false
     t.integer "sample_count", default: 0, null: false
-    t.decimal "total_quality_score", precision: 10, scale: 2, default: "0.0", null: false
+    t.decimal "total_quality_score", precision: 10, scale: 4, default: "0.0", null: false
     t.datetime "updated_at", null: false
     t.index ["ab_test_id", "is_control"], name: "index_ab_test_variants_on_test_and_control"
     t.index ["ab_test_id", "prompt_version_id"], name: "index_ab_test_variants_on_test_and_prompt_version", unique: true
