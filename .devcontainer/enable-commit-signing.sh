@@ -12,8 +12,8 @@ if ! command -v git >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! gh auth status >/dev/null 2>&1; then
-  echo "GitHub CLI is not authenticated. Starting login..."
+if ! gh auth status -h github.com >/dev/null 2>&1; then
+  echo "GitHub CLI is not authenticated for github.com. Starting login..."
   gh auth login -h github.com
 fi
 

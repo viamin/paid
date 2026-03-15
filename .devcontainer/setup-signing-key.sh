@@ -19,10 +19,10 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 0
 fi
 
-if ! gh auth status >/dev/null 2>&1; then
-  echo "WARNING: GitHub CLI is not authenticated; skipping commit signing setup." >&2
+if ! gh auth status -h github.com >/dev/null 2>&1; then
+  echo "WARNING: GitHub CLI is not authenticated for github.com; skipping commit signing setup." >&2
   echo "  To enable it, run:" >&2
-  echo "    gh auth login" >&2
+  echo "    gh auth login -h github.com" >&2
   echo "  Then re-run: bash .devcontainer/setup-signing-key.sh" >&2
   exit 0
 fi
