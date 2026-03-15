@@ -42,8 +42,18 @@ class ProcessRunQueueJob < ApplicationJob
           end
         end
 
-        # Enforce per-user concurrency limit.
+        # Resolve the project owner for capacity checks. If the owner
+        # can't be resolved, fail the run immediately rather than
+        # skipping it — a nil owner would block auto-pick for other
+        # users who may have capacity.
         user = next_run.project.effective_owner
+        unless user
+          if (run = AgentRun.claim_next_queued_run(target_id: next_run.id))
+            run.fail!(error: "Cannot resolve project owner for capacity check")
+          end
+          next
+        end
+
         unless AgentRun.has_run_capacity?(user: user)
           skipped_ids.add(next_run.id)
           next

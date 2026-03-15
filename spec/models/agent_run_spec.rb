@@ -1069,6 +1069,16 @@ RSpec.describe AgentRun do
 
         expect(described_class.has_run_capacity?(user: user)).to be false
       end
+
+      it "does not count orphaned-project runs against non-owner members" do
+        member = create(:user)
+        create(:account_membership, account: user.account, user: member, role: :member)
+        member.settings.update!(max_concurrent_runs: 1)
+        orphaned_project = create(:project, created_by: nil, account: user.account)
+        create(:agent_run, :running, project: orphaned_project)
+
+        expect(described_class.has_run_capacity?(user: member)).to be true
+      end
     end
   end
 

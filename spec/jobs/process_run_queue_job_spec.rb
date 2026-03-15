@@ -118,6 +118,21 @@ RSpec.describe ProcessRunQueueJob do
       expect(good_run.reload.status).to eq("pending")
     end
 
+    it "fails run when project owner cannot be resolved" do
+      project = create(:project)
+      queued_run = create(:agent_run, :queued, project: project)
+      allow(project).to receive(:effective_owner).and_return(nil)
+      allow(queued_run).to receive(:project).and_return(project)
+      allow(AgentRun).to receive(:peek_next_queued_run).and_return(queued_run, nil)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(queued_run.reload.status).to eq("failed")
+      expect(queued_run.error_message).to include("Cannot resolve project owner")
+    end
+
     it "re-queues run when user concurrency limit is reached" do
       project = create(:project)
       user = project.created_by
