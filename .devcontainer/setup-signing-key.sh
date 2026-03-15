@@ -12,10 +12,19 @@ KEY_PATH="$KEY_DIR/id_ed25519"
 TITLE_PREFIX="devcontainer-signing:"
 KEY_TITLE="$TITLE_PREFIX $(hostname)"
 
-# 0. Verify GitHub CLI authentication and required scope
+# 0. Verify GitHub CLI authentication and required scope.
+# This is best-effort in devcontainers; lack of auth should not fail setup.
+if ! command -v gh >/dev/null 2>&1; then
+  echo "WARNING: GitHub CLI is not installed; skipping commit signing setup." >&2
+  exit 0
+fi
+
 if ! gh auth status >/dev/null 2>&1; then
-  echo "Error: GitHub CLI is not authenticated. Run 'gh auth login' first." >&2
-  exit 1
+  echo "WARNING: GitHub CLI is not authenticated; skipping commit signing setup." >&2
+  echo "  To enable it, run:" >&2
+  echo "    gh auth login" >&2
+  echo "  Then re-run: bash .devcontainer/setup-signing-key.sh" >&2
+  exit 0
 fi
 
 if ! gh api /user/ssh_signing_keys --method GET --paginate --jq '.' >/dev/null 2>&1; then
