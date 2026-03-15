@@ -90,10 +90,10 @@ class AgentRun < ApplicationRecord
   # Checks whether the given user has capacity for another agent run.
   #
   # Capacity is determined solely by the user's max_concurrent_runs setting.
-  # A user argument is required; without one, returns true (callers should
-  # always resolve a user via Project#effective_owner).
+  # Returns false (fail closed) when no user is provided, so orphaned
+  # projects or unresolvable owners cannot bypass concurrency limits.
   def self.has_run_capacity?(user: nil)
-    return true unless user
+    return false unless user
 
     active_count_for_user(user) < user.settings.max_concurrent_runs
   end

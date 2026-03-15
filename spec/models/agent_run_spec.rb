@@ -1017,10 +1017,8 @@ RSpec.describe AgentRun do
   end
 
   describe ".has_run_capacity?" do
-    it "returns true without a user" do
-      create(:agent_run, :running)
-
-      expect(described_class.has_run_capacity?).to be true
+    it "returns false without a user (fail closed)" do
+      expect(described_class.has_run_capacity?).to be false
     end
 
     context "with user context" do

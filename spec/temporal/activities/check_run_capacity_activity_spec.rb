@@ -6,12 +6,10 @@ RSpec.describe Activities::CheckRunCapacityActivity do
   let(:activity) { described_class.new }
 
   describe "#execute" do
-    it "returns has_capacity: true without a project context" do
-      create(:agent_run, :running)
-
+    it "returns has_capacity: false without a project context (fail closed)" do
       result = activity.execute({})
 
-      expect(result[:has_capacity]).to be true
+      expect(result[:has_capacity]).to be false
       expect(result[:user_active_count]).to be_nil
       expect(result[:max_concurrent_runs]).to be_nil
     end

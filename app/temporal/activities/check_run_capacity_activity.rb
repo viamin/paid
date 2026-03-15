@@ -12,9 +12,17 @@ module Activities
         max_concurrent_runs = user.settings.max_concurrent_runs
         has_capacity = user_active_count < max_concurrent_runs
       else
+        # Fail closed: if we can't resolve an owner, don't allow the run.
         user_active_count = nil
         max_concurrent_runs = nil
-        has_capacity = true
+        has_capacity = false
+
+        if input[:project_id]
+          logger.warn(
+            message: "concurrency.owner_not_found",
+            project_id: input[:project_id]
+          )
+        end
       end
 
       logger.info(
