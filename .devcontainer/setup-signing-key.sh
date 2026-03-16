@@ -14,6 +14,8 @@ KEY_TITLE="$TITLE_PREFIX $(hostname)"
 
 # 0. Verify GitHub CLI authentication and required scope.
 # This is best-effort in devcontainers; lack of auth should not fail setup.
+# Ensure all gh commands target github.com (not an enterprise host).
+export GH_HOST="github.com"
 if ! command -v gh >/dev/null 2>&1; then
   echo "WARNING: GitHub CLI is not installed; skipping commit signing setup." >&2
   exit 0

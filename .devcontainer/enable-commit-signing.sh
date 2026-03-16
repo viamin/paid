@@ -25,7 +25,18 @@ bash "$(dirname "$0")/setup-signing-key.sh"
 
 echo
 
-echo "Commit signing is enabled for this repo. Current git settings:"
-git config --local --get gpg.format || true
-git config --local --get user.signingkey || true
-git config --local --get commit.gpgsign || true
+# Validate that signing was actually configured (setup-signing-key.sh may
+# exit 0 without configuring anything if auth/scopes are missing).
+if [[ "$(git config --local --get commit.gpgsign 2>/dev/null)" == "true" ]] \
+  && [[ "$(git config --local --get gpg.format 2>/dev/null)" == "ssh" ]] \
+  && [[ -n "$(git config --local --get user.signingkey 2>/dev/null)" ]]; then
+  echo "Commit signing is enabled for this repo. Current git settings:"
+  echo "  gpg.format      = $(git config --local --get gpg.format)"
+  echo "  user.signingkey  = $(git config --local --get user.signingkey)"
+  echo "  commit.gpgsign   = $(git config --local --get commit.gpgsign)"
+else
+  echo "ERROR: Commit signing was not configured." >&2
+  echo "  The signing key setup did not complete successfully." >&2
+  echo "  Check the output above for warnings and follow the suggested steps." >&2
+  exit 1
+fi
