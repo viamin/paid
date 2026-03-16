@@ -44,10 +44,13 @@ module QualityMetrics
       agent_run.pull_request_url.present? ? 1.0 : 0.0
     end
 
-    # CI passed: 1.0 if run completed without errors, 0.0 otherwise.
-    # Future: check GitHub CI status via webhook/polling.
+    # TODO(#145): ci_passed, lint_clean, and tests_pass currently use the same
+    # proxy (agent_run.successful?). Replace with distinct signals from GitHub
+    # PR status checks once webhook integration is available.
+
+    # CI passed: proxy via run success until GitHub CI status is available.
     def ci_passed_score
-      agent_run.successful? ? 1.0 : 0.0
+      success_proxy_score
     end
 
     # Iterations: fewer is better, normalized to 0..1.
@@ -57,15 +60,19 @@ module QualityMetrics
       [ 1.0 - ((iterations - 1) * 0.1), 0.0 ].max
     end
 
-    # Lint clean: 1.0 if completed successfully (proxy for no lint errors).
-    # Future: check via PR status checks.
+    # Lint clean: proxy via run success until PR status checks are available.
     def lint_clean_score
-      agent_run.successful? ? 1.0 : 0.0
+      success_proxy_score
     end
 
-    # Tests pass: 1.0 if completed successfully (proxy for tests passing).
-    # Future: check via PR status checks.
+    # Tests pass: proxy via run success until PR status checks are available.
     def tests_pass_score
+      success_proxy_score
+    end
+
+    # Shared proxy: 1.0 if the agent run completed successfully, 0.0 otherwise.
+    # Used by ci_passed, lint_clean, and tests_pass until distinct signals are available.
+    def success_proxy_score
       agent_run.successful? ? 1.0 : 0.0
     end
   end
