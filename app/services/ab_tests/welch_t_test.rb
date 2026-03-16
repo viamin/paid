@@ -37,7 +37,7 @@ module AbTests
 
     def two_tailed_t_p_value(t_stat, df)
       x = df / (df + t_stat**2)
-      1.0 - regularized_incomplete_beta(df / 2.0, 0.5, x).clamp(0.0, 1.0)
+      regularized_incomplete_beta(df / 2.0, 0.5, x).clamp(0.0, 1.0)
     end
 
     # Approximation of I_x(a, b) using continued fraction (Lentz's method).
