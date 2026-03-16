@@ -5,13 +5,6 @@ require "zlib"
 
 RSpec.describe "Gzip compression" do
   describe "Rack::Deflater middleware" do
-    it "does not compress HTML responses to mitigate BREACH attacks" do
-      get "/up", headers: { "Accept-Encoding" => "gzip" }
-
-      expect(response).to have_http_status(:ok)
-      expect(response.headers["Content-Encoding"]).to be_nil
-    end
-
     context "with JSON responses" do
       let(:qdrant_client) { instance_double(QdrantClient) }
 
@@ -40,6 +33,14 @@ RSpec.describe "Gzip compression" do
         parsed = response.parsed_body
         expect(parsed).to have_key("status")
       end
+    end
+
+    it "excludes text/html from compression to mitigate BREACH attacks" do
+      deflater_config = Rails.application.config.middleware.detect { |m| m.name == "Rack::Deflater" }
+      include_types = deflater_config.args.first[:include]
+
+      expect(include_types).not_to include("text/html")
+      expect(include_types).to include("application/json")
     end
   end
 end
