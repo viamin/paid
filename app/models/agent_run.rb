@@ -119,10 +119,12 @@ class AgentRun < ApplicationRecord
 
   # Returns true if this user is the fallback owner for orphaned
   # projects in their account (account owner or first user).
+  # Uses ID-only queries to avoid loading full User records.
   def self.orphaned_project_owner?(user)
-    account = user.account
-    owner_user = account.account_memberships.find_by(role: :owner)&.user
-    (owner_user || account.users.order(:id).first) == user
+    fallback_id = user.account.account_memberships
+      .where(role: :owner).pick(:user_id)
+    fallback_id ||= user.account.users.order(:id).pick(:id)
+    fallback_id == user.id
   end
 
   # Priority ordering for the run queue:
