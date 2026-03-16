@@ -13,12 +13,13 @@ module Dashboard
     end
 
     def call
+      counts = agent_run_counts
       {
-        active_runs: agent_runs.active.count,
-        queued_runs: agent_runs.queued.count,
-        completed_today: agent_runs.completed.where(completed_at: Time.current.beginning_of_day..).count,
-        failed_today: agent_runs.failed.where(completed_at: Time.current.beginning_of_day..).count,
-        active_containers: agent_runs.running.where.not(container_id: nil).count,
+        active_runs: counts["active_runs"] || 0,
+        queued_runs: counts["queued_runs"] || 0,
+        completed_today: counts["completed_today"] || 0,
+        failed_today: counts["failed_today"] || 0,
+        active_containers: counts["active_containers"] || 0,
         total_projects: account.projects.count,
         active_projects: account.projects.active.count
       }
@@ -26,8 +27,19 @@ module Dashboard
 
     private
 
+    def agent_run_counts
+      today = Time.current.beginning_of_day
+      agent_runs.pick(
+        Arel.sql("COUNT(*) FILTER (WHERE status IN ('pending', 'running')) AS active_runs"),
+        Arel.sql("COUNT(*) FILTER (WHERE status = 'queued') AS queued_runs"),
+        Arel.sql("COUNT(*) FILTER (WHERE status = 'completed' AND completed_at >= #{AgentRun.connection.quote(today)}) AS completed_today"),
+        Arel.sql("COUNT(*) FILTER (WHERE status = 'failed' AND completed_at >= #{AgentRun.connection.quote(today)}) AS failed_today"),
+        Arel.sql("COUNT(*) FILTER (WHERE status = 'running' AND container_id IS NOT NULL) AS active_containers")
+      ).then { |values| %w[active_runs queued_runs completed_today failed_today active_containers].zip(values).to_h }
+    end
+
     def agent_runs
-      @agent_runs ||= AgentRun.joins(:project).where(projects: { account_id: account.id })
+      AgentRun.joins(:project).where(projects: { account_id: account.id })
     end
   end
 end

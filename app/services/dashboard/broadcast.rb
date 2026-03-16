@@ -34,7 +34,8 @@ module Dashboard
     end
 
     def broadcast_active_runs
-      active_runs = account_agent_runs.active.includes(:project, :issue).recent.limit(20)
+      active_runs = account_agent_runs.active.includes(:project, :issue)
+        .order("agent_runs.created_at DESC").limit(20)
 
       Turbo::StreamsChannel.broadcast_replace_to(
         [ account, :dashboard ],
@@ -68,7 +69,7 @@ module Dashboard
         locals: {
           alert_type: alert_type,
           message: message,
-          dom_id_for_alert: "alert-#{agent_run.id}",
+          dom_id_for_alert: "alert-#{agent_run.id}-#{agent_run.status}",
           alert_bg_class: alert_bg_class(alert_type),
           alert_text_class: alert_text_class(alert_type)
         }

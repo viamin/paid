@@ -26,6 +26,8 @@ RSpec.describe Dashboard::LiveStats do
     end
 
     context "with active runs" do
+      around { |example| freeze_time { example.run } }
+
       before do
         create(:agent_run, :running, project: project, container_id: "abc123")
         create(:agent_run, project: project) # pending

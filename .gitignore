@@ -77,6 +77,7 @@ config.log
 # PostgreSQL installation directory (created by bin/setup on some hosts)
 /.pg-install/
 /.pg-local/
+/.pg-log
 
 # APT cache and cached package extracts (created during container setup)
 /.apt-cache/
