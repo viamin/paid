@@ -11,6 +11,7 @@ class AgentRun < ApplicationRecord
   belongs_to :prompt_version, optional: true
 
   has_many :agent_run_logs, dependent: :destroy
+  has_many :quality_metrics, dependent: :destroy
   has_one :worktree, dependent: :nullify
 
   before_create :generate_proxy_token
