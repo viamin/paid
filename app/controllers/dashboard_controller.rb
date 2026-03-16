@@ -10,7 +10,7 @@ class DashboardController < ApplicationController
   def live
     @active_runs = account_agent_runs.active.includes(:project, :issue).recent.limit(20)
     @recent_runs = account_agent_runs.finished.includes(:project, :issue)
-      .order(Arel.sql("COALESCE(completed_at, created_at) DESC")).limit(10)
+      .order(Arel.sql("COALESCE(agent_runs.completed_at, agent_runs.created_at) DESC")).limit(10)
     @stats = Dashboard::LiveStats.call(account: current_account)
   end
 

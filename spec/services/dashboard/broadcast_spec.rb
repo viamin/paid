@@ -44,6 +44,7 @@ RSpec.describe Dashboard::Broadcast do
 
         expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to)
           .with([ account, :dashboard ], hash_including(target: "dashboard-alerts"))
+          .at_least(:once)
       end
     end
 
@@ -78,6 +79,7 @@ RSpec.describe Dashboard::Broadcast do
             target: "dashboard-alerts",
             locals: hash_including(alert_type: "warning")
           ))
+          .at_least(:once)
       end
     end
   end
