@@ -28,6 +28,7 @@ class ProcessRunQueueJob < ApplicationJob
       consecutive_failures = 0
       starts_count = 0
       skipped_ids = Set.new
+      @user_capacity = {}  # { user_id => { active: count, max: limit } }
 
       loop do
         # Peek at the next queued run without claiming it, so we can check
@@ -60,7 +61,7 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        unless AgentRun.has_run_capacity?(user: user)
+        unless user_has_capacity?(user)
           skipped_ids.add(next_run.id)
           next
         end
@@ -78,6 +79,7 @@ class ProcessRunQueueJob < ApplicationJob
         if start_claimed_run(agent_run)
           consecutive_failures = 0
           starts_count += 1
+          record_started_run(user)
           break if starts_count >= MAX_STARTS_PER_PERFORM
         else
           consecutive_failures += 1
@@ -85,12 +87,28 @@ class ProcessRunQueueJob < ApplicationJob
         end
       end
     ensure
-      AgentRun.clear_orphaned_owner_cache!
       ActiveRecord::Base.connection.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})") if acquired
     end
   end
 
   private
+
+  # Checks per-user capacity using an in-memory cache. The active count
+  # is fetched from the DB on first access per user, then updated
+  # in-memory as runs are started, avoiding repeated COUNT queries.
+  def user_has_capacity?(user)
+    cap = @user_capacity[user.id] ||= {
+      active: AgentRun.active_count_for_user(user),
+      max: user.settings.max_concurrent_runs
+    }
+    cap[:active] < cap[:max]
+  end
+
+  # Updates the in-memory capacity tracker after a run is started.
+  def record_started_run(user)
+    cap = @user_capacity[user.id]
+    cap[:active] += 1 if cap
+  end
 
   # Auto-picks unblocked issues for active projects, creating new queued
   # agent runs. Returns true if any runs were created so the main loop
