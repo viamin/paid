@@ -75,22 +75,18 @@ RSpec.describe AbTests::Analyze do
 
   describe "Welch's t-test implementation" do
     it "produces valid p-values" do
-      analyzer = described_class.new(ab_test: ab_test)
-
       # Known test case: two clearly different distributions
-      result = analyzer.send(:welch_t_test, [ 1, 2, 3, 4, 5 ], [ 6, 7, 8, 9, 10 ])
+      result = AbTests::Statistics.welch_t_test([ 1, 2, 3, 4, 5 ], [ 6, 7, 8, 9, 10 ])
       expect(result[:p_value]).to be < 0.01
       expect(result[:t]).to be < 0 # group1 mean < group2 mean
 
       # Known test case: identical distributions
-      result = analyzer.send(:welch_t_test, [ 5, 5, 5, 5, 5 ], [ 5, 5, 5, 5, 5 ])
+      result = AbTests::Statistics.welch_t_test([ 5, 5, 5, 5, 5 ], [ 5, 5, 5, 5, 5 ])
       expect(result[:p_value]).to eq(1.0) # no difference
     end
 
     it "handles zero variance with different means as significant" do
-      analyzer = described_class.new(ab_test: ab_test)
-
-      result = analyzer.send(:welch_t_test, [ 0.3, 0.3, 0.3, 0.3, 0.3 ], [ 0.8, 0.8, 0.8, 0.8, 0.8 ])
+      result = AbTests::Statistics.welch_t_test([ 0.3, 0.3, 0.3, 0.3, 0.3 ], [ 0.8, 0.8, 0.8, 0.8, 0.8 ])
       expect(result[:p_value]).to eq(0.0)
       expect(result[:t]).to eq(-Float::INFINITY)
     end

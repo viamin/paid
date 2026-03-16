@@ -68,7 +68,7 @@ module AbTests
     end
 
     def should_analyze?(ab_test)
-      total_samples = ab_test.ab_test_assignments.where.not(quality_score: nil).count
+      total_samples = ab_test.ab_test_variants.sum(:sample_count)
       min_required = ab_test.min_samples_per_variant * ab_test.ab_test_variants.count
       total_samples == min_required || (total_samples % ANALYSIS_INTERVAL).zero?
     end

@@ -13,6 +13,16 @@ class ProcessRunQueueJob < ApplicationJob
   # Prevents cascading failures when Temporal is down.
   MAX_CONSECUTIVE_FAILURES = 3
 
+  # Maximum workflows started per perform invocation. Bounds how long
+  # the advisory lock is held and prevents a single job run from
+  # monopolizing queue processing under large backlogs.
+  MAX_STARTS_PER_PERFORM = 20
+
+  # Maximum loop iterations (including skips) per perform invocation.
+  # Prevents unbounded scanning when a large queue has many runs that
+  # can't start due to per-user capacity limits.
+  MAX_ITERATIONS_PER_PERFORM = 100
+
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
     # If another instance is already running, this job exits immediately (no-op).
@@ -21,36 +31,47 @@ class ProcessRunQueueJob < ApplicationJob
 
     begin
       consecutive_failures = 0
+      starts_count = 0
+      iterations = 0
       skipped_ids = Set.new
+      @user_capacity = {}  # { user_id => { active: count, max: limit } }
 
-      while AgentRun.has_run_capacity?
+      loop do
+        iterations += 1
+        break if iterations > MAX_ITERATIONS_PER_PERFORM
         # Peek at the next queued run without claiming it, so we can check
         # per-user capacity before transitioning to "pending". This avoids
         # an unnecessary queued -> pending -> queued status flip (and its
         # associated broadcasts/metrics) for runs that can't start yet.
         next_run = AgentRun.peek_next_queued_run(exclude_ids: skipped_ids.to_a)
 
-        # When the queue is empty but capacity exists, auto-pick unblocked
-        # issues to keep agents productive. If new runs were created, loop
-        # back to process them through the normal claim-and-start flow.
+        # When the queue is truly empty (not just all skipped), auto-pick
+        # unblocked issues to keep agents productive. Skip auto-pick when
+        # every queued run was skipped due to capacity limits — scanning
+        # projects and creating more runs would be wasteful.
         unless next_run
-          if auto_pick_unblocked_issues
+          if skipped_ids.empty? && auto_pick_unblocked_issues
             next
           else
             break
           end
         end
 
-        # Enforce per-user concurrency limit. The system-wide check above
-        # gates the loop, but the user may have a lower personal cap.
+        # Resolve the project owner for capacity checks. If the owner
+        # can't be resolved, fail the run immediately rather than
+        # skipping it — a nil owner would block auto-pick for other
+        # users who may have capacity.
         user = next_run.project.effective_owner
-        if user
-          user_active_count = AgentRun.active_count_for_user(user)
-          max = AgentRun.effective_max_concurrent_runs(user)
-          unless user_active_count < max
-            skipped_ids.add(next_run.id)
-            next
+        unless user
+          if (run = AgentRun.claim_next_queued_run(target_id: next_run.id))
+            run.fail!(error: "Cannot resolve project owner for capacity check")
           end
+          next
+        end
+
+        unless user_has_capacity?(user)
+          skipped_ids.add(next_run.id)
+          next
         end
 
         # User has capacity — now atomically claim the run.
@@ -65,6 +86,9 @@ class ProcessRunQueueJob < ApplicationJob
 
         if start_claimed_run(agent_run)
           consecutive_failures = 0
+          starts_count += 1
+          record_started_run(user)
+          break if starts_count >= MAX_STARTS_PER_PERFORM
         else
           consecutive_failures += 1
           break if consecutive_failures >= MAX_CONSECUTIVE_FAILURES
@@ -76,6 +100,23 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   private
+
+  # Checks per-user capacity using an in-memory cache. The active count
+  # is fetched from the DB on first access per user, then updated
+  # in-memory as runs are started, avoiding repeated COUNT queries.
+  def user_has_capacity?(user)
+    cap = @user_capacity[user.id] ||= {
+      active: AgentRun.active_count_for_user(user),
+      max: user.settings.max_concurrent_runs
+    }
+    cap[:active] < cap[:max]
+  end
+
+  # Updates the in-memory capacity tracker after a run is started.
+  def record_started_run(user)
+    cap = @user_capacity[user.id]
+    cap[:active] += 1 if cap
+  end
 
   # Auto-picks unblocked issues for active projects, creating new queued
   # agent runs. Returns true if any runs were created so the main loop
