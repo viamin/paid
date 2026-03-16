@@ -17,7 +17,7 @@ class LlmModel < ApplicationRecord
   scope :active, -> { where(active: true) }
   scope :by_provider, ->(provider) { where(provider: provider) }
   scope :by_category, ->(category) { where(category: category) }
-  scope :by_capability, -> { order(capability_score: :desc) }
+  scope :by_capability, -> { order(Arel.sql("capability_score DESC NULLS LAST")) }
   scope :affordable, ->(budget_cents, avg_tokens) {
     return active if budget_cents.nil?
 
