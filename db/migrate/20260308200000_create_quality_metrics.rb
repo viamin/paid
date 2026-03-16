@@ -10,7 +10,7 @@ class CreateQualityMetrics < ActiveRecord::Migration[8.1]
       t.decimal :composite_score, precision: 5, scale: 4
       t.string :feedback_source, limit: 50
       t.jsonb :metadata, default: {}, null: false
-      t.datetime :created_at, null: false
+      t.timestamps null: false
     end
 
     add_index :quality_metrics, :metric_type
