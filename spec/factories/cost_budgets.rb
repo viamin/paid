@@ -7,15 +7,18 @@ FactoryBot.define do
     limit_cents { 100_000 }
     current_usage_cents { 0 }
     alert_threshold_percent { 80 }
+    period_started_at { Time.current.beginning_of_month }
 
     trait :daily do
       budget_type { "daily" }
       limit_cents { 5_000 }
+      period_started_at { Time.current.beginning_of_day }
     end
 
     trait :per_run do
       budget_type { "per_run" }
       limit_cents { 1_000 }
+      period_started_at { Time.current }
     end
 
     trait :near_limit do

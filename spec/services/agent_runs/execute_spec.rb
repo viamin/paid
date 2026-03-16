@@ -52,7 +52,8 @@ RSpec.describe AgentRuns::Execute do
         expect(TokenUsageTracker).to receive(:track).with(
           agent_run: agent_run,
           tokens_input: 1500,
-          tokens_output: 800
+          tokens_output: 800,
+          request_type: "run_summary"
         )
 
         described_class.call(agent_run: agent_run, prompt: prompt)

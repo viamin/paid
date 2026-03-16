@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class TokenUsage < ApplicationRecord
-  REQUEST_TYPES = %w[agent planning evaluation].freeze
+  REQUEST_TYPES = %w[agent planning evaluation run_summary].freeze
 
   belongs_to :agent_run
 

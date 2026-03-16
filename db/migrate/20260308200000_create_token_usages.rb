@@ -3,7 +3,9 @@
 class CreateTokenUsages < ActiveRecord::Migration[8.1]
   def change
     create_table :token_usages do |t|
-      t.references :agent_run, null: false, foreign_key: { on_delete: :cascade }
+      # index: false because the composite index on [agent_run_id, request_type] below
+      # covers agent_run_id lookups via leftmost prefix in Postgres
+      t.references :agent_run, null: false, index: false, foreign_key: { on_delete: :cascade }
       t.string :llm_model, limit: 100
       t.string :request_type, limit: 50, null: false
       t.integer :input_tokens, default: 0, null: false
