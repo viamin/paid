@@ -4,10 +4,10 @@ module CostBudgets
   # Checks whether a project's cost budgets allow a new agent run.
   # Intended to be called as a pre-flight check before transitioning
   # an AgentRun to "running" (e.g., in the run queue processor or
-  # workflow start path). This service provides the enforcement logic
-  # but is not yet wired into the orchestration layer — integration
-  # will happen when run orchestration adds pre-flight hooks.
-  # See issue #141 for tracking.
+  # workflow start path). This service provides the enforcement logic;
+  # wiring into ProcessRunQueueJob is tracked in a follow-up issue
+  # and intentionally deferred from this PR to keep scope limited
+  # to the model/infrastructure layer. See issue #141.
   class Check
     attr_reader :project
 
