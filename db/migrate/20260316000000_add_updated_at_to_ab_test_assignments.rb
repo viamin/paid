@@ -2,6 +2,6 @@
 
 class AddUpdatedAtToAbTestAssignments < ActiveRecord::Migration[8.1]
   def change
-    add_column :ab_test_assignments, :updated_at, :datetime
+    add_column :ab_test_assignments, :updated_at, :datetime, null: false, default: -> { "CURRENT_TIMESTAMP" }
   end
 end

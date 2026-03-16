@@ -20,7 +20,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_16_000000) do
     t.bigint "agent_run_id", null: false
     t.datetime "created_at", null: false
     t.decimal "quality_score", precision: 5, scale: 4
-    t.datetime "updated_at"
+    t.datetime "updated_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
     t.index ["ab_test_id", "agent_run_id"], name: "index_ab_test_assignments_unique", unique: true
     t.index ["ab_test_id"], name: "index_ab_test_assignments_on_ab_test_id"
     t.index ["ab_test_variant_id"], name: "index_ab_test_assignments_on_ab_test_variant_id"
@@ -425,6 +425,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_16_000000) do
     t.index ["user_id"], name: "index_providers_on_user_id"
   end
 
+  create_table "quality_metrics", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.decimal "composite_score", precision: 5, scale: 4
+    t.datetime "created_at", null: false
+    t.string "feedback_source", limit: 50
+    t.jsonb "metadata", default: {}, null: false
+    t.string "metric_type", limit: 20, null: false
+    t.bigint "prompt_version_id"
+    t.jsonb "scores", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "metric_type"], name: "index_quality_metrics_on_agent_run_and_type", unique: true
+    t.index ["agent_run_id"], name: "index_quality_metrics_on_agent_run_id"
+    t.index ["composite_score"], name: "index_quality_metrics_on_composite_score"
+    t.index ["created_at"], name: "index_quality_metrics_on_created_at"
+    t.index ["metric_type"], name: "index_quality_metrics_on_metric_type"
+    t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
+    t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
+  end
+
   create_table "service_containers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "docker_container_id"
@@ -569,6 +588,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_16_000000) do
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_states", "users", on_delete: :cascade
   add_foreign_key "providers", "users", on_delete: :cascade
+  add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
+  add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "user_settings", "users"
