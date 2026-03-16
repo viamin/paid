@@ -50,6 +50,9 @@ class AbTest < ApplicationRecord
       end
       update!(status: "running", started_at: Time.current)
     end
+  rescue ActiveRecord::RecordNotUnique
+    errors.add(:base, "another test is already running for this prompt")
+    raise ActiveRecord::RecordInvalid, self
   end
 
   def complete!(winner: nil)

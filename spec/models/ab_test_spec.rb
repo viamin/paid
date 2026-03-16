@@ -32,6 +32,13 @@ RSpec.describe AbTest do
       test = create(:ab_test, status: "running", started_at: Time.current)
       expect { test.start! }.to raise_error(ActiveRecord::RecordInvalid, /cannot start a test/)
     end
+
+    it "raises a friendly error when another test is already running for the same prompt" do
+      running_test = create(:ab_test, status: "running", started_at: Time.current)
+      draft_test = create(:ab_test, status: "draft", prompt: running_test.prompt)
+
+      expect { draft_test.start! }.to raise_error(ActiveRecord::RecordInvalid, /already running/)
+    end
   end
 
   describe "#complete!" do

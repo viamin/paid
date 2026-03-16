@@ -91,9 +91,17 @@ module AbTests
       s1 = std_dev(group1)
       s2 = std_dev(group2)
 
-      # Avoid division by zero when both groups have zero variance
+      # Handle zero standard error: both groups have zero variance
       se = Math.sqrt((s1**2 / n1) + (s2**2 / n2))
-      return { t: 0.0, df: n1 + n2 - 2, p_value: 1.0 } if se.zero?
+      if se.zero?
+        if m1 == m2
+          return { t: 0.0, df: n1 + n2 - 2, p_value: 1.0 }
+        else
+          # Means differ with zero variance — perfectly consistent difference
+          t = m1 < m2 ? -Float::INFINITY : Float::INFINITY
+          return { t: t, df: n1 + n2 - 2, p_value: 0.0 }
+        end
+      end
 
       t = (m1 - m2) / se
 
