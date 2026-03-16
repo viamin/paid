@@ -51,7 +51,7 @@ docker compose exec web bin/rails db:prepare
 
 Open in VS Code with the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension, or use GitHub Codespaces. The `.devcontainer/` configuration provides a complete development environment.
 
-#### Enable Commit Signing In Devcontainer
+#### Enable Commit Signing in Dev Container
 
 If commit signing is not configured automatically, run:
 
