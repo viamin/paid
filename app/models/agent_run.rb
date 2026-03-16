@@ -119,26 +119,10 @@ class AgentRun < ApplicationRecord
 
   # Returns true if this user is the fallback owner for orphaned
   # projects in their account (account owner or first user).
-  # Memoized per account to avoid repeated DB lookups in tight loops
-  # (e.g., ProcessRunQueueJob checking multiple runs).
   def self.orphaned_project_owner?(user)
-    @orphaned_owner_cache ||= {}
-    account_id = user.account_id
-
-    unless @orphaned_owner_cache.key?(account_id)
-      account = user.account
-      owner_user = account.account_memberships.find_by(role: :owner)&.user
-      @orphaned_owner_cache[account_id] = (owner_user || account.users.order(:id).first)&.id
-    end
-
-    @orphaned_owner_cache[account_id] == user.id
-  end
-
-  # Clears the orphaned project owner cache. Should be called at the
-  # boundaries of long-running jobs (e.g., ProcessRunQueueJob) to
-  # prevent stale or unbounded cache growth.
-  def self.clear_orphaned_owner_cache!
-    @orphaned_owner_cache = nil
+    account = user.account
+    owner_user = account.account_memberships.find_by(role: :owner)&.user
+    (owner_user || account.users.order(:id).first) == user
   end
 
   # Priority ordering for the run queue:
