@@ -1017,32 +1017,7 @@ RSpec.describe AgentRun do
   end
 
   describe ".has_run_capacity?" do
-    it "returns true when active count is below max" do
-      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
-      create(:agent_run, :running)
-
-      expect(described_class.has_run_capacity?).to be true
-    end
-
-    it "returns false when active count equals max" do
-      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(1)
-      create(:agent_run, :running)
-
-      expect(described_class.has_run_capacity?).to be false
-    end
-
-    it "does not count queued runs as active" do
-      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(1)
-      create(:agent_run, :queued)
-
-      expect(described_class.has_run_capacity?).to be true
-    end
-
-    it "without user context, uses only system config" do
-      allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
-      create(:agent_run, :running)
-      create(:agent_run)
-
+    it "returns false without a user (fail closed)" do
       expect(described_class.has_run_capacity?).to be false
     end
 
@@ -1050,53 +1025,65 @@ RSpec.describe AgentRun do
       let(:user) { create(:user) }
       let(:project) { create(:project, created_by: user, account: user.account) }
 
-      it "uses min of system config and user setting when user cap is lower" do
-        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+      it "returns false when user's active count reaches their max" do
         user.settings.update!(max_concurrent_runs: 1)
         create(:agent_run, :running, project: project)
 
         expect(described_class.has_run_capacity?(user: user)).to be false
       end
 
-      it "prevents users from raising cap above system config" do
-        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
-        user.settings.update!(max_concurrent_runs: 10)
-        create(:agent_run, :running, project: project)
-        create(:agent_run, project: project)
-
-        expect(described_class.has_run_capacity?(user: user)).to be false
-      end
-
-      it "allows runs when under both caps" do
-        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
+      it "returns true when user's active count is below their max" do
         user.settings.update!(max_concurrent_runs: 3)
         create(:agent_run, :running, project: project)
 
         expect(described_class.has_run_capacity?(user: user)).to be true
       end
 
+      it "does not count queued runs as active" do
+        user.settings.update!(max_concurrent_runs: 1)
+        create(:agent_run, :queued, project: project)
+
+        expect(described_class.has_run_capacity?(user: user)).to be true
+      end
+
       it "only counts runs from the user's projects" do
-        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(5)
         user.settings.update!(max_concurrent_runs: 1)
         create(:agent_run, :running) # different user's project
 
         expect(described_class.has_run_capacity?(user: user)).to be true
       end
 
-      it "returns false when global cap is reached even if user has capacity" do
-        allow(Rails.application.config.x).to receive(:max_concurrent_runs).and_return(2)
+      it "is not affected by other users' active runs" do
         user.settings.update!(max_concurrent_runs: 5)
-        # Two runs from other users fill the global cap
+        # Runs from other users don't count against this user
         create(:agent_run, :running)
         create(:agent_run, :running)
 
+        expect(described_class.has_run_capacity?(user: user)).to be true
+      end
+
+      it "counts orphaned-project runs against the account owner" do
+        user.settings.update!(max_concurrent_runs: 1)
+        orphaned_project = create(:project, created_by: nil, account: user.account)
+        create(:agent_run, :running, project: orphaned_project)
+
         expect(described_class.has_run_capacity?(user: user)).to be false
+      end
+
+      it "does not count orphaned-project runs against non-owner members" do
+        member = create(:user)
+        create(:account_membership, account: user.account, user: member, role: :member)
+        member.settings.update!(max_concurrent_runs: 1)
+        orphaned_project = create(:project, created_by: nil, account: user.account)
+        create(:agent_run, :running, project: orphaned_project)
+
+        expect(described_class.has_run_capacity?(user: member)).to be true
       end
     end
   end
 
   describe ".next_queued_run" do
-    it "returns the oldest queued run" do
+    it "returns the oldest queued run when all have the same priority" do
       older = create(:agent_run, :queued, created_at: 2.minutes.ago)
       create(:agent_run, :queued, created_at: 1.minute.ago)
 
@@ -1108,17 +1095,39 @@ RSpec.describe AgentRun do
 
       expect(described_class.next_queued_run).to be_nil
     end
+
+    it "prioritizes manual runs over automatic runs" do
+      auto = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(manual)
+    end
+
+    it "prioritizes auto-continue (PR) runs over auto-picked runs" do
+      auto_picked = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      auto_continue = create(:agent_run, :queued, trigger_type: "automatic",
+        source_pull_request_number: 42, created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(auto_continue)
+    end
+
+    it "uses FIFO within the same priority tier" do
+      newer_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
+      older_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 2.minutes.ago)
+
+      expect(described_class.next_queued_run).to eq(older_manual)
+    end
   end
 
   describe ".peek_next_queued_run" do
-    it "returns the oldest queued run without changing status" do
-      older = create(:agent_run, :queued, created_at: 2.minutes.ago)
-      create(:agent_run, :queued, created_at: 1.minute.ago)
+    it "returns the highest-priority queued run without changing status" do
+      auto = create(:agent_run, :queued, trigger_type: "automatic", created_at: 2.minutes.ago)
+      manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
 
       peeked = described_class.peek_next_queued_run
 
-      expect(peeked).to eq(older)
-      expect(older.reload.status).to eq("queued")
+      expect(peeked).to eq(manual)
+      expect(manual.reload.status).to eq("queued")
     end
 
     it "returns nil when no queued runs exist" do
@@ -1128,12 +1137,12 @@ RSpec.describe AgentRun do
     end
 
     it "skips excluded IDs" do
-      older = create(:agent_run, :queued, created_at: 2.minutes.ago)
-      newer = create(:agent_run, :queued, created_at: 1.minute.ago)
+      manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 2.minutes.ago)
+      auto = create(:agent_run, :queued, trigger_type: "automatic", created_at: 1.minute.ago)
 
-      peeked = described_class.peek_next_queued_run(exclude_ids: [ older.id ])
+      peeked = described_class.peek_next_queued_run(exclude_ids: [ manual.id ])
 
-      expect(peeked).to eq(newer)
+      expect(peeked).to eq(auto)
     end
   end
 
