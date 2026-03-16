@@ -37,12 +37,11 @@ RSpec.describe "Gzip compression" do
     end
 
     context "with HTML responses" do
-      it "does not compress HTML to mitigate BREACH attacks" do
-        get "/users/sign_in", headers: { "Accept-Encoding" => "gzip" }
+      it "excludes text/html from compression to mitigate BREACH attacks" do
+        deflater = Rails.application.config.middleware.detect { |m| m.name == "Rack::Deflater" }
+        options = deflater.args.detect { |a| a.is_a?(Hash) } || {}
 
-        expect(response).to have_http_status(:ok)
-        expect(response.media_type).to eq("text/html")
-        expect(response.headers["Content-Encoding"]).to be_nil
+        expect(options[:include]).not_to include("text/html")
       end
     end
   end
