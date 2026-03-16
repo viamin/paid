@@ -21,3 +21,6 @@ application.register("goal-toggle", GoalToggleController)
 
 import SortableController from "./sortable_controller"
 application.register("sortable", SortableController)
+
+import DropdownController from "./dropdown_controller"
+application.register("dropdown", DropdownController)

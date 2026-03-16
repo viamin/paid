@@ -238,6 +238,17 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(agent_run.error_message)
       end
 
+      it "shows retry provider options for configured providers" do
+        user.providers.create!(provider_key: "cursor")
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Retry with Claude")
+        expect(response.body).to include("Retry with Cursor")
+        expect(response.body).to include("Current")
+      end
+
       it "shows metrics" do
         agent_run = create(:agent_run, :completed, :with_metrics, project: project)
         get project_agent_run_path(project, agent_run)
@@ -585,6 +596,17 @@ RSpec.describe "AgentRuns" do
         post retry_project_agent_run_path(project, agent_run)
 
         expect(agent_run.reload.status).to eq("retried")
+      end
+
+      it "creates a retry using a different configured provider" do
+        user.providers.create!(provider_key: "cursor")
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
+
+        post retry_project_agent_run_path(project, agent_run), params: { provider: "cursor" }
+
+        new_run = AgentRun.last
+        expect(new_run.agent_type).to eq("cursor")
+        expect(response).to redirect_to(project_agent_run_path(project, new_run))
       end
 
       it "preserves custom_prompt from the original run" do

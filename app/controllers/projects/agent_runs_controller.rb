@@ -15,6 +15,7 @@ module Projects
 
     def show
       authorize @agent_run
+      @retry_provider_options = retry_provider_options_for(@agent_run)
       @logs = @agent_run.agent_run_logs.order(created_at: :asc).limit(500).load
     end
 
@@ -83,10 +84,11 @@ module Projects
         return
       end
 
+      agent_type = retry_agent_type_for(@agent_run)
       new_run = AgentRun.create!(
         project: @project,
         issue: @agent_run.issue,
-        agent_type: @agent_run.agent_type,
+        agent_type: agent_type,
         custom_prompt: @agent_run.custom_prompt,
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
@@ -261,6 +263,31 @@ module Projects
 
     def managed_provider_key?(provider_key)
       Provider::SUPPORTED_PROVIDER_KEYS.include?(provider_key)
+    end
+
+    def retry_provider_options_for(agent_run)
+      UserSetting.enabled_agent_providers(current_user).filter_map do |provider_key|
+        agent_type = provider_key_to_agent_type(provider_key)
+        next unless AgentRun::AGENT_TYPES.include?(agent_type)
+
+        {
+          provider_key: provider_key,
+          agent_type: agent_type,
+          label: Provider.display_name(provider_key),
+          current: agent_type == agent_run.agent_type
+        }
+      end
+    end
+
+    def retry_agent_type_for(agent_run)
+      requested_provider_key = params[:provider].presence
+      requested_agent_type = if requested_provider_key.present?
+        provider_key_to_agent_type(requested_provider_key)
+      else
+        params[:agent_type].presence || agent_run.agent_type
+      end
+
+      resolve_agent_type(requested_agent_type: requested_agent_type)
     end
 
     def resolve_agent_type(requested_agent_type:)
