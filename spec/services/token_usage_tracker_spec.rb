@@ -115,8 +115,9 @@ RSpec.describe TokenUsageTracker do
             update_aggregates: false
           )
         }.to change(TokenUsage, :count).by(1)
-          .and not_change { agent_run.reload.tokens_input }
-          .and not_change { project.reload.total_tokens_used }
+
+        expect(agent_run.reload.tokens_input).to eq(0)
+        expect(project.reload.total_tokens_used).to eq(0)
       end
 
       it "does not update cost budgets" do
