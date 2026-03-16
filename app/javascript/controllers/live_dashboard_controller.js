@@ -6,11 +6,11 @@ import { Controller } from "@hotwired/stimulus"
 export default class extends Controller {
   connect() {
     this.boundOnStreamRender = this.onStreamRender.bind(this)
-    this.element.addEventListener("turbo:before-stream-render", this.boundOnStreamRender)
+    document.addEventListener("turbo:before-stream-render", this.boundOnStreamRender)
   }
 
   disconnect() {
-    this.element.removeEventListener("turbo:before-stream-render", this.boundOnStreamRender)
+    document.removeEventListener("turbo:before-stream-render", this.boundOnStreamRender)
   }
 
   onStreamRender() {

@@ -1,5 +1,6 @@
-<%# Phase 1: Live stats, active runs, recent activity, and alerts.
-    Phase 2 will add log streaming, workflow status, resource usage, and worker pool status. %>
+<%# Phase 1 of #147: Live stats, active runs, recent activity, and alerts.
+    Phase 2 (#147 remaining acceptance criteria) will add log streaming, workflow status,
+    resource usage, and worker pool status. This PR partially addresses #147. %>
 <%= turbo_stream_from current_account, :dashboard %>
 
 <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10" data-controller="live-dashboard">

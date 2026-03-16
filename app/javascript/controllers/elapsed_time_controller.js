@@ -22,6 +22,7 @@ export default class extends Controller {
     this.displayTarget.textContent = this.formatDuration(elapsed)
   }
 
+  // NOTE: If a server-side format_duration helper is added, keep these formats in sync.
   formatDuration(seconds) {
     if (seconds >= 86400) {
       const d = Math.floor(seconds / 86400)

@@ -77,7 +77,8 @@ module Dashboard
     end
 
     def alert_worthy?
-      %w[failed timeout auth_expired rate_limited].include?(agent_run.status)
+      agent_run.previous_changes.key?("status") &&
+        %w[failed timeout auth_expired rate_limited].include?(agent_run.status)
     end
 
     def alert_content
