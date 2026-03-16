@@ -16,6 +16,10 @@ class DashboardController < ApplicationController
 
   def cancel_run
     agent_run = account_agent_runs.find(params[:id])
+    unless agent_run.active?
+      redirect_to live_dashboard_path, status: :see_other, notice: "Run is no longer active."
+      return
+    end
     agent_run.cancel!
     redirect_to live_dashboard_path, status: :see_other
   end

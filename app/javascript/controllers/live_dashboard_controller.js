@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 
 // Manages the live dashboard page behavior.
 // Turbo Streams handle DOM updates; this controller provides
-// visual feedback (pulse on update) and auto-scroll for the activity stream.
+// visual feedback (pulse on the live indicator when updates arrive).
 export default class extends Controller {
   connect() {
     this.boundOnStreamRender = this.onStreamRender.bind(this)

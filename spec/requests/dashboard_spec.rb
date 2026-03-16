@@ -112,9 +112,16 @@ RSpec.describe "Dashboard" do
       other_project = create(:project, account: other_account)
       other_run = create(:agent_run, :running, project: other_project)
 
-      expect {
-        post dashboard_cancel_run_path(other_run)
-      }.to raise_error(ActiveRecord::RecordNotFound)
+      post dashboard_cancel_run_path(other_run)
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "redirects without cancelling an already-finished run" do
+      agent_run = create(:agent_run, :completed, project: project)
+      post dashboard_cancel_run_path(agent_run)
+      expect(response).to redirect_to(live_dashboard_path)
+      expect(response).to have_http_status(:see_other)
+      expect(agent_run.reload.status).to eq("completed")
     end
   end
 end

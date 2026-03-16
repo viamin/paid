@@ -564,7 +564,7 @@ class AgentRun < ApplicationRecord
   end
 
   def broadcast_dashboard_updates
-    return unless previous_changes.key?("status")
+    return unless previous_changes.key?("status") || previous_changes.key?("container_id")
 
     Dashboard::Broadcast.call(account: project.account, agent_run: self)
   end

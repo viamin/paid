@@ -1,7 +1,7 @@
-# PostgreSQL-backed Action Cable for cross-process broadcasting.
-# No Redis needed — aligned with the existing PostgreSQL architecture.
+# Use async adapter for development (single-process with bin/dev).
+# Production uses solid_cable for cross-process broadcasting.
 development:
-  adapter: postgresql
+  adapter: async
 
 test:
   adapter: test
