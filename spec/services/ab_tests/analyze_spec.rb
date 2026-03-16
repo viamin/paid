@@ -86,5 +86,13 @@ RSpec.describe AbTests::Analyze do
       result = analyzer.send(:welch_t_test, [ 5, 5, 5, 5, 5 ], [ 5, 5, 5, 5, 5 ])
       expect(result[:p_value]).to eq(1.0) # no difference
     end
+
+    it "handles zero variance with different means as significant" do
+      analyzer = described_class.new(ab_test: ab_test)
+
+      result = analyzer.send(:welch_t_test, [ 0.3, 0.3, 0.3, 0.3, 0.3 ], [ 0.8, 0.8, 0.8, 0.8, 0.8 ])
+      expect(result[:p_value]).to eq(0.0)
+      expect(result[:t]).to eq(-Float::INFINITY)
+    end
   end
 end
