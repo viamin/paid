@@ -18,6 +18,11 @@ class ProcessRunQueueJob < ApplicationJob
   # monopolizing queue processing under large backlogs.
   MAX_STARTS_PER_PERFORM = 20
 
+  # Maximum loop iterations (including skips) per perform invocation.
+  # Prevents unbounded scanning when a large queue has many runs that
+  # can't start due to per-user capacity limits.
+  MAX_ITERATIONS_PER_PERFORM = 100
+
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
     # If another instance is already running, this job exits immediately (no-op).
@@ -27,10 +32,13 @@ class ProcessRunQueueJob < ApplicationJob
     begin
       consecutive_failures = 0
       starts_count = 0
+      iterations = 0
       skipped_ids = Set.new
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
 
       loop do
+        iterations += 1
+        break if iterations > MAX_ITERATIONS_PER_PERFORM
         # Peek at the next queued run without claiming it, so we can check
         # per-user capacity before transitioning to "pending". This avoids
         # an unnecessary queued -> pending -> queued status flip (and its

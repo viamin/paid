@@ -122,7 +122,7 @@ class AgentRun < ApplicationRecord
   # Uses ID-only queries to avoid loading full User records.
   def self.orphaned_project_owner?(user)
     fallback_id = user.account.account_memberships
-      .where(role: :owner).pick(:user_id)
+      .where(role: :owner).order(:id).pick(:user_id)
     fallback_id ||= user.account.users.order(:id).pick(:id)
     fallback_id == user.id
   end
