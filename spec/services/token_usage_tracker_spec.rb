@@ -9,18 +9,18 @@ RSpec.describe TokenUsageTracker do
   describe ".track" do
     it "increments tokens_input on the agent run" do
       expect {
-        described_class.track(agent_run: agent_run, tokens_input: 1000, tokens_output: 500)
+        described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
       }.to change { agent_run.reload.tokens_input }.by(1000)
     end
 
     it "increments tokens_output on the agent run" do
       expect {
-        described_class.track(agent_run: agent_run, tokens_input: 1000, tokens_output: 500)
+        described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
       }.to change { agent_run.reload.tokens_output }.by(500)
     end
 
     it "calculates and sets cost_cents on the agent run" do
-      described_class.track(agent_run: agent_run, tokens_input: 1_000_000, tokens_output: 1_000_000)
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
 
       agent_run.reload
       # $3/M input + $15/M output = $18 = 1800 cents
@@ -28,8 +28,8 @@ RSpec.describe TokenUsageTracker do
     end
 
     it "accumulates across multiple calls" do
-      described_class.track(agent_run: agent_run, tokens_input: 100, tokens_output: 50)
-      described_class.track(agent_run: agent_run, tokens_input: 200, tokens_output: 100)
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 100, tokens_output: 50 })
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 200, tokens_output: 100 })
 
       agent_run.reload
       expect(agent_run.tokens_input).to eq(300)
@@ -38,19 +38,19 @@ RSpec.describe TokenUsageTracker do
 
     it "updates project total_tokens_used" do
       expect {
-        described_class.track(agent_run: agent_run, tokens_input: 1000, tokens_output: 500)
+        described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
       }.to change { project.reload.total_tokens_used }.by(1500)
     end
 
     it "updates project total_cost_cents" do
       expect {
-        described_class.track(agent_run: agent_run, tokens_input: 1_000_000, tokens_output: 1_000_000)
+        described_class.track(agent_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
       }.to change { project.reload.total_cost_cents }.by(1800)
     end
 
     it "creates a metric log entry" do
       expect {
-        described_class.track(agent_run: agent_run, tokens_input: 1000, tokens_output: 500)
+        described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
       }.to change { agent_run.agent_run_logs.where(log_type: "metric").count }.by(1)
 
       log = agent_run.agent_run_logs.where(log_type: "metric").last
@@ -64,10 +64,12 @@ RSpec.describe TokenUsageTracker do
       expect {
         described_class.track(
           agent_run: agent_run,
-          tokens_input: 1000,
-          tokens_output: 500,
-          llm_model: "claude-3-5-sonnet-20241022",
-          request_type: "agent"
+          usage: {
+            tokens_input: 1000,
+            tokens_output: 500,
+            llm_model: "claude-3-5-sonnet-20241022",
+            request_type: "agent"
+          }
         )
       }.to change(TokenUsage, :count).by(1)
 
@@ -82,7 +84,7 @@ RSpec.describe TokenUsageTracker do
     it "updates cost budgets for the project" do
       budget = create(:cost_budget, project: project, limit_cents: 100_000, period_started_at: Time.current.beginning_of_month)
 
-      described_class.track(agent_run: agent_run, tokens_input: 1_000_000, tokens_output: 1_000_000)
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
 
       expect(budget.reload.current_usage_cents).to eq(1800)
     end
@@ -90,16 +92,44 @@ RSpec.describe TokenUsageTracker do
     it "includes llm_model and request_type in the log entry" do
       described_class.track(
         agent_run: agent_run,
-        tokens_input: 1000,
-        tokens_output: 500,
-        llm_model: "claude-3-5-sonnet-20241022",
-        request_type: "planning"
+        usage: {
+          tokens_input: 1000,
+          tokens_output: 500,
+          llm_model: "claude-3-5-sonnet-20241022",
+          request_type: "planning"
+        }
       )
 
       log = agent_run.agent_run_logs.where(log_type: "metric").last
       content = JSON.parse(log.content)
       expect(content["llm_model"]).to eq("claude-3-5-sonnet-20241022")
       expect(content["request_type"]).to eq("planning")
+    end
+
+    context "when update_aggregates is false" do
+      it "creates a TokenUsage record without updating agent_run or project counters" do
+        expect {
+          described_class.track(
+            agent_run: agent_run,
+            usage: { tokens_input: 1000, tokens_output: 500, request_type: "run_summary" },
+            update_aggregates: false
+          )
+        }.to change(TokenUsage, :count).by(1)
+          .and not_change { agent_run.reload.tokens_input }
+          .and not_change { project.reload.total_tokens_used }
+      end
+
+      it "does not update cost budgets" do
+        budget = create(:cost_budget, project: project, limit_cents: 100_000, period_started_at: Time.current.beginning_of_month)
+
+        described_class.track(
+          agent_run: agent_run,
+          usage: { tokens_input: 1_000_000, tokens_output: 1_000_000, request_type: "run_summary" },
+          update_aggregates: false
+        )
+
+        expect(budget.reload.current_usage_cents).to eq(0)
+      end
     end
   end
 

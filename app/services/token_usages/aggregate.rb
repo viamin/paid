@@ -12,8 +12,8 @@ module TokenUsages
       new(...).call
     end
 
-    def self.for_project(project_id, **options)
-      new(scope: TokenUsage.by_project(project_id), **options).call
+    def self.for_project(project_id)
+      new(scope: TokenUsage.by_project(project_id)).call
     end
 
     def call

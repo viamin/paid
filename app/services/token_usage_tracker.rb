@@ -5,8 +5,20 @@ class TokenUsageTracker
   DEFAULT_INPUT_COST_PER_MILLION = BigDecimal("3.00")
   DEFAULT_OUTPUT_COST_PER_MILLION = BigDecimal("15.00")
 
-  def self.track(agent_run:, tokens_input:, tokens_output:, llm_model: nil, request_type: "agent", metadata: {})
-    cost_cents = calculate_cost(tokens_input, tokens_output)
+  # Tracks token usage for an agent run request.
+  #
+  # @param agent_run [AgentRun] the run to attribute usage to
+  # @param usage [Hash] token data (:tokens_input, :tokens_output, :llm_model, :request_type, :metadata)
+  # @param update_aggregates [Boolean] when false, only creates a TokenUsage record without
+  #   updating agent_run/project counters or cost budgets (use for run_summary records
+  #   that would otherwise double-count per-request tracking from the secrets proxy)
+  def self.track(agent_run:, usage:, update_aggregates: true)
+    tokens_input  = usage.fetch(:tokens_input, 0)
+    tokens_output = usage.fetch(:tokens_output, 0)
+    llm_model     = usage[:llm_model]
+    request_type  = usage.fetch(:request_type, "agent")
+    metadata      = usage.fetch(:metadata, {})
+    cost_cents    = calculate_cost(tokens_input, tokens_output)
 
     ActiveRecord::Base.transaction do
       record_per_request_usage(
@@ -19,19 +31,21 @@ class TokenUsageTracker
         metadata: metadata
       )
 
-      agent_run.with_lock do
-        agent_run.increment(:tokens_input, tokens_input)
-        agent_run.increment(:tokens_output, tokens_output)
-        agent_run.increment(:cost_cents, cost_cents)
-        agent_run.save!
+      if update_aggregates
+        agent_run.with_lock do
+          agent_run.increment(:tokens_input, tokens_input)
+          agent_run.increment(:tokens_output, tokens_output)
+          agent_run.increment(:cost_cents, cost_cents)
+          agent_run.save!
+        end
+
+        agent_run.project.increment_metrics!(
+          cost_cents: cost_cents,
+          tokens_used: tokens_input + tokens_output
+        )
+
+        update_cost_budgets(agent_run.project, cost_cents)
       end
-
-      agent_run.project.increment_metrics!(
-        cost_cents: cost_cents,
-        tokens_used: tokens_input + tokens_output
-      )
-
-      update_cost_budgets(agent_run.project, cost_cents)
 
       agent_run.log!("metric", {
         tokens_input: tokens_input,

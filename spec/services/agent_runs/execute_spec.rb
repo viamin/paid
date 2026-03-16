@@ -51,9 +51,12 @@ RSpec.describe AgentRuns::Execute do
       it "delegates token tracking to TokenUsageTracker" do
         expect(TokenUsageTracker).to receive(:track).with(
           agent_run: agent_run,
-          tokens_input: 1500,
-          tokens_output: 800,
-          request_type: "run_summary"
+          usage: {
+            tokens_input: 1500,
+            tokens_output: 800,
+            request_type: "run_summary"
+          },
+          update_aggregates: false
         )
 
         described_class.call(agent_run: agent_run, prompt: prompt)
