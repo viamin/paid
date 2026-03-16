@@ -93,11 +93,11 @@ class Project < ApplicationRecord
   end
 
   # Returns the effective owner of this project for capacity/settings lookups.
-  # Falls back to the account owner or the first account user when
-  # the creating user has been deleted (created_by is nil).
-  # Matches the fallback order in AgentRuns::UserSettingsResolver.
+  # Falls back to the account's fallback owner (first owner by ID, or
+  # first user by ID) when the creating user has been deleted.
+  # Uses Account#fallback_owner for deterministic, shared resolution.
   def effective_owner
-    created_by || account.account_memberships.find_by(role: :owner)&.user || account.users.first
+    created_by || account.fallback_owner
   end
 
   def trusted_github_user?(login)
