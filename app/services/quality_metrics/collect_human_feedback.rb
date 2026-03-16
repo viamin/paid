@@ -2,8 +2,7 @@
 
 module QualityMetrics
   # Collects human feedback quality metrics for an agent run.
-  # Human signals include PR merge status, thumbs up/down reactions,
-  # and PR review outcomes.
+  # Human signals include PR merge status and PR review outcomes.
   #
   # @example
   #   QualityMetrics::CollectHumanFeedback.call(
@@ -12,12 +11,11 @@ module QualityMetrics
   #     feedback_source: "pr_merge"
   #   )
   class CollectHumanFeedback
-    attr_reader :agent_run, :pr_merged, :human_vote, :feedback_source
+    attr_reader :agent_run, :pr_merged, :feedback_source
 
-    def initialize(agent_run:, pr_merged: nil, human_vote: nil, feedback_source: "pr_merge")
+    def initialize(agent_run:, pr_merged: nil, feedback_source: "pr_merge")
       @agent_run = agent_run
       @pr_merged = pr_merged
-      @human_vote = human_vote
       @feedback_source = feedback_source
     end
 

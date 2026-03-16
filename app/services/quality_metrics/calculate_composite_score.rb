@@ -28,22 +28,7 @@ module QualityMetrics
         metric.scores.each { |key, value| combined[key] = value.to_f }
       end
 
-      return nil if merged_scores.empty?
-
-      total_weight = 0.0
-      weighted_sum = 0.0
-
-      merged_scores.each do |key, value|
-        weight = QualityMetric::SCORE_WEIGHTS[key]
-        next unless weight
-
-        total_weight += weight
-        weighted_sum += weight * value
-      end
-
-      return nil if total_weight.zero?
-
-      (weighted_sum / total_weight).round(4)
+      QualityMetric.weighted_average(merged_scores)
     end
   end
 end

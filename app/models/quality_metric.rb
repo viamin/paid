@@ -32,21 +32,18 @@ class QualityMetric < ApplicationRecord
   scope :with_composite_score, -> { where.not(composite_score: nil) }
   scope :recent, -> { order(created_at: :desc) }
 
-  # Calculates composite score from individual scores using RDR-009 weights.
+  # Computes a weighted average from a hash of scores using RDR-009 weights.
+  # Scores without a defined weight in SCORE_WEIGHTS are ignored.
   #
-  # For automated metrics: pr_created (30%), ci_passed (20%), iterations (15%),
-  #   lint_clean (10%), tests_pass (5%)
-  # For human metrics: pr_merged (30%)
-  # Combined: weighted average across all applicable scores.
-  #
-  # @return [Float] Score between 0.0 and 1.0
-  def calculate_composite_score
-    return nil if scores.blank?
+  # @param scores_hash [Hash{String => Numeric}] Score name to value mapping
+  # @return [Float, nil] Weighted average (0.0..1.0), or nil if no weighted scores
+  def self.weighted_average(scores_hash)
+    return nil if scores_hash.blank?
 
     total_weight = 0.0
     weighted_sum = 0.0
 
-    scores.each do |key, value|
+    scores_hash.each do |key, value|
       weight = SCORE_WEIGHTS[key]
       next unless weight
 
@@ -57,6 +54,13 @@ class QualityMetric < ApplicationRecord
     return nil if total_weight.zero?
 
     (weighted_sum / total_weight).round(4)
+  end
+
+  # Calculates composite score from individual scores using RDR-009 weights.
+  #
+  # @return [Float, nil] Score between 0.0 and 1.0, or nil if no scores
+  def calculate_composite_score
+    self.class.weighted_average(scores)
   end
 
   # Calculates and persists the composite score.
