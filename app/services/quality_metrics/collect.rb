@@ -11,16 +11,14 @@ module QualityMetrics
     end
 
     def call
-      metric = QualityMetric.find_or_initialize_by(agent_run: agent_run)
+      metric = QualityMetric.find_or_initialize_by(
+        agent_run: agent_run,
+        metric_type: "automated"
+      )
       metric.assign_attributes(
         prompt_version: agent_run.prompt_version,
-        iterations_to_complete: agent_run.iterations,
-        pr_merged: pr_merged?,
-        ci_passed: ci_passed,
-        files_changed: count_files_changed,
-        lint_errors: count_lint_errors,
-        test_failures: count_test_failures,
-        review_comments_count: metric.review_comments_count || 0
+        feedback_source: "system",
+        scores: build_scores
       )
       metric.save!
 
@@ -33,51 +31,44 @@ module QualityMetrics
 
     attr_reader :agent_run
 
-    def pr_merged?
+    def build_scores
+      scores = {}
+      scores["pr_created"] = agent_run.pull_request_number.present? ? 1.0 : 0.0
+      scores["pr_merged"] = pr_merged_score unless pr_merged_score.nil?
+      scores["iterations"] = iteration_score if agent_run.iterations&.positive?
+      scores["lint_clean"] = lint_clean_score
+      scores
+    end
+
+    def pr_merged_score
       return nil unless agent_run.pull_request_number
 
       issue = agent_run.issue
       return nil unless issue
 
-      issue.pr_review_phase == "merged"
+      issue.pr_review_phase == "merged" ? 1.0 : 0.0
     end
 
-    # Returns nil until a real CI status signal is available.
-    # Previously returned agent_run.status == "completed", which conflated
-    # run completion with CI success and skewed quality scores.
-    def ci_passed
-      nil
+    def iteration_score
+      [ 1.0 - ((agent_run.iterations - 1) * 0.1), 0.0 ].max
     end
 
-    # Returns nil — no code currently emits a "files_changed" metric log.
-    # This field will be populated once PR diff stats are fetched from the
-    # GitHub API during post-run analysis.
-    def count_files_changed
-      nil
-    end
-
-    def count_lint_errors
-      agent_run.agent_run_logs
+    def lint_clean_score
+      has_lint_errors = agent_run.agent_run_logs
         .where(log_type: "stderr")
         .where("content ~ ?", "[1-9][0-9]* offense")
-        .count
-    end
+        .exists?
 
-    def count_test_failures
-      agent_run.agent_run_logs
-        .where(log_type: "stderr")
-        .where("content LIKE ? OR content LIKE ?", "%failure%", "%error%")
-        .count
+      has_lint_errors ? 0.0 : 1.0
     end
 
     def update_prompt_version_stats
       pv = agent_run.prompt_version
-      metrics = QualityMetric.where(prompt_version: pv).with_scores
+      metrics = QualityMetric.where(prompt_version: pv).with_composite_score
 
       pv.update!(
         usage_count: pv.agent_runs.count,
-        avg_quality_score: metrics.average(:quality_score)&.round(2),
-        avg_iterations: metrics.average(:iterations_to_complete)&.round(2)
+        avg_quality_score: metrics.average(:composite_score)&.round(2)
       )
     end
   end

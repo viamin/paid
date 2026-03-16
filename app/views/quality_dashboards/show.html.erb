@@ -9,23 +9,11 @@
   <%# Overview Stats %>
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Overview</h2>
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
       <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
         <dt class="truncate text-sm font-medium text-gray-500">Average Quality Score</dt>
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
           <%= @stats[:overview][:avg_quality_score] %>
-        </dd>
-      </div>
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">PR Merge Rate</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-green-600">
-          <%= @stats[:overview][:pr_merge_rate] %>%
-        </dd>
-      </div>
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">CI Pass Rate</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-blue-600">
-          <%= @stats[:overview][:ci_pass_rate] %>%
         </dd>
       </div>
       <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
@@ -38,12 +26,6 @@
         <dt class="truncate text-sm font-medium text-gray-500">Scored Metrics</dt>
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
           <%= number_with_delimiter(@stats[:overview][:scored_metrics]) %>
-        </dd>
-      </div>
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Avg Iterations</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <%= @stats[:overview][:avg_iterations] %>
         </dd>
       </div>
     </div>

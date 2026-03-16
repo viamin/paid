@@ -26,8 +26,9 @@ module AbTests
       return nil unless rand(100) < test.traffic_percentage
 
       variant = select_variant(test)
-      record_assignment(test, variant) if variant && agent_run
-      variant
+      return variant unless variant && agent_run
+
+      record_assignment(test, variant)
     end
 
     private
@@ -59,13 +60,15 @@ module AbTests
     end
 
     def record_assignment(test, variant)
-      AbTestAssignment.create!(
+      assignment = AbTestAssignment.create!(
         ab_test: test,
         ab_test_variant: variant,
         agent_run: agent_run
       )
+      assignment.ab_test_variant
     rescue ActiveRecord::RecordNotUnique
-      # Another process already assigned this agent run; safe to ignore
+      # Another process already assigned this agent run; return the canonical variant
+      AbTestAssignment.find_by!(agent_run: agent_run).ab_test_variant
     end
   end
 end
