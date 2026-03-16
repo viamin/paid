@@ -10,8 +10,6 @@ deflater_options = {
   include: %w[application/javascript text/javascript text/css application/json image/svg+xml]
 }
 
-if Rails.configuration.public_file_server.enabled
-  Rails.configuration.middleware.insert_before ActionDispatch::Static, Rack::Deflater, deflater_options
-else
-  Rails.configuration.middleware.use Rack::Deflater, deflater_options
-end
+# Insert after Rack::Sendfile (always present) so compression works regardless
+# of whether ActionDispatch::Static is in the middleware stack.
+Rails.configuration.middleware.insert_after Rack::Sendfile, Rack::Deflater, deflater_options

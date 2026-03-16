@@ -39,8 +39,9 @@ RSpec.describe "Gzip compression" do
     context "with HTML responses" do
       it "excludes text/html from compression to mitigate BREACH attacks" do
         deflater = Rails.application.config.middleware.detect { |m| m.name == "Rack::Deflater" }
-        options = deflater.args.detect { |a| a.is_a?(Hash) } || {}
+        expect(deflater).not_to be_nil, "Rack::Deflater middleware not found in stack"
 
+        options = deflater.args.detect { |a| a.is_a?(Hash) } || {}
         expect(options[:include]).not_to include("text/html")
       end
     end
