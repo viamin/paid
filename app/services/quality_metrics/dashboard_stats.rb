@@ -103,18 +103,21 @@ module QualityMetrics
     end
 
     def score_distribution
-      buckets = { "0.0-0.2" => 0, "0.2-0.4" => 0, "0.4-0.6" => 0, "0.6-0.8" => 0, "0.8-1.0" => 0 }
-      metrics.with_scores.pluck(:quality_score).each do |score|
-        bucket = case score.to_f
-        when 0.0...0.2 then "0.0-0.2"
-        when 0.2...0.4 then "0.2-0.4"
-        when 0.4...0.6 then "0.4-0.6"
-        when 0.6...0.8 then "0.6-0.8"
-        else "0.8-1.0"
-        end
-        buckets[bucket] += 1
-      end
-      buckets
+      defaults = { "0.0-0.2" => 0, "0.2-0.4" => 0, "0.4-0.6" => 0, "0.6-0.8" => 0, "0.8-1.0" => 0 }
+
+      rows = metrics.with_scores
+        .group(Arel.sql(<<~SQL.squish))
+          CASE
+            WHEN quality_score < 0.2 THEN '0.0-0.2'
+            WHEN quality_score < 0.4 THEN '0.2-0.4'
+            WHEN quality_score < 0.6 THEN '0.4-0.6'
+            WHEN quality_score < 0.8 THEN '0.6-0.8'
+            ELSE '0.8-1.0'
+          END
+        SQL
+        .count
+
+      defaults.merge(rows)
     end
   end
 end

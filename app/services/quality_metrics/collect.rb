@@ -49,11 +49,11 @@ module QualityMetrics
       nil
     end
 
+    # Returns nil — no code currently emits a "files_changed" metric log.
+    # This field will be populated once PR diff stats are fetched from the
+    # GitHub API during post-run analysis.
     def count_files_changed
-      logs = agent_run.agent_run_logs.where(log_type: "metric")
-        .where("metadata->>'type' = 'files_changed'")
-        .last
-      logs&.metadata&.dig("count")
+      nil
     end
 
     def count_lint_errors

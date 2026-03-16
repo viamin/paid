@@ -6,6 +6,8 @@ class TokenUsageTracker
   DEFAULT_OUTPUT_COST_PER_MILLION = BigDecimal("15.00")
 
   def self.track(agent_run:, tokens_input:, tokens_output:, model_id: nil)
+    # Default to the model selected for this agent run if no explicit model_id
+    model_id ||= agent_run.model_selection&.llm_model&.model_id
     cost_cents = calculate_cost(tokens_input, tokens_output, model_id: model_id)
 
     agent_run.with_lock do

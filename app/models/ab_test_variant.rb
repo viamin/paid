@@ -4,6 +4,8 @@ class AbTestVariant < ApplicationRecord
   belongs_to :ab_test
   belongs_to :prompt_version
 
+  has_many :assignments, class_name: "AbTestAssignment", dependent: :destroy
+
   validates :name, presence: true, uniqueness: { scope: :ab_test_id }
   validates :weight, numericality: { greater_than: 0, less_than_or_equal_to: 100 }
 

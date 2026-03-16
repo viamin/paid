@@ -62,7 +62,7 @@ module Models
         scope = scope.where("capability_score >= 8 OR capability_score IS NULL")
       end
 
-      scope.order(capability_score: :desc).limit(5).to_a
+      scope.order(Arel.sql("capability_score DESC NULLS LAST")).limit(5).to_a
     end
   end
 end

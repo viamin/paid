@@ -8,6 +8,7 @@ class AbTest < ApplicationRecord
   belongs_to :winner_variant, class_name: "AbTestVariant", optional: true
 
   has_many :variants, class_name: "AbTestVariant", dependent: :destroy
+  has_many :assignments, class_name: "AbTestAssignment", dependent: :destroy
   accepts_nested_attributes_for :variants, allow_destroy: true, reject_if: :all_blank
 
   validates :name, presence: true
