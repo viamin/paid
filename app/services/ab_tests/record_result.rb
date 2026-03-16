@@ -27,7 +27,7 @@ module AbTests
         # double-counting if two processes record the same agent_run concurrently.
         updated_count = AbTestAssignment
           .where(ab_test: ab_test, agent_run: agent_run, quality_score: nil)
-          .update_all(quality_score: quality_score)
+          .update_all(quality_score: quality_score, updated_at: Time.current)
         next false unless updated_count > 0
 
         assignment = AbTestAssignment.find_by!(ab_test: ab_test, agent_run: agent_run)
@@ -46,10 +46,16 @@ module AbTests
       end
     end
 
+    # Throttle analysis to avoid running the full t-test on every single sample.
+    # Only analyze when total samples are a multiple of ANALYSIS_INTERVAL, or when
+    # min_samples_per_variant is first reached.
+    ANALYSIS_INTERVAL = 5
+
     def check_auto_completion(ab_test)
       ab_test.reload
       return unless ab_test.running?
       return unless ab_test.sufficient_samples?
+      return unless should_analyze?(ab_test)
 
       result = AbTests::Analyze.call(ab_test: ab_test)
       return if result.status == :insufficient_data
@@ -59,6 +65,12 @@ module AbTests
       elsif result.status == :control_wins
         ab_test.complete!
       end
+    end
+
+    def should_analyze?(ab_test)
+      total_samples = ab_test.ab_test_assignments.where.not(quality_score: nil).count
+      min_required = ab_test.min_samples_per_variant * ab_test.ab_test_variants.count
+      total_samples == min_required || (total_samples % ANALYSIS_INTERVAL).zero?
     end
   end
 end
