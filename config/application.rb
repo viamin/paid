@@ -41,17 +41,6 @@ module Paid
     # Don't generate system test files.
     config.generators.system_tests = nil
 
-    # Enable gzip compression for static assets and API responses.
-    # HTML is excluded to avoid BREACH-style attacks on pages with CSRF tokens.
-    deflater_options = {
-      include: %w[application/javascript text/javascript text/css application/json image/svg+xml]
-    }
-    if config.public_file_server.enabled
-      config.middleware.insert_before ActionDispatch::Static, Rack::Deflater, deflater_options
-    else
-      config.middleware.use Rack::Deflater, deflater_options
-    end
-
     # Use GoodJob for background jobs across environments.
     config.active_job.queue_adapter = :good_job
   end
