@@ -2,6 +2,17 @@
 
 class Provider < ApplicationRecord
   SUPPORTED_PROVIDER_KEYS = %w[claude cursor aider].freeze
+  DISPLAY_NAMES = {
+    "claude" => "Claude",
+    "cursor" => "Cursor",
+    "aider" => "Aider",
+    "codex" => "Codex",
+    "gemini" => "Gemini",
+    "copilot" => "GitHub Copilot",
+    "github_copilot" => "GitHub Copilot",
+    "opencode" => "OpenCode",
+    "kilocode" => "Kilo Code"
+  }.freeze
 
   belongs_to :user
 
@@ -22,6 +33,10 @@ class Provider < ApplicationRecord
     user.providers.find_or_create_by!(provider_key: "claude")
   rescue ActiveRecord::RecordNotUnique
     user.providers.find_by!(provider_key: "claude")
+  end
+
+  def self.display_name(provider_key)
+    DISPLAY_NAMES.fetch(provider_key.to_s, provider_key.to_s.titleize)
   end
 
   private
