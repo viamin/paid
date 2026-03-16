@@ -41,7 +41,14 @@ module Paid
     # Don't generate system test files.
     config.generators.system_tests = nil
 
-    # Use GoodJob for background jobs across environments.
+    # Enable gzip compression for static assets and API responses.
+    # Inserted after Rack::Sendfile (always present) so it works regardless of
+    # whether ActionDispatch::Static is in the stack.
+    # HTML is excluded to avoid BREACH-style attacks on pages with CSRF tokens.
+    config.middleware.insert_after Rack::Sendfile, Rack::Deflater,
+      include: %w[application/javascript text/javascript text/css application/json image/svg+xml]
+
+# Use GoodJob for background jobs across environments.
     config.active_job.queue_adapter = :good_job
   end
 end
