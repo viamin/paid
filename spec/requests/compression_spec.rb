@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "zlib"
+require "stringio"
 
 RSpec.describe "Gzip compression" do
   describe "Rack::Deflater middleware" do
@@ -35,12 +36,14 @@ RSpec.describe "Gzip compression" do
       end
     end
 
-    it "excludes text/html from compression to mitigate BREACH attacks" do
-      deflater_config = Rails.application.config.middleware.detect { |m| m.name == "Rack::Deflater" }
-      include_types = deflater_config.args.first[:include]
+    context "with HTML responses" do
+      it "does not compress HTML to mitigate BREACH attacks" do
+        get "/users/sign_in", headers: { "Accept-Encoding" => "gzip" }
 
-      expect(include_types).not_to include("text/html")
-      expect(include_types).to include("application/json")
+        expect(response).to have_http_status(:ok)
+        expect(response.media_type).to eq("text/html")
+        expect(response.headers["Content-Encoding"]).to be_nil
+      end
     end
   end
 end
