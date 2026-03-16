@@ -13,6 +13,11 @@ class ProcessRunQueueJob < ApplicationJob
   # Prevents cascading failures when Temporal is down.
   MAX_CONSECUTIVE_FAILURES = 3
 
+  # Maximum workflows started per perform invocation. Bounds how long
+  # the advisory lock is held and prevents a single job run from
+  # monopolizing queue processing under large backlogs.
+  MAX_STARTS_PER_PERFORM = 20
+
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
     # If another instance is already running, this job exits immediately (no-op).
@@ -21,6 +26,7 @@ class ProcessRunQueueJob < ApplicationJob
 
     begin
       consecutive_failures = 0
+      starts_count = 0
       skipped_ids = Set.new
 
       loop do
@@ -71,12 +77,15 @@ class ProcessRunQueueJob < ApplicationJob
 
         if start_claimed_run(agent_run)
           consecutive_failures = 0
+          starts_count += 1
+          break if starts_count >= MAX_STARTS_PER_PERFORM
         else
           consecutive_failures += 1
           break if consecutive_failures >= MAX_CONSECUTIVE_FAILURES
         end
       end
     ensure
+      AgentRun.clear_orphaned_owner_cache!
       ActiveRecord::Base.connection.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})") if acquired
     end
   end

@@ -134,9 +134,9 @@ class AgentRun < ApplicationRecord
     @orphaned_owner_cache[account_id] == user.id
   end
 
-  # Clears the orphaned project owner cache. Called automatically
-  # at the end of each request via a middleware/callback, or can
-  # be called manually in long-running jobs.
+  # Clears the orphaned project owner cache. Should be called at the
+  # boundaries of long-running jobs (e.g., ProcessRunQueueJob) to
+  # prevent stale or unbounded cache growth.
   def self.clear_orphaned_owner_cache!
     @orphaned_owner_cache = nil
   end
