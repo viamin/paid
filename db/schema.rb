@@ -108,7 +108,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200001) do
     t.bigint "project_id", null: false
     t.datetime "updated_at", null: false
     t.index ["project_id", "budget_type"], name: "index_cost_budgets_on_project_id_and_budget_type", unique: true
-    t.index ["project_id"], name: "index_cost_budgets_on_project_id"
   end
 
   create_table "github_tokens", force: :cascade do |t|
@@ -427,13 +426,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_200001) do
     t.integer "cost_cents", default: 0, null: false
     t.datetime "created_at", null: false
     t.integer "input_tokens", default: 0, null: false
-    t.jsonb "metadata", default: {}, null: false
     t.string "llm_model", limit: 100
+    t.jsonb "metadata", default: {}, null: false
     t.integer "output_tokens", default: 0, null: false
     t.string "request_type", limit: 50, null: false
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "request_type"], name: "index_token_usages_on_agent_run_id_and_request_type"
-    t.index ["agent_run_id"], name: "index_token_usages_on_agent_run_id"
     t.index ["created_at"], name: "index_token_usages_on_created_at"
     t.index ["llm_model"], name: "index_token_usages_on_llm_model"
     t.index ["request_type"], name: "index_token_usages_on_request_type"
