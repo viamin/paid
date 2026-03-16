@@ -10,16 +10,16 @@ RSpec.describe QualityMetrics::Collect do
       expect { described_class.call(agent_run: agent_run) }.to change(QualityMetric, :count).by(1)
     end
 
-    it "sets iterations from the agent run" do
+    it "sets iteration score in scores hash" do
       metric = described_class.call(agent_run: agent_run)
 
-      expect(metric.iterations_to_complete).to eq(3)
+      expect(metric.scores["iterations"]).to be_present
     end
 
     it "calculates a composite score" do
       metric = described_class.call(agent_run: agent_run)
 
-      expect(metric.quality_score).to be_present
+      expect(metric.composite_score).to be_present
     end
 
     it "does not create duplicate metrics" do

@@ -82,10 +82,21 @@ module AbTests
       )
     end
 
+    # Computes standard deviation from actual quality metric composite scores
+    # for the variant's assigned agent runs.
     def variant_std_dev(variant)
-      return 0.25 unless variant.respond_to?(:std_dev) && variant.std_dev.present?
+      scores = QualityMetric
+        .joins(agent_run: :ab_test_assignment)
+        .where(ab_test_assignments: { ab_test_variant_id: variant.id })
+        .where.not(composite_score: nil)
+        .pluck(:composite_score)
+        .map(&:to_f)
 
-      variant.std_dev.to_f
+      return 0.25 if scores.size < 2
+
+      mean = scores.sum / scores.size
+      variance = scores.sum { |s| (s - mean)**2 } / (scores.size - 1)
+      Math.sqrt(variance)
     end
   end
 end

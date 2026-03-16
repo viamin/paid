@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
 module Models
+  # Seeds LlmModel records from a hardcoded list of known models.
+  # Does NOT pull from the ruby-llm registry at runtime; pricing and
+  # capabilities here are static snapshots. When ruby-llm registry
+  # integration is added, this class should be updated to pull from
+  # the registry with KNOWN_MODELS as a fallback.
   class SyncFromRegistry
-    # Known model data for seeding when ruby-llm is unavailable.
-    # Covers the most commonly used models with current pricing.
     KNOWN_MODELS = [
       {
         model_id: "claude-sonnet-4-6",

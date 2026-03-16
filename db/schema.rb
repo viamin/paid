@@ -465,26 +465,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_14_000005) do
 
   create_table "quality_metrics", force: :cascade do |t|
     t.bigint "agent_run_id", null: false
-    t.boolean "ci_passed"
+    t.decimal "composite_score", precision: 5, scale: 4
     t.datetime "created_at", null: false
-    t.integer "files_changed"
-    t.integer "human_vote"
-    t.integer "iterations_to_complete"
-    t.integer "lines_added"
-    t.integer "lines_removed"
-    t.integer "lint_errors", default: 0, null: false
+    t.string "feedback_source", limit: 50
     t.jsonb "metadata", default: {}, null: false
-    t.boolean "pr_merged"
+    t.string "metric_type", limit: 20, null: false
     t.bigint "prompt_version_id"
-    t.decimal "quality_score", precision: 4, scale: 2
-    t.integer "review_comments_count", default: 0, null: false
-    t.integer "test_failures", default: 0, null: false
-    t.integer "time_to_first_review_seconds"
+    t.jsonb "scores", default: {}, null: false
     t.datetime "updated_at", null: false
-    t.index ["agent_run_id"], name: "index_quality_metrics_on_agent_run_id", unique: true
+    t.index ["agent_run_id", "metric_type"], name: "index_quality_metrics_on_agent_run_and_type", unique: true
+    t.index ["agent_run_id"], name: "index_quality_metrics_on_agent_run_id"
+    t.index ["composite_score"], name: "index_quality_metrics_on_composite_score"
     t.index ["created_at"], name: "index_quality_metrics_on_created_at"
+    t.index ["metric_type"], name: "index_quality_metrics_on_metric_type"
+    t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
     t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
-    t.index ["quality_score"], name: "index_quality_metrics_on_quality_score"
   end
 
   create_table "service_containers", force: :cascade do |t|
