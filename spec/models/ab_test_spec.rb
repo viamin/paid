@@ -30,7 +30,7 @@ RSpec.describe AbTest do
 
     it "raises when not draft" do
       test = create(:ab_test, status: "running", started_at: Time.current)
-      expect { test.start! }.to raise_error(ActiveRecord::RecordInvalid)
+      expect { test.start! }.to raise_error(ActiveRecord::RecordInvalid, /cannot start a test/)
     end
   end
 

@@ -42,21 +42,36 @@ class AbTest < ApplicationRecord
   end
 
   def start!
-    raise ActiveRecord::RecordInvalid, self unless draft?
-
-    update!(status: "running", started_at: Time.current)
+    with_lock do
+      reload
+      unless draft?
+        errors.add(:base, "cannot start a test that is #{status}")
+        raise ActiveRecord::RecordInvalid, self
+      end
+      update!(status: "running", started_at: Time.current)
+    end
   end
 
   def complete!(winner: nil)
-    raise ActiveRecord::RecordInvalid, self unless running?
-
-    update!(status: "completed", completed_at: Time.current, winner_variant: winner)
+    with_lock do
+      reload
+      unless running?
+        errors.add(:base, "cannot complete a test that is #{status}")
+        raise ActiveRecord::RecordInvalid, self
+      end
+      update!(status: "completed", completed_at: Time.current, winner_variant: winner)
+    end
   end
 
   def cancel!
-    raise ActiveRecord::RecordInvalid, self unless %w[draft running].include?(status)
-
-    update!(status: "cancelled", completed_at: Time.current)
+    with_lock do
+      reload
+      unless %w[draft running].include?(status)
+        errors.add(:base, "cannot cancel a test that is #{status}")
+        raise ActiveRecord::RecordInvalid, self
+      end
+      update!(status: "cancelled", completed_at: Time.current)
+    end
   end
 
   def control_variant
