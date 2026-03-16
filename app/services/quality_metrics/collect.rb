@@ -59,7 +59,7 @@ module QualityMetrics
     def count_lint_errors
       agent_run.agent_run_logs
         .where(log_type: "stderr")
-        .where("content LIKE ?", "%offense%")
+        .where("content ~ ?", "[1-9][0-9]* offense")
         .count
     end
 

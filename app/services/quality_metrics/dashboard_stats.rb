@@ -63,29 +63,31 @@ module QualityMetrics
         .joins(agent_run: :prompt_version)
         .joins("INNER JOIN prompts ON prompts.id = prompt_versions.prompt_id")
         .where.not(quality_score: nil)
-        .group("prompts.name")
+        .group("prompts.id", "prompts.name")
         .select(
+          "prompts.id as prompt_id",
           "prompts.name",
           "AVG(quality_metrics.quality_score) as avg_score",
           "COUNT(*) as sample_count"
         )
         .order("avg_score DESC")
         .limit(10)
-        .map { |r| { name: r.name, avg_score: r.avg_score.to_f.round(2), sample_count: r.sample_count } }
+        .map { |r| { id: r.prompt_id, name: r.name, avg_score: r.avg_score.to_f.round(2), sample_count: r.sample_count } }
     end
 
     def by_model
       metrics
         .joins(agent_run: { model_selection: :llm_model })
         .where.not(quality_score: nil)
-        .group("llm_models.display_name")
+        .group("llm_models.id", "llm_models.display_name")
         .select(
+          "llm_models.id as llm_model_id",
           "llm_models.display_name",
           "AVG(quality_metrics.quality_score) as avg_score",
           "COUNT(*) as sample_count"
         )
         .order("avg_score DESC")
-        .map { |r| { name: r.display_name, avg_score: r.avg_score.to_f.round(2), sample_count: r.sample_count } }
+        .map { |r| { id: r.llm_model_id, name: r.display_name, avg_score: r.avg_score.to_f.round(2), sample_count: r.sample_count } }
     end
 
     def weekly_trend
