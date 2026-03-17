@@ -12,6 +12,7 @@ class AgentRun < ApplicationRecord
 
   has_many :agent_run_logs, dependent: :destroy
   has_many :token_usages, dependent: :destroy
+  has_many :ab_test_assignments, dependent: :destroy
   has_many :quality_metrics, dependent: :destroy
   has_one :worktree, dependent: :nullify
 

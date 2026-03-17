@@ -15,26 +15,34 @@ module CostBudgets
 
     PRIORITY_ORDER_SQL = "ARRAY_POSITION(ARRAY[#{BUDGET_TYPE_PRIORITY.map { |t| "'#{t}'" }.join(",")}], budget_type)"
 
-    attr_reader :project
+    attr_reader :project, :agent_run
 
-    def initialize(project)
+    def initialize(project, agent_run: nil)
       @project = project
+      @agent_run = agent_run
     end
 
-    def self.call(project)
-      new(project).call
+    def self.call(project, agent_run: nil)
+      new(project, agent_run: agent_run).call
     end
 
     def call
       return allowed_result if project.cost_budgets.none?
 
-      reset_per_run_budgets
       rollover_expired_periods
 
-      exceeded = project.cost_budgets.reload.exceeded
+      # Check daily/monthly budgets via the shared counter
+      exceeded = project.cost_budgets.where(budget_type: %w[daily monthly]).reload.exceeded
         .order(Arel.sql(PRIORITY_ORDER_SQL))
         .first
       return blocked_result(exceeded) if exceeded
+
+      # Check per_run budgets against this specific agent_run's usage,
+      # avoiding the race condition where concurrent runs share a counter.
+      if agent_run
+        per_run_exceeded = check_per_run_budget
+        return blocked_result(per_run_exceeded) if per_run_exceeded
+      end
 
       send_alerts_if_needed
 
@@ -54,13 +62,14 @@ module CostBudgets
       }
     end
 
-    # NOTE: This resets the shared project-level per_run budget before each run.
-    # If concurrent runs are enabled for a project, one run's reset could zero out
-    # another run's in-progress usage. A future improvement should either enforce
-    # single active run per project when per_run budgets exist, or track per-run
-    # usage keyed by agent_run_id so concurrent runs cannot interfere.
-    def reset_per_run_budgets
-      project.cost_budgets.per_run.each(&:reset_for_new_run!)
+    # Checks per_run budgets by computing usage from the agent_run's own
+    # token_usages rather than a shared counter. This is safe for concurrent
+    # runs because each run's usage is isolated by agent_run_id.
+    def check_per_run_budget
+      project.cost_budgets.per_run.find do |budget|
+        run_cost = agent_run.token_usages.sum(:cost_cents)
+        run_cost >= budget.limit_cents
+      end
     end
 
     def rollover_expired_periods

@@ -106,12 +106,13 @@ module AgentRuns
     # Uses request_type "run_summary" to distinguish from per-request records
     # created by the secrets proxy controller (request_type "agent").
     #
-    # Always records a run_summary TokenUsage for auditing. Aggregate updates
-    # (agent_run counters, project metrics, budgets) use the delta between
-    # run_summary and proxy totals to avoid double-counting:
-    # - No proxy records: aggregates = full run_summary totals
-    # - Proxy records exist: aggregates = run_summary - proxy totals (clamped >= 0)
-    # - Proxy fully covers run_summary: no aggregate update needed
+    # Always records a run_summary TokenUsage for auditing. The delta between
+    # run_summary and proxy totals is persisted as a "run_delta" TokenUsage
+    # record to avoid double-counting while ensuring billable aggregation
+    # includes the full cost:
+    # - No proxy records: run_delta = full run_summary totals
+    # - Proxy records exist: run_delta = run_summary - proxy totals (clamped >= 0)
+    # - Proxy fully covers run_summary: no run_delta record created
     def track_tokens(response)
       return unless response.tokens
 
@@ -142,11 +143,17 @@ module AgentRuns
 
       return unless (delta_input + delta_output).positive?
 
-      # Update aggregates with only the untracked delta
-      TokenUsageTracker.update_aggregates(
+      # Persist the delta as a billable TokenUsage record so downstream
+      # aggregation (TokenUsage.billable, TokenUsages::Aggregate) includes
+      # the portion not covered by per-request proxy tracking.
+      TokenUsageTracker.track(
         agent_run: agent_run,
-        tokens_input: delta_input,
-        tokens_output: delta_output
+        usage: {
+          tokens_input: delta_input,
+          tokens_output: delta_output,
+          llm_model: response.model,
+          request_type: "run_delta"
+        }
       )
     end
 

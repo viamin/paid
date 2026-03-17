@@ -134,23 +134,6 @@ RSpec.describe TokenUsageTracker do
     end
   end
 
-  describe ".update_aggregates" do
-    it "updates agent_run, project, and budget counters without creating a TokenUsage record" do
-      budget = create(:cost_budget, project: project, limit_cents: 100_000, period_started_at: Time.current.beginning_of_month)
-
-      expect {
-        described_class.update_aggregates(agent_run: agent_run, tokens_input: 1000, tokens_output: 500)
-      }.not_to change(TokenUsage, :count)
-
-      agent_run.reload
-      expect(agent_run.tokens_input).to eq(1000)
-      expect(agent_run.tokens_output).to eq(500)
-      expect(agent_run.cost_cents).to eq(1) # ~1.05 cents rounded
-      expect(project.reload.total_tokens_used).to eq(1500)
-      expect(budget.reload.current_usage_cents).to eq(1)
-    end
-  end
-
   describe ".calculate_cost" do
     it "returns 0 for zero tokens" do
       expect(described_class.calculate_cost(0, 0)).to eq(0)

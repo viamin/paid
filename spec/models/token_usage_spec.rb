@@ -82,6 +82,14 @@ RSpec.describe TokenUsage do
 
         expect(described_class.billable).to contain_exactly(summary)
       end
+
+      it "includes run_delta and excludes run_summary when both exist (partial proxy coverage)" do
+        agent_run = create(:agent_run, :running)
+        delta = create(:token_usage, agent_run: agent_run, request_type: "run_delta")
+        create(:token_usage, agent_run: agent_run, request_type: "run_summary")
+
+        expect(described_class.billable).to contain_exactly(delta)
+      end
     end
   end
 

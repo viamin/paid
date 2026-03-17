@@ -21,6 +21,7 @@ Zero Framework Cognition is the principle that orchestration code should remain 
 - Policy enforcement (budget limits, rate limiting, authorization)
 - Mechanical transforms (parsing known formats, string manipulation)
 - State management (workflow status, progress tracking)
+- Typed error handling (using SDK error types, not message parsing)
 
 **ZFC Violations** (delegate to AI):
 
@@ -29,6 +30,22 @@ Zero Framework Cognition is the principle that orchestration code should remain 
 - Semantic analysis of issues, PRs, or code
 - Quality judgments and scoring
 - Pattern matching for meaning (e.g., "is this a bug fix?")
+
+### ZFC Decision Tree
+
+```text
+Is this operation analyzing meaning or making a judgment?
+├─ YES → Delegate to AI (ZFC-compliant)
+│   Examples: "Is this an authentication error?"
+│             "Which model is best for this task?"
+│             "Is the work complete?"
+│
+└─ NO → Is it purely structural/mechanical?
+    ├─ YES → Keep in code (ZFC-compliant)
+    │   Examples: Validate JSON schema, enforce rate limits, track state
+    │
+    └─ NO → Reconsider - probably needs AI
+```
 
 ```ruby
 # ZFC-COMPLIANT: Mechanical orchestration
@@ -92,6 +109,10 @@ AI-Generated Determinism complements ZFC by using AI once during configuration t
 
 - AGD: Input format is stable, decisions can be pre-computed, cost/latency matters
 - ZFC: Each input is unique, fresh context needed, accuracy matters more than speed
+
+### LLM Access via agent_harness
+
+All application- and business-level LLM calls must go through the `agent_harness` gem—do not call AI provider APIs directly from application code (e.g., no raw Faraday/HTTP calls to `api.anthropic.com` or `api.openai.com`). The `agent_harness` gem is the single interface for all LLM interactions in the application. References to `llm_client` or similar abstractions in examples throughout this guide are illustrative—in practice they are backed by `agent_harness`. The secrets proxy (`Api::SecretsProxyController`) is the sole exception: it may call provider APIs directly, but only to forward authenticated requests from containers as an infrastructure-level proxy, not as an application-level LLM interface.
 
 ### Code Organization by Capability
 
@@ -356,10 +377,25 @@ Additional conventions:
 - `require_relative` over `require` for local files (explicit dependencies)
 - Meaningful names without noise words (`create_project` not `do_create_project_action`)
 - No `get_`/`set_` prefixes (Ruby convention: `project` not `get_project`)
+- **Avoid boolean flag parameters** that branch behavior—split into separate methods instead
 - No commented-out code (that's what git is for)
 - No TODO without issue reference: `# TODO(#123): description`
 
 **Rationale for no orphan TODOs**: TODOs without tracking disappear. They accumulate, become stale, and developers learn to ignore them. Requiring an issue reference ensures the work is tracked and prioritized appropriately.
+
+### String Encoding
+
+Convert to UTF-8 before string operations that expect specific encoding. String operations like regex can fail or produce unexpected results with non-UTF-8 encodings:
+
+```ruby
+def process_text(text)
+  return "" if text.nil? || text.empty?
+
+  # Ensure UTF-8 encoding before regex operations
+  text = text.encode("UTF-8", invalid: :replace, undef: :replace) unless text.encoding == Encoding::UTF_8
+  text.scan(/pattern/).flatten
+end
+```
 
 ### Database Conventions
 
@@ -657,6 +693,13 @@ Test behavior and interfaces, not implementation details. Tests should verify th
 
 **Rationale**: Tests coupled to implementation break when you refactor, even if behavior is unchanged. This makes refactoring expensive and discourages improvement. Tests coupled to behavior remain valid through refactoring and catch actual regressions.
 
+Focus on message types (from Sandi Metz):
+
+- **Incoming query messages**: Assert what they return
+- **Incoming command messages**: Assert direct public side effects
+- **Outgoing command messages**: Mock them (verify they're sent)
+- **Private methods and outgoing queries**: Don't test directly
+
 ```ruby
 # GOOD: Tests behavior
 it "creates an agent run with pending status" do
@@ -674,6 +717,14 @@ it "calls AgentRun.create! with correct arguments" do
   AgentRuns::Create.call(project: project, issue: issue)
 end
 ```
+
+### Test Readability
+
+Make tests as readable as possible for code review:
+
+- **Test descriptions**: Use clear, unambiguous titles that describe expected behavior. Good: `"enqueues an email after successful validation"`. Bad: `"works"`.
+- **Context blocks**: Use descriptive context blocks. Good: `context "when the user has no budget remaining"`. Bad: `context "no budget"`.
+- **Before callbacks**: Use descriptive metadata when helpful. Good: `before(with_active_subscription: true) { activate_subscription }`. Bad: `before { activate_subscription }`.
 
 ### Test Organization
 
@@ -732,6 +783,48 @@ let(:service) { described_class.new(github_client: mock_client) }
 # BAD: Mocking application code
 allow(AgentRuns::Create).to receive(:call).and_return(mock_result)
 # This tests nothing about how AgentRuns::Create actually behaves
+```
+
+**Never put test logic in production code.** Use dependency injection instead of checking for test environments:
+
+```ruby
+# BAD: Test-aware production code
+class SomeService
+  def initialize
+    @client = defined?(RSpec) ? MockClient.new : RealClient.new
+  end
+end
+
+# GOOD: Dependency injection
+class SomeService
+  def initialize(client: RealClient.new)
+    @client = client
+  end
+end
+
+# In tests:
+let(:service) { SomeService.new(client: instance_double(RealClient)) }
+```
+
+### Avoid Sleep-Based Tests
+
+Tests that use `sleep` to wait for time-based behavior are flaky and slow. Use explicit timestamps, `travel_to`, or other deterministic time controls instead:
+
+```ruby
+# BAD: Flaky and slow
+it "sorts by most recent" do
+  item1 = create(:agent_run)
+  sleep 0.1
+  item2 = create(:agent_run)
+  expect(AgentRun.recent.first).to eq(item2)
+end
+
+# GOOD: Fast and reliable
+it "sorts by most recent" do
+  item1 = create(:agent_run, created_at: 1.hour.ago)
+  item2 = create(:agent_run, created_at: 1.minute.ago)
+  expect(AgentRun.recent.first).to eq(item2)
+end
 ```
 
 For services that depend on other services, test the integration:
@@ -1167,6 +1260,66 @@ After 1.0, we'll adopt semver and backward compatibility commitments. Until then
 
 ---
 
+## Concurrency & Threads
+
+### Thread Management
+
+- **Always clean up threads** in `ensure` blocks or cleanup methods
+- **Avoid global mutable state** without proper synchronization
+- **Make intervals configurable** for testing (don't hardcode sleeps/waits)
+
+```ruby
+# GOOD: Configurable interval, cooperative stop, proper cleanup
+class GoodBackgroundWorker
+  def initialize(check_interval: 60)
+    @check_interval = check_interval
+    @stop = false
+  end
+
+  def start
+    @stop = false
+    @thread = Thread.new do
+      begin
+        until @stop
+          process_queue
+          sleep(@check_interval)
+        end
+      ensure
+        cleanup!             # Always release resources, even if process_queue raises
+      end
+    end
+  end
+
+  def stop
+    @stop = true
+    @thread&.wakeup         # Interrupt sleep so loop re-checks @stop immediately
+    @thread&.join(5)
+  rescue ThreadError
+    # Thread already dead — nothing to do
+  end
+
+  private
+
+  def cleanup!
+    # Close connections, flush buffers, release any other resources used by the worker
+  end
+end
+
+# BAD: Hardcoded interval, no cleanup, no stop mechanism
+class BadBackgroundWorker
+  def start
+    Thread.new do
+      loop do
+        process_queue
+        sleep 60  # Can't override in tests
+      end
+    end
+  end
+end
+```
+
+---
+
 ## Performance Guidelines
 
 ### Avoid O(n²) Over Large Datasets
@@ -1219,3 +1372,38 @@ File.foreach(large_file_path) do |line|
   process_line(line)
 end
 ```
+
+### Cache Expensive Operations
+
+Cache the results of expensive parsing, API calls, or computations to avoid redundant work:
+
+```ruby
+# GOOD: Cache expensive parsing
+def parsed_config(path)
+  @parsed_cache ||= {}
+  @parsed_cache[path] ||= parse_config_file(path)
+end
+
+# BAD: Re-parsing on every call
+def parsed_config(path)
+  parse_config_file(path)
+end
+```
+
+Consider cache invalidation strategies—use `Rails.cache` with TTLs for shared caches, instance variables for request-scoped caches.
+
+---
+
+## Code Review Guidelines
+
+When reviewing PRs, check for these common issues:
+
+- [ ] Classes follow size limits (~100 lines, methods ~5 lines, max 4 parameters)
+- [ ] Test descriptions are clear and behavior-focused
+- [ ] Error handling uses specific error types (generic `rescue => e` only at top-level boundaries for logging + re-raise)
+- [ ] No mocking of application code (only external dependencies)
+- [ ] No ZFC violations (semantic analysis in code instead of AI)
+- [ ] No backward compatibility shims, legacy wrappers, or "deprecated" methods
+- [ ] No secrets in logs or error messages
+- [ ] Database queries use proper indexes and avoid N+1
+- [ ] No `sleep` in tests (use deterministic time controls)
