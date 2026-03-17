@@ -53,6 +53,17 @@ class UserSetting < ApplicationRecord
   # Provider Fallback
   validate :validate_fallback_providers
 
+  def self.normalize_fallback_providers_param(value)
+    return value unless value.is_a?(String)
+
+    parsed = JSON.parse(value)
+    return [] unless parsed.is_a?(Array)
+
+    parsed.select { |provider| provider.is_a?(String) }
+  rescue JSON::ParserError
+    []
+  end
+
   # Returns providers enabled for agent runs for a user.
   def self.enabled_agent_providers(user = nil)
     system_enabled = system_enabled_provider_keys

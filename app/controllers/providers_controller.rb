@@ -63,8 +63,8 @@ class ProvidersController < ApplicationController
   end
 
   def settings
-    authorize current_user.providers.first_or_initialize(provider_key: "claude"), :update?
     @user_setting = current_user.settings
+    authorize @user_setting, :update?
 
     if @user_setting.update(provider_settings_params)
       redirect_to providers_path, notice: "Provider settings saved successfully."
@@ -160,18 +160,10 @@ class ProvidersController < ApplicationController
       :fallback_providers
     )
 
-    if permitted[:fallback_providers].is_a?(String)
-      parsed = JSON.parse(permitted[:fallback_providers])
-      permitted[:fallback_providers] = if parsed.is_a?(Array)
-        parsed.select { |provider| provider.is_a?(String) }
-      else
-        []
-      end
+    if permitted.key?(:fallback_providers)
+      permitted[:fallback_providers] = UserSetting.normalize_fallback_providers_param(permitted[:fallback_providers])
     end
 
-    permitted
-  rescue JSON::ParserError
-    permitted[:fallback_providers] = []
     permitted
   end
 end
