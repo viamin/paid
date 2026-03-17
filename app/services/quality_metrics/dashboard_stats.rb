@@ -35,25 +35,34 @@ module QualityMetrics
     end
 
     def overview
-      scores = metrics.pluck(:composite_score)
+      row = metrics
+        .select(
+          "COUNT(*) AS total_metrics",
+          "AVG(composite_score) AS avg_score",
+          "MIN(composite_score) AS min_score",
+          "MAX(composite_score) AS max_score",
+          "COUNT(*) FILTER (WHERE metric_type = 'automated') AS automated_count",
+          "COUNT(*) FILTER (WHERE metric_type = 'human') AS human_count"
+        )
+        .take
+
       {
-        total_metrics: scores.size,
-        average_score: scores.any? ? (scores.sum / scores.size).round(4) : nil,
-        min_score: scores.min,
-        max_score: scores.max,
-        automated_count: metrics.automated.count,
-        human_count: metrics.human.count
+        total_metrics: row.total_metrics,
+        average_score: row.avg_score&.round(4),
+        min_score: row.min_score,
+        max_score: row.max_score,
+        automated_count: row.automated_count,
+        human_count: row.human_count
       }
     end
 
     def trends
       recent = metrics
-        .joins(:agent_run)
         .select("quality_metrics.composite_score, quality_metrics.created_at, quality_metrics.metric_type")
-        .order("quality_metrics.created_at ASC")
-        .last(30)
+        .order("quality_metrics.created_at DESC")
+        .limit(30)
 
-      recent.map do |m|
+      recent.reverse.map do |m|
         {
           score: m.composite_score.to_f,
           date: m.created_at.to_date.iso8601,
@@ -92,11 +101,15 @@ module QualityMetrics
           "AVG(composite_score) AS avg_score",
           "COUNT(*) AS sample_size"
         )
+        .to_a
+
+      return [] if version_metrics.empty?
+
+      version_ids = version_metrics.map(&:prompt_version_id)
+      versions_by_id = PromptVersion.includes(:prompt).where(id: version_ids).index_by(&:id)
 
       version_metrics.filter_map do |row|
-        next if row.sample_size < 1
-
-        version = PromptVersion.find_by(id: row.prompt_version_id)
+        version = versions_by_id[row.prompt_version_id]
         next unless version
 
         {
@@ -111,15 +124,22 @@ module QualityMetrics
 
     def human_feedback
       human = QualityMetric.by_project(project.id).human
-      return { total: 0, merge_rate: nil, sources: {} } if human.none?
 
-      merged_count = human.select { |m| m.scores&.dig("pr_merged")&.to_f == 1.0 }.size
-      total = human.count
+      row = human.select(
+        "COUNT(*) AS total",
+        "COUNT(*) FILTER (WHERE (scores->>'pr_merged')::float = 1.0) AS merged_count"
+      ).take
+
+      total = row.total
+      return { total: 0, merge_rate: nil, sources: {} } if total.zero?
+
+      merged_count = row.merged_count
+      sources = human.where.not(feedback_source: nil).group(:feedback_source).count
 
       {
         total: total,
-        merge_rate: total.positive? ? (merged_count.to_f / total * 100).round(1) : nil,
-        sources: human.group(:feedback_source).count
+        merge_rate: (merged_count.to_f / total * 100).round(1),
+        sources: sources
       }
     end
   end
