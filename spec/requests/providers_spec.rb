@@ -22,7 +22,32 @@ RSpec.describe "Providers" do
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Providers")
+        expect(response.body).to include("Provider Priority")
+        expect(response.body).to include("Primary Provider")
       end
+    end
+  end
+
+  describe "PATCH /providers/settings" do
+    before { sign_in user }
+
+    it "updates provider priority settings from the providers page" do
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: true)
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          default_agent_provider: "cursor",
+          fallback_enabled: true,
+          fallback_providers: %w[claude aider].to_json
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      settings = user.reload.settings
+      expect(settings.default_agent_provider).to eq("cursor")
+      expect(settings.fallback_enabled).to be(true)
+      expect(settings.fallback_providers).to eq(%w[claude aider])
     end
   end
 

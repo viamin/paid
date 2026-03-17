@@ -127,10 +127,12 @@ module Activities
     def provider_attempt_count_for(agent_type, user_settings)
       return 1 unless user_settings
 
+      primary_provider = Activities::RunAgentActivity::AGENT_TYPE_TO_PROVIDER.fetch(agent_type, agent_type)
+
       count = Activities::RunAgentActivity.provider_attempt_count(
         agent_type: agent_type,
         fallback_enabled: user_settings.fallback_enabled,
-        fallback_providers: user_settings.fallback_providers
+        fallback_providers: user_settings.fallback_priority_for(primary_provider: primary_provider)
       )
 
       [ count, 1 ].max

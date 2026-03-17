@@ -53,6 +53,17 @@ class UserSetting < ApplicationRecord
   # Provider Fallback
   validate :validate_fallback_providers
 
+  def self.normalize_fallback_providers_param(value)
+    return value unless value.is_a?(String)
+
+    parsed = JSON.parse(value)
+    return [] unless parsed.is_a?(Array)
+
+    parsed.select { |provider| provider.is_a?(String) }
+  rescue JSON::ParserError
+    []
+  end
+
   # Returns providers enabled for agent runs for a user.
   def self.enabled_agent_providers(user = nil)
     system_enabled = system_enabled_provider_keys
@@ -68,7 +79,7 @@ class UserSetting < ApplicationRecord
     return [ "claude" ] & system_enabled unless user
     return Provider::SUPPORTED_PROVIDER_KEYS & system_enabled if user.new_record?
 
-    user.providers.for_agent_runs.for_fallback.ordered.pluck(:provider_key) & system_enabled
+    user.providers.for_fallback.ordered.pluck(:provider_key) & system_enabled
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string
@@ -116,10 +127,22 @@ class UserSetting < ApplicationRecord
   # @return [Array<String>] Provider names in priority order
   def provider_priority
     default = allowed_provider_keys_for_agent_runs.include?(default_agent_provider) ? [ default_agent_provider ] : []
-    fallback = Array(fallback_providers)
-      .reject { |provider| provider == default_agent_provider }
-      .select { |provider| allowed_provider_keys_for_fallback.include?(provider) }
-    default + fallback
+    default + fallback_priority_for(primary_provider: default_agent_provider)
+  end
+
+  # Returns the ordered fallback providers for the given primary provider.
+  # Saved order is respected first, then any other configured fallback providers
+  # are appended so newly added providers participate automatically.
+  #
+  # @param primary_provider [String] The provider already being attempted
+  # @return [Array<String>] Fallback provider keys in attempt order
+  def fallback_priority_for(primary_provider:)
+    candidates = allowed_provider_keys_for_fallback.reject { |provider| provider == primary_provider }
+    saved_order = Array(fallback_providers)
+      .reject { |provider| provider == primary_provider }
+      .select { |provider| candidates.include?(provider) }
+
+    (saved_order + (candidates - saved_order)).uniq
   end
 
   # Returns providers that are currently available (not rate limited, circuit not open).
