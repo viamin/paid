@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_16_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_09_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -20,7 +20,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_16_000000) do
     t.bigint "agent_run_id", null: false
     t.datetime "created_at", null: false
     t.decimal "quality_score", precision: 5, scale: 4
-    t.datetime "updated_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.datetime "updated_at", null: false
     t.index ["ab_test_id", "agent_run_id"], name: "index_ab_test_assignments_unique", unique: true
     t.index ["ab_test_id"], name: "index_ab_test_assignments_on_ab_test_id"
     t.index ["ab_test_variant_id"], name: "index_ab_test_assignments_on_ab_test_variant_id"
