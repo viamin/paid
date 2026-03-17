@@ -64,10 +64,13 @@ class CostBudget < ApplicationRecord
 
   # Resets per_run budgets so each agent run starts with a fresh allowance.
   # Called by CostBudgets::Check before each run.
+  # Uses with_lock to avoid racing with concurrent record_usage! calls.
   def reset_for_new_run!
     return unless budget_type == "per_run"
 
-    reset_period!
+    with_lock do
+      update!(current_usage_cents: 0, period_started_at: Time.current, alert_sent_at: nil)
+    end
   end
 
   def mark_alert_sent!
