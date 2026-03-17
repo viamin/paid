@@ -6,8 +6,7 @@ class ProvidersController < ApplicationController
 
   def index
     authorize Provider
-    @providers = policy_scope(Provider).ordered
-    @provider_states = current_user.provider_states.index_by(&:provider_name)
+    load_index_context
   end
 
   def new
@@ -60,6 +59,18 @@ class ProvidersController < ApplicationController
       end
     else
       redirect_to providers_path, alert: @provider.errors.full_messages.to_sentence
+    end
+  end
+
+  def settings
+    authorize current_user.providers.first_or_initialize(provider_key: "claude"), :update?
+    @user_setting = current_user.settings
+
+    if @user_setting.update(provider_settings_params)
+      redirect_to providers_path, notice: "Provider settings saved successfully."
+    else
+      load_index_context
+      render :index, status: :unprocessable_content
     end
   end
 
@@ -132,5 +143,35 @@ class ProvidersController < ApplicationController
       errors: claude.errors.full_messages
     )
     []
+  end
+
+  def load_index_context
+    @providers = policy_scope(Provider).ordered
+    @provider_states = current_user.provider_states.index_by(&:provider_name)
+    @user_setting = current_user.settings
+    @enabled_agent_providers = UserSetting.enabled_agent_providers(current_user)
+    @fallback_candidate_providers = UserSetting.fallback_candidate_providers(current_user)
+  end
+
+  def provider_settings_params
+    permitted = params.require(:user_setting).permit(
+      :default_agent_provider,
+      :fallback_enabled,
+      :fallback_providers
+    )
+
+    if permitted[:fallback_providers].is_a?(String)
+      parsed = JSON.parse(permitted[:fallback_providers])
+      permitted[:fallback_providers] = if parsed.is_a?(Array)
+        parsed.select { |provider| provider.is_a?(String) }
+      else
+        []
+      end
+    end
+
+    permitted
+  rescue JSON::ParserError
+    permitted[:fallback_providers] = []
+    permitted
   end
 end
