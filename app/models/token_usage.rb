@@ -15,7 +15,15 @@ class TokenUsage < ApplicationRecord
   scope :by_model, ->(llm_model) { where(llm_model: llm_model) }
   scope :by_request_type, ->(type) { where(request_type: type) }
   scope :by_time_period, ->(start_time, end_time) { where(created_at: start_time..end_time) }
-  scope :billable, -> { where.not(request_type: "run_summary") }
+  # Billable scope avoids double-counting by excluding run_summary records
+  # for agent runs that also have per-request proxy records. When the secrets
+  # proxy is NOT used (non-proxy mode), run_summary is the only usage source
+  # and must be included.
+  scope :billable, -> {
+    runs_with_proxy = where.not(request_type: "run_summary").select(:agent_run_id).distinct
+    where.not(request_type: "run_summary")
+      .or(where(request_type: "run_summary").where.not(agent_run_id: runs_with_proxy))
+  }
 
   def total_tokens
     input_tokens + output_tokens

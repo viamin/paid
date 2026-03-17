@@ -105,14 +105,20 @@ module AgentRuns
     # Run-level aggregate token tracking from the agent harness response.
     # Uses request_type "run_summary" to distinguish from per-request records
     # created by the secrets proxy controller (request_type "agent").
-    # Skips aggregate updates only when per-request proxy records already exist,
-    # to avoid double-counting. When the secrets proxy isn't used (e.g.,
-    # subscription auth mode), this is the only source of usage data and
-    # must update aggregates.
+    #
+    # Determines whether to update aggregates based on per-request proxy
+    # records: if proxy records exist AND their summed tokens are at least
+    # 50% of the run summary, we trust per-request tracking and skip
+    # aggregate updates. Otherwise (no proxy records, or partial tracking
+    # due to parse errors/early returns in SecretsProxyController#track_usage),
+    # we apply aggregates from the run summary to avoid undercounting.
     def track_tokens(response)
       return unless response.tokens
 
-      has_proxy_records = agent_run.token_usages.where.not(request_type: "run_summary").exists?
+      proxy_records = agent_run.token_usages.where.not(request_type: "run_summary")
+      run_total = (response.input_tokens || 0) + (response.output_tokens || 0)
+      proxy_total = proxy_records.sum(:input_tokens) + proxy_records.sum(:output_tokens)
+      proxy_sufficient = proxy_records.exists? && (run_total.zero? || proxy_total >= run_total / 2)
 
       TokenUsageTracker.track(
         agent_run: agent_run,
@@ -122,7 +128,7 @@ module AgentRuns
           llm_model: response.model,
           request_type: "run_summary"
         },
-        update_aggregates: !has_proxy_records
+        update_aggregates: !proxy_sufficient
       )
     end
 
