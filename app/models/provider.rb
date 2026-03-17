@@ -2,17 +2,6 @@
 
 class Provider < ApplicationRecord
   SUPPORTED_PROVIDER_KEYS = %w[claude cursor aider].freeze
-  DISPLAY_NAMES = {
-    "claude" => "Claude",
-    "cursor" => "Cursor",
-    "aider" => "Aider",
-    "codex" => "Codex",
-    "gemini" => "Gemini",
-    "copilot" => "GitHub Copilot",
-    "github_copilot" => "GitHub Copilot",
-    "opencode" => "OpenCode",
-    "kilocode" => "Kilo Code"
-  }.freeze
 
   belongs_to :user
 
@@ -36,7 +25,9 @@ class Provider < ApplicationRecord
   end
 
   def self.display_name(provider_key)
-    DISPLAY_NAMES.fetch(provider_key.to_s, provider_key.to_s.titleize)
+    AgentHarness.provider(provider_key.to_sym).display_name
+  rescue AgentHarness::ConfigurationError, NoMethodError
+    provider_key.to_s.titleize
   end
 
   private
