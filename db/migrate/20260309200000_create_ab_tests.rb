@@ -13,7 +13,7 @@ class CreateAbTests < ActiveRecord::Migration[8.1]
       t.bigint :winner_variant_id
 
       t.integer :min_samples_per_variant, default: 30, null: false
-      t.decimal :confidence_threshold, precision: 4, scale: 2, default: 0.95, null: false
+      t.decimal :confidence_threshold, precision: 5, scale: 4, default: 0.95, null: false
 
       t.datetime :started_at
       t.datetime :completed_at

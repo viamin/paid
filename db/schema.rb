@@ -45,7 +45,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_09_200000) do
 
   create_table "ab_tests", force: :cascade do |t|
     t.datetime "completed_at"
-    t.decimal "confidence_threshold", precision: 4, scale: 2, default: "0.95", null: false
+    t.decimal "confidence_threshold", precision: 5, scale: 4, default: "0.95", null: false
     t.bigint "control_version_id", null: false
     t.datetime "created_at", null: false
     t.text "description"

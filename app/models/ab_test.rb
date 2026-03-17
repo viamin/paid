@@ -13,7 +13,7 @@ class AbTest < ApplicationRecord
 
   validates :name, presence: true, length: { maximum: 255 }
   validates :status, presence: true, inclusion: { in: STATUSES }
-  validates :min_samples_per_variant, numericality: { only_integer: true, greater_than: 0 }
+  validates :min_samples_per_variant, numericality: { only_integer: true, greater_than_or_equal_to: 2 }
   validates :confidence_threshold, numericality: { greater_than: 0, less_than_or_equal_to: 1 }
   validate :variant_count_within_limit
   validate :control_version_belongs_to_prompt
