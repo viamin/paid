@@ -1,15 +1,13 @@
 # frozen_string_literal: true
 
 class Provider < ApplicationRecord
-  SUPPORTED_PROVIDER_KEYS = %w[claude cursor aider].freeze
-
   belongs_to :user
 
   scope :for_agent_runs, -> { where(enabled_for_agent_runs: true) }
   scope :for_fallback, -> { where(enabled_for_fallback: true) }
   scope :ordered, -> { order(:provider_key) }
 
-  validates :provider_key, presence: true, inclusion: { in: SUPPORTED_PROVIDER_KEYS }, length: { maximum: 50 }
+  validates :provider_key, presence: true, inclusion: { in: ->(_) { supported_provider_keys } }, length: { maximum: 50 }
   validates :provider_key, uniqueness: { scope: :user_id }
 
   validate :must_keep_at_least_one_agent_run_provider
@@ -34,6 +32,14 @@ class Provider < ApplicationRecord
     end
   rescue AgentHarness::ConfigurationError
     provider_key.to_s.titleize
+  end
+
+  def self.supported_provider_keys
+    AgentHarness::Providers::Registry.instance.all.map(&:to_s)
+  end
+
+  def self.supported_provider_key?(provider_key)
+    supported_provider_keys.include?(provider_key.to_s)
   end
 
   private

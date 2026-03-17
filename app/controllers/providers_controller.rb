@@ -87,18 +87,18 @@ class ProvidersController < ApplicationController
   end
 
   def load_provider_options
-    system_enabled = UserSetting.system_enabled_provider_keys
+    supported_keys = Provider.supported_provider_keys
     existing_keys = current_user.providers.pluck(:provider_key)
     @provider_options = if @provider&.persisted?
-      (system_enabled - (existing_keys - [ @provider.provider_key ]))
+      (supported_keys - (existing_keys - [ @provider.provider_key ]))
     else
-      system_enabled - existing_keys
+      supported_keys - existing_keys
     end
   end
 
   def validate_provider_key_enabled!
     return if @provider.provider_key.blank?
-    return if UserSetting.system_enabled_provider_keys.include?(@provider.provider_key)
+    return if Provider.supported_provider_key?(@provider.provider_key)
 
     @provider.errors.add(:provider_key, "is not currently available")
   end

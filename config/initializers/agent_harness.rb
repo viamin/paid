@@ -18,20 +18,12 @@ AgentHarness.configure do |config|
   config.fallback_providers = %i[cursor aider]
   config.default_timeout = Rails.application.config.x.agent_timeout
 
-  config.provider(:claude) do |p|
-    p.enabled = true
-    p.priority = 10
-    p.timeout = Rails.application.config.x.agent_timeout
-  end
-
-  config.provider(:cursor) do |p|
-    p.enabled = true
-    p.priority = 20
-  end
-
-  config.provider(:aider) do |p|
-    p.enabled = true
-    p.priority = 30
+  AgentHarness::Providers::Registry.instance.all.each_with_index do |provider_name, index|
+    config.provider(provider_name) do |provider|
+      provider.enabled = true
+      provider.priority = (index + 1) * 10
+      provider.timeout = Rails.application.config.x.agent_timeout if provider_name == :claude
+    end
   end
 
   config.orchestration do |orch|

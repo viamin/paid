@@ -66,20 +66,18 @@ class UserSetting < ApplicationRecord
 
   # Returns providers enabled for agent runs for a user.
   def self.enabled_agent_providers(user = nil)
-    system_enabled = system_enabled_provider_keys
-    return [ "claude" ] & system_enabled unless user
-    return Provider::SUPPORTED_PROVIDER_KEYS & system_enabled if user.new_record?
+    return [ "claude" ] unless user
+    return Provider.supported_provider_keys if user.new_record?
 
-    user.providers.for_agent_runs.ordered.pluck(:provider_key) & system_enabled
+    user.providers.for_agent_runs.ordered.pluck(:provider_key)
   end
 
   # Returns providers that can be used as fallback for a user.
   def self.fallback_candidate_providers(user)
-    system_enabled = system_enabled_provider_keys
-    return [ "claude" ] & system_enabled unless user
-    return Provider::SUPPORTED_PROVIDER_KEYS & system_enabled if user.new_record?
+    return [ "claude" ] unless user
+    return Provider.supported_provider_keys if user.new_record?
 
-    user.providers.for_fallback.ordered.pluck(:provider_key) & system_enabled
+    user.providers.for_fallback.ordered.pluck(:provider_key)
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string
@@ -173,12 +171,6 @@ class UserSetting < ApplicationRecord
     user.provider_states.find_or_create_by!(provider_name: provider_name)
   rescue ActiveRecord::RecordNotUnique
     user.provider_states.find_by!(provider_name: provider_name)
-  end
-
-  def self.system_enabled_provider_keys
-    Provider::SUPPORTED_PROVIDER_KEYS.select do |key|
-      AgentHarness.configuration.providers[key.to_sym]&.enabled
-    end
   end
 
   private
