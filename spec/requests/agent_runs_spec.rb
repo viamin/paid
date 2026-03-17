@@ -252,6 +252,16 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("aria-labelledby=")
       end
 
+      it "shows a single retry button when no alternate providers are configured" do
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include(">Retry</button>")
+        expect(response.body).not_to include("Retry options")
+        expect(response.body).not_to include('role="menu"')
+      end
+
       it "shows metrics" do
         agent_run = create(:agent_run, :completed, :with_metrics, project: project)
         get project_agent_run_path(project, agent_run)

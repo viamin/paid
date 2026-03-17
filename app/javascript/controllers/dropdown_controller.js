@@ -4,6 +4,8 @@ export default class extends Controller {
   static targets = ["menu", "button"]
 
   connect() {
+    this.listenersAttached = false
+
     if (!this.hasRequiredTargets()) {
       return
     }
@@ -15,18 +17,20 @@ export default class extends Controller {
     document.addEventListener("click", this.boundCloseOnOutsideClick)
     document.addEventListener("keydown", this.boundCloseOnEscape)
     document.addEventListener("turbo:before-visit", this.boundCloseOnNavigate)
+    this.listenersAttached = true
 
     this.close()
   }
 
   disconnect() {
-    if (!this.hasRequiredTargets()) {
+    if (!this.listenersAttached) {
       return
     }
 
     document.removeEventListener("click", this.boundCloseOnOutsideClick)
     document.removeEventListener("keydown", this.boundCloseOnEscape)
     document.removeEventListener("turbo:before-visit", this.boundCloseOnNavigate)
+    this.listenersAttached = false
   }
 
   toggle(event) {
