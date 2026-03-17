@@ -25,7 +25,7 @@ module Dashboard
     def broadcast_live_stats
       stats = Dashboard::LiveStats.call(account: account)
 
-      Turbo::StreamsChannel.broadcast_replace_to(
+      Turbo::StreamsChannel.broadcast_update_to(
         [ account, :dashboard ],
         target: "live-stats",
         partial: "dashboard/live_stats",
@@ -37,7 +37,7 @@ module Dashboard
       active_runs = account_agent_runs.active.includes(:project, :issue)
         .order("agent_runs.created_at DESC").limit(20)
 
-      Turbo::StreamsChannel.broadcast_replace_to(
+      Turbo::StreamsChannel.broadcast_update_to(
         [ account, :dashboard ],
         target: "active-runs",
         partial: "dashboard/active_runs",
@@ -51,7 +51,7 @@ module Dashboard
       recent_runs = account_agent_runs.finished.includes(:project, :issue)
         .order(Arel.sql("COALESCE(agent_runs.completed_at, agent_runs.created_at) DESC")).limit(10)
 
-      Turbo::StreamsChannel.broadcast_replace_to(
+      Turbo::StreamsChannel.broadcast_update_to(
         [ account, :dashboard ],
         target: "activity-stream",
         partial: "dashboard/activity_stream",
