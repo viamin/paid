@@ -15,6 +15,7 @@ class TokenUsage < ApplicationRecord
   scope :by_model, ->(llm_model) { where(llm_model: llm_model) }
   scope :by_request_type, ->(type) { where(request_type: type) }
   scope :by_time_period, ->(start_time, end_time) { where(created_at: start_time..end_time) }
+  scope :billable, -> { where.not(request_type: "run_summary") }
 
   def total_tokens
     input_tokens + output_tokens
