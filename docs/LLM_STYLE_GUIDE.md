@@ -97,7 +97,7 @@ Analyzing meaning or making a judgment?
 
 - **Internal errors**: Let them crash (bugs should surface immediately). `STYLE_GUIDE:886-892`
 - **External errors**: Handle gracefully with specific error types. `STYLE_GUIDE:894-934`
-- Never use generic `rescue => e`. Create specific error classes per failure mode. `STYLE_GUIDE:894-934`
+- Prefer specific error classes per failure mode. Generic `rescue => e` is acceptable only at top-level boundaries for logging + re-raise. `STYLE_GUIDE:894-934`
 - Use Temporal retry policies for transient failures; mark non-retryable errors. `STYLE_GUIDE:936-964`
 
 ## 8. Rails Patterns
@@ -123,7 +123,7 @@ Analyzing meaning or making a judgment?
 
 - Always clean up threads in `ensure` blocks. `STYLE_GUIDE:1263-1309`
 - Avoid global mutable state without synchronization. `STYLE_GUIDE:1263-1309`
-- Make intervals configurable for testing. Use cooperative stop flags; reserve `Thread#kill` as last resort. `STYLE_GUIDE:1263-1309`
+- Make intervals configurable for testing. Use cooperative stop flags with `Thread#wakeup` to interrupt sleeps. `STYLE_GUIDE:1263-1309`
 
 ## 12. Performance
 
@@ -135,7 +135,7 @@ Analyzing meaning or making a judgment?
 
 - [ ] Classes ~100 lines, methods ~5 lines, max 4 params
 - [ ] Tests are behavior-focused with clear descriptions
-- [ ] Specific error types, not generic rescue
+- [ ] Specific error types (generic rescue only at boundaries for log + re-raise)
 - [ ] Only external deps mocked
 - [ ] No ZFC violations
 - [ ] No backward compat shims or "legacy" methods
