@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe "AbTests" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
-  let(:prompt) { create(:prompt, account: account) }
+  let(:prompt) { create(:prompt, :with_version, account: account) }
 
   describe "GET /ab_tests" do
     context "when not authenticated" do
@@ -27,7 +27,7 @@ RSpec.describe "AbTests" do
   end
 
   describe "GET /ab_tests/:id" do
-    let(:ab_test) { create(:ab_test, :with_variants, prompt: prompt, account: account) }
+    let(:ab_test) { create(:ab_test, prompt: prompt) }
 
     context "when authenticated" do
       before { sign_in user }
@@ -49,8 +49,9 @@ RSpec.describe "AbTests" do
           ab_test: {
             name: "Test Prompt Versions",
             prompt_id: prompt.id,
-            traffic_percentage: 100,
-            min_sample_size: 30
+            control_version_id: prompt.current_version.id,
+            min_samples_per_variant: 30,
+            confidence_threshold: 0.95
           }
         }
       }.to change(AbTest, :count).by(1)
@@ -62,8 +63,8 @@ RSpec.describe "AbTests" do
   describe "POST /ab_tests/:id/start" do
     before { sign_in user }
 
-    it "starts a draft test with variants" do
-      ab_test = create(:ab_test, :with_variants, prompt: prompt, account: account)
+    it "starts a draft test" do
+      ab_test = create(:ab_test, prompt: prompt)
 
       post start_ab_test_path(ab_test)
 

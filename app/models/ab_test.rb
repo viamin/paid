@@ -1,34 +1,36 @@
 # frozen_string_literal: true
 
 class AbTest < ApplicationRecord
-  STATUSES = %w[draft running paused completed cancelled].freeze
+  STATUSES = %w[draft running completed cancelled].freeze
+  MAX_VARIANTS = 3
 
   belongs_to :prompt
-  belongs_to :account
+  belongs_to :control_version, class_name: "PromptVersion"
   belongs_to :winner_variant, class_name: "AbTestVariant", optional: true
 
-  has_many :variants, class_name: "AbTestVariant", dependent: :destroy
-  has_many :assignments, class_name: "AbTestAssignment", dependent: :destroy
-  accepts_nested_attributes_for :variants, allow_destroy: true, reject_if: :all_blank
+  has_many :ab_test_variants, dependent: :destroy
+  has_many :ab_test_assignments, dependent: :destroy
 
-  validates :name, presence: true
+  validates :name, presence: true, length: { maximum: 255 }
   validates :status, presence: true, inclusion: { in: STATUSES }
-  validates :traffic_percentage, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
-  validates :min_sample_size, numericality: { greater_than: 0 }
-  validate :prompt_belongs_to_account
+  validates :min_samples_per_variant, numericality: { only_integer: true, greater_than_or_equal_to: 2 }
+  validates :confidence_threshold, numericality: { greater_than: 0, less_than_or_equal_to: 1 }
+  validate :variant_count_within_limit
+  validate :control_version_belongs_to_prompt
+  validate :winner_variant_belongs_to_test
 
   scope :draft, -> { where(status: "draft") }
   scope :running, -> { where(status: "running") }
-  scope :paused, -> { where(status: "paused") }
   scope :completed, -> { where(status: "completed") }
-  scope :active_tests, -> { where(status: %w[running paused]) }
+  scope :cancelled, -> { where(status: "cancelled") }
+  scope :active, -> { where(status: %w[draft running]) }
 
   def self.ransackable_attributes(auth_object = nil)
     %w[name status created_at started_at completed_at]
   end
 
   def self.ransackable_associations(auth_object = nil)
-    %w[prompt account]
+    %w[prompt]
   end
 
   def draft?
@@ -37,10 +39,6 @@ class AbTest < ApplicationRecord
 
   def running?
     status == "running"
-  end
-
-  def paused?
-    status == "paused"
   end
 
   def completed?
@@ -52,48 +50,72 @@ class AbTest < ApplicationRecord
   end
 
   def start!
-    raise "Cannot start: test must be in draft or paused state" unless draft? || paused?
-    raise "Cannot start: test must have at least 2 variants" if variants.count < 2
-
-    update!(status: "running", started_at: started_at || Time.current)
-  end
-
-  def pause!
-    raise "Cannot pause: test must be running" unless running?
-
-    update!(status: "paused")
+    with_lock do
+      reload
+      unless draft?
+        errors.add(:base, "cannot start a test that is #{status}")
+        raise ActiveRecord::RecordInvalid, self
+      end
+      update!(status: "running", started_at: Time.current)
+    end
+  rescue ActiveRecord::RecordNotUnique
+    errors.add(:base, "another test is already running for this prompt")
+    raise ActiveRecord::RecordInvalid, self
   end
 
   def complete!(winner: nil)
-    raise "Cannot complete: test must be running or paused" unless running? || paused?
-
-    update!(status: "completed", completed_at: Time.current, winner_variant: winner)
+    with_lock do
+      reload
+      unless running?
+        errors.add(:base, "cannot complete a test that is #{status}")
+        raise ActiveRecord::RecordInvalid, self
+      end
+      update!(status: "completed", completed_at: Time.current, winner_variant: winner)
+    end
   end
 
   def cancel!
-    raise "Cannot cancel: test is already completed" if completed?
-
-    update!(status: "cancelled", completed_at: Time.current)
+    with_lock do
+      reload
+      unless %w[draft running].include?(status)
+        errors.add(:base, "cannot cancel a test that is #{status}")
+        raise ActiveRecord::RecordInvalid, self
+      end
+      update!(status: "cancelled", completed_at: Time.current)
+    end
   end
 
-  def total_samples
-    variants.sum(:sample_count)
+  def control_variant
+    ab_test_variants.find_by(is_control: true)
   end
 
-  def reached_min_sample_size?
-    variants.all? { |v| v.sample_count >= min_sample_size }
+  def non_control_variants
+    ab_test_variants.where(is_control: false)
   end
 
-  def for_prompt?(prompt)
-    prompt_id == prompt.id
+  def sufficient_samples?
+    ab_test_variants.all? { |v| v.sample_count >= min_samples_per_variant }
   end
 
   private
 
-  def prompt_belongs_to_account
-    return unless prompt_id && account_id
-    return if prompt&.account_id == account_id || prompt&.global?
+  def variant_count_within_limit
+    return if ab_test_variants.size <= MAX_VARIANTS + 1 # +1 for control
 
-    errors.add(:prompt, "must belong to the same account or be a global prompt")
+    errors.add(:ab_test_variants, "cannot have more than #{MAX_VARIANTS} variants plus control")
+  end
+
+  def control_version_belongs_to_prompt
+    return if control_version.nil? || prompt.nil?
+    return if control_version.prompt_id == prompt_id
+
+    errors.add(:control_version, "must belong to the same prompt")
+  end
+
+  def winner_variant_belongs_to_test
+    return if winner_variant.nil?
+    return if winner_variant.ab_test_id == id
+
+    errors.add(:winner_variant, "must belong to this A/B test")
   end
 end

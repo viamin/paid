@@ -48,7 +48,6 @@ Rails.application.routes.draw do
   resources :ab_tests do
     member do
       post :start
-      post :pause
       post :complete
       post :promote_winner
     end
