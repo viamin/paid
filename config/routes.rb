@@ -39,6 +39,11 @@ Rails.application.routes.draw do
   # Prompt management
   resources :prompts do
     get :diff, on: :member
+    resources :ab_tests, only: [ :index, :show, :new, :create ] do
+      post :start, on: :member
+      post :cancel, on: :member
+      post :promote, on: :member
+    end
   end
 
   # Style guide management
