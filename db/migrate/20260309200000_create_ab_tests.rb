@@ -66,7 +66,7 @@ class CreateAbTests < ActiveRecord::Migration[8.1]
 
       t.decimal :quality_score, precision: 5, scale: 4
 
-      t.datetime :created_at, null: false
+      t.timestamps
     end
 
     add_index :ab_test_assignments, [ :ab_test_id, :agent_run_id ],
