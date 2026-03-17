@@ -82,6 +82,8 @@ module ApplicationHelper
       create_pr_context(run)
     elsif run.create_issue_goal?
       create_issue_context(run)
+    elsif run.review_goal?
+      review_context(run)
     else
       { type: :placeholder }
     end
@@ -128,6 +130,14 @@ module ApplicationHelper
       { type: :placeholder }
     else
       { type: :pending }
+    end
+  end
+
+  def review_context(run)
+    if run.source_pull_request_number.present?
+      { type: :text, label: "PR ##{run.source_pull_request_number}", classes: "text-gray-700" }
+    else
+      { type: :placeholder }
     end
   end
 
