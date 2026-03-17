@@ -8,11 +8,12 @@ RSpec.describe Dashboard::Broadcast do
 
   describe ".call" do
     context "when agent run transitions to a finished state" do
-      let(:agent_run) { create(:agent_run, :failed, project: project) }
+      let(:agent_run) { create(:agent_run, :running, project: project) }
 
       before do
         allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
         allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
+        agent_run.update!(status: "failed", error_message: "An error occurred", completed_at: Time.current)
       end
 
       it "broadcasts live stats update" do
@@ -64,11 +65,12 @@ RSpec.describe Dashboard::Broadcast do
     end
 
     context "when agent run times out" do
-      let(:agent_run) { create(:agent_run, :timeout, project: project) }
+      let(:agent_run) { create(:agent_run, :running, project: project) }
 
       before do
         allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
         allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
+        agent_run.update!(status: "timeout", completed_at: Time.current)
       end
 
       it "broadcasts a warning alert" do
