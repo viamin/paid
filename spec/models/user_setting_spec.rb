@@ -58,6 +58,17 @@ RSpec.describe UserSetting do
     end
   end
 
+  describe ".fallback_candidate_providers" do
+    let(:user) { create(:user) }
+
+    it "returns configured fallback providers even when not enabled for agent runs" do
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
+      user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: false)
+
+      expect(described_class.fallback_candidate_providers(user)).to contain_exactly("claude", "cursor")
+    end
+  end
+
   describe "#container_memory_gb" do
     it "converts bytes to gigabytes" do
       setting = build(:user_setting, container_memory_bytes: 4 * 1024 * 1024 * 1024)
@@ -194,18 +205,56 @@ RSpec.describe UserSetting do
 
     it "excludes the default provider from fallback list" do
       setting = build(:user_setting, user: user, default_agent_provider: "claude", fallback_providers: %w[claude cursor])
-      expect(setting.provider_priority).to eq(%w[claude cursor])
+      expect(setting.provider_priority).to eq(%w[claude cursor aider])
     end
 
     it "handles empty fallback_providers" do
       setting = build(:user_setting, user: user, default_agent_provider: "claude", fallback_providers: [])
-      expect(setting.provider_priority).to eq(%w[claude])
+      expect(setting.provider_priority).to eq(%w[claude aider cursor])
     end
 
     it "handles nil fallback_providers" do
       setting = build(:user_setting, user: user, default_agent_provider: "claude")
       setting.fallback_providers = nil
-      expect(setting.provider_priority).to eq(%w[claude])
+      expect(setting.provider_priority).to eq(%w[claude aider cursor])
+    end
+
+    it "appends configured fallback providers missing from saved order" do
+      setting = build(:user_setting, user: user, default_agent_provider: "claude", fallback_providers: [ "cursor" ])
+
+      expect(setting.provider_priority).to eq(%w[claude cursor aider])
+    end
+
+    it "includes fallback-only providers in the runtime priority" do
+      user.providers.find_by!(provider_key: "cursor").update!(
+        enabled_for_agent_runs: false,
+        enabled_for_fallback: true
+      )
+
+      setting = build(:user_setting, user: user, default_agent_provider: "claude", fallback_providers: [])
+
+      expect(setting.provider_priority).to eq(%w[claude aider cursor])
+    end
+  end
+
+  describe "#fallback_priority_for" do
+    let(:user) { create(:user) }
+
+    before do
+      user.providers.create!(provider_key: "cursor")
+      user.providers.create!(provider_key: "aider")
+    end
+
+    it "respects saved order before appending remaining configured providers" do
+      setting = build(:user_setting, user: user, fallback_providers: [ "aider" ])
+
+      expect(setting.fallback_priority_for(primary_provider: "claude")).to eq(%w[aider cursor])
+    end
+
+    it "excludes the current primary provider from fallback order" do
+      setting = build(:user_setting, user: user, fallback_providers: %w[claude cursor aider])
+
+      expect(setting.fallback_priority_for(primary_provider: "cursor")).to eq(%w[claude aider])
     end
   end
 
@@ -278,6 +327,14 @@ RSpec.describe UserSetting do
       user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
       setting = build(:user_setting, user: user, fallback_providers: %w[claude cursor])
       expect(setting).to be_valid
+    end
+
+    it "accepts providers that are fallback-only" do
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
+      setting = build(:user_setting, user: user, fallback_providers: %w[claude cursor])
+
+      expect(setting).to be_valid
+      expect(setting.fallback_providers).to eq(%w[claude cursor])
     end
 
     it "sanitizes unknown providers" do

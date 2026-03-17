@@ -21,6 +21,8 @@ RSpec.describe "UserSettings" do
         get edit_user_settings_path
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Settings")
+        expect(response.body).not_to include("Provider Priority")
+        expect(response.body).not_to include("Default Agent Provider")
       end
 
       it "creates a user_setting record if none exists" do

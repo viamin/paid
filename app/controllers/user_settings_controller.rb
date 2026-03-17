@@ -7,7 +7,6 @@ class UserSettingsController < ApplicationController
 
   def edit
     authorize @user_setting
-    load_provider_lists
   end
 
   def update
@@ -16,7 +15,6 @@ class UserSettingsController < ApplicationController
     if @user_setting.update(user_setting_params)
       redirect_to edit_user_settings_path, notice: "Settings saved successfully."
     else
-      load_provider_lists
       render :edit, status: :unprocessable_content
     end
   end
@@ -25,11 +23,6 @@ class UserSettingsController < ApplicationController
 
   def set_user_setting
     @user_setting = current_user.settings
-  end
-
-  def load_provider_lists
-    @enabled_agent_providers = UserSetting.enabled_agent_providers(current_user)
-    @fallback_candidate_providers = UserSetting.fallback_candidate_providers(current_user)
   end
 
   def user_setting_params
@@ -55,19 +48,10 @@ class UserSettingsController < ApplicationController
       :fallback_providers
     )
 
-    # Parse fallback_providers from JSON string (from hidden field)
-    if permitted[:fallback_providers].is_a?(String)
-      parsed = JSON.parse(permitted[:fallback_providers])
-      permitted[:fallback_providers] = if parsed.is_a?(Array)
-        parsed.select { |provider| provider.is_a?(String) }
-      else
-        []
-      end
+    if permitted.key?(:fallback_providers)
+      permitted[:fallback_providers] = UserSetting.normalize_fallback_providers_param(permitted[:fallback_providers])
     end
 
-    permitted
-  rescue JSON::ParserError
-    permitted[:fallback_providers] = []
     permitted
   end
 end

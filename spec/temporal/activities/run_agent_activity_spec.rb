@@ -437,6 +437,29 @@ RSpec.describe Activities::RunAgentActivity do
         expect(result[:final_provider]).to eq("cursor")
       end
 
+      it "includes configured fallback-only providers even when saved fallback order is empty" do
+        user.providers.find_by!(provider_key: "cursor").update!(
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: true
+        )
+        user.settings.update!(fallback_enabled: true, fallback_providers: [])
+
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            rate_limit_failure
+          else
+            exec_success
+          end
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(result[:final_provider]).to eq("aider")
+      end
+
       it "records provider switch when falling back" do
         call_count = 0
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
