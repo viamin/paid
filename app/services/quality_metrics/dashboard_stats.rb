@@ -47,12 +47,12 @@ module QualityMetrics
         .take
 
       {
-        total_metrics: row.total_metrics,
-        average_score: row.avg_score&.round(4),
-        min_score: row.min_score,
-        max_score: row.max_score,
-        automated_count: row.automated_count,
-        human_count: row.human_count
+        total_metrics: row.total_metrics.to_i,
+        average_score: row.avg_score&.to_f&.round(4),
+        min_score: row.min_score&.to_f,
+        max_score: row.max_score&.to_f,
+        automated_count: row.automated_count.to_i,
+        human_count: row.human_count.to_i
       }
     end
 
@@ -75,22 +75,23 @@ module QualityMetrics
       automated = QualityMetric.by_project(project.id).automated.with_composite_score
       return {} if automated.none?
 
-      weight_keys = QualityMetric::SCORE_WEIGHTS.keys
       totals = Hash.new(0.0)
-      count = 0
+      counts = Hash.new(0)
 
       automated.find_each do |metric|
         next if metric.scores.blank?
 
-        count += 1
-        weight_keys.each do |key|
-          totals[key] += metric.scores[key].to_f
+        metric.scores.each do |key, value|
+          next unless QualityMetric::SCORE_WEIGHTS.key?(key)
+
+          totals[key] += value.to_f
+          counts[key] += 1
         end
       end
 
-      return {} if count.zero?
+      return {} if counts.empty?
 
-      weight_keys.to_h { |key| [ key, (totals[key] / count).round(4) ] }
+      totals.to_h { |key, sum| [ key, (sum / counts[key]).round(4) ] }
     end
 
     def prompt_comparison
@@ -117,7 +118,7 @@ module QualityMetrics
           prompt_name: version.prompt.name,
           version_number: version.version,
           avg_score: row.avg_score.to_f.round(4),
-          sample_size: row.sample_size
+          sample_size: row.sample_size.to_i
         }
       end.sort_by { |r| -r[:avg_score] }
     end
@@ -130,10 +131,10 @@ module QualityMetrics
         "COUNT(*) FILTER (WHERE (scores->>'pr_merged')::float = 1.0) AS merged_count"
       ).take
 
-      total = row.total
+      total = row.total.to_i
       return { total: 0, merge_rate: nil, sources: {} } if total.zero?
 
-      merged_count = row.merged_count
+      merged_count = row.merged_count.to_i
       sources = human.where.not(feedback_source: nil).group(:feedback_source).count
 
       {

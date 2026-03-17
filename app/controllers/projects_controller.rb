@@ -23,13 +23,19 @@ class ProjectsController < ApplicationController
     open_items = @project.issues.where(github_state: "open").order(github_number: :desc)
     @issues = open_items.issues_only.limit(25)
     @pull_requests = open_items.pull_requests_only.limit(25)
-    @quality_summary = QualityMetric.by_project(@project.id).with_composite_score
+    summary_row = QualityMetric.by_project(@project.id).with_composite_score
       .select(
         "COUNT(*) AS total_count",
         "AVG(composite_score) AS avg_score",
         "MIN(composite_score) AS min_score",
         "MAX(composite_score) AS max_score"
       ).take
+    @quality_summary = OpenStruct.new(
+      total_count: summary_row.total_count.to_i,
+      avg_score: summary_row.avg_score&.to_f,
+      min_score: summary_row.min_score&.to_f,
+      max_score: summary_row.max_score&.to_f
+    )
   end
 
   def new

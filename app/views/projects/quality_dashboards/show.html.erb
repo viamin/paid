@@ -59,7 +59,7 @@
       <% if trends.any? %>
         <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
           <div class="px-4 py-5 sm:p-6">
-            <div class="flex items-end gap-1" style="height: 120px;" aria-label="Quality score trend chart">
+            <div class="flex items-end gap-1" style="height: 120px;" role="img" aria-label="Quality score trend chart">
               <% max_score = [trends.map { |t| t[:score] }.max, 0.01].max %>
               <% trends.each do |point| %>
                 <% height_pct = (point[:score] / max_score * 100).round %>
