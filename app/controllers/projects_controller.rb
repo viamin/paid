@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ProjectsController < ApplicationController
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :detect_services ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -91,6 +91,22 @@ class ProjectsController < ApplicationController
     end
   end
 
+  def detect_services
+    authorize @project, :update?
+
+    result = Projects::DetectServices.call(project: @project)
+
+    if result.any_detected?
+      added = apply_detected_services(result.matched)
+      notice = build_detection_notice(added, result)
+      redirect_to edit_project_path(@project), notice: notice
+    else
+      redirect_to edit_project_path(@project), notice: "No service dependencies detected in repository files."
+    end
+  rescue GithubClient::Error => e
+    redirect_to edit_project_path(@project), alert: "Could not detect services: #{e.message}"
+  end
+
   def destroy
     authorize @project
     @project.destroy!
@@ -117,6 +133,26 @@ class ProjectsController < ApplicationController
       :poll_interval_seconds, :github_id, :default_branch,
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled,
       allowed_github_usernames: [])
+  end
+
+  def apply_detected_services(containers)
+    added = []
+    containers.each do |container|
+      psc = @project.project_service_containers.find_or_create_by(service_container: container)
+      added << container.name if psc.previously_new_record?
+    rescue ActiveRecord::RecordNotUnique
+      next
+    end
+    added
+  end
+
+  def build_detection_notice(added, result)
+    parts = []
+    parts << "Added #{added.join(', ')}." if added.any?
+    parts << "#{result.unmatched.map { |d| d[:service] }.join(', ')} detected but no matching service container exists." if result.unmatched.any?
+    already_count = result.matched.size - added.size
+    parts << "#{already_count} already associated." if already_count > 0
+    parts.join(" ").presence || "All detected services are already associated."
   end
 
   def parse_usernames_csv
