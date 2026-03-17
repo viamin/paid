@@ -5,8 +5,6 @@ require "rails_helper"
 RSpec.describe "AbTests" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
-  let(:github_token) { create(:github_token, account: account) }
-  let(:project) { create(:project, account: account, github_token: github_token) }
   let(:prompt) { create(:prompt, :for_account, :with_version, account: account) }
 
   describe "GET /prompts/:prompt_id/ab_tests" do

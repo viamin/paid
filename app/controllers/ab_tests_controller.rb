@@ -14,7 +14,7 @@ class AbTestsController < ApplicationController
   def show
     authorize @ab_test
     @variants = @ab_test.ab_test_variants.includes(:prompt_version).order(is_control: :desc)
-    @analysis = analyze_if_running
+    @analysis = analyze_if_running(@variants)
   end
 
   def new
@@ -36,12 +36,16 @@ class AbTestsController < ApplicationController
     )
 
     redirect_to prompt_ab_test_path(@prompt, ab_test), notice: "A/B test was successfully created."
-  rescue ArgumentError => e
+  rescue ArgumentError, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
     @ab_test = @prompt.ab_tests.build(
       name: ab_test_params[:name],
-      description: ab_test_params[:description]
+      description: ab_test_params[:description],
+      min_samples_per_variant: ab_test_params[:min_samples_per_variant],
+      confidence_threshold: ab_test_params[:confidence_threshold]
     )
-    @ab_test.errors.add(:base, e.message)
+    message = e.is_a?(ActiveRecord::RecordInvalid) ? e.record.errors.full_messages.join(", ") : e.message
+    @ab_test.errors.add(:base, message)
+    @selected_variant_ids = selected_variant_ids
     @versions = available_versions
     render :new, status: :unprocessable_content
   end
@@ -94,8 +98,8 @@ class AbTestsController < ApplicationController
     @prompt.prompt_versions.order(version: :desc)
   end
 
-  def analyze_if_running
-    return unless @ab_test.running? && @ab_test.ab_test_variants.any? { |v| v.sample_count > 0 }
+  def analyze_if_running(variants)
+    return unless @ab_test.running? && variants.any? { |v| v.sample_count > 0 }
 
     AbTests::Analyze.call(ab_test: @ab_test)
   end
