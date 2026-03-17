@@ -8,6 +8,7 @@ class Prompt < ApplicationRecord
   belongs_to :account, optional: true
   belongs_to :project, optional: true
 
+  has_many :ab_tests, dependent: :destroy
   has_many :prompt_versions, dependent: :destroy
   belongs_to :current_version, class_name: "PromptVersion", optional: true
 
