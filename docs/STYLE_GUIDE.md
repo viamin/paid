@@ -110,6 +110,10 @@ AI-Generated Determinism complements ZFC by using AI once during configuration t
 - AGD: Input format is stable, decisions can be pre-computed, cost/latency matters
 - ZFC: Each input is unique, fresh context needed, accuracy matters more than speed
 
+### LLM Access via agent_harness
+
+All LLM calls must go through the `agent_harness` gem—never call AI provider APIs directly (e.g., no raw Faraday/HTTP calls to `api.anthropic.com` or `api.openai.com`). The `agent_harness` gem is the single interface for all LLM interactions in the application. The secrets proxy (`SecretsProxyController`) exists only to forward authenticated requests from containers—it is infrastructure, not an application-level LLM interface.
+
 ### Code Organization by Capability
 
 Organize code by what it does (capability) rather than which workflow uses it. This maximizes reusability and prevents duplication.
@@ -804,7 +808,7 @@ let(:service) { SomeService.new(client: instance_double(RealClient)) }
 
 ### Avoid Sleep-Based Tests
 
-Tests that use `sleep` to wait for time-based behavior are flaky and slow. Stub `Time.now` for deterministic, fast tests:
+Tests that use `sleep` to wait for time-based behavior are flaky and slow. Use explicit timestamps, `travel_to`, or other deterministic time controls instead:
 
 ```ruby
 # BAD: Flaky and slow
@@ -1265,15 +1269,17 @@ After 1.0, we'll adopt semver and backward compatibility commitments. Until then
 - **Make intervals configurable** for testing (don't hardcode sleeps/waits)
 
 ```ruby
-# GOOD: Configurable interval, proper cleanup
+# GOOD: Configurable interval, cooperative stop, proper cleanup
 class BackgroundWorker
   def initialize(check_interval: 60)
     @check_interval = check_interval
+    @stop = false
   end
 
   def start
+    @stop = false
     @thread = Thread.new do
-      loop do
+      until @stop
         process_queue
         sleep(@check_interval)
       end
@@ -1281,12 +1287,13 @@ class BackgroundWorker
   end
 
   def stop
-    @thread&.kill
-    @thread&.join(5) # Timeout for graceful shutdown
+    @stop = true
+    @thread&.join(5)       # Wait for cooperative shutdown
+    @thread&.kill if @thread&.alive? # Last resort if thread is stuck
   end
 end
 
-# BAD: Hardcoded interval, no cleanup
+# BAD: Hardcoded interval, no cleanup, no stop mechanism
 class BackgroundWorker
   def start
     Thread.new do
