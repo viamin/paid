@@ -247,6 +247,9 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Retry with Anthropic Claude CLI")
         expect(response.body).to include("Retry with Cursor AI")
         expect(response.body).to include("Current")
+        expect(response.body).to include('aria-haspopup="menu"')
+        expect(response.body).to include("aria-controls=")
+        expect(response.body).to include("aria-labelledby=")
       end
 
       it "shows metrics" do
@@ -616,6 +619,19 @@ RSpec.describe "AgentRuns" do
         new_run = AgentRun.last
         expect(new_run.agent_type).to eq("cursor")
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
+      end
+
+      it "rejects retrying with an unavailable explicit provider" do
+        user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false)
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run), params: { provider: "cursor" }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("selected provider is not available")
       end
 
       it "preserves custom_prompt from the original run" do

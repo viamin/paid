@@ -4,6 +4,10 @@ export default class extends Controller {
   static targets = ["menu", "button"]
 
   connect() {
+    if (!this.hasRequiredTargets()) {
+      return
+    }
+
     this.boundCloseOnOutsideClick = this.closeOnOutsideClick.bind(this)
     this.boundCloseOnEscape = this.closeOnEscape.bind(this)
     this.boundCloseOnNavigate = this.close.bind(this)
@@ -16,12 +20,20 @@ export default class extends Controller {
   }
 
   disconnect() {
+    if (!this.hasRequiredTargets()) {
+      return
+    }
+
     document.removeEventListener("click", this.boundCloseOnOutsideClick)
     document.removeEventListener("keydown", this.boundCloseOnEscape)
     document.removeEventListener("turbo:before-visit", this.boundCloseOnNavigate)
   }
 
   toggle(event) {
+    if (!this.hasRequiredTargets()) {
+      return
+    }
+
     event.preventDefault()
     event.stopPropagation()
 
@@ -33,16 +45,28 @@ export default class extends Controller {
   }
 
   close() {
+    if (!this.hasRequiredTargets()) {
+      return
+    }
+
     this.menuTarget.classList.add("hidden")
     this.buttonTarget.setAttribute("aria-expanded", "false")
   }
 
   open() {
+    if (!this.hasRequiredTargets()) {
+      return
+    }
+
     this.menuTarget.classList.remove("hidden")
     this.buttonTarget.setAttribute("aria-expanded", "true")
   }
 
   closeOnOutsideClick(event) {
+    if (!this.hasRequiredTargets()) {
+      return
+    }
+
     if (this.element.contains(event.target)) {
       return
     }
@@ -51,6 +75,10 @@ export default class extends Controller {
   }
 
   closeOnEscape(event) {
+    if (!this.hasRequiredTargets()) {
+      return
+    }
+
     if (event.key !== "Escape") {
       return
     }
@@ -59,6 +87,14 @@ export default class extends Controller {
   }
 
   isOpen() {
+    if (!this.hasRequiredTargets()) {
+      return false
+    }
+
     return !this.menuTarget.classList.contains("hidden")
+  }
+
+  hasRequiredTargets() {
+    return this.hasMenuTarget && this.hasButtonTarget
   }
 }
