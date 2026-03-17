@@ -200,7 +200,7 @@ class AgentRun < ApplicationRecord
   end
 
   def active?
-    %w[pending running].include?(status)
+    ACTIVE_STATUSES.include?(status)
   end
 
   def running?

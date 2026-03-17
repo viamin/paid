@@ -84,7 +84,8 @@ module Dashboard
     def alert_content
       case agent_run.status
       when "failed"
-        [ "error", "Agent run failed for #{agent_run.project.full_name}: #{agent_run.error_message.to_s.truncate(100)}" ]
+        error_detail = agent_run.error_message.presence&.then { |msg| ": #{msg.truncate(100)}" }
+        [ "error", "Agent run failed for #{agent_run.project.full_name}#{error_detail}" ]
       when "timeout"
         [ "warning", "Agent run timed out for #{agent_run.project.full_name}" ]
       when "auth_expired"
