@@ -9,6 +9,12 @@ module CostBudgets
   # and intentionally deferred from this PR to keep scope limited
   # to the model/infrastructure layer. See issue #141.
   class Check
+    # Explicit priority for which exceeded budget blocks a run first.
+    # per_run is most specific, then daily, then monthly.
+    BUDGET_TYPE_PRIORITY = %w[per_run daily monthly].freeze
+
+    PRIORITY_ORDER_SQL = "ARRAY_POSITION(ARRAY[#{BUDGET_TYPE_PRIORITY.map { |t| "'#{t}'" }.join(",")}], budget_type)"
+
     attr_reader :project
 
     def initialize(project)
@@ -25,7 +31,9 @@ module CostBudgets
       reset_per_run_budgets
       rollover_expired_periods
 
-      exceeded = project.cost_budgets.reload.exceeded.order(:budget_type).first
+      exceeded = project.cost_budgets.reload.exceeded
+        .order(Arel.sql(PRIORITY_ORDER_SQL))
+        .first
       return blocked_result(exceeded) if exceeded
 
       send_alerts_if_needed
