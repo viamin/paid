@@ -4,6 +4,12 @@ module Activities
   class CompleteReviewGoalActivity < BaseActivity
     activity_name "CompleteReviewGoal"
 
+    # Marks the review run as completed unconditionally. We don't verify
+    # that the agent actually posted review comments because:
+    # 1. The proxy tracks issue creation but not review creation (yet)
+    # 2. The agent may have legitimately found nothing to comment on
+    # Tracking successful review creation can be added later by extending
+    # the proxy to record POST /pulls/:number/reviews calls.
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)

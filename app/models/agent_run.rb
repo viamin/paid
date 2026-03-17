@@ -24,6 +24,7 @@ class AgentRun < ApplicationRecord
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
+  validate :review_goal_requires_pull_request
   validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
   validates :created_issue_url, length: { maximum: 500 }
   validates :worktree_path, length: { maximum: 500 }
@@ -388,11 +389,11 @@ class AgentRun < ApplicationRecord
   end
 
   # Returns the base prompt for the review goal.
+  # The review_goal_requires_pull_request validation ensures
+  # source_pull_request_number is always present for review goals.
   #
-  # @return [String, nil] The review prompt
+  # @return [String] The review prompt
   def prompt_for_review
-    return nil unless source_pull_request_number.present?
-
     "Review pull request ##{source_pull_request_number} in #{project.full_name}."
   end
 
@@ -520,6 +521,12 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def review_goal_requires_pull_request
+    if goal == "review" && source_pull_request_number.blank?
+      errors.add(:source_pull_request_number, "is required for review goals")
+    end
+  end
 
   def prompt_for_goal
     if review_goal?
