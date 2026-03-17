@@ -2,7 +2,8 @@
 
 module DashboardHelper
   def format_duration(seconds)
-    return "--" unless seconds && seconds > 0
+    return "--" unless seconds
+    return "0s" if seconds == 0
 
     if seconds >= 86400
       "#{seconds / 86400}d #{(seconds % 86400) / 3600}h"
