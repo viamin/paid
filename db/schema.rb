@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_14_000005) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_14_000006) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -27,12 +27,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_14_000005) do
 
   create_table "ab_test_variants", force: :cascade do |t|
     t.bigint "ab_test_id", null: false
-    t.decimal "avg_quality_score", precision: 4, scale: 2
+    t.decimal "avg_quality_score", precision: 6, scale: 4
     t.datetime "created_at", null: false
     t.string "name", null: false
     t.bigint "prompt_version_id", null: false
     t.integer "sample_count", default: 0, null: false
-    t.decimal "total_quality_score", precision: 10, scale: 2, default: "0.0", null: false
+    t.decimal "total_quality_score", precision: 12, scale: 4, default: "0.0", null: false
     t.datetime "updated_at", null: false
     t.integer "weight", default: 50, null: false
     t.index ["ab_test_id", "name"], name: "index_ab_test_variants_on_ab_test_id_and_name", unique: true
