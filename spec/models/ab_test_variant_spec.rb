@@ -21,5 +21,20 @@ RSpec.describe AbTestVariant do
       expect(variant.sample_count).to eq(2)
       expect(variant.avg_quality_score.to_f).to eq(0.7)
     end
+
+    it "rejects negative scores" do
+      variant = create(:ab_test_variant)
+      expect { variant.record_quality_score!(-0.5) }.to raise_error(ArgumentError, /between 0 and 1/)
+    end
+
+    it "rejects scores above 1" do
+      variant = create(:ab_test_variant)
+      expect { variant.record_quality_score!(1.5) }.to raise_error(ArgumentError, /between 0 and 1/)
+    end
+
+    it "rejects non-numeric scores" do
+      variant = create(:ab_test_variant)
+      expect { variant.record_quality_score!("bad") }.to raise_error(ArgumentError, /between 0 and 1/)
+    end
   end
 end
