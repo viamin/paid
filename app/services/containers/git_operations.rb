@@ -19,7 +19,14 @@ module Containers
     class CloneError < Error; end
     class PushError < Error; end
 
-    CLONE_TIMEOUT = Integer(ENV.fetch("CONTAINER_GIT_CLONE_TIMEOUT_SECONDS", 600))
+    CLONE_TIMEOUT = begin
+      [ Integer(ENV.fetch("CONTAINER_GIT_CLONE_TIMEOUT_SECONDS", 600)), 1 ].max
+    rescue ArgumentError
+      Rails.logger.warn(message: "container_git.invalid_clone_timeout",
+        value: ENV["CONTAINER_GIT_CLONE_TIMEOUT_SECONDS"],
+        fallback: 600)
+      600
+    end
     PUSH_TIMEOUT = 60
 
     # Marker comment used as a grep guard so Temporal retries don't
