@@ -111,11 +111,7 @@ module Activities
     def provider_attempt_count_for(agent_type, user_settings)
       return 1 unless user_settings
 
-      primary_provider = if agent_type == "claude_code"
-        "claude"
-      else
-        agent_type
-      end
+      primary_provider = Activities::RunAgentActivity::AGENT_TYPE_TO_PROVIDER.fetch(agent_type, agent_type)
 
       count = Activities::RunAgentActivity.provider_attempt_count(
         agent_type: agent_type,
