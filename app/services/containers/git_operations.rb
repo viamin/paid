@@ -356,7 +356,12 @@ module Containers
       # Idempotent: skip clone if a previous attempt already populated /workspace.
       # This prevents failures on Temporal retries when the clone succeeded but a
       # later step (e.g. DB update) failed.
-      check = execute_git("rev-parse", "--is-inside-work-tree")
+      #
+      # We check rev-parse HEAD (not --is-inside-work-tree) because a partial
+      # clone can leave a .git dir with no commits — --is-inside-work-tree
+      # would return true, skipping the clone and causing head_sha to fail
+      # with "ambiguous argument 'HEAD'".
+      check = execute_git("rev-parse", "HEAD")
       return if check.success?
 
       project = agent_run.project

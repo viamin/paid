@@ -18,16 +18,12 @@ RSpec.describe Containers::GitOperations do
     before do
       allow(container_service).to receive(:execute).and_return(success_result)
 
-      # The clone is skipped when rev-parse succeeds (idempotency guard),
-      # so return failure to indicate /workspace is not yet a repo.
-      allow(container_service).to receive(:execute)
-        .with([ "git", "rev-parse", "--is-inside-work-tree" ], timeout: nil, stream: false)
-        .and_return(not_a_repo_result)
-
+      # The clone is skipped when rev-parse HEAD succeeds (idempotency guard),
+      # so return failure first (triggering clone), then success (for head_sha).
       sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
         .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
-        .and_return(sha_result)
+        .and_return(not_a_repo_result, sha_result)
     end
 
     it "clones the repository inside the container" do
@@ -106,7 +102,7 @@ RSpec.describe Containers::GitOperations do
       allow(container_service).to receive(:execute).and_return(success_result)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "rev-parse", "--is-inside-work-tree" ], timeout: nil, stream: false)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
         .and_return(not_a_repo_result)
 
       allow(container_service).to receive(:execute)
