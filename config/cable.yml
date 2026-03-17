@@ -5,7 +5,9 @@ development:
   connects_to:
     database:
       writing: cable
-  polling_interval: <%= 0.1.seconds %>
+  # Polling interval trades latency for DB load: lower = faster updates but more queries.
+  # 1s is a reasonable default; reduce to 0.1s only for low-client-count environments.
+  polling_interval: <%= 1.second %>
   message_retention: <%= 1.day %>
 
 test:
@@ -16,5 +18,5 @@ production:
   connects_to:
     database:
       writing: cable
-  polling_interval: <%= 0.1.seconds %>
+  polling_interval: <%= 1.second %>
   message_retention: <%= 1.day %>

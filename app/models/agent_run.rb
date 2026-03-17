@@ -2,6 +2,7 @@
 
 class AgentRun < ApplicationRecord
   STATUSES = %w[queued pending running completed failed cancelled timeout retried auth_expired rate_limited].freeze
+  ACTIVE_STATUSES = %w[pending running].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   GOALS = %w[create_pr create_issue].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
@@ -57,7 +58,7 @@ class AgentRun < ApplicationRecord
   scope :retried, -> { where(status: "retried") }
   scope :auth_expired, -> { where(status: "auth_expired") }
   scope :rate_limited, -> { where(status: "rate_limited") }
-  scope :active, -> { where(status: %w[pending running]) }
+  scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :finished, -> { where(status: %w[completed failed cancelled timeout retried auth_expired rate_limited]) }
   scope :recent, -> { order(created_at: :desc) }
   scope :search_by_goal, lambda { |query|

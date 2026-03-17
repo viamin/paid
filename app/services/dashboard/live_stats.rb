@@ -29,14 +29,15 @@ module Dashboard
 
     def agent_run_counts
       today = Time.current.beginning_of_day
-      quoted_today = AgentRun.connection.quote(today)
-      active_in = AgentRun.active.where_values_hash["status"].map { |s| AgentRun.connection.quote(s) }.join(", ")
+      active_statuses = AgentRun::ACTIVE_STATUSES
+      sanitized_active = active_statuses.map { |s| AgentRun.connection.quote(s) }.join(", ")
+      sanitized_today = AgentRun.sanitize_sql_for_conditions([ "?", today ])
 
       agent_runs.pick(
-        Arel.sql("COUNT(*) FILTER (WHERE status IN (#{active_in})) AS active_runs"),
+        Arel.sql("COUNT(*) FILTER (WHERE status IN (#{sanitized_active})) AS active_runs"),
         Arel.sql("COUNT(*) FILTER (WHERE status = 'queued') AS queued_runs"),
-        Arel.sql("COUNT(*) FILTER (WHERE status = 'completed' AND completed_at >= #{quoted_today}) AS completed_today"),
-        Arel.sql("COUNT(*) FILTER (WHERE status = 'failed' AND completed_at >= #{quoted_today}) AS failed_today"),
+        Arel.sql("COUNT(*) FILTER (WHERE status = 'completed' AND completed_at >= #{sanitized_today}) AS completed_today"),
+        Arel.sql("COUNT(*) FILTER (WHERE status = 'failed' AND completed_at >= #{sanitized_today}) AS failed_today"),
         Arel.sql("COUNT(*) FILTER (WHERE status = 'running' AND container_id IS NOT NULL) AS active_containers")
       ).then { |values| %w[active_runs queued_runs completed_today failed_today active_containers].zip(values).to_h }
     end
