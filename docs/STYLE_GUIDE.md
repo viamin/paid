@@ -112,7 +112,7 @@ AI-Generated Determinism complements ZFC by using AI once during configuration t
 
 ### LLM Access via agent_harness
 
-All application- and business-level LLM calls must go through the `agent_harness` gem—do not call AI provider APIs directly from application code (e.g., no raw Faraday/HTTP calls to `api.anthropic.com` or `api.openai.com`). The `agent_harness` gem is the single interface for all LLM interactions in the application. References to `llm_client` or similar abstractions in examples throughout this guide are illustrative—in practice they are backed by `agent_harness`. The secrets proxy (`SecretsProxyController`) is the sole exception: it may call provider APIs directly, but only to forward authenticated requests from containers as an infrastructure-level proxy, not as an application-level LLM interface.
+All application- and business-level LLM calls must go through the `agent_harness` gem—do not call AI provider APIs directly from application code (e.g., no raw Faraday/HTTP calls to `api.anthropic.com` or `api.openai.com`). The `agent_harness` gem is the single interface for all LLM interactions in the application. References to `llm_client` or similar abstractions in examples throughout this guide are illustrative—in practice they are backed by `agent_harness`. The secrets proxy (`Api::SecretsProxyController`) is the sole exception: it may call provider APIs directly, but only to forward authenticated requests from containers as an infrastructure-level proxy, not as an application-level LLM interface.
 
 ### Code Organization by Capability
 
