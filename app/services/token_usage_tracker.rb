@@ -57,29 +57,6 @@ class TokenUsageTracker
     end
   end
 
-  # Updates only the aggregate counters (agent_run, project, budgets) without
-  # creating a TokenUsage record. Used by AgentRuns::Execute to apply the delta
-  # between run_summary and proxy totals.
-  def self.update_aggregates(agent_run:, tokens_input:, tokens_output:)
-    cost_cents = calculate_cost(tokens_input, tokens_output)
-
-    ActiveRecord::Base.transaction do
-      agent_run.with_lock do
-        agent_run.increment(:tokens_input, tokens_input)
-        agent_run.increment(:tokens_output, tokens_output)
-        agent_run.increment(:cost_cents, cost_cents)
-        agent_run.save!
-      end
-
-      agent_run.project.increment_metrics!(
-        cost_cents: cost_cents,
-        tokens_used: tokens_input + tokens_output
-      )
-
-      update_cost_budgets(agent_run.project, cost_cents)
-    end
-  end
-
   def self.calculate_cost(input_tokens, output_tokens)
     input_cost = BigDecimal(input_tokens.to_s) / BigDecimal("1000000") * DEFAULT_INPUT_COST_PER_MILLION
     output_cost = BigDecimal(output_tokens.to_s) / BigDecimal("1000000") * DEFAULT_OUTPUT_COST_PER_MILLION

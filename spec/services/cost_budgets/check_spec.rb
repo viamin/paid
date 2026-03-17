@@ -32,12 +32,29 @@ RSpec.describe CostBudgets::Check do
     end
 
     context "with a per_run budget" do
-      it "resets per_run usage before checking" do
-        budget = create(:cost_budget, :per_run, project: project, limit_cents: 1_000, current_usage_cents: 999)
-        result = described_class.call(project)
+      it "checks per_run usage against the specific agent_run's token_usages" do
+        agent_run = create(:agent_run, :running, project: project)
+        create(:cost_budget, :per_run, project: project, limit_cents: 1_000, current_usage_cents: 0)
+        create(:token_usage, agent_run: agent_run, cost_cents: 500)
 
+        result = described_class.call(project, agent_run: agent_run)
         expect(result[:allowed]).to be true
-        expect(budget.reload.current_usage_cents).to eq(0)
+      end
+
+      it "blocks when agent_run's token_usages exceed per_run limit" do
+        agent_run = create(:agent_run, :running, project: project)
+        create(:cost_budget, :per_run, project: project, limit_cents: 1_000, current_usage_cents: 0)
+        create(:token_usage, agent_run: agent_run, cost_cents: 1_001)
+
+        result = described_class.call(project, agent_run: agent_run)
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to include("per_run budget exceeded")
+      end
+
+      it "ignores per_run budgets when no agent_run is provided" do
+        create(:cost_budget, :per_run, project: project, limit_cents: 1_000, current_usage_cents: 5_000)
+        result = described_class.call(project)
+        expect(result[:allowed]).to be true
       end
     end
 
