@@ -8,11 +8,22 @@ RSpec.describe Provider do
   end
 
   describe "validations" do
-    subject { build(:provider) }
+    subject(:provider) { build(:provider) }
 
     it { is_expected.to validate_presence_of(:provider_key) }
-    it { is_expected.to validate_inclusion_of(:provider_key).in_array(described_class::SUPPORTED_PROVIDER_KEYS) }
     it { is_expected.to validate_uniqueness_of(:provider_key).scoped_to(:user_id) }
+
+    it "validates provider_key against agent harness-supported providers" do
+      expect(provider).to allow_value("cursor").for(:provider_key)
+      expect(provider).to allow_value("gemini").for(:provider_key)
+      expect(provider).not_to allow_value("unknown_provider").for(:provider_key)
+    end
+  end
+
+  describe ".supported_provider_keys" do
+    it "returns built-in provider keys from the agent harness registry" do
+      expect(described_class.supported_provider_keys).to include("claude", "cursor", "gemini", "codex", "kilocode")
+    end
   end
 
   describe ".ensure_default_for" do
