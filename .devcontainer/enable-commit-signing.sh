@@ -21,7 +21,8 @@ echo "Ensuring token has admin:ssh_signing_key scope..."
 gh auth refresh -h github.com -s admin:ssh_signing_key
 
 echo "Configuring SSH commit signing for this repository..."
-bash "$(dirname "$0")/setup-signing-key.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bash "${SCRIPT_DIR}/setup-signing-key.sh"
 
 echo
 
