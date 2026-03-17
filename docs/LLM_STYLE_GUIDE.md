@@ -6,7 +6,7 @@
 
 - **ZFC**: Meaning/decisions -> AI. Mechanical/structural -> code. Never hard-code semantic analysis. `STYLE_GUIDE:11-94`
 - **AGD**: Use AI once at config time to generate deterministic artifacts; no AI calls at runtime. `STYLE_GUIDE:96-112`
-- **All LLM calls go through `agent_harness`** -- never call AI provider APIs directly. `STYLE_GUIDE:113-115`
+- **All LLM calls go through `agent_harness`** -- never call AI provider APIs directly, **except** for the intentional provider-proxy endpoint `Api::SecretsProxyController`, which may call Anthropic/OpenAI directly for container traffic. `STYLE_GUIDE:113-115`
 - **Organize by capability** (parsers/, analyzers/, formatters/), not by workflow. `STYLE_GUIDE:117-165`
 
 ### ZFC Decision Tree
