@@ -65,6 +65,11 @@ module AbTests
       elsif result.status == :control_wins
         ab_test.complete!
       end
+    rescue ActiveRecord::RecordInvalid
+      # Another process already completed or cancelled this test concurrently.
+      # The complete! method uses with_lock { reload } internally, but two processes
+      # can still race past the running? check above. Treat as a no-op.
+      nil
     end
 
     def should_analyze?(ab_test)

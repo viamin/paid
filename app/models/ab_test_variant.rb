@@ -10,7 +10,12 @@ class AbTestVariant < ApplicationRecord
   validate :prompt_version_belongs_to_same_prompt
   validate :ab_test_variant_count_within_limit, on: :create
 
+  # Updates aggregate metrics atomically. Validates score is within 0..1 to prevent
+  # corrupted aggregates from invalid inputs. Prefer AbTests::RecordResult as the
+  # public entry point — it handles assignment lookup, atomic claiming, and auto-completion.
   def record_quality_score!(score)
+    raise ArgumentError, "quality score must be a number between 0 and 1" unless valid_score?(score)
+
     with_lock do
       score_decimal = BigDecimal(score.to_s)
 
@@ -23,6 +28,10 @@ class AbTestVariant < ApplicationRecord
   end
 
   private
+
+  def valid_score?(score)
+    score.is_a?(Numeric) && score >= 0 && score <= 1
+  end
 
   def prompt_version_belongs_to_same_prompt
     return if prompt_version.nil? || ab_test.nil?

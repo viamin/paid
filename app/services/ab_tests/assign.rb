@@ -5,11 +5,13 @@ module AbTests
   # Variants with fewer samples get higher weight to ensure balanced distribution.
   #
   # TODO(#143): Wire into AgentExecutionWorkflow where prompt_version is resolved.
-  # Call AbTests::Assign.call(ab_test:, agent_run:) to get the assignment,
-  # then use `assignment.ab_test_variant.prompt_version` instead of the default.
-  # Integration is intentionally deferred — this PR ships the framework and
-  # statistical engine only. Workflow wiring belongs in a follow-up PR once
-  # AgentExecutionWorkflow infrastructure is in place.
+  # When AgentExecutionWorkflow resolves the prompt_version for an AgentRun:
+  #   1. Check for a running AbTest on the prompt via `prompt.ab_tests.running.first`
+  #   2. Call `AbTests::Assign.call(ab_test:, agent_run:)` to get the assignment
+  #   3. Use `assignment.ab_test_variant.prompt_version` instead of the default
+  # This integration is deferred because AgentExecutionWorkflow infrastructure
+  # does not yet exist. The framework, services, and statistical engine are
+  # complete and tested — only the call site in the workflow is missing.
   #
   # @example
   #   assignment = AbTests::Assign.call(ab_test: test, agent_run: run)
