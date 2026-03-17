@@ -11,7 +11,7 @@ if ENV.fetch("COVERAGE", "true") != "false"
 end
 
 RSpec.configure do |config|
-  config.example_status_persistence_file_path = "tmp/rspec_examples.txt"
+  config.example_status_persistence_file_path = "spec/.examples.txt"
 
   # rspec-expectations config goes here.
   config.expect_with :rspec do |expectations|
