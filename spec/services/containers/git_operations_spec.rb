@@ -29,10 +29,43 @@ RSpec.describe Containers::GitOperations do
     it "clones the repository inside the container" do
       expect(container_service).to receive(:execute)
         .with([ "git", "clone", "https://github.com/#{project.full_name}.git", "." ],
-              timeout: 120, stream: false)
+              timeout: described_class::CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
 
       git_ops.clone_and_setup_branch
+    end
+
+    it "cleans a partial clone before retrying" do
+      expect(container_service).to receive(:execute)
+        .with("find . -mindepth 1 -maxdepth 1 -print -quit", timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: ".git\n", stderr: "", exit_code: 0))
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with("find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +", timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "clone", "https://github.com/#{project.full_name}.git", "." ],
+              timeout: described_class::CLONE_TIMEOUT, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      git_ops.clone_and_setup_branch
+    end
+
+    it "raises CloneError when partial clone cleanup fails" do
+      allow(container_service).to receive(:execute)
+        .with("find . -mindepth 1 -maxdepth 1 -print -quit", timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: ".git\n", stderr: "", exit_code: 0))
+
+      allow(container_service).to receive(:execute)
+        .with("find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +", timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.failure(error: "rm failed", stdout: "", stderr: "permission denied", exit_code: 1))
+
+      expect { git_ops.clone_and_setup_branch }
+        .to raise_error(described_class::CloneError, /Failed to clean partial clone/)
     end
 
     it "creates a branch with a slug from the issue title when issue is present" do
@@ -113,7 +146,7 @@ RSpec.describe Containers::GitOperations do
     it "clones and checks out the existing branch" do
       expect(container_service).to receive(:execute)
         .with([ "git", "clone", "https://github.com/#{project.full_name}.git", "." ],
-              timeout: 120, stream: false)
+              timeout: described_class::CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
 
       expect(container_service).to receive(:execute)
