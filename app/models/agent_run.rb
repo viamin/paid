@@ -3,7 +3,7 @@
 class AgentRun < ApplicationRecord
   STATUSES = %w[queued pending running completed failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
-  GOALS = %w[create_pr create_issue].freeze
+  GOALS = %w[create_pr create_issue review].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
 
   belongs_to :project
@@ -195,6 +195,10 @@ class AgentRun < ApplicationRecord
     goal == "create_pr"
   end
 
+  def review_goal?
+    goal == "review"
+  end
+
   def manual?
     trigger_type == "manual"
   end
@@ -376,11 +380,20 @@ class AgentRun < ApplicationRecord
   end
 
   # Returns the prompt for this run: custom_prompt if provided,
-  # otherwise delegates to prompt_for_issue.
+  # otherwise delegates to goal-specific prompt builders.
   #
   # @return [String, nil] The prompt to send to the agent
   def effective_prompt
-    custom_prompt.presence || prompt_for_issue
+    custom_prompt.presence || prompt_for_goal
+  end
+
+  # Returns the base prompt for the review goal.
+  #
+  # @return [String, nil] The review prompt
+  def prompt_for_review
+    return nil unless source_pull_request_number.present?
+
+    "Review pull request ##{source_pull_request_number} in #{project.full_name}."
   end
 
   # Records a provider attempt in the providers_attempted array.
@@ -507,6 +520,14 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def prompt_for_goal
+    if review_goal?
+      prompt_for_review
+    else
+      prompt_for_issue
+    end
+  end
 
   # Removes the named Docker volume for this agent run if it exists.
   # No-op for worktree-based runs (they use bind mounts, not named volumes).

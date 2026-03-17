@@ -13,6 +13,8 @@
       PR
     <% elsif agent_run.create_issue_goal? %>
       Issue
+    <% elsif agent_run.review_goal? %>
+      Review
     <% else %>
       <span class="text-gray-400"><%= agent_run.goal.humanize %></span>
     <% end %>

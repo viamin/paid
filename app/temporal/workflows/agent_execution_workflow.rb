@@ -55,6 +55,7 @@ module Workflows
         # Step 3: Clone repo and create branch inside the container.
         # Skip clone for create_issue goals without a source PR — the agent
         # only needs the GitHub API proxy, not repository code.
+        # Review goals always need the repo to examine code.
         skip_clone = goal == "create_issue" && source_pull_request_number.blank?
         unless skip_clone
           run_activity(Activities::CloneRepoActivity,
@@ -107,6 +108,11 @@ module Workflows
             run_activity(Activities::CreateGithubIssueActivity,
               { agent_run_id: agent_run_id }, timeout: 120, retry_policy: NO_RETRY)
           end
+        elsif goal == "review"
+          # Review goal: complete the run — all output is PR comments posted
+          # by the agent via the GitHub API proxy during execution.
+          run_activity(Activities::CompleteReviewGoalActivity,
+            { agent_run_id: agent_run_id }, timeout: 30)
         elsif agent_result[:has_changes]
           # Step 5: Push branch (inside container)
           run_activity(Activities::PushBranchActivity,
