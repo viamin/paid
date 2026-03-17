@@ -46,6 +46,11 @@ module CostBudgets
       }
     end
 
+    # NOTE: This resets the shared project-level per_run budget before each run.
+    # If concurrent runs are enabled for a project, one run's reset could zero out
+    # another run's in-progress usage. A future improvement should either enforce
+    # single active run per project when per_run budgets exist, or track per-run
+    # usage keyed by agent_run_id so concurrent runs cannot interfere.
     def reset_per_run_budgets
       project.cost_budgets.per_run.each(&:reset_for_new_run!)
     end
