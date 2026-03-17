@@ -20,7 +20,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_14_000005) do
     t.bigint "agent_run_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["ab_test_id", "agent_run_id"], name: "index_ab_test_assignments_on_ab_test_id_and_agent_run_id", unique: true
     t.index ["ab_test_id"], name: "index_ab_test_assignments_on_ab_test_id"
     t.index ["ab_test_variant_id"], name: "index_ab_test_assignments_on_ab_test_variant_id"
     t.index ["agent_run_id"], name: "index_ab_test_assignments_on_agent_run_id", unique: true
