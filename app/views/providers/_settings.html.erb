@@ -1,0 +1,97 @@
+<div class="rounded-lg bg-white shadow">
+  <div class="border-b border-gray-200 px-4 py-5 sm:px-6">
+    <h2 class="text-base font-semibold text-gray-900">Provider Priority</h2>
+    <p class="mt-1 text-sm text-gray-500">Choose the primary provider and configure automatic fallback order in one place.</p>
+  </div>
+
+  <div class="px-4 py-5 sm:p-6">
+    <%= form_with model: @user_setting, url: settings_providers_path, method: :patch do |form| %>
+      <% if @user_setting.errors.any? %>
+        <div class="mb-6 rounded-md bg-red-50 p-4">
+          <div class="flex">
+            <div class="flex-shrink-0">
+              <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="ml-3">
+              <h3 class="text-sm font-medium text-red-800">
+                <%= pluralize(@user_setting.errors.count, "error") %> prevented your provider settings from being saved:
+              </h3>
+              <div class="mt-2 text-sm text-red-700">
+                <ul class="list-disc space-y-1 pl-5">
+                  <% @user_setting.errors.full_messages.each do |message| %>
+                    <li><%= message %></li>
+                  <% end %>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      <% end %>
+
+      <div class="space-y-6">
+        <div>
+          <%= form.label :default_agent_provider, "Primary Provider", class: "block text-sm font-medium leading-6 text-gray-900" %>
+          <div class="mt-2">
+            <%= form.select :default_agent_provider,
+                @enabled_agent_providers.map { |provider| [ provider.titleize, provider ] },
+                {},
+                class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+          </div>
+          <p class="mt-1 text-xs text-gray-500">This provider is always tried first for new agent runs.</p>
+        </div>
+
+        <div class="flex items-center">
+          <%= form.check_box :fallback_enabled, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+          <%= form.label :fallback_enabled, "Enable automatic provider fallback", class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
+        </div>
+        <p class="-mt-4 ml-7 text-xs text-gray-500">When enabled, the system will try the other configured fallback providers in the order below.</p>
+
+        <div data-controller="sortable">
+          <p class="mb-2 text-sm font-medium text-gray-700">Fallback order:</p>
+          <div class="space-y-2" data-sortable-target="list">
+            <% provider_states_by_name = @provider_states %>
+            <% fallback_candidates = @fallback_candidate_providers %>
+            <% saved_order = Array(@user_setting.fallback_providers) %>
+            <% providers_in_order = (saved_order.select { |provider| fallback_candidates.include?(provider) } + (fallback_candidates - saved_order)).uniq %>
+            <% providers_in_order.each do |provider| %>
+              <% provider_state = provider_states_by_name[provider] %>
+              <div class="provider-item flex cursor-move items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm" data-provider="<%= provider %>" data-sortable-target="item">
+                <div class="flex items-center">
+                  <svg class="mr-2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
+                  </svg>
+                  <span class="text-sm font-medium text-gray-900"><%= provider.titleize %></span>
+                </div>
+                <div>
+                  <% if provider == @user_setting.default_agent_provider %>
+                    <span class="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">Primary</span>
+                  <% elsif provider_state&.rate_limited? %>
+                    <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">Rate limited</span>
+                  <% elsif provider_state&.circuit_open? %>
+                    <span class="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">Circuit open</span>
+                  <% elsif provider_state&.circuit_half_open? %>
+                    <span class="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">Recovering</span>
+                  <% else %>
+                    <span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">Available</span>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+          </div>
+
+          <%= form.hidden_field :fallback_providers,
+              value: (@user_setting.fallback_providers || []).to_json,
+              data: { sortable_target: "input", primary_provider: @user_setting.default_agent_provider } %>
+        </div>
+
+        <p class="text-xs text-gray-500">The primary provider is excluded automatically. Any additional configured fallback providers are appended if they have not been ordered yet.</p>
+
+        <div class="flex justify-end">
+          <%= form.submit "Save Provider Settings", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>
