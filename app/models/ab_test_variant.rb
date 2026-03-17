@@ -15,7 +15,8 @@ class AbTestVariant < ApplicationRecord
     self.class.where(id: id).update_all(
       "sample_count = sample_count + 1, " \
       "total_quality_score = total_quality_score + #{self.class.connection.quote(score.to_f)}, " \
-      "avg_quality_score = (total_quality_score + #{self.class.connection.quote(score.to_f)}) / (sample_count + 1)"
+      "avg_quality_score = (total_quality_score + #{self.class.connection.quote(score.to_f)}) / (sample_count + 1), " \
+      "updated_at = #{self.class.connection.quote(Time.current)}"
     )
     reload
   end

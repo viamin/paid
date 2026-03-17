@@ -55,14 +55,19 @@ module Models
       excluded = agent_run.project.model_preferences["excluded_model_ids"]
       scope = scope.where.not(model_id: excluded) if excluded.present?
 
-      # For simple tasks, prefer cheaper models
+      # Filter by minimum capability, then order by cost-effectiveness
       if complexity < 4.0
         scope = scope.where("capability_score >= 5 OR capability_score IS NULL")
+        # For simple tasks, prefer cheaper models among those that meet the threshold
+        scope.order(Arel.sql("input_cost_per_million ASC NULLS LAST")).limit(5).to_a
       elsif complexity >= 7.0
         scope = scope.where("capability_score >= 8 OR capability_score IS NULL")
+        # For complex tasks, prefer the most capable models
+        scope.order(Arel.sql("capability_score DESC NULLS LAST")).limit(5).to_a
+      else
+        # For medium complexity, balance capability and cost
+        scope.order(Arel.sql("capability_score DESC NULLS LAST")).limit(5).to_a
       end
-
-      scope.order(Arel.sql("capability_score DESC NULLS LAST")).limit(5).to_a
     end
   end
 end
