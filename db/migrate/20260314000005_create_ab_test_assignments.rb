@@ -11,6 +11,5 @@ class CreateAbTestAssignments < ActiveRecord::Migration[8.1]
     end
 
     add_index :ab_test_assignments, :agent_run_id, unique: true
-    add_index :ab_test_assignments, [ :ab_test_id, :agent_run_id ], unique: true
   end
 end

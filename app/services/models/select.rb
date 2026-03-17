@@ -20,15 +20,14 @@ module Models
 
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
 
-      ModelSelection.create!(
-        agent_run: agent_run,
-        llm_model: selected[:model],
-        selector_type: selected[:selector_type],
-        reasoning: selected[:reasoning],
-        candidates: selected[:candidates],
-        complexity_score: selected[:complexity_score],
-        selection_duration_ms: duration_ms
-      )
+      ModelSelection.find_or_create_by!(agent_run: agent_run) do |ms|
+        ms.llm_model = selected[:model]
+        ms.selector_type = selected[:selector_type]
+        ms.reasoning = selected[:reasoning]
+        ms.candidates = selected[:candidates]
+        ms.complexity_score = selected[:complexity_score]
+        ms.selection_duration_ms = duration_ms
+      end
     end
 
     private

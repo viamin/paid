@@ -23,6 +23,7 @@ module QualityMetrics
       metric.save!
 
       metric.calculate_composite_score!
+      update_ab_test_variant_stats(metric)
       update_prompt_version_stats if agent_run.prompt_version.present?
       metric
     end
@@ -60,6 +61,13 @@ module QualityMetrics
         .exists?
 
       has_lint_errors ? 0.0 : 1.0
+    end
+
+    def update_ab_test_variant_stats(metric)
+      assignment = agent_run.ab_test_assignment
+      return unless assignment
+
+      assignment.ab_test_variant.record_quality_score!(metric.composite_score)
     end
 
     def update_prompt_version_stats
