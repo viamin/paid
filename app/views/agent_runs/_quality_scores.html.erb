@@ -1,4 +1,4 @@
-<% quality_metrics = agent_run.quality_metrics.with_composite_score %>
+<% quality_metrics = agent_run.quality_metrics.with_composite_score.load %>
 <% if quality_metrics.any? %>
   <div class="mt-6 rounded-lg bg-white shadow">
     <div class="border-b border-gray-200 px-4 py-4 sm:px-6">
