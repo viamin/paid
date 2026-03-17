@@ -64,6 +64,15 @@ module AbTests
       raise ArgumentError, "variant versions must be unique" if variant_version_ids.uniq.size != variant_version_ids.size
       raise ArgumentError, "variant versions cannot include the control version" if variant_version_ids.include?(prompt.current_version_id)
       raise ArgumentError, "prompt already has a running A/B test" if prompt.ab_tests.running.exists?
+      validate_variant_versions_exist!
+    end
+
+    def validate_variant_versions_exist!
+      existing_ids = prompt.prompt_versions.where(id: variant_version_ids).pluck(:id)
+      missing_ids = variant_version_ids - existing_ids
+      return if missing_ids.empty?
+
+      raise ArgumentError, "variant version(s) #{missing_ids.join(', ')} not found for this prompt"
     end
   end
 end
