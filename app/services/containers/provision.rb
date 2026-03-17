@@ -416,7 +416,7 @@ module Containers
         begin
           Docker::Volume.get(@workspace_volume)
         rescue Docker::Error::NotFoundError
-          Docker::Volume.create(@workspace_volume)
+          Docker::Volume.create(@workspace_volume, volume_options)
         end
       end
     end
@@ -437,6 +437,17 @@ module Containers
       )
     ensure
       @workspace_volume = nil
+    end
+
+    def volume_options
+      {
+        "Labels" => {
+          "paid.managed" => "true",
+          "paid.resource" => "workspace_volume",
+          "paid.agent_run_id" => agent_run.id.to_s,
+          "paid.project_id" => agent_run.project_id.to_s
+        }
+      }
     end
 
     def create_container
