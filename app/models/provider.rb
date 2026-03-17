@@ -25,8 +25,14 @@ class Provider < ApplicationRecord
   end
 
   def self.display_name(provider_key)
-    AgentHarness.provider(provider_key.to_sym).display_name
-  rescue AgentHarness::ConfigurationError, NoMethodError
+    provider = AgentHarness.provider(provider_key.to_sym)
+
+    if provider.respond_to?(:display_name)
+      provider.display_name
+    else
+      provider_key.to_s.titleize
+    end
+  rescue AgentHarness::ConfigurationError
     provider_key.to_s.titleize
   end
 
