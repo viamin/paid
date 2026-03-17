@@ -28,6 +28,8 @@ module Models
         ms.complexity_score = selected[:complexity_score]
         ms.selection_duration_ms = duration_ms
       end
+    rescue ActiveRecord::RecordNotUnique
+      ModelSelection.find_by!(agent_run: agent_run)
     end
 
     private

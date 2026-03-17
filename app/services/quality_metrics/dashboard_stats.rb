@@ -41,8 +41,7 @@ module QualityMetrics
 
     def by_prompt
       metrics
-        .joins(agent_run: :prompt_version)
-        .joins("INNER JOIN prompts ON prompts.id = prompt_versions.prompt_id")
+        .joins(agent_run: { prompt_version: :prompt })
         .where.not(composite_score: nil)
         .group("prompts.id", "prompts.name")
         .select(
