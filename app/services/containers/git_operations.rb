@@ -19,7 +19,7 @@ module Containers
     class CloneError < Error; end
     class PushError < Error; end
 
-    CLONE_TIMEOUT = 120
+    CLONE_TIMEOUT = Integer(ENV.fetch("CONTAINER_GIT_CLONE_TIMEOUT_SECONDS", 600))
     PUSH_TIMEOUT = 60
 
     # Marker comment used as a grep guard so Temporal retries don't
@@ -364,11 +364,35 @@ module Containers
       check = execute_git("rev-parse", "HEAD")
       return if check.success?
 
+      cleanup_partial_clone! if workspace_contains_files?
+
       project = agent_run.project
       url = "https://github.com/#{project.full_name}.git"
 
       result = execute_git("clone", url, ".", timeout: CLONE_TIMEOUT)
       raise CloneError, "Clone failed: #{error_with_stderr(result)}" if result.failure?
+    end
+
+    def workspace_contains_files?
+      result = container_service.execute(
+        "find . -mindepth 1 -maxdepth 1 -print -quit",
+        timeout: nil,
+        stream: false
+      )
+
+      result.success? && result[:stdout].present?
+    end
+
+    def cleanup_partial_clone!
+      result = container_service.execute(
+        "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +",
+        timeout: nil,
+        stream: false
+      )
+
+      return if result.success?
+
+      raise CloneError, "Failed to clean partial clone: #{error_with_stderr(result)}"
     end
 
     def checkout_remote_branch(branch_name, pull_request_number: nil)
