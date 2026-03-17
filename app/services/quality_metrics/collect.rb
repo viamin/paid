@@ -15,14 +15,15 @@ module QualityMetrics
         agent_run: agent_run,
         metric_type: "automated"
       )
+      scores = build_scores
       metric.assign_attributes(
         prompt_version: agent_run.prompt_version,
         feedback_source: "system",
-        scores: build_scores
+        scores: scores,
+        composite_score: QualityMetric.weighted_average(scores)
       )
       metric.save!
 
-      metric.calculate_composite_score!
       update_ab_test_variant_stats(metric)
       update_prompt_version_stats if agent_run.prompt_version.present?
       metric
