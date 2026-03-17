@@ -238,6 +238,30 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(agent_run.error_message)
       end
 
+      it "shows retry provider options for configured providers" do
+        user.providers.create!(provider_key: "cursor")
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Retry with Anthropic Claude CLI")
+        expect(response.body).to include("Retry with Cursor AI")
+        expect(response.body).to include("Current")
+        expect(response.body).to include('aria-haspopup="menu"')
+        expect(response.body).to include("aria-controls=")
+        expect(response.body).to include("aria-labelledby=")
+      end
+
+      it "shows a single retry button when no alternate providers are configured" do
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include(">Retry</button>")
+        expect(response.body).not_to include("Retry options")
+        expect(response.body).not_to include('role="menu"')
+      end
+
       it "shows metrics" do
         agent_run = create(:agent_run, :completed, :with_metrics, project: project)
         get project_agent_run_path(project, agent_run)
@@ -585,6 +609,39 @@ RSpec.describe "AgentRuns" do
         post retry_project_agent_run_path(project, agent_run)
 
         expect(agent_run.reload.status).to eq("retried")
+      end
+
+      it "keeps the primary retry action on the original agent type" do
+        user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false)
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "cursor")
+
+        post retry_project_agent_run_path(project, agent_run)
+
+        expect(AgentRun.last.agent_type).to eq("cursor")
+      end
+
+      it "creates a retry using a different configured provider" do
+        user.providers.create!(provider_key: "cursor")
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
+
+        post retry_project_agent_run_path(project, agent_run), params: { provider: "cursor" }
+
+        new_run = AgentRun.last
+        expect(new_run.agent_type).to eq("cursor")
+        expect(response).to redirect_to(project_agent_run_path(project, new_run))
+      end
+
+      it "rejects retrying with an unavailable explicit provider" do
+        user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false)
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run), params: { provider: "cursor" }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("selected provider is not available")
       end
 
       it "preserves custom_prompt from the original run" do

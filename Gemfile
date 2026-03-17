@@ -99,7 +99,7 @@ end
 gem "good_job", "~> 4.13"
 
 # Pagination [https://github.com/ddnexus/pagy]
-gem "pagy", "~> 43.3"
+gem "pagy", "~> 43.4"
 
 # Search and filtering [https://github.com/activerecord-hackery/ransack]
 gem "ransack"

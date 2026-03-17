@@ -24,6 +24,18 @@ class Provider < ApplicationRecord
     user.providers.find_by!(provider_key: "claude")
   end
 
+  def self.display_name(provider_key)
+    provider = AgentHarness.provider(provider_key.to_sym)
+
+    if provider.respond_to?(:display_name)
+      provider.display_name
+    else
+      provider_key.to_s.titleize
+    end
+  rescue AgentHarness::ConfigurationError
+    provider_key.to_s.titleize
+  end
+
   private
 
   def must_keep_at_least_one_agent_run_provider

@@ -32,6 +32,17 @@ RSpec.describe Provider do
     end
   end
 
+  describe ".display_name" do
+    it "uses agent harness provider display names when available" do
+      expect(described_class.display_name("codex")).to eq("OpenAI Codex CLI")
+      expect(described_class.display_name("github_copilot")).to eq("GitHub Copilot CLI")
+    end
+
+    it "falls back to titleized keys for unknown providers" do
+      expect(described_class.display_name("unknown_provider")).to eq("Unknown Provider")
+    end
+  end
+
   describe "agent-run provider guardrails" do
     let(:user) { create(:user) }
 
