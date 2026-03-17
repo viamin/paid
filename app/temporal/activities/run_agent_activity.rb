@@ -203,10 +203,14 @@ module Activities
     #
     # @return [Array<String>] Provider names in priority order
     def build_provider_order(agent_run, user_settings)
+      fallback_providers = user_settings.fallback_priority_for(
+        primary_provider: canonical_provider(agent_run.agent_type)
+      )
+
       self.class.provider_order(
         agent_type: agent_run.agent_type,
         fallback_enabled: user_settings.fallback_enabled,
-        fallback_providers: user_settings.fallback_providers
+        fallback_providers: fallback_providers
       )
     end
 
