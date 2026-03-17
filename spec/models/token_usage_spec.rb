@@ -66,6 +66,23 @@ RSpec.describe TokenUsage do
         expect(described_class.by_time_period(3.days.ago, Time.current)).to contain_exactly(usage1)
       end
     end
+
+    describe ".billable" do
+      it "excludes run_summary when per-request proxy records exist for the same agent run" do
+        agent_run = create(:agent_run, :running)
+        proxy_record = create(:token_usage, agent_run: agent_run, request_type: "agent")
+        create(:token_usage, agent_run: agent_run, request_type: "run_summary")
+
+        expect(described_class.billable).to contain_exactly(proxy_record)
+      end
+
+      it "includes run_summary when no per-request proxy records exist (non-proxy mode)" do
+        agent_run = create(:agent_run, :running)
+        summary = create(:token_usage, agent_run: agent_run, request_type: "run_summary")
+
+        expect(described_class.billable).to contain_exactly(summary)
+      end
+    end
   end
 
   describe "aggregation methods" do

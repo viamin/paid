@@ -63,8 +63,9 @@ RSpec.describe AgentRuns::Execute do
         described_class.call(agent_run: agent_run, prompt: prompt)
       end
 
-      it "skips aggregate updates when per-request proxy records already exist" do
-        create(:token_usage, agent_run: agent_run, request_type: "agent")
+      it "skips aggregate updates when per-request proxy records are sufficient" do
+        create(:token_usage, agent_run: agent_run, request_type: "agent",
+               input_tokens: 1200, output_tokens: 600)
 
         expect(TokenUsageTracker).to receive(:track).with(
           agent_run: agent_run,
@@ -75,6 +76,24 @@ RSpec.describe AgentRuns::Execute do
             request_type: "run_summary"
           },
           update_aggregates: false
+        )
+
+        described_class.call(agent_run: agent_run, prompt: prompt)
+      end
+
+      it "enables aggregate updates when proxy records are insufficient (partial tracking)" do
+        create(:token_usage, agent_run: agent_run, request_type: "agent",
+               input_tokens: 100, output_tokens: 50)
+
+        expect(TokenUsageTracker).to receive(:track).with(
+          agent_run: agent_run,
+          usage: {
+            tokens_input: 1500,
+            tokens_output: 800,
+            llm_model: "claude-sonnet-4",
+            request_type: "run_summary"
+          },
+          update_aggregates: true
         )
 
         described_class.call(agent_run: agent_run, prompt: prompt)
