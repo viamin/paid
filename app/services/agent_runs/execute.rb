@@ -106,29 +106,47 @@ module AgentRuns
     # Uses request_type "run_summary" to distinguish from per-request records
     # created by the secrets proxy controller (request_type "agent").
     #
-    # Determines whether to update aggregates based on per-request proxy
-    # records: if proxy records exist AND their summed tokens are at least
-    # 50% of the run summary, we trust per-request tracking and skip
-    # aggregate updates. Otherwise (no proxy records, or partial tracking
-    # due to parse errors/early returns in SecretsProxyController#track_usage),
-    # we apply aggregates from the run summary to avoid undercounting.
+    # Always records a run_summary TokenUsage for auditing. Aggregate updates
+    # (agent_run counters, project metrics, budgets) use the delta between
+    # run_summary and proxy totals to avoid double-counting:
+    # - No proxy records: aggregates = full run_summary totals
+    # - Proxy records exist: aggregates = run_summary - proxy totals (clamped >= 0)
+    # - Proxy fully covers run_summary: no aggregate update needed
     def track_tokens(response)
       return unless response.tokens
 
-      proxy_records = agent_run.token_usages.where.not(request_type: "run_summary")
-      run_total = (response.input_tokens || 0) + (response.output_tokens || 0)
-      proxy_total = proxy_records.sum(:input_tokens) + proxy_records.sum(:output_tokens)
-      proxy_sufficient = proxy_records.exists? && (run_total.zero? || proxy_total >= run_total / 2)
+      run_input = response.input_tokens || 0
+      run_output = response.output_tokens || 0
 
+      # Record full run_summary for auditing (never updates aggregates)
       TokenUsageTracker.track(
         agent_run: agent_run,
         usage: {
-          tokens_input: response.input_tokens || 0,
-          tokens_output: response.output_tokens || 0,
+          tokens_input: run_input,
+          tokens_output: run_output,
           llm_model: response.model,
           request_type: "run_summary"
         },
-        update_aggregates: !proxy_sufficient
+        update_aggregates: false
+      )
+
+      # Compute delta: what the proxy didn't already track
+      proxy_records = agent_run.token_usages.where.not(request_type: "run_summary")
+      if proxy_records.exists?
+        delta_input = [ run_input - proxy_records.sum(:input_tokens), 0 ].max
+        delta_output = [ run_output - proxy_records.sum(:output_tokens), 0 ].max
+      else
+        delta_input = run_input
+        delta_output = run_output
+      end
+
+      return unless (delta_input + delta_output).positive?
+
+      # Update aggregates with only the untracked delta
+      TokenUsageTracker.update_aggregates(
+        agent_run: agent_run,
+        tokens_input: delta_input,
+        tokens_output: delta_output
       )
     end
 

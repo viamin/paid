@@ -48,25 +48,7 @@ RSpec.describe AgentRuns::Execute do
         expect(agent_run.tokens_output).to eq(800)
       end
 
-      it "delegates token tracking to TokenUsageTracker with aggregates enabled when no proxy records exist" do
-        expect(TokenUsageTracker).to receive(:track).with(
-          agent_run: agent_run,
-          usage: {
-            tokens_input: 1500,
-            tokens_output: 800,
-            llm_model: "claude-sonnet-4",
-            request_type: "run_summary"
-          },
-          update_aggregates: true
-        )
-
-        described_class.call(agent_run: agent_run, prompt: prompt)
-      end
-
-      it "skips aggregate updates when per-request proxy records are sufficient" do
-        create(:token_usage, agent_run: agent_run, request_type: "agent",
-               input_tokens: 1200, output_tokens: 600)
-
+      it "records run_summary without aggregates, then applies full totals when no proxy records exist" do
         expect(TokenUsageTracker).to receive(:track).with(
           agent_run: agent_run,
           usage: {
@@ -77,23 +59,42 @@ RSpec.describe AgentRuns::Execute do
           },
           update_aggregates: false
         )
+        expect(TokenUsageTracker).to receive(:update_aggregates).with(
+          agent_run: agent_run,
+          tokens_input: 1500,
+          tokens_output: 800
+        )
 
         described_class.call(agent_run: agent_run, prompt: prompt)
       end
 
-      it "enables aggregate updates when proxy records are insufficient (partial tracking)" do
+      it "skips aggregate updates when proxy records fully cover tracking" do
         create(:token_usage, agent_run: agent_run, request_type: "agent",
-               input_tokens: 100, output_tokens: 50)
+               input_tokens: 1500, output_tokens: 800)
 
         expect(TokenUsageTracker).to receive(:track).with(
           agent_run: agent_run,
-          usage: {
-            tokens_input: 1500,
-            tokens_output: 800,
-            llm_model: "claude-sonnet-4",
-            request_type: "run_summary"
-          },
-          update_aggregates: true
+          usage: hash_including(request_type: "run_summary"),
+          update_aggregates: false
+        )
+        expect(TokenUsageTracker).not_to receive(:update_aggregates)
+
+        described_class.call(agent_run: agent_run, prompt: prompt)
+      end
+
+      it "applies only the delta when proxy records partially cover tracking" do
+        create(:token_usage, agent_run: agent_run, request_type: "agent",
+               input_tokens: 1000, output_tokens: 500)
+
+        expect(TokenUsageTracker).to receive(:track).with(
+          agent_run: agent_run,
+          usage: hash_including(request_type: "run_summary"),
+          update_aggregates: false
+        )
+        expect(TokenUsageTracker).to receive(:update_aggregates).with(
+          agent_run: agent_run,
+          tokens_input: 500,
+          tokens_output: 300
         )
 
         described_class.call(agent_run: agent_run, prompt: prompt)
