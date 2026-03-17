@@ -21,6 +21,18 @@ class AbTestPolicy < ApplicationPolicy
     has_account_role?(:owner)
   end
 
+  private
+
+  def account_for_record
+    record.prompt&.account
+  end
+
   class Scope < ApplicationPolicy::Scope
+    def resolve
+      raise Pundit::NotAuthorizedError, "must be logged in" unless user
+
+      scope.joins(:prompt).where(prompts: { account_id: user.account_id })
+            .or(scope.joins(:prompt).where(prompts: { account_id: nil }))
+    end
   end
 end

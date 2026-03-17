@@ -6,9 +6,8 @@ module AbTests
       new(...).call
     end
 
-    def initialize(prompt:, project:, agent_run: nil)
+    def initialize(prompt:, agent_run: nil)
       @prompt = prompt
-      @project = project
       @agent_run = agent_run
     end
 
@@ -18,12 +17,9 @@ module AbTests
 
       # Prevent double-assignment for the same agent run
       if agent_run
-        existing = AbTestAssignment.find_by(agent_run: agent_run)
+        existing = AbTestAssignment.find_by(ab_test: test, agent_run: agent_run)
         return existing.ab_test_variant if existing
       end
-
-      # Check traffic percentage
-      return nil unless rand(100) < test.traffic_percentage
 
       variant = select_variant(test)
       return variant unless variant && agent_run
@@ -33,26 +29,30 @@ module AbTests
 
     private
 
-    attr_reader :prompt, :project, :agent_run
+    attr_reader :prompt, :agent_run
 
     def find_active_test
       AbTest
         .running
-        .where(prompt: prompt, account_id: project.account_id)
+        .where(prompt: prompt)
         .order(created_at: :desc)
         .first
     end
 
+    # Weighted random selection: variants with fewer samples get higher weight
+    # to ensure balanced distribution across variants.
     def select_variant(test)
-      variants = test.variants.to_a
+      variants = test.ab_test_variants.to_a
       return nil if variants.empty?
 
-      total_weight = variants.sum(&:weight)
-      roll = rand(total_weight)
-      cumulative = 0
+      max_samples = variants.map(&:sample_count).max
+      weights = variants.map { |v| [ v, (max_samples - v.sample_count + 1).to_f ] }
+      total_weight = weights.sum(&:last)
+      roll = rand * total_weight
+      cumulative = 0.0
 
-      variants.each do |variant|
-        cumulative += variant.weight
+      weights.each do |variant, weight|
+        cumulative += weight
         return variant if roll < cumulative
       end
 
@@ -68,7 +68,7 @@ module AbTests
       assignment.ab_test_variant
     rescue ActiveRecord::RecordNotUnique
       # Another process already assigned this agent run; return the canonical variant
-      AbTestAssignment.find_by!(agent_run: agent_run).ab_test_variant
+      AbTestAssignment.find_by!(ab_test: test, agent_run: agent_run).ab_test_variant
     end
   end
 end

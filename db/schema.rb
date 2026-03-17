@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_14_000006) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_14_000002) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -19,45 +19,49 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_14_000006) do
     t.bigint "ab_test_variant_id", null: false
     t.bigint "agent_run_id", null: false
     t.datetime "created_at", null: false
+    t.decimal "quality_score", precision: 5, scale: 4
     t.datetime "updated_at", null: false
+    t.index ["ab_test_id", "agent_run_id"], name: "index_ab_test_assignments_unique", unique: true
     t.index ["ab_test_id"], name: "index_ab_test_assignments_on_ab_test_id"
     t.index ["ab_test_variant_id"], name: "index_ab_test_assignments_on_ab_test_variant_id"
-    t.index ["agent_run_id"], name: "index_ab_test_assignments_on_agent_run_id", unique: true
+    t.index ["agent_run_id"], name: "index_ab_test_assignments_on_agent_run_id"
   end
 
   create_table "ab_test_variants", force: :cascade do |t|
     t.bigint "ab_test_id", null: false
-    t.decimal "avg_quality_score", precision: 6, scale: 4
+    t.decimal "avg_quality_score", precision: 5, scale: 4
     t.datetime "created_at", null: false
-    t.string "name", null: false
+    t.boolean "is_control", default: false, null: false
     t.bigint "prompt_version_id", null: false
     t.integer "sample_count", default: 0, null: false
-    t.decimal "total_quality_score", precision: 12, scale: 4, default: "0.0", null: false
+    t.decimal "total_quality_score", precision: 10, scale: 4, default: "0.0", null: false
     t.datetime "updated_at", null: false
-    t.integer "weight", default: 50, null: false
-    t.index ["ab_test_id", "name"], name: "index_ab_test_variants_on_ab_test_id_and_name", unique: true
+    t.index ["ab_test_id", "is_control"], name: "index_ab_test_variants_on_test_and_control"
+    t.index ["ab_test_id", "prompt_version_id"], name: "index_ab_test_variants_on_test_and_prompt_version", unique: true
     t.index ["ab_test_id"], name: "index_ab_test_variants_on_ab_test_id"
+    t.index ["ab_test_id"], name: "index_ab_test_variants_on_control_per_test", unique: true, where: "(is_control = true)"
     t.index ["prompt_version_id"], name: "index_ab_test_variants_on_prompt_version_id"
   end
 
   create_table "ab_tests", force: :cascade do |t|
-    t.bigint "account_id", null: false
     t.datetime "completed_at"
-    t.decimal "confidence_level", precision: 4, scale: 2
+    t.decimal "confidence_threshold", precision: 5, scale: 4, default: "0.95", null: false
+    t.bigint "control_version_id", null: false
     t.datetime "created_at", null: false
     t.text "description"
-    t.integer "min_sample_size", default: 30, null: false
-    t.string "name", null: false
+    t.integer "min_samples_per_variant", default: 30, null: false
+    t.string "name", limit: 255, null: false
     t.bigint "prompt_id", null: false
     t.datetime "started_at"
-    t.string "status", limit: 20, default: "draft", null: false
-    t.integer "traffic_percentage", default: 100, null: false
+    t.string "status", limit: 50, default: "draft", null: false
     t.datetime "updated_at", null: false
     t.bigint "winner_variant_id"
-    t.index ["account_id"], name: "index_ab_tests_on_account_id"
+    t.index ["control_version_id"], name: "index_ab_tests_on_control_version_id"
     t.index ["prompt_id", "status"], name: "index_ab_tests_on_prompt_id_and_status"
     t.index ["prompt_id"], name: "index_ab_tests_on_prompt_id"
+    t.index ["prompt_id"], name: "index_ab_tests_one_running_per_prompt", unique: true, where: "((status)::text = 'running'::text)"
     t.index ["status"], name: "index_ab_tests_on_status"
+    t.index ["winner_variant_id"], name: "index_ab_tests_on_winner_variant_id"
   end
 
   create_table "account_memberships", force: :cascade do |t|
@@ -594,9 +598,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_14_000006) do
   add_foreign_key "ab_test_assignments", "ab_tests", on_delete: :cascade
   add_foreign_key "ab_test_assignments", "agent_runs", on_delete: :cascade
   add_foreign_key "ab_test_variants", "ab_tests", on_delete: :cascade
-  add_foreign_key "ab_test_variants", "prompt_versions"
+  add_foreign_key "ab_test_variants", "prompt_versions", on_delete: :restrict
   add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
-  add_foreign_key "ab_tests", "accounts", on_delete: :cascade
+  add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"

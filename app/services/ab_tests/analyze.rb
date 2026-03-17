@@ -1,102 +1,85 @@
 # frozen_string_literal: true
 
 module AbTests
+  # Analyzes A/B test results using Welch's t-test to determine
+  # if any variant is statistically significantly better than control.
+  #
+  # @example
+  #   result = AbTests::Analyze.call(ab_test: test)
+  #   result[:status]     # => :winner_found, :control_wins, :no_significant_difference, :insufficient_data
+  #   result[:winner]     # => AbTestVariant (if winner_found)
+  #   result[:confidence] # => 0.97 (if winner_found)
   class Analyze
-    include WelchTTest
+    Result = Struct.new(:status, :winner, :confidence, :improvement, :details, keyword_init: true)
 
-    def self.call(...)
-      new(...).call
-    end
+    attr_reader :ab_test
 
     def initialize(ab_test:)
       @ab_test = ab_test
     end
 
-    def call
-      return insufficient_data unless ab_test.reached_min_sample_size?
+    def self.call(...)
+      new(...).analyze
+    end
 
-      variants = ab_test.variants.order(:id).to_a
-      return insufficient_data if variants.size < 2
+    def analyze
+      variants = ab_test.ab_test_variants.order(:id).to_a
+      control = variants.find(&:is_control)
 
-      # Control is the variant named "control"; falls back to lowest-id variant
-      # if no variant is explicitly named "control".
-      control = variants.find { |v| v.name == "control" } || variants.first
-      best_variant = variants.max_by { |v| v.avg_quality_score.to_f }
+      return Result.new(status: :insufficient_data) unless control
+      return Result.new(status: :insufficient_data) unless all_have_minimum_samples?(variants)
 
-      improvement = calculate_improvement(control, best_variant)
-      confidence = calculate_confidence(control, best_variant)
-      threshold = ab_test.confidence_level&.to_f || 0.95
+      control_scores = scores_for(control)
+      return Result.new(status: :insufficient_data) if control_scores.size < 2
 
-      {
-        status: confidence >= threshold ? :significant : :not_significant,
-        winner: best_variant,
-        control: control,
-        confidence: confidence.round(4),
-        improvement: improvement.round(2),
-        variants: variants.map { |v| variant_summary(v) }
-      }
+      results = variants.reject(&:is_control).map do |variant|
+        variant_scores = scores_for(variant)
+        next nil if variant_scores.size < 2
+
+        t_result = Statistics.welch_t_test(control_scores, variant_scores)
+        {
+          variant: variant,
+          mean_diff: Statistics.mean(variant_scores) - Statistics.mean(control_scores),
+          p_value: t_result[:p_value],
+          significant: t_result[:p_value] < (1 - ab_test.confidence_threshold)
+        }
+      end.compact
+
+      determine_outcome(results)
     end
 
     private
 
-    attr_reader :ab_test
-
-    def insufficient_data
-      {
-        status: :insufficient_data,
-        winner: nil,
-        control: nil,
-        confidence: 0.0,
-        improvement: 0.0,
-        variants: ab_test.variants.map { |v| variant_summary(v) }
-      }
+    def all_have_minimum_samples?(variants)
+      variants.all? { |v| v.sample_count >= ab_test.min_samples_per_variant }
     end
 
-    def variant_summary(variant)
-      {
-        id: variant.id,
-        name: variant.name,
-        sample_count: variant.sample_count,
-        avg_quality_score: variant.avg_quality_score.to_f.round(4)
-      }
+    def scores_for(variant)
+      variant.ab_test_assignments
+             .where.not(quality_score: nil)
+             .pluck(:quality_score)
+             .map(&:to_f)
     end
 
-    def calculate_improvement(control, variant)
-      return 0.0 if control.avg_quality_score.to_f.zero?
-      return 0.0 if control == variant
+    def determine_outcome(results)
+      return Result.new(status: :insufficient_data) if results.empty?
 
-      ((variant.avg_quality_score.to_f - control.avg_quality_score.to_f) / control.avg_quality_score.to_f * 100)
-    end
+      significant_improvements = results.select { |r| r[:significant] && r[:mean_diff] > 0 }
 
-    def calculate_confidence(control, variant)
-      return 0.0 if control == variant
-      return 0.0 if control.sample_count < 2 || variant.sample_count < 2
-
-      welch_t_test_confidence(
-        variant.avg_quality_score.to_f,
-        control.avg_quality_score.to_f,
-        variant_std_dev(variant),
-        variant_std_dev(control),
-        variant.sample_count.to_f,
-        control.sample_count.to_f
-      )
-    end
-
-    # Computes standard deviation from actual quality metric composite scores
-    # for the variant's assigned agent runs.
-    def variant_std_dev(variant)
-      scores = QualityMetric
-        .joins(agent_run: :ab_test_assignment)
-        .where(ab_test_assignments: { ab_test_variant_id: variant.id })
-        .where.not(composite_score: nil)
-        .pluck(:composite_score)
-        .map(&:to_f)
-
-      return 0.25 if scores.size < 2
-
-      mean = scores.sum / scores.size
-      variance = scores.sum { |s| (s - mean)**2 } / (scores.size - 1)
-      Math.sqrt(variance)
+      if significant_improvements.any?
+        winner = significant_improvements.max_by { |r| r[:mean_diff] }
+        Result.new(
+          status: :winner_found,
+          winner: winner[:variant],
+          confidence: 1 - winner[:p_value],
+          improvement: winner[:mean_diff],
+          details: results
+        )
+      elsif results.all? { |r| r[:significant] && r[:mean_diff] < 0 }
+        Result.new(status: :control_wins, details: results)
+      else
+        Result.new(status: :no_significant_difference, details: results)
+      end
     end
   end
 end

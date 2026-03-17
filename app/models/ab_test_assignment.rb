@@ -5,15 +5,16 @@ class AbTestAssignment < ApplicationRecord
   belongs_to :ab_test_variant
   belongs_to :agent_run
 
-  validates :agent_run_id, uniqueness: true
-  validate :variant_belongs_to_test
+  validates :agent_run_id, uniqueness: { scope: :ab_test_id }
+  validate :ab_test_variant_matches_ab_test
 
   private
 
-  def variant_belongs_to_test
-    return unless ab_test_id && ab_test_variant_id
-    return if ab_test_variant&.ab_test_id == ab_test_id
+  def ab_test_variant_matches_ab_test
+    return if ab_test_variant.nil? || ab_test.nil?
 
-    errors.add(:ab_test_variant, "must belong to the same A/B test")
+    if ab_test_variant.ab_test_id != ab_test_id
+      errors.add(:ab_test_variant, "must belong to the same A/B test")
+    end
   end
 end

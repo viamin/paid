@@ -52,7 +52,7 @@ module QualityMetrics
         )
         .order("avg_score DESC")
         .limit(10)
-        .map { |r| { id: r.prompt_id, name: r.name, avg_score: r.avg_score.to_f.round(2), sample_count: r.sample_count } }
+        .map { |r| { id: r.prompt_id, name: r.name, avg_score: r.avg_score.to_f.round(2), sample_count: r.sample_count.to_i } }
     end
 
     def by_model
@@ -67,7 +67,7 @@ module QualityMetrics
           "COUNT(*) as sample_count"
         )
         .order("avg_score DESC")
-        .map { |r| { id: r.llm_model_id, name: r.display_name, avg_score: r.avg_score.to_f.round(2), sample_count: r.sample_count } }
+        .map { |r| { id: r.llm_model_id, name: r.display_name, avg_score: r.avg_score.to_f.round(2), sample_count: r.sample_count.to_i } }
     end
 
     def weekly_trend

@@ -65,7 +65,8 @@ module Models
         # For complex tasks, prefer the most capable models
         scope.order(Arel.sql("capability_score DESC NULLS LAST")).limit(5).to_a
       else
-        # For medium complexity, balance capability and cost
+        # For medium complexity, prefer higher capability (same as complex tasks
+        # but with a wider pool since no minimum capability filter is applied)
         scope.order(Arel.sql("capability_score DESC NULLS LAST")).limit(5).to_a
       end
     end
