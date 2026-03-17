@@ -1270,7 +1270,7 @@ After 1.0, we'll adopt semver and backward compatibility commitments. Until then
 
 ```ruby
 # GOOD: Configurable interval, cooperative stop, proper cleanup
-class BackgroundWorker
+class GoodBackgroundWorker
   def initialize(check_interval: 60)
     @check_interval = check_interval
     @stop = false
@@ -1306,7 +1306,7 @@ class BackgroundWorker
 end
 
 # BAD: Hardcoded interval, no cleanup, no stop mechanism
-class BackgroundWorker
+class BadBackgroundWorker
   def start
     Thread.new do
       loop do
