@@ -503,7 +503,7 @@ module Activities
         Post your review using the GitHub API proxy:
 
         ```bash
-        # Get the PR diff
+        # Get PR details (metadata and links)
         curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}" \\
           -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
           -H "X-Proxy-Token: $PROXY_TOKEN"
