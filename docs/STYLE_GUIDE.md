@@ -1288,8 +1288,10 @@ class BackgroundWorker
 
   def stop
     @stop = true
-    @thread&.join(5)       # Wait for cooperative shutdown
-    @thread&.kill if @thread&.alive? # Last resort if thread is stuck
+    @thread&.wakeup         # Interrupt sleep so loop re-checks @stop immediately
+    @thread&.join(5)
+  rescue ThreadError
+    # Thread already dead — nothing to do
   end
 end
 
@@ -1388,7 +1390,7 @@ When reviewing PRs, check for these common issues:
 
 - [ ] Classes follow size limits (~100 lines, methods ~5 lines, max 4 parameters)
 - [ ] Test descriptions are clear and behavior-focused
-- [ ] Error handling uses specific error types, not generic `rescue => e`
+- [ ] Error handling uses specific error types (generic `rescue => e` only at top-level boundaries for logging + re-raise)
 - [ ] No mocking of application code (only external dependencies)
 - [ ] No ZFC violations (semantic analysis in code instead of AI)
 - [ ] No backward compatibility shims, legacy wrappers, or "deprecated" methods
