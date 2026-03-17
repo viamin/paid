@@ -1,0 +1,102 @@
+# frozen_string_literal: true
+
+class AbTestsController < ApplicationController
+  before_action :set_prompt
+  before_action :set_ab_test, only: [ :show, :start, :cancel, :promote ]
+  skip_after_action :verify_authorized, only: :index
+
+  def index
+    @ab_tests = policy_scope(AbTest).where(prompt: @prompt)
+                                    .includes(:control_version, :winner_variant, :ab_test_variants)
+                                    .order(created_at: :desc)
+  end
+
+  def show
+    authorize @ab_test
+    @variants = @ab_test.ab_test_variants.includes(:prompt_version).order(is_control: :desc)
+    @analysis = analyze_if_running
+  end
+
+  def new
+    @ab_test = @prompt.ab_tests.build
+    authorize @ab_test
+    @versions = available_versions
+  end
+
+  def create
+    authorize @prompt.ab_tests.build, :create?
+
+    ab_test = AbTests::Create.call(
+      prompt: @prompt,
+      name: ab_test_params[:name],
+      description: ab_test_params[:description],
+      variant_version_ids: selected_variant_ids,
+      min_samples_per_variant: ab_test_params[:min_samples_per_variant].to_i,
+      confidence_threshold: ab_test_params[:confidence_threshold].to_f
+    )
+
+    redirect_to prompt_ab_test_path(@prompt, ab_test), notice: "A/B test was successfully created."
+  rescue ArgumentError => e
+    @ab_test = @prompt.ab_tests.build(
+      name: ab_test_params[:name],
+      description: ab_test_params[:description]
+    )
+    @ab_test.errors.add(:base, e.message)
+    @versions = available_versions
+    render :new, status: :unprocessable_content
+  end
+
+  def start
+    authorize @ab_test, :update?
+    @ab_test.start!
+    redirect_to prompt_ab_test_path(@prompt, @ab_test), notice: "A/B test has been started."
+  rescue ActiveRecord::RecordInvalid => e
+    redirect_to prompt_ab_test_path(@prompt, @ab_test), alert: e.record.errors.full_messages.join(", ")
+  end
+
+  def cancel
+    authorize @ab_test, :update?
+    @ab_test.cancel!
+    redirect_to prompt_ab_test_path(@prompt, @ab_test), notice: "A/B test has been cancelled."
+  rescue ActiveRecord::RecordInvalid => e
+    redirect_to prompt_ab_test_path(@prompt, @ab_test), alert: e.record.errors.full_messages.join(", ")
+  end
+
+  def promote
+    authorize @ab_test, :update?
+    AbTests::PromoteWinner.call(ab_test: @ab_test)
+    redirect_to prompt_ab_test_path(@prompt, @ab_test),
+                notice: "Winner promoted! v#{@ab_test.winner_variant.prompt_version.version} is now the current version."
+  rescue ArgumentError => e
+    redirect_to prompt_ab_test_path(@prompt, @ab_test), alert: e.message
+  end
+
+  private
+
+  def set_prompt
+    @prompt = policy_scope(Prompt).find(params[:prompt_id])
+  end
+
+  def set_ab_test
+    @ab_test = @prompt.ab_tests.find(params[:id])
+  end
+
+  def ab_test_params
+    params.require(:ab_test).permit(:name, :description, :min_samples_per_variant, :confidence_threshold,
+                                    variant_version_ids: [])
+  end
+
+  def selected_variant_ids
+    Array(ab_test_params[:variant_version_ids]).reject(&:blank?).map(&:to_i)
+  end
+
+  def available_versions
+    @prompt.prompt_versions.order(version: :desc)
+  end
+
+  def analyze_if_running
+    return unless @ab_test.running? && @ab_test.ab_test_variants.any? { |v| v.sample_count > 0 }
+
+    AbTests::Analyze.call(ab_test: @ab_test)
+  end
+end
