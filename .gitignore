@@ -95,6 +95,7 @@ config.log
 /.gem-home/
 /.gem-spec-cache/
 /.gem_cache/
+/.gem-cache/
 /.gem_home/
 /.mise-cache/
 /.mise-data/
