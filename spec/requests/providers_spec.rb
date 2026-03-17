@@ -70,10 +70,17 @@ RSpec.describe "Providers" do
     end
 
     it "rejects unsupported providers" do
-      post providers_path, params: { provider: { provider_key: "gemini", enabled_for_agent_runs: true, enabled_for_fallback: true } }
+      post providers_path, params: { provider: { provider_key: "unknown_provider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("is not currently available")
+    end
+
+    it "accepts agent harness-supported providers configured through the providers page" do
+      post providers_path, params: { provider: { provider_key: "gemini", enabled_for_agent_runs: true, enabled_for_fallback: true } }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.providers.find_by(provider_key: "gemini")).to be_present
     end
   end
 

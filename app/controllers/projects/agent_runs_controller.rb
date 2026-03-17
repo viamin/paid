@@ -269,7 +269,7 @@ module Projects
     end
 
     def managed_provider_key?(provider_key)
-      Provider::SUPPORTED_PROVIDER_KEYS.include?(provider_key)
+      Provider.supported_provider_key?(provider_key)
     end
 
     def retry_provider_options_for(agent_run)
