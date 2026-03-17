@@ -130,15 +130,15 @@ module AgentRuns
         update_aggregates: false
       )
 
-      # Compute delta: what the proxy didn't already track
-      proxy_records = agent_run.token_usages.where.not(request_type: "run_summary")
-      if proxy_records.exists?
-        delta_input = [ run_input - proxy_records.sum(:input_tokens), 0 ].max
-        delta_output = [ run_output - proxy_records.sum(:output_tokens), 0 ].max
-      else
-        delta_input = run_input
-        delta_output = run_output
-      end
+      # Compute delta: what the proxy didn't already track.
+      # Single query for both sums (returns [0, 0] when no proxy records exist).
+      proxy_totals = agent_run.token_usages
+        .where.not(request_type: "run_summary")
+        .pick(Arel.sql("COALESCE(SUM(input_tokens), 0)"), Arel.sql("COALESCE(SUM(output_tokens), 0)"))
+      proxy_input, proxy_output = proxy_totals
+
+      delta_input = [ run_input - proxy_input, 0 ].max
+      delta_output = [ run_output - proxy_output, 0 ].max
 
       return unless (delta_input + delta_output).positive?
 

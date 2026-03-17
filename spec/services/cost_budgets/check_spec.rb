@@ -54,7 +54,7 @@ RSpec.describe CostBudgets::Check do
     end
 
     context "when multiple budgets are exceeded" do
-      it "returns a deterministic reason based on budget_type ordering" do
+      it "returns the most specific exceeded budget (per_run > daily > monthly)" do
         create(:cost_budget, project: project, budget_type: "monthly",
           limit_cents: 10_000, current_usage_cents: 10_001,
           period_started_at: Time.current.beginning_of_month)
