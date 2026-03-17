@@ -85,6 +85,12 @@ module Projects
       end
 
       agent_type = retry_agent_type_for(@agent_run)
+      if agent_type.nil?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "The selected provider is not available for retries."
+        return
+      end
+
       new_run = AgentRun.create!(
         project: @project,
         issue: @agent_run.issue,
@@ -286,8 +292,18 @@ module Projects
       return agent_run.agent_type if requested_provider_key.blank? && requested_agent_type.blank?
 
       requested_agent_type = provider_key_to_agent_type(requested_provider_key) if requested_provider_key.present?
+      return nil unless retry_agent_type_allowed?(requested_agent_type)
 
-      resolve_agent_type(requested_agent_type: requested_agent_type)
+      requested_agent_type
+    end
+
+    def retry_agent_type_allowed?(agent_type)
+      return false unless AgentRun::AGENT_TYPES.include?(agent_type)
+
+      provider_key = agent_type_to_provider_key(agent_type)
+      return true unless managed_provider_key?(provider_key)
+
+      UserSetting.enabled_agent_providers(current_user).include?(provider_key)
     end
 
     def resolve_agent_type(requested_agent_type:)
