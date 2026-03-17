@@ -129,7 +129,7 @@ Analyzing meaning or making a judgment?
 
 - Avoid O(n^2) -- use index lookups over nested loops. `STYLE_GUIDE:1313-1328`
 - Batch database operations. Use `find_each` for large record sets. `STYLE_GUIDE:1330-1350`
-- Stream large files. Cache expensive operations with invalidation strategy. `STYLE_GUIDE:1352-1382`
+- Stream large files. Cache expensive operations with invalidation strategy. `STYLE_GUIDE:1352-1383`
 
 ## 13. Code Review Checklist
 
@@ -143,7 +143,7 @@ Analyzing meaning or making a judgment?
 - [ ] No N+1 queries
 - [ ] No `sleep` in tests
 
-`STYLE_GUIDE:1385-1397`
+`STYLE_GUIDE:1387-1400`
 
 ## 14. Anti-Patterns (Reject in PRs)
 
