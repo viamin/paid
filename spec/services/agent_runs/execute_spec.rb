@@ -48,12 +48,30 @@ RSpec.describe AgentRuns::Execute do
         expect(agent_run.tokens_output).to eq(800)
       end
 
-      it "delegates token tracking to TokenUsageTracker" do
+      it "delegates token tracking to TokenUsageTracker with aggregates enabled when no proxy records exist" do
         expect(TokenUsageTracker).to receive(:track).with(
           agent_run: agent_run,
           usage: {
             tokens_input: 1500,
             tokens_output: 800,
+            llm_model: "claude-sonnet-4",
+            request_type: "run_summary"
+          },
+          update_aggregates: true
+        )
+
+        described_class.call(agent_run: agent_run, prompt: prompt)
+      end
+
+      it "skips aggregate updates when per-request proxy records already exist" do
+        create(:token_usage, agent_run: agent_run, request_type: "agent")
+
+        expect(TokenUsageTracker).to receive(:track).with(
+          agent_run: agent_run,
+          usage: {
+            tokens_input: 1500,
+            tokens_output: 800,
+            llm_model: "claude-sonnet-4",
             request_type: "run_summary"
           },
           update_aggregates: false

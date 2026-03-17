@@ -4,7 +4,10 @@ module TokenUsages
   class Aggregate
     attr_reader :scope
 
-    def initialize(scope: TokenUsage.all)
+    # Defaults to billable scope (excludes run_summary records) to avoid
+    # double-counting when both per-request proxy tracking and run-level
+    # summaries exist. Pass scope: TokenUsage.all to include everything.
+    def initialize(scope: TokenUsage.billable)
       @scope = scope
     end
 
@@ -13,7 +16,7 @@ module TokenUsages
     end
 
     def self.for_project(project_id)
-      new(scope: TokenUsage.by_project(project_id)).call
+      new(scope: TokenUsage.billable.by_project(project_id)).call
     end
 
     def call

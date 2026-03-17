@@ -105,19 +105,24 @@ module AgentRuns
     # Run-level aggregate token tracking from the agent harness response.
     # Uses request_type "run_summary" to distinguish from per-request records
     # created by the secrets proxy controller (request_type "agent").
-    # Skips aggregate updates (agent_run/project counters and cost budgets)
-    # because those are already handled per-request by the secrets proxy.
+    # Skips aggregate updates only when per-request proxy records already exist,
+    # to avoid double-counting. When the secrets proxy isn't used (e.g.,
+    # subscription auth mode), this is the only source of usage data and
+    # must update aggregates.
     def track_tokens(response)
       return unless response.tokens
+
+      has_proxy_records = agent_run.token_usages.where.not(request_type: "run_summary").exists?
 
       TokenUsageTracker.track(
         agent_run: agent_run,
         usage: {
           tokens_input: response.input_tokens || 0,
           tokens_output: response.output_tokens || 0,
+          llm_model: response.model,
           request_type: "run_summary"
         },
-        update_aggregates: false
+        update_aggregates: !has_proxy_records
       )
     end
 
