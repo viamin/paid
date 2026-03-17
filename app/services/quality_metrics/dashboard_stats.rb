@@ -18,6 +18,10 @@ module QualityMetrics
       new(...).call
     end
 
+    def self.overview(...)
+      new(...).send(:overview)
+    end
+
     def call
       {
         overview: overview,
@@ -72,26 +76,15 @@ module QualityMetrics
     end
 
     def score_breakdown
-      automated = QualityMetric.by_project(project.id).automated.with_composite_score
-      return {} if automated.none?
+      valid_keys = QualityMetric::SCORE_WEIGHTS.keys
+      rows = QualityMetric.by_project(project.id).automated.with_composite_score
+        .where.not(scores: nil)
+        .joins("CROSS JOIN LATERAL jsonb_each_text(scores) AS kv(key, val)")
+        .where("kv.key IN (?)", valid_keys)
+        .group("kv.key")
+        .pluck(Arel.sql("kv.key, AVG(kv.val::float)"))
 
-      totals = Hash.new(0.0)
-      counts = Hash.new(0)
-
-      automated.find_each do |metric|
-        next if metric.scores.blank?
-
-        metric.scores.each do |key, value|
-          next unless QualityMetric::SCORE_WEIGHTS.key?(key)
-
-          totals[key] += value.to_f
-          counts[key] += 1
-        end
-      end
-
-      return {} if counts.empty?
-
-      totals.to_h { |key, sum| [ key, (sum / counts[key]).round(4) ] }
+      rows.to_h { |key, avg| [ key, avg.to_f.round(4) ] }
     end
 
     def prompt_comparison
