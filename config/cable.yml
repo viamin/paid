@@ -1,7 +1,12 @@
-# Use async adapter for development (single-process with bin/dev).
-# Production uses solid_cable for cross-process broadcasting.
+# Use solid_cable in development for cross-process broadcasting (bin/dev
+# runs web and worker as separate processes via Procfile.dev).
 development:
-  adapter: async
+  adapter: solid_cable
+  connects_to:
+    database:
+      writing: cable
+  polling_interval: 0.1.seconds
+  message_retention: 1.day
 
 test:
   adapter: test

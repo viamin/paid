@@ -1,5 +1,4 @@
-<%# Live dashboard (closes #147): real-time stats, active runs, recent activity, and alerts.
-    Future enhancements may add log streaming, workflow status, resource usage, and worker pool status. %>
+<%# Live dashboard (closes #147): real-time stats, active runs, recent activity, and alerts. %>
 <%= turbo_stream_from current_account, :dashboard %>
 
 <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10" data-controller="live-dashboard">
