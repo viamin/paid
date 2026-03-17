@@ -49,6 +49,9 @@
 # Ignore code coverage reports
 /coverage/
 
+# RSpec example status persistence (for --only-failures)
+spec/.examples.txt
+
 # Ignore agent workspace directory (used for Docker container testing)
 /agent-workspace/
 
