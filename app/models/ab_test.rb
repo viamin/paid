@@ -15,6 +15,7 @@ class AbTest < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :traffic_percentage, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
   validates :min_sample_size, numericality: { greater_than: 0 }
+  validate :prompt_belongs_to_account
 
   scope :draft, -> { where(status: "draft") }
   scope :running, -> { where(status: "running") }
@@ -85,5 +86,14 @@ class AbTest < ApplicationRecord
 
   def for_prompt?(prompt)
     prompt_id == prompt.id
+  end
+
+  private
+
+  def prompt_belongs_to_account
+    return unless prompt_id && account_id
+    return if prompt&.account_id == account_id || prompt&.global?
+
+    errors.add(:prompt, "must belong to the same account or be a global prompt")
   end
 end

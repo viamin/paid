@@ -8,6 +8,7 @@ class AbTestVariant < ApplicationRecord
 
   validates :name, presence: true, uniqueness: { scope: :ab_test_id }
   validates :weight, numericality: { greater_than: 0, less_than_or_equal_to: 100 }
+  validate :prompt_version_belongs_to_prompt
 
   def record_quality_score!(score)
     return if score.nil?
@@ -19,5 +20,14 @@ class AbTestVariant < ApplicationRecord
       "updated_at = #{self.class.connection.quote(Time.current)}"
     )
     reload
+  end
+
+  private
+
+  def prompt_version_belongs_to_prompt
+    return unless prompt_version_id && ab_test_id
+    return if prompt_version&.prompt_id == ab_test&.prompt_id
+
+    errors.add(:prompt_version, "must belong to the same prompt as the A/B test")
   end
 end
