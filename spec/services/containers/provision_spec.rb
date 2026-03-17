@@ -210,6 +210,24 @@ RSpec.describe Containers::Provision do
         expect(service.workspace_volume).to eq("paid-workspace-#{agent_run.id}")
       end
 
+      it "labels created workspace volumes for paid ownership" do
+        service = described_class.new(agent_run: agent_run)
+
+        service.provision
+
+        expect(Docker::Volume).to have_received(:create).with(
+          "paid-workspace-#{agent_run.id}",
+          {
+            "Labels" => {
+              "paid.managed" => "true",
+              "paid.resource" => "workspace_volume",
+              "paid.agent_run_id" => agent_run.id.to_s,
+              "paid.project_id" => project.id.to_s
+            }
+          }
+        )
+      end
+
       it "creates workspace volume for blank path" do
         service = described_class.new(agent_run: agent_run, worktree_path: "")
 
