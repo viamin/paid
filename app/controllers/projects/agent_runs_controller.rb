@@ -281,11 +281,11 @@ module Projects
 
     def retry_agent_type_for(agent_run)
       requested_provider_key = params[:provider].presence
-      requested_agent_type = if requested_provider_key.present?
-        provider_key_to_agent_type(requested_provider_key)
-      else
-        params[:agent_type].presence || agent_run.agent_type
-      end
+      requested_agent_type = params[:agent_type].presence
+
+      return agent_run.agent_type if requested_provider_key.blank? && requested_agent_type.blank?
+
+      requested_agent_type = provider_key_to_agent_type(requested_provider_key) if requested_provider_key.present?
 
       resolve_agent_type(requested_agent_type: requested_agent_type)
     end

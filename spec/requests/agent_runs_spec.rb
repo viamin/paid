@@ -244,8 +244,8 @@ RSpec.describe "AgentRuns" do
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include("Retry with Claude")
-        expect(response.body).to include("Retry with Cursor")
+        expect(response.body).to include("Retry with Anthropic Claude CLI")
+        expect(response.body).to include("Retry with Cursor AI")
         expect(response.body).to include("Current")
       end
 
@@ -596,6 +596,15 @@ RSpec.describe "AgentRuns" do
         post retry_project_agent_run_path(project, agent_run)
 
         expect(agent_run.reload.status).to eq("retried")
+      end
+
+      it "keeps the primary retry action on the original agent type" do
+        user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false)
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "cursor")
+
+        post retry_project_agent_run_path(project, agent_run)
+
+        expect(AgentRun.last.agent_type).to eq("cursor")
       end
 
       it "creates a retry using a different configured provider" do
