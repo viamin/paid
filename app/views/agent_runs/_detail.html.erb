@@ -17,45 +17,52 @@
           <%= agent_run_status_badge(agent_run.status) %>
           <% if agent_run.finished? && local_assigns.fetch(:show_retry, false) %>
             <% retry_provider_options = local_assigns.fetch(:retry_provider_options, []) %>
-            <% retry_menu_button_id = dom_id(agent_run, :retry_menu_button) %>
-            <% retry_menu_id = dom_id(agent_run, :retry_menu) %>
-            <div class="relative inline-flex rounded-md shadow-sm" data-controller="dropdown">
-              <%= button_to "Retry", retry_project_agent_run_path(agent_run.project, agent_run),
-                    method: :post,
-                    class: "inline-flex items-center rounded-l-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" %>
-              <button type="button"
-                      id="<%= retry_menu_button_id %>"
-                      class="inline-flex items-center rounded-r-md border-l border-indigo-500 bg-indigo-600 px-2 py-1.5 text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-                      aria-haspopup="menu"
-                      aria-expanded="false"
-                      aria-controls="<%= retry_menu_id %>"
-                      aria-label="Retry options"
-                      data-action="dropdown#toggle"
-                      data-dropdown-target="button">
-                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
-                </svg>
-              </button>
-              <div id="<%= retry_menu_id %>"
-                   class="absolute right-0 top-full z-10 mt-2 hidden min-w-56 overflow-hidden rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5"
-                   role="menu"
-                   aria-labelledby="<%= retry_menu_button_id %>"
-                   data-dropdown-target="menu">
-                <% retry_provider_options.each do |option| %>
-                  <%= button_to retry_project_agent_run_path(agent_run.project, agent_run),
-                        method: :post,
-                        params: { provider: option[:provider_key] },
-                        form_class: "w-full",
-                        class: "flex w-full items-center justify-between px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50",
-                        role: "menuitem" do %>
-                    <span>Retry with <%= option[:label] %></span>
-                    <% if option[:current] %>
-                      <span class="ml-3 rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Current</span>
+            <% show_retry_menu = retry_provider_options.any? { |option| !option[:current] } %>
+            <% if show_retry_menu %>
+              <% retry_menu_button_id = dom_id(agent_run, :retry_menu_button) %>
+              <% retry_menu_id = dom_id(agent_run, :retry_menu) %>
+              <div class="relative inline-flex rounded-md shadow-sm" data-controller="dropdown">
+                <%= button_to "Retry", retry_project_agent_run_path(agent_run.project, agent_run),
+                      method: :post,
+                      class: "inline-flex items-center rounded-l-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" %>
+                <button type="button"
+                        id="<%= retry_menu_button_id %>"
+                        class="inline-flex items-center rounded-r-md border-l border-indigo-500 bg-indigo-600 px-2 py-1.5 text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                        aria-haspopup="menu"
+                        aria-expanded="false"
+                        aria-controls="<%= retry_menu_id %>"
+                        aria-label="Retry options"
+                        data-action="dropdown#toggle"
+                        data-dropdown-target="button">
+                  <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
+                  </svg>
+                </button>
+                <div id="<%= retry_menu_id %>"
+                     class="absolute right-0 top-full z-10 mt-2 hidden min-w-56 overflow-hidden rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5"
+                     role="menu"
+                     aria-labelledby="<%= retry_menu_button_id %>"
+                     data-dropdown-target="menu">
+                  <% retry_provider_options.each do |option| %>
+                    <%= button_to retry_project_agent_run_path(agent_run.project, agent_run),
+                          method: :post,
+                          params: { provider: option[:provider_key] },
+                          form_class: "w-full",
+                          class: "flex w-full items-center justify-between px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50",
+                          role: "menuitem" do %>
+                      <span>Retry with <%= option[:label] %></span>
+                      <% if option[:current] %>
+                        <span class="ml-3 rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Current</span>
+                      <% end %>
                     <% end %>
                   <% end %>
-                <% end %>
+                </div>
               </div>
-            </div>
+            <% else %>
+              <%= button_to "Retry", retry_project_agent_run_path(agent_run.project, agent_run),
+                    method: :post,
+                    class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" %>
+            <% end %>
           <% end %>
         </div>
       </div>
