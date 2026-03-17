@@ -26,7 +26,9 @@ Rails.application.routes.draw do
 
   # User settings (singleton resource — one per user)
   resource :user_settings, only: [ :edit, :update ]
-  resources :providers, except: :show
+  resources :providers, except: :show do
+    patch :settings, on: :collection
+  end
 
   # Service container management
   resources :service_containers
