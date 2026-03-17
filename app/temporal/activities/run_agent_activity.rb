@@ -514,6 +514,7 @@ module Activities
           -H "X-Proxy-Token: $PROXY_TOKEN"
 
         # Post a review with inline comments
+        # Note: "side" must be "RIGHT" (new code) or "LEFT" (deleted code) for inline comments.
         curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/reviews" \\
           -H "Content-Type: application/json" \\
           -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
@@ -525,6 +526,7 @@ module Activities
               {
                 "path": "file.rb",
                 "line": 10,
+                "side": "RIGHT",
                 "body": "Review comment on this line"
               }
             ]
