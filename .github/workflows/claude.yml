@@ -189,7 +189,7 @@ jobs:
         #   4. persist-credentials: false on any checkout steps
         #   5. The action performs its own permission checks before
         #      accessing PR code
-        uses: anthropics/claude-code-action@26ec041249acb0a944c0a47b6c0c13f05dbc5b44 # v1
+        uses: anthropics/claude-code-action@cd77b50d2b0808657f8e6774085c8bf54484351c # v1
         with:
           # IMPORTANT: Authentication uses an OAuth token, NOT an API key.
           # Create the CLAUDE_CODE_OAUTH_TOKEN secret (not an Anthropic API key)
