@@ -363,6 +363,7 @@ class GithubClient
           id: r.id,
           user_login: r.user&.login,
           state: r.state,
+          body: r.body.to_s,
           submitted_at: parse_timestamp(r.submitted_at)
         }
       end
