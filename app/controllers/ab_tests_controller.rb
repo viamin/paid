@@ -14,7 +14,7 @@ class AbTestsController < ApplicationController
   def show
     authorize @ab_test
     @variants = @ab_test.ab_test_variants.includes(:prompt_version).order(is_control: :desc)
-    @analysis = analyze_if_running(@variants)
+    @analysis = analyze_if_available(@variants)
   end
 
   def new
@@ -100,8 +100,8 @@ class AbTestsController < ApplicationController
     @prompt.prompt_versions.order(version: :desc)
   end
 
-  def analyze_if_running(variants)
-    return unless @ab_test.running? && variants.any? { |v| v.sample_count > 0 }
+  def analyze_if_available(variants)
+    return unless (@ab_test.running? || @ab_test.completed?) && variants.any? { |v| v.sample_count > 0 }
 
     AbTests::Analyze.call(ab_test: @ab_test)
   end
