@@ -24,7 +24,6 @@ RSpec.describe Projects::DetectServices do
     allow(github_client).to receive(:contents).and_raise(GithubClient::NotFoundError)
     # Default: no service containers exist
     allow(service_container_class).to receive(:all).and_return([])
-    allow([]).to receive(:index_by).and_return({})
   end
 
   def stub_file(path, content)
@@ -291,6 +290,72 @@ RSpec.describe Projects::DetectServices do
 
         result = described_class.call(project: project)
         expect(result.detected).to be_empty
+      end
+
+      it "handles YAML with disallowed classes in docker-compose.yml" do
+        allow(YAML).to receive(:safe_load).and_raise(Psych::DisallowedClass.new("action", "Symbol"))
+        stub_file("docker-compose.yml", "services: {}")
+
+        result = described_class.call(project: project)
+        expect(result.detected).to be_empty
+      end
+
+      it "handles YAML with disallowed classes in database.yml" do
+        allow(YAML).to receive(:safe_load).and_raise(Psych::DisallowedClass.new("action", "Symbol"))
+        stub_file("config/database.yml", "default:\n  adapter: postgresql")
+
+        result = described_class.call(project: project)
+        expect(result.detected).to be_empty
+      end
+    end
+
+    context "when config/database.yml contains multi-line ERB" do
+      before do
+        stub_file("config/database.yml", <<~YAML)
+          default: &default
+            adapter: postgresql
+            pool: <%
+              if ENV["RAILS_MAX_THREADS"]
+                ENV["RAILS_MAX_THREADS"]
+              else
+                5
+              end
+            %>
+
+          production:
+            <<: *default
+        YAML
+      end
+
+      it "handles multi-line ERB templates gracefully" do
+        result = described_class.call(project: project)
+
+        services = result.detected.map { |d| d[:service] }
+        expect(services).to include("postgres")
+      end
+    end
+
+    context "when docker-compose.yml uses YAML anchors" do
+      before do
+        stub_file("docker-compose.yml", <<~YAML)
+          x-common: &common
+            restart: always
+
+          services:
+            db:
+              <<: *common
+              image: postgres:16
+            cache:
+              <<: *common
+              image: redis:7
+        YAML
+      end
+
+      it "detects services from compose files with anchors" do
+        result = described_class.call(project: project)
+
+        services = result.detected.map { |d| d[:service] }
+        expect(services).to include("postgres", "redis")
       end
     end
 
