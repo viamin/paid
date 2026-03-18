@@ -4,57 +4,45 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Projects::DetectServices do
-  let(:octokit_client) { instance_double(Octokit::Client) }
-  let(:project_owner) { "test-owner" }
-  let(:project_repo) { "test-repo" }
-  let(:service) { described_class.new(project: project_stub) }
-  let(:project_stub) do
-    github_token_stub = OpenStruct.new(
-      client: OpenStruct.new(client: octokit_client)
-    )
-    OpenStruct.new(owner: project_owner, repo: project_repo, github_token: github_token_stub)
+  let(:github_client) { instance_double(GithubClient) }
+
+  # Use lightweight stubs for AR models to avoid DB connections during class loading
+  let(:github_token_stub) { Struct.new(:client).new(github_client) }
+  let(:project) { Struct.new(:owner, :repo, :github_token).new("test-owner", "test-repo", github_token_stub) }
+
+  let(:service_container_class) do
+    Class.new do
+      def self.all
+        raise "stub me"
+      end
+    end
   end
 
   before do
-    # Default: all files return 404
-    allow(octokit_client).to receive(:contents).and_raise(Octokit::NotFound.new)
+    stub_const("ServiceContainer", service_container_class)
+    # Default: all files return NotFound
+    allow(github_client).to receive(:contents).and_raise(GithubClient::NotFoundError)
+    # Default: no service containers exist
+    allow(service_container_class).to receive(:all).and_return([])
+    allow([]).to receive(:index_by).and_return({})
   end
 
   def stub_file(path, content)
     encoded = Base64.encode64(content)
     response = OpenStruct.new(content: encoded)
-    allow(octokit_client).to receive(:contents)
+    allow(github_client).to receive(:contents)
       .with("test-owner/test-repo", path: path)
       .and_return(response)
   end
 
-  # Override the service's call to use a stubbed container lookup instead of hitting the DB.
-  def call_with_containers(containers_by_name = {})
-    result_detections = []
-    result_detections.concat(service.send(:detect_from_gemfile))
-    result_detections.concat(service.send(:detect_from_package_json))
-    result_detections.concat(service.send(:detect_from_docker_compose))
-    result_detections.concat(service.send(:detect_from_database_yml))
-
-    unique_services = result_detections.uniq { |d| d[:service] }
-
-    matched = []
-    unmatched = []
-
-    unique_services.each do |detection|
-      container = containers_by_name[detection[:service]]
-      if container
-        matched << container
-      else
-        unmatched << detection
-      end
+  def stub_containers(*names)
+    containers_by_name = names.each_with_object({}) do |name, hash|
+      hash[name] = Struct.new(:name).new(name)
     end
-
-    described_class::Result.new(
-      detected: unique_services,
-      matched: matched.uniq,
-      unmatched: unmatched
-    )
+    container_list = containers_by_name.values
+    allow(service_container_class).to receive(:all).and_return(container_list)
+    allow(container_list).to receive(:index_by).and_return(containers_by_name)
+    containers_by_name
   end
 
   describe ".call" do
@@ -70,38 +58,37 @@ RSpec.describe Projects::DetectServices do
       end
 
       it "detects postgres and redis services" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         services = result.detected.map { |d| d[:service] }
         expect(services).to include("postgres", "redis")
       end
 
       it "deduplicates redis from both redis gem and sidekiq" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         service_names = result.detected.map { |d| d[:service] }
         expect(service_names.count("redis")).to eq(1)
       end
 
       it "reports the source as Gemfile" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         postgres_detection = result.detected.find { |d| d[:service] == "postgres" }
         expect(postgres_detection[:source]).to eq("Gemfile")
       end
 
       context "when matching containers exist" do
-        let(:postgres_container) { OpenStruct.new(name: "postgres") }
-        let(:redis_container) { OpenStruct.new(name: "redis") }
-
         it "returns matched containers" do
-          result = call_with_containers("postgres" => postgres_container, "redis" => redis_container)
+          containers = stub_containers("postgres", "redis")
+          result = described_class.call(project: project)
 
-          expect(result.matched).to contain_exactly(postgres_container, redis_container)
+          expect(result.matched).to contain_exactly(containers["postgres"], containers["redis"])
         end
 
         it "returns no unmatched" do
-          result = call_with_containers("postgres" => postgres_container, "redis" => redis_container)
+          stub_containers("postgres", "redis")
+          result = described_class.call(project: project)
 
           expect(result.unmatched).to be_empty
         end
@@ -109,7 +96,7 @@ RSpec.describe Projects::DetectServices do
 
       context "when no matching containers exist" do
         it "returns unmatched detections" do
-          result = call_with_containers
+          result = described_class.call(project: project)
 
           expect(result.unmatched).to be_present
           unmatched_services = result.unmatched.map { |d| d[:service] }
@@ -136,14 +123,14 @@ RSpec.describe Projects::DetectServices do
       end
 
       it "detects postgres, redis, and elasticsearch" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         services = result.detected.map { |d| d[:service] }
         expect(services).to include("postgres", "redis", "elasticsearch")
       end
 
       it "reports the source as package.json" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         result.detected.each do |detection|
           expect(detection[:source]).to eq("package.json")
@@ -170,14 +157,14 @@ RSpec.describe Projects::DetectServices do
       end
 
       it "detects services from compose images" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         services = result.detected.map { |d| d[:service] }
         expect(services).to include("postgres", "redis", "elasticsearch")
       end
 
       it "reports the source as docker-compose.yml" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         result.detected.each do |detection|
           expect(detection[:source]).to eq("docker-compose.yml")
@@ -194,11 +181,14 @@ RSpec.describe Projects::DetectServices do
         YAML
       end
 
-      it "falls back to compose.yml" do
-        result = call_with_containers
+      it "falls back to compose.yml and reports correct source" do
+        result = described_class.call(project: project)
 
         services = result.detected.map { |d| d[:service] }
         expect(services).to include("postgres")
+
+        detection = result.detected.find { |d| d[:service] == "postgres" }
+        expect(detection[:source]).to eq("compose.yml")
       end
     end
 
@@ -221,14 +211,14 @@ RSpec.describe Projects::DetectServices do
       end
 
       it "detects postgres from the adapter" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         services = result.detected.map { |d| d[:service] }
         expect(services).to include("postgres")
       end
 
       it "reports the source as config/database.yml" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         db_detection = result.detected.find { |d| d[:source] == "config/database.yml" }
         expect(db_detection).to be_present
@@ -251,7 +241,7 @@ RSpec.describe Projects::DetectServices do
       end
 
       it "handles ERB templates gracefully" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         services = result.detected.map { |d| d[:service] }
         expect(services).to include("postgres")
@@ -270,7 +260,7 @@ RSpec.describe Projects::DetectServices do
       end
 
       it "deduplicates across sources" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         postgres_detections = result.detected.select { |d| d[:service] == "postgres" }
         expect(postgres_detections.size).to eq(1)
@@ -279,7 +269,7 @@ RSpec.describe Projects::DetectServices do
 
     context "when no files are found" do
       it "returns empty results" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         expect(result.detected).to be_empty
         expect(result.matched).to be_empty
@@ -292,14 +282,14 @@ RSpec.describe Projects::DetectServices do
       it "handles invalid JSON gracefully" do
         stub_file("package.json", "not valid json {{{")
 
-        result = call_with_containers
+        result = described_class.call(project: project)
         expect(result.detected).to be_empty
       end
 
       it "handles invalid YAML gracefully" do
         stub_file("docker-compose.yml", "invalid: yaml: content: [}")
 
-        result = call_with_containers
+        result = described_class.call(project: project)
         expect(result.detected).to be_empty
       end
     end
@@ -317,7 +307,7 @@ RSpec.describe Projects::DetectServices do
       end
 
       it "detects services from service names" do
-        result = call_with_containers
+        result = described_class.call(project: project)
 
         services = result.detected.map { |d| d[:service] }
         expect(services).to include("postgres", "redis")
