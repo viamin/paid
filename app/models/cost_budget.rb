@@ -40,7 +40,10 @@ class CostBudget < ApplicationRecord
   end
 
   def alert_threshold_reached?
-    usage_percent >= alert_threshold_percent
+    return false if limit_cents.zero?
+
+    # Compare using unrounded ratio to avoid premature alerts from rounding
+    (current_usage_cents.to_f / limit_cents * 100) >= alert_threshold_percent
   end
 
   def alert_needed?
