@@ -438,19 +438,21 @@ module Containers
       if fetch_result.success?
         result = execute_git("switch", "--", branch_name)
         return if result.success?
+
+        # Fetch succeeded but switch still failed — unusual, include switch error only.
+        checkout_detail = "switch failed after successful fetch: #{error_with_stderr(result)}"
+      else
+        # Both fetch and switch failed — include both errors so operators can
+        # distinguish branch deletion from network/auth issues.
+        checkout_detail = "switch: #{error_with_stderr(result)}; fetch: #{error_with_stderr(fetch_result)}"
       end
 
-      # Both switch and fetch failed. Include fetch details so operators can
-      # distinguish branch deletion from network/auth errors.
-      unless pull_request_number
-        raise CloneError,
-          "Checkout failed (switch: #{error_with_stderr(result)}; fetch: #{error_with_stderr(fetch_result)})"
-      end
+      raise CloneError, "Checkout failed (#{checkout_detail})" unless pull_request_number
 
       pr_fetch = execute_git("fetch", "origin", "refs/pull/#{pull_request_number}/head:#{branch_name}")
       if pr_fetch.failure?
         raise CloneError,
-          "Branch checkout failed; PR ref fetch also failed (fetch: #{error_with_stderr(fetch_result)}; " \
+          "Branch checkout failed; PR ref fetch also failed (#{checkout_detail}; " \
           "PR ref: #{error_with_stderr(pr_fetch)})"
       end
 
