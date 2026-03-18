@@ -15,9 +15,10 @@ module Activities
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
 
-      agent_run.complete!(
-        pr_number: agent_run.source_pull_request_number
-      )
+      # Don't set pull_request_number for review runs — that field represents
+      # the PR produced by the run. Review runs use source_pull_request_number
+      # to track which PR was reviewed, keeping the two semantics distinct.
+      agent_run.complete!
       agent_run.log!("system", "Completed: review goal finished for PR ##{agent_run.source_pull_request_number}")
 
       logger.info(
