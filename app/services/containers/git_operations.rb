@@ -330,6 +330,10 @@ module Containers
     # @param onto_branch [String] The branch to rebase onto (e.g. "main")
     # @return [Boolean] true if rebase succeeded, false if conflicts occurred
     def rebase_onto(onto_branch)
+      # Shallow clones lack the history needed for rebase. Unshallow first
+      # so git can find the merge-base between the branches.
+      unshallow
+
       fetch_branch(onto_branch)
 
       result = execute_git("rebase", "origin/#{onto_branch}")
@@ -357,6 +361,18 @@ module Containers
       execute_git("rebase", "--abort")
     rescue Error
       # Best effort — abort may fail if rebase state is already gone
+    end
+
+    # Converts a shallow clone into a full clone by fetching all history.
+    # No-op if the repo is already unshallow. Needed before operations
+    # that require commit ancestry (e.g. rebase).
+    def unshallow
+      result = execute_git("fetch", "--unshallow")
+      # --unshallow fails with "fatal: --unshallow on a complete repository"
+      # when already unshallow — that's fine, ignore it.
+      return if result.success? || result[:stderr].to_s.include?("complete repository")
+
+      Rails.logger.warn(message: "container_git.unshallow_failed", stderr: result[:stderr].to_s.truncate(200))
     end
 
     def clone_repo
@@ -403,24 +419,24 @@ module Containers
     end
 
     def checkout_remote_branch(branch_name, pull_request_number: nil)
+      # Try switching first — the branch may already exist locally from a
+      # previous Temporal attempt, preserving idempotency without a network call.
+      result = execute_git("switch", "--", branch_name)
+      return if result.success?
+
       # Shallow clones (--depth 1) only fetch the default branch tip, so
       # remote tracking branches aren't available locally. Fetch the target
       # branch shallowly before switching.
       fetch_result = execute_git("fetch", "--depth", "1", "origin", branch_name)
 
       if fetch_result.success?
-        # Use "git switch" for branch switching; "git checkout -- <name>" enters
-        # pathspec (file-restore) mode and won't switch branches.
-        # "--" separates options from the branch operand so names starting with
-        # "-" are never misinterpreted as flags.
         result = execute_git("switch", "--", branch_name)
         return if result.success?
       end
 
       # Branch may have been deleted from the remote (e.g. after PR merge).
       # Fall back to fetching the PR ref which GitHub preserves.
-      failed_result = result || fetch_result
-      raise CloneError, "Checkout failed: #{error_with_stderr(failed_result)}" unless pull_request_number
+      raise CloneError, "Checkout failed: #{error_with_stderr(result)}" unless pull_request_number
 
       pr_fetch = execute_git("fetch", "origin", "refs/pull/#{pull_request_number}/head:#{branch_name}")
       raise CloneError, "Checkout failed (branch deleted, PR fetch also failed): #{error_with_stderr(pr_fetch)}" if pr_fetch.failure?
