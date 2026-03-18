@@ -6,16 +6,16 @@ module Activities
 
     # Maps agent_type/provider to the CLI command used inside the container.
     # Each entry is an array of command parts; the prompt is appended as the last argument.
+    #
+    # Only include providers whose CLIs are installed in the agent Docker container
+    # (docker/agent/Dockerfile). Other providers may be harness-supported for
+    # configuration/validation but cannot execute in container-based runs until
+    # their CLIs are added to the image.
     AGENT_COMMANDS = {
       "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "cursor" => %w[cursor-agent --message],
-      "codex" => %w[codex --prompt],
-      "copilot" => %w[copilot -p --allow-all-tools],
-      "aider" => %w[aider --yes --no-auto-commits --message],
-      "gemini" => %w[gemini --prompt],
-      "opencode" => %w[opencode --prompt],
-      "kilocode" => %w[kilocode --prompt]
+      "aider" => %w[aider --yes --no-auto-commits --message]
     }.freeze
 
     # Maps agent_type values to their canonical settings provider name.
