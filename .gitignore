@@ -73,6 +73,7 @@ config.log
 
 # Ignore downloaded packages
 *.deb
+*.txz
 
 # Node corepack cache (created by corepack enable / yarn install)
 /.corepack/
@@ -80,6 +81,8 @@ config.log
 # PostgreSQL installation directory (created by bin/setup on some hosts)
 /.pg-install/
 /.pg-local/
+/.pg-src/
+/.pg.jar
 
 # APT cache and cached package extracts (created during container setup)
 /.apt-cache/
@@ -103,6 +106,7 @@ config.log
 /.mise-cache/
 /.mise-data/
 /.mise-home/
+/.bundle-install/
 /.bundle_path/
 /.cache/
 /.tmp/
@@ -131,3 +135,7 @@ config.log
 /.tmp_pg.tar.bz2
 /.tmp_ruby.tar.gz
 /.tmp_yaml.tar.gz
+
+# Python virtual environments and caches
+/.venv/
+__pycache__/
