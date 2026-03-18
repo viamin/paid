@@ -129,7 +129,8 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-200 bg-white">
-          <% max_score = @variants.map { |v| v.avg_quality_score.to_f }.max %>
+          <% scored_variants = @variants.select { |v| v.avg_quality_score.present? } %>
+          <% max_score = scored_variants.map { |v| v.avg_quality_score.to_f }.max %>
           <% @variants.each do |variant| %>
             <tr class="<%= variant_row_class(variant, @ab_test) %>">
               <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
@@ -151,17 +152,18 @@
                 <%= variant.sample_count %> / <%= @ab_test.min_samples_per_variant %>
               </td>
               <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900 font-medium">
-                <% if variant.avg_quality_score %>
+                <% if variant.avg_quality_score.present? %>
                   <%= number_with_precision(variant.avg_quality_score, precision: 4) %>
                 <% else %>
                   <span class="text-gray-400">-</span>
                 <% end %>
               </td>
               <td class="px-3 py-4 text-sm text-gray-500">
-                <% if variant.avg_quality_score && max_score && max_score > 0 %>
+                <% if variant.avg_quality_score.present? && max_score %>
                   <div class="flex items-center">
                     <div class="h-4 w-32 rounded-full bg-gray-200">
-                      <div class="h-4 rounded-full <%= variant.is_control? ? 'bg-gray-500' : 'bg-indigo-600' %>" style="width: <%= ((variant.avg_quality_score.to_f / max_score) * 100).round %>%"></div>
+                      <% bar_width = max_score > 0 ? ((variant.avg_quality_score.to_f / max_score) * 100).round : 0 %>
+                      <div class="h-4 rounded-full <%= variant.is_control? ? 'bg-gray-500' : 'bg-indigo-600' %>" style="width: <%= bar_width %>%"></div>
                     </div>
                   </div>
                 <% else %>
