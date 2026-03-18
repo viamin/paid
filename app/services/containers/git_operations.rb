@@ -330,6 +330,10 @@ module Containers
     # @param onto_branch [String] The branch to rebase onto (e.g. "main")
     # @return [Boolean] true if rebase succeeded, false if conflicts occurred
     def rebase_onto(onto_branch)
+      # Shallow clones lack the history needed for rebase. Unshallow first
+      # so git can find the merge-base between the branches.
+      unshallow
+
       fetch_branch(onto_branch)
 
       result = execute_git("rebase", "origin/#{onto_branch}")
@@ -359,6 +363,19 @@ module Containers
       # Best effort — abort may fail if rebase state is already gone
     end
 
+    # Converts a shallow clone into a full clone by fetching all history.
+    # No-op if the repo is already unshallow. Needed before operations
+    # that require commit ancestry (e.g. rebase).
+    def unshallow
+      check = execute_git("rev-parse", "--is-shallow-repository")
+      return if check.success? && check[:stdout].to_s.strip == "false"
+
+      result = execute_git("fetch", "--unshallow", timeout: CLONE_TIMEOUT)
+      return if result.success?
+
+      raise Error, "Failed to unshallow repository: #{error_with_stderr(result)}"
+    end
+
     def clone_repo
       # Idempotent: skip clone if a previous attempt already populated /workspace.
       # This prevents failures on Temporal retries when the clone succeeded but a
@@ -376,7 +393,7 @@ module Containers
       project = agent_run.project
       url = "https://github.com/#{project.full_name}.git"
 
-      result = execute_git("clone", url, ".", timeout: CLONE_TIMEOUT)
+      result = execute_git("clone", "--depth", "1", url, ".", timeout: CLONE_TIMEOUT)
       raise CloneError, "Clone failed: #{error_with_stderr(result)}" if result.failure?
     end
 
@@ -403,19 +420,36 @@ module Containers
     end
 
     def checkout_remote_branch(branch_name, pull_request_number: nil)
-      # Use "git switch" for branch switching; "git checkout -- <name>" enters
-      # pathspec (file-restore) mode and won't switch branches.
-      # "--" separates options from the branch operand so names starting with
-      # "-" are never misinterpreted as flags.
+      # Try switching first — the branch may already exist locally from a
+      # previous Temporal attempt, preserving idempotency without a network call.
       result = execute_git("switch", "--", branch_name)
       return if result.success?
 
-      # Branch may have been deleted from the remote (e.g. after PR merge).
-      # Fall back to fetching the PR ref which GitHub preserves.
-      raise CloneError, "Checkout failed: #{error_with_stderr(result)}" unless pull_request_number
+      # Shallow clones (--depth 1) only fetch the default branch tip, so
+      # remote tracking branches aren't available locally. Fetch the target
+      # branch shallowly before switching.
+      fetch_result = execute_git("fetch", "--depth", "1", "origin", branch_name)
 
-      fetch_result = execute_git("fetch", "origin", "refs/pull/#{pull_request_number}/head:#{branch_name}")
-      raise CloneError, "Checkout failed (branch deleted, PR fetch also failed): #{error_with_stderr(fetch_result)}" if fetch_result.failure?
+      if fetch_result.success?
+        result = execute_git("switch", "--", branch_name)
+        return if result.success?
+
+        # Fetch succeeded but switch still failed — unusual, include switch error only.
+        checkout_detail = "switch failed after successful fetch: #{error_with_stderr(result)}"
+      else
+        # Both fetch and switch failed — include both errors so operators can
+        # distinguish branch deletion from network/auth issues.
+        checkout_detail = "switch: #{error_with_stderr(result)}; fetch: #{error_with_stderr(fetch_result)}"
+      end
+
+      raise CloneError, "Checkout failed (#{checkout_detail})" unless pull_request_number
+
+      pr_fetch = execute_git("fetch", "origin", "refs/pull/#{pull_request_number}/head:#{branch_name}")
+      if pr_fetch.failure?
+        raise CloneError,
+          "Branch checkout failed; PR ref fetch also failed (#{checkout_detail}; " \
+          "PR ref: #{error_with_stderr(pr_fetch)})"
+      end
 
       checkout_result = execute_git("switch", "--", branch_name)
       raise CloneError, "Checkout failed after PR fetch: #{error_with_stderr(checkout_result)}" if checkout_result.failure?
