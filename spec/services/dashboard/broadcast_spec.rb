@@ -11,11 +11,14 @@ RSpec.describe Dashboard::Broadcast do
       let(:agent_run) { create(:agent_run, :running, project: project) }
 
       before do
-        # Transition the run to failed so previous_changes includes "status".
-        # Suppress broadcasts during update! by stubbing before the transition.
+        # Suppress the after_commit callback so it doesn't trigger broadcasts
+        # during setup. This ensures only the explicit described_class.call is tested.
+        allow(described_class).to receive(:call)
+        agent_run.update!(status: "failed", error_message: "An error occurred", completed_at: Time.current)
+        allow(described_class).to receive(:call).and_call_original
+
         allow(Turbo::StreamsChannel).to receive(:broadcast_update_to)
         allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
-        agent_run.update!(status: "failed", error_message: "An error occurred", completed_at: Time.current)
       end
 
       it "broadcasts live stats update" do
@@ -23,7 +26,6 @@ RSpec.describe Dashboard::Broadcast do
 
         expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to)
           .with([ account, :dashboard ], hash_including(target: "live-stats"))
-          .at_least(:once)
       end
 
       it "broadcasts active runs update" do
@@ -31,7 +33,6 @@ RSpec.describe Dashboard::Broadcast do
 
         expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to)
           .with([ account, :dashboard ], hash_including(target: "active-runs"))
-          .at_least(:once)
       end
 
       it "broadcasts activity stream for finished runs" do
@@ -39,7 +40,6 @@ RSpec.describe Dashboard::Broadcast do
 
         expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to)
           .with([ account, :dashboard ], hash_including(target: "activity-stream"))
-          .at_least(:once)
       end
 
       it "broadcasts alert for failed runs" do
@@ -47,7 +47,6 @@ RSpec.describe Dashboard::Broadcast do
 
         expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to)
           .with([ account, :dashboard ], hash_including(target: "dashboard-alerts"))
-          .at_least(:once)
       end
     end
 
@@ -70,9 +69,12 @@ RSpec.describe Dashboard::Broadcast do
       let(:agent_run) { create(:agent_run, :running, project: project) }
 
       before do
+        allow(described_class).to receive(:call)
+        agent_run.update!(status: "timeout", completed_at: Time.current)
+        allow(described_class).to receive(:call).and_call_original
+
         allow(Turbo::StreamsChannel).to receive(:broadcast_update_to)
         allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
-        agent_run.update!(status: "timeout", completed_at: Time.current)
       end
 
       it "broadcasts a warning alert" do
@@ -83,7 +85,6 @@ RSpec.describe Dashboard::Broadcast do
             target: "dashboard-alerts",
             locals: hash_including(alert_type: "warning")
           ))
-          .at_least(:once)
       end
     end
   end

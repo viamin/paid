@@ -81,6 +81,9 @@ config.log
 /.pg-install/
 /.pg-local/
 /.pg-log
+/.pg.jar
+/postgres-linux-arm_64.txz
+*.txz
 
 # APT cache and cached package extracts (created during container setup)
 /.apt-cache/
