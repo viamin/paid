@@ -172,7 +172,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(success_result)
 
       expect(container_service).not_to receive(:execute)
-        .with(array_including("fetch", "--depth"), anything)
+        .with([ "git", "fetch", "--depth", "1", "origin", "fix-bug-branch" ], timeout: nil, stream: false)
 
       git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
 
@@ -534,7 +534,7 @@ RSpec.describe Containers::GitOperations do
 
     before do
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "--unshallow" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
 
       allow(container_service).to receive(:execute)
@@ -555,7 +555,7 @@ RSpec.describe Containers::GitOperations do
 
       it "unshallows then fetches the branch before rebasing" do
         expect(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: nil, stream: false)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
           .and_return(success_result)
           .ordered
 
