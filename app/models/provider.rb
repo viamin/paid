@@ -23,7 +23,7 @@ class Provider < ApplicationRecord
   end
 
   def self.display_name(provider_key)
-    provider = AgentHarness.provider(provider_key.to_sym)
+    provider = AgentHarness.provider(ProviderSupport.harness_provider_key_for(provider_key).to_sym)
 
     if provider.respond_to?(:display_name)
       provider.display_name
@@ -35,11 +35,23 @@ class Provider < ApplicationRecord
   end
 
   def self.supported_provider_keys
-    AgentHarness::Providers::Registry.instance.all.map(&:to_s)
+    ProviderSupport.supported_provider_keys
   end
 
   def self.supported_provider_key?(provider_key)
-    supported_provider_keys.include?(provider_key.to_s)
+    ProviderSupport.supported_provider_key?(provider_key)
+  end
+
+  def self.harness_provider_key_for(provider_key)
+    ProviderSupport.harness_provider_key_for(provider_key)
+  end
+
+  def self.provider_key_for_agent_type(agent_type)
+    ProviderSupport.provider_key_for_agent_type(agent_type)
+  end
+
+  def self.agent_type_for(provider_key)
+    ProviderSupport.agent_type_for(provider_key)
   end
 
   private

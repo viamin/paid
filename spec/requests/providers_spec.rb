@@ -82,6 +82,13 @@ RSpec.describe "Providers" do
       expect(response).to redirect_to(providers_path)
       expect(user.providers.find_by(provider_key: "gemini")).to be_present
     end
+
+    it "accepts app provider aliases backed by agent harness providers" do
+      post providers_path, params: { provider: { provider_key: "copilot", enabled_for_agent_runs: true, enabled_for_fallback: true } }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.providers.find_by(provider_key: "copilot")).to be_present
+    end
   end
 
   describe "GET /providers/new" do
