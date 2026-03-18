@@ -17,7 +17,13 @@ Rails.application.config.x.agent_timeout = agent_timeout
 AgentHarness.configure do |config|
   supported_provider_keys = ProviderSupport.supported_provider_keys
 
-  config.default_provider = :claude
+  default_key = if supported_provider_keys.include?("claude")
+    :claude
+  elsif supported_provider_keys.any?
+    ProviderSupport.harness_provider_key_for(supported_provider_keys.first).to_sym
+  end
+
+  config.default_provider = default_key if default_key
   config.fallback_providers = %w[cursor aider].filter_map do |provider_key|
     next unless supported_provider_keys.include?(provider_key)
 
