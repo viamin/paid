@@ -37,7 +37,7 @@ module CostBudgets
       # and each run's usage is naturally isolated by agent_run_id.
       if agent_run
         per_run_exceeded = check_per_run_budget
-        return blocked_result(per_run_exceeded) if per_run_exceeded
+        return blocked_result(per_run_exceeded, actual_usage_cents: @per_run_cost) if per_run_exceeded
       end
 
       # Check daily/monthly budgets via the shared counter
@@ -57,10 +57,12 @@ module CostBudgets
       { allowed: true }
     end
 
-    def blocked_result(budget)
+    def blocked_result(budget, actual_usage_cents: nil)
+      usage = actual_usage_cents || budget.current_usage_cents
+      percent = budget.limit_cents.positive? ? (usage.to_f / budget.limit_cents * 100).round(1) : 0
       {
         allowed: false,
-        reason: "#{budget.budget_type} budget exceeded (#{budget.usage_percent}% of #{budget.limit_cents} cents used)"
+        reason: "#{budget.budget_type} budget exceeded (#{percent}% of #{budget.limit_cents} cents used)"
       }
     end
 
@@ -70,7 +72,11 @@ module CostBudgets
     # double-count costs already tracked by per-request proxy records.
     def check_per_run_budget
       run_cost = TokenUsage.billable.where(agent_run: agent_run).sum(:cost_cents)
-      project.cost_budgets.per_run.find { |budget| run_cost >= budget.limit_cents }
+      exceeded_budget = project.cost_budgets.per_run.find { |budget| run_cost >= budget.limit_cents }
+      return nil unless exceeded_budget
+
+      @per_run_cost = run_cost
+      exceeded_budget
     end
 
     def rollover_expired_periods

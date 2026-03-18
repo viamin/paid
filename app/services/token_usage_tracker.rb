@@ -13,11 +13,11 @@ class TokenUsageTracker
   #   updating agent_run/project counters or cost budgets (use for run_summary records
   #   that would otherwise double-count per-request tracking from the secrets proxy)
   def self.track(agent_run:, usage:, update_aggregates: true)
-    tokens_input  = usage.fetch(:tokens_input, 0)
-    tokens_output = usage.fetch(:tokens_output, 0)
+    tokens_input  = usage.fetch(:tokens_input, 0).to_i
+    tokens_output = usage.fetch(:tokens_output, 0).to_i
     llm_model     = usage[:llm_model]
-    request_type  = usage.fetch(:request_type, "agent")
-    metadata      = usage.fetch(:metadata, {})
+    request_type  = usage.fetch(:request_type, nil).presence || "agent"
+    metadata      = usage.fetch(:metadata, nil).presence || {}
     cost_cents    = calculate_cost(tokens_input, tokens_output)
 
     ActiveRecord::Base.transaction do
