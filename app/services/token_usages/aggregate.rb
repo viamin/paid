@@ -36,6 +36,12 @@ module TokenUsages
     end
 
     def project_cost_projection(days_ahead: 30)
+      # billable is applied before by_time_period intentionally. The billable
+      # scope's subquery must check for proxy records globally (not just within
+      # the time window) so that a run_summary is excluded whenever proxy records
+      # exist for that run — even if those proxy records fall outside the window.
+      # Reversing the order would cause run_summary records to be incorrectly
+      # included (double-counted) when their proxy records predate the window.
       recent_costs = scope.by_time_period(30.days.ago, Time.current)
       daily_average = calculate_daily_average(recent_costs)
 

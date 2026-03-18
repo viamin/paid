@@ -132,9 +132,11 @@ module AgentRuns
       )
 
       # Compute delta: what the proxy didn't already track.
-      # Single query for both sums (returns [0, 0] when no proxy records exist).
+      # Only count proxy-originated request types (agent, planning, evaluation),
+      # excluding both run_summary (audit) and run_delta (prior delta records
+      # from retries) to avoid inflating the delta calculation.
       proxy_totals = agent_run.token_usages
-        .where.not(request_type: "run_summary")
+        .where.not(request_type: %w[run_summary run_delta])
         .pick(Arel.sql("COALESCE(SUM(input_tokens), 0)"), Arel.sql("COALESCE(SUM(output_tokens), 0)"))
       proxy_input, proxy_output = proxy_totals
 

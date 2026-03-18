@@ -41,7 +41,7 @@ module CostBudgets
       end
 
       # Check daily/monthly budgets via the shared counter
-      exceeded = project.cost_budgets.where(budget_type: %w[daily monthly]).reload.exceeded
+      exceeded = project.cost_budgets.where(budget_type: %w[daily monthly]).exceeded
         .order(Arel.sql(PRIORITY_ORDER_SQL))
         .first
       return blocked_result(exceeded) if exceeded
