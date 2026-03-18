@@ -145,9 +145,9 @@ module Prompts
 
         After addressing the explicit feedback, proactively scan the rest of the PR diff
         for the same classes of issues the reviewers raised. For example, if a reviewer
-        flagged a missing nil check, look for similar unguarded calls elsewhere in your
-        changes. Fix any instances you find — the goal is zero new review rounds for
-        problems you could have caught yourself.
+        flagged a missing guard clause or input validation, look for similar unguarded
+        calls elsewhere in your changes. Fix any instances you find — the goal is zero
+        new review rounds for problems you could have caught yourself.
       SECTION
     end
 
@@ -174,7 +174,6 @@ module Prompts
       priorities << "Close implementation gaps against the linked issue" if linked_issue?
       priorities << "Address code review comments" if unresolved_threads.any?
       priorities << "Address conversation comments" if trusted_comments.any?
-      priorities << "Proactively self-review the full diff for issues a reviewer would flag"
       priority_list = priorities.each_with_index.map { |p, i| "#{i + 1}. #{p}" }.join("\n")
 
       <<~SECTION

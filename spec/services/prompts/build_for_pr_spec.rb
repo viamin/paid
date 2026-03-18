@@ -55,6 +55,11 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Do not push")
     end
 
+    it "includes self-review step" do
+      expect(prompt).to include("Self-review")
+      expect(prompt).to include("review your full diff as a critical code")
+    end
+
     it "includes rules" do
       expect(prompt).to include("MUST pass before every commit")
       expect(prompt).to include("Never use `--no-verify`")
@@ -164,6 +169,17 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Code Review Comments")
       expect(prompt).to include("This method is too long")
       expect(prompt).to include("app/models/user.rb:42")
+    end
+
+    it "includes proactive scanning instruction" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("proactively scan the rest of the PR diff")
     end
 
     it "excludes resolved threads" do
