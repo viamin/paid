@@ -43,7 +43,10 @@ module Api
       response = proxy_to_github(path, github_token)
       github_token.touch_last_used!
 
-      track_issue_creation(path, response) if response.status >= 200 && response.status < 300
+      if response.status >= 200 && response.status < 300
+        track_issue_creation(path, response)
+        track_review_creation(path, response)
+      end
 
       render body: response.body, status: response.status,
              content_type: response.headers["content-type"] || "application/json"
@@ -118,6 +121,22 @@ module Api
         issue_url: body["html_url"])
     rescue => e
       log_error("github_proxy.track_issue_failed", e.message)
+    end
+
+    def track_review_creation(path, response)
+      return unless request.method == "POST"
+      return unless %r{\Arepos/[^/]+/[^/]+/pulls/\d+/reviews\z}.match?(path)
+
+      body = parse_response_body(response.body)
+      return unless body.is_a?(Hash) && body["id"].present?
+
+      @agent_run.update!(review_posted_at: Time.current)
+
+      log_info("github_proxy.review_created",
+        review_id: body["id"],
+        review_url: body["html_url"])
+    rescue => e
+      log_error("github_proxy.track_review_failed", e.message)
     end
 
     def parse_response_body(body)
