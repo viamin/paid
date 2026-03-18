@@ -257,15 +257,11 @@ module Projects
     end
 
     def provider_key_to_agent_type(provider_key)
-      return "claude_code" if provider_key == "claude"
-
-      provider_key
+      Provider.agent_type_for(provider_key)
     end
 
     def agent_type_to_provider_key(agent_type)
-      return "claude" if agent_type == "claude_code"
-
-      agent_type
+      Provider.provider_key_for_agent_type(agent_type)
     end
 
     def managed_provider_key?(provider_key)

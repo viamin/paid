@@ -343,7 +343,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "raises for unsupported agent types" do
       unsupported_issue = create(:issue, project: project)
       unsupported_run = create(:agent_run, project: project, issue: unsupported_issue,
-        agent_type: "copilot", container_id: "abc123")
+        agent_type: "api", container_id: "abc123")
       allow(AgentRun).to receive(:find).with(unsupported_run.id).and_return(unsupported_run)
       allow(Containers::Provision).to receive(:reconnect)
         .with(agent_run: unsupported_run, container_id: "abc123")

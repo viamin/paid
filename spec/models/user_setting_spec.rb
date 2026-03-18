@@ -56,6 +56,14 @@ RSpec.describe UserSetting do
     it "returns claude when no user is provided" do
       expect(described_class.enabled_agent_providers).to eq([ "claude" ])
     end
+
+    it "filters out stale providers that are no longer supported" do
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
+
+      allow(Provider).to receive(:supported_provider_keys).and_return(%w[claude])
+
+      expect(described_class.enabled_agent_providers(user)).to eq([ "claude" ])
+    end
   end
 
   describe ".fallback_candidate_providers" do
@@ -66,6 +74,14 @@ RSpec.describe UserSetting do
       user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: false)
 
       expect(described_class.fallback_candidate_providers(user)).to contain_exactly("claude", "cursor")
+    end
+
+    it "filters out stale fallback providers that are no longer supported" do
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
+
+      allow(Provider).to receive(:supported_provider_keys).and_return(%w[claude])
+
+      expect(described_class.fallback_candidate_providers(user)).to eq([ "claude" ])
     end
   end
 

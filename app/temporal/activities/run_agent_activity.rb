@@ -10,7 +10,12 @@ module Activities
       "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "cursor" => %w[cursor-agent --message],
-      "aider" => %w[aider --yes --no-auto-commits --message]
+      "codex" => %w[codex --prompt],
+      "copilot" => %w[copilot -p --allow-all-tools],
+      "aider" => %w[aider --yes --no-auto-commits --message],
+      "gemini" => %w[gemini --prompt],
+      "opencode" => %w[opencode --prompt],
+      "kilocode" => %w[kilocode --prompt]
     }.freeze
 
     # Maps agent_type values to their canonical settings provider name.

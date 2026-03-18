@@ -21,8 +21,30 @@ RSpec.describe Provider do
   end
 
   describe ".supported_provider_keys" do
-    it "returns built-in provider keys from the agent harness registry" do
-      expect(described_class.supported_provider_keys).to include("claude", "cursor", "gemini", "codex", "kilocode")
+    it "returns app provider keys backed by the agent harness registry" do
+      expect(described_class.supported_provider_keys).to include("claude", "cursor", "gemini", "codex", "kilocode", "copilot")
+      expect(described_class.supported_provider_keys).not_to include("github_copilot")
+    end
+  end
+
+  describe ".harness_provider_key_for" do
+    it "maps app provider keys to agent harness provider keys" do
+      expect(described_class.harness_provider_key_for("copilot")).to eq("github_copilot")
+      expect(described_class.harness_provider_key_for("gemini")).to eq("gemini")
+    end
+  end
+
+  describe ".agent_type_for" do
+    it "maps provider keys to app agent types" do
+      expect(described_class.agent_type_for("claude")).to eq("claude_code")
+      expect(described_class.agent_type_for("copilot")).to eq("copilot")
+    end
+  end
+
+  describe ".provider_key_for_agent_type" do
+    it "maps app agent types back to provider keys" do
+      expect(described_class.provider_key_for_agent_type("claude_code")).to eq("claude")
+      expect(described_class.provider_key_for_agent_type("copilot")).to eq("copilot")
     end
   end
 
@@ -46,7 +68,7 @@ RSpec.describe Provider do
   describe ".display_name" do
     it "uses agent harness provider display names when available" do
       expect(described_class.display_name("codex")).to eq("OpenAI Codex CLI")
-      expect(described_class.display_name("github_copilot")).to eq("GitHub Copilot CLI")
+      expect(described_class.display_name("copilot")).to eq("GitHub Copilot CLI")
     end
 
     it "falls back to titleized keys for unknown providers" do
