@@ -57,7 +57,7 @@ module AbTests
       return unless ab_test.sufficient_samples?
       return unless should_analyze?(ab_test)
 
-      result = AbTests::Analyze.call(ab_test: ab_test)
+      result = ab_test.cached_or_compute_analysis
       return if result.status == :insufficient_data
 
       if result.status == :winner_found
