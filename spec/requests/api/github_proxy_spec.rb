@@ -156,6 +156,53 @@ RSpec.describe "Api::GithubProxy" do
     end
   end
 
+  describe "POST /api/proxy/github/repos/:owner/:repo/pulls/:number/reviews" do
+    let(:target_url) { "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews" }
+    let(:review_response_body) do
+      {
+        id: 999,
+        body: "Review summary",
+        html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+        state: "commented"
+      }.to_json
+    end
+
+    before do
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: review_response_body, headers: { "Content-Type" => "application/json" })
+    end
+
+    it "proxies review creation" do
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "tracks review_posted_at on the agent run" do
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_posted_at).to be_present
+    end
+
+    it "does not track review_posted_at on upstream error" do
+      stub_request(:post, target_url)
+        .to_return(status: 422, body: { message: "Validation Failed" }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_posted_at).to be_nil
+    end
+  end
+
   describe "repo mismatch" do
     it "returns 403 when the repo does not match the project" do
       stub_request(:get, "https://api.github.com/repos/otherowner/otherrepo/issues")

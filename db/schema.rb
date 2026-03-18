@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_09_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_18_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -124,6 +124,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_09_200000) do
     t.string "result_commit_sha", limit: 40
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
+    t.datetime "review_posted_at"
     t.integer "source_pull_request_number"
     t.datetime "started_at"
     t.string "status", limit: 50, default: "pending", null: false
