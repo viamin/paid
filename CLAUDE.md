@@ -125,6 +125,7 @@ app/
 
 - **Reuse existing code** - Before writing new code, search the codebase for existing implementations. Prefer extending or reusing existing patterns, utilities, and components over creating new ones.
 - **Write concisely** - Strive for concise code while maintaining clarity and readability. Avoid unnecessary verbosity, but never sacrifice readability for brevity.
+- **Be proactive** - After making changes, review your own diff as a critical reviewer would before committing. Look for missing guard clauses, unhandled edge cases, insufficient tests, and style inconsistencies. When addressing review feedback, also scan for the same class of issue elsewhere in your changes.
 
 ### Zero Framework Cognition (ZFC)
 
