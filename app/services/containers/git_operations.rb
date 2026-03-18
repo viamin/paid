@@ -367,18 +367,13 @@ module Containers
     # No-op if the repo is already unshallow. Needed before operations
     # that require commit ancestry (e.g. rebase).
     def unshallow
-      result = execute_git("fetch", "--unshallow", timeout: CLONE_TIMEOUT)
-      # --unshallow fails with "fatal: --unshallow on a complete repository"
-      # when already unshallow — that's fine, ignore it.
-      return if result.success? || result[:stderr].to_s.include?("complete repository")
+      check = execute_git("rev-parse", "--is-shallow-repository")
+      return if check.success? && check[:stdout].to_s.strip == "false"
 
-      Rails.logger.warn(
-        message: "container_git.unshallow_failed",
-        agent_run_id: agent_run.id,
-        project_id: agent_run.project_id,
-        exit_code: result[:exit_code],
-        stderr: result[:stderr].to_s.truncate(200)
-      )
+      result = execute_git("fetch", "--unshallow", timeout: CLONE_TIMEOUT)
+      return if result.success?
+
+      raise Error, "Failed to unshallow repository: #{error_with_stderr(result)}"
     end
 
     def clone_repo
