@@ -101,7 +101,12 @@ class AbTestsController < ApplicationController
   end
 
   def analyze_if_available(variants)
-    return unless (@ab_test.running? || @ab_test.completed?) && variants.any? { |v| v.sample_count > 0 }
+    return unless variants.any? { |v| v.sample_count > 0 }
+
+    # Completed tests always show analysis (final result).
+    # Running tests only compute analysis once sufficient samples exist to avoid
+    # expensive per-request score aggregation while data is still sparse.
+    return unless @ab_test.completed? || (@ab_test.running? && @ab_test.sufficient_samples?)
 
     AbTests::Analyze.call(ab_test: @ab_test)
   end
