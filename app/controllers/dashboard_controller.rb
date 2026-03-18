@@ -20,7 +20,7 @@ class DashboardController < ApplicationController
     cancelled = agent_run.with_lock do
       agent_run.reload
       if agent_run.active?
-        agent_run.cancel!
+        AgentRuns::Cancel.call(agent_run: agent_run)
         true
       end
     end

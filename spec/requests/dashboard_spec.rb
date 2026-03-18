@@ -101,10 +101,11 @@ RSpec.describe "Dashboard" do
 
     it "cancels a running agent run and redirects to live dashboard" do
       agent_run = create(:agent_run, :running, project: project)
+      allow(AgentRuns::Cancel).to receive(:call)
       post dashboard_cancel_run_path(agent_run)
       expect(response).to redirect_to(live_dashboard_path)
       expect(response).to have_http_status(:see_other)
-      expect(agent_run.reload.status).to eq("cancelled")
+      expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run)
     end
 
     it "returns not found for runs from other accounts" do
