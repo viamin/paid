@@ -3,6 +3,12 @@
 require "set"
 
 module ProviderSupport
+  # Maps app-level provider keys to agent-harness registry keys.
+  # This drives validation, UI, and configuration — providers listed here are
+  # "known" to the app and can be configured by users.
+  #
+  # NOTE: Inclusion here does NOT mean the provider's CLI is installed in the
+  # agent Docker container. For container execution, see CONTAINER_EXECUTABLE_PROVIDER_KEYS.
   APP_TO_HARNESS_PROVIDER_KEYS = {
     "claude" => "claude",
     "cursor" => "cursor",
@@ -13,6 +19,11 @@ module ProviderSupport
     "opencode" => "opencode",
     "kilocode" => "kilocode"
   }.freeze
+
+  # Provider keys whose CLIs are actually installed in the agent Docker container
+  # (docker/agent/Dockerfile). Only these providers can execute in container-based
+  # runs. Update this list when new CLIs are added to the container image.
+  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[claude cursor aider]).freeze
 
   module_function
 
@@ -36,6 +47,14 @@ module ProviderSupport
 
   def reset_supported_provider_keys!
     @supported_provider_keys_set = nil
+  end
+
+  def container_executable_provider_keys
+    supported_provider_keys.select { |key| CONTAINER_EXECUTABLE_PROVIDER_KEYS.include?(key) }
+  end
+
+  def container_executable_provider_key?(provider_key)
+    CONTAINER_EXECUTABLE_PROVIDER_KEYS.include?(provider_key.to_s)
   end
 
   def harness_provider_key_for(provider_key)
