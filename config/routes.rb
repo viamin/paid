@@ -51,6 +51,7 @@ Rails.application.routes.draw do
     member do
       post :start
       post :complete
+      post :cancel
       post :promote_winner
     end
   end

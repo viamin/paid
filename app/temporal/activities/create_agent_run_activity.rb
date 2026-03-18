@@ -116,7 +116,9 @@ module Activities
       logger.warn(
         message: "agent_execution.model_selection_failed",
         agent_run_id: agent_run.id,
-        error: e.message
+        error_class: e.class.name,
+        error: e.message,
+        backtrace: e.backtrace&.first(5)
       )
     end
 

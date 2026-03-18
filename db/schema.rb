@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_14_000002) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_18_041425) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -334,6 +334,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_14_000002) do
     t.text "reasoning"
     t.integer "selection_duration_ms"
     t.string "selector_type", limit: 50, null: false
+    t.datetime "updated_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
     t.index ["agent_run_id"], name: "index_model_selections_on_agent_run_id", unique: true
     t.index ["llm_model_id"], name: "index_model_selections_on_llm_model_id"
     t.index ["selector_type"], name: "index_model_selections_on_selector_type"

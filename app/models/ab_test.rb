@@ -11,6 +11,9 @@ class AbTest < ApplicationRecord
   has_many :ab_test_variants, dependent: :destroy
   has_many :ab_test_assignments, dependent: :destroy
 
+  accepts_nested_attributes_for :ab_test_variants, allow_destroy: true,
+    reject_if: ->(attrs) { attrs["prompt_version_id"].blank? }
+
   validates :name, presence: true, length: { maximum: 255 }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :min_samples_per_variant, numericality: { only_integer: true, greater_than_or_equal_to: 2 }
