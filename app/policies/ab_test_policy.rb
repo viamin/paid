@@ -6,7 +6,7 @@ class AbTestPolicy < ApplicationPolicy
   end
 
   def show?
-    user_in_account?
+    visible?
   end
 
   def create?
@@ -14,17 +14,30 @@ class AbTestPolicy < ApplicationPolicy
   end
 
   def update?
+    return false unless visible?
+
     has_any_account_role?(:owner, :admin)
   end
 
   def destroy?
+    return false unless visible?
+
     has_account_role?(:owner)
   end
 
   private
 
+  def visible?
+    return false unless user.present?
+    return true if record.prompt&.account_id.nil?
+
+    user_in_account?
+  end
+
   def account_for_record
-    record.prompt&.account
+    # For new records (no prompt yet), fall back to the user's account
+    # so that role checks work on the new/create actions.
+    record.prompt&.account || user&.account
   end
 
   class Scope < ApplicationPolicy::Scope

@@ -6,9 +6,11 @@ class TokenUsageTracker
   DEFAULT_OUTPUT_COST_PER_MILLION = BigDecimal("15.00")
 
   def self.track(agent_run:, tokens_input:, tokens_output:, model_id: nil)
-    # Default to the model selected for this agent run if no explicit model_id
-    model_id ||= agent_run.model_selection&.llm_model&.model_id
-    cost_cents = calculate_cost(tokens_input, tokens_output, model_id: model_id)
+    # Use the already-loaded llm_model from the agent run's model selection
+    # to avoid a redundant LlmModel.find_by query in calculate_cost.
+    llm_model = agent_run.model_selection&.llm_model
+    model_id ||= llm_model&.model_id
+    cost_cents = calculate_cost(tokens_input, tokens_output, llm_model: llm_model, model_id: model_id)
 
     agent_run.with_lock do
       agent_run.increment(:tokens_input, tokens_input)
@@ -30,8 +32,8 @@ class TokenUsageTracker
     }.to_json, metadata: { type: "token_usage" })
   end
 
-  def self.calculate_cost(input_tokens, output_tokens, model_id: nil)
-    model = LlmModel.find_by(model_id: model_id) if model_id.present?
+  def self.calculate_cost(input_tokens, output_tokens, llm_model: nil, model_id: nil)
+    model = llm_model || (LlmModel.find_by(model_id: model_id) if model_id.present?)
 
     if model&.input_cost_per_million && model&.output_cost_per_million
       model.estimated_cost(input_tokens, output_tokens)

@@ -21,11 +21,14 @@ class LlmModel < ApplicationRecord
   scope :affordable, ->(budget_cents, avg_tokens) {
     return active if budget_cents.nil?
 
-    where(
-      "((COALESCE(input_cost_per_million, 0) + COALESCE(output_cost_per_million, 0)) / 2.0 * :tokens / 1000000.0 * 100) <= :budget",
-      tokens: avg_tokens,
-      budget: budget_cents
-    )
+    # Exclude models with unknown pricing — nil costs must not appear "free"
+    where.not(input_cost_per_million: nil)
+         .where.not(output_cost_per_million: nil)
+         .where(
+           "((input_cost_per_million + output_cost_per_million) / 2.0 * :tokens / 1000000.0 * 100) <= :budget",
+           tokens: avg_tokens,
+           budget: budget_cents
+         )
   }
 
   def estimated_cost(input_tokens, output_tokens)
