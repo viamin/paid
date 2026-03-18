@@ -186,9 +186,10 @@ module Prompts
         1. Install dependencies (`bundle install`, `yarn install`, etc.)
         #{setup_database_instruction}
         2. Work through the priorities above in order
-        3. Self-review: Before running checks, review your full diff as a critical code
-           reviewer would. Look for edge cases, missing tests, unclear naming, error
-           handling gaps, and style inconsistencies. Fix anything you find.
+        3. Self-review: Before running checks, review the changes you are about to
+           commit as a critical code reviewer would. Look for missing guard clauses,
+           insufficient input validation, unhandled edge cases, missing tests, unclear
+           naming, and style inconsistencies. Fix anything you find.
         4. Run lint and fix any violations: `#{lint_command}`
         5. Run the test suite and fix any failures: `#{test_command}`
         6. Commit your changes with a descriptive message
