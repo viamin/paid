@@ -33,6 +33,10 @@ module QualityMetrics
 
     attr_reader :agent_run
 
+    # Builds scores for metrics that can be reliably determined from available data.
+    # `ci_passed` and `tests_pass` are intentionally omitted because the agent run
+    # does not track CI/test results separately — the weighted_average method
+    # renormalizes over present keys so the composite score remains valid.
     def build_scores
       scores = {}
       scores["pr_created"] = agent_run.pull_request_number.present? ? 1.0 : 0.0
@@ -68,6 +72,7 @@ module QualityMetrics
       assignment = agent_run.ab_test_assignment
       return unless assignment
 
+      assignment.update!(quality_score: metric.composite_score)
       assignment.ab_test_variant.record_quality_score!(metric.composite_score)
     end
 

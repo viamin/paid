@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class AbTestsController < ApplicationController
-  before_action :set_ab_test, only: [ :show, :edit, :update, :destroy, :start, :complete, :promote_winner ]
+  before_action :set_ab_test, only: [ :show, :edit, :update, :destroy, :start, :complete, :cancel, :promote_winner ]
   skip_after_action :verify_authorized, only: :index
 
   def index
@@ -20,6 +20,7 @@ class AbTestsController < ApplicationController
     @ab_test = AbTest.new
     authorize @ab_test
     @prompts = policy_scope(Prompt).active.includes(:current_version).order(:name)
+    @ab_test.ab_test_variants.build if @ab_test.ab_test_variants.empty?
   end
 
   def create
@@ -37,6 +38,7 @@ class AbTestsController < ApplicationController
   def edit
     authorize @ab_test
     @prompts = policy_scope(Prompt).active.includes(:current_version).order(:name)
+    @ab_test.ab_test_variants.build if @ab_test.ab_test_variants.empty?
   end
 
   def update
@@ -72,6 +74,14 @@ class AbTestsController < ApplicationController
     redirect_to @ab_test, alert: e.message
   end
 
+  def cancel
+    authorize @ab_test, :update?
+    @ab_test.cancel!
+    redirect_to @ab_test, notice: "A/B test has been cancelled."
+  rescue ActiveRecord::RecordInvalid => e
+    redirect_to @ab_test, alert: e.message
+  end
+
   def promote_winner
     authorize @ab_test, :update?
 
@@ -96,7 +106,8 @@ class AbTestsController < ApplicationController
   def ab_test_params
     params.require(:ab_test).permit(
       :name, :description, :prompt_id, :control_version_id,
-      :min_samples_per_variant, :confidence_threshold
+      :min_samples_per_variant, :confidence_threshold,
+      ab_test_variants_attributes: [ :id, :prompt_version_id, :is_control, :_destroy ]
     )
   end
 end

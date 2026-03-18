@@ -24,12 +24,14 @@
     <%= f.collection_select :prompt_id, prompts, :id, :name, { include_blank: "Select a prompt..." }, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
   </div>
 
-  <% if ab_test.prompt.present? %>
-    <div>
-      <%= f.label :control_version_id, "Control Version", class: "block text-sm font-medium text-gray-700" %>
+  <div>
+    <%= f.label :control_version_id, "Control Version", class: "block text-sm font-medium text-gray-700" %>
+    <% if ab_test.prompt.present? %>
       <%= f.collection_select :control_version_id, ab_test.prompt.prompt_versions.order(:version), :id, ->(pv) { "v#{pv.version}" }, {}, class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
-    </div>
-  <% end %>
+    <% else %>
+      <p class="mt-1 text-sm text-gray-500">Select a prompt above to choose a control version.</p>
+    <% end %>
+  </div>
 
   <div class="grid grid-cols-2 gap-4">
     <div>
@@ -42,7 +44,26 @@
     </div>
   </div>
 
-  <p class="text-sm text-gray-500">Variants are managed through the API using <code>AbTests::Create</code>. Configure the prompt, control version, and test parameters here.</p>
+  <fieldset class="border border-gray-200 rounded-md p-4">
+    <legend class="text-sm font-medium text-gray-700 px-1">Variants</legend>
+    <% if ab_test.prompt.present? %>
+      <%= f.fields_for :ab_test_variants do |vf| %>
+        <div class="flex items-center gap-3 mt-2">
+          <%= vf.collection_select :prompt_version_id, ab_test.prompt.prompt_versions.order(:version), :id, ->(pv) { "v#{pv.version}" }, { include_blank: "Select version..." }, class: "block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+          <%= vf.label :is_control, class: "flex items-center gap-1 text-sm text-gray-600 whitespace-nowrap" do %>
+            <%= vf.check_box :is_control, class: "rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
+            Control
+          <% end %>
+          <% if vf.object.persisted? %>
+            <%= vf.check_box :_destroy, class: "rounded border-gray-300 text-red-600 focus:ring-red-500" %>
+            <span class="text-sm text-red-600">Remove</span>
+          <% end %>
+        </div>
+      <% end %>
+    <% else %>
+      <p class="text-sm text-gray-500 mt-2">Select a prompt above to configure variants.</p>
+    <% end %>
+  </fieldset>
 
   <div class="flex justify-end gap-3">
     <%= link_to "Cancel", ab_tests_path, class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>

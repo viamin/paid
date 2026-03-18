@@ -9,13 +9,13 @@ class AbTestAnalysisJob < ApplicationJob
 
     result = AbTests::Analyze.call(ab_test: ab_test)
 
-    if result[:status] == :significant
-      ab_test.complete!(winner: result[:winner])
+    if result.status == :winner_found
+      ab_test.complete!(winner: result.winner)
       Rails.logger.info(
         message: "ab_test.auto_completed",
         ab_test_id: ab_test.id,
-        winner: result[:winner]&.name,
-        confidence: result[:confidence]
+        winner: result.winner&.name,
+        confidence: result.confidence
       )
     end
   end
