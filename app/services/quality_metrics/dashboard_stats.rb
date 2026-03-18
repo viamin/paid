@@ -19,7 +19,7 @@ module QualityMetrics
     end
 
     def self.overview(...)
-      new(...).send(:overview)
+      new(...).overview
     end
 
     def call
@@ -30,12 +30,6 @@ module QualityMetrics
         prompt_comparison: prompt_comparison,
         human_feedback: human_feedback
       }
-    end
-
-    private
-
-    def metrics
-      @metrics ||= QualityMetric.by_project(project.id).with_composite_score
     end
 
     def overview
@@ -58,6 +52,12 @@ module QualityMetrics
         automated_count: row.automated_count.to_i,
         human_count: row.human_count.to_i
       }
+    end
+
+    private
+
+    def metrics
+      @metrics ||= QualityMetric.by_project(project.id).with_composite_score
     end
 
     def trends
@@ -121,18 +121,20 @@ module QualityMetrics
 
       row = human.select(
         "COUNT(*) AS total",
+        "COUNT(*) FILTER (WHERE scores ? 'pr_merged') AS with_merge_status",
         "COUNT(*) FILTER (WHERE (scores->>'pr_merged')::float = 1.0) AS merged_count"
       ).take
 
       total = row.total.to_i
       return { total: 0, merge_rate: nil, sources: {} } if total.zero?
 
+      with_merge_status = row.with_merge_status.to_i
       merged_count = row.merged_count.to_i
       sources = human.where.not(feedback_source: nil).group(:feedback_source).count
 
       {
         total: total,
-        merge_rate: (merged_count.to_f / total * 100).round(1),
+        merge_rate: with_merge_status.zero? ? nil : (merged_count.to_f / with_merge_status * 100).round(1),
         sources: sources
       }
     end
