@@ -89,7 +89,42 @@ class AbTest < ApplicationRecord
     ab_test_variants.all? { |v| v.sample_count >= min_samples_per_variant }
   end
 
+  # Returns cached analysis if sample counts haven't changed since last computation,
+  # otherwise recomputes via AbTests::Analyze and persists the result.
+  # This avoids expensive per-request score aggregation (plucking all quality_scores).
+  def cached_or_compute_analysis
+    current_key = samples_key
+    return deserialize_analysis if cached_analysis.present? && analysis_samples_key == current_key
+
+    AbTests::Analyze.call(ab_test: self).tap { |result| persist_analysis!(result, current_key) }
+  end
+
   private
+
+  def samples_key
+    ab_test_variants.order(:id).pluck(:id, :sample_count).map { |id, n| "#{id}:#{n}" }.join(",")
+  end
+
+  def persist_analysis!(result, key)
+    serialized = {
+      status: result.status.to_s,
+      confidence: result.confidence&.to_f,
+      improvement: result.improvement&.to_f,
+      winner_id: result.winner&.id
+    }
+    update_columns(cached_analysis: serialized, analysis_samples_key: key)
+  end
+
+  def deserialize_analysis
+    data = cached_analysis.symbolize_keys
+    winner = data[:winner_id] ? ab_test_variants.find_by(id: data[:winner_id]) : nil
+    AbTests::Analyze::Result.new(
+      status: data[:status]&.to_sym,
+      winner: winner,
+      confidence: data[:confidence],
+      improvement: data[:improvement]
+    )
+  end
 
   def variant_count_within_limit
     return if ab_test_variants.size <= MAX_VARIANTS + 1 # +1 for control
