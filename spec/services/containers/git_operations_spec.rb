@@ -28,7 +28,7 @@ RSpec.describe Containers::GitOperations do
 
     it "clones the repository inside the container" do
       expect(container_service).to receive(:execute)
-        .with([ "git", "clone", "https://github.com/#{project.full_name}.git", "." ],
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
               timeout: described_class::CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
 
@@ -47,7 +47,7 @@ RSpec.describe Containers::GitOperations do
         .ordered
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "clone", "https://github.com/#{project.full_name}.git", "." ],
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
               timeout: described_class::CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
         .ordered
@@ -145,8 +145,12 @@ RSpec.describe Containers::GitOperations do
 
     it "clones and checks out the existing branch" do
       expect(container_service).to receive(:execute)
-        .with([ "git", "clone", "https://github.com/#{project.full_name}.git", "." ],
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
               timeout: described_class::CLONE_TIMEOUT, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--depth", "1", "origin", "fix-bug-branch" ], timeout: nil, stream: false)
         .and_return(success_result)
 
       expect(container_service).to receive(:execute)
@@ -162,7 +166,7 @@ RSpec.describe Containers::GitOperations do
 
     it "raises CloneError when checkout fails and no PR number given" do
       allow(container_service).to receive(:execute)
-        .with([ "git", "switch", "--", "nonexistent" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "--depth", "1", "origin", "nonexistent" ], timeout: nil, stream: false)
         .and_return(failure_result)
 
       expect { git_ops.clone_and_checkout_branch(branch_name: "nonexistent") }
@@ -172,11 +176,15 @@ RSpec.describe Containers::GitOperations do
     context "when branch is deleted but PR number is given" do
       it "falls back to fetching the PR ref" do
         allow(container_service).to receive(:execute)
-          .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false)
-          .and_return(failure_result, success_result)
+          .with([ "git", "fetch", "--depth", "1", "origin", "deleted-branch" ], timeout: nil, stream: false)
+          .and_return(failure_result)
 
         expect(container_service).to receive(:execute)
           .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false)
           .and_return(success_result)
 
         git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42)
@@ -186,7 +194,7 @@ RSpec.describe Containers::GitOperations do
 
       it "raises CloneError when PR ref fetch also fails" do
         allow(container_service).to receive(:execute)
-          .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false)
+          .with([ "git", "fetch", "--depth", "1", "origin", "deleted-branch" ], timeout: nil, stream: false)
           .and_return(failure_result)
 
         allow(container_service).to receive(:execute)
