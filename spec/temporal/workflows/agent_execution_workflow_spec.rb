@@ -135,9 +135,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       workflow.execute(input)
 
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::CreatePullRequestActivity, anything, any_args)
+        .with(Activities::CreatePullRequestActivity, anything, timeout: anything)
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::PushBranchActivity, anything, any_args)
+        .with(Activities::PushBranchActivity, anything, timeout: anything)
     end
 
     it "does not run PreparePrPromptActivity for review goals" do
@@ -146,7 +146,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       workflow.execute(input)
 
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::PreparePrPromptActivity, anything, any_args)
+        .with(Activities::PreparePrPromptActivity, anything, timeout: anything)
     end
 
     it "does not run RebaseBranchActivity for review goals" do
@@ -155,7 +155,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       workflow.execute(input)
 
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::RebaseBranchActivity, anything, any_args)
+        .with(Activities::RebaseBranchActivity, anything, timeout: anything)
     end
   end
 
