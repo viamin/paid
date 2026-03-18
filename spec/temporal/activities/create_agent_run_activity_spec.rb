@@ -46,6 +46,19 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:provider_attempt_count]).to eq(3)
     end
 
+    it "counts configured fallback-only providers even when not explicitly ordered yet" do
+      project.created_by.providers.find_or_create_by!(
+        provider_key: "cursor",
+        enabled_for_agent_runs: false,
+        enabled_for_fallback: true
+      )
+      project.created_by.settings.update!(fallback_enabled: true, fallback_providers: [])
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
+
+      expect(result[:provider_attempt_count]).to eq(2)
+    end
+
     it "updates the issue paid_state to in_progress" do
       activity.execute(project_id: project.id, issue_id: issue.id)
 
