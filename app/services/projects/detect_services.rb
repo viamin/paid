@@ -118,11 +118,9 @@ module Projects
 
     def fetch_file(path)
       client = project.github_token.client
-      response = client.client.contents("#{project.owner}/#{project.repo}", path: path)
+      response = client.contents("#{project.owner}/#{project.repo}", path: path)
       decode_content(response)
-    rescue GithubClient::NotFoundError, Octokit::NotFound
-      nil
-    rescue GithubClient::Error
+    rescue GithubClient::NotFoundError
       nil
     end
 
@@ -174,10 +172,15 @@ module Projects
     end
 
     def detect_from_docker_compose
-      content = fetch_file("docker-compose.yml") || fetch_file("compose.yml")
+      source_file = "docker-compose.yml"
+      content = fetch_file(source_file)
+      unless content
+        source_file = "compose.yml"
+        content = fetch_file(source_file)
+      end
       return [] unless content
 
-      data = YAML.safe_load(content, permitted_classes: [ Symbol ])
+      data = YAML.safe_load(content)
       return [] unless data.is_a?(Hash)
 
       services = data["services"]
@@ -191,20 +194,26 @@ module Projects
         matched_service = match_compose_image(image) || match_compose_service_name(service_name)
         next unless matched_service
 
-        detections << { service: matched_service, source: "docker-compose.yml", dependency: image.presence || service_name }
+        detections << { service: matched_service, source: source_file, dependency: image.presence || service_name }
       end
       detections
     rescue Psych::SyntaxError
       []
     end
 
+    # Maximum size for database.yml content to mitigate YAML alias expansion DoS
+    DATABASE_YML_MAX_SIZE = 64_000
+
     def detect_from_database_yml
       content = fetch_file("config/database.yml")
       return [] unless content
+      return [] if content.bytesize > DATABASE_YML_MAX_SIZE
 
-      # Parse YAML but handle ERB-style templates by stripping them
+      # Parse YAML but handle ERB-style templates by stripping them.
+      # Aliases are enabled because database.yml conventionally uses YAML
+      # anchors (e.g., &default / <<: *default) to share config across environments.
       sanitized = content.gsub(/<%.*?%>/, '""')
-      data = YAML.safe_load(sanitized, permitted_classes: [ Symbol ], aliases: true)
+      data = YAML.safe_load(sanitized, aliases: true)
       return [] unless data.is_a?(Hash)
 
       detections = []

@@ -101,6 +101,17 @@ class GithubClient
     handle_errors { client.repository(repo) }
   end
 
+  # Fetches file contents from a repository.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param path [String] File path within the repository
+  # @return [Sawyer::Resource] File content data (Base64-encoded)
+  # @raise [NotFoundError] if the file does not exist
+  # @raise [AuthenticationError] if access is denied
+  def contents(repo, path:)
+    handle_errors { client.contents(repo, path: path) }
+  end
+
   # Lists repositories the token has push access to.
   # Filters by permissions.push to exclude repos where the token only
   # has metadata access (relevant for fine-grained PATs with selected repos).
