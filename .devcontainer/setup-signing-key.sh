@@ -25,15 +25,14 @@ if ! gh auth status -h github.com >/dev/null 2>&1; then
   echo "WARNING: GitHub CLI is not authenticated for github.com; skipping commit signing setup." >&2
   echo "  To enable it, run:" >&2
   echo "    gh auth login -h github.com" >&2
-  echo "  Then re-run: bash .devcontainer/setup-signing-key.sh" >&2
+  echo "  Then re-run: bash .devcontainer/enable-commit-signing.sh" >&2
   exit 0
 fi
 
 if ! gh api /user/ssh_signing_keys --method GET --paginate --jq '.' >/dev/null 2>&1; then
   echo "WARNING: GitHub token lacks the 'admin:ssh_signing_key' scope." >&2
   echo "  Commit signing will be disabled. To enable it, run:" >&2
-  echo "    gh auth refresh -h github.com -s admin:ssh_signing_key" >&2
-  echo "  Then re-run: bash .devcontainer/setup-signing-key.sh" >&2
+  echo "    bash .devcontainer/enable-commit-signing.sh" >&2
   exit 0
 fi
 
@@ -77,7 +76,7 @@ if ! output=$(gh ssh-key add "$KEY_PATH.pub" --type signing --title "$KEY_TITLE"
   echo "    - Network issues or GitHub availability problems" >&2
   echo "    - API rate limits or other GitHub API errors" >&2
   echo "    - A signing key with the same title already exists" >&2
-  echo "  After resolving the issue, re-run: bash .devcontainer/setup-signing-key.sh" >&2
+  echo "  After resolving the issue, re-run: bash .devcontainer/enable-commit-signing.sh" >&2
   exit 0
 fi
 
