@@ -127,6 +127,8 @@ module Workflows
         handle_escalate_to_owner(project_id, pr_data)
       elsif trigger_types.include?("owner_approved")
         handle_owner_approved(project_id, pr_data)
+      elsif trigger_types.include?("review_bot_review_pending")
+        handle_review_bot_review_pending(project_id, pr_data, trigger_types)
       elsif pr_data[:phase].in?(%w[draft restarted])
         start_draft_followup_workflow(project_id, pr_data)
       else
@@ -156,20 +158,38 @@ module Workflows
       reviewer = pr_data[:owner_reviewer_login]
       return if reviewer.blank?
 
-      begin
-        run_activity(Activities::RequestReviewActivity,
-          { project_id: project_id, pr_number: pr_data[:pr_number],
-            reviewers: [ reviewer ] }, timeout: 60)
-      rescue Temporalio::Error::CanceledError
-        raise
-      rescue => e
-        Temporalio::Workflow.logger.warn(
-          message: "pr_review.request_owner_review_failed",
-          project_id: project_id,
-          pr_number: pr_data[:pr_number],
-          error: e.message
-        )
+      request_review(project_id, pr_data[:pr_number], [ reviewer ],
+        log_key: "pr_review.request_owner_review_failed")
+    end
+
+    def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
+      request_review(project_id, pr_data[:pr_number], [ "copilot" ],
+        log_key: "pr_review.request_review_bot_review_failed")
+
+      # If there are other triggers besides review_bot_review_pending, dispatch them
+      other_triggers = trigger_types - [ "review_bot_review_pending" ]
+      return if other_triggers.empty?
+
+      if pr_data[:phase].in?(%w[draft restarted])
+        start_draft_followup_workflow(project_id, pr_data)
+      else
+        start_pr_followup_workflow(project_id, pr_data)
       end
+    end
+
+    def request_review(project_id, pr_number, reviewers, log_key:)
+      run_activity(Activities::RequestReviewActivity,
+        { project_id: project_id, pr_number: pr_number,
+          reviewers: reviewers }, timeout: 60)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: log_key,
+        project_id: project_id,
+        pr_number: pr_number,
+        error: e.message
+      )
     end
 
     def handle_owner_approved(project_id, pr_data)
