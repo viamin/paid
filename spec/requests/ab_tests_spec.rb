@@ -186,6 +186,28 @@ RSpec.describe "AbTests" do
         expect(response).to have_http_status(:unprocessable_content)
       end
     end
+
+    context "when authenticated as a non-owner/non-admin user" do
+      let(:member_user) { create(:user, :member, account: account) }
+
+      before { sign_in member_user }
+
+      it "rejects the request and does not create an AbTest" do
+        old_version = prompt.current_version
+        prompt.create_version!(template: "New current template")
+        expect {
+          post prompt_ab_tests_path(prompt), params: {
+            ab_test: {
+              name: "New Test",
+              variant_version_ids: [ old_version.id ],
+              min_samples_per_variant: 30,
+              confidence_threshold: 0.95
+            }
+          }
+        }.not_to change(AbTest, :count)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
   end
 
   describe "POST /prompts/:prompt_id/ab_tests/:id/start" do
@@ -208,6 +230,19 @@ RSpec.describe "AbTests" do
         expect(flash[:alert]).to be_present
       end
     end
+
+    context "when authenticated as a non-owner/non-admin user" do
+      let(:member_user) { create(:user, :member, account: account) }
+
+      before { sign_in member_user }
+
+      it "rejects the request and does not start the test" do
+        ab_test = create(:ab_test, prompt: prompt, status: "draft")
+        post start_prompt_ab_test_path(prompt, ab_test)
+        expect(ab_test.reload.status).to eq("draft")
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
   end
 
   describe "POST /prompts/:prompt_id/ab_tests/:id/cancel" do
@@ -225,6 +260,19 @@ RSpec.describe "AbTests" do
         ab_test = create(:ab_test, prompt: prompt, status: "draft")
         post cancel_prompt_ab_test_path(prompt, ab_test)
         expect(ab_test.reload.status).to eq("cancelled")
+      end
+    end
+
+    context "when authenticated as a non-owner/non-admin user" do
+      let(:member_user) { create(:user, :member, account: account) }
+
+      before { sign_in member_user }
+
+      it "rejects the request and does not cancel the test" do
+        ab_test = create(:ab_test, prompt: prompt, status: "running", started_at: Time.current)
+        post cancel_prompt_ab_test_path(prompt, ab_test)
+        expect(ab_test.reload.status).to eq("running")
+        expect(flash[:alert]).to include("not authorized")
       end
     end
   end
@@ -248,6 +296,22 @@ RSpec.describe "AbTests" do
         post promote_prompt_ab_test_path(prompt, ab_test)
         expect(response).to redirect_to(prompt_ab_test_path(prompt, ab_test))
         expect(flash[:alert]).to be_present
+      end
+    end
+
+    context "when authenticated as a non-owner/non-admin user" do
+      let(:member_user) { create(:user, :member, account: account) }
+
+      before { sign_in member_user }
+
+      it "rejects the request and does not promote" do
+        ab_test = create(:ab_test, prompt: prompt, status: "completed", completed_at: Time.current)
+        variant = create(:ab_test_variant, ab_test: ab_test)
+        ab_test.update!(winner_variant: variant)
+        original_version = prompt.current_version
+        post promote_prompt_ab_test_path(prompt, ab_test)
+        expect(prompt.reload.current_version).to eq(original_version)
+        expect(flash[:alert]).to include("not authorized")
       end
     end
   end

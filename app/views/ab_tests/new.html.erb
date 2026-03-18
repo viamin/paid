@@ -64,8 +64,9 @@
               Select up to 3 prompt versions to test against the control (v<%= @prompt.current_version&.version || "?" %>).
               Only versions other than the current version are shown.
             </p>
+            <% non_current_versions = @versions.reject { |v| v.id == @prompt.current_version_id } %>
             <div class="mt-3 space-y-2">
-              <% @versions.reject { |v| v.id == @prompt.current_version_id }.each do |version| %>
+              <% non_current_versions.each do |version| %>
                 <label class="flex items-start rounded-md border border-gray-200 p-3 hover:bg-gray-50 cursor-pointer">
                   <input type="checkbox" name="ab_test[variant_version_ids][]" value="<%= version.id %>"
                          <%= "checked" if @selected_variant_ids&.include?(version.id) %>
@@ -79,7 +80,7 @@
                   </div>
                 </label>
               <% end %>
-              <% if @versions.reject { |v| v.id == @prompt.current_version_id }.empty? %>
+              <% if non_current_versions.empty? %>
                 <p class="text-sm text-gray-500 italic">No other versions available. Create additional prompt versions first.</p>
               <% end %>
             </div>

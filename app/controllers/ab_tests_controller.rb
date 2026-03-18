@@ -26,14 +26,16 @@ class AbTestsController < ApplicationController
   def create
     authorize @prompt.ab_tests.build, :create?
 
-    ab_test = AbTests::Create.call(
+    create_options = {
       prompt: @prompt,
       name: ab_test_params[:name],
       description: ab_test_params[:description],
-      variant_version_ids: selected_variant_ids,
-      min_samples_per_variant: ab_test_params[:min_samples_per_variant].to_i,
-      confidence_threshold: ab_test_params[:confidence_threshold].to_f
-    )
+      variant_version_ids: selected_variant_ids
+    }
+    create_options[:min_samples_per_variant] = ab_test_params[:min_samples_per_variant].to_i if ab_test_params[:min_samples_per_variant].present?
+    create_options[:confidence_threshold] = ab_test_params[:confidence_threshold].to_f if ab_test_params[:confidence_threshold].present?
+
+    ab_test = AbTests::Create.call(**create_options)
 
     redirect_to prompt_ab_test_path(@prompt, ab_test), notice: "A/B test was successfully created."
   rescue ArgumentError, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
