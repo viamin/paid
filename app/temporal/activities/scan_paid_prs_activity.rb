@@ -85,12 +85,16 @@ module Activities
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
 
-      # Fetch reviews and review threads — cheapest signals that often suffice.
+      # Fetch review threads first; only fetch full reviews when needed.
       unless skip_comment_signals
-        reviews = fetch_reviews(client, project, issue)
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
-        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads)
         human_triggers = human_review_thread_triggers(project, unresolved_threads)
+
+        review_bot_triggers = []
+        if human_triggers.blank?
+          reviews = fetch_reviews(client, project, issue)
+          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads)
+        end
       end
 
       all_triggers = (review_bot_triggers || []) + (human_triggers || [])
@@ -360,6 +364,8 @@ module Activities
     end
 
     def review_bot_review_status(reviews)
+      return :unknown if reviews.nil? || reviews.empty?
+
       bot_reviews = reviews.select { |r| review_bot?(r[:user_login]) }
       return :no_review if bot_reviews.empty?
 
@@ -377,6 +383,8 @@ module Activities
         [ { type: "review_bot_review_pending", details: "No review bot review found" } ]
       when :has_comments
         review_bot_thread_triggers(unresolved_threads)
+      when :unknown
+        []
       end
     end
 
