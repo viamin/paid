@@ -64,14 +64,13 @@ module CostBudgets
       }
     end
 
-    # Checks per_run budgets by computing usage from the agent_run's own
-    # token_usages rather than a shared counter. This is safe for concurrent
-    # runs because each run's usage is isolated by agent_run_id.
+    # Checks per_run budgets by computing billable usage from the agent_run's
+    # own token_usages rather than a shared counter. Uses the billable scope
+    # to exclude run_summary (audit-only) records that would otherwise
+    # double-count costs already tracked by per-request proxy records.
     def check_per_run_budget
-      project.cost_budgets.per_run.find do |budget|
-        run_cost = agent_run.token_usages.sum(:cost_cents)
-        run_cost >= budget.limit_cents
-      end
+      run_cost = TokenUsage.billable.where(agent_run: agent_run).sum(:cost_cents)
+      project.cost_budgets.per_run.find { |budget| run_cost >= budget.limit_cents }
     end
 
     def rollover_expired_periods
