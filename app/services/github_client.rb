@@ -353,7 +353,7 @@ class GithubClient
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Pull request number
-  # @return [Array<Hash>] Reviews with :id, :user_login, :state, :submitted_at keys
+  # @return [Array<Hash>] Reviews with :id, :user_login, :state, :body, :submitted_at keys (:body is always a String)
   # @raise [NotFoundError] if the pull request does not exist
   def pull_request_reviews(repo, number)
     handle_errors do
