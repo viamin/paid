@@ -108,6 +108,8 @@ class AbTestsController < ApplicationController
     # expensive per-request score aggregation while data is still sparse.
     return unless @ab_test.completed? || (@ab_test.running? && @ab_test.sufficient_samples?)
 
-    AbTests::Analyze.call(ab_test: @ab_test)
+    # Uses cached result when sample counts haven't changed, avoiding repeated
+    # pluck of all quality_scores on every page load.
+    @ab_test.cached_or_compute_analysis
   end
 end
