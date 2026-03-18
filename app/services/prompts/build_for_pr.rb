@@ -142,6 +142,12 @@ module Prompts
 
         Address each thread: fix the code if the reviewer is correct, or explain
         your reasoning in a code comment if you disagree. Do not ignore review feedback.
+
+        After addressing the explicit feedback, proactively scan the rest of the PR diff
+        for the same classes of issues the reviewers raised. For example, if a reviewer
+        flagged a missing nil check, look for similar unguarded calls elsewhere in your
+        changes. Fix any instances you find — the goal is zero new review rounds for
+        problems you could have caught yourself.
       SECTION
     end
 
@@ -168,6 +174,7 @@ module Prompts
       priorities << "Close implementation gaps against the linked issue" if linked_issue?
       priorities << "Address code review comments" if unresolved_threads.any?
       priorities << "Address conversation comments" if trusted_comments.any?
+      priorities << "Proactively self-review the full diff for issues a reviewer would flag"
       priority_list = priorities.each_with_index.map { |p, i| "#{i + 1}. #{p}" }.join("\n")
 
       <<~SECTION
@@ -180,9 +187,12 @@ module Prompts
         1. Install dependencies (`bundle install`, `yarn install`, etc.)
         #{setup_database_instruction}
         2. Work through the priorities above in order
-        3. Run lint and fix any violations: `#{lint_command}`
-        4. Run the test suite and fix any failures: `#{test_command}`
-        5. Commit your changes with a descriptive message
+        3. Self-review: Before running checks, review your full diff as a critical code
+           reviewer would. Look for edge cases, missing tests, unclear naming, error
+           handling gaps, and style inconsistencies. Fix anything you find.
+        4. Run lint and fix any violations: `#{lint_command}`
+        5. Run the test suite and fix any failures: `#{test_command}`
+        6. Commit your changes with a descriptive message
 
         **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
         If the commit is rejected, read the error output carefully, fix the issues, and commit again.
