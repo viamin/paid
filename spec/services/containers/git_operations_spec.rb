@@ -189,7 +189,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(failure_result)
 
       expect { git_ops.clone_and_checkout_branch(branch_name: "nonexistent") }
-        .to raise_error(described_class::CloneError, /Checkout failed/)
+        .to raise_error(described_class::CloneError, /Checkout failed.*switch:.*fetch:/)
     end
 
     context "when branch is deleted but PR number is given" do
@@ -227,7 +227,7 @@ RSpec.describe Containers::GitOperations do
           .and_return(failure_result)
 
         expect { git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42) }
-          .to raise_error(described_class::CloneError, /branch deleted, PR fetch also failed/)
+          .to raise_error(described_class::CloneError, /Branch checkout failed.*PR ref fetch also failed/)
       end
     end
 
