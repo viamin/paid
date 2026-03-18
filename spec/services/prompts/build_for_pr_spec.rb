@@ -57,7 +57,7 @@ RSpec.describe Prompts::BuildForPr do
 
     it "includes self-review step" do
       expect(prompt).to include("Self-review")
-      expect(prompt).to include("review your full diff as a critical code")
+      expect(prompt).to include("review the changes you are about to")
     end
 
     it "includes rules" do
@@ -82,8 +82,9 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).not_to include("CI Failures")
     end
 
-    it "omits code review section when no unresolved threads" do
+    it "omits code review section and proactive scanning when no unresolved threads" do
       expect(prompt).not_to include("Code Review Comments")
+      expect(prompt).not_to include("proactively scan the rest of the PR diff")
     end
 
     it "omits conversation section when no trusted comments" do
