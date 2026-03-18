@@ -77,7 +77,11 @@ class TokenUsageTracker
   private_class_method :record_per_request_usage
 
   def self.update_cost_budgets(project, cost_cents)
-    project.cost_budgets.find_each do |budget|
+    # Only update daily/monthly budgets. Per-run budgets are enforced by
+    # summing agent_run.token_usages (not current_usage_cents), so updating
+    # the counter here would cause it to drift upward across runs and
+    # trigger misleading threshold alerts.
+    project.cost_budgets.where(budget_type: %w[daily monthly]).find_each do |budget|
       budget.record_usage!(cost_cents)
     end
   end
