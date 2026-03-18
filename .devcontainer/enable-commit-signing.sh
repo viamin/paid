@@ -24,7 +24,11 @@ echo "Configuring SSH commit signing for this repository..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Resolve the repo root from the script's location so validation works even
 # when the user runs this script from a subdirectory or outside the repo.
-REPO_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)"
+if ! REPO_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel 2>/dev/null)"; then
+  echo "Error: this script must be run from within a checked-out repository." >&2
+  echo "  Could not find a git repository at or above: ${SCRIPT_DIR}" >&2
+  exit 1
+fi
 # Run setup-signing-key.sh from the repo root so its internal
 # `git rev-parse --show-toplevel` resolves correctly even when the user
 # invokes this wrapper from outside the repository.

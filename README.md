@@ -61,7 +61,7 @@ bash .devcontainer/enable-commit-signing.sh
 
 This script will:
 
-1. Authenticate GitHub CLI if needed (`gh auth login`)
+1. Authenticate GitHub CLI if needed (`gh auth login -h github.com`)
 2. Request the required `admin:ssh_signing_key` scope
 3. Create/register a container-local SSH signing key
 4. Configure repo-local git signing settings
