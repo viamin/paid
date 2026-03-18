@@ -271,6 +271,24 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Cost")
       end
 
+      it "shows quality scores when quality metrics exist" do
+        agent_run = create(:agent_run, :completed, project: project)
+        create(:quality_metric, agent_run: agent_run, composite_score: 0.85)
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Quality Scores")
+        expect(response.body).to include("85%")
+      end
+
+      it "does not show quality scores when no quality metrics exist" do
+        agent_run = create(:agent_run, :completed, project: project)
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).not_to include("Quality Scores")
+      end
+
       it "shows git details when available" do
         agent_run = create(:agent_run, :with_git_context, project: project)
         get project_agent_run_path(project, agent_run)
