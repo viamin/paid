@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "agent_harness"
+require Rails.root.join("lib/provider_support")
 
 agent_timeout = begin
   [ Integer(ENV.fetch("AGENT_TIMEOUT", 3600)), 1 ].max
@@ -18,11 +19,13 @@ AgentHarness.configure do |config|
   config.fallback_providers = %i[cursor aider]
   config.default_timeout = Rails.application.config.x.agent_timeout
 
-  AgentHarness::Providers::Registry.instance.all.each_with_index do |provider_name, index|
-    config.provider(provider_name) do |provider|
+  ProviderSupport.supported_provider_keys.each_with_index do |provider_key, index|
+    harness_provider_key = ProviderSupport.harness_provider_key_for(provider_key)
+
+    config.provider(harness_provider_key) do |provider|
       provider.enabled = true
       provider.priority = (index + 1) * 10
-      provider.timeout = Rails.application.config.x.agent_timeout if provider_name == :claude
+      provider.timeout = Rails.application.config.x.agent_timeout if harness_provider_key == "claude"
     end
   end
 
