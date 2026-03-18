@@ -4,16 +4,21 @@ module Activities
   class CompleteReviewGoalActivity < BaseActivity
     activity_name "CompleteReviewGoal"
 
-    # Marks the review run as completed unconditionally. We don't verify
-    # that the agent actually posted review comments because:
-    # 1. The proxy tracks issue creation but not review creation (yet)
-    # 2. The agent may have legitimately found nothing to comment on
-    # 3. Review failures surface as agent-level errors handled upstream
-    # TODO(#232): Track successful POST /pulls/:number/reviews calls in
-    # the proxy to enable conditional completion verification.
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
+
+      # Reload to pick up any review_posted_at set by the proxy during execution.
+      agent_run.reload
+
+      if agent_run.review_posted_at.blank?
+        logger.warn(
+          message: "agent_execution.review_goal_no_review_posted",
+          agent_run_id: agent_run_id,
+          pr_number: agent_run.source_pull_request_number
+        )
+        agent_run.log!("system", "Warning: no review was posted on PR ##{agent_run.source_pull_request_number}")
+      end
 
       # Don't set pull_request_number for review runs — that field represents
       # the PR produced by the run. Review runs use source_pull_request_number
@@ -24,7 +29,8 @@ module Activities
       logger.info(
         message: "agent_execution.review_goal_completed",
         agent_run_id: agent_run_id,
-        pr_number: agent_run.source_pull_request_number
+        pr_number: agent_run.source_pull_request_number,
+        review_posted: agent_run.review_posted_at.present?
       )
 
       ProcessRunQueueJob.perform_later
