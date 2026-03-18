@@ -142,12 +142,6 @@ module Prompts
 
         Address each thread: fix the code if the reviewer is correct, or explain
         your reasoning in a code comment if you disagree. Do not ignore review feedback.
-
-        After addressing the explicit feedback, proactively scan the rest of the PR diff
-        for the same classes of issues the reviewers raised. For example, if a reviewer
-        flagged a missing guard clause or input validation, look for similar unguarded
-        calls elsewhere in your changes. Fix any instances you find — the goal is zero
-        new review rounds for problems you could have caught yourself.
       SECTION
     end
 
@@ -186,10 +180,11 @@ module Prompts
         1. Install dependencies (`bundle install`, `yarn install`, etc.)
         #{setup_database_instruction}
         2. Work through the priorities above in order
-        3. Self-review: Before running checks, review the changes you are about to
-           commit as a critical code reviewer would. Look for missing guard clauses,
+        3. Proactive scan: After making your changes, review the **entire diff** you are
+           about to commit#{review_scan_instruction}. Look for missing guard clauses,
            insufficient input validation, unhandled edge cases, missing tests, unclear
-           naming, and style inconsistencies. Fix anything you find.
+           naming, and style inconsistencies. Fix every issue you find — the goal is
+           zero new review rounds for problems you could have caught yourself.
         4. Run lint and fix any violations: `#{lint_command}`
         5. Run the test suite and fix any failures: `#{test_command}`
         6. Commit your changes with a descriptive message
@@ -214,6 +209,16 @@ module Prompts
         - Do not modify unrelated files
         - Focus on completing the specific tasks listed above
       SECTION
+    end
+
+    # When reviewers have flagged specific issues, tell the agent to scan for
+    # the same class of problem across the whole diff — not just the flagged lines.
+    def review_scan_instruction
+      return "" unless unresolved_threads.any?
+
+      ". Pay special attention to the same classes of issues the reviewers " \
+        "raised — if they flagged one instance, scan for similar problems " \
+        "elsewhere in your changes"
     end
 
     # Memoized data fetchers
