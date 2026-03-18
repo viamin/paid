@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "base64"
+
 module Projects
   # Inspects repository files to detect required service dependencies.
   #
@@ -180,7 +182,7 @@ module Projects
       end
       return [] unless content
 
-      data = YAML.safe_load(content)
+      data = YAML.safe_load(content, aliases: true)
       return [] unless data.is_a?(Hash)
 
       services = data["services"]
@@ -197,7 +199,7 @@ module Projects
         detections << { service: matched_service, source: source_file, dependency: image.presence || service_name }
       end
       detections
-    rescue Psych::SyntaxError
+    rescue Psych::Exception
       []
     end
 
@@ -212,7 +214,7 @@ module Projects
       # Parse YAML but handle ERB-style templates by stripping them.
       # Aliases are enabled because database.yml conventionally uses YAML
       # anchors (e.g., &default / <<: *default) to share config across environments.
-      sanitized = content.gsub(/<%.*?%>/, '""')
+      sanitized = content.gsub(/<%.*?%>/m, '""')
       data = YAML.safe_load(sanitized, aliases: true)
       return [] unless data.is_a?(Hash)
 
@@ -227,7 +229,7 @@ module Projects
         detections << { service: service, source: "config/database.yml", dependency: adapter }
       end
       detections
-    rescue Psych::SyntaxError
+    rescue Psych::Exception
       []
     end
 
