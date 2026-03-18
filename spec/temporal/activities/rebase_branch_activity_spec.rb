@@ -69,7 +69,7 @@ RSpec.describe Activities::RebaseBranchActivity do
 
         # unshallow (shallow clone -> full history)
         allow(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: nil, stream: false)
+          .with([ "git", "fetch", "--unshallow" ], timeout: Containers::GitOperations::CLONE_TIMEOUT, stream: false)
           .and_return(success_result)
 
         # fetch succeeds

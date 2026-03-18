@@ -367,7 +367,7 @@ module Containers
     # No-op if the repo is already unshallow. Needed before operations
     # that require commit ancestry (e.g. rebase).
     def unshallow
-      result = execute_git("fetch", "--unshallow")
+      result = execute_git("fetch", "--unshallow", timeout: CLONE_TIMEOUT)
       # --unshallow fails with "fatal: --unshallow on a complete repository"
       # when already unshallow — that's fine, ignore it.
       return if result.success? || result[:stderr].to_s.include?("complete repository")
