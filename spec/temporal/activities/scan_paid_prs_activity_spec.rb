@@ -234,8 +234,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           project: project, github_number: 42,
           labels: [ "paid-generated" ], paid_state: "completed")
         stub_github_for_pr(
-          reviews: [
-            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", submitted_at: Time.current }
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: Time.current }
           ]
         )
       end
@@ -255,9 +255,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           project: project, github_number: 42,
           labels: [ "paid-generated" ], paid_state: "completed")
         stub_github_for_pr(
-          reviews: [
-            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", submitted_at: 2.hours.ago },
-            { id: 2, user_login: "viamin", state: "APPROVED", submitted_at: 1.hour.ago }
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: 2.hours.ago },
+            { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 1.hour.ago }
           ]
         )
       end
@@ -278,8 +278,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           project: project, source_pull_request_number: 42,
           completed_at: 1.hour.ago)
         stub_github_for_pr(
-          reviews: [
-            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", submitted_at: 2.hours.ago }
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: 2.hours.ago }
           ]
         )
       end
@@ -499,6 +499,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
+                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -527,6 +529,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "claude[bot]", state: "COMMENTED",
+                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -555,6 +559,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "claude-code[bot]", state: "COMMENTED",
+                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -571,6 +577,84 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
+      end
+    end
+
+    context "when review bot review body says generated no comments" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer", state: "COMMENTED",
+                       body: "Copilot reviewed 5 out of 5 changed files and generated no comments.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Old comment", path: "app/model.rb", line: 10, author: "copilot-pull-request-reviewer" } ]
+            }
+          ]
+        )
+      end
+
+      it "does not return review_bot_threads trigger when review body is clean" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).not_to include("review_bot_threads")
+      end
+    end
+
+    context "when no review bot review exists" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(reviews: [])
+      end
+
+      it "returns review_bot_review_pending trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("review_bot_review_pending")
+      end
+    end
+
+    context "when review bot review has non-clean body" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer", state: "COMMENTED",
+                       body: "Copilot reviewed 3 out of 3 changed files and generated 2 comments.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "copilot-pull-request-reviewer" } ]
+            }
+          ]
+        )
+      end
+
+      it "falls back to unresolved thread check" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
       end
     end
@@ -713,8 +797,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           project: project, source_pull_request_number: 42,
           completed_at: 1.hour.ago)
         stub_github_for_pr(
-          reviews: [
-            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", submitted_at: 30.minutes.ago }
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: 30.minutes.ago }
           ]
         )
       end
@@ -737,6 +821,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer", state: "COMMENTED",
+                       body: "Copilot reviewed and generated 1 comment.",
+                       submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -835,8 +922,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "ready",
           paid_state: "completed")
         stub_github_for_pr(
-          reviews: [
-            { id: 1, user_login: "viamin", state: "APPROVED", submitted_at: Time.current }
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
           ]
         )
       end
@@ -858,6 +945,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "ready",
           paid_state: "completed")
         stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer", state: "COMMENTED",
+                       body: "Copilot reviewed and generated 1 comment.",
+                       submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -934,6 +1024,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       before do
         stub_github_for_pr(draft: true,
+          reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
+                       body: "I found issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -1060,6 +1152,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "restarted",
           draft_review_count: 2)
         stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
+                       body: "I found issues.", submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
@@ -1115,7 +1209,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     checks: [ { name: "ci", conclusion: "success" } ],
     review_threads: [],
     issue_comments: [],
-    reviews: []
+    reviews: default_clean_copilot_review
   )
     pr_data = OpenStruct.new(head: OpenStruct.new(sha: "abc123"), mergeable: mergeable, draft: draft)
 
@@ -1134,5 +1228,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:pull_request_reviews)
       .with(project.full_name, 42)
       .and_return(reviews)
+  end
+
+  def default_clean_copilot_review
+    [ { id: 100, user_login: "copilot-pull-request-reviewer", state: "COMMENTED",
+        body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago } ]
   end
 end
