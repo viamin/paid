@@ -142,6 +142,12 @@ module Prompts
 
         Address each thread: fix the code if the reviewer is correct, or explain
         your reasoning in a code comment if you disagree. Do not ignore review feedback.
+
+        After addressing the explicit feedback, proactively scan the rest of the PR diff
+        for the same classes of issues the reviewers raised. For example, if a reviewer
+        flagged a missing guard clause or input validation, look for similar unguarded
+        calls elsewhere in your changes. Fix any instances you find — the goal is zero
+        new review rounds for problems you could have caught yourself.
       SECTION
     end
 
@@ -180,9 +186,13 @@ module Prompts
         1. Install dependencies (`bundle install`, `yarn install`, etc.)
         #{setup_database_instruction}
         2. Work through the priorities above in order
-        3. Run lint and fix any violations: `#{lint_command}`
-        4. Run the test suite and fix any failures: `#{test_command}`
-        5. Commit your changes with a descriptive message
+        3. Self-review: Before running checks, review the changes you are about to
+           commit as a critical code reviewer would. Look for missing guard clauses,
+           insufficient input validation, unhandled edge cases, missing tests, unclear
+           naming, and style inconsistencies. Fix anything you find.
+        4. Run lint and fix any violations: `#{lint_command}`
+        5. Run the test suite and fix any failures: `#{test_command}`
+        6. Commit your changes with a descriptive message
 
         **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
         If the commit is rejected, read the error output carefully, fix the issues, and commit again.
