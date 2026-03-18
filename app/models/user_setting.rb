@@ -67,7 +67,7 @@ class UserSetting < ApplicationRecord
   # Returns providers enabled for agent runs for a user.
   def self.enabled_agent_providers(user = nil)
     supported_keys = Provider.supported_provider_keys
-    return [ "claude" ] unless user
+    return [ "claude" ] & supported_keys unless user
     return supported_keys if user.new_record?
 
     user.providers.for_agent_runs.ordered.pluck(:provider_key) & supported_keys
@@ -76,7 +76,7 @@ class UserSetting < ApplicationRecord
   # Returns providers that can be used as fallback for a user.
   def self.fallback_candidate_providers(user)
     supported_keys = Provider.supported_provider_keys
-    return [ "claude" ] unless user
+    return [ "claude" ] & supported_keys unless user
     return supported_keys if user.new_record?
 
     user.providers.for_fallback.ordered.pluck(:provider_key) & supported_keys
