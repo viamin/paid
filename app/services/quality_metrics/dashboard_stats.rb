@@ -78,7 +78,7 @@ module QualityMetrics
     def score_breakdown
       valid_keys = QualityMetric::SCORE_WEIGHTS.keys
       rows = QualityMetric.by_project(project.id).automated.with_composite_score
-        .where.not(scores: nil)
+        .where("scores <> '{}'::jsonb")
         .joins("CROSS JOIN LATERAL jsonb_each_text(scores) AS kv(key, val)")
         .where("kv.key IN (?)", valid_keys)
         .group("kv.key")

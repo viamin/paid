@@ -1,12 +1,11 @@
-<% quality_metrics = agent_run.quality_metrics.with_composite_score.load %>
 <% if quality_metrics.any? %>
   <div class="mt-6 rounded-lg bg-white shadow">
     <div class="border-b border-gray-200 px-4 py-4 sm:px-6">
       <h2 class="text-sm font-semibold text-gray-900">Quality Scores</h2>
     </div>
     <div class="px-4 py-4 sm:px-6">
-      <% quality_metrics.each do |metric| %>
-        <div class="<%= 'mt-4' unless metric == quality_metrics.first %>">
+      <% quality_metrics.each_with_index do |metric, index| %>
+        <div class="<%= 'mt-4' unless index.zero? %>">
           <div class="flex items-center justify-between">
             <span class="text-sm font-medium text-gray-700 capitalize"><%= metric.metric_type %> Score</span>
             <span class="text-lg font-semibold <%= quality_score_color(metric.composite_score) %>">
