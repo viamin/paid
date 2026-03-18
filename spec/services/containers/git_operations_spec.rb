@@ -165,11 +165,21 @@ RSpec.describe Containers::GitOperations do
       expect(agent_run.base_commit_sha).to eq(merge_base_sha)
     end
 
-    it "skips fetch when branch already exists locally (idempotent retry)" do
-      # Switch succeeds immediately — no fetch needed
+    it "skips clone and fetch when branch already exists locally (idempotent retry)" do
+      # On Temporal retry, rev-parse HEAD succeeds (clone already done)
+      # and switch succeeds (branch already checked out).
+      sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha_result)
+
       allow(container_service).to receive(:execute)
         .with([ "git", "switch", "--", "fix-bug-branch" ], timeout: nil, stream: false)
         .and_return(success_result)
+
+      expect(container_service).not_to receive(:execute)
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
+              timeout: described_class::CLONE_TIMEOUT, stream: false)
 
       expect(container_service).not_to receive(:execute)
         .with([ "git", "fetch", "--depth", "1", "origin", "fix-bug-branch" ], timeout: nil, stream: false)
@@ -531,8 +541,13 @@ RSpec.describe Containers::GitOperations do
 
   describe "#rebase_onto" do
     let(:fetch_result) { success_result }
+    let(:shallow_true_result) { Containers::Provision::Result.success(stdout: "true\n", stderr: "", exit_code: 0) }
 
     before do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+        .and_return(shallow_true_result)
+
       allow(container_service).to receive(:execute)
         .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
@@ -553,7 +568,12 @@ RSpec.describe Containers::GitOperations do
         expect(git_ops.rebase_onto("main")).to be true
       end
 
-      it "unshallows then fetches the branch before rebasing" do
+      it "checks shallow status, unshallows, then fetches before rebasing" do
+        expect(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+          .and_return(shallow_true_result)
+          .ordered
+
         expect(container_service).to receive(:execute)
           .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
           .and_return(success_result)
@@ -636,6 +656,40 @@ RSpec.describe Containers::GitOperations do
           .and_return(success_result)
 
         expect { git_ops.rebase_onto("main") }.to raise_error(described_class::Error)
+      end
+    end
+
+    context "when repo is not shallow" do
+      let(:shallow_false_result) { Containers::Provision::Result.success(stdout: "false\n", stderr: "", exit_code: 0) }
+
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+          .and_return(shallow_false_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "skips unshallow and proceeds with rebase" do
+        expect(container_service).not_to receive(:execute)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
+
+        expect(git_ops.rebase_onto("main")).to be true
+      end
+    end
+
+    context "when unshallow fails" do
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
+          .and_return(failure_result)
+      end
+
+      it "raises Error with unshallow details" do
+        expect { git_ops.rebase_onto("main") }
+          .to raise_error(described_class::Error, /Failed to unshallow/)
       end
     end
   end
