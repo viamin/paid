@@ -56,6 +56,18 @@ RSpec.describe CostBudgets::Check do
         result = described_class.call(project)
         expect(result[:allowed]).to be true
       end
+
+      it "excludes run_summary records from per_run usage to avoid double-counting" do
+        agent_run = create(:agent_run, :running, project: project)
+        create(:cost_budget, :per_run, project: project, limit_cents: 1_000, current_usage_cents: 0)
+        # Proxy record below budget
+        create(:token_usage, agent_run: agent_run, cost_cents: 500, request_type: "agent")
+        # run_summary audit record that would push total over budget if counted
+        create(:token_usage, agent_run: agent_run, cost_cents: 600, request_type: "run_summary")
+
+        result = described_class.call(project, agent_run: agent_run)
+        expect(result[:allowed]).to be true
+      end
     end
 
     context "when a daily budget has stale usage from a previous period" do
