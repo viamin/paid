@@ -372,7 +372,13 @@ module Containers
       # when already unshallow — that's fine, ignore it.
       return if result.success? || result[:stderr].to_s.include?("complete repository")
 
-      Rails.logger.warn(message: "container_git.unshallow_failed", stderr: result[:stderr].to_s.truncate(200))
+      Rails.logger.warn(
+        message: "container_git.unshallow_failed",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id,
+        exit_code: result[:exit_code],
+        stderr: result[:stderr].to_s.truncate(200)
+      )
     end
 
     def clone_repo
@@ -434,12 +440,19 @@ module Containers
         return if result.success?
       end
 
-      # Branch may have been deleted from the remote (e.g. after PR merge).
-      # Fall back to fetching the PR ref which GitHub preserves.
-      raise CloneError, "Checkout failed: #{error_with_stderr(result)}" unless pull_request_number
+      # Both switch and fetch failed. Include fetch details so operators can
+      # distinguish branch deletion from network/auth errors.
+      unless pull_request_number
+        raise CloneError,
+          "Checkout failed (switch: #{error_with_stderr(result)}; fetch: #{error_with_stderr(fetch_result)})"
+      end
 
       pr_fetch = execute_git("fetch", "origin", "refs/pull/#{pull_request_number}/head:#{branch_name}")
-      raise CloneError, "Checkout failed (branch deleted, PR fetch also failed): #{error_with_stderr(pr_fetch)}" if pr_fetch.failure?
+      if pr_fetch.failure?
+        raise CloneError,
+          "Branch checkout failed; PR ref fetch also failed (fetch: #{error_with_stderr(fetch_result)}; " \
+          "PR ref: #{error_with_stderr(pr_fetch)})"
+      end
 
       checkout_result = execute_git("switch", "--", branch_name)
       raise CloneError, "Checkout failed after PR fetch: #{error_with_stderr(checkout_result)}" if checkout_result.failure?
