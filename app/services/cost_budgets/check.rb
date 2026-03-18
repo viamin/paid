@@ -32,10 +32,10 @@ module CostBudgets
       rollover_expired_periods
 
       # Priority: per_run > daily > monthly (most specific first).
-      # Check per_run budgets first against this specific agent_run's usage,
-      # avoiding the race condition where concurrent runs share a counter.
+      # Per-run enforcement uses agent_run.token_usages.sum(:cost_cents)
+      # rather than the current_usage_cents counter, so no reset is needed
+      # and each run's usage is naturally isolated by agent_run_id.
       if agent_run
-        reset_per_run_budgets
         per_run_exceeded = check_per_run_budget
         return blocked_result(per_run_exceeded) if per_run_exceeded
       end
@@ -72,10 +72,6 @@ module CostBudgets
         run_cost = agent_run.token_usages.sum(:cost_cents)
         run_cost >= budget.limit_cents
       end
-    end
-
-    def reset_per_run_budgets
-      project.cost_budgets.per_run.find_each(&:reset_for_new_run!)
     end
 
     def rollover_expired_periods

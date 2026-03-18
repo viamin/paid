@@ -4,10 +4,10 @@ module TokenUsages
   class Aggregate
     attr_reader :scope
 
-    # Defaults to billable scope which intelligently handles run_summary
-    # records: excludes them when per-request proxy records exist for an
-    # agent run (avoiding double-counting), but includes them for non-proxy
-    # runs where run_summary is the only usage source.
+    # Defaults to billable scope which excludes run_summary audit records.
+    # Billing uses per-request proxy records and run_delta records (the gap
+    # between run totals and proxy totals). run_summary is only included as
+    # a legacy fallback when it is the sole record for a run.
     # Pass scope: TokenUsage.all to include everything regardless.
     def initialize(scope: TokenUsage.billable)
       @scope = scope
