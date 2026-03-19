@@ -45,7 +45,7 @@ module ProviderSupport
 
       APP_TO_HARNESS_PROVIDER_KEYS.each_with_object(Set.new) do |(provider_key, harness_key), set|
         set << provider_key if registry_keys.include?(harness_key)
-      end
+      end.freeze
     end
   end
 
