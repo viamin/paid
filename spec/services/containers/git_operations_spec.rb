@@ -451,21 +451,6 @@ RSpec.describe Containers::GitOperations do
       receive_check.ordered if ordered
     end
 
-    def stub_refresh_remote_branch(sha)
-      allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "paid/test-branch" ], timeout: nil, stream: false)
-        .and_return(success_result)
-
-      allow(container_service).to receive(:execute)
-        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
-        .and_return(Containers::Provision::Result.success(stdout: "#{sha}\n", stderr: "", exit_code: 0))
-    end
-
-    def stub_not_shallow_repo
-      allow(container_service).to receive(:execute)
-        .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
-        .and_return(Containers::Provision::Result.success(stdout: "false\n", stderr: "", exit_code: 0))
-    end
   end
 
   describe "#head_sha" do
