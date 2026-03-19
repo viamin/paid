@@ -401,6 +401,25 @@ RSpec.describe "Projects" do
         expect(response.body).to include("$15.00")
       end
 
+      it "shows quality summary when quality metrics exist" do
+        project = create(:project, account: account, github_token: github_token)
+        agent_run = create(:agent_run, project: project, status: "completed")
+        create(:quality_metric, agent_run: agent_run, composite_score: 0.85)
+
+        get project_path(project)
+
+        expect(response.body).to include("Average Quality Score")
+        expect(response.body).to include("View Dashboard")
+      end
+
+      it "does not show quality summary when no quality metrics exist" do
+        project = create(:project, account: account, github_token: github_token)
+
+        get project_path(project)
+
+        expect(response.body).not_to include("Average Quality Score")
+      end
+
       it "shows recent agent runs" do
         project = create(:project, account: account, github_token: github_token)
         create(:agent_run, project: project, agent_type: "claude_code", status: "completed")
