@@ -338,7 +338,7 @@ RSpec.describe Projects::DetectServices do
       end
 
       it "handles YAML with disallowed classes in docker-compose.yml" do
-        allow(YAML).to receive(:safe_load).and_raise(Psych::DisallowedClass.new("action", "Symbol"))
+        allow(Psych).to receive(:parse).and_raise(Psych::DisallowedClass.new("action", "Symbol"))
         stub_file("docker-compose.yml", "services: {}")
 
         result = described_class.call(project: project)
@@ -346,7 +346,7 @@ RSpec.describe Projects::DetectServices do
       end
 
       it "handles YAML with disallowed classes in database.yml" do
-        allow(YAML).to receive(:safe_load).and_raise(Psych::DisallowedClass.new("action", "Symbol"))
+        allow(Psych).to receive(:parse).and_raise(Psych::DisallowedClass.new("action", "Symbol"))
         stub_file("config/database.yml", "default:\n  adapter: postgresql")
 
         result = described_class.call(project: project)
@@ -404,6 +404,22 @@ RSpec.describe Projects::DetectServices do
       end
     end
 
+    context "when docker-compose.yml exceeds alias limit" do
+      it "returns empty results to prevent YAML bomb expansion" do
+        # Build a YAML payload with aliases exceeding MAX_YAML_ALIASES
+        lines = [ "x-base: &base\n  restart: always\n" ]
+        lines << "services:\n"
+        110.times do |i|
+          lines << "  svc#{i}:\n    <<: *base\n    image: postgres:16\n"
+        end
+        stub_file("docker-compose.yml", lines.join)
+
+        result = described_class.call(project: project)
+        compose_detections = result.detected.select { |d| d[:source] == "docker-compose.yml" }
+        expect(compose_detections).to be_empty
+      end
+    end
+
     context "when docker-compose.yml uses service names without explicit images" do
       before do
         stub_file("docker-compose.yml", <<~YAML)
@@ -421,6 +437,42 @@ RSpec.describe Projects::DetectServices do
 
         services = result.detected.map { |d| d[:service] }
         expect(services).to include("postgres", "redis")
+      end
+    end
+  end
+
+  describe Projects::DetectServices::Result do
+    describe "#notice_message" do
+      it "reports added services" do
+        result = described_class.new(
+          detected: [ { service: "postgres", source: "Gemfile", dependency: "pg" } ],
+          matched: [ double(name: "postgres") ],
+          unmatched: []
+        )
+        expect(result.notice_message(%w[postgres])).to eq("Added postgres.")
+      end
+
+      it "reports unmatched services" do
+        result = described_class.new(
+          detected: [ { service: "elasticsearch", source: "Gemfile", dependency: "searchkick" } ],
+          matched: [],
+          unmatched: [ { service: "elasticsearch", source: "Gemfile" } ]
+        )
+        expect(result.notice_message([])).to include("elasticsearch detected but no matching service container exists")
+      end
+
+      it "reports already associated count" do
+        result = described_class.new(
+          detected: [ { service: "postgres", source: "Gemfile", dependency: "pg" } ],
+          matched: [ double(name: "postgres") ],
+          unmatched: []
+        )
+        expect(result.notice_message([])).to include("1 already associated")
+      end
+
+      it "returns fallback when no changes" do
+        result = described_class.new(detected: [], matched: [], unmatched: [])
+        expect(result.notice_message([])).to eq("All detected services are already associated.")
       end
     end
   end

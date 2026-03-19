@@ -97,9 +97,8 @@ class ProjectsController < ApplicationController
     result = Projects::DetectServices.call(project: @project)
 
     if result.any_detected?
-      added = apply_detected_services(result.matched)
-      notice = build_detection_notice(added, result)
-      redirect_to edit_project_path(@project), notice: notice
+      added = result.apply(@project)
+      redirect_to edit_project_path(@project), notice: result.notice_message(added)
     else
       redirect_to edit_project_path(@project), notice: "No service dependencies detected in repository files."
     end
@@ -133,26 +132,6 @@ class ProjectsController < ApplicationController
       :poll_interval_seconds, :github_id, :default_branch,
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled,
       allowed_github_usernames: [])
-  end
-
-  def apply_detected_services(containers)
-    added = []
-    containers.each do |container|
-      psc = @project.project_service_containers.find_or_create_by!(service_container: container)
-      added << container.name if psc.previously_new_record?
-    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
-      next
-    end
-    added
-  end
-
-  def build_detection_notice(added, result)
-    parts = []
-    parts << "Added #{added.join(', ')}." if added.any?
-    parts << "#{result.unmatched.map { |d| d[:service] }.join(', ')} detected but no matching service container exists." if result.unmatched.any?
-    already_count = result.matched.size - added.size
-    parts << "#{already_count} already associated." if already_count > 0
-    parts.join(" ").presence || "All detected services are already associated."
   end
 
   def parse_usernames_csv
