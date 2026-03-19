@@ -362,13 +362,13 @@ module Containers
       result = push_with_lease(expected_remote_sha)
       return result unless stale_info_rejection?(result)
 
-      recover_branch_drift!(agent_run.branch_name)
-
       refreshed_remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
+      recover_branch_drift!(agent_run.branch_name)
       push_with_lease(refreshed_remote_sha)
     end
 
     def recover_branch_drift!(branch)
+      unshallow
       result = execute_git("rebase", "origin/#{branch}")
       return if result.success?
 
