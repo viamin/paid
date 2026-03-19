@@ -87,10 +87,11 @@ module CostBudgets
 
     def send_alerts_if_needed
       project.cost_budgets.each do |budget|
-        # Skip per_run budgets when no agent_run is provided — their
-        # current_usage_cents is not maintained by TokenUsageTracker, so
-        # threshold checks would be based on stale/zero values.
-        next if budget.budget_type == "per_run" && agent_run.nil?
+        # Always skip per_run budgets — their current_usage_cents is not
+        # maintained by TokenUsageTracker (per_run enforcement uses
+        # agent_run.token_usages.sum(:cost_cents) instead), so alert_needed?
+        # would always check against stale/zero values.
+        next if budget.budget_type == "per_run"
         next unless budget.alert_needed?
 
         Rails.logger.warn(
