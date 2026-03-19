@@ -55,9 +55,9 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Do not push")
     end
 
-    it "includes self-review step" do
-      expect(prompt).to include("Self-review")
-      expect(prompt).to include("review the changes you are about to")
+    it "includes proactive scan step" do
+      expect(prompt).to include("Proactive scan")
+      expect(prompt).to include("review the **entire diff**")
     end
 
     it "includes rules" do
@@ -82,9 +82,12 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).not_to include("CI Failures")
     end
 
-    it "omits code review section and proactive scanning when no unresolved threads" do
+    it "omits code review section when no unresolved threads" do
       expect(prompt).not_to include("Code Review Comments")
-      expect(prompt).not_to include("proactively scan the rest of the PR diff")
+    end
+
+    it "omits review-specific scan instruction when no unresolved threads" do
+      expect(prompt).not_to include("same classes of issues the reviewers")
     end
 
     it "omits conversation section when no trusted comments" do
@@ -172,7 +175,7 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("app/models/user.rb:42")
     end
 
-    it "includes proactive scanning instruction" do
+    it "includes review-specific scan instruction in the proactive scan step" do
       prompt = described_class.call(
         project: project,
         pr_number: 42,
@@ -180,7 +183,8 @@ RSpec.describe Prompts::BuildForPr do
         rebase_succeeded: true
       )
 
-      expect(prompt).to include("proactively scan the rest of the PR diff")
+      expect(prompt).to include("same classes of issues the reviewers")
+      expect(prompt).to include("Proactive scan")
     end
 
     it "excludes resolved threads" do
