@@ -345,14 +345,37 @@ RSpec.describe Containers::GitOperations do
       expect { git_ops.push_branch }.to raise_error(described_class::PushError, /Fetch failed/)
     end
 
+    it "raises PushError with remote ref context when remote SHA resolution fails" do
+      agent_run.update!(source_pull_request_number: 42)
+      rev_parse_failure = Containers::Provision::Result.failure(
+        error: "Command exited with code 128",
+        stdout: "",
+        stderr: "fatal: ambiguous argument 'refs/remotes/origin/paid/test-branch'",
+        exit_code: 128
+      )
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(rev_parse_failure)
+
+      expect { git_ops.push_branch }.to raise_error(
+        described_class::PushError,
+        /refs\/remotes\/origin\/paid\/test-branch/
+      )
+    end
+
     it "rebases onto the refreshed remote branch after a stale info rejection" do
       agent_run.update!(source_pull_request_number: 42)
       refreshed_remote_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
       expect_refresh_remote_branch(remote_sha, ordered: true)
       expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
-      expect_refresh_remote_branch(refreshed_remote_sha, ordered: true)
       expect_not_shallow_repo(ordered: true)
+      expect_refresh_remote_branch(refreshed_remote_sha, ordered: true)
 
       expect(container_service).to receive(:execute)
         .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
@@ -424,8 +447,8 @@ RSpec.describe Containers::GitOperations do
     def expect_stale_info_recovery_rebase_failure(rebase_failure)
       expect_refresh_remote_branch(remote_sha, ordered: true)
       expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
-      expect_refresh_remote_branch("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ordered: true)
       expect_not_shallow_repo(ordered: true)
+      expect_refresh_remote_branch("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ordered: true)
 
       expect(container_service).to receive(:execute)
         .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
