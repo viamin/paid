@@ -89,14 +89,14 @@ class AbTest < ApplicationRecord
     ab_test_variants.all? { |v| v.sample_count >= min_samples_per_variant }
   end
 
-  # Returns cached analysis if sample counts haven't changed since last computation,
-  # otherwise recomputes via AbTests::Analyze and persists the result.
-  # This avoids expensive per-request score aggregation (plucking all quality_scores).
-  def cached_or_compute_analysis
+  # Returns cached analysis when fresh, otherwise recomputes via AbTests::Analyze.
+  # Pass persist: true (default) from write paths (e.g. RecordResult) to update the DB cache.
+  # Pass persist: false from read paths (e.g. controller show) to keep GET requests read-only.
+  def cached_or_compute_analysis(persist: true)
     current_key = samples_key
     return deserialize_analysis if cached_analysis.present? && analysis_samples_key == current_key
 
-    AbTests::Analyze.call(ab_test: self).tap { |result| persist_analysis!(result, current_key) }
+    AbTests::Analyze.call(ab_test: self).tap { |result| persist_analysis!(result, current_key) if persist }
   end
 
   private

@@ -110,6 +110,8 @@ class AbTestsController < ApplicationController
 
     # Uses cached result when sample counts haven't changed, avoiding repeated
     # pluck of all quality_scores on every page load.
-    @ab_test.cached_or_compute_analysis
+    # persist: false keeps GET requests read-only — cache is populated by write
+    # paths (e.g. RecordResult) instead.
+    @ab_test.cached_or_compute_analysis(persist: false)
   end
 end
