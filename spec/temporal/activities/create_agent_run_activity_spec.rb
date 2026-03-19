@@ -37,6 +37,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "returns deduplicated provider_attempt_count when fallback is enabled" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
       project.created_by.providers.find_or_create_by!(provider_key: "cursor")
       project.created_by.providers.find_or_create_by!(provider_key: "aider")
       project.created_by.settings.update!(fallback_enabled: true, fallback_providers: %w[claude cursor aider])
@@ -47,6 +48,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "counts configured fallback-only providers even when not explicitly ordered yet" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
       project.created_by.providers.find_or_create_by!(
         provider_key: "cursor",
         enabled_for_agent_runs: false,

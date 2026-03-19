@@ -22,13 +22,17 @@ module ProviderSupport
 
   # Provider keys whose CLIs are actually installed in the agent Docker container
   # (docker/agent/Dockerfile). Only these providers can execute in container-based
-  # runs. Update this list when new CLIs are added to the container image.
-  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[claude cursor aider]).freeze
+  # runs. Currently only the Claude CLI is installed in the container image.
+  # Update this list when new CLIs are added to the Dockerfile.
+  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[claude]).freeze
 
   module_function
 
+  # Returns supported provider keys in a deterministic order matching
+  # APP_TO_HARNESS_PROVIDER_KEYS declaration order, so that provider
+  # priority and default selection are stable across boots.
   def supported_provider_keys
-    supported_provider_keys_set.to_a
+    APP_TO_HARNESS_PROVIDER_KEYS.keys.select { |key| supported_provider_keys_set.include?(key) }
   end
 
   def supported_provider_key?(provider_key)

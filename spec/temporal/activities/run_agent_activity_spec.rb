@@ -414,6 +414,7 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       before do
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
         user.providers.find_or_create_by!(provider_key: "cursor")
         user.providers.find_or_create_by!(provider_key: "aider")
         user.settings.update!(fallback_enabled: true, fallback_providers: %w[claude cursor aider])

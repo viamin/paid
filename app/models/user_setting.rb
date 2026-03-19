@@ -65,21 +65,26 @@ class UserSetting < ApplicationRecord
   end
 
   # Returns providers enabled for agent runs for a user.
+  # Filtered to container-executable providers only, since non-executable
+  # providers would cause immediate "All providers exhausted" failures
+  # in RunAgentActivity.
   def self.enabled_agent_providers(user = nil)
-    supported_keys = Provider.supported_provider_keys
-    return [ "claude" ] & supported_keys unless user
-    return supported_keys if user.new_record?
+    executable_keys = ProviderSupport.container_executable_provider_keys
+    return [ "claude" ] & executable_keys unless user
+    return executable_keys if user.new_record?
 
-    user.providers.for_agent_runs.ordered.pluck(:provider_key) & supported_keys
+    user.providers.for_agent_runs.ordered.pluck(:provider_key) & executable_keys
   end
 
   # Returns providers that can be used as fallback for a user.
+  # Filtered to container-executable providers only, since non-executable
+  # providers would cause immediate failures during fallback in RunAgentActivity.
   def self.fallback_candidate_providers(user)
-    supported_keys = Provider.supported_provider_keys
-    return [ "claude" ] & supported_keys unless user
-    return supported_keys if user.new_record?
+    executable_keys = ProviderSupport.container_executable_provider_keys
+    return [ "claude" ] & executable_keys unless user
+    return executable_keys if user.new_record?
 
-    user.providers.for_fallback.ordered.pluck(:provider_key) & supported_keys
+    user.providers.for_fallback.ordered.pluck(:provider_key) & executable_keys
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string

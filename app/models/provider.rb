@@ -17,9 +17,12 @@ class Provider < ApplicationRecord
   before_destroy :prevent_destroying_claude_provider
 
   def self.ensure_default_for(user)
-    user.providers.find_or_create_by!(provider_key: "claude")
+    default_key = supported_provider_keys.include?("claude") ? "claude" : supported_provider_keys.first
+    raise "No supported providers available" unless default_key
+
+    user.providers.find_or_create_by!(provider_key: default_key)
   rescue ActiveRecord::RecordNotUnique
-    user.providers.find_by!(provider_key: "claude")
+    user.providers.find_by!(provider_key: default_key)
   end
 
   def self.display_name(provider_key)
