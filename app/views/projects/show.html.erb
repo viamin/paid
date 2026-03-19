@@ -126,6 +126,8 @@
       </div>
     </div>
 
+    <%= render "projects/quality_summary", project: @project, quality_summary: @quality_summary %>
+
     <%= render "projects/agent_runs", project: @project, recent_agent_runs: @recent_agent_runs %>
   </div>
 

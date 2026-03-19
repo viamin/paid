@@ -517,7 +517,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:phase]).to eq("draft")
-        expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
     end
 
@@ -547,7 +547,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:phase]).to eq("draft")
-        expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
     end
 
@@ -577,7 +577,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:phase]).to eq("draft")
-        expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
     end
 
@@ -589,14 +589,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
-          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer", state: "COMMENTED",
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                        body: "Copilot reviewed 5 out of 5 changed files and generated no comments.",
                        submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
               is_resolved: false,
-              comments: [ { body: "Old comment", path: "app/model.rb", line: 10, author: "copilot-pull-request-reviewer" } ]
+              comments: [ { body: "Old comment", path: "app/model.rb", line: 10, author: "copilot-pull-request-reviewer[bot]" } ]
             }
           ]
         )
@@ -663,25 +663,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
-          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer", state: "COMMENTED",
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                        body: "Copilot reviewed 3 out of 3 changed files and generated 2 comments.",
                        submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
               is_resolved: false,
-              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "copilot-pull-request-reviewer" } ]
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "copilot-pull-request-reviewer[bot]" } ]
             }
           ]
         )
       end
 
-      it "falls back to unresolved thread check" do
+      it "includes review_bot comments and thread triggers" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
-        expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+        expect(trigger_types).to include("review_bot_threads")
       end
     end
 
@@ -839,7 +841,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when draft PR has review bot threads from copilot-pull-request-reviewer" do
+    context "when draft PR has review bot threads from copilot-pull-request-reviewer[bot]" do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -847,26 +849,51 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
-          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer", state: "COMMENTED",
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
                        body: "Copilot reviewed and generated 1 comment.",
                        submitted_at: 1.hour.ago } ],
           review_threads: [
             {
               id: "thread_1",
               is_resolved: false,
-              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "copilot-pull-request-reviewer" } ]
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "copilot-pull-request-reviewer[bot]" } ]
             }
           ]
         )
       end
 
-      it "recognizes copilot-pull-request-reviewer as a review bot" do
+      it "recognizes copilot-pull-request-reviewer[bot] as a review bot" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:phase]).to eq("draft")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
+      end
+    end
+
+    context "when the latest Copilot review uses the real GitHub bot login" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+                       body: "Copilot reviewed 20 out of 20 changed files in this pull request and generated 3 comments.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "treats comment-generating bot reviews as blocking" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |trigger| trigger[:triggers].map { |t| t[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending")
+        expect(trigger_types).not_to include("ready_for_owner")
+        expect(trigger_types).to include("review_bot_comments")
       end
     end
 
@@ -1196,7 +1223,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:phase]).to eq("restarted")
-        expect(trigger[:triggers].first[:type]).to eq("review_bot_threads")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
         expect(trigger[:current_draft_review_count]).to eq(2)
       end
     end
@@ -1257,7 +1284,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   end
 
   def default_clean_copilot_review
-    [ { id: 100, user_login: "copilot-pull-request-reviewer", state: "COMMENTED",
+    [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
         body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago } ]
   end
 end
