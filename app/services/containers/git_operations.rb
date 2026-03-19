@@ -403,8 +403,9 @@ module Containers
     end
 
     def remote_branch_sha(branch)
+      remote_ref = "refs/remotes/origin/#{branch}"
       result = execute_git("rev-parse", "refs/remotes/origin/#{branch}")
-      raise Error, "Failed to resolve remote branch SHA: #{error_with_stderr(result)}" if result.failure?
+      raise Error, "Failed to resolve remote branch SHA for #{remote_ref}: #{error_with_stderr(result)}" if result.failure?
 
       result[:stdout].strip
     end
