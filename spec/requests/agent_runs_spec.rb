@@ -278,7 +278,7 @@ RSpec.describe "AgentRuns" do
         get project_agent_run_path(project, agent_run)
 
         expect(response.body).to include("Quality Scores")
-        expect(response.body).to include("85%")
+        expect(response.body).to include("85.0%")
       end
 
       it "does not show quality scores when no quality metrics exist" do
