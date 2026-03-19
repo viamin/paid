@@ -29,7 +29,10 @@ RSpec.describe "Providers" do
   end
 
   describe "PATCH /providers/settings" do
-    before { sign_in user }
+    before do
+      sign_in user
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
+    end
 
     it "updates provider priority settings from the providers page" do
       user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
@@ -54,7 +57,10 @@ RSpec.describe "Providers" do
   describe "POST /providers" do
     before { sign_in user }
 
-    it "creates a provider" do
+    it "creates a container-executable provider with agent runs enabled" do
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).with("cursor").and_return(true)
+
       post providers_path, params: { provider: { provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
       expect(response).to redirect_to(providers_path)
@@ -63,6 +69,7 @@ RSpec.describe "Providers" do
 
     it "handles an empty run-provider list during settings reconciliation" do
       allow(UserSetting).to receive(:enabled_agent_providers).with(user).and_return([], [ "claude" ])
+      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_return(true)
 
       post providers_path, params: { provider: { provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
@@ -76,15 +83,22 @@ RSpec.describe "Providers" do
       expect(response.body).to include("is not currently available")
     end
 
-    it "accepts agent harness-supported providers configured through the providers page" do
-      post providers_path, params: { provider: { provider_key: "gemini", enabled_for_agent_runs: true, enabled_for_fallback: true } }
+    it "accepts non-executable providers without agent run or fallback flags" do
+      post providers_path, params: { provider: { provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false } }
 
       expect(response).to redirect_to(providers_path)
       expect(user.providers.find_by(provider_key: "gemini")).to be_present
     end
 
+    it "rejects non-executable providers when enabled_for_agent_runs is set" do
+      post providers_path, params: { provider: { provider_key: "gemini", enabled_for_agent_runs: true, enabled_for_fallback: false } }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("cannot be enabled")
+    end
+
     it "accepts app provider aliases backed by agent harness providers" do
-      post providers_path, params: { provider: { provider_key: "copilot", enabled_for_agent_runs: true, enabled_for_fallback: true } }
+      post providers_path, params: { provider: { provider_key: "copilot", enabled_for_agent_runs: false, enabled_for_fallback: false } }
 
       expect(response).to redirect_to(providers_path)
       expect(user.providers.find_by(provider_key: "copilot")).to be_present
