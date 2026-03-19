@@ -2,7 +2,7 @@
 
 class AbTestPolicy < ApplicationPolicy
   def index?
-    user.present?
+    visible?
   end
 
   def show?
