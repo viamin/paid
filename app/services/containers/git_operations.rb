@@ -373,7 +373,7 @@ module Containers
       return if result.success?
 
       abort_rebase
-      raise PushError, "Push failed after branch advanced remotely: #{error_with_stderr(result)}"
+      raise PushError, "Rebase onto origin/#{branch} failed after branch advanced remotely: #{error_with_stderr(result)}"
     end
 
     def push_with_lease(expected_remote_sha)
