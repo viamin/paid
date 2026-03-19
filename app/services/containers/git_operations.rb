@@ -307,7 +307,11 @@ module Containers
     # @return [void]
     # @raise [Error] when the fetch fails
     def fetch_branch(branch)
-      result = execute_git("fetch", "origin", branch)
+      result = execute_git(
+        "fetch",
+        "origin",
+        "refs/heads/#{branch}:refs/remotes/origin/#{branch}"
+      )
       raise Error, "Fetch failed: #{error_with_stderr(result)}" if result.failure?
     end
 
@@ -481,15 +485,23 @@ module Containers
 
       # Shallow clones (--depth 1) only fetch the default branch tip, so
       # remote tracking branches aren't available locally. Fetch the target
-      # branch shallowly before switching.
-      fetch_result = execute_git("fetch", "--depth", "1", "origin", branch_name)
+      # branch shallowly into refs/remotes/origin/<branch>, then create/reset
+      # the local branch from that explicit remote-tracking ref.
+      remote_ref = "refs/remotes/origin/#{branch_name}"
+      fetch_result = execute_git(
+        "fetch",
+        "--depth",
+        "1",
+        "origin",
+        "refs/heads/#{branch_name}:#{remote_ref}"
+      )
 
       if fetch_result.success?
-        result = execute_git("switch", "--", branch_name)
+        result = execute_git("checkout", "-B", branch_name, remote_ref)
         return if result.success?
 
-        # Fetch succeeded but switch still failed — unusual, include switch error only.
-        checkout_detail = "switch failed after successful fetch: #{error_with_stderr(result)}"
+        # Fetch succeeded but local checkout still failed — unusual, include checkout error only.
+        checkout_detail = "checkout failed after successful fetch: #{error_with_stderr(result)}"
       else
         # Both fetch and switch failed — include both errors so operators can
         # distinguish branch deletion from network/auth issues.
