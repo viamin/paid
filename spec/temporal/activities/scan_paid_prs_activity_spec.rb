@@ -814,6 +814,37 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when the only new comment is Paid's own agent update" do
+      let(:comment) do
+        OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "## Agent Update\n\nThe background agent confirmed what we already found.",
+          created_at: 30.minutes.ago
+        )
+      end
+
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago)
+        stub_github_for_pr(
+          issue_comments: [ comment ],
+          checks: [ { name: "ci", conclusion: nil } ]
+        )
+      end
+
+      it "does not treat the agent update as a conversation trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "when draft PR has changes_requested review after last run" do
       before do
         create(:issue, :pull_request,
