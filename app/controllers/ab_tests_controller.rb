@@ -47,9 +47,14 @@ class AbTestsController < ApplicationController
       min_samples_per_variant: ab_test_params[:min_samples_per_variant],
       confidence_threshold: ab_test_params[:confidence_threshold]
     )
-    message = e.is_a?(ActiveRecord::RecordInvalid) ? e.record.errors.full_messages.join(", ") : e.message
+    message = case e
+    when ActiveRecord::RecordInvalid then e.record.errors.full_messages.join(", ")
+    when ArgumentError then "Invalid input: please check your values and try again"
+    when ActiveRecord::RecordNotFound then "One or more selected variants could not be found"
+    end
+    Rails.logger.warn(message: "ab_tests.create_failed", error_class: e.class.name, error_message: e.message)
     @ab_test.errors.add(:base, message)
-    @selected_variant_ids = selected_variant_ids
+    @selected_variant_ids = Array(ab_test_params[:variant_version_ids]).reject(&:blank?).filter_map { |id| Integer(id, exception: false) }
     @versions = available_versions
     render :new, status: :unprocessable_content
   end
@@ -95,7 +100,7 @@ class AbTestsController < ApplicationController
   end
 
   def selected_variant_ids
-    Array(ab_test_params[:variant_version_ids]).reject(&:blank?).map(&:to_i)
+    Array(ab_test_params[:variant_version_ids]).reject(&:blank?).map { |id| Integer(id) }
   end
 
   def available_versions
