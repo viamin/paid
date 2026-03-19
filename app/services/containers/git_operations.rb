@@ -362,8 +362,8 @@ module Containers
       result = push_with_lease(expected_remote_sha)
       return result unless stale_info_rejection?(result)
 
-      refreshed_remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
       recover_branch_drift!(agent_run.branch_name)
+      refreshed_remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
       push_with_lease(refreshed_remote_sha)
     end
 
@@ -404,7 +404,7 @@ module Containers
 
     def remote_branch_sha(branch)
       remote_ref = "refs/remotes/origin/#{branch}"
-      result = execute_git("rev-parse", "refs/remotes/origin/#{branch}")
+      result = execute_git("rev-parse", remote_ref)
       raise Error, "Failed to resolve remote branch SHA for #{remote_ref}: #{error_with_stderr(result)}" if result.failure?
 
       result[:stdout].strip
