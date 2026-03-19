@@ -32,8 +32,10 @@ class AbTestsController < ApplicationController
       description: ab_test_params[:description],
       variant_version_ids: selected_variant_ids
     }
-    create_options[:min_samples_per_variant] = ab_test_params[:min_samples_per_variant].to_i if ab_test_params[:min_samples_per_variant].present?
-    create_options[:confidence_threshold] = ab_test_params[:confidence_threshold].to_f if ab_test_params[:confidence_threshold].present?
+    # Use strict parsing so invalid input (e.g. "abc") raises an error
+    # instead of silently coercing to 0/0.0 via to_i/to_f.
+    create_options[:min_samples_per_variant] = Integer(ab_test_params[:min_samples_per_variant]) if ab_test_params[:min_samples_per_variant].present?
+    create_options[:confidence_threshold] = Float(ab_test_params[:confidence_threshold]) if ab_test_params[:confidence_threshold].present?
 
     ab_test = AbTests::Create.call(**create_options)
 
@@ -108,10 +110,9 @@ class AbTestsController < ApplicationController
     # expensive per-request score aggregation while data is still sparse.
     return unless @ab_test.completed? || (@ab_test.running? && @ab_test.sufficient_samples?)
 
-    # Uses cached result when sample counts haven't changed, avoiding repeated
-    # pluck of all quality_scores on every page load.
-    # persist: false keeps GET requests read-only — cache is populated by write
-    # paths (e.g. RecordResult) instead.
+    # persist: false returns the last cached result (even if slightly stale)
+    # instead of recomputing — keeps GET requests read-only and avoids expensive
+    # score aggregation between write-path analysis intervals.
     @ab_test.cached_or_compute_analysis(persist: false)
   end
 end
