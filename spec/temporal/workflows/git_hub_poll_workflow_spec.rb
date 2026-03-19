@@ -229,6 +229,79 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       )
     end
 
+    it "routes review_bot_review_pending to RequestReviewActivity with copilot" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), anything)
+    end
+
+    it "requests review bot review and dispatches other triggers" do
+      allow(Temporalio::Workflow).to receive(:start_child_workflow)
+      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, anything)
+        .and_return({ has_capacity: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 1,
+        triggers: [
+          { type: "review_bot_review_pending" },
+          { type: "review_threads" }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), anything)
+      expect(Temporalio::Workflow).to have_received(:start_child_workflow)
+    end
+
+    it "does not start followup workflow when review_bot_review_pending is the only trigger" do
+      allow(Temporalio::Workflow).to receive(:start_child_workflow)
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+    end
+
+    it "requests bot review alongside ready_for_owner when pending_review_bot_request is set" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MarkPrReadyActivity, anything, anything)
+        .and_return({ marked_ready: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
+        pending_review_bot_request: true,
+        triggers: [ { type: "ready_for_owner" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ "viamin" ]), anything)
+    end
+
     it "skips owner review request when owner_reviewer_login is blank" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MarkPrReadyActivity, anything, anything)
