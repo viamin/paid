@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "base64"
+require "json"
+require "yaml"
 
 module Projects
   # Inspects repository files to detect required service dependencies.
@@ -184,7 +186,7 @@ module Projects
       return [] unless content
       return [] if content.bytesize > YAML_MAX_SIZE
 
-      data = YAML.safe_load(content, aliases: true)
+      data = safe_yaml_load(content)
       return [] unless data.is_a?(Hash)
 
       services = data["services"]
@@ -205,10 +207,14 @@ module Projects
       []
     end
 
-    # Maximum size for YAML content to mitigate YAML alias expansion DoS.
-    # Applied to both docker-compose and database.yml since both support
-    # YAML aliases that can cause exponential memory expansion.
+    # Maximum size for YAML content to limit parsing of untrusted files.
     YAML_MAX_SIZE = 64_000
+
+    # Maximum number of YAML alias nodes allowed. Limits exponential
+    # expansion from small "YAML bomb" payloads that use nested aliases
+    # (e.g., &a [*b,*b] chains). Checked via Psych AST before converting
+    # to Ruby objects.
+    MAX_YAML_ALIASES = 100
 
     def detect_from_database_yml
       content = fetch_file("config/database.yml")
@@ -219,7 +225,7 @@ module Projects
       # Aliases are enabled because database.yml conventionally uses YAML
       # anchors (e.g., &default / <<: *default) to share config across environments.
       sanitized = content.gsub(/<%.*?%>/m, '""')
-      data = YAML.safe_load(sanitized, aliases: true)
+      data = safe_yaml_load(sanitized)
       return [] unless data.is_a?(Hash)
 
       detections = []
@@ -251,6 +257,27 @@ module Projects
       end
     end
 
+    # Parses YAML via Psych AST with an alias count limit to prevent
+    # exponential expansion from YAML bomb payloads. Returns nil if the
+    # alias count exceeds MAX_YAML_ALIASES.
+    def safe_yaml_load(content)
+      tree = Psych.parse(content)
+      return nil unless tree
+
+      alias_count = count_yaml_aliases(tree)
+      return nil if alias_count > MAX_YAML_ALIASES
+
+      tree.to_ruby
+    end
+
+    def count_yaml_aliases(node)
+      count = node.is_a?(Psych::Nodes::Alias) ? 1 : 0
+      if node.respond_to?(:children) && node.children
+        node.children.each { |child| count += count_yaml_aliases(child) }
+      end
+      count
+    end
+
     def match_compose_image(image)
       return nil if image.blank?
 
@@ -279,6 +306,31 @@ module Projects
 
       def any_detected?
         detected.any?
+      end
+
+      # Associates matched service containers with the project.
+      # Returns the names of newly added associations.
+      def apply(project)
+        added = []
+        matched.each do |container|
+          psc = project.project_service_containers.find_or_create_by!(service_container: container)
+          added << container.name if psc.previously_new_record?
+        rescue ActiveRecord::RecordNotUnique
+          next
+        end
+        added
+      end
+
+      def notice_message(added)
+        parts = []
+        parts << "Added #{added.join(', ')}." if added.any?
+        if unmatched.any?
+          names = unmatched.map { |d| d[:service] }.join(", ")
+          parts << "#{names} detected but no matching service container exists."
+        end
+        already_count = matched.size - added.size
+        parts << "#{already_count} already associated." if already_count > 0
+        parts.join(" ").presence || "All detected services are already associated."
       end
     end
   end
