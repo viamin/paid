@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_09_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_10_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -44,6 +44,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_09_200000) do
   end
 
   create_table "ab_tests", force: :cascade do |t|
+    t.string "analysis_samples_key"
+    t.jsonb "cached_analysis"
     t.datetime "completed_at"
     t.decimal "confidence_threshold", precision: 5, scale: 4, default: "0.95", null: false
     t.bigint "control_version_id", null: false
