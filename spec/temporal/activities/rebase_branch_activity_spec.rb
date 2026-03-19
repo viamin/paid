@@ -78,7 +78,7 @@ RSpec.describe Activities::RebaseBranchActivity do
 
         # fetch succeeds
         allow(container_service).to receive(:execute)
-          .with([ "git", "fetch", "origin", "main" ], timeout: nil, stream: false)
+          .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false)
           .and_return(success_result)
 
         # rebase fails with conflict

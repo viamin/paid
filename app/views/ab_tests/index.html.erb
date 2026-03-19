@@ -4,9 +4,11 @@
       <h1 class="text-2xl font-semibold leading-6 text-gray-900">A/B Tests</h1>
       <p class="mt-2 text-sm text-gray-700">Compare prompt versions to find the best performers.</p>
     </div>
-    <div class="mt-4 sm:mt-0">
-      <%= link_to "New A/B Test", new_ab_test_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
-    </div>
+    <% if policy(AbTest.new).create? %>
+      <div class="mt-4 sm:mt-0">
+        <%= link_to "New A/B Test", new_ab_test_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      </div>
+    <% end %>
   </div>
 
   <%# Filters %>

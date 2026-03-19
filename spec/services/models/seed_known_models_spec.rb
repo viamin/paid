@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Models::SyncFromRegistry do
+RSpec.describe Models::SeedKnownModels do
   describe ".call" do
     it "creates model records from known models" do
       expect { described_class.call }.to change(LlmModel, :count).by(described_class::KNOWN_MODELS.size)
