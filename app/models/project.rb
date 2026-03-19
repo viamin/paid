@@ -161,7 +161,7 @@ class Project < ApplicationRecord
       agent_run, :detail,
       target: ActionView::RecordIdentifier.dom_id(agent_run, :detail),
       partial: "agent_runs/detail",
-      locals: { agent_run: agent_run }
+      locals: { agent_run: agent_run, quality_metrics: agent_run.quality_metrics.with_composite_score.load }
     )
   end
 
