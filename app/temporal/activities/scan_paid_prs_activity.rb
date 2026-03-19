@@ -394,10 +394,7 @@ module Activities
       when :no_review
         [ { type: "review_bot_review_pending", details: "No review bot review found" } ]
       when :has_comments
-        [
-          { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
-          { type: "review_bot_comments", details: "Latest review bot review generated comments" }
-        ] +
+        [ { type: "review_bot_comments", details: "Latest review bot review generated comments" } ] +
           review_bot_thread_triggers(unresolved_threads)
       when :unknown
         review_bot_thread_triggers(unresolved_threads)
