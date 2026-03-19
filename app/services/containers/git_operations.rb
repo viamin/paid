@@ -368,7 +368,12 @@ module Containers
     end
 
     def recover_branch_drift!(branch)
-      unshallow
+      begin
+        unshallow
+      rescue Error => e
+        raise PushError, "Failed to fetch full git history before rebasing onto origin/#{branch}: #{e.message}"
+      end
+
       result = execute_git("rebase", "origin/#{branch}")
       return if result.success?
 
