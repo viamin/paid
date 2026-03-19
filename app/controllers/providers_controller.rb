@@ -18,6 +18,7 @@ class ProvidersController < ApplicationController
     @provider = current_user.providers.new(provider_params)
     authorize @provider
     validate_provider_key_enabled!
+    validate_container_executable!
 
     if @provider.errors.none? && @provider.save
       if reconcile_settings!
@@ -36,8 +37,10 @@ class ProvidersController < ApplicationController
 
   def update
     authorize @provider
+    @provider.assign_attributes(provider_params)
+    validate_container_executable!
 
-    if @provider.update(provider_params)
+    if @provider.errors.none? && @provider.save
       if reconcile_settings!
         redirect_to providers_path, notice: "Provider updated successfully."
       else
@@ -101,6 +104,21 @@ class ProvidersController < ApplicationController
     return if Provider.supported_provider_key?(@provider.provider_key)
 
     @provider.errors.add(:provider_key, "is not currently available")
+  end
+
+  def validate_container_executable!
+    return if @provider.provider_key.blank?
+    return if ProviderSupport.container_executable_provider_key?(@provider.provider_key)
+
+    setting_agent_runs = @provider.enabled_for_agent_runs && (@provider.new_record? || @provider.will_save_change_to_attribute?("enabled_for_agent_runs", to: true))
+    setting_fallback = @provider.enabled_for_fallback && (@provider.new_record? || @provider.will_save_change_to_attribute?("enabled_for_fallback", to: true))
+
+    if setting_agent_runs
+      @provider.errors.add(:enabled_for_agent_runs, "cannot be enabled for a provider whose CLI is not installed in the agent container")
+    end
+    if setting_fallback
+      @provider.errors.add(:enabled_for_fallback, "cannot be enabled for a provider whose CLI is not installed in the agent container")
+    end
   end
 
   def reconcile_settings!

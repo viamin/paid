@@ -46,27 +46,34 @@ RSpec.describe UserSetting do
   describe ".enabled_agent_providers" do
     let(:user) { create(:user) }
 
-    it "returns user-configured run-enabled providers" do
+    it "returns user-configured run-enabled providers filtered to container-executable" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
       user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
-      user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false)
+      user.providers.create!(provider_key: "aider", enabled_for_agent_runs: true)
 
       expect(described_class.enabled_agent_providers(user)).to contain_exactly("claude", "cursor")
+    end
+
+    it "excludes non-container-executable providers even when enabled for agent runs" do
+      user.providers.create!(provider_key: "gemini", enabled_for_agent_runs: true)
+
+      expect(described_class.enabled_agent_providers(user)).to eq([ "claude" ])
     end
 
     it "returns claude when no user is provided" do
       expect(described_class.enabled_agent_providers).to eq([ "claude" ])
     end
 
-    it "returns an empty list when no user is provided and claude is unsupported" do
-      allow(Provider).to receive(:supported_provider_keys).and_return(%w[cursor])
+    it "returns an empty list when no user is provided and claude is not container-executable" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[cursor])
 
       expect(described_class.enabled_agent_providers).to eq([])
     end
 
-    it "filters out stale providers that are no longer supported" do
+    it "filters out stale providers that are no longer container-executable" do
       user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
 
-      allow(Provider).to receive(:supported_provider_keys).and_return(%w[claude])
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude])
 
       expect(described_class.enabled_agent_providers(user)).to eq([ "claude" ])
     end
@@ -75,23 +82,24 @@ RSpec.describe UserSetting do
   describe ".fallback_candidate_providers" do
     let(:user) { create(:user) }
 
-    it "returns configured fallback providers even when not enabled for agent runs" do
+    it "returns configured fallback providers filtered to container-executable" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
       user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
-      user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: false)
+      user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: true)
 
       expect(described_class.fallback_candidate_providers(user)).to contain_exactly("claude", "cursor")
     end
 
-    it "returns an empty list when no user is provided and claude is unsupported" do
-      allow(Provider).to receive(:supported_provider_keys).and_return(%w[cursor])
+    it "returns an empty list when no user is provided and claude is not container-executable" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[cursor])
 
       expect(described_class.fallback_candidate_providers(nil)).to eq([])
     end
 
-    it "filters out stale fallback providers that are no longer supported" do
+    it "filters out stale fallback providers that are no longer container-executable" do
       user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
 
-      allow(Provider).to receive(:supported_provider_keys).and_return(%w[claude])
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude])
 
       expect(described_class.fallback_candidate_providers(user)).to eq([ "claude" ])
     end
@@ -222,6 +230,7 @@ RSpec.describe UserSetting do
     let(:user) { create(:user) }
 
     before do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
       user.providers.create!(provider_key: "cursor")
       user.providers.create!(provider_key: "aider")
     end
@@ -269,6 +278,7 @@ RSpec.describe UserSetting do
     let(:user) { create(:user) }
 
     before do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
       user.providers.create!(provider_key: "cursor")
       user.providers.create!(provider_key: "aider")
     end
@@ -291,6 +301,7 @@ RSpec.describe UserSetting do
     let(:setting) { create(:user_setting, user: user, fallback_providers: %w[cursor aider]) }
 
     before do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
       user.providers.create!(provider_key: "cursor")
       user.providers.create!(provider_key: "aider")
     end
@@ -350,6 +361,10 @@ RSpec.describe UserSetting do
 
   describe "#validate_fallback_providers" do
     let(:user) { create(:user) }
+
+    before do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
+    end
 
     it "is valid with known providers" do
       user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
