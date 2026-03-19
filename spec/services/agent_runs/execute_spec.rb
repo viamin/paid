@@ -81,9 +81,11 @@ RSpec.describe AgentRuns::Execute do
           usage: hash_including(request_type: "run_summary"),
           update_aggregates: false
         )
-        # No run_delta expected when proxy fully covers
+        # No run_delta expected when proxy fully covers.
+        # Use keyword arg matching (not positional hash) since track uses kwargs.
         expect(TokenUsageTracker).not_to receive(:track).with(
-          hash_including(usage: hash_including(request_type: "run_delta"))
+          agent_run: anything,
+          usage: hash_including(request_type: "run_delta")
         )
 
         described_class.call(agent_run: agent_run, prompt: prompt)

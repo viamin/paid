@@ -21,8 +21,12 @@ class TokenUsage < ApplicationRecord
   # (the gap between run_summary totals and proxy totals). run_summary is
   # only included as a legacy fallback when it is the sole record for a run
   # (i.e., no proxy or run_delta records exist).
+  #
+  # Uses an unscoped subquery for proxy detection so that chaining order
+  # (e.g., by_time_period(...).billable) doesn't affect which runs are
+  # considered to have proxy records.
   scope :billable, -> {
-    runs_with_proxy = where.not(request_type: "run_summary").select(:agent_run_id).distinct
+    runs_with_proxy = unscoped.where.not(request_type: "run_summary").select(:agent_run_id).distinct
     where.not(request_type: "run_summary")
       .or(where(request_type: "run_summary").where.not(agent_run_id: runs_with_proxy))
   }
