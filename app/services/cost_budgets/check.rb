@@ -3,11 +3,12 @@
 module CostBudgets
   # Checks whether a project's cost budgets allow a new agent run.
   # Intended to be called as a pre-flight check before transitioning
-  # an AgentRun to "running" (e.g., in the run queue processor or
-  # workflow start path). This service provides the enforcement logic;
-  # wiring into ProcessRunQueueJob is tracked in a follow-up issue
-  # and intentionally deferred from this PR to keep scope limited
-  # to the model/infrastructure layer. See issue #141.
+  # an AgentRun to "running" (e.g., in ProcessRunQueueJob or the
+  # Temporal workflow start path).
+  #
+  # NOTE: This service is NOT yet wired into any run-start path.
+  # It provides enforcement logic only; orchestration integration is
+  # tracked as a follow-up to issue #141.
   class Check
     # Explicit priority for which exceeded budget blocks a run first.
     # per_run is most specific, then daily, then monthly.
@@ -62,16 +63,17 @@ module CostBudgets
       percent = budget.limit_cents.positive? ? (usage.to_f / budget.limit_cents * 100).round(1) : 0
       {
         allowed: false,
-        reason: "#{budget.budget_type} budget exceeded (#{percent}% of #{budget.limit_cents} cents used)"
+        reason: "#{budget.budget_type} budget exceeded: #{usage} of #{budget.limit_cents} cents used (#{percent}%)"
       }
     end
 
     # Checks per_run budgets by computing billable usage from the agent_run's
-    # own token_usages rather than a shared counter. Uses the billable scope
-    # to exclude run_summary (audit-only) records that would otherwise
-    # double-count costs already tracked by per-request proxy records.
+    # own token_usages rather than a shared counter. Scoped to the agent_run's
+    # records only (O(records in run)) and excludes run_summary (audit-only)
+    # records to avoid double-counting costs already tracked by per-request
+    # proxy records.
     def check_per_run_budget
-      run_cost = TokenUsage.billable.where(agent_run: agent_run).sum(:cost_cents)
+      run_cost = agent_run.token_usages.where.not(request_type: "run_summary").sum(:cost_cents)
       exceeded_budget = project.cost_budgets.per_run.find { |budget| run_cost >= budget.limit_cents }
       return nil unless exceeded_budget
 
@@ -85,6 +87,10 @@ module CostBudgets
 
     def send_alerts_if_needed
       project.cost_budgets.each do |budget|
+        # Skip per_run budgets when no agent_run is provided — their
+        # current_usage_cents is not maintained by TokenUsageTracker, so
+        # threshold checks would be based on stale/zero values.
+        next if budget.budget_type == "per_run" && agent_run.nil?
         next unless budget.alert_needed?
 
         Rails.logger.warn(
