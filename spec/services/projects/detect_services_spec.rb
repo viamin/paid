@@ -12,7 +12,7 @@ RSpec.describe Projects::DetectServices do
 
   let(:service_container_class) do
     Class.new do
-      def self.all
+      def self.where(name:)
         raise "stub me"
       end
     end
@@ -23,7 +23,7 @@ RSpec.describe Projects::DetectServices do
     # Default: all files return NotFound
     allow(github_client).to receive(:contents).and_raise(GithubClient::NotFoundError)
     # Default: no service containers exist
-    allow(service_container_class).to receive(:all).and_return([])
+    allow(service_container_class).to receive(:where).and_return(double(index_by: {}))
   end
 
   def stub_file(path, content)
@@ -38,9 +38,8 @@ RSpec.describe Projects::DetectServices do
     containers_by_name = names.each_with_object({}) do |name, hash|
       hash[name] = Struct.new(:name).new(name)
     end
-    container_list = containers_by_name.values
-    allow(service_container_class).to receive(:all).and_return(container_list)
-    allow(container_list).to receive(:index_by).and_return(containers_by_name)
+    relation = double(index_by: containers_by_name)
+    allow(service_container_class).to receive(:where).and_return(relation)
     containers_by_name
   end
 
@@ -247,6 +246,27 @@ RSpec.describe Projects::DetectServices do
       end
     end
 
+    context "when config/database.yml uses multi-db nested structure" do
+      before do
+        stub_file("config/database.yml", <<~YAML)
+          production:
+            primary:
+              adapter: postgresql
+              database: myapp_production
+            cache:
+              adapter: postgresql
+              database: myapp_cache
+        YAML
+      end
+
+      it "detects postgres from nested adapter keys" do
+        result = described_class.call(project: project)
+
+        services = result.detected.map { |d| d[:service] }
+        expect(services).to include("postgres")
+      end
+    end
+
     context "when multiple sources detect the same service" do
       before do
         stub_file("Gemfile", <<~GEMFILE)
@@ -263,6 +283,17 @@ RSpec.describe Projects::DetectServices do
 
         postgres_detections = result.detected.select { |d| d[:service] == "postgres" }
         expect(postgres_detections.size).to eq(1)
+      end
+    end
+
+    context "when docker-compose.yml exceeds size limit" do
+      it "returns empty results" do
+        oversized = "services:\n  db:\n    image: postgres:16\n" + ("x" * 65_000)
+        stub_file("docker-compose.yml", oversized)
+
+        result = described_class.call(project: project)
+        compose_detections = result.detected.select { |d| d[:source] == "docker-compose.yml" }
+        expect(compose_detections).to be_empty
       end
     end
 
@@ -290,6 +321,20 @@ RSpec.describe Projects::DetectServices do
 
         result = described_class.call(project: project)
         expect(result.detected).to be_empty
+      end
+
+      it "handles invalid UTF-8 content gracefully" do
+        # Simulate a file with invalid UTF-8 bytes
+        invalid_utf8 = "gem \"pg\"\ngem \"\xFF\xFE\"".b
+        encoded = Base64.encode64(invalid_utf8)
+        response = OpenStruct.new(content: encoded)
+        allow(github_client).to receive(:contents)
+          .with("test-owner/test-repo", path: "Gemfile")
+          .and_return(response)
+
+        result = described_class.call(project: project)
+        services = result.detected.map { |d| d[:service] }
+        expect(services).to include("postgres")
       end
 
       it "handles YAML with disallowed classes in docker-compose.yml" do
