@@ -29,12 +29,19 @@ if ! gh auth status -h github.com >/dev/null 2>&1; then
   exit 0
 fi
 
-if ! gh api /user/ssh_signing_keys --method GET --paginate --jq '.' >/dev/null 2>&1; then
-  echo "WARNING: GitHub token lacks the 'admin:ssh_signing_key' scope." >&2
-  echo "  Commit signing will be disabled. To enable it, run:" >&2
-  echo "    bash .devcontainer/enable-commit-signing.sh" >&2
+scope_output=$(gh api /user/ssh_signing_keys --method GET --paginate --jq '.' 2>&1) || {
+  if echo "$scope_output" | grep -qiE "insufficient.scope|403|missing.*scope"; then
+    echo "WARNING: GitHub token lacks the 'admin:ssh_signing_key' scope." >&2
+    echo "  Commit signing will be disabled. To enable it, run:" >&2
+    echo "    bash .devcontainer/enable-commit-signing.sh" >&2
+  else
+    echo "WARNING: Failed to verify SSH signing key scope (API call failed)." >&2
+    echo "  This may be due to a network issue, rate limiting, or missing scope." >&2
+    echo "  Commit signing will be disabled. To enable it, run:" >&2
+    echo "    bash .devcontainer/enable-commit-signing.sh" >&2
+  fi
   exit 0
-fi
+}
 
 # 1. Generate key (overwrite any leftover from a previous build)
 echo "Generating SSH signing key..."
