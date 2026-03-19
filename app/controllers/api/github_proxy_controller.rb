@@ -125,7 +125,12 @@ module Api
 
     def track_review_creation(path, response)
       return unless request.method == "POST"
-      return unless %r{\Arepos/[^/]+/[^/]+/pulls/\d+/reviews\z}.match?(path)
+
+      match = %r{\Arepos/[^/]+/[^/]+/pulls/(?<number>\d+)/reviews\z}.match(path)
+      return unless match
+
+      # Only track reviews posted on the run's target PR, not unrelated PRs.
+      return unless @agent_run.source_pull_request_number == match[:number].to_i
 
       body = parse_response_body(response.body)
       return unless body.is_a?(Hash) && body["id"].present?

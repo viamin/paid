@@ -157,6 +157,7 @@ RSpec.describe "Api::GithubProxy" do
   end
 
   describe "POST /api/proxy/github/repos/:owner/:repo/pulls/:number/reviews" do
+    let(:agent_run) { create(:agent_run, :running, :review_goal, project: project) }
     let(:target_url) { "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews" }
     let(:review_response_body) do
       {
@@ -180,13 +181,26 @@ RSpec.describe "Api::GithubProxy" do
       expect(response).to have_http_status(:ok)
     end
 
-    it "tracks review_posted_at on the agent run" do
+    it "tracks review_posted_at when PR number matches source_pull_request_number" do
       post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
         params: { body: "Looks good", event: "COMMENT" }.to_json,
         headers: valid_headers
 
       agent_run.reload
       expect(agent_run.review_posted_at).to be_present
+    end
+
+    it "does not track review_posted_at when PR number does not match" do
+      mismatched_url = "https://api.github.com/repos/testowner/testrepo/pulls/99/reviews"
+      stub_request(:post, mismatched_url)
+        .to_return(status: 200, body: review_response_body, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/99/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_posted_at).to be_nil
     end
 
     it "does not track review_posted_at on upstream error" do
