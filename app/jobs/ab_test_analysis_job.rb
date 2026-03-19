@@ -14,7 +14,7 @@ class AbTestAnalysisJob < ApplicationJob
       Rails.logger.info(
         message: "ab_test.auto_completed",
         ab_test_id: ab_test.id,
-        winner: result.winner&.name,
+        winner_variant_id: result.winner&.id,
         confidence: result.confidence
       )
     end

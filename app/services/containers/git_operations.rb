@@ -131,23 +131,13 @@ module Containers
     def push_branch
       validate_branch_name!
 
-      # Fetch current remote state before --force-with-lease to avoid
-      # "stale info" rejections when the branch was updated by a prior run.
-      if agent_run.existing_pr?
-        begin
-          fetch_branch(agent_run.branch_name)
-        rescue Error => e
-          raise PushError, e.message
+      result =
+        if agent_run.existing_pr?
+          push_existing_pr_branch
+        else
+          push_new_branch
         end
-      end
 
-      # --no-verify skips any pre-push hooks. The push is a system operation
-      # that runs after the agent has exited — quality was already enforced
-      # by the pre-commit hook during agent execution.
-      push_args = [ "push", "--no-verify", "origin", agent_run.branch_name ]
-      push_args << "--force-with-lease" if agent_run.existing_pr?
-
-      result = execute_git(*push_args, timeout: PUSH_TIMEOUT)
       raise PushError, "Push failed: #{error_with_stderr(result)}" if result.failure?
 
       sha = head_sha
@@ -317,7 +307,11 @@ module Containers
     # @return [void]
     # @raise [Error] when the fetch fails
     def fetch_branch(branch)
-      result = execute_git("fetch", "origin", branch)
+      result = execute_git(
+        "fetch",
+        "origin",
+        "refs/heads/#{branch}:refs/remotes/origin/#{branch}"
+      )
       raise Error, "Fetch failed: #{error_with_stderr(result)}" if result.failure?
     end
 
@@ -361,6 +355,70 @@ module Containers
       execute_git("rebase", "--abort")
     rescue Error
       # Best effort — abort may fail if rebase state is already gone
+    end
+
+    def push_new_branch
+      execute_git("push", "--no-verify", "origin", agent_run.branch_name, timeout: PUSH_TIMEOUT)
+    end
+
+    def push_existing_pr_branch
+      expected_remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
+      result = push_with_lease(expected_remote_sha)
+      return result unless stale_info_rejection?(result)
+
+      ensure_rebase_history!(agent_run.branch_name)
+      refreshed_remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
+      recover_branch_drift!(agent_run.branch_name)
+      push_with_lease(refreshed_remote_sha)
+    end
+
+    def ensure_rebase_history!(branch)
+      begin
+        unshallow
+      rescue Error => e
+        raise PushError, "Failed to fetch full git history before rebasing onto origin/#{branch}: #{e.message}"
+      end
+    end
+
+    def recover_branch_drift!(branch)
+      result = execute_git("rebase", "origin/#{branch}")
+      return if result.success?
+
+      abort_rebase
+      raise PushError, "Rebase onto origin/#{branch} failed after branch advanced remotely: #{error_with_stderr(result)}"
+    end
+
+    def push_with_lease(expected_remote_sha)
+      # --no-verify skips any pre-push hooks. The push is a system operation
+      # that runs after the agent has exited — quality was already enforced
+      # by the pre-commit hook during agent execution.
+      execute_git(
+        "push",
+        "--no-verify",
+        "origin",
+        agent_run.branch_name,
+        "--force-with-lease=#{agent_run.branch_name}:#{expected_remote_sha}",
+        timeout: PUSH_TIMEOUT
+      )
+    end
+
+    def refresh_remote_branch_sha!(branch)
+      fetch_branch(branch)
+      remote_branch_sha(branch)
+    rescue Error => e
+      raise PushError, e.message
+    end
+
+    def remote_branch_sha(branch)
+      remote_ref = "refs/remotes/origin/#{branch}"
+      result = execute_git("rev-parse", remote_ref)
+      raise Error, "Failed to resolve remote branch SHA for #{remote_ref}: #{error_with_stderr(result)}" if result.failure?
+
+      result[:stdout].strip
+    end
+
+    def stale_info_rejection?(result)
+      [ result[:stdout], result[:stderr] ].compact.any? { |output| output.include?("(stale info)") }
     end
 
     # Converts a shallow clone into a full clone by fetching all history.
@@ -427,15 +485,23 @@ module Containers
 
       # Shallow clones (--depth 1) only fetch the default branch tip, so
       # remote tracking branches aren't available locally. Fetch the target
-      # branch shallowly before switching.
-      fetch_result = execute_git("fetch", "--depth", "1", "origin", branch_name)
+      # branch shallowly into refs/remotes/origin/<branch>, then create/reset
+      # the local branch from that explicit remote-tracking ref.
+      remote_ref = "refs/remotes/origin/#{branch_name}"
+      fetch_result = execute_git(
+        "fetch",
+        "--depth",
+        "1",
+        "origin",
+        "refs/heads/#{branch_name}:#{remote_ref}"
+      )
 
       if fetch_result.success?
-        result = execute_git("switch", "--", branch_name)
+        result = execute_git("checkout", "-B", branch_name, remote_ref)
         return if result.success?
 
-        # Fetch succeeded but switch still failed — unusual, include switch error only.
-        checkout_detail = "switch failed after successful fetch: #{error_with_stderr(result)}"
+        # Fetch succeeded but local checkout still failed — unusual, include checkout error only.
+        checkout_detail = "checkout failed after successful fetch: #{error_with_stderr(result)}"
       else
         # Both fetch and switch failed — include both errors so operators can
         # distinguish branch deletion from network/auth issues.

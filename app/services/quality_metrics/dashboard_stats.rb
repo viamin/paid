@@ -1,105 +1,142 @@
 # frozen_string_literal: true
 
 module QualityMetrics
+  # Computes quality metrics dashboard data for a project.
+  # Provides composite scores, trends, breakdowns, prompt comparisons,
+  # and human feedback summaries.
+  #
+  # @example
+  #   stats = QualityMetrics::DashboardStats.call(project: project)
   class DashboardStats
-    attr_reader :account
+    attr_reader :project
+
+    def initialize(project:)
+      @project = project
+    end
 
     def self.call(...)
       new(...).call
     end
 
-    def initialize(account:)
-      @account = account
+    def self.overview(...)
+      new(...).overview
     end
 
     def call
       {
         overview: overview,
-        by_prompt: by_prompt,
-        by_model: by_model,
-        weekly_trend: weekly_trend,
-        score_distribution: score_distribution
+        trends: trends,
+        breakdown: score_breakdown,
+        prompt_comparison: prompt_comparison,
+        human_feedback: human_feedback
+      }
+    end
+
+    def overview
+      row = metrics
+        .select(
+          "COUNT(*) AS total_metrics",
+          "AVG(composite_score) AS avg_score",
+          "MIN(composite_score) AS min_score",
+          "MAX(composite_score) AS max_score",
+          "COUNT(*) FILTER (WHERE metric_type = 'automated') AS automated_count",
+          "COUNT(*) FILTER (WHERE metric_type = 'human') AS human_count"
+        )
+        .take
+
+      {
+        total_metrics: row.total_metrics.to_i,
+        average_score: row.avg_score&.to_f&.round(4),
+        min_score: row.min_score&.to_f,
+        max_score: row.max_score&.to_f,
+        automated_count: row.automated_count.to_i,
+        human_count: row.human_count.to_i
       }
     end
 
     private
 
     def metrics
-      @metrics ||= QualityMetric
-        .joins(agent_run: :project)
-        .where(projects: { account_id: account.id })
+      @metrics ||= QualityMetric.by_project(project.id).with_composite_score
     end
 
-    def overview
-      scored = metrics.with_composite_score
+    def trends
+      recent = metrics
+        .select("quality_metrics.composite_score, quality_metrics.created_at, quality_metrics.metric_type")
+        .order("quality_metrics.created_at DESC")
+        .limit(30)
+
+      recent.reverse.map do |m|
+        {
+          score: m.composite_score.to_f,
+          date: m.created_at.to_date.iso8601,
+          metric_type: m.metric_type
+        }
+      end
+    end
+
+    def score_breakdown
+      valid_keys = QualityMetric::SCORE_WEIGHTS.keys
+      rows = QualityMetric.by_project(project.id).automated.with_composite_score
+        .where("scores <> '{}'::jsonb")
+        .joins("CROSS JOIN LATERAL jsonb_each_text(scores) AS kv(key, val)")
+        .where("kv.key IN (?)", valid_keys)
+        .group("kv.key")
+        .pluck(Arel.sql("kv.key, AVG(kv.val::float)"))
+
+      rows.to_h { |key, avg| [ key, avg.to_f.round(4) ] }
+    end
+
+    def prompt_comparison
+      version_metrics = metrics.where.not(prompt_version_id: nil)
+        .group(:prompt_version_id)
+        .select(
+          "prompt_version_id",
+          "AVG(composite_score) AS avg_score",
+          "COUNT(*) AS sample_size"
+        )
+        .to_a
+
+      return [] if version_metrics.empty?
+
+      version_ids = version_metrics.map(&:prompt_version_id)
+      versions_by_id = PromptVersion.includes(:prompt).where(id: version_ids).index_by(&:id)
+
+      version_metrics.filter_map do |row|
+        version = versions_by_id[row.prompt_version_id]
+        next unless version
+
+        {
+          prompt_version_id: row.prompt_version_id,
+          prompt_name: version.prompt.name,
+          version_number: version.version,
+          avg_score: row.avg_score.to_f.round(4),
+          sample_size: row.sample_size.to_i
+        }
+      end.sort_by { |r| -r[:avg_score] }
+    end
+
+    def human_feedback
+      human = QualityMetric.by_project(project.id).human
+
+      row = human.select(
+        "COUNT(*) AS total",
+        "COUNT(*) FILTER (WHERE scores ? 'pr_merged') AS with_merge_status",
+        "COUNT(*) FILTER (WHERE (scores->>'pr_merged')::float = 1.0) AS merged_count"
+      ).take
+
+      total = row.total.to_i
+      return { total: 0, merge_rate: nil, sources: {} } if total.zero?
+
+      with_merge_status = row.with_merge_status.to_i
+      merged_count = row.merged_count.to_i
+      sources = human.where.not(feedback_source: nil).group(:feedback_source).count
+
       {
-        total_metrics: metrics.count,
-        scored_metrics: scored.count,
-        avg_quality_score: scored.average(:composite_score)&.round(2) || 0.0
+        total: total,
+        merge_rate: with_merge_status.zero? ? nil : (merged_count.to_f / with_merge_status * 100).round(1),
+        sources: sources
       }
-    end
-
-    def by_prompt
-      metrics
-        .joins(agent_run: { prompt_version: :prompt })
-        .where.not(composite_score: nil)
-        .group("prompts.id", "prompts.name")
-        .select(
-          "prompts.id as prompt_id",
-          "prompts.name",
-          "AVG(quality_metrics.composite_score) as avg_score",
-          "COUNT(*) as sample_count"
-        )
-        .order("avg_score DESC")
-        .limit(10)
-        .map { |r| { id: r.prompt_id, name: r.name, avg_score: r.avg_score.to_f.round(2), sample_count: r.sample_count.to_i } }
-    end
-
-    def by_model
-      metrics
-        .joins(agent_run: { model_selection: :llm_model })
-        .where.not(composite_score: nil)
-        .group("llm_models.id", "llm_models.display_name")
-        .select(
-          "llm_models.id as llm_model_id",
-          "llm_models.display_name",
-          "AVG(quality_metrics.composite_score) as avg_score",
-          "COUNT(*) as sample_count"
-        )
-        .order("avg_score DESC")
-        .map { |r| { id: r.llm_model_id, name: r.display_name, avg_score: r.avg_score.to_f.round(2), sample_count: r.sample_count.to_i } }
-    end
-
-    def weekly_trend
-      metrics
-        .with_composite_score
-        .where("quality_metrics.created_at >= ?", 12.weeks.ago)
-        .group("date_trunc('week', quality_metrics.created_at)")
-        .order(Arel.sql("date_trunc('week', quality_metrics.created_at)"))
-        .pluck(
-          Arel.sql("date_trunc('week', quality_metrics.created_at)"),
-          Arel.sql("AVG(quality_metrics.composite_score)"),
-          Arel.sql("COUNT(*)")
-        )
-        .map { |week, avg, count| { week: week.to_date, avg_score: avg.to_f.round(2), count: count } }
-    end
-
-    def score_distribution
-      defaults = { "0.0-0.2" => 0, "0.2-0.4" => 0, "0.4-0.6" => 0, "0.6-0.8" => 0, "0.8-1.0" => 0 }
-
-      rows = metrics.with_composite_score
-        .group(Arel.sql(<<~SQL.squish))
-          CASE
-            WHEN composite_score < 0.2 THEN '0.0-0.2'
-            WHEN composite_score < 0.4 THEN '0.2-0.4'
-            WHEN composite_score < 0.6 THEN '0.4-0.6'
-            WHEN composite_score < 0.8 THEN '0.6-0.8'
-            ELSE '0.8-1.0'
-          END
-        SQL
-        .count
-
-      defaults.merge(rows)
     end
   end
 end

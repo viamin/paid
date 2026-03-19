@@ -2,11 +2,11 @@
 
 module Models
   # Seeds LlmModel records from a hardcoded snapshot of known models.
-  # Despite the class name, this does NOT pull from the ruby-llm
-  # registry at runtime — pricing and capabilities are static.
+  # Pricing and capabilities are static — this does not pull from an
+  # external registry at runtime.
   # TODO(#139): Integrate with ruby-llm registry as the primary source,
   # falling back to KNOWN_MODELS when the registry is unavailable.
-  class SyncFromRegistry
+  class SeedKnownModels
     KNOWN_MODELS = [
       {
         model_id: "claude-sonnet-4-6",
@@ -113,7 +113,7 @@ module Models
         synced += 1
       end
 
-      Rails.logger.info(message: "model_registry.sync_completed", models_synced: synced)
+      Rails.logger.info(message: "model_registry.seed_completed", models_synced: synced)
       synced
     end
   end

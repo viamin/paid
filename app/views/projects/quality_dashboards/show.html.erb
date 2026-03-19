@@ -1,0 +1,228 @@
+<% content_for(:title) { "Quality Metrics - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">Quality Metrics</h1>
+      <p class="mt-1 text-sm text-gray-500"><%= @project.name %></p>
+    </div>
+  </div>
+
+  <% overview = @stats[:overview] %>
+  <% if overview[:total_metrics] > 0 %>
+    <%# Overview Cards %>
+    <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Average Score</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight <%= quality_score_color(overview[:average_score]) %>">
+          <%= format_quality_score(overview[:average_score]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Total Metrics</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= overview[:total_metrics] %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Score Range</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= format_quality_score(overview[:min_score]) %> - <%= format_quality_score(overview[:max_score]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Metric Types</dt>
+        <dd class="mt-1 text-sm text-gray-900">
+          <span class="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
+            Automated: <%= overview[:automated_count] %>
+          </span>
+          <span class="ml-1 inline-flex items-center rounded-md bg-purple-100 px-2 py-1 text-xs font-medium text-purple-700">
+            Human: <%= overview[:human_count] %>
+          </span>
+        </dd>
+      </div>
+    </div>
+
+    <%# Quality Trends %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Quality Trends</h2>
+      <% trends = @stats[:trends] %>
+      <% if trends.any? %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 sm:p-6">
+            <div class="flex items-end gap-1" style="height: 120px;" role="img" aria-label="Quality score trend chart">
+              <% max_score = [trends.map { |t| t[:score] }.max, 0.01].max %>
+              <% trends.each do |point| %>
+                <% height_pct = (point[:score] / max_score * 100).round %>
+                <div class="group relative flex-1" style="min-width: 4px;">
+                  <div class="w-full rounded-t <%= point[:metric_type] == 'human' ? 'bg-purple-400' : 'bg-indigo-400' %>"
+                       style="height: <%= height_pct %>%;"
+                       title="<%= point[:date] %>: <%= format('%.1f%%', point[:score] * 100) %> (<%= point[:metric_type] %>)">
+                  </div>
+                </div>
+              <% end %>
+            </div>
+            <div class="mt-2 flex justify-between text-xs text-gray-400">
+              <% if trends.any? %>
+                <span><%= trends.first[:date] %></span>
+                <span><%= trends.last[:date] %></span>
+              <% end %>
+            </div>
+            <div class="mt-2 flex gap-4 text-xs text-gray-500">
+              <div class="flex items-center gap-1">
+                <div class="h-2 w-2 rounded-full bg-indigo-400"></div>
+                Automated
+              </div>
+              <div class="flex items-center gap-1">
+                <div class="h-2 w-2 rounded-full bg-purple-400"></div>
+                Human
+              </div>
+            </div>
+          </div>
+        </div>
+      <% else %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 text-sm text-gray-500">Not enough data for trend analysis.</div>
+        </div>
+      <% end %>
+    </div>
+
+    <%# Score Breakdown %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Score Breakdown</h2>
+      <% breakdown = @stats[:breakdown] %>
+      <% if breakdown.any? %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 sm:p-6">
+            <div class="space-y-4">
+              <% breakdown.each do |key, avg_value| %>
+                <div>
+                  <div class="flex items-center justify-between text-sm">
+                    <span class="font-medium text-gray-700"><%= key.titleize %></span>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-gray-400">Weight: <%= format("%.0f%%", QualityMetric::SCORE_WEIGHTS[key].to_f * 100) %></span>
+                      <span class="font-medium <%= quality_score_color(avg_value) %>"><%= format("%.0f%%", avg_value * 100) %></span>
+                    </div>
+                  </div>
+                  <div class="mt-1 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div class="h-2 rounded-full <%= quality_score_bar_color(avg_value) %>"
+                         style="width: <%= (avg_value * 100).round %>%"></div>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        </div>
+      <% else %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 text-sm text-gray-500">No automated metrics available for breakdown.</div>
+        </div>
+      <% end %>
+    </div>
+
+    <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <%# Prompt Comparison %>
+      <div>
+        <h2 class="text-lg font-semibold text-gray-900">Prompt Effectiveness</h2>
+        <% prompts = @stats[:prompt_comparison] %>
+        <% if prompts.any? %>
+          <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Prompt</th>
+                  <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Score</th>
+                  <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Runs</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 bg-white">
+                <% prompts.each do |prompt_data| %>
+                  <tr>
+                    <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
+                      <%= prompt_data[:prompt_name] %>
+                      <span class="text-gray-400">v<%= prompt_data[:version_number] %></span>
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium <%= quality_score_color(prompt_data[:avg_score]) %>">
+                      <%= format_quality_score(prompt_data[:avg_score]) %>
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-500">
+                      <%= prompt_data[:sample_size] %>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        <% else %>
+          <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 text-sm text-gray-500">No prompt version data available yet.</div>
+          </div>
+        <% end %>
+      </div>
+
+      <%# Human Feedback %>
+      <div>
+        <h2 class="text-lg font-semibold text-gray-900">Human Feedback</h2>
+        <% feedback = @stats[:human_feedback] %>
+        <% if feedback[:total] > 0 %>
+          <div class="mt-4 space-y-4">
+            <div class="overflow-hidden rounded-lg bg-white shadow">
+              <div class="px-4 py-5 sm:p-6">
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">Feedback Count</dt>
+                    <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= feedback[:total] %></dd>
+                  </div>
+                  <div>
+                    <dt class="text-sm font-medium text-gray-500">PR Merge Rate</dt>
+                    <dd class="mt-1 text-2xl font-semibold <%= feedback[:merge_rate] && feedback[:merge_rate] >= 50 ? 'text-green-600' : 'text-gray-900' %>">
+                      <%= feedback[:merge_rate] ? "#{feedback[:merge_rate]}%" : "--" %>
+                    </dd>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <% if feedback[:sources].any? %>
+              <div class="overflow-hidden rounded-lg bg-white shadow">
+                <div class="px-4 py-4 sm:px-6">
+                  <h3 class="text-sm font-medium text-gray-500">Feedback Sources</h3>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    <% feedback[:sources].each do |source, count| %>
+                      <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                        <%= source&.titleize || "Unknown" %>: <%= count %>
+                      </span>
+                    <% end %>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 text-sm text-gray-500">No human feedback collected yet.</div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% else %>
+    <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-6 py-12 text-center">
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
+        </svg>
+        <h3 class="mt-2 text-sm font-semibold text-gray-900">No quality metrics yet</h3>
+        <p class="mt-1 text-sm text-gray-500">Quality metrics will appear here after agent runs are completed and scored.</p>
+      </div>
+    </div>
+  <% end %>
+</div>
