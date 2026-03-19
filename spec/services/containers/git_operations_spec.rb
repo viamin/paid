@@ -461,12 +461,6 @@ RSpec.describe Containers::GitOperations do
         .and_return(Containers::Provision::Result.success(stdout: "#{sha}\n", stderr: "", exit_code: 0))
     end
 
-    def stub_push_with_lease(sha, result)
-      allow(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{sha}" ], timeout: 60, stream: false)
-        .and_return(result)
-    end
-
     def stub_not_shallow_repo
       allow(container_service).to receive(:execute)
         .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
