@@ -371,13 +371,14 @@ RSpec.describe Containers::GitOperations do
 
       expect_refresh_remote_branch(remote_sha, ordered: true)
       expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
+      expect_refresh_remote_branch(refreshed_remote_sha, ordered: true)
+      expect_not_shallow_repo(ordered: true)
 
       expect(container_service).to receive(:execute)
         .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
         .and_return(success_result)
         .ordered
 
-      expect_refresh_remote_branch(refreshed_remote_sha, ordered: true)
       expect_push_with_lease(refreshed_remote_sha, success_result, ordered: true)
 
       git_ops.push_branch
@@ -392,16 +393,20 @@ RSpec.describe Containers::GitOperations do
         exit_code: 1
       )
 
-      stub_refresh_remote_branch(remote_sha)
-      stub_push_with_lease(remote_sha, stale_push_result)
+      expect_refresh_remote_branch(remote_sha, ordered: true)
+      expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
+      expect_refresh_remote_branch("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ordered: true)
+      expect_not_shallow_repo(ordered: true)
 
       expect(container_service).to receive(:execute)
         .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
         .and_return(rebase_failure)
+        .ordered
 
       expect(container_service).to receive(:execute)
         .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
         .and_return(success_result)
+        .ordered
 
       expect { git_ops.push_branch }.to raise_error(described_class::PushError, /Push failed after branch advanced remotely/)
     end
@@ -439,6 +444,13 @@ RSpec.describe Containers::GitOperations do
       receive_push.ordered if ordered
     end
 
+    def expect_not_shallow_repo(ordered: false)
+      receive_check = expect(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "false\n", stderr: "", exit_code: 0))
+      receive_check.ordered if ordered
+    end
+
     def stub_refresh_remote_branch(sha)
       allow(container_service).to receive(:execute)
         .with([ "git", "fetch", "origin", "paid/test-branch" ], timeout: nil, stream: false)
@@ -453,6 +465,12 @@ RSpec.describe Containers::GitOperations do
       allow(container_service).to receive(:execute)
         .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{sha}" ], timeout: 60, stream: false)
         .and_return(result)
+    end
+
+    def stub_not_shallow_repo
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "false\n", stderr: "", exit_code: 0))
     end
   end
 
