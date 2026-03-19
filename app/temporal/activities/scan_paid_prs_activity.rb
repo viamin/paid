@@ -114,6 +114,7 @@ module Activities
 
         # Only check changes_requested if still no triggers.
         if all_triggers.empty?
+          reviews ||= fetch_reviews(client, project, issue)
           all_triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
         end
       end
@@ -364,7 +365,7 @@ module Activities
     end
 
     def review_bot_review_status(reviews)
-      return :unknown if reviews.nil? || reviews.empty?
+      return :unknown if reviews.nil?
 
       bot_reviews = reviews.select { |r| review_bot?(r[:user_login]) }
       return :no_review if bot_reviews.empty?
@@ -424,10 +425,12 @@ module Activities
       client.pull_request_reviews(project.full_name, issue.github_number)
     rescue GithubClient::Error => e
       log_signal_error("fetch_reviews", project, issue, e)
-      []
+      nil
     end
 
     def changes_requested_from_reviews(project, reviews, last_run)
+      return [] if reviews.nil?
+
       cutoff = last_run&.completed_at
 
       latest_by_user = reviews
@@ -468,6 +471,8 @@ module Activities
     # --- Owner approval check ---
 
     def owner_approved_from_reviews?(project, reviews)
+      return false if reviews.nil?
+
       owner_login = project.owner_reviewer_login
       return false if owner_login.blank?
 
