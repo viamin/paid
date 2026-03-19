@@ -116,6 +116,8 @@
     </dl>
   </div>
 
+  <%= render "agent_runs/quality_scores", quality_metrics: quality_metrics %>
+
   <% if agent_run.pull_request_url.present? %>
     <div class="mt-6 rounded-lg border border-green-200 bg-green-50 p-4">
       <h2 class="text-sm font-semibold text-green-800">Pull Request Created</h2>
