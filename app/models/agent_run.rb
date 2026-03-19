@@ -130,8 +130,11 @@ class AgentRun < ApplicationRecord
   #   0 = manual runs (highest)
   #   1 = automatic runs fixing a PR (auto-continue)
   #   2 = automatic runs from auto-pick (lowest)
-  # Within each tier, runs are processed FIFO by created_at, with id
-  # as a stable tiebreaker for runs created in the same timestamp.
+  # Within each tier, create_issue runs are prioritized over create_pr
+  # runs because issue creation is lighter-weight and often unblocks
+  # downstream PR work.
+  # Within each goal type, runs are processed FIFO by created_at, with
+  # id as a stable tiebreaker for runs created in the same timestamp.
   QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
     CASE
       WHEN trigger_type = 'manual' THEN 0
@@ -139,7 +142,13 @@ class AgentRun < ApplicationRecord
       ELSE 2
     END
   SQL
-  QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
+  GOAL_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
+    CASE
+      WHEN goal = 'create_issue' THEN 0
+      ELSE 1
+    END
+  SQL
+  QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
 
   def self.next_queued_run
     queued.order(QUEUE_ORDER).first
