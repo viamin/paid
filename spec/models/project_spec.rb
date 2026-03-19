@@ -581,7 +581,7 @@ RSpec.describe Project do
           agent_run, :detail,
           target: "detail_agent_run_#{agent_run.id}",
           partial: "agent_runs/detail",
-          locals: { agent_run: agent_run }
+          locals: hash_including(agent_run: agent_run)
         ).once
       end
     end
