@@ -532,7 +532,7 @@ module Activities
             ]
           }'
 
-        # Post a standalone comment on the PR
+        # Post a standalone comment on the PR (optional, supplementary only)
         curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/issues/#{pr_number}/comments" \\
           -H "Content-Type: application/json" \\
           -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
@@ -540,11 +540,15 @@ module Activities
           -d '{"body": "Summary review comment"}'
         ```
 
+        IMPORTANT: You MUST post at least one PR review via the `/pulls/#{pr_number}/reviews`
+        endpoint. This is how your review is tracked as complete. Standalone PR comments
+        via `/issues/#{pr_number}/comments` are optional and do NOT satisfy the review requirement.
+
         Available endpoints:
         - GET  $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number} — get PR details
         - GET  $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/files — list changed files
-        - POST $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/reviews — create review with inline comments
-        - POST $GITHUB_API_URL/repos/#{repo}/issues/#{pr_number}/comments — post PR comment
+        - POST $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/reviews — create review with inline comments (REQUIRED)
+        - POST $GITHUB_API_URL/repos/#{repo}/issues/#{pr_number}/comments — post PR comment (optional)
         - GET  $GITHUB_API_URL/repos/#{repo}/issues/{number} — get linked issue details
 
         Do NOT push code, create issues, or create new pull requests. Only post review comments on PR ##{pr_number}.

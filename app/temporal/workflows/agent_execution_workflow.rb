@@ -34,7 +34,7 @@ module Workflows
       create_input = { project_id: project_id, issue_id: issue_id, agent_type: agent_type,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
-        agent_run_id: agent_run_id }.compact
+        agent_run_id: agent_run_id, goal: goal }.compact
       agent_run_result = run_activity(Activities::CreateAgentRunActivity,
         create_input, timeout: 30)
       agent_run_id = agent_run_result[:agent_run_id]
