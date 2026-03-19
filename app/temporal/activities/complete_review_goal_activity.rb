@@ -17,7 +17,12 @@ module Activities
           agent_run_id: agent_run_id,
           pr_number: agent_run.source_pull_request_number
         )
-        agent_run.log!("system", "Warning: no review was posted on PR ##{agent_run.source_pull_request_number}")
+        agent_run.fail!(error: "No review was posted on PR ##{agent_run.source_pull_request_number}")
+
+        raise Temporalio::Error::ApplicationError.new(
+          "No review was posted on PR ##{agent_run.source_pull_request_number}",
+          type: "ReviewNotPosted"
+        )
       end
 
       # Don't set pull_request_number for review runs — that field represents
