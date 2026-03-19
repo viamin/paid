@@ -385,7 +385,9 @@ module Activities
       when :has_comments
         review_bot_thread_triggers(unresolved_threads)
       when :unknown
-        []
+        # When review status is unknown (e.g., fetch_reviews failed), fall back to
+        # unresolved review-bot threads so they still block progression.
+        review_bot_thread_triggers(unresolved_threads)
       end
     end
 
