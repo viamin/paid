@@ -143,6 +143,12 @@ module Workflows
 
       return unless result[:marked_ready]
 
+      if pr_data[:pending_review_bot_request]
+        request_review(project_id, pr_data[:pr_number],
+          [ Activities::RequestReviewActivity::COPILOT_LOGIN ],
+          log_key: "pr_review.request_review_bot_review_failed")
+      end
+
       request_owner_review(project_id, pr_data)
     end
 
@@ -163,7 +169,8 @@ module Workflows
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
-      request_review(project_id, pr_data[:pr_number], [ "copilot" ],
+      request_review(project_id, pr_data[:pr_number],
+        [ Activities::RequestReviewActivity::COPILOT_LOGIN ],
         log_key: "pr_review.request_review_bot_review_failed")
 
       # If there are other triggers besides review_bot_review_pending, dispatch them
