@@ -6,136 +6,101 @@
     </div>
   </div>
 
-  <%# Overview Stats %>
-  <div class="mt-8">
-    <h2 class="text-lg font-semibold text-gray-900">Overview</h2>
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Average Quality Score</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <%= @stats[:overview][:avg_quality_score] %>
-        </dd>
-      </div>
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Total Metrics Collected</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <%= number_with_delimiter(@stats[:overview][:total_metrics]) %>
-        </dd>
-      </div>
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Scored Metrics</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <%= number_with_delimiter(@stats[:overview][:scored_metrics]) %>
-        </dd>
+  <% if @projects.any? %>
+    <div class="mt-4">
+      <%= form_tag quality_dashboard_path, method: :get, class: "flex items-center gap-3" do %>
+        <label for="project_id" class="text-sm font-medium text-gray-700">Project</label>
+        <%= select_tag :project_id, options_from_collection_for_select(@projects, :id, :name, @project&.id), class: "rounded-md border-gray-300 text-sm", onchange: "this.form.submit()" %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if @stats %>
+    <%# Overview Stats %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Overview</h2>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Average Quality Score</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= @stats[:overview][:average_score] || "—" %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Total Metrics Collected</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= number_with_delimiter(@stats[:overview][:total_metrics]) %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Human Feedback</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= number_with_delimiter(@stats[:human_feedback][:total]) %>
+          </dd>
+        </div>
       </div>
     </div>
-  </div>
 
-  <%# Score Distribution %>
-  <div class="mt-8">
-    <h2 class="text-lg font-semibold text-gray-900">Score Distribution</h2>
-    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-      <% max_count = [@stats[:score_distribution].values.max || 1, 1].max %>
-      <div class="space-y-3">
-        <% @stats[:score_distribution].each do |range, count| %>
-          <div class="flex items-center gap-3">
-            <span class="w-16 text-sm text-gray-500"><%= range %></span>
-            <div class="flex-1 bg-gray-100 rounded-full h-5">
-              <div class="bg-indigo-500 rounded-full h-5" style="width: <%= (count.to_f / max_count * 100).round %>%"></div>
-            </div>
-            <span class="w-10 text-sm text-gray-700 text-right"><%= count %></span>
-          </div>
+    <%# Trends %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Recent Trends</h2>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <% if @stats[:trends].any? %>
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Date</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Score</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% @stats[:trends].each do |row| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-900"><%= row[:date] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:score] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:metric_type] %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        <% else %>
+          <div class="px-4 py-5 text-sm text-gray-500">No trend data yet.</div>
         <% end %>
       </div>
     </div>
-  </div>
 
-  <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
-    <%# Quality by Prompt %>
-    <div>
-      <h2 class="text-lg font-semibold text-gray-900">Quality by Prompt</h2>
+    <%# Prompt Comparison %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Prompt Comparison</h2>
       <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
-        <% if @stats[:by_prompt].any? %>
+        <% if @stats[:prompt_comparison].any? %>
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Prompt</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Version</th>
                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Score</th>
                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Samples</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 bg-white">
-              <% @stats[:by_prompt].each do |row| %>
+              <% @stats[:prompt_comparison].each do |row| %>
                 <tr>
-                  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= row[:name] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= row[:prompt_name] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">v<%= row[:version_number] %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:avg_score] %></td>
-                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:sample_count] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:sample_size] %></td>
                 </tr>
               <% end %>
             </tbody>
           </table>
         <% else %>
-          <div class="px-4 py-5 text-sm text-gray-500">No prompt quality data yet.</div>
+          <div class="px-4 py-5 text-sm text-gray-500">No prompt comparison data yet.</div>
         <% end %>
       </div>
     </div>
-
-    <%# Quality by Model %>
-    <div>
-      <h2 class="text-lg font-semibold text-gray-900">Quality by Model</h2>
-      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
-        <% if @stats[:by_model].any? %>
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-              <tr>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Model</th>
-                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Score</th>
-                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Samples</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 bg-white">
-              <% @stats[:by_model].each do |row| %>
-                <tr>
-                  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= row[:name] %></td>
-                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:avg_score] %></td>
-                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:sample_count] %></td>
-                </tr>
-              <% end %>
-            </tbody>
-          </table>
-        <% else %>
-          <div class="px-4 py-5 text-sm text-gray-500">No model quality data yet.</div>
-        <% end %>
-      </div>
-    </div>
-  </div>
-
-  <%# Weekly Trend %>
-  <div class="mt-8">
-    <h2 class="text-lg font-semibold text-gray-900">Weekly Quality Trend</h2>
-    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
-      <% if @stats[:weekly_trend].any? %>
-        <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
-            <tr>
-              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Week</th>
-              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Score</th>
-              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Samples</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-200 bg-white">
-            <% @stats[:weekly_trend].each do |row| %>
-              <tr>
-                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-900"><%= row[:week].strftime("%Y-%m-%d") %></td>
-                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:avg_score] %></td>
-                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:count] %></td>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
-      <% else %>
-        <div class="px-4 py-5 text-sm text-gray-500">No weekly trend data yet.</div>
-      <% end %>
-    </div>
-  </div>
+  <% else %>
+    <div class="mt-8 text-sm text-gray-500">No projects found. Create a project to start tracking quality metrics.</div>
+  <% end %>
 </div>

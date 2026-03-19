@@ -52,7 +52,7 @@ module Models
         model: model,
         selector_type: "override",
         reasoning: reason,
-        candidates: [ { model_id: model.model_id, score: model.capability_score } ],
+        candidates: [ { model_id: model.model_id, score: model.capability_score.to_f } ],
         complexity_score: nil
       }
     end

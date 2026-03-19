@@ -15,12 +15,16 @@ class AbTestPolicy < ApplicationPolicy
 
   def update?
     return false unless visible?
+    # Global-prompt A/B tests are read-only to prevent cross-tenant mutation.
+    return false if record.prompt&.account_id.nil?
 
     has_any_account_role?(:owner, :admin)
   end
 
   def destroy?
     return false unless visible?
+    # Global-prompt A/B tests are read-only to prevent cross-tenant mutation.
+    return false if record.prompt&.account_id.nil?
 
     has_account_role?(:owner)
   end
@@ -44,8 +48,9 @@ class AbTestPolicy < ApplicationPolicy
     def resolve
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
 
+      # Only show A/B tests for the user's own account. Global-prompt tests
+      # are excluded from the scope to prevent cross-tenant data exposure.
       scope.joins(:prompt).where(prompts: { account_id: user.account_id })
-            .or(scope.joins(:prompt).where(prompts: { account_id: nil }))
     end
   end
 end

@@ -4,6 +4,6 @@ class ModelsSyncJob < ApplicationJob
   queue_as :default
 
   def perform
-    Models::SyncFromRegistry.call
+    Models::SeedKnownModels.call
   end
 end
