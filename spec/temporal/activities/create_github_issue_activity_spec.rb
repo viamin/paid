@@ -30,6 +30,7 @@ RSpec.describe Activities::CreateGithubIssueActivity do
     allow(agent_run).to receive(:broadcast_project_updates)
     allow(agent_run).to receive(:update_project_last_agent_run_at)
 
+    allow(Llm::GenerateIssueTitle).to receive(:call).and_return(nil)
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:create_issue).and_return(issue_response)
     allow(ProcessRunQueueJob).to receive(:perform_later)
@@ -108,8 +109,7 @@ RSpec.describe Activities::CreateGithubIssueActivity do
 
     it "falls back to LLM-generated title when no heading" do
       agent_run.log!("stdout", "The auth system uses JWT tokens.")
-      harness_response = instance_double(AgentHarness::Response, success?: true, output: "JWT authentication analysis")
-      allow(AgentHarness).to receive(:send_message).and_return(harness_response)
+      allow(Llm::GenerateIssueTitle).to receive(:call).and_return("JWT authentication analysis")
 
       expect(github_client).to receive(:create_issue).with(
         anything,
@@ -119,10 +119,9 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "falls back to default title when LLM returns a failed response" do
+    it "falls back to default title when LLM returns nil" do
       agent_run.log!("stdout", "The auth system uses JWT tokens.")
-      harness_response = instance_double(AgentHarness::Response, success?: false, output: "")
-      allow(AgentHarness).to receive(:send_message).and_return(harness_response)
+      allow(Llm::GenerateIssueTitle).to receive(:call).and_return(nil)
 
       expect(github_client).to receive(:create_issue).with(
         anything,
