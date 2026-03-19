@@ -95,7 +95,8 @@ module Projects
       detections.concat(detect_from_database_yml)
 
       unique_services = detections.uniq { |d| d[:service] }
-      containers = ServiceContainer.all.index_by(&:name)
+      detected_names = unique_services.map { |d| d[:service] }
+      containers = ServiceContainer.where(name: detected_names).index_by(&:name)
 
       matched = []
       unmatched = []
@@ -129,7 +130,7 @@ module Projects
     def decode_content(response)
       return nil unless response&.content
 
-      Base64.decode64(response.content).force_encoding("UTF-8")
+      Base64.decode64(response.content).force_encoding("UTF-8").scrub
     end
 
     def detect_from_gemfile
@@ -181,6 +182,7 @@ module Projects
         content = fetch_file(source_file)
       end
       return [] unless content
+      return [] if content.bytesize > YAML_MAX_SIZE
 
       data = YAML.safe_load(content, aliases: true)
       return [] unless data.is_a?(Hash)
@@ -203,13 +205,15 @@ module Projects
       []
     end
 
-    # Maximum size for database.yml content to mitigate YAML alias expansion DoS
-    DATABASE_YML_MAX_SIZE = 64_000
+    # Maximum size for YAML content to mitigate YAML alias expansion DoS.
+    # Applied to both docker-compose and database.yml since both support
+    # YAML aliases that can cause exponential memory expansion.
+    YAML_MAX_SIZE = 64_000
 
     def detect_from_database_yml
       content = fetch_file("config/database.yml")
       return [] unless content
-      return [] if content.bytesize > DATABASE_YML_MAX_SIZE
+      return [] if content.bytesize > YAML_MAX_SIZE
 
       # Parse YAML but handle ERB-style templates by stripping them.
       # Aliases are enabled because database.yml conventionally uses YAML
@@ -219,10 +223,7 @@ module Projects
       return [] unless data.is_a?(Hash)
 
       detections = []
-      data.each_value do |config|
-        next unless config.is_a?(Hash)
-
-        adapter = config["adapter"]
+      extract_adapters(data) do |adapter|
         service = DATABASE_ADAPTER_MAP[adapter]
         next unless service
 
@@ -231,6 +232,23 @@ module Projects
       detections
     rescue Psych::Exception
       []
+    end
+
+    # Recursively walks a YAML hash to find all "adapter" values.
+    # Handles both single-db (adapter at top level of each env) and
+    # multi-db (adapter nested under primary/secondary sub-keys) configs.
+    def extract_adapters(hash, &block)
+      return unless hash.is_a?(Hash)
+
+      hash.each_value do |value|
+        next unless value.is_a?(Hash)
+
+        if value.key?("adapter")
+          yield value["adapter"]
+        else
+          extract_adapters(value, &block)
+        end
+      end
     end
 
     def match_compose_image(image)

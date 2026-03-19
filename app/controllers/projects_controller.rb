@@ -138,9 +138,9 @@ class ProjectsController < ApplicationController
   def apply_detected_services(containers)
     added = []
     containers.each do |container|
-      psc = @project.project_service_containers.find_or_create_by(service_container: container)
+      psc = @project.project_service_containers.find_or_create_by!(service_container: container)
       added << container.name if psc.previously_new_record?
-    rescue ActiveRecord::RecordNotUnique
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
       next
     end
     added
