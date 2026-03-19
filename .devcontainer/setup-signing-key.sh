@@ -29,8 +29,8 @@ if ! gh auth status -h github.com >/dev/null 2>&1; then
   exit 0
 fi
 
-scope_output=$(gh api /user/ssh_signing_keys --method GET --paginate --jq '.' 2>&1) || {
-  if echo "$scope_output" | grep -qiE "insufficient.scope|403|missing.*scope"; then
+scope_error=$(gh api /user/ssh_signing_keys --method GET --paginate --jq '.' 2>&1 >/dev/null) || {
+  if echo "$scope_error" | grep -qiE "insufficient.scope|Resource not accessible by|missing.*scope"; then
     echo "WARNING: GitHub token lacks the 'admin:ssh_signing_key' scope." >&2
     echo "  Commit signing will be disabled. To enable it, run:" >&2
     echo "    bash .devcontainer/enable-commit-signing.sh" >&2
