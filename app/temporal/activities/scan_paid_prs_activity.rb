@@ -97,9 +97,13 @@ module Activities
         end
       end
 
-      all_triggers = (review_bot_triggers || []) + (human_triggers || [])
+      # review_bot_review_pending is non-blocking: it requests a review but
+      # should not prevent evaluation of CI, comments, or changes_requested.
+      pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
+      blocking_triggers = (review_bot_triggers || []).reject { |t| t[:type] == "review_bot_review_pending" }
+      all_triggers = blocking_triggers + (human_triggers || [])
 
-      # Only fetch PR data and check runs if review threads alone aren't enough.
+      # Only fetch PR data and check runs if blocking review triggers aren't enough.
       if all_triggers.empty?
         pr_data ||= fetch_pr_data(client, project, issue)
         checks = fetch_check_runs(client, project, pr_data)
@@ -126,11 +130,18 @@ module Activities
         # Only auto-advance when we have at least one check and all conclusions are green.
         # all_checks_green? implicitly rejects nil conclusions (pending checks).
         if checks.present? && all_checks_green?(checks)
-          return ready_for_owner_trigger(issue)
+          result = ready_for_owner_trigger(issue)
+          # Carry pending bot review requests so the workflow can request them
+          # alongside the phase transition.
+          result[:pending_review_bot_request] = true if pending_triggers.any?
+          return result
         end
 
         return nil # CI still pending or checks unavailable
       end
+
+      # Re-add pending triggers so the workflow can request the review.
+      all_triggers.concat(pending_triggers)
 
       triggers = all_triggers
       log_triggers(project, issue, triggers)
@@ -382,11 +393,7 @@ module Activities
         []
       when :no_review
         [ { type: "review_bot_review_pending", details: "No review bot review found" } ]
-      when :has_comments
-        review_bot_thread_triggers(unresolved_threads)
-      when :unknown
-        # When review status is unknown (e.g., fetch_reviews failed), fall back to
-        # unresolved review-bot threads so they still block progression.
+      when :has_comments, :unknown
         review_bot_thread_triggers(unresolved_threads)
       end
     end

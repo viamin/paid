@@ -610,8 +610,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when no review bot review exists" do
+    context "when no review bot review exists and CI is green" do
       before do
+        project.update!(owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated" ],
@@ -620,12 +621,37 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(reviews: [])
       end
 
-      it "returns review_bot_review_pending trigger" do
+      it "advances to ready_for_owner with pending bot review request" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
-        expect(trigger[:triggers].first[:type]).to eq("review_bot_review_pending")
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+        expect(trigger[:pending_review_bot_request]).to be true
+      end
+    end
+
+    context "when no review bot review exists and CI is failing" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [],
+          checks: [ { name: "rspec", conclusion: "failure" } ]
+        )
+      end
+
+      it "includes review_bot_review_pending alongside CI failure" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("ci_failure")
+        expect(trigger_types).to include("review_bot_review_pending")
       end
     end
 
