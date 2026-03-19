@@ -172,7 +172,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       workflow.execute(input)
 
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::RequestReviewActivity, anything, anything)
+        .with(Activities::RequestReviewActivity, any_args)
     end
   end
 
