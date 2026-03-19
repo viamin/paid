@@ -34,8 +34,12 @@ class AbTestsController < ApplicationController
     }
     # Use strict parsing so invalid input (e.g. "abc") raises an error
     # instead of silently coercing to 0/0.0 via to_i/to_f.
-    create_options[:min_samples_per_variant] = Integer(ab_test_params[:min_samples_per_variant]) if ab_test_params[:min_samples_per_variant].present?
-    create_options[:confidence_threshold] = Float(ab_test_params[:confidence_threshold]) if ab_test_params[:confidence_threshold].present?
+    begin
+      create_options[:min_samples_per_variant] = Integer(ab_test_params[:min_samples_per_variant]) if ab_test_params[:min_samples_per_variant].present?
+      create_options[:confidence_threshold] = Float(ab_test_params[:confidence_threshold]) if ab_test_params[:confidence_threshold].present?
+    rescue ArgumentError
+      raise ArgumentError, "Invalid numeric input: please enter valid numbers for samples and confidence"
+    end
 
     ab_test = AbTests::Create.call(**create_options)
 
@@ -49,7 +53,7 @@ class AbTestsController < ApplicationController
     )
     message = case e
     when ActiveRecord::RecordInvalid then e.record.errors.full_messages.join(", ")
-    when ArgumentError then "Invalid input: please check your values and try again"
+    when ArgumentError then e.message
     when ActiveRecord::RecordNotFound then "One or more selected variants could not be found"
     end
     Rails.logger.warn(message: "ab_tests.create_failed", error_class: e.class.name, error_message: e.message)
