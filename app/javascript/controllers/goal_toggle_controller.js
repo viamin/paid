@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["issueSection", "prSection"]
+  static targets = ["issueSection", "prSection", "prHeading", "prDescription"]
 
   connect() {
     this.toggle()
@@ -31,5 +31,23 @@ export default class extends Controller {
         }
       )
     })
+
+    if (goal === "review") {
+      this.prHeadingTargets.forEach((el) => {
+        el.textContent = "Select PR to Review"
+      })
+      this.prDescriptionTargets.forEach((el) => {
+        el.textContent =
+          "Choose a pull request for the agent to review and post comments on."
+      })
+    } else {
+      this.prHeadingTargets.forEach((el) => {
+        el.textContent = "Or Work on an Existing PR"
+      })
+      this.prDescriptionTargets.forEach((el) => {
+        el.textContent =
+          "Push changes to an existing pull request's branch instead of creating a new one."
+      })
+    }
   }
 }
