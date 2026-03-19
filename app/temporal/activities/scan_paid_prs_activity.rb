@@ -21,6 +21,7 @@ module Activities
     PAID_GENERATED_LABEL = "paid-generated"
     MIN_COMMENT_LENGTH = 20
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
+    REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
 
     def execute(input)
       project_id = input[:project_id]
@@ -84,16 +85,25 @@ module Activities
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
 
-      # Fetch review threads first — cheapest signal that often suffices.
+      # Fetch review threads first; only fetch full reviews when needed.
       unless skip_comment_signals
-        thread_triggers = fetch_review_thread_triggers(client, project, issue)
-        review_bot_triggers = thread_triggers.select { |t| t[:type] == "review_bot_threads" }
-        human_triggers = thread_triggers.select { |t| t[:type] == "review_threads" }
+        unresolved_threads = fetch_unresolved_threads(client, project, issue)
+        human_triggers = human_review_thread_triggers(project, unresolved_threads)
+
+        review_bot_triggers = []
+        if human_triggers.blank?
+          reviews = fetch_reviews(client, project, issue)
+          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads)
+        end
       end
 
-      all_triggers = (review_bot_triggers || []) + (human_triggers || [])
+      # review_bot_review_pending is non-blocking: it requests a review but
+      # should not prevent evaluation of CI, comments, or changes_requested.
+      pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
+      blocking_triggers = (review_bot_triggers || []).reject { |t| t[:type] == "review_bot_review_pending" }
+      all_triggers = blocking_triggers + (human_triggers || [])
 
-      # Only fetch PR data and check runs if review threads alone aren't enough.
+      # Only fetch PR data and check runs if blocking review triggers aren't enough.
       if all_triggers.empty?
         pr_data ||= fetch_pr_data(client, project, issue)
         checks = fetch_check_runs(client, project, pr_data)
@@ -106,10 +116,10 @@ module Activities
         last_run = last_completed_run(project, issue)
         all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
 
-        # Only fetch full reviews if still no triggers.
+        # Only check changes_requested if still no triggers.
         if all_triggers.empty?
-          all_triggers.concat(changes_requested_from_reviews(project,
-            fetch_reviews(client, project, issue), last_run))
+          reviews ||= fetch_reviews(client, project, issue)
+          all_triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
         end
       end
 
@@ -120,11 +130,18 @@ module Activities
         # Only auto-advance when we have at least one check and all conclusions are green.
         # all_checks_green? implicitly rejects nil conclusions (pending checks).
         if checks.present? && all_checks_green?(checks)
-          return ready_for_owner_trigger(issue)
+          result = ready_for_owner_trigger(issue)
+          # Carry pending bot review requests so the workflow can request them
+          # alongside the phase transition.
+          result[:pending_review_bot_request] = true if pending_triggers.any?
+          return result
         end
 
         return nil # CI still pending or checks unavailable
       end
+
+      # Re-add pending triggers so the workflow can request the review.
+      all_triggers.concat(pending_triggers)
 
       triggers = all_triggers
       log_triggers(project, issue, triggers)
@@ -241,8 +258,11 @@ module Activities
       reviews ||= fetch_reviews(client, project, issue)
       triggers = []
 
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+
       triggers.concat(ci_failure_triggers(checks))
-      triggers.concat(fetch_review_thread_triggers(client, project, issue))
+      triggers.concat(check_review_bot_status(reviews, unresolved_threads))
+      triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
@@ -335,27 +355,57 @@ module Activities
 
     # --- Review checks ---
 
-    def fetch_review_thread_triggers(client, project, issue)
+    def fetch_unresolved_threads(client, project, issue)
       threads = client.review_threads(project.full_name, issue.github_number)
-      unresolved = threads.reject { |t| t[:is_resolved] }
+      threads.reject { |t| t[:is_resolved] }
+    rescue GithubClient::Error => e
+      log_signal_error("review_threads", project, issue, e)
+      []
+    end
 
-      trusted_threads = unresolved.select do |thread|
+    def human_review_thread_triggers(project, unresolved_threads)
+      trusted_threads = unresolved_threads.select do |thread|
         thread[:comments].any? do |c|
           project.trusted_github_user?(c[:author]) && !bot_user?(c[:author])
         end
       end
 
-      review_bot_threads = unresolved.select do |thread|
+      return [] if trusted_threads.empty?
+
+      [ { type: "review_threads", details: "#{trusted_threads.size} unresolved thread(s)" } ]
+    end
+
+    def review_bot_review_status(reviews)
+      return :unknown if reviews.nil?
+
+      bot_reviews = reviews.select { |r| review_bot?(r[:user_login]) }
+      return :no_review if bot_reviews.empty?
+
+      latest = bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+      REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
+    end
+
+    def check_review_bot_status(reviews, unresolved_threads)
+      status = review_bot_review_status(reviews)
+
+      case status
+      when :clean
+        []
+      when :no_review
+        [ { type: "review_bot_review_pending", details: "No review bot review found" } ]
+      when :has_comments, :unknown
+        review_bot_thread_triggers(unresolved_threads)
+      end
+    end
+
+    def review_bot_thread_triggers(unresolved_threads)
+      review_bot_threads = unresolved_threads.select do |thread|
         thread[:comments].any? { |c| review_bot?(c[:author]) }
       end
 
-      triggers = []
-      triggers << { type: "review_threads", details: "#{trusted_threads.size} unresolved thread(s)" } if trusted_threads.any?
-      triggers << { type: "review_bot_threads", details: "#{review_bot_threads.size} unresolved review bot thread(s)" } if review_bot_threads.any?
-      triggers
-    rescue GithubClient::Error => e
-      log_signal_error("review_thread_triggers", project, issue, e)
-      []
+      return [] if review_bot_threads.empty?
+
+      [ { type: "review_bot_threads", details: "#{review_bot_threads.size} unresolved review bot thread(s)" } ]
     end
 
     def check_conversation_comments(client, project, issue, last_run)
@@ -384,10 +434,12 @@ module Activities
       client.pull_request_reviews(project.full_name, issue.github_number)
     rescue GithubClient::Error => e
       log_signal_error("fetch_reviews", project, issue, e)
-      []
+      nil
     end
 
     def changes_requested_from_reviews(project, reviews, last_run)
+      return [] if reviews.nil?
+
       cutoff = last_run&.completed_at
 
       latest_by_user = reviews
@@ -428,6 +480,8 @@ module Activities
     # --- Owner approval check ---
 
     def owner_approved_from_reviews?(project, reviews)
+      return false if reviews.nil?
+
       owner_login = project.owner_reviewer_login
       return false if owner_login.blank?
 
