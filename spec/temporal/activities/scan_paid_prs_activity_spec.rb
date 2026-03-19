@@ -676,12 +676,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "falls back to unresolved thread check" do
+      it "includes review_bot comments and thread triggers" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
-        expect(trigger[:triggers].first[:type]).to eq("review_bot_comments")
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+        expect(trigger_types).to include("review_bot_threads")
       end
     end
 
