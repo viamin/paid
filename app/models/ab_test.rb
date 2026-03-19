@@ -91,18 +91,32 @@ class AbTest < ApplicationRecord
 
   # Returns cached analysis when fresh, otherwise recomputes via AbTests::Analyze.
   # Pass persist: true (default) from write paths (e.g. RecordResult) to update the DB cache.
-  # Pass persist: false from read paths (e.g. controller show) to keep GET requests read-only.
+  # Pass persist: false from read paths (e.g. controller show) to keep GET requests read-only
+  # and return the last persisted result (even if slightly stale) rather than recomputing.
   def cached_or_compute_analysis(persist: true)
     current_key = samples_key
-    return deserialize_analysis if cached_analysis.present? && analysis_samples_key == current_key
+    if cached_analysis.present?
+      return deserialize_analysis if analysis_samples_key == current_key
+      # On read paths, return the stale cached result rather than triggering an
+      # expensive recomputation — the write path (RecordResult) will refresh
+      # the cache at the next analysis interval.
+      return deserialize_analysis unless persist
+    end
 
     AbTests::Analyze.call(ab_test: self).tap { |result| persist_analysis!(result, current_key) if persist }
   end
 
   private
 
+  # Bucket sample counts to the ANALYSIS_INTERVAL (5) so that intermediate
+  # samples between analysis cadences don't invalidate the cache. This aligns
+  # cache freshness with the write-path throttle in RecordResult.
+  CACHE_BUCKET_SIZE = 5
+
   def samples_key
-    ab_test_variants.order(:id).pluck(:id, :sample_count).map { |id, n| "#{id}:#{n}" }.join(",")
+    ab_test_variants.order(:id).pluck(:id, :sample_count)
+                    .map { |id, n| "#{id}:#{(n / CACHE_BUCKET_SIZE) * CACHE_BUCKET_SIZE}" }
+                    .join(",")
   end
 
   def persist_analysis!(result, key)
