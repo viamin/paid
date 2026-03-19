@@ -119,7 +119,7 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "falls back to default title when LLM returns a failed response" do
+    it "falls back to default title when LLM returns nil" do
       agent_run.log!("stdout", "The auth system uses JWT tokens.")
       allow(Llm::GenerateIssueTitle).to receive(:call).and_return(nil)
 
