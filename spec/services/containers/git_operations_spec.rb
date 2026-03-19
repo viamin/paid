@@ -259,6 +259,15 @@ RSpec.describe Containers::GitOperations do
 
   describe "#push_branch" do
     let(:head_sha) { "def456789012345678901234567890abcdef1234" }
+    let(:remote_sha) { "abc9999999999999999999999999999999999999" }
+    let(:stale_push_result) do
+      Containers::Provision::Result.failure(
+        error: "Command exited with code 1",
+        stdout: "",
+        stderr: " ! [rejected] paid/test-branch -> paid/test-branch (stale info)",
+        exit_code: 1
+      )
+    end
 
     before do
       agent_run.update!(branch_name: "paid/test-branch")
@@ -299,8 +308,12 @@ RSpec.describe Containers::GitOperations do
         .with([ "git", "fetch", "origin", "paid/test-branch" ], timeout: nil, stream: false)
         .and_return(success_result)
 
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "#{remote_sha}\n", stderr: "", exit_code: 0))
+
       expect(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease" ], timeout: 60, stream: false)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false)
         .and_return(success_result)
 
       git_ops.push_branch
@@ -310,7 +323,11 @@ RSpec.describe Containers::GitOperations do
       agent_run.update!(source_pull_request_number: 42)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease" ], timeout: 60, stream: false)
+        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "#{remote_sha}\n", stderr: "", exit_code: 0))
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false)
         .and_return(success_result)
 
       expect(container_service).to receive(:execute)
@@ -319,7 +336,12 @@ RSpec.describe Containers::GitOperations do
         .ordered
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease" ], timeout: 60, stream: false)
+        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "#{remote_sha}\n", stderr: "", exit_code: 0))
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false)
         .and_return(success_result)
         .ordered
 
@@ -343,6 +365,47 @@ RSpec.describe Containers::GitOperations do
       expect { git_ops.push_branch }.to raise_error(described_class::PushError, /Fetch failed/)
     end
 
+    it "rebases onto the refreshed remote branch after a stale info rejection" do
+      agent_run.update!(source_pull_request_number: 42)
+      refreshed_remote_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+      expect_refresh_remote_branch(remote_sha, ordered: true)
+      expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect_refresh_remote_branch(refreshed_remote_sha, ordered: true)
+      expect_push_with_lease(refreshed_remote_sha, success_result, ordered: true)
+
+      git_ops.push_branch
+    end
+
+    it "raises PushError when rebasing after stale info fails" do
+      agent_run.update!(source_pull_request_number: 42)
+      rebase_failure = Containers::Provision::Result.failure(
+        error: "Command exited with code 1",
+        stdout: "",
+        stderr: "CONFLICT (content): Merge conflict in app/models/example.rb",
+        exit_code: 1
+      )
+
+      stub_refresh_remote_branch(remote_sha)
+      stub_push_with_lease(remote_sha, stale_push_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(rebase_failure)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect { git_ops.push_branch }.to raise_error(described_class::PushError, /Push failed after branch advanced remotely/)
+    end
+
     it "raises PushError when branch_name is blank" do
       agent_run.update!(branch_name: nil)
 
@@ -355,6 +418,41 @@ RSpec.describe Containers::GitOperations do
         .and_return(failure_result)
 
       expect { git_ops.push_branch }.to raise_error(described_class::PushError, /error/)
+    end
+
+    def expect_refresh_remote_branch(sha, ordered: false)
+      receive_fetch = expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+      receive_fetch = receive_fetch.ordered if ordered
+
+      receive_rev_parse = expect(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "#{sha}\n", stderr: "", exit_code: 0))
+      receive_rev_parse.ordered if ordered
+    end
+
+    def expect_push_with_lease(sha, result, ordered: false)
+      receive_push = expect(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{sha}" ], timeout: 60, stream: false)
+        .and_return(result)
+      receive_push.ordered if ordered
+    end
+
+    def stub_refresh_remote_branch(sha)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+        .and_return(Containers::Provision::Result.success(stdout: "#{sha}\n", stderr: "", exit_code: 0))
+    end
+
+    def stub_push_with_lease(sha, result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{sha}" ], timeout: 60, stream: false)
+        .and_return(result)
     end
   end
 
