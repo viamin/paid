@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/viamin/paid/compare/v0.4.0...v0.4.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* **pr-review:** re-request bot review after commented runs ([8707862](https://github.com/viamin/paid/commit/8707862b05b1fdcc80b279f8c559af5201fad755))
+* **pr-review:** re-request bot review after commented runs ([47b2d23](https://github.com/viamin/paid/commit/47b2d23d187b3d1b87395de1d0cff381572df8f9))
+* **pr-review:** remove stray schema changes ([bf7852d](https://github.com/viamin/paid/commit/bf7852d9b1aad4c94392a0a93849712ad72c10c5))
+
 ## [0.4.0](https://github.com/viamin/paid/compare/v0.3.0...v0.4.0) (2026-03-19)
 
 
