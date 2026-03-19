@@ -92,7 +92,8 @@ class AbTest < ApplicationRecord
   # Returns cached analysis when fresh, otherwise recomputes via AbTests::Analyze.
   # Pass persist: true (default) from write paths (e.g. RecordResult) to update the DB cache.
   # Pass persist: false from read paths (e.g. controller show) to keep GET requests read-only
-  # and return the last persisted result (even if slightly stale) rather than recomputing.
+  # and return the last persisted result rather than recomputing. Returns nil on cache miss
+  # when persist: false — the write path (RecordResult) will populate the cache.
   def cached_or_compute_analysis(persist: true)
     current_key = samples_key
     if cached_analysis.present?
@@ -103,15 +104,17 @@ class AbTest < ApplicationRecord
       return deserialize_analysis unless persist
     end
 
-    AbTests::Analyze.call(ab_test: self).tap { |result| persist_analysis!(result, current_key) if persist }
+    # Read paths never trigger expensive recomputation on cache miss.
+    return nil unless persist
+
+    AbTests::Analyze.call(ab_test: self).tap { |result| persist_analysis!(result, current_key) }
   end
 
   private
 
-  # Bucket sample counts to the ANALYSIS_INTERVAL (5) so that intermediate
-  # samples between analysis cadences don't invalidate the cache. This aligns
-  # cache freshness with the write-path throttle in RecordResult.
-  CACHE_BUCKET_SIZE = 5
+  # Bucket sample counts to the same interval used by RecordResult's analysis
+  # throttle so cache freshness aligns with write-path recomputation cadence.
+  CACHE_BUCKET_SIZE = AbTests::RecordResult::ANALYSIS_INTERVAL
 
   def samples_key
     ab_test_variants.order(:id).pluck(:id, :sample_count)

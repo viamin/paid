@@ -78,6 +78,59 @@ RSpec.describe AbTest do
     end
   end
 
+  describe "#cached_or_compute_analysis" do
+    let(:ab_test) { create(:ab_test, status: "running", started_at: Time.current, min_samples_per_variant: 2) }
+    let!(:control) { create(:ab_test_variant, ab_test: ab_test, is_control: true, sample_count: 5) }
+    let(:analysis_result) { AbTests::Analyze::Result.new(status: :no_significant_difference, confidence: nil, improvement: nil) }
+
+    before do
+      create(:ab_test_variant, ab_test: ab_test, sample_count: 5)
+      allow(AbTests::Analyze).to receive(:call).and_return(analysis_result)
+    end
+
+    it "computes and persists analysis on first call with persist: true" do
+      result = ab_test.cached_or_compute_analysis(persist: true)
+
+      expect(AbTests::Analyze).to have_received(:call).with(ab_test: ab_test)
+      expect(result.status).to eq(:no_significant_difference)
+      expect(ab_test.reload.cached_analysis).to be_present
+    end
+
+    it "returns cached result on subsequent calls when samples haven't changed" do
+      ab_test.cached_or_compute_analysis(persist: true)
+      ab_test.cached_or_compute_analysis(persist: true)
+
+      expect(AbTests::Analyze).to have_received(:call).once
+    end
+
+    it "recomputes when sample counts cross a bucket boundary" do
+      ab_test.cached_or_compute_analysis(persist: true)
+
+      # Move sample count past the next bucket boundary (ANALYSIS_INTERVAL = 5)
+      control.update_columns(sample_count: 10)
+      ab_test.cached_or_compute_analysis(persist: true)
+
+      expect(AbTests::Analyze).to have_received(:call).twice
+    end
+
+    it "returns nil on cache miss when persist: false" do
+      result = ab_test.cached_or_compute_analysis(persist: false)
+
+      expect(result).to be_nil
+      expect(AbTests::Analyze).not_to have_received(:call)
+    end
+
+    it "returns stale cached result when persist: false and cache key differs" do
+      ab_test.cached_or_compute_analysis(persist: true)
+      control.update_columns(sample_count: 10)
+
+      result = ab_test.cached_or_compute_analysis(persist: false)
+
+      expect(result.status).to eq(:no_significant_difference)
+      expect(AbTests::Analyze).to have_received(:call).once
+    end
+  end
+
   describe "#sufficient_samples?" do
     it "returns true when all variants have enough samples" do
       test = create(:ab_test, min_samples_per_variant: 2)
