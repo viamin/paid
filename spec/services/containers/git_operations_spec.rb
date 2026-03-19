@@ -28,7 +28,7 @@ RSpec.describe Containers::GitOperations do
 
     it "clones the repository inside the container" do
       expect(container_service).to receive(:execute)
-        .with([ "git", "clone", "https://github.com/#{project.full_name}.git", "." ],
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
               timeout: described_class::CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
 
@@ -47,7 +47,7 @@ RSpec.describe Containers::GitOperations do
         .ordered
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "clone", "https://github.com/#{project.full_name}.git", "." ],
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
               timeout: described_class::CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
         .ordered
@@ -143,14 +143,19 @@ RSpec.describe Containers::GitOperations do
         .and_return(Containers::Provision::Result.success(stdout: "#{merge_base_sha}\n", stderr: "", exit_code: 0))
     end
 
-    it "clones and checks out the existing branch" do
+    it "clones and checks out the existing branch via fetch" do
+      # First switch attempt fails (branch not local yet in shallow clone)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "switch", "--", "fix-bug-branch" ], timeout: nil, stream: false)
+        .and_return(failure_result, success_result)
+
       expect(container_service).to receive(:execute)
-        .with([ "git", "clone", "https://github.com/#{project.full_name}.git", "." ],
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
               timeout: described_class::CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "switch", "--", "fix-bug-branch" ], timeout: nil, stream: false)
+        .with([ "git", "fetch", "--depth", "1", "origin", "fix-bug-branch" ], timeout: nil, stream: false)
         .and_return(success_result)
 
       git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
@@ -160,20 +165,54 @@ RSpec.describe Containers::GitOperations do
       expect(agent_run.base_commit_sha).to eq(merge_base_sha)
     end
 
+    it "skips clone and fetch when branch already exists locally (idempotent retry)" do
+      # On Temporal retry, rev-parse HEAD succeeds (clone already done)
+      # and switch succeeds (branch already checked out).
+      sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "switch", "--", "fix-bug-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).not_to receive(:execute)
+        .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
+              timeout: described_class::CLONE_TIMEOUT, stream: false)
+
+      expect(container_service).not_to receive(:execute)
+        .with([ "git", "fetch", "--depth", "1", "origin", "fix-bug-branch" ], timeout: nil, stream: false)
+
+      git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
+
+      expect(agent_run.reload.branch_name).to eq("fix-bug-branch")
+    end
+
     it "raises CloneError when checkout fails and no PR number given" do
       allow(container_service).to receive(:execute)
         .with([ "git", "switch", "--", "nonexistent" ], timeout: nil, stream: false)
         .and_return(failure_result)
 
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--depth", "1", "origin", "nonexistent" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
       expect { git_ops.clone_and_checkout_branch(branch_name: "nonexistent") }
-        .to raise_error(described_class::CloneError, /Checkout failed/)
+        .to raise_error(described_class::CloneError, /Checkout failed.*switch:.*fetch:/)
     end
 
     context "when branch is deleted but PR number is given" do
       it "falls back to fetching the PR ref" do
+        # First switch fails (not local), shallow fetch fails (branch deleted),
+        # PR ref fetch succeeds, final switch succeeds.
+        switch_returns = [ failure_result, success_result ]
         allow(container_service).to receive(:execute)
-          .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false)
-          .and_return(failure_result, success_result)
+          .with([ "git", "switch", "--", "deleted-branch" ], timeout: nil, stream: false) { switch_returns.shift }
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "--depth", "1", "origin", "deleted-branch" ], timeout: nil, stream: false)
+          .and_return(failure_result)
 
         expect(container_service).to receive(:execute)
           .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false)
@@ -190,11 +229,15 @@ RSpec.describe Containers::GitOperations do
           .and_return(failure_result)
 
         allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "--depth", "1", "origin", "deleted-branch" ], timeout: nil, stream: false)
+          .and_return(failure_result)
+
+        allow(container_service).to receive(:execute)
           .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false)
           .and_return(failure_result)
 
         expect { git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42) }
-          .to raise_error(described_class::CloneError, /branch deleted, PR fetch also failed/)
+          .to raise_error(described_class::CloneError, /Branch checkout failed.*PR ref fetch also failed/)
       end
     end
 
@@ -498,8 +541,17 @@ RSpec.describe Containers::GitOperations do
 
   describe "#rebase_onto" do
     let(:fetch_result) { success_result }
+    let(:shallow_true_result) { Containers::Provision::Result.success(stdout: "true\n", stderr: "", exit_code: 0) }
 
     before do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+        .and_return(shallow_true_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
+        .and_return(success_result)
+
       allow(container_service).to receive(:execute)
         .with([ "git", "fetch", "origin", "main" ], timeout: nil, stream: false)
         .and_return(fetch_result)
@@ -516,7 +568,17 @@ RSpec.describe Containers::GitOperations do
         expect(git_ops.rebase_onto("main")).to be true
       end
 
-      it "fetches the branch first" do
+      it "checks shallow status, unshallows, then fetches before rebasing" do
+        expect(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+          .and_return(shallow_true_result)
+          .ordered
+
+        expect(container_service).to receive(:execute)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
+          .and_return(success_result)
+          .ordered
+
         expect(container_service).to receive(:execute)
           .with([ "git", "fetch", "origin", "main" ], timeout: nil, stream: false)
           .and_return(success_result)
@@ -594,6 +656,40 @@ RSpec.describe Containers::GitOperations do
           .and_return(success_result)
 
         expect { git_ops.rebase_onto("main") }.to raise_error(described_class::Error)
+      end
+    end
+
+    context "when repo is not shallow" do
+      let(:shallow_false_result) { Containers::Provision::Result.success(stdout: "false\n", stderr: "", exit_code: 0) }
+
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+          .and_return(shallow_false_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/main" ], timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "skips unshallow and proceeds with rebase" do
+        expect(container_service).not_to receive(:execute)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
+
+        expect(git_ops.rebase_onto("main")).to be true
+      end
+    end
+
+    context "when unshallow fails" do
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
+          .and_return(failure_result)
+      end
+
+      it "raises Error with unshallow details" do
+        expect { git_ops.rebase_onto("main") }
+          .to raise_error(described_class::Error, /Failed to unshallow/)
       end
     end
   end
