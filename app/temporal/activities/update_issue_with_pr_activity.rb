@@ -8,28 +8,30 @@ module Activities
       agent_run_id = input[:agent_run_id]
       pull_request_url = input[:pull_request_url]
       agent_run = AgentRun.find(agent_run_id)
-      issue = agent_run.issue
+      track_phase(agent_run_id: agent_run_id, phase_key: "update_issue_with_pr", phase_group: "post", agent_run: agent_run) do
+        issue = agent_run.issue
 
-      return { agent_run_id: agent_run_id } unless issue
+        return { agent_run_id: agent_run_id } unless issue
 
-      project = agent_run.project
-      client = project.github_token.client
+        project = agent_run.project
+        client = project.github_token.client
 
-      issue.update!(paid_state: "completed")
+        issue.update!(paid_state: "completed")
 
-      post_pr_comment(client, project, issue, pull_request_url, agent_run_id)
-      remove_trigger_labels(client, project, issue, agent_run_id)
+        post_pr_comment(client, project, issue, pull_request_url, agent_run_id)
+        remove_trigger_labels(client, project, issue, agent_run_id)
 
-      agent_run.log!("system", "Issue ##{issue.github_number} updated with PR link")
+        agent_run.log!("system", "Issue ##{issue.github_number} updated with PR link")
 
-      logger.info(
-        message: "agent_execution.issue_updated",
-        agent_run_id: agent_run_id,
-        issue_id: issue.id,
-        pull_request_url: pull_request_url
-      )
+        logger.info(
+          message: "agent_execution.issue_updated",
+          agent_run_id: agent_run_id,
+          issue_id: issue.id,
+          pull_request_url: pull_request_url
+        )
 
-      { agent_run_id: agent_run_id }
+        { agent_run_id: agent_run_id }
+      end
     end
 
     private
