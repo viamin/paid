@@ -33,20 +33,11 @@ class AbTestPolicy < ApplicationPolicy
     record.prompt&.account
   end
 
-  class Scope
-    def initialize(user, scope)
-      @user = user
-      @scope = scope
-    end
-
+  class Scope < ApplicationPolicy::Scope
     def resolve
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
 
       scope.joins(:prompt).where(prompts: { account_id: user.account_id })
     end
-
-    private
-
-    attr_reader :user, :scope
   end
 end
