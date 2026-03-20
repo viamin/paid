@@ -42,6 +42,13 @@ RSpec.describe "Dashboard" do
         expect(mobile_settings_link).to be_present
         expect(mobile_settings_link.text.strip).to eq("Settings")
       end
+
+      it "shows the run phase breakdown section" do
+        get dashboard_path
+
+        expect(response.body).to include("Run Phase Breakdown")
+        expect(response.body).to include("Average End-to-End Composition")
+      end
     end
   end
 end

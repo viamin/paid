@@ -46,5 +46,34 @@ module Activities
         error: e.message
       )
     end
+
+    def track_phase(agent_run_id:, phase_key:, phase_group:, metadata: {})
+      started_at = Time.current
+      status = "completed"
+      result = yield
+      result
+    rescue => e
+      status = "failed"
+      metadata = metadata.merge(
+        error_class: e.class.name,
+        error_message: e.message.to_s.truncate(500)
+      )
+      raise
+    ensure
+      if agent_run_id.present?
+        agent_run = AgentRun.find_by(id: agent_run_id)
+        if agent_run
+          AgentRunPhase.record!(
+            agent_run: agent_run,
+            phase_key: phase_key,
+            phase_group: phase_group,
+            started_at: started_at,
+            finished_at: Time.current,
+            status: status,
+            metadata: metadata
+          )
+        end
+      end
+    end
   end
 end

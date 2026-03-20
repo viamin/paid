@@ -18,6 +18,8 @@ module Projects
       @retry_provider_options = retry_provider_options_for(@agent_run)
       @quality_metrics = @agent_run.quality_metrics.with_composite_score.load
       @logs = @agent_run.agent_run_logs.order(created_at: :asc).limit(500).load
+      @phase_timeline = @agent_run.agent_run_phases.ordered.load
+      @phase_summary = @agent_run.phase_summary
     end
 
     def new

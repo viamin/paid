@@ -9,37 +9,39 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      agent_run = AgentRun.find(agent_run_id)
-      project = agent_run.project
-      client = project.github_token.client
+      track_phase(agent_run_id: agent_run_id, phase_key: "complete_existing_pr_run", phase_group: "post") do
+        agent_run = AgentRun.find(agent_run_id)
+        project = agent_run.project
+        client = project.github_token.client
 
-      pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
+        pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
 
-      agent_run.complete!(
-        result_commit: agent_run.result_commit_sha,
-        pr_url: pr.html_url,
-        pr_number: pr.number
-      )
+        agent_run.complete!(
+          result_commit: agent_run.result_commit_sha,
+          pr_url: pr.html_url,
+          pr_number: pr.number
+        )
 
-      post_update_comment(client, project, pr.number, agent_run)
+        post_update_comment(client, project, pr.number, agent_run)
 
-      agent_run.log!("system", "Pushed updates to existing PR: #{pr.html_url}")
+        agent_run.log!("system", "Pushed updates to existing PR: #{pr.html_url}")
 
-      issue = agent_run.issue
-      if issue && !(issue.is_pull_request? && issue.draft_phase?)
-        issue.update!(paid_state: "completed")
+        issue = agent_run.issue
+        if issue && !(issue.is_pull_request? && issue.draft_phase?)
+          issue.update!(paid_state: "completed")
+        end
+
+        logger.info(
+          message: "agent_execution.existing_pr_completed",
+          agent_run_id: agent_run_id,
+          pull_request_url: pr.html_url
+        )
+
+        ProcessRunQueueJob.perform_later
+
+        { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number,
+          pr_review_phase: agent_run.issue&.pr_review_phase }
       end
-
-      logger.info(
-        message: "agent_execution.existing_pr_completed",
-        agent_run_id: agent_run_id,
-        pull_request_url: pr.html_url
-      )
-
-      ProcessRunQueueJob.perform_later
-
-      { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number,
-        pr_review_phase: agent_run.issue&.pr_review_phase }
     end
 
     private

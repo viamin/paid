@@ -10,18 +10,20 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "provision_services", phase_group: "setup") do
+        agent_run = AgentRun.find(agent_run_id)
 
-      provisioner = Containers::ServiceProvisioner.new
-      env_vars = provisioner.provision(agent_run, network: NetworkPolicy.agent_network)
+        provisioner = Containers::ServiceProvisioner.new
+        env_vars = provisioner.provision(agent_run, network: NetworkPolicy.agent_network)
 
-      logger.info(
-        message: "agent_execution.services_provisioned",
-        agent_run_id: agent_run_id,
-        service_count: agent_run.service_container_ids.size
-      )
+        logger.info(
+          message: "agent_execution.services_provisioned",
+          agent_run_id: agent_run_id,
+          service_count: agent_run.service_container_ids.size
+        )
 
-      { agent_run_id: agent_run_id, service_environment: env_vars }
+        { agent_run_id: agent_run_id, service_environment: env_vars }
+      end
     end
   end
 end

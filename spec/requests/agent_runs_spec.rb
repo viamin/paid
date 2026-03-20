@@ -216,6 +216,17 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Claude Code")
       end
 
+      it "shows the run timeline when phase data exists" do
+        agent_run = create(:agent_run, :completed, project: project)
+        create(:agent_run_phase, agent_run: agent_run, phase_key: "run_agent", phase_group: "agent")
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Run Timeline")
+        expect(response.body).to include("Run Agent")
+        expect(response.body).to include("Prompt Prep")
+      end
+
       it "shows issue details when attached" do
         issue = create(:issue, project: project, github_number: 42, title: "Fix the bug")
         agent_run = create(:agent_run, project: project, issue: issue)

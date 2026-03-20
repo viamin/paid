@@ -116,6 +116,73 @@
     </dl>
   </div>
 
+  <% phase_summary = local_assigns.fetch(:phase_summary, agent_run.phase_summary) %>
+  <% phase_timeline = local_assigns.fetch(:phase_timeline, agent_run.phase_timeline) %>
+
+  <div class="mt-6 rounded-lg bg-white p-4 shadow">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-900">Run Timeline</h2>
+        <p class="mt-1 text-sm text-gray-500">Breaks out queue, setup, prompt preparation, agent execution, post-processing, and cleanup.</p>
+      </div>
+      <span class="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+        Observed <%= format_duration(phase_summary[:observed_seconds]) %>
+      </span>
+    </div>
+
+    <div class="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <% {
+        "queue" => phase_summary[:queue_seconds],
+        "setup" => phase_summary[:setup_seconds],
+        "prompt" => phase_summary[:prompt_seconds],
+        "agent" => phase_summary[:agent_seconds],
+        "post" => phase_summary[:post_seconds],
+        "cleanup" => phase_summary[:cleanup_seconds]
+      }.each do |phase_group, seconds| %>
+        <div class="rounded-lg border border-gray-200 px-3 py-3">
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500"><%= phase_group_label(phase_group) %></div>
+          <div class="mt-2 text-xl font-semibold text-gray-900"><%= format_duration(seconds) %></div>
+        </div>
+      <% end %>
+    </div>
+
+    <% if phase_timeline.any? %>
+      <div class="mt-5 overflow-hidden rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Phase</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Group</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Duration</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Finished</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% phase_timeline.each do |phase| %>
+              <tr>
+                <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= phase.label %></td>
+                <td class="px-4 py-3 text-sm text-gray-500">
+                  <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-white <%= phase_group_bar_style(phase.phase_group) %>">
+                    <%= phase_group_label(phase.phase_group) %>
+                  </span>
+                  <% if phase.status == "failed" %>
+                    <span class="ml-2 inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">Failed</span>
+                  <% end %>
+                </td>
+                <td class="px-4 py-3 text-right text-sm text-gray-900"><%= format_duration(phase.duration_seconds) %></td>
+                <td class="px-4 py-3 text-right text-sm text-gray-500"><%= time_ago_in_words(phase.finished_at) %> ago</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <div class="mt-4 rounded-lg border border-dashed border-gray-300 px-4 py-5 text-sm text-gray-500">
+        Phase timing will appear here once this run records lifecycle events.
+      </div>
+    <% end %>
+  </div>
+
   <%= render "agent_runs/quality_scores", quality_metrics: quality_metrics %>
 
   <% if agent_run.pull_request_url.present? %>

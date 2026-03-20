@@ -8,36 +8,38 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      agent_run = AgentRun.find(agent_run_id)
-      project = agent_run.project
+      track_phase(agent_run_id: agent_run_id, phase_key: "create_github_issue", phase_group: "post") do
+        agent_run = AgentRun.find(agent_run_id)
+        project = agent_run.project
 
-      client = project.github_token.client
-      summary = agent_run.agent_summary
-      title = extract_title(summary, agent_run.custom_prompt)
-      body = issue_body(summary)
+        client = project.github_token.client
+        summary = agent_run.agent_summary
+        title = extract_title(summary, agent_run.custom_prompt)
+        body = issue_body(summary)
 
-      gh_issue = client.create_issue(
-        project.full_name,
-        title: title,
-        body: body,
-        labels: [ PAID_GENERATED_LABEL ]
-      )
+        gh_issue = client.create_issue(
+          project.full_name,
+          title: title,
+          body: body,
+          labels: [ PAID_GENERATED_LABEL ]
+        )
 
-      sync_issue_record(project, gh_issue)
+        sync_issue_record(project, gh_issue)
 
-      agent_run.complete!(issue_url: gh_issue.html_url, issue_number: gh_issue.number)
+        agent_run.complete!(issue_url: gh_issue.html_url, issue_number: gh_issue.number)
 
-      agent_run.log!("system", "Issue created: #{gh_issue.html_url}")
+        agent_run.log!("system", "Issue created: #{gh_issue.html_url}")
 
-      logger.info(
-        message: "agent_execution.github_issue_created",
-        agent_run_id: agent_run_id,
-        issue_url: gh_issue.html_url
-      )
+        logger.info(
+          message: "agent_execution.github_issue_created",
+          agent_run_id: agent_run_id,
+          issue_url: gh_issue.html_url
+        )
 
-      ProcessRunQueueJob.perform_later
+        ProcessRunQueueJob.perform_later
 
-      { agent_run_id: agent_run_id, issue_url: gh_issue.html_url, issue_number: gh_issue.number }
+        { agent_run_id: agent_run_id, issue_url: gh_issue.html_url, issue_number: gh_issue.number }
+      end
     end
 
     private

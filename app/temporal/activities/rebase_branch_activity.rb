@@ -10,30 +10,32 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      agent_run = AgentRun.find(agent_run_id)
-      project = agent_run.project
+      track_phase(agent_run_id: agent_run_id, phase_key: "rebase_branch", phase_group: "setup") do
+        agent_run = AgentRun.find(agent_run_id)
+        project = agent_run.project
 
-      base_branch = fetch_base_branch(agent_run, project)
+        base_branch = fetch_base_branch(agent_run, project)
 
-      container_service = reconnect_container(agent_run)
-      git_ops = Containers::GitOperations.new(
-        container_service: container_service,
-        agent_run: agent_run
-      )
+        container_service = reconnect_container(agent_run)
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
+        )
 
-      rebase_succeeded = git_ops.rebase_onto(base_branch)
+        rebase_succeeded = git_ops.rebase_onto(base_branch)
 
-      agent_run.log!("system",
-        rebase_succeeded ? "Rebased onto #{base_branch}" : "Rebase onto #{base_branch} failed (conflicts)")
+        agent_run.log!("system",
+          rebase_succeeded ? "Rebased onto #{base_branch}" : "Rebase onto #{base_branch} failed (conflicts)")
 
-      logger.info(
-        message: "agent_execution.rebase_branch",
-        agent_run_id: agent_run_id,
-        base_branch: base_branch,
-        rebase_succeeded: rebase_succeeded
-      )
+        logger.info(
+          message: "agent_execution.rebase_branch",
+          agent_run_id: agent_run_id,
+          base_branch: base_branch,
+          rebase_succeeded: rebase_succeeded
+        )
 
-      { agent_run_id: agent_run_id, rebase_succeeded: rebase_succeeded, base_branch: base_branch }
+        { agent_run_id: agent_run_id, rebase_succeeded: rebase_succeeded, base_branch: base_branch }
+      end
     end
 
     private
