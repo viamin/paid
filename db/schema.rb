@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_09_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -95,6 +95,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_09_200000) do
     t.index ["created_at"], name: "index_agent_run_logs_on_created_at"
   end
 
+  create_table "agent_run_phases", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "duration_seconds", default: 0, null: false
+    t.datetime "finished_at", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.string "phase_group", limit: 50, null: false
+    t.string "phase_key", limit: 100, null: false
+    t.datetime "started_at", null: false
+    t.string "status", limit: 50, default: "completed", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "started_at"], name: "index_agent_run_phases_on_agent_run_id_and_started_at"
+    t.index ["agent_run_id"], name: "index_agent_run_phases_on_agent_run_id"
+    t.index ["phase_group", "started_at"], name: "index_agent_run_phases_on_phase_group_and_started_at"
+    t.index ["phase_key", "started_at"], name: "index_agent_run_phases_on_phase_key_and_started_at"
+    t.check_constraint "duration_seconds >= 0", name: "agent_run_phases_duration_seconds_non_negative"
+    t.check_constraint "finished_at >= started_at", name: "agent_run_phases_finished_at_after_started_at"
+  end
+
   create_table "agent_runs", force: :cascade do |t|
     t.string "agent_type", limit: 50, null: false
     t.string "auth_provider", limit: 50
@@ -137,8 +156,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_09_200000) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -593,6 +612,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_09_200000) do
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
+  add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify

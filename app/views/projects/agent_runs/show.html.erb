@@ -15,6 +15,8 @@
   <%= render "agent_runs/detail",
         agent_run: @agent_run,
         quality_metrics: @quality_metrics,
+        phase_timeline: @phase_timeline,
+        phase_summary: @phase_summary,
         show_retry: policy(@agent_run.project).run_agent?,
         retry_provider_options: @retry_provider_options %>
 
