@@ -1359,8 +1359,18 @@ RSpec.describe AgentRun do
   end
 
   describe "#phase_summary" do
+    def set_run_timestamps(agent_run)
+      agent_run.update_columns(
+        created_at: 20.minutes.ago,
+        started_at: 10.minutes.ago,
+        completed_at: Time.current,
+        duration_seconds: 600
+      )
+    end
+
     it "summarizes queue and grouped phase durations" do
-      agent_run = create(:agent_run, :completed, created_at: 20.minutes.ago)
+      agent_run = create(:agent_run, :completed)
+      set_run_timestamps(agent_run)
       create(:agent_run_phase, agent_run: agent_run, phase_key: "provision_container",
         phase_group: "setup", started_at: 15.minutes.ago, finished_at: 13.minutes.ago, duration_seconds: 120)
       create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt",
@@ -1372,7 +1382,7 @@ RSpec.describe AgentRun do
       create(:agent_run_phase, agent_run: agent_run, phase_key: "cleanup_container",
         phase_group: "cleanup", started_at: 7.minutes.ago, finished_at: 6.minutes.ago, duration_seconds: 60)
 
-      summary = agent_run.phase_summary
+      summary = agent_run.reload.phase_summary
 
       expect(summary[:queue_seconds]).to eq(300)
       expect(summary[:setup_seconds]).to eq(120)

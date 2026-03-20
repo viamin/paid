@@ -44,8 +44,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
   end
 
   create_table "ab_tests", force: :cascade do |t|
-    t.string "analysis_samples_key"
-    t.jsonb "cached_analysis"
     t.datetime "completed_at"
     t.decimal "confidence_threshold", precision: 5, scale: 4, default: "0.95", null: false
     t.bigint "control_version_id", null: false
@@ -101,11 +99,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
     t.bigint "agent_run_id", null: false
     t.datetime "created_at", null: false
     t.integer "duration_seconds", default: 0, null: false
-    t.datetime "finished_at", precision: nil, null: false
+    t.datetime "finished_at", null: false
     t.jsonb "metadata", default: {}, null: false
     t.string "phase_group", limit: 50, null: false
     t.string "phase_key", limit: 100, null: false
-    t.datetime "started_at", precision: nil, null: false
+    t.datetime "started_at", null: false
     t.string "status", limit: 50, default: "completed", null: false
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "started_at"], name: "index_agent_run_phases_on_agent_run_id_and_started_at"
@@ -583,7 +581,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
-  add_foreign_key "agent_run_phases", "agent_runs"
+  add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify

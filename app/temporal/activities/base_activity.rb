@@ -61,16 +61,27 @@ module Activities
       raise
     ensure
       if agent_run_id.present?
-        agent_run = AgentRun.find_by(id: agent_run_id)
-        if agent_run
-          AgentRunPhase.record!(
-            agent_run: agent_run,
+        begin
+          agent_run = AgentRun.find_by(id: agent_run_id)
+          if agent_run
+            AgentRunPhase.record!(
+              agent_run: agent_run,
+              phase_key: phase_key,
+              phase_group: phase_group,
+              started_at: started_at,
+              finished_at: Time.current,
+              status: status,
+              metadata: metadata
+            )
+          end
+        rescue => recording_error
+          logger.warn(
+            message: "agent_run_phase.record_failed",
+            agent_run_id: agent_run_id,
             phase_key: phase_key,
             phase_group: phase_group,
-            started_at: started_at,
-            finished_at: Time.current,
-            status: status,
-            metadata: metadata
+            error_class: recording_error.class.name,
+            error_message: recording_error.message.to_s.truncate(500)
           )
         end
       end

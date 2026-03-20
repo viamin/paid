@@ -11,7 +11,7 @@ class AgentRun < ApplicationRecord
   belongs_to :prompt_version, optional: true
 
   has_many :agent_run_logs, dependent: :destroy
-  has_many :agent_run_phases, dependent: :destroy
+  has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
   has_many :ab_test_assignments, dependent: :destroy
   has_many :quality_metrics, dependent: :destroy
   has_one :worktree, dependent: :nullify
@@ -228,16 +228,17 @@ class AgentRun < ApplicationRecord
   end
 
   def phase_timeline
-    agent_run_phases.ordered
+    agent_run_phases
   end
 
-  def phase_summary
-    phases = phase_timeline.to_a
+  def phase_summary(phases: nil)
+    phases ||= phase_timeline.to_a
     return empty_phase_summary if phases.empty?
 
-    first_phase = phases.first
+    ordered_phases = phases.sort_by { |phase| [ phase.started_at, phase.id ] }
+    first_phase = ordered_phases.first
     queue_seconds = [ (first_phase.started_at - created_at).to_i, 0 ].max
-    grouped = phases.group_by(&:phase_group).transform_values do |entries|
+    grouped = ordered_phases.group_by(&:phase_group).transform_values do |entries|
       entries.sum(&:duration_seconds)
     end
 
@@ -248,9 +249,9 @@ class AgentRun < ApplicationRecord
       agent_seconds: grouped.fetch("agent", 0),
       post_seconds: grouped.fetch("post", 0),
       cleanup_seconds: grouped.fetch("cleanup", 0),
-      observed_seconds: phases.sum(&:duration_seconds),
+      observed_seconds: ordered_phases.sum(&:duration_seconds),
       first_phase_at: first_phase.started_at,
-      last_phase_at: phases.last.finished_at
+      last_phase_at: ordered_phases.last.finished_at
     }
   end
 
