@@ -79,6 +79,15 @@ module Projects
       "mongo" => "mongodb"
     }.freeze
 
+    # Maximum size for YAML content to limit parsing of untrusted files.
+    YAML_MAX_SIZE = 64_000
+
+    # Maximum number of YAML alias nodes allowed. Limits exponential
+    # expansion from small "YAML bomb" payloads that use nested aliases
+    # (e.g., &a [*b,*b] chains). Checked via Psych AST before converting
+    # to Ruby objects.
+    MAX_YAML_ALIASES = 100
+
     attr_reader :project
 
     def initialize(project:)
@@ -125,7 +134,7 @@ module Projects
       client = project.github_token.client
       response = client.contents("#{project.owner}/#{project.repo}", path: path)
       decode_content(response)
-    rescue GithubClient::NotFoundError
+    rescue GithubClient::Error
       nil
     end
 
@@ -206,15 +215,6 @@ module Projects
     rescue Psych::Exception
       []
     end
-
-    # Maximum size for YAML content to limit parsing of untrusted files.
-    YAML_MAX_SIZE = 64_000
-
-    # Maximum number of YAML alias nodes allowed. Limits exponential
-    # expansion from small "YAML bomb" payloads that use nested aliases
-    # (e.g., &a [*b,*b] chains). Checked via Psych AST before converting
-    # to Ruby objects.
-    MAX_YAML_ALIASES = 100
 
     def detect_from_database_yml
       content = fetch_file("config/database.yml")
