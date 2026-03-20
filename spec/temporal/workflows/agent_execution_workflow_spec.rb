@@ -126,7 +126,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       expect(result[:success]).to be true
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::CompleteReviewGoalActivity, { agent_run_id: 42 }, timeout: 30)
+        .with(Activities::CompleteReviewGoalActivity, { agent_run_id: 42 },
+              timeout: 30, retry_policy: described_class::NO_RETRY)
     end
 
     it "does not run PR creation or push activities" do
