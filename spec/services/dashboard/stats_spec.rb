@@ -123,6 +123,15 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:phase_breakdown]["queue"][:sample_size]).to eq(3)
       end
 
+      it "skips completed runs without phase rows" do
+        completed_run = AgentRun.where(project: project, status: "completed").first
+        create_setup_phase(completed_run, duration_seconds: 20)
+
+        expect(stats[:phase_breakdown]["setup"][:sample_size]).to eq(1)
+        expect(stats[:phase_breakdown]["setup"][:avg_seconds]).to eq(20)
+        expect(stats[:phase_breakdown]["queue"][:sample_size]).to eq(1)
+      end
+
       it "calculates cost totals" do
         expect(stats[:cost_and_tokens][:total_cost_cents]).to eq(400)
       end

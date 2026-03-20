@@ -61,30 +61,40 @@ module Activities
       raise
     ensure
       if agent_run_id.present?
-        begin
-          tracked_agent_run = agent_run || AgentRun.find_by(id: agent_run_id)
-          if tracked_agent_run
-            AgentRunPhase.record!(
-              agent_run: tracked_agent_run,
-              phase_key: phase_key,
-              phase_group: phase_group,
-              started_at: started_at,
-              finished_at: Time.current,
-              status: status,
-              metadata: metadata
-            )
-          end
-        rescue => recording_error
-          logger.warn(
-            message: "agent_run_phase.record_failed",
-            agent_run_id: agent_run_id,
-            phase_key: phase_key,
-            phase_group: phase_group,
-            error_class: recording_error.class.name,
-            error_message: recording_error.message.to_s.truncate(500)
-          )
-        end
+        tracked_agent_run = agent_run || AgentRun.find_by(id: agent_run_id)
+        record_phase(
+          agent_run: tracked_agent_run,
+          phase_key: phase_key,
+          phase_group: phase_group,
+          started_at: started_at,
+          finished_at: Time.current,
+          status: status,
+          metadata: metadata
+        )
       end
+    end
+
+    def record_phase(agent_run:, phase_key:, phase_group:, started_at:, finished_at:, status: "completed", metadata: {})
+      return unless agent_run
+
+      AgentRunPhase.record!(
+        agent_run: agent_run,
+        phase_key: phase_key,
+        phase_group: phase_group,
+        started_at: started_at,
+        finished_at: finished_at,
+        status: status,
+        metadata: metadata
+      )
+    rescue => recording_error
+      logger.warn(
+        message: "agent_run_phase.record_failed",
+        agent_run_id: agent_run.id,
+        phase_key: phase_key,
+        phase_group: phase_group,
+        error_class: recording_error.class.name,
+        error_message: recording_error.message.to_s.truncate(500)
+      )
     end
   end
 end
