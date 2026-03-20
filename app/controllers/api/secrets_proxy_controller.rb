@@ -85,8 +85,12 @@ module Api
       usage = body["usage"]
       TokenUsageTracker.track(
         agent_run: @agent_run,
-        tokens_input: usage["input_tokens"] || usage["prompt_tokens"] || 0,
-        tokens_output: usage["output_tokens"] || usage["completion_tokens"] || 0
+        usage: {
+          tokens_input: usage["input_tokens"] || usage["prompt_tokens"] || 0,
+          tokens_output: usage["output_tokens"] || usage["completion_tokens"] || 0,
+          llm_model: body["model"],
+          request_type: "agent"
+        }
       )
     rescue => e
       log_error("secrets_proxy.track_usage_failed", e.message)
