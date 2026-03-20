@@ -108,7 +108,7 @@ module Dashboard
       values_by_group = Hash.new { |hash, key| hash[key] = [] }
 
       completed_runs.each do |run|
-        summary = run.phase_summary
+        summary = run.phase_summary(phases: run.agent_run_phases.to_a)
         values_by_group["queue"] << summary[:queue_seconds]
         values_by_group["setup"] << summary[:setup_seconds]
         values_by_group["prompt"] << summary[:prompt_seconds]
