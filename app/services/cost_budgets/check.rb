@@ -1,12 +1,16 @@
 # frozen_string_literal: true
 
 module CostBudgets
-  # Checks whether a project's cost budgets allow a new agent run.
-  # Intended to be called as a pre-flight check before transitioning
-  # an AgentRun to "running" (e.g., in ProcessRunQueueJob or the
-  # Temporal workflow start path).
+  # Budget enforcement service for agent runs. Performs two kinds of checks:
   #
-  # NOTE: This service is NOT yet wired into any run-start path.
+  # 1. **Daily/monthly** — pre-flight checks using the shared `current_usage_cents`
+  #    counter. These can block a run *before* it starts.
+  # 2. **Per-run** — in-run checks using `agent_run.token_usages.sum(:cost_cents)`,
+  #    which is only meaningful *after* usage has accrued. These detect a single
+  #    run exceeding its per-run budget and should be called periodically during
+  #    execution (not solely at start).
+  #
+  # NOTE: This service is NOT yet wired into any run-start or in-run path.
   # It provides enforcement logic only; orchestration integration is
   # tracked as a follow-up to issue #141.
   class Check

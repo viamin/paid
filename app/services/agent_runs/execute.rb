@@ -137,7 +137,7 @@ module AgentRuns
       proxy_totals = agent_run.token_usages
         .where.not(request_type: %w[run_summary run_delta])
         .pick(Arel.sql("COALESCE(SUM(input_tokens), 0)"), Arel.sql("COALESCE(SUM(output_tokens), 0)"))
-      proxy_input, proxy_output = proxy_totals
+      proxy_input, proxy_output = proxy_totals || [ 0, 0 ]
 
       delta_input = [ run_input - proxy_input, 0 ].max
       delta_output = [ run_output - proxy_output, 0 ].max
