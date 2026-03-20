@@ -8,9 +8,6 @@ module Activities
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
 
-      # Reload to pick up any review_posted_at set by the proxy during execution.
-      agent_run.reload
-
       if agent_run.review_posted_at.blank?
         logger.warn(
           message: "agent_execution.review_goal_no_review_posted",

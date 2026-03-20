@@ -44,20 +44,20 @@ module Projects
 
       if goal == "review"
         unless source_pr_number
-          redirect_to new_project_agent_run_path(@project),
+          redirect_to new_project_agent_run_path(@project, goal: goal),
             alert: "Please select a pull request to review."
           return
         end
       else
         unless issue || custom_prompt || source_pr_number
-          redirect_to new_project_agent_run_path(@project),
+          redirect_to new_project_agent_run_path(@project, goal: goal),
             alert: "Please select an issue, provide a custom prompt, or select a pull request."
           return
         end
       end
 
       create_run_and_redirect(
-        on_error_path: new_project_agent_run_path(@project),
+        on_error_path: new_project_agent_run_path(@project, goal: goal),
         issue: issue,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pr_number,
