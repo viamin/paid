@@ -10,9 +10,8 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      track_phase(agent_run_id: agent_run_id, phase_key: "push_branch", phase_group: "post") do
-        agent_run = AgentRun.find(agent_run_id)
-
+      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "push_branch", phase_group: "post", agent_run: agent_run) do
         container_service = Containers::Provision.reconnect(
           agent_run: agent_run,
           container_id: agent_run.container_id

@@ -11,9 +11,8 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      track_phase(agent_run_id: agent_run_id, phase_key: "cleanup_worktree", phase_group: "cleanup") do
-        agent_run = AgentRun.find(agent_run_id)
-
+      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "cleanup_worktree", phase_group: "cleanup", agent_run: agent_run) do
         worktree = agent_run.worktree
         worktree&.mark_cleaned! if worktree&.active?
 

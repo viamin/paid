@@ -218,13 +218,14 @@ RSpec.describe "AgentRuns" do
 
       it "shows the run timeline when phase data exists" do
         agent_run = create(:agent_run, :completed, project: project)
+        create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt", phase_group: "prompt")
         create(:agent_run_phase, agent_run: agent_run, phase_key: "run_agent", phase_group: "agent")
 
         get project_agent_run_path(project, agent_run)
 
         expect(response.body).to include("Run Timeline")
         expect(response.body).to include("Run Agent")
-        expect(response.body).to include("Prompt Prep")
+        expect(response.body).to include("Prepare PR Prompt")
       end
 
       it "shows issue details when attached" do

@@ -7,9 +7,8 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       reason = input.fetch(:reason, "no_changes")
-      track_phase(agent_run_id: agent_run_id, phase_key: "mark_agent_run_complete", phase_group: "post", metadata: { reason: reason }) do
-        agent_run = AgentRun.find(agent_run_id)
-
+      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "mark_agent_run_complete", phase_group: "post", agent_run: agent_run, metadata: { reason: reason }) do
         agent_run.complete!
         agent_run.log!("system", "Completed without PR: #{reason}")
 
