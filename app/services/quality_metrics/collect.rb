@@ -70,18 +70,17 @@ module QualityMetrics
     end
 
     def update_ab_test_variant_stats(metric)
-      assignment = agent_run.ab_test_assignment
-      return unless assignment
+      agent_run.ab_test_assignments.includes(:ab_test_variant).find_each do |assignment|
+        old_score = assignment.quality_score
+        assignment.update!(quality_score: metric.composite_score)
 
-      old_score = assignment.quality_score
-      assignment.update!(quality_score: metric.composite_score)
+        # Only update variant aggregates if this is a new score (not a re-run).
+        # record_quality_score! increments sample_count, so calling it again on
+        # re-collection would corrupt the aggregates.
+        next if old_score.present?
 
-      # Only update variant aggregates if this is a new score (not a re-run).
-      # record_quality_score! increments sample_count, so calling it again on
-      # re-collection would corrupt the aggregates.
-      return if old_score.present?
-
-      assignment.ab_test_variant.record_quality_score!(metric.composite_score)
+        assignment.ab_test_variant.record_quality_score!(metric.composite_score)
+      end
     end
 
     def update_prompt_version_stats
