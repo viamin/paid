@@ -138,7 +138,7 @@
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Run Phase Breakdown</h2>
     <p class="mt-1 text-sm text-gray-500">Separate queue and setup overhead from prompt preparation, agent execution, and wrap-up work.</p>
-    <% phase_groups = %w[queue setup prompt agent post cleanup] %>
+    <% phase_groups = @stats[:phase_breakdown].keys %>
     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <% phase_groups.each do |phase_group| %>
         <% phase_stats = @stats[:phase_breakdown][phase_group] %>
@@ -160,13 +160,17 @@
       <div class="px-4 py-5 sm:p-6">
         <h3 class="text-sm font-medium text-gray-500">Average End-to-End Composition</h3>
         <% total_avg_seconds = phase_groups.sum { |group| @stats[:phase_breakdown][group][:avg_seconds] } %>
-        <div class="mt-4 h-4 overflow-hidden rounded-full bg-gray-100">
+        <div class="mt-4 h-4 overflow-hidden rounded-full bg-gray-100"
+             role="img"
+             aria-label="Average end-to-end composition by phase">
           <% phase_groups.each do |phase_group| %>
             <% avg_seconds = @stats[:phase_breakdown][phase_group][:avg_seconds] %>
             <% width_pct = total_avg_seconds.zero? ? 0 : ((avg_seconds.to_f / total_avg_seconds) * 100).round(1) %>
             <div class="<%= phase_group_bar_style(phase_group) %> h-4 float-left"
                  style="width: <%= width_pct %>%"
-                 title="<%= "#{phase_group_label(phase_group)}: #{format_duration(avg_seconds)}" %>"></div>
+                 title="<%= "#{phase_group_label(phase_group)}: #{format_duration(avg_seconds)}" %>"
+                 aria-label="<%= "#{phase_group_label(phase_group)} average duration #{format_duration(avg_seconds)} (#{width_pct}%) of total run time" %>"
+                 tabindex="0"></div>
           <% end %>
         </div>
         <div class="mt-4 flex flex-wrap gap-3 text-sm text-gray-600">

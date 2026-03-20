@@ -48,6 +48,7 @@ RSpec.describe "Dashboard" do
 
         expect(response.body).to include("Run Phase Breakdown")
         expect(response.body).to include("Average End-to-End Composition")
+        expect(response.body).to include('aria-label="Average end-to-end composition by phase"')
       end
     end
   end
