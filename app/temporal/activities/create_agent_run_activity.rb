@@ -17,7 +17,6 @@ module Activities
       agent_type = input.fetch(:agent_type, "claude_code")
       source_pull_request_number = input[:source_pull_request_number]
 
-      started_at = Time.current
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
       user_settings = resolve_user_settings(project)
@@ -64,7 +63,7 @@ module Activities
           prompt_version_id: prompt_version&.id,
           custom_prompt_provided: input[:custom_prompt].present?
         },
-        started_at: started_at
+        started_at: agent_run.created_at
       ) do
         issue&.update!(paid_state: "in_progress")
 
