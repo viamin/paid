@@ -116,8 +116,8 @@
     </dl>
   </div>
 
-  <% phase_summary = local_assigns.fetch(:phase_summary, agent_run.phase_summary) %>
-  <% phase_timeline = local_assigns.fetch(:phase_timeline, agent_run.phase_timeline) %>
+  <% phase_summary = local_assigns.fetch(:phase_summary) { agent_run.phase_summary } %>
+  <% phase_timeline = local_assigns.fetch(:phase_timeline) { agent_run.phase_timeline } %>
 
   <div class="mt-6 rounded-lg bg-white p-4 shadow">
     <div class="flex items-start justify-between gap-4">
