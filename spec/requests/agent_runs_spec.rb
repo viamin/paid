@@ -228,6 +228,16 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Prepare PR Prompt")
       end
 
+      it "shows the empty timeline state when no phase data exists" do
+        agent_run = create(:agent_run, :completed, project: project)
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Run Timeline")
+        expect(response.body).to include("Phase timing will appear here once this run records lifecycle events.")
+        expect(response.body).not_to include("Run Agent")
+      end
+
       it "shows issue details when attached" do
         issue = create(:issue, project: project, github_number: 42, title: "Fix the bug")
         agent_run = create(:agent_run, project: project, issue: issue)

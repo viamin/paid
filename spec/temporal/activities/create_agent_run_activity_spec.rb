@@ -77,6 +77,20 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(issue.reload.paid_state).to eq("in_progress")
     end
 
+    it "records a failed phase when later side effects raise" do
+      allow(Issue).to receive(:find).with(issue.id).and_return(issue)
+      allow(issue).to receive(:update!).and_raise(StandardError, "issue update failed")
+
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id)
+      }.to raise_error(StandardError, "issue update failed")
+
+      phase = AgentRunPhase.order(:id).last
+      expect(phase.phase_key).to eq("create_agent_run")
+      expect(phase.status).to eq("failed")
+      expect(phase.metadata["error_class"]).to eq("StandardError")
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid project_id" do
       expect {
         activity.execute(project_id: -1, issue_id: issue.id)

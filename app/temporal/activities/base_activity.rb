@@ -47,8 +47,7 @@ module Activities
       )
     end
 
-    def track_phase(agent_run_id:, phase_key:, phase_group:, agent_run: nil, metadata: {})
-      started_at = Time.current
+    def track_phase(agent_run_id:, phase_key:, phase_group:, agent_run: nil, metadata: {}, started_at: Time.current)
       status = "completed"
       result = yield
       result
