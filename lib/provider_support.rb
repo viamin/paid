@@ -58,7 +58,7 @@ module ProviderSupport
   end
 
   def container_executable_provider_key?(provider_key)
-    CONTAINER_EXECUTABLE_PROVIDER_KEYS.include?(provider_key.to_s)
+    container_executable_provider_keys.include?(provider_key.to_s)
   end
 
   def harness_provider_key_for(provider_key)
