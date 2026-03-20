@@ -19,7 +19,7 @@ module Projects
       @quality_metrics = @agent_run.quality_metrics.with_composite_score.load
       @logs = @agent_run.agent_run_logs.order(created_at: :asc).limit(500).load
       @phase_timeline = @agent_run.agent_run_phases.load
-      @phase_summary = @agent_run.phase_summary
+      @phase_summary = @agent_run.phase_summary(phases: @phase_timeline.to_a)
     end
 
     def new
