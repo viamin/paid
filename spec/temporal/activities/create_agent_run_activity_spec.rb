@@ -65,6 +65,17 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(issue.reload.paid_state).to eq("in_progress")
     end
 
+    it "records create_agent_run phase starting at the run creation time" do
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      phase = AgentRunPhase.order(:id).last
+
+      expect(phase.phase_key).to eq("create_agent_run")
+      expect(phase.started_at.to_i).to eq(agent_run.created_at.to_i)
+      expect(phase.started_at).to be >= agent_run.created_at
+    end
+
     it "does not fail when phase recording raises" do
       allow(AgentRunPhase).to receive(:record!).and_raise(StandardError, "phase write failed")
       result = nil
