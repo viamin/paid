@@ -14,12 +14,16 @@ class AgentRun < ApplicationRecord
   has_many :quality_metrics, dependent: :destroy
   has_one :worktree, dependent: :nullify
   has_one :model_selection, dependent: :destroy
+  # In practice, at most one running AbTest exists per prompt, so an agent run
+  # will only ever have one assignment. If multiple tests per prompt are allowed
+  # in the future, this should become has_many.
   has_one :ab_test_assignment, dependent: :destroy
 
   before_create :generate_proxy_token
 
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
+  after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_completed?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -561,6 +565,14 @@ class AgentRun < ApplicationRecord
       .where(id: project_id)
       .where("last_agent_run_at IS NULL OR last_agent_run_at < ?", created_at)
       .update_all(last_agent_run_at: created_at, updated_at: Time.current)
+  end
+
+  def just_completed?
+    previous_changes.key?("status") && status == "completed"
+  end
+
+  def enqueue_quality_metrics_collection
+    QualityMetricsCollectionJob.perform_later(id)
   end
 
   def broadcast_project_updates
