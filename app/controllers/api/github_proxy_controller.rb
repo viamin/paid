@@ -125,6 +125,9 @@ module Api
 
     def track_review_creation(path, response)
       return unless request.method == "POST"
+      # Only track for review-goal runs so non-review runs don't accidentally
+      # set review_posted_at, which is used to verify review-goal completion.
+      return unless @agent_run.review_goal?
 
       match = %r{\Arepos/[^/]+/[^/]+/pulls/(?<number>\d+)/reviews\z}.match(path)
       return unless match

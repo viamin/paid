@@ -21,7 +21,8 @@ module Activities
 
         raise Temporalio::Error::ApplicationError.new(
           "No review was posted on PR ##{agent_run.source_pull_request_number}",
-          type: "ReviewNotPosted"
+          type: "ReviewNotPosted",
+          non_retryable: true
         )
       end
 

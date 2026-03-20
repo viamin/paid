@@ -114,7 +114,7 @@ module Workflows
           # Review goal: complete the run — all output is PR comments posted
           # by the agent via the GitHub API proxy during execution.
           run_activity(Activities::CompleteReviewGoalActivity,
-            { agent_run_id: agent_run_id }, timeout: 30)
+            { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
         elsif agent_result[:has_changes]
           # Step 5: Push branch (inside container)
           run_activity(Activities::PushBranchActivity,

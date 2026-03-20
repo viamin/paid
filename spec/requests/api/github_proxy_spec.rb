@@ -203,6 +203,22 @@ RSpec.describe "Api::GithubProxy" do
       expect(agent_run.review_posted_at).to be_nil
     end
 
+    it "does not track review_posted_at for non-review goal runs" do
+      non_review_run = create(:agent_run, :running, project: project,
+        goal: "create_pr", source_pull_request_number: 10)
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: {
+          "Content-Type" => "application/json",
+          "X-Agent-Run-Id" => non_review_run.id.to_s,
+          "X-Proxy-Token" => non_review_run.proxy_token
+        }
+
+      non_review_run.reload
+      expect(non_review_run.review_posted_at).to be_nil
+    end
+
     it "does not track review_posted_at on upstream error" do
       stub_request(:post, target_url)
         .to_return(status: 422, body: { message: "Validation Failed" }.to_json,
