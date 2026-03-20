@@ -7,8 +7,10 @@ class Provider < ApplicationRecord
   scope :for_fallback, -> { where(enabled_for_fallback: true) }
   scope :ordered, -> { order(:provider_key) }
 
-  validates :provider_key, presence: true, inclusion: { in: ->(_) { supported_provider_keys } }, length: { maximum: 50 }
+  validates :provider_key, presence: true, length: { maximum: 50 }
   validates :provider_key, uniqueness: { scope: :user_id }
+  validates :provider_key, inclusion: { in: ->(_) { supported_provider_keys } },
+    if: -> { new_record? || will_save_change_to_provider_key? }
 
   validate :must_keep_at_least_one_agent_run_provider
   validate :default_provider_must_remain_enabled_for_agent_runs
@@ -18,19 +20,21 @@ class Provider < ApplicationRecord
 
   # Returns the provider key that must always exist and remain enabled for
   # agent runs. Prefers "claude" when container-executable, otherwise falls
-  # back to the first available container-executable provider.
+  # back to the first available container-executable provider. Returns nil
+  # when no container-executable providers are available, so callers can
+  # surface a user-facing error instead of a 500.
   def self.default_provider_key
     executable_keys = ProviderSupport.container_executable_provider_keys
-    key = executable_keys.include?("claude") ? "claude" : executable_keys.first
-    raise "No container-executable providers available" unless key
-
-    key
+    executable_keys.include?("claude") ? "claude" : executable_keys.first
   end
 
   def self.ensure_default_for(user)
-    user.providers.find_or_create_by!(provider_key: default_provider_key)
+    key = default_provider_key
+    return unless key
+
+    user.providers.find_or_create_by!(provider_key: key)
   rescue ActiveRecord::RecordNotUnique
-    user.providers.find_by!(provider_key: default_provider_key)
+    user.providers.find_by!(provider_key: key)
   end
 
   def self.display_name(provider_key)
@@ -86,18 +90,22 @@ class Provider < ApplicationRecord
   end
 
   def default_provider_must_remain_enabled_for_agent_runs
-    return unless provider_key == self.class.default_provider_key
+    default_key = self.class.default_provider_key
+    return unless default_key
+    return unless provider_key == default_key
     return unless will_save_change_to_enabled_for_agent_runs?(to: false)
 
     errors.add(:enabled_for_agent_runs,
-      "#{Provider.display_name(self.class.default_provider_key)} must remain enabled for agent runs")
+      "#{Provider.display_name(default_key)} must remain enabled for agent runs")
   end
 
   def prevent_destroying_default_provider
+    default_key = self.class.default_provider_key
     return if destroyed_by_association.present?
-    return unless provider_key == self.class.default_provider_key
+    return unless default_key
+    return unless provider_key == default_key
 
-    errors.add(:base, "Cannot delete the #{Provider.display_name(self.class.default_provider_key)} provider")
+    errors.add(:base, "Cannot delete the #{Provider.display_name(default_key)} provider")
     throw(:abort)
   end
 end
