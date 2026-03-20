@@ -109,6 +109,7 @@ RSpec.describe AbTest do
 
       # Move sample count past the next bucket boundary (ANALYSIS_INTERVAL = 5)
       control.update_columns(sample_count: 10)
+      ab_test.ab_test_variants.reload
       ab_test.cached_or_compute_analysis(persist: true)
 
       expect(AbTests::Analyze).to have_received(:call).twice

@@ -46,6 +46,25 @@ RSpec.describe "AbTests" do
     end
   end
 
+  describe "cross-account isolation" do
+    let(:other_account) { create(:account) }
+    let(:other_prompt) { create(:prompt, :for_account, :with_version, account: other_account) }
+
+    before { sign_in user }
+
+    it "does not show A/B tests from another account" do
+      other_ab_test = create(:ab_test, prompt: other_prompt, name: "Other Account Test")
+      get prompt_ab_tests_path(prompt)
+      expect(response.body).not_to include("Other Account Test")
+    end
+
+    it "cannot access A/B test belonging to another account" do
+      other_ab_test = create(:ab_test, prompt: other_prompt)
+      get prompt_ab_test_path(other_prompt, other_ab_test)
+      expect(response).not_to have_http_status(:ok)
+    end
+  end
+
   describe "GET /prompts/:prompt_id/ab_tests/:id" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
