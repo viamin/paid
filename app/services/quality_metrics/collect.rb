@@ -40,7 +40,8 @@ module QualityMetrics
     def build_scores
       scores = {}
       scores["pr_created"] = agent_run.pull_request_number.present? ? 1.0 : 0.0
-      scores["pr_merged"] = pr_merged_score unless pr_merged_score.nil?
+      merged = pr_merged_score
+      scores["pr_merged"] = merged unless merged.nil?
       scores["iterations"] = iteration_score if agent_run.iterations&.positive?
       scores["lint_clean"] = lint_clean_score
       scores
@@ -72,7 +73,14 @@ module QualityMetrics
       assignment = agent_run.ab_test_assignment
       return unless assignment
 
+      old_score = assignment.quality_score
       assignment.update!(quality_score: metric.composite_score)
+
+      # Only update variant aggregates if this is a new score (not a re-run).
+      # record_quality_score! increments sample_count, so calling it again on
+      # re-collection would corrupt the aggregates.
+      return if old_score.present?
+
       assignment.ab_test_variant.record_quality_score!(metric.composite_score)
     end
 

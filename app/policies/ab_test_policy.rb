@@ -33,7 +33,9 @@ class AbTestPolicy < ApplicationPolicy
 
   def visible?
     return false unless user.present?
-    return true if record.prompt&.account_id.nil?
+    # Exclude global-prompt A/B tests — consistent with Scope#resolve
+    # which filters to the user's own account only.
+    return false if record.prompt&.account_id.nil?
 
     user_in_account?
   end
