@@ -347,17 +347,17 @@ RSpec.describe Projects::DetectServices do
         expect(services).to include("postgres")
       end
 
-      it "handles YAML with disallowed classes in docker-compose.yml" do
-        allow(Psych).to receive(:parse).and_raise(Psych::DisallowedClass.new("action", "Symbol"))
-        stub_file("docker-compose.yml", "services: {}")
+      it "handles Psych errors during docker-compose.yml parsing" do
+        # Psych.parse raises SyntaxError on truly malformed YAML (e.g., bare
+        # tab characters). This exercises the Psych::Exception rescue clause.
+        stub_file("docker-compose.yml", "services:\n\t- invalid")
 
         result = described_class.call(project: project)
         expect(result.detected).to be_empty
       end
 
-      it "handles YAML with disallowed classes in database.yml" do
-        allow(Psych).to receive(:parse).and_raise(Psych::DisallowedClass.new("action", "Symbol"))
-        stub_file("config/database.yml", "default:\n  adapter: postgresql")
+      it "handles Psych errors during database.yml parsing" do
+        stub_file("config/database.yml", "default:\n\t- invalid")
 
         result = described_class.call(project: project)
         expect(result.detected).to be_empty
