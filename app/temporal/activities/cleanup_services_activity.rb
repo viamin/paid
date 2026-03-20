@@ -9,16 +9,17 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "cleanup_services", phase_group: "cleanup", agent_run: agent_run) do
+        provisioner = Containers::ServiceProvisioner.new
+        provisioner.cleanup(agent_run)
 
-      provisioner = Containers::ServiceProvisioner.new
-      provisioner.cleanup(agent_run)
+        logger.info(
+          message: "agent_execution.services_cleaned",
+          agent_run_id: agent_run_id
+        )
 
-      logger.info(
-        message: "agent_execution.services_cleaned",
-        agent_run_id: agent_run_id
-      )
-
-      { agent_run_id: agent_run_id }
+        { agent_run_id: agent_run_id }
+      end
     end
   end
 end
