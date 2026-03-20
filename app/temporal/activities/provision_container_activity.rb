@@ -10,8 +10,8 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      track_phase(agent_run_id: agent_run_id, phase_key: "provision_container", phase_group: "setup") do
-        agent_run = AgentRun.find(agent_run_id)
+      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "provision_container", phase_group: "setup", agent_run: agent_run) do
         agent_run.ensure_proxy_token!
         agent_run.provision_container
 

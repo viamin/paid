@@ -47,7 +47,7 @@ module Activities
       )
     end
 
-    def track_phase(agent_run_id:, phase_key:, phase_group:, metadata: {})
+    def track_phase(agent_run_id:, phase_key:, phase_group:, agent_run: nil, metadata: {})
       started_at = Time.current
       status = "completed"
       result = yield
@@ -62,10 +62,10 @@ module Activities
     ensure
       if agent_run_id.present?
         begin
-          agent_run = AgentRun.find_by(id: agent_run_id)
-          if agent_run
+          tracked_agent_run = agent_run || AgentRun.find_by(id: agent_run_id)
+          if tracked_agent_run
             AgentRunPhase.record!(
-              agent_run: agent_run,
+              agent_run: tracked_agent_run,
               phase_key: phase_key,
               phase_group: phase_group,
               started_at: started_at,

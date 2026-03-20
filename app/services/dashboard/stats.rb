@@ -2,6 +2,9 @@
 
 module Dashboard
   class Stats
+    PHASE_BREAKDOWN_WINDOW = 30.days
+    PHASE_BREAKDOWN_RUN_LIMIT = 500
+
     attr_reader :account
 
     def initialize(account:)
@@ -102,7 +105,7 @@ module Dashboard
     end
 
     def phase_breakdown
-      completed_runs = agent_runs.where(status: "completed").includes(:agent_run_phases).to_a
+      completed_runs = recent_completed_runs_for_phase_breakdown
       return empty_phase_breakdown if completed_runs.empty?
 
       values_by_group = Hash.new { |hash, key| hash[key] = [] }
@@ -120,6 +123,16 @@ module Dashboard
       values_by_group.transform_values do |values|
         summarize_phase_values(values)
       end
+    end
+
+    def recent_completed_runs_for_phase_breakdown
+      now = Time.current
+
+      agent_runs.where(status: "completed", created_at: (now - PHASE_BREAKDOWN_WINDOW)..now)
+        .order(created_at: :desc)
+        .limit(PHASE_BREAKDOWN_RUN_LIMIT)
+        .includes(:agent_run_phases)
+        .to_a
     end
 
     def avg_iterations_per_run

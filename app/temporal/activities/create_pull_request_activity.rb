@@ -8,8 +8,8 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      track_phase(agent_run_id: agent_run_id, phase_key: "create_pull_request", phase_group: "post") do
-        agent_run = AgentRun.find(agent_run_id)
+      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "create_pull_request", phase_group: "post", agent_run: agent_run) do
         project = agent_run.project
         issue = agent_run.issue
 
