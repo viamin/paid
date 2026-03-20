@@ -134,7 +134,7 @@ module Projects
       client = project.github_token.client
       response = client.contents("#{project.owner}/#{project.repo}", path: path)
       decode_content(response)
-    rescue GithubClient::Error
+    rescue GithubClient::NotFoundError
       nil
     end
 
