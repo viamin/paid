@@ -102,7 +102,7 @@ class ProjectsController < ApplicationController
     else
       redirect_to edit_project_path(@project), notice: "No service dependencies detected in repository files."
     end
-  rescue GithubClient::Error, Octokit::Error => e
+  rescue GithubClient::Error => e
     redirect_to edit_project_path(@project), alert: "Could not detect services: #{e.message}"
   end
 
