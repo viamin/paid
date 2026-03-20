@@ -131,6 +131,24 @@ RSpec.describe AbTest do
       expect(result.status).to eq(:no_significant_difference)
       expect(AbTests::Analyze).to have_received(:call).once
     end
+
+    it "recomputes when total samples cross a bucket boundary even if no single variant does" do
+      # Start with control=3, treatment=2 (total=5, bucket=5)
+      control.update_columns(sample_count: 3)
+      ab_test.ab_test_variants.where(is_control: false).update_all(sample_count: 2)
+      ab_test.ab_test_variants.reload
+      ab_test.cached_or_compute_analysis(persist: true)
+
+      # Bump to control=6, treatment=4 (total=10, bucket=10)
+      # Neither variant crosses its own bucket boundary (both stay in bucket 5),
+      # but total crosses from bucket 5 to bucket 10.
+      control.update_columns(sample_count: 6)
+      ab_test.ab_test_variants.where(is_control: false).update_all(sample_count: 4)
+      ab_test.ab_test_variants.reload
+      ab_test.cached_or_compute_analysis(persist: true)
+
+      expect(AbTests::Analyze).to have_received(:call).twice
+    end
   end
 
   describe "#sufficient_samples?" do

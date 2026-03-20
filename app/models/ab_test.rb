@@ -117,9 +117,15 @@ class AbTest < ApplicationRecord
   CACHE_BUCKET_SIZE = AbTests::RecordResult::ANALYSIS_INTERVAL
 
   def samples_key
-    ab_test_variants.sort_by(&:id)
-                    .map { |v| "#{v.id}:#{(v.sample_count / CACHE_BUCKET_SIZE) * CACHE_BUCKET_SIZE}" }
-                    .join(",")
+    total_samples = ab_test_variants.sum(&:sample_count)
+    total_bucket  = (total_samples / CACHE_BUCKET_SIZE) * CACHE_BUCKET_SIZE
+
+    variant_buckets = ab_test_variants
+                      .sort_by(&:id)
+                      .map { |v| "#{v.id}:#{(v.sample_count / CACHE_BUCKET_SIZE) * CACHE_BUCKET_SIZE}" }
+                      .join(",")
+
+    "total:#{total_bucket}|#{variant_buckets}"
   end
 
   def persist_analysis!(result, key)
