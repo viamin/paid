@@ -48,11 +48,66 @@ RSpec.describe AgentRuns::Execute do
         expect(agent_run.tokens_output).to eq(800)
       end
 
-      it "delegates token tracking to TokenUsageTracker" do
+      it "records run_summary without aggregates, then persists delta as run_delta when no proxy records exist" do
         expect(TokenUsageTracker).to receive(:track).with(
           agent_run: agent_run,
-          tokens_input: 1500,
-          tokens_output: 800
+          usage: {
+            tokens_input: 1500,
+            tokens_output: 800,
+            llm_model: "claude-sonnet-4",
+            request_type: "run_summary"
+          },
+          update_aggregates: false
+        )
+        expect(TokenUsageTracker).to receive(:track).with(
+          agent_run: agent_run,
+          usage: {
+            tokens_input: 1500,
+            tokens_output: 800,
+            llm_model: "claude-sonnet-4",
+            request_type: "run_delta"
+          }
+        )
+
+        described_class.call(agent_run: agent_run, prompt: prompt)
+      end
+
+      it "skips delta record when proxy records fully cover tracking" do
+        create(:token_usage, agent_run: agent_run, request_type: "agent",
+               input_tokens: 1500, output_tokens: 800)
+
+        expect(TokenUsageTracker).to receive(:track).with(
+          agent_run: agent_run,
+          usage: hash_including(request_type: "run_summary"),
+          update_aggregates: false
+        )
+        # No run_delta expected when proxy fully covers.
+        # Use keyword arg matching (not positional hash) since track uses kwargs.
+        expect(TokenUsageTracker).not_to receive(:track).with(
+          agent_run: anything,
+          usage: hash_including(request_type: "run_delta")
+        )
+
+        described_class.call(agent_run: agent_run, prompt: prompt)
+      end
+
+      it "persists only the delta as run_delta when proxy records partially cover tracking" do
+        create(:token_usage, agent_run: agent_run, request_type: "agent",
+               input_tokens: 1000, output_tokens: 500)
+
+        expect(TokenUsageTracker).to receive(:track).with(
+          agent_run: agent_run,
+          usage: hash_including(request_type: "run_summary"),
+          update_aggregates: false
+        )
+        expect(TokenUsageTracker).to receive(:track).with(
+          agent_run: agent_run,
+          usage: {
+            tokens_input: 500,
+            tokens_output: 300,
+            llm_model: "claude-sonnet-4",
+            request_type: "run_delta"
+          }
         )
 
         described_class.call(agent_run: agent_run, prompt: prompt)

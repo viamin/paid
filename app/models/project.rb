@@ -12,6 +12,8 @@ class Project < ApplicationRecord
   has_many :issues, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
   has_many :worktrees, dependent: :destroy
+  has_many :cost_budgets, dependent: :destroy
+  has_many :token_usages, through: :agent_runs
   has_many :workflow_states, dependent: :destroy
   has_many :prompts, dependent: :destroy
   has_many :style_guides, dependent: :destroy
