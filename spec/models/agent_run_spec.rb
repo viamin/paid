@@ -7,6 +7,7 @@ RSpec.describe AgentRun do
     it { is_expected.to belong_to(:project) }
     it { is_expected.to belong_to(:issue).optional }
     it { is_expected.to have_many(:agent_run_logs).dependent(:destroy) }
+    it { is_expected.to have_many(:agent_run_phases).dependent(:destroy) }
   end
 
   describe "validations" do
@@ -1354,6 +1355,32 @@ RSpec.describe AgentRun do
       agent_run = create(:agent_run)
       expect { agent_run.log_provider_switch!("claude", "cursor", "rate_limited") }
         .to change { agent_run.reload.provider_switches }.by(1)
+    end
+  end
+
+  describe "#phase_summary" do
+    it "summarizes queue and grouped phase durations" do
+      agent_run = create(:agent_run, :completed, created_at: 20.minutes.ago)
+      create(:agent_run_phase, agent_run: agent_run, phase_key: "provision_container",
+        phase_group: "setup", started_at: 15.minutes.ago, finished_at: 13.minutes.ago, duration_seconds: 120)
+      create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt",
+        phase_group: "prompt", started_at: 13.minutes.ago, finished_at: 12.minutes.ago, duration_seconds: 60)
+      create(:agent_run_phase, agent_run: agent_run, phase_key: "run_agent",
+        phase_group: "agent", started_at: 12.minutes.ago, finished_at: 8.minutes.ago, duration_seconds: 240)
+      create(:agent_run_phase, agent_run: agent_run, phase_key: "create_pull_request",
+        phase_group: "post", started_at: 8.minutes.ago, finished_at: 7.minutes.ago, duration_seconds: 60)
+      create(:agent_run_phase, agent_run: agent_run, phase_key: "cleanup_container",
+        phase_group: "cleanup", started_at: 7.minutes.ago, finished_at: 6.minutes.ago, duration_seconds: 60)
+
+      summary = agent_run.phase_summary
+
+      expect(summary[:queue_seconds]).to eq(300)
+      expect(summary[:setup_seconds]).to eq(120)
+      expect(summary[:prompt_seconds]).to eq(60)
+      expect(summary[:agent_seconds]).to eq(240)
+      expect(summary[:post_seconds]).to eq(60)
+      expect(summary[:cleanup_seconds]).to eq(60)
+      expect(summary[:observed_seconds]).to eq(540)
     end
   end
 end

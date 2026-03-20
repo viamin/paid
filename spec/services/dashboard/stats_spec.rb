@@ -94,6 +94,23 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:duration_percentiles][:p90]).to be > 0
       end
 
+      it "calculates phase breakdown percentiles" do
+        completed_runs = AgentRun.where(project: project, status: "completed").order(:duration_seconds).to_a
+
+        create(:agent_run_phase, agent_run: completed_runs[0], phase_group: "setup", duration_seconds: 10, started_at: 2.days.ago, finished_at: 2.days.ago + 10.seconds)
+        create(:agent_run_phase, agent_run: completed_runs[0], phase_group: "agent", duration_seconds: 80, started_at: 2.days.ago + 20.seconds, finished_at: 2.days.ago + 100.seconds)
+
+        create(:agent_run_phase, agent_run: completed_runs[1], phase_group: "setup", duration_seconds: 20, started_at: 5.days.ago, finished_at: 5.days.ago + 20.seconds)
+        create(:agent_run_phase, agent_run: completed_runs[1], phase_group: "agent", duration_seconds: 160, started_at: 5.days.ago + 30.seconds, finished_at: 5.days.ago + 190.seconds)
+
+        create(:agent_run_phase, agent_run: completed_runs[2], phase_group: "setup", duration_seconds: 40, started_at: 20.days.ago, finished_at: 20.days.ago + 40.seconds)
+        create(:agent_run_phase, agent_run: completed_runs[2], phase_group: "agent", duration_seconds: 500, started_at: 20.days.ago + 60.seconds, finished_at: 20.days.ago + 560.seconds)
+
+        expect(stats[:phase_breakdown]["setup"][:avg_seconds]).to eq(23)
+        expect(stats[:phase_breakdown]["agent"][:p50_seconds]).to eq(160)
+        expect(stats[:phase_breakdown]["queue"][:sample_size]).to eq(3)
+      end
+
       it "calculates cost totals" do
         expect(stats[:cost_and_tokens][:total_cost_cents]).to eq(400)
       end

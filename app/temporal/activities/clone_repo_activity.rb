@@ -15,29 +15,31 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "clone_repo", phase_group: "setup") do
+        agent_run = AgentRun.find(agent_run_id)
 
-      container_service = reconnect_container(agent_run)
-      git_ops = Containers::GitOperations.new(
-        container_service: container_service,
-        agent_run: agent_run
-      )
-
-      if agent_run.existing_pr?
-        branch_name = fetch_pr_branch(agent_run)
-        git_ops.clone_and_checkout_branch(
-          branch_name: branch_name,
-          pull_request_number: agent_run.source_pull_request_number
+        container_service = reconnect_container(agent_run)
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
         )
-      else
-        git_ops.clone_and_setup_branch
+
+        if agent_run.existing_pr?
+          branch_name = fetch_pr_branch(agent_run)
+          git_ops.clone_and_checkout_branch(
+            branch_name: branch_name,
+            pull_request_number: agent_run.source_pull_request_number
+          )
+        else
+          git_ops.clone_and_setup_branch
+        end
+
+        git_ops.install_artifact_excludes
+        install_quality_hooks(git_ops, agent_run)
+        create_worktree_record(agent_run)
+
+        { agent_run_id: agent_run_id, branch_name: agent_run.branch_name }
       end
-
-      git_ops.install_artifact_excludes
-      install_quality_hooks(git_ops, agent_run)
-      create_worktree_record(agent_run)
-
-      { agent_run_id: agent_run_id, branch_name: agent_run.branch_name }
     end
 
     private
