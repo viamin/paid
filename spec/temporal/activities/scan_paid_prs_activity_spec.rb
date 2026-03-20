@@ -205,6 +205,32 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when the new comment is a paid agent update" do
+      let(:comment) do
+        OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "#{Activities::CompleteExistingPrRunActivity::COMMENT_MARKER}\n## Agent Update\n\nRefreshed the tests and pushed the fix.",
+          created_at: 30.minutes.ago
+        )
+      end
+
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ], paid_state: "completed")
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago)
+        stub_github_for_pr(issue_comments: [ comment ])
+      end
+
+      it "ignores the comment" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "when short comments are ignored" do
       let(:short_comment) do
         OpenStruct.new(
