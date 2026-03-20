@@ -22,6 +22,16 @@ Rails.application.configure do
     docker_orphan_cleanup: {
       cron: "*/15 * * * *",
       class: "DockerOrphanCleanupJob"
+    },
+    models_sync: {
+      cron: "0 0 * * *",
+      class: "ModelsSyncJob",
+      description: "Seed/update LlmModel records from known models list"
+    },
+    ab_test_analysis: {
+      cron: "0 */4 * * *",
+      class: "AbTestAnalysisCheckJob",
+      description: "Check running A/B tests for auto-completion"
     }
   }
 end
