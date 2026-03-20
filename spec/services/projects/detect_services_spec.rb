@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "base64"
 require "ostruct"
 
 RSpec.describe Projects::DetectServices do
