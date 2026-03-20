@@ -6,6 +6,18 @@ module Activities
   # and adds a comment to the PR noting the agent pushed updates.
   class CompleteExistingPrRunActivity < BaseActivity
     activity_name "CompleteExistingPrRun"
+    COMMENT_MARKER = "<!-- paid:agent-update -->"
+    SUMMARY_PREFIX = "## Agent Update"
+    GENERIC_MESSAGE = "Agent pushed updates to this PR."
+    LEGACY_COMMENT_BODIES = [ SUMMARY_PREFIX, GENERIC_MESSAGE ].freeze
+
+    class << self
+      def agent_update_comment?(body)
+        normalized = body.to_s
+        normalized.include?(COMMENT_MARKER) ||
+          LEGACY_COMMENT_BODIES.any? { |comment| normalized.include?(comment) }
+      end
+    end
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -61,9 +73,9 @@ module Activities
       summary = agent_run.agent_summary
 
       if summary.present?
-        "## Agent Update\n\n#{summary.truncate(50_000)}"
+        "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{summary.truncate(50_000)}"
       else
-        "Agent pushed updates to this PR."
+        "#{COMMENT_MARKER}\n#{GENERIC_MESSAGE}"
       end
     end
   end
