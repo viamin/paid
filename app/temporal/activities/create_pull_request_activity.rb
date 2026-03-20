@@ -8,37 +8,39 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      agent_run = AgentRun.find(agent_run_id)
-      project = agent_run.project
-      issue = agent_run.issue
+      track_phase(agent_run_id: agent_run_id, phase_key: "create_pull_request", phase_group: "post") do
+        agent_run = AgentRun.find(agent_run_id)
+        project = agent_run.project
+        issue = agent_run.issue
 
-      client = project.github_token.client
-      pr = client.create_pull_request(
-        project.full_name,
-        base: project.default_branch,
-        head: agent_run.branch_name,
-        title: pr_title(issue),
-        body: pr_body(issue, agent_run),
-        draft: true
-      )
+        client = project.github_token.client
+        pr = client.create_pull_request(
+          project.full_name,
+          base: project.default_branch,
+          head: agent_run.branch_name,
+          title: pr_title(issue),
+          body: pr_body(issue, agent_run),
+          draft: true
+        )
 
-      agent_run.complete!(
-        result_commit: agent_run.result_commit_sha,
-        pr_url: pr.html_url,
-        pr_number: pr.number
-      )
+        agent_run.complete!(
+          result_commit: agent_run.result_commit_sha,
+          pr_url: pr.html_url,
+          pr_number: pr.number
+        )
 
-      add_pr_labels(client, project, pr.number, agent_run_id)
+        add_pr_labels(client, project, pr.number, agent_run_id)
 
-      agent_run.log!("system", "PR created: #{pr.html_url}")
+        agent_run.log!("system", "PR created: #{pr.html_url}")
 
-      logger.info(
-        message: "agent_execution.pull_request_created",
-        agent_run_id: agent_run_id,
-        pull_request_url: pr.html_url
-      )
+        logger.info(
+          message: "agent_execution.pull_request_created",
+          agent_run_id: agent_run_id,
+          pull_request_url: pr.html_url
+        )
 
-      { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number }
+        { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number }
+      end
     end
 
     private

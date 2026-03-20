@@ -17,6 +17,7 @@ module Activities
       agent_type = input.fetch(:agent_type, "claude_code")
       source_pull_request_number = input[:source_pull_request_number]
 
+      started_at = Time.current
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
       user_settings = resolve_user_settings(project)
@@ -52,6 +53,18 @@ module Activities
         source_pull_request_number: source_pull_request_number,
         prompt_version: prompt_version,
         status: "pending"
+      )
+
+      AgentRunPhase.record!(
+        agent_run: agent_run,
+        phase_key: "create_agent_run",
+        phase_group: "prompt",
+        started_at: started_at,
+        finished_at: Time.current,
+        metadata: {
+          prompt_version_id: prompt_version&.id,
+          custom_prompt_provided: input[:custom_prompt].present?
+        }
       )
 
       issue&.update!(paid_state: "in_progress")

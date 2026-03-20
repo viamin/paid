@@ -11,6 +11,7 @@ class AgentRun < ApplicationRecord
   belongs_to :prompt_version, optional: true
 
   has_many :agent_run_logs, dependent: :destroy
+  has_many :agent_run_phases, dependent: :destroy
   has_many :ab_test_assignments, dependent: :destroy
   has_many :quality_metrics, dependent: :destroy
   has_one :worktree, dependent: :nullify
@@ -224,6 +225,33 @@ class AgentRun < ApplicationRecord
 
   def total_tokens
     tokens_input + tokens_output
+  end
+
+  def phase_timeline
+    agent_run_phases.ordered
+  end
+
+  def phase_summary
+    phases = phase_timeline.to_a
+    return empty_phase_summary if phases.empty?
+
+    first_phase = phases.first
+    queue_seconds = [ (first_phase.started_at - created_at).to_i, 0 ].max
+    grouped = phases.group_by(&:phase_group).transform_values do |entries|
+      entries.sum(&:duration_seconds)
+    end
+
+    {
+      queue_seconds: queue_seconds,
+      setup_seconds: grouped.fetch("setup", 0),
+      prompt_seconds: grouped.fetch("prompt", 0),
+      agent_seconds: grouped.fetch("agent", 0),
+      post_seconds: grouped.fetch("post", 0),
+      cleanup_seconds: grouped.fetch("cleanup", 0),
+      observed_seconds: phases.sum(&:duration_seconds),
+      first_phase_at: first_phase.started_at,
+      last_phase_at: phases.last.finished_at
+    }
   end
 
   def start!
@@ -506,6 +534,20 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def empty_phase_summary
+    {
+      queue_seconds: 0,
+      setup_seconds: 0,
+      prompt_seconds: 0,
+      agent_seconds: 0,
+      post_seconds: 0,
+      cleanup_seconds: 0,
+      observed_seconds: 0,
+      first_phase_at: nil,
+      last_phase_at: nil
+    }
+  end
 
   # Removes the named Docker volume for this agent run if it exists.
   # No-op for worktree-based runs (they use bind mounts, not named volumes).
