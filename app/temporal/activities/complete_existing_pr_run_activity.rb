@@ -14,8 +14,18 @@ module Activities
     class << self
       def agent_update_comment?(body)
         normalized = body.to_s
-        normalized.include?(COMMENT_MARKER) ||
-          LEGACY_COMMENT_BODIES.any? { |comment| normalized.include?(comment) }
+
+        # Prefer the explicit HTML marker when present.
+        return true if normalized.include?(COMMENT_MARKER)
+
+        # Legacy detection: treat as agent update only when the trimmed body
+        # clearly matches the legacy formats, rather than any substring match.
+        stripped = normalized.strip
+
+        return true if stripped.start_with?(SUMMARY_PREFIX)
+        return true if stripped == GENERIC_MESSAGE
+
+        false
       end
     end
 
