@@ -110,6 +110,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
     t.index ["agent_run_id"], name: "index_agent_run_phases_on_agent_run_id"
     t.index ["phase_group", "started_at"], name: "index_agent_run_phases_on_phase_group_and_started_at"
     t.index ["phase_key", "started_at"], name: "index_agent_run_phases_on_phase_key_and_started_at"
+    t.check_constraint "duration_seconds >= 0", name: "agent_run_phases_duration_seconds_non_negative"
+    t.check_constraint "finished_at >= started_at", name: "agent_run_phases_finished_at_after_started_at"
   end
 
   create_table "agent_runs", force: :cascade do |t|

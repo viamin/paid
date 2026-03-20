@@ -236,7 +236,8 @@ class AgentRun < ApplicationRecord
     phases ||= phase_timeline.to_a
     return empty_phase_summary if phases.empty?
 
-    ordered_phases = phases.sort_by { |phase| [ phase.started_at, phase.id ] }
+    # Callers pass phases from the ordered association; avoid resorting hot paths.
+    ordered_phases = phases
     first_phase = ordered_phases.first
     queue_seconds = [ (first_phase.started_at - created_at).to_i, 0 ].max
     grouped = ordered_phases.group_by(&:phase_group).transform_values do |entries|
