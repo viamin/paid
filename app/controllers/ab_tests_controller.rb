@@ -84,8 +84,9 @@ class AbTestsController < ApplicationController
     AbTests::PromoteWinner.call(ab_test: @ab_test)
     redirect_to prompt_ab_test_path(@prompt, @ab_test),
                 notice: "Winner promoted! v#{@ab_test.winner_variant.prompt_version.version} is now the current version."
-  rescue ArgumentError => e
-    redirect_to prompt_ab_test_path(@prompt, @ab_test), alert: e.message
+  rescue ArgumentError, ActiveRecord::RecordInvalid => e
+    message = e.is_a?(ActiveRecord::RecordInvalid) ? e.record.errors.full_messages.join(", ") : e.message
+    redirect_to prompt_ab_test_path(@prompt, @ab_test), alert: message
   end
 
   private

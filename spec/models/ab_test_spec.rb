@@ -17,6 +17,7 @@ RSpec.describe AbTest do
     it { is_expected.to validate_presence_of(:status) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
     it { is_expected.to validate_numericality_of(:min_samples_per_variant).only_integer.is_greater_than_or_equal_to(2) }
+    it { is_expected.to validate_numericality_of(:confidence_threshold).is_greater_than(0).is_less_than_or_equal_to(1) }
   end
 
   describe "#start!" do
