@@ -149,16 +149,19 @@ class ProvidersController < ApplicationController
     run_keys = UserSetting.enabled_agent_providers(current_user)
     return run_keys if run_keys.present?
 
-    claude = current_user.providers.find_or_initialize_by(provider_key: "claude")
-    claude.enabled_for_agent_runs = true
-    claude.enabled_for_fallback = true if claude.new_record?
+    default_key = Provider.default_provider_key
+    return [] unless default_key
 
-    return UserSetting.enabled_agent_providers(current_user) if claude.save
+    default = current_user.providers.find_or_initialize_by(provider_key: default_key)
+    default.enabled_for_agent_runs = true
+    default.enabled_for_fallback = true if default.new_record?
+
+    return UserSetting.enabled_agent_providers(current_user) if default.save
 
     Rails.logger.error(
       message: "providers.ensure_run_enabled_provider_failed",
       user_id: current_user.id,
-      errors: claude.errors.full_messages
+      errors: default.errors.full_messages
     )
     []
   end

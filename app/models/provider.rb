@@ -38,6 +38,8 @@ class Provider < ApplicationRecord
   end
 
   def self.display_name(provider_key)
+    return "Unknown" if provider_key.blank?
+
     provider = AgentHarness.provider(ProviderSupport.harness_provider_key_for(provider_key).to_sym)
 
     if provider.respond_to?(:display_name)
