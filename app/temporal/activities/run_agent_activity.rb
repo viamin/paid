@@ -64,9 +64,8 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent") do
-        agent_run = AgentRun.find(agent_run_id)
-
+      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
         prompt = agent_run.effective_prompt
         raise Temporalio::Error::ApplicationError.new("No prompt available for agent run", type: "MissingPrompt") unless prompt
 

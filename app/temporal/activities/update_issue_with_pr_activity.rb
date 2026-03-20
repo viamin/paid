@@ -7,8 +7,8 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       pull_request_url = input[:pull_request_url]
-      track_phase(agent_run_id: agent_run_id, phase_key: "update_issue_with_pr", phase_group: "post") do
-        agent_run = AgentRun.find(agent_run_id)
+      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "update_issue_with_pr", phase_group: "post", agent_run: agent_run) do
         issue = agent_run.issue
 
         return { agent_run_id: agent_run_id } unless issue

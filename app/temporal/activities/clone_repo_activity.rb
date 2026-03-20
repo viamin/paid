@@ -15,9 +15,8 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      track_phase(agent_run_id: agent_run_id, phase_key: "clone_repo", phase_group: "setup") do
-        agent_run = AgentRun.find(agent_run_id)
-
+      agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "clone_repo", phase_group: "setup", agent_run: agent_run) do
         container_service = reconnect_container(agent_run)
         git_ops = Containers::GitOperations.new(
           container_service: container_service,

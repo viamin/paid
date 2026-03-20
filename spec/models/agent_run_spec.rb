@@ -1359,28 +1359,39 @@ RSpec.describe AgentRun do
   end
 
   describe "#phase_summary" do
-    def set_run_timestamps(agent_run)
+    def set_run_timestamps(agent_run, base_time)
       agent_run.update_columns(
-        created_at: 20.minutes.ago,
-        started_at: 10.minutes.ago,
-        completed_at: Time.current,
+        created_at: base_time - 20.minutes,
+        started_at: base_time - 10.minutes,
+        completed_at: base_time,
         duration_seconds: 600
       )
     end
 
+    def create_phase(agent_run, phase_key:, phase_group:, started_at:, finished_at:, duration_seconds:)
+      create(:agent_run_phase, agent_run: agent_run, phase_key: phase_key,
+        phase_group: phase_group, started_at: started_at,
+        finished_at: finished_at, duration_seconds: duration_seconds)
+    end
+
+    def create_default_phase_summary(agent_run, base_time)
+      create_phase(agent_run, phase_key: "provision_container", phase_group: "setup",
+        started_at: base_time - 15.minutes, finished_at: base_time - 13.minutes, duration_seconds: 120)
+      create_phase(agent_run, phase_key: "prepare_pr_prompt", phase_group: "prompt",
+        started_at: base_time - 13.minutes, finished_at: base_time - 12.minutes, duration_seconds: 60)
+      create_phase(agent_run, phase_key: "run_agent", phase_group: "agent",
+        started_at: base_time - 12.minutes, finished_at: base_time - 8.minutes, duration_seconds: 240)
+      create_phase(agent_run, phase_key: "create_pull_request", phase_group: "post",
+        started_at: base_time - 8.minutes, finished_at: base_time - 7.minutes, duration_seconds: 60)
+      create_phase(agent_run, phase_key: "cleanup_container", phase_group: "cleanup",
+        started_at: base_time - 7.minutes, finished_at: base_time - 6.minutes, duration_seconds: 60)
+    end
+
     it "summarizes queue and grouped phase durations" do
       agent_run = create(:agent_run, :completed)
-      set_run_timestamps(agent_run)
-      create(:agent_run_phase, agent_run: agent_run, phase_key: "provision_container",
-        phase_group: "setup", started_at: 15.minutes.ago, finished_at: 13.minutes.ago, duration_seconds: 120)
-      create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt",
-        phase_group: "prompt", started_at: 13.minutes.ago, finished_at: 12.minutes.ago, duration_seconds: 60)
-      create(:agent_run_phase, agent_run: agent_run, phase_key: "run_agent",
-        phase_group: "agent", started_at: 12.minutes.ago, finished_at: 8.minutes.ago, duration_seconds: 240)
-      create(:agent_run_phase, agent_run: agent_run, phase_key: "create_pull_request",
-        phase_group: "post", started_at: 8.minutes.ago, finished_at: 7.minutes.ago, duration_seconds: 60)
-      create(:agent_run_phase, agent_run: agent_run, phase_key: "cleanup_container",
-        phase_group: "cleanup", started_at: 7.minutes.ago, finished_at: 6.minutes.ago, duration_seconds: 60)
+      base_time = Time.current
+      set_run_timestamps(agent_run, base_time)
+      create_default_phase_summary(agent_run, base_time)
 
       summary = agent_run.reload.phase_summary
 
