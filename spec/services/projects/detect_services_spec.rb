@@ -308,17 +308,13 @@ RSpec.describe Projects::DetectServices do
       end
     end
 
-    context "when a GitHub API error occurs for one file" do
-      it "continues detection from other files" do
+    context "when a non-NotFound GitHub API error occurs" do
+      it "propagates the error instead of silently swallowing it" do
         allow(github_client).to receive(:contents)
           .with("test-owner/test-repo", path: "Gemfile")
           .and_raise(GithubClient::RateLimitError.new)
-        stub_file("config/database.yml", "default:\n  adapter: postgresql")
 
-        result = described_class.call(project: project)
-
-        services = result.detected.map { |d| d[:service] }
-        expect(services).to include("postgres")
+        expect { described_class.call(project: project) }.to raise_error(GithubClient::RateLimitError)
       end
     end
 
