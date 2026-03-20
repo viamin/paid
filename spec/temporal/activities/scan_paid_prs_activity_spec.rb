@@ -887,11 +887,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "treats comment-generating bot reviews as blocking" do
+      it "treats comment-generating bot reviews as blocking and requests a refresh" do
         result = activity.execute(project_id: project.id)
 
         trigger_types = result[:prs_to_trigger].flat_map { |trigger| trigger[:triggers].map { |t| t[:type] } }
-        expect(trigger_types).not_to include("review_bot_review_pending")
+        expect(trigger_types).to include("review_bot_review_pending")
         expect(trigger_types).not_to include("ready_for_owner")
         expect(trigger_types).to include("review_bot_comments")
       end
@@ -1017,6 +1017,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:phase]).to eq("ready")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_review_pending")
         expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_threads")
       end
     end
