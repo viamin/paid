@@ -1111,7 +1111,14 @@ RSpec.describe AgentRun do
       expect(described_class.next_queued_run).to eq(auto_continue)
     end
 
-    it "uses FIFO within the same priority tier" do
+    it "prioritizes create_issue over create_pr within the same priority tier" do
+      pr_run = create(:agent_run, :queued, trigger_type: "manual", goal: "create_pr", created_at: 2.minutes.ago)
+      issue_run = create(:agent_run, :queued, trigger_type: "manual", goal: "create_issue", created_at: 1.minute.ago)
+
+      expect(described_class.next_queued_run).to eq(issue_run)
+    end
+
+    it "uses FIFO within the same priority tier and goal type" do
       newer_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
       older_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 2.minutes.ago)
 
