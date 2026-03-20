@@ -22,7 +22,6 @@ module Activities
     MIN_COMMENT_LENGTH = 20
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
-    AGENT_UPDATE_COMMENT_PATTERN = /\A## Agent Update\b/i
 
     def execute(input)
       project_id = input[:project_id]
@@ -541,10 +540,7 @@ module Activities
     end
 
     def system_generated_comment?(body)
-      normalized = body.to_s.strip
-
-      AGENT_UPDATE_COMMENT_PATTERN.match?(normalized) ||
-        normalized == "Agent pushed updates to this PR."
+      Activities::CompleteExistingPrRunActivity.agent_update_comment?(body)
     end
 
     def log_signal_error(signal, project, issue, error)
