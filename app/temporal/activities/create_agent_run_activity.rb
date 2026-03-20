@@ -55,7 +55,7 @@ module Activities
         status: "pending"
       )
 
-      AgentRunPhase.record!(
+      record_phase(
         agent_run: agent_run,
         phase_key: "create_agent_run",
         phase_group: "prompt",

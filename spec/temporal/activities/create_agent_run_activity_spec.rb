@@ -65,6 +65,18 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(issue.reload.paid_state).to eq("in_progress")
     end
 
+    it "does not fail when phase recording raises" do
+      allow(AgentRunPhase).to receive(:record!).and_raise(StandardError, "phase write failed")
+      result = nil
+
+      expect {
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+      }.not_to raise_error
+
+      expect(AgentRun.find(result[:agent_run_id]).status).to eq("pending")
+      expect(issue.reload.paid_state).to eq("in_progress")
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid project_id" do
       expect {
         activity.execute(project_id: -1, issue_id: issue.id)

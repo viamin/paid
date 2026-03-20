@@ -111,16 +111,21 @@ module Dashboard
       values_by_group = Hash.new { |hash, key| hash[key] = [] }
 
       completed_runs.each do |run|
-        summary = run.phase_summary(phases: run.agent_run_phases.to_a)
+        phases = run.agent_run_phases.to_a
+        next if phases.empty?
+
+        summary = run.phase_summary(phases: phases)
         values_by_group["queue"] << summary[:queue_seconds]
-        values_by_group["setup"] << summary[:setup_seconds]
-        values_by_group["prompt"] << summary[:prompt_seconds]
-        values_by_group["agent"] << summary[:agent_seconds]
-        values_by_group["post"] << summary[:post_seconds]
-        values_by_group["cleanup"] << summary[:cleanup_seconds]
+
+        phase_durations_by_group(phases).each do |phase_group, duration_seconds|
+          values_by_group[phase_group] << duration_seconds
+        end
       end
 
-      values_by_group.transform_values do |values|
+      return empty_phase_breakdown if values_by_group.empty?
+
+      phase_breakdown_groups.index_with do |phase_group|
+        values = values_by_group.fetch(phase_group, [])
         summarize_phase_values(values)
       end
     end
@@ -189,8 +194,18 @@ module Dashboard
     end
 
     def empty_phase_breakdown
-      %w[queue setup prompt agent post cleanup].index_with do
+      phase_breakdown_groups.index_with do
         summarize_phase_values([])
+      end
+    end
+
+    def phase_breakdown_groups
+      %w[queue setup prompt agent post cleanup]
+    end
+
+    def phase_durations_by_group(phases)
+      phases.group_by(&:phase_group).transform_values do |entries|
+        entries.sum(&:duration_seconds)
       end
     end
 
