@@ -9,7 +9,6 @@ module Activities
     COMMENT_MARKER = "<!-- paid:agent-update -->"
     SUMMARY_PREFIX = "## Agent Update"
     GENERIC_MESSAGE = "Agent pushed updates to this PR."
-    LEGACY_COMMENT_BODIES = [ SUMMARY_PREFIX, GENERIC_MESSAGE ].freeze
 
     class << self
       def agent_update_comment?(body)
