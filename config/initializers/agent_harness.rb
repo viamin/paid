@@ -28,7 +28,10 @@ AgentHarness.configure do |config|
   config.fallback_providers = %w[cursor aider].filter_map do |provider_key|
     next unless supported_provider_keys.include?(provider_key)
 
-    ProviderSupport.harness_provider_key_for(provider_key).to_sym
+    harness_provider_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
+    next if default_key && harness_provider_key == default_key
+
+    harness_provider_key
   end
   config.default_timeout = Rails.application.config.x.agent_timeout
 
