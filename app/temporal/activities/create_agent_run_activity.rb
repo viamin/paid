@@ -55,33 +55,33 @@ module Activities
         status: "pending"
       )
 
-      record_phase(
+      track_phase(
+        agent_run_id: agent_run.id,
         agent_run: agent_run,
         phase_key: "create_agent_run",
         phase_group: "prompt",
-        started_at: started_at,
-        finished_at: Time.current,
         metadata: {
           prompt_version_id: prompt_version&.id,
           custom_prompt_provided: input[:custom_prompt].present?
+        },
+        started_at: started_at
+      ) do
+        issue&.update!(paid_state: "in_progress")
+
+        logger.info(
+          message: "agent_execution.agent_run_created",
+          agent_run_id: agent_run.id,
+          project_id: project_id,
+          issue_id: issue_id,
+          custom_prompt_provided: input[:custom_prompt].present?,
+          prompt_version_id: prompt_version&.id
+        )
+
+        {
+          agent_run_id: agent_run.id,
+          provider_attempt_count: provider_attempt_count_for(agent_type, user_settings)
         }
-      )
-
-      issue&.update!(paid_state: "in_progress")
-
-      logger.info(
-        message: "agent_execution.agent_run_created",
-        agent_run_id: agent_run.id,
-        project_id: project_id,
-        issue_id: issue_id,
-        custom_prompt_provided: input[:custom_prompt].present?,
-        prompt_version_id: prompt_version&.id
-      )
-
-      {
-        agent_run_id: agent_run.id,
-        provider_attempt_count: provider_attempt_count_for(agent_type, user_settings)
-      }
+      end
     end
 
     private
