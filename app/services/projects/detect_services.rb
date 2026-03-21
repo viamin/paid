@@ -288,8 +288,11 @@ module Projects
     end
 
     def match_compose_service_name(name)
+      return nil if name.blank?
+
+      name_str = name.to_s
       COMPOSE_IMAGE_PATTERNS.each do |pattern, service|
-        return service if name.match?(pattern)
+        return service if name_str.match?(pattern)
       end
       nil
     end
