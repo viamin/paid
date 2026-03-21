@@ -663,6 +663,109 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "POST /projects/:id/detect_services" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        project = create(:project, account: account, github_token: github_token)
+        post detect_services_project_path(project)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as owner" do
+      let(:project) { create(:project, account: account, github_token: github_token) }
+      let(:detect_result) do
+        Projects::DetectServices::Result.new(detected: [], matched: [], unmatched: [])
+      end
+
+      before do
+        sign_in user
+        allow(Projects::DetectServices).to receive(:call).and_return(detect_result)
+      end
+
+      it "redirects to the edit page" do
+        post detect_services_project_path(project)
+        expect(response).to redirect_to(edit_project_path(project))
+      end
+
+      it "shows a notice when no services are detected" do
+        post detect_services_project_path(project)
+        expect(flash[:notice]).to include("No service dependencies detected")
+      end
+
+      context "when services are detected and matched" do
+        let(:postgres_container) { ServiceContainer.find_by(name: "postgres") || create(:service_container, name: "postgres") }
+        let(:detect_result) do
+          Projects::DetectServices::Result.new(
+            detected: [ { service: "postgres", source: "Gemfile", dependency: "pg" } ],
+            matched: [ postgres_container ],
+            unmatched: []
+          )
+        end
+
+        it "creates project service container associations" do
+          expect {
+            post detect_services_project_path(project)
+          }.to change(ProjectServiceContainer, :count).by(1)
+        end
+
+        it "shows a notice with added services" do
+          post detect_services_project_path(project)
+          expect(flash[:notice]).to include("postgres")
+        end
+
+        it "does not duplicate existing associations" do
+          create(:project_service_container, project: project, service_container: postgres_container)
+          expect {
+            post detect_services_project_path(project)
+          }.not_to change(ProjectServiceContainer, :count)
+        end
+      end
+
+      context "when services are detected but unmatched" do
+        let(:detect_result) do
+          Projects::DetectServices::Result.new(
+            detected: [ { service: "elasticsearch", source: "Gemfile", dependency: "searchkick" } ],
+            matched: [],
+            unmatched: [ { service: "elasticsearch", source: "Gemfile", dependency: "searchkick" } ]
+          )
+        end
+
+        it "shows a notice about unmatched services" do
+          post detect_services_project_path(project)
+          expect(flash[:notice]).to include("elasticsearch")
+          expect(flash[:notice]).to include("no matching service container")
+        end
+      end
+
+      context "when GitHub API returns an error" do
+        before do
+          allow(Projects::DetectServices).to receive(:call)
+            .and_raise(GithubClient::ApiError.new("API rate limit exceeded"))
+        end
+
+        it "redirects with an alert" do
+          post detect_services_project_path(project)
+          expect(response).to redirect_to(edit_project_path(project))
+          expect(flash[:alert]).to include("Could not detect services")
+        end
+      end
+    end
+
+    context "when authenticated as viewer" do
+      let(:viewer_user) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer_user }
+
+      it "redirects with authorization error" do
+        project = create(:project, account: account, github_token: github_token)
+        post detect_services_project_path(project)
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+  end
+
   describe "DELETE /projects/:id" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
