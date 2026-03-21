@@ -74,12 +74,24 @@ module QualityMetrics
         old_score = assignment.quality_score
         assignment.update!(quality_score: metric.composite_score)
 
-        # Only update variant aggregates if this is a new score (not a re-run).
-        # record_quality_score! increments sample_count, so calling it again on
-        # re-collection would corrupt the aggregates.
-        next if old_score.present?
+        variant = assignment.ab_test_variant
+        if old_score.present?
+          # Re-collection: adjust aggregates by replacing old score with new
+          adjust_variant_score(variant, old_score: old_score, new_score: metric.composite_score)
+        else
+          # First collection: add new score to aggregates
+          variant.record_quality_score!(metric.composite_score)
+        end
+      end
+    end
 
-        assignment.ab_test_variant.record_quality_score!(metric.composite_score)
+    def adjust_variant_score(variant, old_score:, new_score:)
+      variant.with_lock do
+        old_decimal = BigDecimal(old_score.to_s)
+        new_decimal = BigDecimal(new_score.to_s)
+        variant.total_quality_score = (variant.total_quality_score || BigDecimal("0")) - old_decimal + new_decimal
+        variant.avg_quality_score = variant.sample_count.positive? ? variant.total_quality_score / variant.sample_count : nil
+        variant.save!
       end
     end
 
