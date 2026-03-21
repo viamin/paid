@@ -51,6 +51,29 @@ docker compose exec web bin/rails db:prepare
 
 Open in VS Code with the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension, or use GitHub Codespaces. The `.devcontainer/` configuration provides a complete development environment.
 
+#### Enable Commit Signing in Dev Container
+
+If commit signing is not configured automatically, run:
+
+```bash
+bash .devcontainer/enable-commit-signing.sh
+```
+
+This script will:
+
+1. Authenticate GitHub CLI if needed (`gh auth login -h github.com`)
+2. Request the required `admin:ssh_signing_key` scope
+3. Create/register a container-local SSH signing key
+4. Configure repo-local git signing settings
+
+If you prefer to run commands manually:
+
+```bash
+gh auth login -h github.com
+gh auth refresh -h github.com -s admin:ssh_signing_key
+bash .devcontainer/setup-signing-key.sh
+```
+
 ### Option 3: Local Development
 
 ```bash
