@@ -13,26 +13,28 @@ module Activities
       agent_run_id = input[:agent_run_id]
       rebase_succeeded = input.fetch(:rebase_succeeded, true)
       agent_run = AgentRun.find(agent_run_id)
-      project = agent_run.project
-      client = project.github_token.client
+      track_phase(agent_run_id: agent_run_id, phase_key: "prepare_pr_prompt", phase_group: "prompt", agent_run: agent_run) do
+        project = agent_run.project
+        client = project.github_token.client
 
-      prompt = Prompts::BuildForPr.call(
-        project: project,
-        pr_number: agent_run.source_pull_request_number,
-        github_client: client,
-        rebase_succeeded: rebase_succeeded,
-        issue: agent_run.issue
-      )
+        prompt = Prompts::BuildForPr.call(
+          project: project,
+          pr_number: agent_run.source_pull_request_number,
+          github_client: client,
+          rebase_succeeded: rebase_succeeded,
+          issue: agent_run.issue
+        )
 
-      agent_run.update!(custom_prompt: prompt)
+        agent_run.update!(custom_prompt: prompt)
 
-      logger.info(
-        message: "agent_execution.prepare_pr_prompt",
-        agent_run_id: agent_run_id,
-        prompt_length: prompt.length
-      )
+        logger.info(
+          message: "agent_execution.prepare_pr_prompt",
+          agent_run_id: agent_run_id,
+          prompt_length: prompt.length
+        )
 
-      { agent_run_id: agent_run_id, prompt_length: prompt.length }
+        { agent_run_id: agent_run_id, prompt_length: prompt.length }
+      end
     end
   end
 end
