@@ -17,18 +17,6 @@ module AgentRuns
   #   result.success? # => true
   #   result.response  # => AgentHarness::Response
   class Execute
-    # Maps AgentRun agent_type values to agent-harness provider symbols
-    PROVIDER_MAP = {
-      "claude_code" => :claude,
-      "cursor" => :cursor,
-      "codex" => :codex,
-      "copilot" => :github_copilot,
-      "aider" => :aider,
-      "gemini" => :gemini,
-      "opencode" => :opencode,
-      "kilocode" => :kilocode
-    }.freeze
-
     attr_reader :agent_run, :prompt, :timeout
 
     def initialize(agent_run:, prompt:, timeout: nil)
@@ -58,7 +46,7 @@ module AgentRuns
     private
 
     def validate!
-      provider_name = PROVIDER_MAP[agent_run.agent_type]
+      provider_name = provider_name_for(agent_run.agent_type)
       raise ArgumentError, "Unsupported agent type: #{agent_run.agent_type}" unless provider_name
     end
 
@@ -69,7 +57,7 @@ module AgentRuns
     end
 
     def execute_agent
-      provider_name = PROVIDER_MAP[agent_run.agent_type]
+      provider_name = provider_name_for(agent_run.agent_type)
 
       options = { provider: provider_name, dangerous_mode: true }
       options[:timeout] = timeout unless timeout.nil?
@@ -159,7 +147,7 @@ module AgentRuns
     end
 
     def handle_auth_error(error)
-      provider_name = PROVIDER_MAP[agent_run.agent_type]
+      provider_name = provider_name_for(agent_run.agent_type)
       agent_run.auth_expire!(error: error.message, provider: provider_name.to_s)
       agent_run.log!("system", "Authentication expired for #{provider_name}")
 
@@ -181,6 +169,13 @@ module AgentRuns
       agent_run.log!("system", "Execution failed: #{error.class.name}")
 
       Result.new(success: false, error: error)
+    end
+
+    def provider_name_for(agent_type)
+      provider_key = Provider.provider_key_for_agent_type(agent_type)
+      return nil unless Provider.supported_provider_key?(provider_key)
+
+      Provider.harness_provider_key_for(provider_key).to_sym
     end
 
     # Simple result object for execute outcomes
