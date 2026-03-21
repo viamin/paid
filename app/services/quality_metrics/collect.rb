@@ -70,12 +70,14 @@ module QualityMetrics
     end
 
     def update_ab_test_variant_stats(metric)
-      agent_run.ab_test_assignments.includes(:ab_test_variant).find_each do |assignment|
+      agent_run.ab_test_assignments.find_each do |assignment|
         variant = assignment.ab_test_variant
 
-        # Wrap assignment + variant aggregate update in a single transaction
-        # so a crash between steps doesn't leave aggregates inconsistent.
+        # Lock variant first, then reload assignment inside the lock to get
+        # the authoritative old_score. This prevents a concurrent job from
+        # seeing old_score as nil and double-incrementing sample_count.
         variant.with_lock do
+          assignment.reload
           old_score = assignment.quality_score
           assignment.update!(quality_score: metric.composite_score)
 
@@ -98,11 +100,17 @@ module QualityMetrics
 
     def update_prompt_version_stats
       pv = agent_run.prompt_version
-      metrics = QualityMetric.where(prompt_version: pv).with_composite_score
 
-      pv.update!(
-        usage_count: pv.agent_runs.count,
-        avg_quality_score: metrics.average(:composite_score)&.round(2)
+      # Incremental update: use SQL to compute count + average in a single
+      # query scoped to the prompt version, avoiding full-table aggregation.
+      stats = QualityMetric.where(prompt_version: pv)
+                           .with_composite_score
+                           .pick(Arel.sql("COUNT(*), AVG(composite_score)"))
+
+      count, avg = stats
+      pv.update_columns(
+        usage_count: count.to_i,
+        avg_quality_score: avg&.round(2)
       )
     end
   end
