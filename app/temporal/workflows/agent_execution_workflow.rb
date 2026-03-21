@@ -153,6 +153,12 @@ module Workflows
           # No changes - mark as completed without PR
           run_activity(Activities::MarkAgentRunCompleteActivity,
             { agent_run_id: agent_run_id, reason: "no_changes" }, timeout: 30)
+
+          # Still request Copilot review for existing PR runs: the previous
+          # run may have pushed a fix that Copilot hasn't reviewed yet.
+          if source_pull_request_number
+            request_copilot_review(project_id, source_pull_request_number)
+          end
         end
 
         { success: true, agent_run_id: agent_run_id }
