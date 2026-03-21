@@ -44,12 +44,20 @@ echo
 gpgsign="$(git -C "${REPO_ROOT}" config --local --get commit.gpgsign 2>/dev/null || true)"
 gpgformat="$(git -C "${REPO_ROOT}" config --local --get gpg.format 2>/dev/null || true)"
 signingkey="$(git -C "${REPO_ROOT}" config --local --get user.signingkey 2>/dev/null || true)"
+# Resolve the signing key path (expand leading ~) so we can verify the file
+# actually exists and is readable, not just that the config points to it.
+resolved_signingkey="${signingkey}"
+if [[ -n "${resolved_signingkey}" && "${resolved_signingkey}" == "~"* ]]; then
+  resolved_signingkey="${HOME}${resolved_signingkey:1}"
+fi
 if [[ "${gpgsign}" == "true" ]] \
   && [[ "${gpgformat}" == "ssh" ]] \
-  && [[ -n "${signingkey}" ]]; then
+  && [[ -n "${signingkey}" ]] \
+  && [[ -r "${resolved_signingkey}" ]]; then
   echo "Commit signing is enabled for this repo. Current git settings:"
   echo "  gpg.format      = ${gpgformat}"
   echo "  user.signingkey  = ${signingkey}"
+  echo "  signing key file = ${resolved_signingkey} (readable)"
   echo "  commit.gpgsign   = ${gpgsign}"
 else
   echo "ERROR: Commit signing was not configured." >&2
