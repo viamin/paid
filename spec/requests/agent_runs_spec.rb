@@ -441,7 +441,7 @@ RSpec.describe "AgentRuns" do
 
       it "redirects with error when no issue selected" do
         post project_agent_runs_path(project)
-        expect(response).to redirect_to(new_project_agent_run_path(project))
+        expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
         follow_redirect!
         expect(response.body).to include("Please select an issue")
       end
@@ -503,7 +503,7 @@ RSpec.describe "AgentRuns" do
 
           post project_agent_runs_path(project), params: { issue_id: issue.id }
 
-          expect(response).to redirect_to(new_project_agent_run_path(project))
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
           follow_redirect!
           expect(response.body).to include("already queued or in progress")
         end
