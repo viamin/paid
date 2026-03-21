@@ -57,11 +57,13 @@ class TokenUsageTracker
     end
   end
 
-  # In-memory cache of LlmModel records keyed by model_id string.
+  # Thread-safe in-memory cache of LlmModel records keyed by model_id string.
   # Avoids a DB query per tracked request in the high-volume proxy path.
+  # Uses Concurrent::Map for safe concurrent access from Puma threads.
+  # Caches misses as :not_found to avoid repeated DB queries for unknown models.
   # Reset on deploy (process restart); stale pricing is acceptable since
   # model costs change infrequently and the cache is small.
-  @model_cache = {}
+  @model_cache = Concurrent::Map.new
 
   def self.calculate_cost(input_tokens, output_tokens, llm_model: nil, model_id: nil)
     model = llm_model
@@ -80,7 +82,8 @@ class TokenUsageTracker
   def self.lookup_model(model_id)
     return nil if model_id.blank?
 
-    @model_cache[model_id] ||= LlmModel.find_by(model_id: model_id)
+    cached = @model_cache.compute_if_absent(model_id) { LlmModel.find_by(model_id: model_id) || :not_found }
+    cached == :not_found ? nil : cached
   end
   private_class_method :lookup_model
 
