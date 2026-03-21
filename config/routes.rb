@@ -51,16 +51,6 @@ Rails.application.routes.draw do
     post :compress, on: :member
   end
 
-  # A/B testing management
-  resources :ab_tests do
-    member do
-      post :start
-      post :complete
-      post :cancel
-      post :promote_winner
-    end
-  end
-
   # Quality metrics dashboard
   resource :quality_dashboard, only: [ :show ]
 
