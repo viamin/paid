@@ -4,6 +4,10 @@ class AbTest < ApplicationRecord
   STATUSES = %w[draft running completed cancelled].freeze
   MAX_VARIANTS = 3
 
+  # Interval used for analysis bucketing; kept in sync with RecordResult's analysis
+  # throttle so cache freshness aligns with write-path recomputation cadence.
+  ANALYSIS_INTERVAL = 5
+
   belongs_to :prompt
   belongs_to :control_version, class_name: "PromptVersion"
   belongs_to :winner_variant, class_name: "AbTestVariant", optional: true
@@ -112,9 +116,7 @@ class AbTest < ApplicationRecord
 
   private
 
-  # Bucket sample counts to the same interval used by RecordResult's analysis
-  # throttle so cache freshness aligns with write-path recomputation cadence.
-  CACHE_BUCKET_SIZE = AbTests::RecordResult::ANALYSIS_INTERVAL
+  CACHE_BUCKET_SIZE = ANALYSIS_INTERVAL
 
   def samples_key
     total_samples = ab_test_variants.sum(&:sample_count)
