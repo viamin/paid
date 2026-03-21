@@ -176,6 +176,47 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "existing PR follow-up with no changes" do
+    let(:input) { { project_id: 1, issue_id: 1, source_pull_request_number: 42 } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    def stub_no_changes_followup
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
+        when "Activities::PreparePrPromptActivity" then {}
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    it "requests Copilot review even when agent makes no changes on existing PR" do
+      stub_no_changes_followup
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: 1, pr_number: 42,
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
+          timeout: 60)
+    end
+  end
+
   describe "#unwrap_error_message" do
     let(:workflow) { described_class.new }
 
