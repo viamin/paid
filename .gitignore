@@ -6,6 +6,7 @@
 
 # Ignore bundler config and vendored gems.
 /.bundle
+/.bundle-install
 /vendor/bundle
 
 # Ignore vendored gems
