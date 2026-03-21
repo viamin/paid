@@ -123,9 +123,17 @@ class AbTestsController < ApplicationController
     # expensive per-request score aggregation while data is still sparse.
     return unless @ab_test.completed? || (@ab_test.running? && @ab_test.sufficient_samples?)
 
-    # persist: false returns the last cached result (even if slightly stale)
-    # instead of recomputing — keeps GET requests read-only and avoids expensive
-    # score aggregation between write-path analysis intervals.
-    @ab_test.cached_or_compute_analysis(persist: false)
+    # First, try to use the last cached result (even if slightly stale) without
+    # recomputing — keeps GET requests read-only for running tests and avoids
+    # expensive score aggregation between write-path analysis intervals.
+    analysis = @ab_test.cached_or_compute_analysis(persist: false)
+
+    # For completed tests, if the cache is missing, compute and persist analysis
+    # so that completed tests truly always show a final result.
+    if analysis.nil? && @ab_test.completed?
+      analysis = @ab_test.cached_or_compute_analysis(persist: true)
+    end
+
+    analysis
   end
 end
