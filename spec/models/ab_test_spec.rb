@@ -107,7 +107,7 @@ RSpec.describe AbTest do
     it "recomputes when sample counts cross a bucket boundary" do
       ab_test.cached_or_compute_analysis(persist: true)
 
-      # Move sample count past the next bucket boundary (ANALYSIS_INTERVAL = 5)
+      # Move sample count past the next bucket boundary (AbTest::ANALYSIS_INTERVAL)
       control.update_columns(sample_count: 10)
       ab_test.ab_test_variants.reload
       ab_test.cached_or_compute_analysis(persist: true)
