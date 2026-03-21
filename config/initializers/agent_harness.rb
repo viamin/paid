@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "agent_harness"
-require Rails.root.join("lib/provider_support")
+require Rails.root.join("lib/provider_support").to_s
 
 agent_timeout = begin
   [ Integer(ENV.fetch("AGENT_TIMEOUT", 3600)), 1 ].max
