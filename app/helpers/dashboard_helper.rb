@@ -1,6 +1,24 @@
 # frozen_string_literal: true
 
 module DashboardHelper
+  PHASE_GROUP_LABELS = {
+    "queue" => "Queue",
+    "setup" => "Setup",
+    "prompt" => "Prompt Prep",
+    "agent" => "Agent",
+    "post" => "Post-Processing",
+    "cleanup" => "Cleanup"
+  }.freeze
+
+  PHASE_GROUP_BAR_STYLES = {
+    "queue" => "bg-slate-400",
+    "setup" => "bg-sky-500",
+    "prompt" => "bg-violet-500",
+    "agent" => "bg-emerald-500",
+    "post" => "bg-amber-500",
+    "cleanup" => "bg-rose-400"
+  }.freeze
+
   def format_duration(seconds)
     return "--" unless seconds && seconds > 0
 
@@ -13,5 +31,13 @@ module DashboardHelper
     else
       "#{seconds}s"
     end
+  end
+
+  def phase_group_label(phase_group)
+    PHASE_GROUP_LABELS.fetch(phase_group, phase_group.to_s.titleize)
+  end
+
+  def phase_group_bar_style(phase_group)
+    PHASE_GROUP_BAR_STYLES.fetch(phase_group, "bg-gray-400")
   end
 end
