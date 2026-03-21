@@ -58,7 +58,9 @@ class TokenUsageTracker
   end
 
   def self.calculate_cost(input_tokens, output_tokens, llm_model: nil, model_id: nil)
-    model = llm_model || (LlmModel.find_by(model_id: model_id) if model_id.present?)
+    model = llm_model
+    model = LlmModel.find_by(model_id: model) if model.is_a?(String)
+    model ||= LlmModel.find_by(model_id: model_id) if model_id.present?
 
     if model&.input_cost_per_million && model&.output_cost_per_million
       model.estimated_cost(input_tokens, output_tokens)
