@@ -137,6 +137,7 @@ module Api
 
       body = parse_response_body(response.body)
       return unless body.is_a?(Hash) && body["id"].present?
+      return if @agent_run.review_posted_at.present?
 
       @agent_run.update!(review_posted_at: Time.current)
 
