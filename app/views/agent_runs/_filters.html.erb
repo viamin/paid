@@ -20,7 +20,8 @@
       <%= f.label :goal_eq, "Goal", class: "block text-sm font-medium text-gray-700" %>
       <% goal_labels = {
         "create_pr" => "Create PR",
-        "create_issue" => "Create Issue"
+        "create_issue" => "Create Issue",
+        "review" => "PR Code Review"
       } %>
       <%= f.select :goal_eq,
         options_for_select(AgentRun::GOALS.map { |g| [goal_labels.fetch(g, g.titleize), g] }, params.dig(:q, :goal_eq)),

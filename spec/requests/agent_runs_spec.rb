@@ -442,7 +442,7 @@ RSpec.describe "AgentRuns" do
 
       it "redirects with error when no issue selected" do
         post project_agent_runs_path(project)
-        expect(response).to redirect_to(new_project_agent_run_path(project))
+        expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
         follow_redirect!
         expect(response.body).to include("Please select an issue")
       end
@@ -504,7 +504,7 @@ RSpec.describe "AgentRuns" do
 
           post project_agent_runs_path(project), params: { issue_id: issue.id }
 
-          expect(response).to redirect_to(new_project_agent_run_path(project))
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
           follow_redirect!
           expect(response.body).to include("already queued or in progress")
         end
@@ -526,6 +526,36 @@ RSpec.describe "AgentRuns" do
         post project_agent_runs_path(project), params: { issue_id: issue.id, agent_type: "cursor" }
 
         expect(AgentRun.last.agent_type).to eq("claude_code")
+      end
+
+      context "with goal=review" do
+        let(:pr) { create(:issue, :pull_request, project: project, github_number: 55, title: "Review target PR") }
+
+        it "creates a review agent run with source_pull_request_number" do
+          expect {
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_id: pr.id }
+          }.to change(AgentRun, :count).by(1)
+
+          agent_run = AgentRun.last
+          expect(agent_run.goal).to eq("review")
+          expect(agent_run.source_pull_request_number).to eq(55)
+          expect(agent_run.status).to eq("queued")
+          expect(response).to redirect_to(project_path(project))
+        end
+
+        it "redirects with error when no pull request selected" do
+          post project_agent_runs_path(project), params: { goal: "review" }
+
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: "review"))
+          follow_redirect!
+          expect(response.body).to include("Please select a pull request to review")
+        end
+
+        it "enqueues ProcessRunQueueJob for review runs" do
+          expect {
+            post project_agent_runs_path(project), params: { goal: "review", pull_request_id: pr.id }
+          }.to have_enqueued_job(ProcessRunQueueJob)
+        end
       end
     end
   end
