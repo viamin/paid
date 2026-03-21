@@ -15,6 +15,7 @@ module Activities
       issue_id = input[:issue_id]
       custom_prompt = input[:custom_prompt]
       agent_type = input.fetch(:agent_type, "claude_code")
+      goal = input.fetch(:goal, "create_pr")
       source_pull_request_number = input[:source_pull_request_number]
 
       project = Project.find(project_id)
@@ -48,6 +49,7 @@ module Activities
         project: project,
         issue: issue,
         agent_type: agent_type,
+        goal: goal,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
         prompt_version: prompt_version,

@@ -34,7 +34,7 @@ module Workflows
       create_input = { project_id: project_id, issue_id: issue_id, agent_type: agent_type,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
-        agent_run_id: agent_run_id }.compact
+        agent_run_id: agent_run_id, goal: goal }.compact
       agent_run_result = run_activity(Activities::CreateAgentRunActivity,
         create_input, timeout: 30)
       agent_run_id = agent_run_result[:agent_run_id]
@@ -55,14 +55,17 @@ module Workflows
         # Step 3: Clone repo and create branch inside the container.
         # Skip clone for create_issue goals without a source PR — the agent
         # only needs the GitHub API proxy, not repository code.
+        # Review goals always need the repo to examine code.
         skip_clone = goal == "create_issue" && source_pull_request_number.blank?
         unless skip_clone
           run_activity(Activities::CloneRepoActivity,
             { agent_run_id: agent_run_id }, timeout: 180)
         end
 
-        # Step 3b: For existing PR runs without a custom prompt, rebase and build a rich prompt
-        pr_run_without_prompt = source_pull_request_number.present? && custom_prompt.blank?
+        # Step 3b: For existing PR runs without a custom prompt, rebase and build a rich prompt.
+        # Skip for review goals — they use their own review-specific prompt and
+        # don't need the PR-editing prompt that instructs the agent to commit fixes.
+        pr_run_without_prompt = source_pull_request_number.present? && custom_prompt.blank? && goal != "review"
         if pr_run_without_prompt
           rebase_result = run_activity(Activities::RebaseBranchActivity,
             { agent_run_id: agent_run_id }, timeout: 120)
@@ -107,6 +110,11 @@ module Workflows
             run_activity(Activities::CreateGithubIssueActivity,
               { agent_run_id: agent_run_id }, timeout: 120, retry_policy: NO_RETRY)
           end
+        elsif goal == "review"
+          # Review goal: complete the run — all output is PR comments posted
+          # by the agent via the GitHub API proxy during execution.
+          run_activity(Activities::CompleteReviewGoalActivity,
+            { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
         elsif agent_result[:has_changes]
           # Step 5: Push branch (inside container)
           run_activity(Activities::PushBranchActivity,
