@@ -71,28 +71,29 @@ module QualityMetrics
 
     def update_ab_test_variant_stats(metric)
       agent_run.ab_test_assignments.includes(:ab_test_variant).find_each do |assignment|
-        old_score = assignment.quality_score
-        assignment.update!(quality_score: metric.composite_score)
-
         variant = assignment.ab_test_variant
-        if old_score.present?
-          # Re-collection: adjust aggregates by replacing old score with new
-          adjust_variant_score(variant, old_score: old_score, new_score: metric.composite_score)
-        else
-          # First collection: add new score to aggregates
-          variant.record_quality_score!(metric.composite_score)
+
+        # Wrap assignment + variant aggregate update in a single transaction
+        # so a crash between steps doesn't leave aggregates inconsistent.
+        variant.with_lock do
+          old_score = assignment.quality_score
+          assignment.update!(quality_score: metric.composite_score)
+
+          if old_score.present?
+            adjust_variant_aggregates(variant, old_score: old_score, new_score: metric.composite_score)
+          else
+            variant.record_quality_score!(metric.composite_score)
+          end
         end
       end
     end
 
-    def adjust_variant_score(variant, old_score:, new_score:)
-      variant.with_lock do
-        old_decimal = BigDecimal(old_score.to_s)
-        new_decimal = BigDecimal(new_score.to_s)
-        variant.total_quality_score = (variant.total_quality_score || BigDecimal("0")) - old_decimal + new_decimal
-        variant.avg_quality_score = variant.sample_count.positive? ? variant.total_quality_score / variant.sample_count : nil
-        variant.save!
-      end
+    def adjust_variant_aggregates(variant, old_score:, new_score:)
+      old_decimal = BigDecimal(old_score.to_s)
+      new_decimal = BigDecimal(new_score.to_s)
+      variant.total_quality_score = (variant.total_quality_score || BigDecimal("0")) - old_decimal + new_decimal
+      variant.avg_quality_score = variant.sample_count.positive? ? variant.total_quality_score / variant.sample_count : nil
+      variant.save!
     end
 
     def update_prompt_version_stats

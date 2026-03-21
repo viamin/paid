@@ -152,5 +152,10 @@ FactoryBot.define do
       created_issue_url { "https://github.com/example/repo/issues/42" }
       created_issue_number { 42 }
     end
+
+    trait :review_goal do
+      goal { "review" }
+      source_pull_request_number { 10 }
+    end
   end
 end
