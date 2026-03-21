@@ -423,6 +423,7 @@ module Activities
         next false if bot_user?(login)
         next false unless project.trusted_github_user?(login)
         next false if cutoff && c.created_at <= cutoff
+        next false if system_generated_comment?(c.body)
         next false if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
 
         true
@@ -536,6 +537,10 @@ module Activities
       return true if normalized.end_with?("[bot]", "-bot")
 
       KNOWN_BOT_PREFIXES.any? { |prefix| normalized.start_with?(prefix) }
+    end
+
+    def system_generated_comment?(body)
+      Activities::CompleteExistingPrRunActivity.agent_update_comment?(body)
     end
 
     def log_signal_error(signal, project, issue, error)

@@ -7,6 +7,7 @@ RSpec.describe AgentRun do
     it { is_expected.to belong_to(:project) }
     it { is_expected.to belong_to(:issue).optional }
     it { is_expected.to have_many(:agent_run_logs).dependent(:destroy) }
+    it { is_expected.to have_many(:agent_run_phases).dependent(:destroy) }
   end
 
   describe "validations" do
@@ -65,6 +66,21 @@ RSpec.describe AgentRun do
 
         expect(agent_run).not_to be_valid
         expect(agent_run.errors[:base]).to include("must have either an issue, a custom prompt, or a source pull request")
+      end
+    end
+
+    describe "review goal requires pull request" do
+      it "is invalid without source_pull_request_number when goal is review" do
+        agent_run = build(:agent_run, :review_goal, source_pull_request_number: nil)
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:source_pull_request_number]).to include("is required for review goals")
+      end
+
+      it "is valid with source_pull_request_number when goal is review" do
+        agent_run = build(:agent_run, :review_goal)
+
+        expect(agent_run).to be_valid
       end
     end
   end
@@ -1354,6 +1370,53 @@ RSpec.describe AgentRun do
       agent_run = create(:agent_run)
       expect { agent_run.log_provider_switch!("claude", "cursor", "rate_limited") }
         .to change { agent_run.reload.provider_switches }.by(1)
+    end
+  end
+
+  describe "#phase_summary" do
+    def set_run_timestamps(agent_run, base_time)
+      agent_run.update_columns(
+        created_at: base_time - 20.minutes,
+        started_at: base_time - 10.minutes,
+        completed_at: base_time,
+        duration_seconds: 600
+      )
+    end
+
+    def create_phase(agent_run, phase_key:, phase_group:, started_at:, finished_at:, duration_seconds:)
+      create(:agent_run_phase, agent_run: agent_run, phase_key: phase_key,
+        phase_group: phase_group, started_at: started_at,
+        finished_at: finished_at, duration_seconds: duration_seconds)
+    end
+
+    def create_default_phase_summary(agent_run, base_time)
+      create_phase(agent_run, phase_key: "provision_container", phase_group: "setup",
+        started_at: base_time - 15.minutes, finished_at: base_time - 13.minutes, duration_seconds: 120)
+      create_phase(agent_run, phase_key: "prepare_pr_prompt", phase_group: "prompt",
+        started_at: base_time - 13.minutes, finished_at: base_time - 12.minutes, duration_seconds: 60)
+      create_phase(agent_run, phase_key: "run_agent", phase_group: "agent",
+        started_at: base_time - 12.minutes, finished_at: base_time - 8.minutes, duration_seconds: 240)
+      create_phase(agent_run, phase_key: "create_pull_request", phase_group: "post",
+        started_at: base_time - 8.minutes, finished_at: base_time - 7.minutes, duration_seconds: 60)
+      create_phase(agent_run, phase_key: "cleanup_container", phase_group: "cleanup",
+        started_at: base_time - 7.minutes, finished_at: base_time - 6.minutes, duration_seconds: 60)
+    end
+
+    it "summarizes queue and grouped phase durations" do
+      agent_run = create(:agent_run, :completed)
+      base_time = Time.current
+      set_run_timestamps(agent_run, base_time)
+      create_default_phase_summary(agent_run, base_time)
+
+      summary = agent_run.reload.phase_summary
+
+      expect(summary[:queue_seconds]).to eq(300)
+      expect(summary[:setup_seconds]).to eq(120)
+      expect(summary[:prompt_seconds]).to eq(60)
+      expect(summary[:agent_seconds]).to eq(240)
+      expect(summary[:post_seconds]).to eq(60)
+      expect(summary[:cleanup_seconds]).to eq(60)
+      expect(summary[:observed_seconds]).to eq(540)
     end
   end
 end

@@ -38,16 +38,24 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       agent_run.log!("stdout", "Fixed the login validation bug by updating the form handler.")
 
       expect(github_client).to receive(:add_comment)
-        .with(project.full_name, 42, "## Agent Update\n\nFixed the login validation bug by updating the form handler.")
+        .with(project.full_name, 42,
+          "#{described_class::COMMENT_MARKER}\n#{described_class::SUMMARY_PREFIX}\n\nFixed the login validation bug by updating the form handler.")
 
       activity.execute(agent_run_id: agent_run.id)
     end
 
     it "adds a generic comment when no stdout logs exist" do
       expect(github_client).to receive(:add_comment)
-        .with(project.full_name, 42, "Agent pushed updates to this PR.")
+        .with(project.full_name, 42, "#{described_class::COMMENT_MARKER}\n#{described_class::GENERIC_MESSAGE}")
 
       activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "identifies agent update comments" do
+      expect(described_class.agent_update_comment?("#{described_class::COMMENT_MARKER}\nUpdate")).to be(true)
+      expect(described_class.agent_update_comment?("## Agent Update\n\nLegacy summary")).to be(true)
+      expect(described_class.agent_update_comment?("Agent pushed updates to this PR.")).to be(true)
+      expect(described_class.agent_update_comment?("Please fix the parser error handling")).to be(false)
     end
 
     it "logs a system message" do

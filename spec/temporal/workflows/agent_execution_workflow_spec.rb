@@ -184,6 +184,58 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "existing PR follow-up reviews" do
+    let(:input) { { project_id: 1, issue_id: 1, source_pull_request_number: 42 } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    def stub_existing_pr_followup(pr_review_phase:)
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
+        when "Activities::PreparePrPromptActivity" then {}
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::ResolveReviewThreadsActivity" then {}
+        when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: pr_review_phase }
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    it "re-requests Copilot review after pushing commits to a ready PR" do
+      stub_existing_pr_followup(pr_review_phase: "ready")
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: 1, pr_number: 42,
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
+          timeout: 60)
+    end
+
+    it "does not request Copilot review after pushing commits to a merged PR" do
+      stub_existing_pr_followup(pr_review_phase: "merged")
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, any_args)
+    end
+  end
+
   describe "#unwrap_error_message" do
     let(:workflow) { described_class.new }
 

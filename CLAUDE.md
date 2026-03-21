@@ -158,6 +158,7 @@ Never skip pre-commit hooks (`--no-verify`), never disable linters, never ignore
 - UUIDs for external-facing IDs, bigints for internal foreign keys
 - Always add foreign key constraints
 - Index all foreign keys and frequently queried columns
+- **Always use `rails generate migration`** to create migrations — never create migration files manually. The generator ensures correct timestamps, naming conventions, and boilerplate.
 
 ## Release Management
 

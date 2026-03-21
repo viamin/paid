@@ -68,111 +68,112 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
+        prompt = agent_run.effective_prompt
+        raise Temporalio::Error::ApplicationError.new("No prompt available for agent run", type: "MissingPrompt") unless prompt
 
-      prompt = agent_run.effective_prompt
-      raise Temporalio::Error::ApplicationError.new("No prompt available for agent run", type: "MissingPrompt") unless prompt
+        user_settings = resolve_user_settings(agent_run)
+        providers = build_provider_order(agent_run, user_settings)
+        provider_states = load_provider_state_cache(user_settings.user, providers)
 
-      user_settings = resolve_user_settings(agent_run)
-      providers = build_provider_order(agent_run, user_settings)
-      provider_states = load_provider_state_cache(user_settings.user, providers)
+        pre_agent_sha = nil
+        last_error = nil
+        last_attempted_provider = nil
+        timeout_error = nil
+        rate_limit_reset_at = nil
+        skipped_rate_limited_count = 0
 
-      pre_agent_sha = nil
-      last_error = nil
-      last_attempted_provider = nil
-      timeout_error = nil
-      rate_limit_reset_at = nil
-      skipped_rate_limited_count = 0
-
-      providers.each do |provider|
-        # Skip unavailable providers, tracking rate-limited skips separately
-        if provider_unavailable?(user_settings, provider, provider_states)
-          canonical = canonical_provider(provider)
-          state = provider_states[canonical]
-          error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
-          skipped_rate_limited_count += 1 if error_type == "rate_limited"
-          agent_run.record_provider_attempt(provider, success: false, error_type: error_type)
-          next
-        end
-
-        # Log provider switch when we have a previous actually-attempted provider
-        if last_attempted_provider
-          agent_run.log_provider_switch!(last_attempted_provider, provider, last_error || "fallback")
-        end
-
-        begin
-          last_attempted_provider = provider
-          provider_result = run_agent_with_provider(agent_run, provider, prompt)
-          pre_agent_sha = provider_result.fetch(:pre_agent_sha)
-
-          # Success - record and update final provider
-          record_provider_success(user_settings, provider, provider_states)
-          agent_run.record_provider_attempt(provider, success: true)
-          agent_run.update!(final_provider: provider)
-
-          commit_uncommitted_changes(agent_run)
-          has_changes = check_for_changes(agent_run, pre_agent_sha)
-
-          if !has_changes && !provider_result.fetch(:output_present)
-            agent_run.log!("system", "Provider completed with no output and no changes")
+        providers.each do |provider|
+          # Skip unavailable providers, tracking rate-limited skips separately
+          if provider_unavailable?(user_settings, provider, provider_states)
+            canonical = canonical_provider(provider)
+            state = provider_states[canonical]
+            error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
+            skipped_rate_limited_count += 1 if error_type == "rate_limited"
+            agent_run.record_provider_attempt(provider, success: false, error_type: error_type)
+            next
           end
 
-          return {
-            agent_run_id: agent_run_id,
-            success: true,
-            has_changes: has_changes,
-            final_provider: provider
-          }
-        rescue ProviderRateLimitError => e
-          last_error = "rate_limited"
-          rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
-          persist_rate_limit(user_settings, provider, provider_states, e.reset_at)
-          agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
-          logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
-        rescue ProviderTimeoutError => e
-          last_error = "timeout"
-          timeout_error ||= e.message
-          record_provider_failure(user_settings, provider, provider_states)
-          agent_run.record_provider_attempt(provider, success: false, error_type: "timeout")
-          logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
-        rescue ProviderExecutionError => e
-          last_error = "error"
-          record_provider_failure(user_settings, provider, provider_states)
-          agent_run.record_provider_attempt(provider, success: false, error_type: "error")
-          logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
-        end
-      end
+          # Log provider switch when we have a previous actually-attempted provider
+          if last_attempted_provider
+            agent_run.log_provider_switch!(last_attempted_provider, provider, last_error || "fallback")
+          end
 
-      # When all providers were skipped due to cached rate-limit state (no
-      # attempts made), compute the earliest reset time from provider states.
-      all_skipped_rate_limited = providers.any? && skipped_rate_limited_count == providers.size
-      if rate_limit_reset_at.nil? && all_skipped_rate_limited
-        reset_candidates = providers.filter_map do |provider|
-          state = provider_states[canonical_provider(provider)]
-          state&.rate_limited_until
-        end
-        rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
-      end
+          begin
+            last_attempted_provider = provider
+            provider_result = run_agent_with_provider(agent_run, provider, prompt)
+            pre_agent_sha = provider_result.fetch(:pre_agent_sha)
 
-      # All providers exhausted. Timeout takes precedence over rate_limited
-      # because it indicates an actual execution attempt that should trigger
-      # ProcessRunQueueJob to re-schedule work.
-      if timeout_error.present?
-        agent_run.timeout!(error: timeout_error) unless agent_run.finished?
-        ProcessRunQueueJob.perform_later
-      elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
-        provider_list = providers.any? ? providers.join(", ") : "none"
-        agent_run.rate_limit!(
-          error: "All providers rate limited: #{provider_list}",
-          reset_at: rate_limit_reset_at
+            # Success - record and update final provider
+            record_provider_success(user_settings, provider, provider_states)
+            agent_run.record_provider_attempt(provider, success: true)
+            agent_run.update!(final_provider: provider)
+
+            commit_uncommitted_changes(agent_run)
+            has_changes = check_for_changes(agent_run, pre_agent_sha)
+
+            if !has_changes && !provider_result.fetch(:output_present)
+              agent_run.log!("system", "Provider completed with no output and no changes")
+            end
+
+            return {
+              agent_run_id: agent_run_id,
+              success: true,
+              has_changes: has_changes,
+              final_provider: provider
+            }
+          rescue ProviderRateLimitError => e
+            last_error = "rate_limited"
+            rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
+            persist_rate_limit(user_settings, provider, provider_states, e.reset_at)
+            agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
+            logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
+          rescue ProviderTimeoutError => e
+            last_error = "timeout"
+            timeout_error ||= e.message
+            record_provider_failure(user_settings, provider, provider_states)
+            agent_run.record_provider_attempt(provider, success: false, error_type: "timeout")
+            logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
+          rescue ProviderExecutionError => e
+            last_error = "error"
+            record_provider_failure(user_settings, provider, provider_states)
+            agent_run.record_provider_attempt(provider, success: false, error_type: "error")
+            logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
+          end
+        end
+
+        # When all providers were skipped due to cached rate-limit state (no
+        # attempts made), compute the earliest reset time from provider states.
+        all_skipped_rate_limited = providers.any? && skipped_rate_limited_count == providers.size
+        if rate_limit_reset_at.nil? && all_skipped_rate_limited
+          reset_candidates = providers.filter_map do |provider|
+            state = provider_states[canonical_provider(provider)]
+            state&.rate_limited_until
+          end
+          rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
+        end
+
+        # All providers exhausted. Timeout takes precedence over rate_limited
+        # because it indicates an actual execution attempt that should trigger
+        # ProcessRunQueueJob to re-schedule work.
+        if timeout_error.present?
+          agent_run.timeout!(error: timeout_error) unless agent_run.finished?
+          ProcessRunQueueJob.perform_later
+        elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
+          provider_list = providers.any? ? providers.join(", ") : "none"
+          agent_run.rate_limit!(
+            error: "All providers rate limited: #{provider_list}",
+            reset_at: rate_limit_reset_at
+          )
+        elsif !agent_run.finished?
+          provider_list = providers.any? ? providers.join(", ") : "none"
+          agent_run.fail!(error: "All providers exhausted: #{provider_list}")
+        end
+        raise Temporalio::Error::ApplicationError.new(
+          "All providers exhausted",
+          type: "AllProvidersExhausted"
         )
-      elsif !agent_run.finished?
-        provider_list = providers.any? ? providers.join(", ") : "none"
-        agent_run.fail!(error: "All providers exhausted: #{provider_list}")
       end
-      raise Temporalio::Error::ApplicationError.new(
-        "All providers exhausted",
-        type: "AllProvidersExhausted"
-      )
     end
 
     # Custom error classes for provider-specific failures
@@ -482,7 +483,11 @@ module Activities
 
         Review PR ##{pr_number} in #{repo}. Examine the code changes and post review comments on the PR.
 
-        You have access to the repository code (already cloned). Use `git diff` to examine changes.
+        You have access to the repository code (already cloned). To examine the code changes, either:
+        - Use the GitHub API (via the proxy) to retrieve the PR's `/pulls/#{pr_number}/files` patches and review those diffs; or
+        - From the cloned repo, run an explicit diff against the PR base, for example:
+          `git fetch origin` then `git diff "$(git merge-base HEAD origin/main)"...HEAD`
+          (replace `main` with the PR's actual base branch if different).
         You also have access to the GitHub API via a proxy for posting review comments.
 
         Review the code for:

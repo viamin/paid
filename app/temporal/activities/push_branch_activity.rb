@@ -11,20 +11,21 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
+      track_phase(agent_run_id: agent_run_id, phase_key: "push_branch", phase_group: "post", agent_run: agent_run) do
+        container_service = Containers::Provision.reconnect(
+          agent_run: agent_run,
+          container_id: agent_run.container_id
+        )
 
-      container_service = Containers::Provision.reconnect(
-        agent_run: agent_run,
-        container_id: agent_run.container_id
-      )
+        git_ops = Containers::GitOperations.new(
+          container_service: container_service,
+          agent_run: agent_run
+        )
 
-      git_ops = Containers::GitOperations.new(
-        container_service: container_service,
-        agent_run: agent_run
-      )
+        commit_sha = git_ops.push_branch
 
-      commit_sha = git_ops.push_branch
-
-      { commit_sha: commit_sha, agent_run_id: agent_run_id }
+        { commit_sha: commit_sha, agent_run_id: agent_run_id }
+      end
     end
   end
 end
