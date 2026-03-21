@@ -84,15 +84,12 @@ class AbTestsController < ApplicationController
 
   def promote_winner
     authorize @ab_test, :update?
+    authorize @ab_test.prompt, :update?
 
-    if @ab_test.winner_variant.present?
-      prompt = @ab_test.prompt
-      authorize prompt, :update?
-      prompt.update!(current_version: @ab_test.winner_variant.prompt_version)
-      redirect_to @ab_test, notice: "Winner promoted as the current prompt version."
-    else
-      redirect_to @ab_test, alert: "No winner has been determined yet."
-    end
+    AbTests::PromoteWinner.call(ab_test: @ab_test)
+    redirect_to @ab_test, notice: "Winner promoted as the current prompt version."
+  rescue ArgumentError => e
+    redirect_to @ab_test, alert: e.message
   rescue Pundit::NotAuthorizedError
     redirect_to @ab_test, alert: "You are not authorized to update this prompt."
   end

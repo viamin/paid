@@ -61,7 +61,7 @@
                 </span>
               </td>
               <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= test.ab_test_variants.size %></td>
-              <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= test.ab_test_variants.sum(:sample_count) %></td>
+              <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= test.ab_test_variants.map(&:sample_count).sum %></td>
               <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"><%= test.created_at.strftime("%Y-%m-%d") %></td>
             </tr>
           <% end %>
