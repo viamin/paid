@@ -261,6 +261,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "shows retry provider options for configured providers" do
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
         user.providers.create!(provider_key: "cursor")
         agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
 
@@ -661,6 +662,7 @@ RSpec.describe "AgentRuns" do
       end
 
       it "creates a retry using a different configured provider" do
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
         user.providers.create!(provider_key: "cursor")
         agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
 
