@@ -169,13 +169,19 @@ module Workflows
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
-      request_review(project_id, pr_data[:pr_number],
-        [ Activities::RequestReviewActivity::COPILOT_LOGIN ],
-        log_key: "pr_review.request_review_bot_review_failed")
-
-      # If there are other triggers besides review_bot_review_pending, dispatch them
+      # If there are other triggers besides review_bot_review_pending, a followup
+      # agent will run and push changes. Defer the Copilot review request to the
+      # AgentExecutionWorkflow so Copilot reviews the fixed code, not the pre-fix
+      # state. When review_bot_review_pending is the only trigger, request
+      # immediately since no followup will run.
       other_triggers = trigger_types - [ "review_bot_review_pending" ]
-      return if other_triggers.empty?
+
+      if other_triggers.empty?
+        request_review(project_id, pr_data[:pr_number],
+          [ Activities::RequestReviewActivity::COPILOT_LOGIN ],
+          log_key: "pr_review.request_review_bot_review_failed")
+        return
+      end
 
       if pr_data[:phase].in?(%w[draft restarted])
         start_draft_followup_workflow(project_id, pr_data)

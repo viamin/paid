@@ -243,7 +243,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), anything)
     end
 
-    it "requests review bot review and dispatches other triggers" do
+    it "defers review request and dispatches followup when other triggers present" do
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
       allow(workflow).to receive(:run_activity)
@@ -261,9 +261,10 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
-      expect(workflow).to have_received(:run_activity)
+      # Review request is deferred to the AgentExecutionWorkflow (after push)
+      expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
-          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), anything)
+          hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), anything)
       expect(Temporalio::Workflow).to have_received(:start_child_workflow)
     end
 

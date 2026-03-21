@@ -39,21 +39,31 @@ module Projects
     def create
       authorize @project, :run_agent?
 
+      goal = params[:goal].presence || "create_pr"
       custom_prompt = params[:custom_prompt]&.strip.presence
       issue = resolve_issue
       source_pr_number = resolve_pull_request
 
-      unless issue || custom_prompt || source_pr_number
-        redirect_to new_project_agent_run_path(@project),
-          alert: "Please select an issue, provide a custom prompt, or select a pull request."
-        return
+      if goal == "review"
+        unless source_pr_number
+          redirect_to new_project_agent_run_path(@project, goal: goal),
+            alert: "Please select a pull request to review."
+          return
+        end
+      else
+        unless issue || custom_prompt || source_pr_number
+          redirect_to new_project_agent_run_path(@project, goal: goal),
+            alert: "Please select an issue, provide a custom prompt, or select a pull request."
+          return
+        end
       end
 
       create_run_and_redirect(
-        on_error_path: new_project_agent_run_path(@project),
+        on_error_path: new_project_agent_run_path(@project, goal: goal),
         issue: issue,
         custom_prompt: custom_prompt,
-        source_pull_request_number: source_pr_number
+        source_pull_request_number: source_pr_number,
+        goal: goal
       )
     end
 
@@ -259,19 +269,15 @@ module Projects
     end
 
     def provider_key_to_agent_type(provider_key)
-      return "claude_code" if provider_key == "claude"
-
-      provider_key
+      Provider.agent_type_for(provider_key)
     end
 
     def agent_type_to_provider_key(agent_type)
-      return "claude" if agent_type == "claude_code"
-
-      agent_type
+      Provider.provider_key_for_agent_type(agent_type)
     end
 
     def managed_provider_key?(provider_key)
-      Provider::SUPPORTED_PROVIDER_KEYS.include?(provider_key)
+      Provider.supported_provider_key?(provider_key)
     end
 
     def retry_provider_options_for(agent_run)
