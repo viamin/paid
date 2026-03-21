@@ -8,37 +8,39 @@ module Activities
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
 
-      if agent_run.review_posted_at.blank?
-        logger.warn(
-          message: "agent_execution.review_goal_no_review_posted",
+      track_phase(agent_run_id: agent_run_id, phase_key: "complete_review_goal", phase_group: "post", agent_run: agent_run) do
+        if agent_run.review_posted_at.blank?
+          logger.warn(
+            message: "agent_execution.review_goal_no_review_posted",
+            agent_run_id: agent_run_id,
+            pr_number: agent_run.source_pull_request_number
+          )
+          agent_run.fail!(error: "No review was posted on PR ##{agent_run.source_pull_request_number}")
+
+          raise Temporalio::Error::ApplicationError.new(
+            "No review was posted on PR ##{agent_run.source_pull_request_number}",
+            type: "ReviewNotPosted",
+            non_retryable: true
+          )
+        end
+
+        # Don't set pull_request_number for review runs — that field represents
+        # the PR produced by the run. Review runs use source_pull_request_number
+        # to track which PR was reviewed, keeping the two semantics distinct.
+        agent_run.complete!
+        agent_run.log!("system", "Completed: review goal finished for PR ##{agent_run.source_pull_request_number}")
+
+        logger.info(
+          message: "agent_execution.review_goal_completed",
           agent_run_id: agent_run_id,
-          pr_number: agent_run.source_pull_request_number
+          pr_number: agent_run.source_pull_request_number,
+          review_posted: agent_run.review_posted_at.present?
         )
-        agent_run.fail!(error: "No review was posted on PR ##{agent_run.source_pull_request_number}")
 
-        raise Temporalio::Error::ApplicationError.new(
-          "No review was posted on PR ##{agent_run.source_pull_request_number}",
-          type: "ReviewNotPosted",
-          non_retryable: true
-        )
+        ProcessRunQueueJob.perform_later
+
+        { agent_run_id: agent_run_id, success: true }
       end
-
-      # Don't set pull_request_number for review runs — that field represents
-      # the PR produced by the run. Review runs use source_pull_request_number
-      # to track which PR was reviewed, keeping the two semantics distinct.
-      agent_run.complete!
-      agent_run.log!("system", "Completed: review goal finished for PR ##{agent_run.source_pull_request_number}")
-
-      logger.info(
-        message: "agent_execution.review_goal_completed",
-        agent_run_id: agent_run_id,
-        pr_number: agent_run.source_pull_request_number,
-        review_posted: agent_run.review_posted_at.present?
-      )
-
-      ProcessRunQueueJob.perform_later
-
-      { agent_run_id: agent_run_id, success: true }
     end
   end
 end
