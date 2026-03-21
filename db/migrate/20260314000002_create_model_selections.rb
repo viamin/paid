@@ -12,7 +12,7 @@ class CreateModelSelections < ActiveRecord::Migration[8.1]
       t.decimal :complexity_score, precision: 4, scale: 2
       t.integer :selection_duration_ms
 
-      t.datetime :created_at, null: false
+      t.timestamps null: false
     end
 
     add_index :model_selections, :agent_run_id, unique: true
