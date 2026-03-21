@@ -219,6 +219,18 @@ RSpec.describe "Api::GithubProxy" do
       expect(non_review_run.review_posted_at).to be_nil
     end
 
+    it "does not overwrite review_posted_at when already set" do
+      original_time = 1.hour.ago
+      agent_run.update!(review_posted_at: original_time)
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Second review", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_posted_at).to be_within(1.second).of(original_time)
+    end
+
     it "does not track review_posted_at on upstream error" do
       stub_request(:post, target_url)
         .to_return(status: 422, body: { message: "Validation Failed" }.to_json,
