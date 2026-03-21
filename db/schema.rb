@@ -143,6 +143,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
     t.string "pull_request_url", limit: 500
     t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
+    t.datetime "review_posted_at"
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
@@ -158,8 +159,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -333,6 +334,47 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
     t.index ["project_id"], name: "index_issues_on_project_id"
   end
 
+  create_table "llm_models", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.decimal "capability_score", precision: 4, scale: 2
+    t.string "category", limit: 50, default: "general", null: false
+    t.integer "context_window"
+    t.datetime "created_at", null: false
+    t.string "display_name", null: false
+    t.string "family", limit: 100
+    t.decimal "input_cost_per_million", precision: 10, scale: 4
+    t.integer "max_output_tokens"
+    t.jsonb "metadata", default: {}, null: false
+    t.string "model_id", null: false
+    t.decimal "output_cost_per_million", precision: 10, scale: 4
+    t.string "provider", limit: 50, null: false
+    t.boolean "supports_json_output", default: false, null: false
+    t.boolean "supports_tools", default: false, null: false
+    t.boolean "supports_vision", default: false, null: false
+    t.datetime "updated_at", null: false
+    t.index ["active"], name: "index_llm_models_on_active"
+    t.index ["category"], name: "index_llm_models_on_category"
+    t.index ["model_id"], name: "index_llm_models_on_model_id", unique: true
+    t.index ["provider", "active"], name: "index_llm_models_on_provider_and_active"
+    t.index ["provider"], name: "index_llm_models_on_provider"
+  end
+
+  create_table "model_selections", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.integer "budget_limit_cents"
+    t.jsonb "candidates", default: [], null: false
+    t.decimal "complexity_score", precision: 4, scale: 2
+    t.datetime "created_at", null: false
+    t.bigint "llm_model_id", null: false
+    t.text "reasoning"
+    t.integer "selection_duration_ms"
+    t.string "selector_type", limit: 50, null: false
+    t.datetime "updated_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.index ["agent_run_id"], name: "index_model_selections_on_agent_run_id", unique: true
+    t.index ["llm_model_id"], name: "index_model_selections_on_llm_model_id"
+    t.index ["selector_type"], name: "index_model_selections_on_selector_type"
+  end
+
   create_table "project_memberships", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "project_id", null: false
@@ -374,6 +416,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_pr_followup_runs", default: 8, null: false
     t.string "merge_method", default: "squash", null: false
+    t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
     t.string "owner", null: false
     t.string "owner_reviewer_login"
@@ -625,6 +668,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
+  add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
+  add_foreign_key "model_selections", "llm_models"
   add_foreign_key "project_memberships", "projects"
   add_foreign_key "project_memberships", "users"
   add_foreign_key "project_service_containers", "projects", on_delete: :cascade
