@@ -61,7 +61,7 @@ RSpec.describe "AbTests" do
     it "cannot access A/B test belonging to another account" do
       other_ab_test = create(:ab_test, prompt: other_prompt)
       get prompt_ab_test_path(other_prompt, other_ab_test)
-      expect(response).not_to have_http_status(:ok)
+      expect(response).to have_http_status(:not_found)
     end
   end
 
