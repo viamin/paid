@@ -44,6 +44,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
   end
 
   create_table "ab_tests", force: :cascade do |t|
+    t.string "analysis_samples_key"
+    t.jsonb "cached_analysis"
     t.datetime "completed_at"
     t.decimal "confidence_threshold", precision: 5, scale: 4, default: "0.95", null: false
     t.bigint "control_version_id", null: false
