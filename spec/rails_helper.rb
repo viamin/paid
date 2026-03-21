@@ -68,4 +68,9 @@ RSpec.configure do |config|
 
   # Include ActiveSupport time helpers (freeze_time, travel_to, etc.)
   config.include ActiveSupport::Testing::TimeHelpers
+
+  # Reset memoized provider support data between tests
+  config.after do
+    ProviderSupport.reset_supported_provider_keys!
+  end
 end
