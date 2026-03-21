@@ -18,6 +18,7 @@ class ProvidersController < ApplicationController
     @provider = current_user.providers.new(provider_params)
     authorize @provider
     validate_provider_key_enabled!
+    validate_container_executable!
 
     if @provider.errors.none? && @provider.save
       if reconcile_settings!
@@ -36,8 +37,10 @@ class ProvidersController < ApplicationController
 
   def update
     authorize @provider
+    @provider.assign_attributes(provider_params)
+    validate_container_executable!
 
-    if @provider.update(provider_params)
+    if @provider.errors.none? && @provider.save
       if reconcile_settings!
         redirect_to providers_path, notice: "Provider updated successfully."
       else
@@ -87,20 +90,35 @@ class ProvidersController < ApplicationController
   end
 
   def load_provider_options
-    system_enabled = UserSetting.system_enabled_provider_keys
+    supported_keys = Provider.supported_provider_keys
     existing_keys = current_user.providers.pluck(:provider_key)
     @provider_options = if @provider&.persisted?
-      (system_enabled - (existing_keys - [ @provider.provider_key ]))
+      (supported_keys - (existing_keys - [ @provider.provider_key ]))
     else
-      system_enabled - existing_keys
+      supported_keys - existing_keys
     end
   end
 
   def validate_provider_key_enabled!
     return if @provider.provider_key.blank?
-    return if UserSetting.system_enabled_provider_keys.include?(@provider.provider_key)
+    return if Provider.supported_provider_key?(@provider.provider_key)
 
     @provider.errors.add(:provider_key, "is not currently available")
+  end
+
+  def validate_container_executable!
+    return if @provider.provider_key.blank?
+    return if ProviderSupport.container_executable_provider_key?(@provider.provider_key)
+
+    setting_agent_runs = @provider.enabled_for_agent_runs && (@provider.new_record? || @provider.will_save_change_to_attribute?("enabled_for_agent_runs", to: true))
+    setting_fallback = @provider.enabled_for_fallback && (@provider.new_record? || @provider.will_save_change_to_attribute?("enabled_for_fallback", to: true))
+
+    if setting_agent_runs
+      @provider.errors.add(:enabled_for_agent_runs, "cannot be enabled for a provider whose CLI is not installed in the agent container")
+    end
+    if setting_fallback
+      @provider.errors.add(:enabled_for_fallback, "cannot be enabled for a provider whose CLI is not installed in the agent container")
+    end
   end
 
   def reconcile_settings!
@@ -131,16 +149,19 @@ class ProvidersController < ApplicationController
     run_keys = UserSetting.enabled_agent_providers(current_user)
     return run_keys if run_keys.present?
 
-    claude = current_user.providers.find_or_initialize_by(provider_key: "claude")
-    claude.enabled_for_agent_runs = true
-    claude.enabled_for_fallback = true if claude.new_record?
+    default_key = Provider.default_provider_key
+    return [] unless default_key
 
-    return UserSetting.enabled_agent_providers(current_user) if claude.save
+    default = current_user.providers.find_or_initialize_by(provider_key: default_key)
+    default.enabled_for_agent_runs = true
+    default.enabled_for_fallback = true if default.new_record?
+
+    return UserSetting.enabled_agent_providers(current_user) if default.save
 
     Rails.logger.error(
       message: "providers.ensure_run_enabled_provider_failed",
       user_id: current_user.id,
-      errors: claude.errors.full_messages
+      errors: default.errors.full_messages
     )
     []
   end

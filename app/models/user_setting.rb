@@ -65,21 +65,26 @@ class UserSetting < ApplicationRecord
   end
 
   # Returns providers enabled for agent runs for a user.
+  # Filtered to container-executable providers only, since non-executable
+  # providers would cause immediate "All providers exhausted" failures
+  # in RunAgentActivity.
   def self.enabled_agent_providers(user = nil)
-    system_enabled = system_enabled_provider_keys
-    return [ "claude" ] & system_enabled unless user
-    return Provider::SUPPORTED_PROVIDER_KEYS & system_enabled if user.new_record?
+    executable_keys = ProviderSupport.container_executable_provider_keys
+    return [ "claude" ] & executable_keys unless user
+    return executable_keys if user.new_record?
 
-    user.providers.for_agent_runs.ordered.pluck(:provider_key) & system_enabled
+    user.providers.for_agent_runs.ordered.pluck(:provider_key) & executable_keys
   end
 
   # Returns providers that can be used as fallback for a user.
+  # Filtered to container-executable providers only, since non-executable
+  # providers would cause immediate failures during fallback in RunAgentActivity.
   def self.fallback_candidate_providers(user)
-    system_enabled = system_enabled_provider_keys
-    return [ "claude" ] & system_enabled unless user
-    return Provider::SUPPORTED_PROVIDER_KEYS & system_enabled if user.new_record?
+    executable_keys = ProviderSupport.container_executable_provider_keys
+    return [ "claude" ] & executable_keys unless user
+    return executable_keys if user.new_record?
 
-    user.providers.for_fallback.ordered.pluck(:provider_key) & system_enabled
+    user.providers.for_fallback.ordered.pluck(:provider_key) & executable_keys
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string
@@ -173,12 +178,6 @@ class UserSetting < ApplicationRecord
     user.provider_states.find_or_create_by!(provider_name: provider_name)
   rescue ActiveRecord::RecordNotUnique
     user.provider_states.find_by!(provider_name: provider_name)
-  end
-
-  def self.system_enabled_provider_keys
-    Provider::SUPPORTED_PROVIDER_KEYS.select do |key|
-      AgentHarness.configuration.providers[key.to_sym]&.enabled
-    end
   end
 
   private
