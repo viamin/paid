@@ -68,6 +68,21 @@ RSpec.describe AgentRun do
         expect(agent_run.errors[:base]).to include("must have either an issue, a custom prompt, or a source pull request")
       end
     end
+
+    describe "review goal requires pull request" do
+      it "is invalid without source_pull_request_number when goal is review" do
+        agent_run = build(:agent_run, :review_goal, source_pull_request_number: nil)
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:source_pull_request_number]).to include("is required for review goals")
+      end
+
+      it "is valid with source_pull_request_number when goal is review" do
+        agent_run = build(:agent_run, :review_goal)
+
+        expect(agent_run).to be_valid
+      end
+    end
   end
 
   describe "scopes" do
@@ -1186,7 +1201,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid GOALS" do
-      expect(described_class::GOALS).to eq(%w[create_pr create_issue])
+      expect(described_class::GOALS).to eq(%w[create_pr create_issue review])
     end
 
     it "defines valid TRIGGER_TYPES" do

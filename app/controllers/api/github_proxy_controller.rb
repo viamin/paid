@@ -6,12 +6,17 @@ module Api
 
     # Allowlisted GitHub API endpoints (regex with named captures for owner/repo).
     ALLOWED_ENDPOINTS = [
+      # Issues
       { method: "GET",   pattern: %r{\Arepos/(?<owner>[^/]+)/(?<repo>[^/]+)/issues\z} },
       { method: "GET",   pattern: %r{\Arepos/(?<owner>[^/]+)/(?<repo>[^/]+)/issues/(?<number>\d+)\z} },
       { method: "POST",  pattern: %r{\Arepos/(?<owner>[^/]+)/(?<repo>[^/]+)/issues\z} },
       { method: "PATCH", pattern: %r{\Arepos/(?<owner>[^/]+)/(?<repo>[^/]+)/issues/(?<number>\d+)\z} },
       { method: "POST",  pattern: %r{\Arepos/(?<owner>[^/]+)/(?<repo>[^/]+)/issues/(?<number>\d+)/comments\z} },
-      { method: "POST",  pattern: %r{\Arepos/(?<owner>[^/]+)/(?<repo>[^/]+)/issues/(?<number>\d+)/labels\z} }
+      { method: "POST",  pattern: %r{\Arepos/(?<owner>[^/]+)/(?<repo>[^/]+)/issues/(?<number>\d+)/labels\z} },
+      # Pull requests (for review goal)
+      { method: "GET",   pattern: %r{\Arepos/(?<owner>[^/]+)/(?<repo>[^/]+)/pulls/(?<number>\d+)\z} },
+      { method: "GET",   pattern: %r{\Arepos/(?<owner>[^/]+)/(?<repo>[^/]+)/pulls/(?<number>\d+)/files\z} },
+      { method: "POST",  pattern: %r{\Arepos/(?<owner>[^/]+)/(?<repo>[^/]+)/pulls/(?<number>\d+)/reviews\z} }
     ].freeze
 
     # GET/POST/PATCH /api/proxy/github/*path
@@ -38,7 +43,10 @@ module Api
       response = proxy_to_github(path, github_token)
       github_token.touch_last_used!
 
-      track_issue_creation(path, response) if response.status >= 200 && response.status < 300
+      if response.status >= 200 && response.status < 300
+        track_issue_creation(path, response)
+        track_review_creation(path, response)
+      end
 
       render body: response.body, status: response.status,
              content_type: response.headers["content-type"] || "application/json"
@@ -113,6 +121,31 @@ module Api
         issue_url: body["html_url"])
     rescue => e
       log_error("github_proxy.track_issue_failed", e.message)
+    end
+
+    def track_review_creation(path, response)
+      return unless request.method == "POST"
+      # Only track for review-goal runs so non-review runs don't accidentally
+      # set review_posted_at, which is used to verify review-goal completion.
+      return unless @agent_run.review_goal?
+
+      match = %r{\Arepos/[^/]+/[^/]+/pulls/(?<number>\d+)/reviews\z}.match(path)
+      return unless match
+
+      # Only track reviews posted on the run's target PR, not unrelated PRs.
+      return unless @agent_run.source_pull_request_number == match[:number].to_i
+
+      body = parse_response_body(response.body)
+      return unless body.is_a?(Hash) && body["id"].present?
+      return if @agent_run.review_posted_at.present?
+
+      @agent_run.update!(review_posted_at: Time.current)
+
+      log_info("github_proxy.review_created",
+        review_id: body["id"],
+        review_url: body["html_url"])
+    rescue => e
+      log_error("github_proxy.track_review_failed", e.message)
     end
 
     def parse_response_body(body)

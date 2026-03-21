@@ -43,6 +43,9 @@ module Activities
     ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
 
+    # Review goal uses standard agent timeout but a shorter idle timeout.
+    REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
+
     def self.provider_order(agent_type:, fallback_enabled:, fallback_providers:)
       return [ agent_type ].select { |p| AGENT_COMMANDS.key?(p) } unless fallback_enabled
 
@@ -282,7 +285,7 @@ module Activities
         raise ProviderExecutionError, "Unsupported provider: #{provider}"
       end
 
-      prompt = augment_prompt_for_issue_goal(agent_run, prompt)
+      prompt = augment_prompt_for_goal(agent_run, prompt)
       command = command_prefix + [ prompt ]
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
@@ -295,8 +298,16 @@ module Activities
       agent_run.log!("system", "Starting #{provider} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
 
-      effective_timeout = agent_run.create_issue_goal? ? ISSUE_GOAL_TIMEOUT : agent_timeout
-      effective_idle_timeout = agent_run.create_issue_goal? ? ISSUE_GOAL_IDLE_TIMEOUT : nil
+      effective_timeout = if agent_run.create_issue_goal?
+        ISSUE_GOAL_TIMEOUT
+      else
+        agent_timeout
+      end
+      effective_idle_timeout = if agent_run.create_issue_goal?
+        ISSUE_GOAL_IDLE_TIMEOUT
+      elsif agent_run.review_goal?
+        REVIEW_GOAL_IDLE_TIMEOUT
+      end
 
       result = container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
 
@@ -428,18 +439,18 @@ module Activities
       false
     end
 
-    def augment_prompt_for_issue_goal(agent_run, prompt)
-      return prompt unless agent_run.create_issue_goal?
-
-      # full_name is "owner/repo" from our DB (set during GitHub import).
-      # Validate format to prevent injection in the shell command example.
-      repo = agent_run.project.full_name
-      unless repo.match?(%r{\A[A-Za-z0-9\-_.]+/[A-Za-z0-9\-_.]+\z})
-        raise Temporalio::Error::ApplicationError.new(
-          "Invalid repository name format: #{repo.inspect}",
-          type: "InvalidRepoName"
-        )
+    def augment_prompt_for_goal(agent_run, prompt)
+      if agent_run.create_issue_goal?
+        augment_prompt_for_issue_goal(agent_run, prompt)
+      elsif agent_run.review_goal?
+        augment_prompt_for_review_goal(agent_run, prompt)
+      else
+        prompt
       end
+    end
+
+    def augment_prompt_for_issue_goal(agent_run, prompt)
+      repo = validated_repo_name(agent_run)
       <<~AUGMENTED
         #{prompt}
 
@@ -466,6 +477,105 @@ module Activities
 
         Do NOT push code or create a pull request. Only create the GitHub issue.
       AUGMENTED
+    end
+
+    def augment_prompt_for_review_goal(agent_run, prompt)
+      repo = validated_repo_name(agent_run)
+      pr_number = agent_run.source_pull_request_number
+      <<~AUGMENTED
+        #{prompt}
+
+        ---
+        IMPORTANT: Your goal is to REVIEW A PULL REQUEST, not to write code, create issues, or create PRs.
+
+        Review PR ##{pr_number} in #{repo}. Examine the code changes and post review comments on the PR.
+
+        You have access to the repository code (already cloned). To examine the code changes, either:
+        - Use the GitHub API (via the proxy) to retrieve the PR's `/pulls/#{pr_number}/files` patches and review those diffs; or
+        - From the cloned repo, run an explicit diff against the PR base, for example:
+          `git fetch origin` then `git diff "$(git merge-base HEAD origin/main)"...HEAD`
+          (replace `main` with the PR's actual base branch if different).
+        You also have access to the GitHub API via a proxy for posting review comments.
+
+        Review the code for:
+        1. **Performance** — inefficient algorithms, N+1 queries, unnecessary allocations, missing caching
+        2. **Security** — SQL injection, XSS, insecure deserialization, secrets in code
+        3. **Best practices** — language/framework idioms, error handling, naming
+        4. **Project code style** — adherence to existing conventions, indentation, file organization
+        5. **Scope violations** — changes unrelated to the linked issue, unnecessary refactoring, feature creep
+        6. **Issue linkage** — verify the PR actually addresses the issue it claims to fix
+
+        Use GitHub's suggestion block syntax for concrete fixes:
+        ````
+        ```suggestion
+        corrected code here
+        ```
+        ````
+
+        Post your review using the GitHub API proxy:
+
+        ```bash
+        # Get PR details (metadata and links)
+        curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}" \\
+          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
+          -H "X-Proxy-Token: $PROXY_TOKEN"
+
+        # Get PR files
+        curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/files" \\
+          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
+          -H "X-Proxy-Token: $PROXY_TOKEN"
+
+        # Post a review with inline comments
+        # Note: "side" must be "RIGHT" (new code) or "LEFT" (deleted code) for inline comments.
+        curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/reviews" \\
+          -H "Content-Type: application/json" \\
+          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
+          -H "X-Proxy-Token: $PROXY_TOKEN" \\
+          -d '{
+            "body": "Overall summary of the review",
+            "event": "COMMENT",
+            "comments": [
+              {
+                "path": "file.rb",
+                "line": 10,
+                "side": "RIGHT",
+                "body": "Review comment on this line"
+              }
+            ]
+          }'
+
+        # Post a standalone comment on the PR (optional, supplementary only)
+        curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/issues/#{pr_number}/comments" \\
+          -H "Content-Type: application/json" \\
+          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
+          -H "X-Proxy-Token: $PROXY_TOKEN" \\
+          -d '{"body": "Summary review comment"}'
+        ```
+
+        IMPORTANT: You MUST post at least one PR review via the `/pulls/#{pr_number}/reviews`
+        endpoint. This is how your review is tracked as complete. Standalone PR comments
+        via `/issues/#{pr_number}/comments` are optional and do NOT satisfy the review requirement.
+
+        Available endpoints:
+        - GET  $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number} — get PR details
+        - GET  $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/files — list changed files
+        - POST $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/reviews — create review with inline comments (REQUIRED)
+        - POST $GITHUB_API_URL/repos/#{repo}/issues/#{pr_number}/comments — post PR comment (optional)
+        - GET  $GITHUB_API_URL/repos/#{repo}/issues/{number} — get linked issue details
+
+        Do NOT push code, create issues, or create new pull requests. Only post review comments on PR ##{pr_number}.
+      AUGMENTED
+    end
+
+    def validated_repo_name(agent_run)
+      repo = agent_run.project.full_name
+      unless repo.match?(%r{\A[A-Za-z0-9\-_.]+/[A-Za-z0-9\-_.]+\z})
+        raise Temporalio::Error::ApplicationError.new(
+          "Invalid repository name format: #{repo.inspect}",
+          type: "InvalidRepoName"
+        )
+      end
+      repo
     end
 
     def reconnect_container(agent_run)

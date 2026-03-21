@@ -23,13 +23,18 @@
           <legend class="text-base font-semibold text-gray-900">Goal</legend>
           <p class="mt-1 text-sm text-gray-500" id="goal-description">What should the agent produce?</p>
           <div class="mt-4 flex items-center space-x-6" role="radiogroup" aria-describedby="goal-description">
+            <% selected_goal = params[:goal].presence || "create_pr" %>
             <label class="inline-flex items-center">
-              <input type="radio" name="goal" value="create_pr" checked class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <input type="radio" name="goal" value="create_pr" <%= "checked" if selected_goal == "create_pr" %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
               <span class="ml-2 text-sm text-gray-700">Create/Edit Pull Request</span>
             </label>
             <label class="inline-flex items-center">
-              <input type="radio" name="goal" value="create_issue" class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <input type="radio" name="goal" value="create_issue" <%= "checked" if selected_goal == "create_issue" %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
               <span class="ml-2 text-sm text-gray-700">Create Issue</span>
+            </label>
+            <label class="inline-flex items-center">
+              <input type="radio" name="goal" value="review" <%= "checked" if selected_goal == "review" %> class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" data-action="change->goal-toggle#toggle">
+              <span class="ml-2 text-sm text-gray-700">PR Code Review</span>
             </label>
           </div>
         </fieldset>
@@ -55,8 +60,8 @@
         </div>
 
         <div data-goal-toggle-target="prSection">
-          <h2 class="text-base font-semibold text-gray-900">Or Work on an Existing PR</h2>
-          <p class="mt-1 text-sm text-gray-500">Push changes to an existing pull request's branch instead of creating a new one.</p>
+          <h2 class="text-base font-semibold text-gray-900" data-goal-toggle-target="prHeading">Or Work on an Existing PR</h2>
+          <p class="mt-1 text-sm text-gray-500" data-goal-toggle-target="prDescription">Push changes to an existing pull request's branch instead of creating a new one.</p>
 
           <div class="mt-4 rounded-lg border border-gray-200 p-4">
             <label for="pull_request_id" class="block text-sm font-medium text-gray-700">Choose from synced PRs:</label>

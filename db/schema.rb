@@ -143,6 +143,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
     t.string "result_commit_sha", limit: 40
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
+    t.datetime "review_posted_at"
     t.integer "source_pull_request_number"
     t.datetime "started_at"
     t.string "status", limit: 50, default: "pending", null: false
