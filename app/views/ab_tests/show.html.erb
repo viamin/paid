@@ -1,0 +1,179 @@
+<% content_for(:title) { "#{@ab_test.name} - A/B Test - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to prompt_ab_tests_path(@prompt), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to A/B Tests
+    <% end %>
+  </div>
+
+  <%# Header %>
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-semibold text-gray-900"><%= @ab_test.name %></h1>
+          <p class="mt-1 text-sm text-gray-500">
+            Testing prompt: <%= link_to @prompt.name, prompt_path(@prompt), class: "text-indigo-600 hover:text-indigo-900" %>
+          </p>
+        </div>
+        <div class="flex items-center space-x-3">
+          <%= ab_test_status_badge(@ab_test.status) %>
+          <% if policy(@ab_test).update? %>
+            <% if @ab_test.draft? %>
+              <%= button_to "Start Test", start_prompt_ab_test_path(@prompt, @ab_test), method: :post, class: "inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500", form: { data: { turbo_confirm: "Start this A/B test? It will begin assigning agent runs to variants." } } %>
+            <% end %>
+            <% if @ab_test.draft? || @ab_test.running? %>
+              <%= button_to "Cancel Test", cancel_prompt_ab_test_path(@prompt, @ab_test), method: :post, class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500", form: { data: { turbo_confirm: "Cancel this A/B test? This action cannot be undone." } } %>
+            <% end %>
+            <% if @ab_test.completed? && @ab_test.winner_variant.present? %>
+              <%= button_to "Promote Winner", promote_prompt_ab_test_path(@prompt, @ab_test), method: :post, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500", form: { data: { turbo_confirm: "Promote the winning variant as the current prompt version? This will change the active prompt template." } } %>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+    </div>
+
+    <div class="border-t border-gray-200">
+      <dl class="divide-y divide-gray-200">
+        <% if @ab_test.description.present? %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500">Description</dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= @ab_test.description %></dd>
+          </div>
+        <% end %>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Control Version</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">v<%= @ab_test.control_version.version %></dd>
+        </div>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Min Samples per Variant</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= @ab_test.min_samples_per_variant %></dd>
+        </div>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Confidence Threshold</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= number_to_percentage(@ab_test.confidence_threshold * 100, precision: 1) %></dd>
+        </div>
+        <% if @ab_test.started_at.present? %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500">Started</dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= @ab_test.started_at.strftime("%b %d, %Y %H:%M") %></dd>
+          </div>
+        <% end %>
+        <% if @ab_test.completed_at.present? %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500">Completed</dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= @ab_test.completed_at.strftime("%b %d, %Y %H:%M") %></dd>
+          </div>
+        <% end %>
+        <% if @ab_test.winner_variant.present? %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500">Winner</dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+              <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-sm font-medium text-green-700">
+                v<%= @ab_test.winner_variant.prompt_version.version %>
+              </span>
+            </dd>
+          </div>
+        <% end %>
+      </dl>
+    </div>
+  </div>
+
+  <%# Analysis Results %>
+  <% if @analysis %>
+    <div class="mt-8 bg-white shadow sm:rounded-lg">
+      <div class="px-4 py-5 sm:px-6">
+        <h2 class="text-lg font-medium text-gray-900">Analysis</h2>
+      </div>
+      <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+        <div class="rounded-md <%= analysis_status_bg(@analysis.status) %> p-4">
+          <div class="flex">
+            <div class="ml-3">
+              <h3 class="text-sm font-medium <%= analysis_status_text(@analysis.status) %>">
+                <%= analysis_status_label(@analysis.status) %>
+              </h3>
+              <% if @analysis.confidence %>
+                <p class="mt-1 text-sm <%= analysis_status_text(@analysis.status) %>">
+                  Confidence: <%= number_to_percentage(@analysis.confidence * 100, precision: 1) %>
+                  <% if @analysis.improvement %>
+                    | Improvement: <%= number_to_percentage(@analysis.improvement * 100, precision: 1) %>
+                  <% end %>
+                </p>
+              <% end %>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <%# Variant Comparison %>
+  <div class="mt-8 bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <h2 class="text-lg font-medium text-gray-900">Variant Performance</h2>
+      <p class="mt-1 text-sm text-gray-500">Compare quality scores across variants.</p>
+    </div>
+    <div class="border-t border-gray-200">
+      <table class="min-w-full divide-y divide-gray-300">
+        <thead class="bg-gray-50">
+          <tr>
+            <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Variant</th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Version</th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Samples</th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Avg Quality</th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Performance</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 bg-white">
+          <% scored_variants = @variants.select { |v| v.avg_quality_score.present? } %>
+          <% max_score = scored_variants.map { |v| v.avg_quality_score.to_f }.max %>
+          <% @variants.each do |variant| %>
+            <tr class="<%= variant_row_class(variant, @ab_test) %>">
+              <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
+                <span class="font-medium text-gray-900">
+                  <% if variant.is_control? %>
+                    Control
+                  <% else %>
+                    Variant
+                  <% end %>
+                </span>
+                <% if @ab_test.winner_variant_id == variant.id %>
+                  <span class="ml-2 inline-flex items-center rounded-md bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">winner</span>
+                <% end %>
+              </td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                v<%= variant.prompt_version.version %>
+              </td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                <%= variant.sample_count %> / <%= @ab_test.min_samples_per_variant %>
+              </td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900 font-medium">
+                <% if variant.avg_quality_score.present? %>
+                  <%= number_with_precision(variant.avg_quality_score, precision: 4) %>
+                <% else %>
+                  <span class="text-gray-400">-</span>
+                <% end %>
+              </td>
+              <td class="px-3 py-4 text-sm text-gray-500">
+                <% if variant.avg_quality_score.present? && max_score %>
+                  <div class="flex items-center">
+                    <div class="h-4 w-32 rounded-full bg-gray-200">
+                      <% bar_width = max_score > 0 ? ((variant.avg_quality_score.to_f / max_score) * 100).round : 0 %>
+                      <div class="h-4 rounded-full <%= variant.is_control? ? 'bg-gray-500' : 'bg-indigo-600' %>" style="width: <%= bar_width %>%"></div>
+                    </div>
+                  </div>
+                <% else %>
+                  <span class="text-gray-400">No data</span>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
