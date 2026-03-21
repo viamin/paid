@@ -343,7 +343,7 @@ RSpec.describe Activities::RunAgentActivity do
     it "raises for unsupported agent types" do
       unsupported_issue = create(:issue, project: project)
       unsupported_run = create(:agent_run, project: project, issue: unsupported_issue,
-        agent_type: "copilot", container_id: "abc123")
+        agent_type: "api", container_id: "abc123")
       allow(AgentRun).to receive(:find).with(unsupported_run.id).and_return(unsupported_run)
       allow(Containers::Provision).to receive(:reconnect)
         .with(agent_run: unsupported_run, container_id: "abc123")
@@ -414,6 +414,7 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       before do
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
         user.providers.find_or_create_by!(provider_key: "cursor")
         user.providers.find_or_create_by!(provider_key: "aider")
         user.settings.update!(fallback_enabled: true, fallback_providers: %w[claude cursor aider])
