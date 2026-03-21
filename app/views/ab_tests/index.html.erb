@@ -1,79 +1,102 @@
-<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
-  <div class="sm:flex sm:items-center">
-    <div class="sm:flex-auto">
-      <h1 class="text-2xl font-semibold leading-6 text-gray-900">A/B Tests</h1>
-      <p class="mt-2 text-sm text-gray-700">Compare prompt versions to find the best performers.</p>
+<% content_for(:title) { "A/B Tests - #{@prompt.name} - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to prompt_path(@prompt), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @prompt.name %>
+    <% end %>
+  </div>
+
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">A/B Tests</h1>
+      <p class="mt-1 text-sm text-gray-500">Manage A/B tests for <strong><%= @prompt.name %></strong>.</p>
     </div>
-    <% if policy(AbTest.new).create? %>
+    <% if policy(AbTest.new(prompt: @prompt)).create? %>
       <div class="mt-4 sm:mt-0">
-        <%= link_to "New A/B Test", new_ab_test_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+        <%= link_to new_prompt_ab_test_path(@prompt), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" do %>
+          <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+          </svg>
+          New A/B Test
+        <% end %>
       </div>
     <% end %>
   </div>
 
-  <%# Filters %>
-  <div class="mt-6 rounded-lg bg-white p-4 shadow">
-    <%= search_form_for @q, url: ab_tests_path, html: { method: :get, class: "flex flex-wrap gap-4 items-end" } do |f| %>
-      <div>
-        <%= f.label :name_cont, "Name", class: "block text-sm font-medium text-gray-700" %>
-        <%= f.search_field :name_cont, class: "mt-1 block rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm", placeholder: "Search..." %>
-      </div>
-      <div>
-        <%= f.label :status_eq, "Status", class: "block text-sm font-medium text-gray-700" %>
-        <%= f.select :status_eq, AbTest::STATUSES.map { |s| [s.capitalize, s] }, { include_blank: "All" }, class: "mt-1 block rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
-      </div>
-      <div>
-        <%= f.submit "Filter", class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
-        <%= link_to "Clear", ab_tests_path, class: "ml-2 text-sm text-gray-500 hover:text-gray-700" %>
-      </div>
-    <% end %>
-  </div>
-
-  <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
-    <% if @ab_tests.any? %>
-      <table class="min-w-full divide-y divide-gray-200">
+  <% if @ab_tests.any? %>
+    <div class="mt-6 overflow-hidden bg-white shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+      <table class="min-w-full divide-y divide-gray-300">
         <thead class="bg-gray-50">
           <tr>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Prompt</th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
-            <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Variants</th>
-            <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Samples</th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Created</th>
+            <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Name</th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Variants</th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Progress</th>
+            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Created</th>
+            <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+              <span class="sr-only">View</span>
+            </th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-200 bg-white">
-          <% @ab_tests.each do |test| %>
+          <% @ab_tests.each do |ab_test| %>
             <tr>
-              <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-indigo-600">
-                <%= link_to test.name, test %>
+              <td class="whitespace-nowrap py-4 pl-4 pr-3 sm:pl-6">
+                <div class="text-sm font-medium text-gray-900">
+                  <%= link_to ab_test.name, prompt_ab_test_path(@prompt, ab_test), class: "hover:text-indigo-600" %>
+                </div>
+                <% if ab_test.description.present? %>
+                  <div class="text-xs text-gray-500 truncate max-w-xs"><%= ab_test.description %></div>
+                <% end %>
               </td>
-              <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"><%= test.prompt.name %></td>
-              <td class="whitespace-nowrap px-4 py-3 text-sm">
-                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
-                  <%= case test.status
-                      when 'draft' then 'bg-gray-100 text-gray-700'
-                      when 'running' then 'bg-blue-100 text-blue-700'
-                      when 'completed' then 'bg-green-100 text-green-700'
-                      when 'cancelled' then 'bg-red-100 text-red-700'
-                      end %>">
-                  <%= test.status.capitalize %>
-                </span>
+              <td class="whitespace-nowrap px-3 py-4 text-sm">
+                <%= ab_test_status_badge(ab_test.status) %>
               </td>
-              <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= test.ab_test_variants.size %></td>
-              <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= test.ab_test_variants.map(&:sample_count).sum %></td>
-              <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500"><%= test.created_at.strftime("%Y-%m-%d") %></td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                <%= ab_test.ab_test_variants.size %>
+              </td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                <% total_samples = ab_test.ab_test_variants.sum(&:sample_count) %>
+                <% target_samples = ab_test.min_samples_per_variant * ab_test.ab_test_variants.size %>
+                <%= total_samples %> / <%= target_samples %> samples
+                <% if target_samples > 0 %>
+                  <div class="mt-1 h-1.5 w-24 rounded-full bg-gray-200">
+                    <div class="h-1.5 rounded-full bg-indigo-600" style="width: <%= [((total_samples.to_f / target_samples) * 100).round, 100].min %>%"></div>
+                  </div>
+                <% end %>
+              </td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                <%= ab_test.created_at.strftime("%b %d, %Y") %>
+              </td>
+              <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                <%= link_to "View", prompt_ab_test_path(@prompt, ab_test), class: "text-indigo-600 hover:text-indigo-900" %>
+              </td>
             </tr>
           <% end %>
         </tbody>
       </table>
-      <div class="px-4 py-3">
-        <%== pagy_nav(@pagy) %>
-      </div>
-    <% else %>
-      <div class="px-4 py-12 text-center text-sm text-gray-500">
-        No A/B tests yet. <%= link_to "Create one", new_ab_test_path, class: "text-indigo-600 hover:text-indigo-500" %> to start comparing prompt versions.
-      </div>
-    <% end %>
-  </div>
+    </div>
+  <% else %>
+    <div class="mt-8 text-center">
+      <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+      </svg>
+      <h3 class="mt-2 text-sm font-semibold text-gray-900">No A/B tests</h3>
+      <p class="mt-1 text-sm text-gray-500">Create an A/B test to compare prompt variants.</p>
+      <% if policy(AbTest.new(prompt: @prompt)).create? %>
+        <div class="mt-6">
+          <%= link_to new_prompt_ab_test_path(@prompt), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" do %>
+            <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+            </svg>
+            New A/B Test
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
 </div>

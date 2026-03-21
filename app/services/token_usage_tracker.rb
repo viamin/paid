@@ -57,10 +57,16 @@ class TokenUsageTracker
     end
   end
 
+  # In-memory cache of LlmModel records keyed by model_id string.
+  # Avoids a DB query per tracked request in the high-volume proxy path.
+  # Reset on deploy (process restart); stale pricing is acceptable since
+  # model costs change infrequently and the cache is small.
+  @model_cache = {}
+
   def self.calculate_cost(input_tokens, output_tokens, llm_model: nil, model_id: nil)
     model = llm_model
-    model = LlmModel.find_by(model_id: model) if model.is_a?(String)
-    model ||= LlmModel.find_by(model_id: model_id) if model_id.present?
+    model = lookup_model(model) if model.is_a?(String)
+    model ||= lookup_model(model_id) if model_id.present?
 
     if model&.input_cost_per_million && model&.output_cost_per_million
       model.estimated_cost(input_tokens, output_tokens)
@@ -70,6 +76,13 @@ class TokenUsageTracker
       ((input_cost + output_cost) * 100).round.to_i
     end
   end
+
+  def self.lookup_model(model_id)
+    return nil if model_id.blank?
+
+    @model_cache[model_id] ||= LlmModel.find_by(model_id: model_id)
+  end
+  private_class_method :lookup_model
 
   def self.record_per_request_usage(agent_run:, input_tokens:, output_tokens:, cost_cents:, llm_model:, request_type:, metadata:)
     TokenUsage.create!(

@@ -36,7 +36,27 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:provider_attempt_count]).to eq(1)
     end
 
+    it "persists the goal when provided" do
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        goal: "review",
+        source_pull_request_number: 42
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.goal).to eq("review")
+    end
+
+    it "defaults goal to create_pr when not provided" do
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.goal).to eq("create_pr")
+    end
+
     it "returns deduplicated provider_attempt_count when fallback is enabled" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
       project.created_by.providers.find_or_create_by!(provider_key: "cursor")
       project.created_by.providers.find_or_create_by!(provider_key: "aider")
       project.created_by.settings.update!(fallback_enabled: true, fallback_providers: %w[claude cursor aider])
@@ -47,6 +67,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "counts configured fallback-only providers even when not explicitly ordered yet" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
       project.created_by.providers.find_or_create_by!(
         provider_key: "cursor",
         enabled_for_agent_runs: false,

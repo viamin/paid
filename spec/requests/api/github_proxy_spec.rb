@@ -156,6 +156,95 @@ RSpec.describe "Api::GithubProxy" do
     end
   end
 
+  describe "POST /api/proxy/github/repos/:owner/:repo/pulls/:number/reviews" do
+    let(:agent_run) { create(:agent_run, :running, :review_goal, project: project) }
+    let(:target_url) { "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews" }
+    let(:review_response_body) do
+      {
+        id: 999,
+        body: "Review summary",
+        html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+        state: "commented"
+      }.to_json
+    end
+
+    before do
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: review_response_body, headers: { "Content-Type" => "application/json" })
+    end
+
+    it "proxies review creation" do
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "tracks review_posted_at when PR number matches source_pull_request_number" do
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_posted_at).to be_present
+    end
+
+    it "does not track review_posted_at when PR number does not match" do
+      mismatched_url = "https://api.github.com/repos/testowner/testrepo/pulls/99/reviews"
+      stub_request(:post, mismatched_url)
+        .to_return(status: 200, body: review_response_body, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/99/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_posted_at).to be_nil
+    end
+
+    it "does not track review_posted_at for non-review goal runs" do
+      non_review_run = create(:agent_run, :running, project: project,
+        goal: "create_pr", source_pull_request_number: 10)
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: {
+          "Content-Type" => "application/json",
+          "X-Agent-Run-Id" => non_review_run.id.to_s,
+          "X-Proxy-Token" => non_review_run.proxy_token
+        }
+
+      non_review_run.reload
+      expect(non_review_run.review_posted_at).to be_nil
+    end
+
+    it "does not overwrite review_posted_at when already set" do
+      original_time = 1.hour.ago
+      agent_run.update!(review_posted_at: original_time)
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Second review", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_posted_at).to be_within(1.second).of(original_time)
+    end
+
+    it "does not track review_posted_at on upstream error" do
+      stub_request(:post, target_url)
+        .to_return(status: 422, body: { message: "Validation Failed" }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_posted_at).to be_nil
+    end
+  end
+
   describe "repo mismatch" do
     it "returns 403 when the repo does not match the project" do
       stub_request(:get, "https://api.github.com/repos/otherowner/otherrepo/issues")

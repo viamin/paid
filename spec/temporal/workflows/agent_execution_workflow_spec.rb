@@ -100,6 +100,66 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "review goal" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "review", source_pull_request_number: 42 } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    def stub_review_activities
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true }
+        when "Activities::CompleteReviewGoalActivity" then { agent_run_id: 42, success: true }
+        else {}
+        end
+      end
+    end
+
+    it "runs CompleteReviewGoalActivity after a successful agent run" do
+      stub_review_activities
+
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be true
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CompleteReviewGoalActivity, { agent_run_id: 42 },
+              timeout: 30, retry_policy: described_class::NO_RETRY)
+    end
+
+    it "does not run PR creation or push activities" do
+      stub_review_activities
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreatePullRequestActivity, anything, timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::PushBranchActivity, anything, timeout: anything)
+    end
+
+    it "does not run PreparePrPromptActivity for review goals" do
+      stub_review_activities
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::PreparePrPromptActivity, anything, timeout: anything)
+    end
+
+    it "does not run RebaseBranchActivity for review goals" do
+      stub_review_activities
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RebaseBranchActivity, anything, timeout: anything)
+    end
+  end
+
   describe "activity timeout for create_pr goal" do
     let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
 
@@ -173,6 +233,47 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, any_args)
+    end
+  end
+
+  describe "existing PR follow-up with no changes" do
+    let(:input) { { project_id: 1, issue_id: 1, source_pull_request_number: 42 } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    def stub_no_changes_followup
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
+        when "Activities::PreparePrPromptActivity" then {}
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        when "Activities::RequestReviewActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    it "requests Copilot review even when agent makes no changes on existing PR" do
+      stub_no_changes_followup
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: 1, pr_number: 42,
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
+          timeout: 60)
     end
   end
 

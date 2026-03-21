@@ -3,7 +3,7 @@
 class AgentRun < ApplicationRecord
   STATUSES = %w[queued pending running completed failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
-  GOALS = %w[create_pr create_issue].freeze
+  GOALS = %w[create_pr create_issue review].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
 
   belongs_to :project
@@ -22,11 +22,12 @@ class AgentRun < ApplicationRecord
 
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
-  after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_completed?
+  after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_finished?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
+  validate :review_goal_requires_pull_request
   validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
   validates :created_issue_url, length: { maximum: 500 }
   validates :worktree_path, length: { maximum: 500 }
@@ -196,6 +197,10 @@ class AgentRun < ApplicationRecord
 
   def create_pr_goal?
     goal == "create_pr"
+  end
+
+  def review_goal?
+    goal == "review"
   end
 
   def manual?
@@ -408,11 +413,20 @@ class AgentRun < ApplicationRecord
   end
 
   # Returns the prompt for this run: custom_prompt if provided,
-  # otherwise delegates to prompt_for_issue.
+  # otherwise delegates to goal-specific prompt builders.
   #
   # @return [String, nil] The prompt to send to the agent
   def effective_prompt
-    custom_prompt.presence || prompt_for_issue
+    custom_prompt.presence || prompt_for_goal
+  end
+
+  # Returns the base prompt for the review goal.
+  # The review_goal_requires_pull_request validation ensures
+  # source_pull_request_number is always present for review goals.
+  #
+  # @return [String] The review prompt
+  def prompt_for_review
+    "Review pull request ##{source_pull_request_number} in #{project.full_name}."
   end
 
   # Records a provider attempt in the providers_attempted array.
@@ -540,6 +554,20 @@ class AgentRun < ApplicationRecord
 
   private
 
+  def review_goal_requires_pull_request
+    if goal == "review" && source_pull_request_number.blank?
+      errors.add(:source_pull_request_number, "is required for review goals")
+    end
+  end
+
+  def prompt_for_goal
+    if review_goal?
+      prompt_for_review
+    else
+      prompt_for_issue
+    end
+  end
+
   def empty_phase_summary
     {
       queue_seconds: 0,
@@ -609,8 +637,8 @@ class AgentRun < ApplicationRecord
       .update_all(last_agent_run_at: created_at, updated_at: Time.current)
   end
 
-  def just_completed?
-    previous_changes.key?("status") && status == "completed"
+  def just_finished?
+    previous_changes.key?("status") && finished?
   end
 
   def enqueue_quality_metrics_collection

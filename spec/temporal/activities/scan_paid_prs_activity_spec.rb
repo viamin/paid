@@ -547,6 +547,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when review bot review had comments but all threads are resolved" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
+                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "advances to ready_for_owner with pending bot review request" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+        expect(trigger[:pending_review_bot_request]).to be true
+      end
+    end
+
     context "when PR is in draft phase with Claude review threads" do
       before do
         create(:issue, :pull_request,
@@ -944,13 +968,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "treats comment-generating bot reviews as blocking and requests a refresh" do
+      it "advances to ready_for_owner when review had comments but threads are resolved" do
         result = activity.execute(project_id: project.id)
 
-        trigger_types = result[:prs_to_trigger].flat_map { |trigger| trigger[:triggers].map { |t| t[:type] } }
-        expect(trigger_types).to include("review_bot_review_pending")
-        expect(trigger_types).not_to include("ready_for_owner")
-        expect(trigger_types).to include("review_bot_comments")
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+        expect(trigger[:pending_review_bot_request]).to be true
       end
     end
 

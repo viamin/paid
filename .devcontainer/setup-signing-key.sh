@@ -12,19 +12,36 @@ KEY_PATH="$KEY_DIR/id_ed25519"
 TITLE_PREFIX="devcontainer-signing:"
 KEY_TITLE="$TITLE_PREFIX $(hostname)"
 
-# 0. Verify GitHub CLI authentication and required scope
-if ! gh auth status >/dev/null 2>&1; then
-  echo "Error: GitHub CLI is not authenticated. Run 'gh auth login' first." >&2
-  exit 1
-fi
-
-if ! gh api /user/ssh_signing_keys --method GET --paginate --jq '.' >/dev/null 2>&1; then
-  echo "WARNING: GitHub token lacks the 'admin:ssh_signing_key' scope." >&2
-  echo "  Commit signing will be disabled. To enable it, run:" >&2
-  echo "    gh auth refresh -h github.com -s admin:ssh_signing_key" >&2
-  echo "  Then re-run: bash .devcontainer/setup-signing-key.sh" >&2
+# 0. Verify GitHub CLI authentication and required scope.
+# This is best-effort in devcontainers; lack of auth should not fail setup.
+# Ensure all gh commands target github.com (not an enterprise host).
+export GH_HOST="github.com"
+if ! command -v gh >/dev/null 2>&1; then
+  echo "WARNING: GitHub CLI is not installed; skipping commit signing setup." >&2
   exit 0
 fi
+
+if ! gh auth status -h github.com >/dev/null 2>&1; then
+  echo "WARNING: GitHub CLI is not authenticated for github.com; skipping commit signing setup." >&2
+  echo "  To enable it, run:" >&2
+  echo "    gh auth login -h github.com" >&2
+  echo "  Then re-run: bash .devcontainer/enable-commit-signing.sh" >&2
+  exit 0
+fi
+
+scope_error=$({ gh api /user/ssh_signing_keys --method GET --paginate --jq '.' >/dev/null; } 2>&1) || {
+  if echo "$scope_error" | grep -qiE "insufficient.scope|Resource not accessible by|missing.*scope"; then
+    echo "WARNING: GitHub token lacks the 'admin:ssh_signing_key' scope." >&2
+    echo "  Commit signing will be disabled. To enable it, run:" >&2
+    echo "    bash .devcontainer/enable-commit-signing.sh" >&2
+  else
+    echo "WARNING: Failed to verify SSH signing key scope (API call failed)." >&2
+    echo "  This may be due to a network issue, rate limiting, or missing scope." >&2
+    echo "  Commit signing will be disabled. To enable it, run:" >&2
+    echo "    bash .devcontainer/enable-commit-signing.sh" >&2
+  fi
+  exit 0
+}
 
 # 1. Generate key (overwrite any leftover from a previous build)
 echo "Generating SSH signing key..."
@@ -66,7 +83,7 @@ if ! output=$(gh ssh-key add "$KEY_PATH.pub" --type signing --title "$KEY_TITLE"
   echo "    - Network issues or GitHub availability problems" >&2
   echo "    - API rate limits or other GitHub API errors" >&2
   echo "    - A signing key with the same title already exists" >&2
-  echo "  After resolving the issue, re-run: bash .devcontainer/setup-signing-key.sh" >&2
+  echo "  After resolving the issue, re-run: bash .devcontainer/enable-commit-signing.sh" >&2
   exit 0
 fi
 

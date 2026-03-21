@@ -1,116 +1,139 @@
 # frozen_string_literal: true
 
 class AbTestsController < ApplicationController
-  before_action :set_ab_test, only: [ :show, :edit, :update, :destroy, :start, :complete, :cancel, :promote_winner ]
+  before_action :set_prompt
+  before_action :set_ab_test, only: [ :show, :start, :cancel, :promote ]
   skip_after_action :verify_authorized, only: :index
 
   def index
-    base_scope = policy_scope(AbTest).includes(:prompt, :ab_test_variants)
-    @q = base_scope.ransack(params[:q])
-    @q.sorts = "created_at desc" if @q.sorts.empty?
-    @pagy, @ab_tests = pagy(@q.result)
+    @ab_tests = policy_scope(AbTest).where(prompt: @prompt)
+                                    .includes(:control_version, :winner_variant, :ab_test_variants)
+                                    .order(created_at: :desc)
   end
 
   def show
     authorize @ab_test
-    @analysis = AbTests::Analyze.call(ab_test: @ab_test) if @ab_test.running? || @ab_test.completed?
+    @variants = @ab_test.ab_test_variants.includes(:prompt_version).order(is_control: :desc)
+    @analysis = analyze_if_available(@variants)
   end
 
   def new
-    @ab_test = AbTest.new
+    @ab_test = @prompt.ab_tests.build
     authorize @ab_test
-    @prompts = policy_scope(Prompt).active.includes(:current_version).order(:name)
-    build_minimum_variants
+    @versions = available_versions
   end
 
   def create
-    @ab_test = AbTest.new(ab_test_params)
-    authorize @ab_test
+    authorize @prompt.ab_tests.build, :create?
 
-    if @ab_test.save
-      redirect_to @ab_test, notice: "A/B test was successfully created."
-    else
-      @prompts = policy_scope(Prompt).active.includes(:current_version).order(:name)
-      render :new, status: :unprocessable_content
+    create_options = {
+      prompt: @prompt,
+      name: ab_test_params[:name],
+      description: ab_test_params[:description],
+      variant_version_ids: selected_variant_ids
+    }
+
+    # Use strict parsing so invalid input (e.g. "abc") raises an error
+    # instead of silently coercing to 0/0.0 via to_i/to_f.
+    begin
+      create_options[:min_samples_per_variant] = Integer(ab_test_params[:min_samples_per_variant]) if ab_test_params[:min_samples_per_variant].present?
+      create_options[:confidence_threshold] = Float(ab_test_params[:confidence_threshold]) if ab_test_params[:confidence_threshold].present?
+    rescue ArgumentError
+      raise ArgumentError, "Invalid numeric input: please enter valid numbers for samples and confidence"
     end
-  end
 
-  def edit
-    authorize @ab_test
-    @prompts = policy_scope(Prompt).active.includes(:current_version).order(:name)
-    build_minimum_variants
-  end
+    ab_test = AbTests::Create.call(**create_options)
 
-  def update
-    authorize @ab_test
-
-    if @ab_test.update(ab_test_params)
-      redirect_to @ab_test, notice: "A/B test was successfully updated."
-    else
-      @prompts = policy_scope(Prompt).active.includes(:current_version).order(:name)
-      render :edit, status: :unprocessable_content
+    redirect_to prompt_ab_test_path(@prompt, ab_test), notice: "A/B test was successfully created."
+  rescue ArgumentError, ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
+    @ab_test = @prompt.ab_tests.build(
+      name: ab_test_params[:name],
+      description: ab_test_params[:description],
+      min_samples_per_variant: ab_test_params[:min_samples_per_variant],
+      confidence_threshold: ab_test_params[:confidence_threshold]
+    )
+    message = case e
+    when ActiveRecord::RecordInvalid then e.record.errors.full_messages.join(", ")
+    when ArgumentError then e.message
+    when ActiveRecord::RecordNotFound then "One or more selected variants could not be found"
     end
-  end
-
-  def destroy
-    authorize @ab_test
-    @ab_test.destroy!
-    redirect_to ab_tests_path, notice: "A/B test was successfully deleted."
+    Rails.logger.warn(message: "ab_tests.create_failed", error_class: e.class.name, error_message: e.message)
+    @ab_test.errors.add(:base, message)
+    @selected_variant_ids = Array(ab_test_params[:variant_version_ids]).reject(&:blank?).filter_map { |id| Integer(id, exception: false) }
+    @versions = available_versions
+    render :new, status: :unprocessable_content
   end
 
   def start
     authorize @ab_test, :update?
     @ab_test.start!
-    redirect_to @ab_test, notice: "A/B test has been started."
+    redirect_to prompt_ab_test_path(@prompt, @ab_test), notice: "A/B test has been started."
   rescue ActiveRecord::RecordInvalid => e
-    redirect_to @ab_test, alert: e.message
-  end
-
-  def complete
-    authorize @ab_test, :update?
-    @ab_test.complete!
-    redirect_to @ab_test, notice: "A/B test has been completed."
-  rescue ActiveRecord::RecordInvalid => e
-    redirect_to @ab_test, alert: e.message
+    redirect_to prompt_ab_test_path(@prompt, @ab_test), alert: e.record.errors.full_messages.join(", ")
   end
 
   def cancel
     authorize @ab_test, :update?
     @ab_test.cancel!
-    redirect_to @ab_test, notice: "A/B test has been cancelled."
+    redirect_to prompt_ab_test_path(@prompt, @ab_test), notice: "A/B test has been cancelled."
   rescue ActiveRecord::RecordInvalid => e
-    redirect_to @ab_test, alert: e.message
+    redirect_to prompt_ab_test_path(@prompt, @ab_test), alert: e.record.errors.full_messages.join(", ")
   end
 
-  def promote_winner
+  def promote
     authorize @ab_test, :update?
-    authorize @ab_test.prompt, :update?
-
     AbTests::PromoteWinner.call(ab_test: @ab_test)
-    redirect_to @ab_test, notice: "Winner promoted as the current prompt version."
-  rescue ArgumentError => e
-    redirect_to @ab_test, alert: e.message
-  rescue Pundit::NotAuthorizedError
-    redirect_to @ab_test, alert: "You are not authorized to update this prompt."
+    redirect_to prompt_ab_test_path(@prompt, @ab_test),
+                notice: "Winner promoted! v#{@ab_test.winner_variant.prompt_version.version} is now the current version."
+  rescue ArgumentError, ActiveRecord::RecordInvalid => e
+    message = e.is_a?(ActiveRecord::RecordInvalid) ? e.record.errors.full_messages.join(", ") : e.message
+    redirect_to prompt_ab_test_path(@prompt, @ab_test), alert: message
   end
 
   private
 
-  def set_ab_test
-    @ab_test = policy_scope(AbTest).find(params[:id])
+  def set_prompt
+    @prompt = policy_scope(Prompt).find(params[:prompt_id])
   end
 
-  # Ensure at least 2 variant rows (control + 1 treatment) exist for the form.
-  def build_minimum_variants
-    existing = @ab_test.ab_test_variants.size
-    (2 - existing).times { @ab_test.ab_test_variants.build } if existing < 2
+  def set_ab_test
+    @ab_test = @prompt.ab_tests.find(params[:id])
   end
 
   def ab_test_params
-    params.require(:ab_test).permit(
-      :name, :description, :prompt_id, :control_version_id,
-      :min_samples_per_variant, :confidence_threshold,
-      ab_test_variants_attributes: [ :id, :prompt_version_id, :is_control, :_destroy ]
-    )
+    params.require(:ab_test).permit(:name, :description, :min_samples_per_variant, :confidence_threshold,
+                                    variant_version_ids: [])
+  end
+
+  def selected_variant_ids
+    Array(ab_test_params[:variant_version_ids]).reject(&:blank?).map { |id| Integer(id) }
+  rescue ArgumentError
+    raise ArgumentError, "Invalid variant selection: please choose valid versions"
+  end
+
+  def available_versions
+    @prompt.prompt_versions.order(version: :desc)
+  end
+
+  def analyze_if_available(variants)
+    return unless variants.any? { |v| v.sample_count > 0 }
+
+    # Completed tests always show analysis (final result).
+    # Running tests only compute analysis once sufficient samples exist to avoid
+    # expensive per-request score aggregation while data is still sparse.
+    return unless @ab_test.completed? || (@ab_test.running? && @ab_test.sufficient_samples?)
+
+    # First, try to use the last cached result (even if slightly stale) without
+    # recomputing — keeps GET requests read-only for running tests and avoids
+    # expensive score aggregation between write-path analysis intervals.
+    analysis = @ab_test.cached_or_compute_analysis(persist: false)
+
+    # For completed tests, if the cache is missing, compute and persist analysis
+    # so that completed tests truly always show a final result.
+    if analysis.nil? && @ab_test.completed?
+      analysis = @ab_test.cached_or_compute_analysis(persist: true)
+    end
+
+    analysis
   end
 end
