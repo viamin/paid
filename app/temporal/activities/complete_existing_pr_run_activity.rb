@@ -6,40 +6,63 @@ module Activities
   # and adds a comment to the PR noting the agent pushed updates.
   class CompleteExistingPrRunActivity < BaseActivity
     activity_name "CompleteExistingPrRun"
+    COMMENT_MARKER = "<!-- paid:agent-update -->"
+    SUMMARY_PREFIX = "## Agent Update"
+    GENERIC_MESSAGE = "Agent pushed updates to this PR."
+
+    class << self
+      def agent_update_comment?(body)
+        normalized = body.to_s
+
+        # Prefer the explicit HTML marker when present.
+        return true if normalized.include?(COMMENT_MARKER)
+
+        # Legacy detection: treat as agent update only when the trimmed body
+        # clearly matches the legacy formats, rather than any substring match.
+        stripped = normalized.strip
+
+        return true if stripped.start_with?(SUMMARY_PREFIX)
+        return true if stripped == GENERIC_MESSAGE
+
+        false
+      end
+    end
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
-      project = agent_run.project
-      client = project.github_token.client
+      track_phase(agent_run_id: agent_run_id, phase_key: "complete_existing_pr_run", phase_group: "post", agent_run: agent_run) do
+        project = agent_run.project
+        client = project.github_token.client
 
-      pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
+        pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
 
-      agent_run.complete!(
-        result_commit: agent_run.result_commit_sha,
-        pr_url: pr.html_url,
-        pr_number: pr.number
-      )
+        agent_run.complete!(
+          result_commit: agent_run.result_commit_sha,
+          pr_url: pr.html_url,
+          pr_number: pr.number
+        )
 
-      post_update_comment(client, project, pr.number, agent_run)
+        post_update_comment(client, project, pr.number, agent_run)
 
-      agent_run.log!("system", "Pushed updates to existing PR: #{pr.html_url}")
+        agent_run.log!("system", "Pushed updates to existing PR: #{pr.html_url}")
 
-      issue = agent_run.issue
-      if issue && !(issue.is_pull_request? && issue.draft_phase?)
-        issue.update!(paid_state: "completed")
+        issue = agent_run.issue
+        if issue && !(issue.is_pull_request? && issue.draft_phase?)
+          issue.update!(paid_state: "completed")
+        end
+
+        logger.info(
+          message: "agent_execution.existing_pr_completed",
+          agent_run_id: agent_run_id,
+          pull_request_url: pr.html_url
+        )
+
+        ProcessRunQueueJob.perform_later
+
+        { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number,
+          pr_review_phase: agent_run.issue&.pr_review_phase }
       end
-
-      logger.info(
-        message: "agent_execution.existing_pr_completed",
-        agent_run_id: agent_run_id,
-        pull_request_url: pr.html_url
-      )
-
-      ProcessRunQueueJob.perform_later
-
-      { agent_run_id: agent_run_id, pull_request_url: pr.html_url, pull_request_number: pr.number,
-        pr_review_phase: agent_run.issue&.pr_review_phase }
     end
 
     private
@@ -61,9 +84,9 @@ module Activities
       summary = agent_run.agent_summary
 
       if summary.present?
-        "## Agent Update\n\n#{summary.truncate(50_000)}"
+        "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{summary.truncate(50_000)}"
       else
-        "Agent pushed updates to this PR."
+        "#{COMMENT_MARKER}\n#{GENERIC_MESSAGE}"
       end
     end
   end

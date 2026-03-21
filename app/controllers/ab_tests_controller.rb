@@ -26,15 +26,16 @@ class AbTestsController < ApplicationController
   def create
     authorize @prompt.ab_tests.build, :create?
 
+    create_options = {
+      prompt: @prompt,
+      name: ab_test_params[:name],
+      description: ab_test_params[:description],
+      variant_version_ids: selected_variant_ids
+    }
+
     # Use strict parsing so invalid input (e.g. "abc") raises an error
     # instead of silently coercing to 0/0.0 via to_i/to_f.
     begin
-      create_options = {
-        prompt: @prompt,
-        name: ab_test_params[:name],
-        description: ab_test_params[:description],
-        variant_version_ids: selected_variant_ids
-      }
       create_options[:min_samples_per_variant] = Integer(ab_test_params[:min_samples_per_variant]) if ab_test_params[:min_samples_per_variant].present?
       create_options[:confidence_threshold] = Float(ab_test_params[:confidence_threshold]) if ab_test_params[:confidence_threshold].present?
     rescue ArgumentError

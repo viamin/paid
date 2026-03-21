@@ -49,7 +49,7 @@ module AbTests
     # Throttle analysis to avoid running the full t-test on every single sample.
     # Only analyze when total samples are a multiple of ANALYSIS_INTERVAL, or when
     # min_samples_per_variant is first reached.
-    ANALYSIS_INTERVAL = 5
+    ANALYSIS_INTERVAL = AbTest::ANALYSIS_INTERVAL
 
     def check_auto_completion(ab_test)
       ab_test.reload

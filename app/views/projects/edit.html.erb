@@ -164,10 +164,15 @@
   <%# Service Containers section %>
   <div class="mt-6 bg-white shadow sm:rounded-lg">
     <div class="px-4 py-5 sm:p-6">
-      <h2 class="text-lg font-semibold text-gray-900">Service Containers</h2>
-      <p class="mt-1 text-sm text-gray-500">
-        Associate service containers with this project. Agents will receive connection environment variables (e.g. <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">DATABASE_URL</code>) during runs.
-      </p>
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900">Service Containers</h2>
+          <p class="mt-1 text-sm text-gray-500">
+            Associate service containers with this project. Agents will receive connection environment variables (e.g. <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">DATABASE_URL</code>) during runs.
+          </p>
+        </div>
+        <%= button_to "Detect from Repo", detect_services_project_path(@project), method: :post, class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+      </div>
 
       <% project_service_containers = @project.project_service_containers.includes(:service_container).to_a %>
       <% if project_service_containers.any? %>

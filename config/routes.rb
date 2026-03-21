@@ -62,6 +62,7 @@ Rails.application.routes.draw do
       post :quick_create, on: :collection
     end
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
+    post :detect_services, on: :member
   end
 
   # API endpoints for agent containers
