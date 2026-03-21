@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "agent_harness"
+require Rails.root.join("lib/provider_support").to_s
 
 agent_timeout = begin
   [ Integer(ENV.fetch("AGENT_TIMEOUT", 3600)), 1 ].max
@@ -14,24 +15,34 @@ end
 Rails.application.config.x.agent_timeout = agent_timeout
 
 AgentHarness.configure do |config|
-  config.default_provider = :claude
-  config.fallback_providers = %i[cursor aider]
+  # Order is deterministic: follows APP_TO_HARNESS_PROVIDER_KEYS declaration order.
+  supported_provider_keys = ProviderSupport.supported_provider_keys
+
+  default_key = if supported_provider_keys.include?("claude")
+    :claude
+  elsif supported_provider_keys.any?
+    ProviderSupport.harness_provider_key_for(supported_provider_keys.first).to_sym
+  end
+
+  config.default_provider = default_key if default_key
+  config.fallback_providers = %w[cursor aider].filter_map do |provider_key|
+    next unless supported_provider_keys.include?(provider_key)
+
+    harness_provider_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
+    next if default_key && harness_provider_key == default_key
+
+    harness_provider_key
+  end
   config.default_timeout = Rails.application.config.x.agent_timeout
 
-  config.provider(:claude) do |p|
-    p.enabled = true
-    p.priority = 10
-    p.timeout = Rails.application.config.x.agent_timeout
-  end
+  supported_provider_keys.each_with_index do |provider_key, index|
+    harness_provider_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
 
-  config.provider(:cursor) do |p|
-    p.enabled = true
-    p.priority = 20
-  end
-
-  config.provider(:aider) do |p|
-    p.enabled = true
-    p.priority = 30
+    config.provider(harness_provider_key) do |provider|
+      provider.enabled = true
+      provider.priority = (index + 1) * 10
+      provider.timeout = Rails.application.config.x.agent_timeout if harness_provider_key == :claude
+    end
   end
 
   config.orchestration do |orch|
