@@ -18,7 +18,7 @@ class TokenUsageTracker
     llm_model     = usage[:llm_model]
     request_type  = usage.fetch(:request_type, nil).presence || "agent"
     metadata      = usage.fetch(:metadata, nil).presence || {}
-    cost_cents    = calculate_cost(tokens_input, tokens_output)
+    cost_cents    = calculate_cost(tokens_input, tokens_output, llm_model: llm_model)
 
     ActiveRecord::Base.transaction do
       record_per_request_usage(

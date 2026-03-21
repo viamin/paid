@@ -6,20 +6,22 @@
         Prompt: <%= link_to @ab_test.prompt.name, @ab_test.prompt, class: "text-indigo-600 hover:text-indigo-500" %>
       </p>
     </div>
-    <div class="mt-4 flex gap-2 sm:mt-0">
-      <% if @ab_test.draft? %>
-        <%= button_to "Start", start_ab_test_path(@ab_test), method: :post, class: "inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500" %>
-      <% end %>
-      <% if @ab_test.running? %>
-        <%= button_to "Complete", complete_ab_test_path(@ab_test), method: :post, class: "inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500" %>
-      <% end %>
-      <% if @ab_test.completed? && @ab_test.winner_variant.present? %>
-        <%= button_to "Promote Winner", promote_winner_ab_test_path(@ab_test), method: :post, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
-      <% end %>
-      <% unless @ab_test.completed? %>
-        <%= link_to "Edit", edit_ab_test_path(@ab_test), class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
-      <% end %>
-    </div>
+    <% if policy(@ab_test).update? %>
+      <div class="mt-4 flex gap-2 sm:mt-0">
+        <% if @ab_test.draft? %>
+          <%= button_to "Start", start_ab_test_path(@ab_test), method: :post, class: "inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500" %>
+        <% end %>
+        <% if @ab_test.running? %>
+          <%= button_to "Complete", complete_ab_test_path(@ab_test), method: :post, class: "inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500" %>
+        <% end %>
+        <% if @ab_test.completed? && @ab_test.winner_variant.present? %>
+          <%= button_to "Promote Winner", promote_winner_ab_test_path(@ab_test), method: :post, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+        <% end %>
+        <% unless @ab_test.completed? %>
+          <%= link_to "Edit", edit_ab_test_path(@ab_test), class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+        <% end %>
+      </div>
+    <% end %>
   </div>
 
   <%# Status & Config %>

@@ -20,7 +20,7 @@ class AbTestsController < ApplicationController
     @ab_test = AbTest.new
     authorize @ab_test
     @prompts = policy_scope(Prompt).active.includes(:current_version).order(:name)
-    @ab_test.ab_test_variants.build if @ab_test.ab_test_variants.empty?
+    build_minimum_variants
   end
 
   def create
@@ -38,7 +38,7 @@ class AbTestsController < ApplicationController
   def edit
     authorize @ab_test
     @prompts = policy_scope(Prompt).active.includes(:current_version).order(:name)
-    @ab_test.ab_test_variants.build if @ab_test.ab_test_variants.empty?
+    build_minimum_variants
   end
 
   def update
@@ -101,6 +101,12 @@ class AbTestsController < ApplicationController
 
   def set_ab_test
     @ab_test = policy_scope(AbTest).find(params[:id])
+  end
+
+  # Ensure at least 2 variant rows (control + 1 treatment) exist for the form.
+  def build_minimum_variants
+    existing = @ab_test.ab_test_variants.size
+    (2 - existing).times { @ab_test.ab_test_variants.build } if existing < 2
   end
 
   def ab_test_params
