@@ -63,6 +63,7 @@ RSpec.describe "UserSettings" do
       end
 
       it "updates agent execution settings" do
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
         user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
 
         patch user_settings_path, params: {
