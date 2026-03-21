@@ -622,6 +622,7 @@ class AgentRun < ApplicationRecord
       project.broadcast_agent_runs_update
       project.broadcast_agent_runs_list_update
       project.broadcast_stats_update
+      Dashboard::Broadcaster.call(account: project.account)
     end
 
     project.broadcast_agent_run_detail_update(self)
