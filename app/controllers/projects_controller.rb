@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ProjectsController < ApplicationController
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :detect_services ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -89,6 +89,21 @@ class ProjectsController < ApplicationController
       end
       format.html { redirect_to @project }
     end
+  end
+
+  def detect_services
+    authorize @project, :update?
+
+    result = Projects::DetectServices.call(project: @project)
+
+    if result.any_detected?
+      added = result.apply(@project)
+      redirect_to edit_project_path(@project), notice: result.notice_message(added)
+    else
+      redirect_to edit_project_path(@project), notice: "No service dependencies detected in repository files."
+    end
+  rescue GithubClient::Error => e
+    redirect_to edit_project_path(@project), alert: "Could not detect services: #{e.message}"
   end
 
   def destroy
