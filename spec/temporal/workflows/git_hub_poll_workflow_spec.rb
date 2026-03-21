@@ -263,7 +263,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       # Review request is deferred to the AgentExecutionWorkflow (after push)
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::RequestReviewActivity, anything, anything)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), anything)
       expect(Temporalio::Workflow).to have_received(:start_child_workflow)
     end
 
