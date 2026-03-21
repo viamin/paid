@@ -366,7 +366,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_20_000000) do
     t.text "reasoning"
     t.integer "selection_duration_ms"
     t.string "selector_type", limit: 50, null: false
-    t.datetime "updated_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.datetime "updated_at", null: false
     t.index ["agent_run_id"], name: "index_model_selections_on_agent_run_id", unique: true
     t.index ["llm_model_id"], name: "index_model_selections_on_llm_model_id"
     t.index ["selector_type"], name: "index_model_selections_on_selector_type"
