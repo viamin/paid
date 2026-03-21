@@ -107,6 +107,8 @@ class AbTestsController < ApplicationController
 
   def selected_variant_ids
     Array(ab_test_params[:variant_version_ids]).reject(&:blank?).map { |id| Integer(id) }
+  rescue ArgumentError
+    raise ArgumentError, "Invalid variant selection: please choose valid versions"
   end
 
   def available_versions

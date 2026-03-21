@@ -25,7 +25,7 @@ RSpec.describe "AbTests" do
       end
 
       it "shows existing A/B tests" do
-        ab_test = create(:ab_test, prompt: prompt, name: "Test Comparison")
+        create(:ab_test, prompt: prompt, name: "Test Comparison")
         get prompt_ab_tests_path(prompt)
         expect(response.body).to include("Test Comparison")
       end
@@ -53,14 +53,14 @@ RSpec.describe "AbTests" do
     before { sign_in user }
 
     it "does not show A/B tests from another account" do
-      other_ab_test = create(:ab_test, prompt: other_prompt, name: "Other Account Test")
+      create(:ab_test, prompt: other_prompt, name: "Other Account Test")
       get prompt_ab_tests_path(prompt)
       expect(response.body).not_to include("Other Account Test")
     end
 
     it "cannot access A/B test belonging to another account" do
-      other_ab_test = create(:ab_test, prompt: other_prompt)
-      get prompt_ab_test_path(other_prompt, other_ab_test)
+      other_test = create(:ab_test, prompt: other_prompt)
+      get prompt_ab_test_path(other_prompt, other_test)
       expect(response).to have_http_status(:not_found)
     end
   end
