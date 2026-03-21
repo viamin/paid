@@ -650,7 +650,12 @@ class AgentRun < ApplicationRecord
       project.broadcast_agent_runs_update
       project.broadcast_agent_runs_list_update
       project.broadcast_stats_update
-      DashboardBroadcastJob.perform_later(project.account_id)
+
+      # Only broadcast dashboard stats on terminal status transitions to avoid
+      # a burst of expensive aggregate queries during intermediate transitions
+      # (queued→pending→running→completed). The Turbo Stream partials for
+      # project-level stats already cover the real-time detail view.
+      DashboardBroadcastJob.perform_later(project.account_id) if finished?
     end
 
     project.broadcast_agent_run_detail_update(self)
