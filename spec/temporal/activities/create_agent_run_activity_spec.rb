@@ -67,6 +67,43 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(issue.reload.paid_state).to eq("in_progress")
     end
 
+    it "records create_agent_run phase starting at the run creation time" do
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      phase = AgentRunPhase.order(:id).last
+
+      expect(phase.phase_key).to eq("create_agent_run")
+      expect(phase.started_at.to_i).to eq(agent_run.created_at.to_i)
+      expect(phase.started_at).to be >= agent_run.created_at
+    end
+
+    it "does not fail when phase recording raises" do
+      allow(AgentRunPhase).to receive(:record!).and_raise(StandardError, "phase write failed")
+      result = nil
+
+      expect {
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+      }.not_to raise_error
+
+      expect(AgentRun.find(result[:agent_run_id]).status).to eq("pending")
+      expect(issue.reload.paid_state).to eq("in_progress")
+    end
+
+    it "records a failed phase when later side effects raise" do
+      allow(Issue).to receive(:find).with(issue.id).and_return(issue)
+      allow(issue).to receive(:update!).and_raise(StandardError, "issue update failed")
+
+      expect {
+        activity.execute(project_id: project.id, issue_id: issue.id)
+      }.to raise_error(StandardError, "issue update failed")
+
+      phase = AgentRunPhase.order(:id).last
+      expect(phase.phase_key).to eq("create_agent_run")
+      expect(phase.status).to eq("failed")
+      expect(phase.metadata["error_class"]).to eq("StandardError")
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid project_id" do
       expect {
         activity.execute(project_id: -1, issue_id: issue.id)

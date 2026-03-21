@@ -6,6 +6,18 @@ RSpec.describe Dashboard::Stats do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
 
+  def create_timed_completed_run(project:, created_at:)
+    create(:agent_run, :completed, project: project,
+      created_at: created_at, started_at: created_at + 1.minute,
+      completed_at: created_at + 2.minutes, duration_seconds: 60)
+  end
+
+  def create_setup_phase(agent_run, duration_seconds:)
+    create(:agent_run_phase, agent_run: agent_run, phase_group: "setup",
+      duration_seconds: duration_seconds, started_at: agent_run.started_at,
+      finished_at: agent_run.started_at + duration_seconds.seconds)
+  end
+
   describe ".call" do
     subject(:stats) { described_class.call(account: account) }
 
@@ -94,6 +106,32 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:duration_percentiles][:p90]).to be > 0
       end
 
+      it "calculates phase breakdown percentiles" do
+        completed_runs = AgentRun.where(project: project, status: "completed").order(:duration_seconds).to_a
+
+        create(:agent_run_phase, agent_run: completed_runs[0], phase_group: "setup", duration_seconds: 10, started_at: 2.days.ago, finished_at: 2.days.ago + 10.seconds)
+        create(:agent_run_phase, agent_run: completed_runs[0], phase_group: "agent", duration_seconds: 80, started_at: 2.days.ago + 20.seconds, finished_at: 2.days.ago + 100.seconds)
+
+        create(:agent_run_phase, agent_run: completed_runs[1], phase_group: "setup", duration_seconds: 20, started_at: 5.days.ago, finished_at: 5.days.ago + 20.seconds)
+        create(:agent_run_phase, agent_run: completed_runs[1], phase_group: "agent", duration_seconds: 160, started_at: 5.days.ago + 30.seconds, finished_at: 5.days.ago + 190.seconds)
+
+        create(:agent_run_phase, agent_run: completed_runs[2], phase_group: "setup", duration_seconds: 40, started_at: 20.days.ago, finished_at: 20.days.ago + 40.seconds)
+        create(:agent_run_phase, agent_run: completed_runs[2], phase_group: "agent", duration_seconds: 500, started_at: 20.days.ago + 60.seconds, finished_at: 20.days.ago + 560.seconds)
+
+        expect(stats[:phase_breakdown]["setup"][:avg_seconds]).to eq(23)
+        expect(stats[:phase_breakdown]["agent"][:p50_seconds]).to eq(160)
+        expect(stats[:phase_breakdown]["queue"][:sample_size]).to eq(3)
+      end
+
+      it "skips completed runs without phase rows" do
+        completed_run = AgentRun.where(project: project, status: "completed").first
+        create_setup_phase(completed_run, duration_seconds: 20)
+
+        expect(stats[:phase_breakdown]["setup"][:sample_size]).to eq(1)
+        expect(stats[:phase_breakdown]["setup"][:avg_seconds]).to eq(20)
+        expect(stats[:phase_breakdown]["queue"][:sample_size]).to eq(1)
+      end
+
       it "calculates cost totals" do
         expect(stats[:cost_and_tokens][:total_cost_cents]).to eq(400)
       end
@@ -135,6 +173,30 @@ RSpec.describe Dashboard::Stats do
 
       it "only includes runs from the specified account" do
         expect(stats[:run_volume][:total]).to eq(1)
+      end
+    end
+
+    context "with many completed runs for phase breakdown" do
+      it "limits phase breakdown to recent completed runs" do
+        travel_to Time.zone.parse("2026-03-20 12:00:00 UTC") do
+          stub_const("Dashboard::Stats::PHASE_BREAKDOWN_RUN_LIMIT", 2)
+
+          recent_runs = [
+            create_timed_completed_run(project: project, created_at: 5.days.ago),
+            create_timed_completed_run(project: project, created_at: 4.days.ago),
+            create_timed_completed_run(project: project, created_at: 3.days.ago)
+          ]
+
+          create_setup_phase(recent_runs[0], duration_seconds: 5)
+          create_setup_phase(recent_runs[1], duration_seconds: 10)
+          create_setup_phase(recent_runs[2], duration_seconds: 20)
+
+          old_run = create_timed_completed_run(project: project, created_at: 45.days.ago)
+          create_setup_phase(old_run, duration_seconds: 999)
+
+          expect(stats[:phase_breakdown]["setup"][:sample_size]).to eq(2)
+          expect(stats[:phase_breakdown]["setup"][:avg_seconds]).to eq(15)
+        end
       end
     end
 
