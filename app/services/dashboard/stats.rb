@@ -2,6 +2,9 @@
 
 module Dashboard
   class Stats
+    PHASE_BREAKDOWN_WINDOW = 30.days
+    PHASE_BREAKDOWN_RUN_LIMIT = 500
+
     attr_reader :account
 
     def initialize(account:)
@@ -16,6 +19,7 @@ module Dashboard
       {
         run_volume: run_volume,
         duration_percentiles: duration_percentiles,
+        phase_breakdown: phase_breakdown,
         cost_and_tokens: cost_and_tokens,
         runs_by_agent_type: runs_by_agent_type,
         runs_by_project: runs_by_project,
@@ -100,6 +104,42 @@ module Dashboard
       }
     end
 
+    def phase_breakdown
+      completed_runs = recent_completed_runs_for_phase_breakdown
+      return empty_phase_breakdown if completed_runs.empty?
+
+      values_by_group = Hash.new { |hash, key| hash[key] = [] }
+
+      completed_runs.each do |run|
+        phases = run.agent_run_phases.to_a
+        next if phases.empty?
+
+        summary = run.phase_summary(phases: phases)
+        values_by_group["queue"] << summary[:queue_seconds]
+
+        phase_durations_by_group(phases).each do |phase_group, duration_seconds|
+          values_by_group[phase_group] << duration_seconds
+        end
+      end
+
+      return empty_phase_breakdown if values_by_group.empty?
+
+      phase_breakdown_groups.index_with do |phase_group|
+        values = values_by_group.fetch(phase_group, [])
+        summarize_phase_values(values)
+      end
+    end
+
+    def recent_completed_runs_for_phase_breakdown
+      now = Time.current
+
+      agent_runs.where(status: "completed", created_at: (now - PHASE_BREAKDOWN_WINDOW)..now)
+        .order(created_at: :desc)
+        .limit(PHASE_BREAKDOWN_RUN_LIMIT)
+        .includes(:agent_run_phases)
+        .to_a
+    end
+
     def avg_iterations_per_run
       result = agent_runs.where(status: "completed")
         .where("iterations > 0")
@@ -151,6 +191,45 @@ module Dashboard
         time_to_merge: { avg_seconds: 0, p50_seconds: 0, p90_seconds: 0 },
         agent_run_seconds: { avg_seconds: 0, p50_seconds: 0, p90_seconds: 0 }
       }
+    end
+
+    def empty_phase_breakdown
+      phase_breakdown_groups.index_with do
+        summarize_phase_values([])
+      end
+    end
+
+    def phase_breakdown_groups
+      %w[queue setup prompt agent post cleanup]
+    end
+
+    def phase_durations_by_group(phases)
+      phases.group_by(&:phase_group).transform_values do |entries|
+        entries.sum(&:duration_seconds)
+      end
+    end
+
+    def summarize_phase_values(values)
+      sorted = values.compact.sort
+      count = sorted.length
+
+      {
+        avg_seconds: count.zero? ? 0 : (sorted.sum.to_f / count).round,
+        p50_seconds: percentile(sorted, 0.5),
+        p75_seconds: percentile(sorted, 0.75),
+        p90_seconds: percentile(sorted, 0.9),
+        sample_size: count
+      }
+    end
+
+    def percentile(sorted_values, percentile)
+      return 0 if sorted_values.empty?
+
+      rank = (percentile * (sorted_values.length - 1))
+      lower = sorted_values[rank.floor]
+      upper = sorted_values[rank.ceil]
+      interpolated = lower + ((upper - lower) * (rank - rank.floor))
+      interpolated.round
     end
 
     def merged_pr_aggregate
