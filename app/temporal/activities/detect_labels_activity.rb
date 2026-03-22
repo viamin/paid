@@ -44,6 +44,17 @@ module Activities
         return "none"
       end
 
+      build_label = project.label_for_stage(:build)
+      plan_label = project.label_for_stage(:plan)
+
+      action = if build_label && issue.has_label?(build_label)
+        "execute_agent"
+      elsif plan_label && issue.has_label?(plan_label)
+        "start_planning"
+      end
+
+      return "none" unless action
+
       blocking = issue.blocking_issues.pluck(:github_number)
       if blocking.any?
         logger.info(
@@ -55,16 +66,7 @@ module Activities
         return "none"
       end
 
-      build_label = project.label_for_stage(:build)
-      plan_label = project.label_for_stage(:plan)
-
-      if build_label && issue.has_label?(build_label)
-        "execute_agent"
-      elsif plan_label && issue.has_label?(plan_label)
-        "start_planning"
-      else
-        "none"
-      end
+      action
     end
   end
 end
