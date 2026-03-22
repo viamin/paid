@@ -23,11 +23,20 @@ class RecoverMissingPrLabelsJob < ApplicationJob
     recovered = 0
     skipped = 0
     failed = 0
+    not_synced = 0
 
-    candidate_runs.each do |agent_run|
-      synced_pr = synced_pull_request(agent_run)
+    runs = candidate_runs.to_a
+    synced_prs = prefetch_synced_prs(runs)
 
-      if synced_pr&.has_label?(PAID_GENERATED_LABEL)
+    runs.each do |agent_run|
+      synced_pr = synced_prs[[ agent_run.project_id, agent_run.pull_request_number ]]
+
+      unless synced_pr
+        not_synced += 1
+        next
+      end
+
+      if synced_pr.has_label?(PAID_GENERATED_LABEL)
         skipped += 1
         next
       end
@@ -52,7 +61,8 @@ class RecoverMissingPrLabelsJob < ApplicationJob
       message: "agent_execution.pr_label_recovery_complete",
       recovered: recovered,
       skipped: skipped,
-      failed: failed
+      failed: failed,
+      not_synced: not_synced
     )
   end
 
@@ -71,11 +81,23 @@ class RecoverMissingPrLabelsJob < ApplicationJob
       .preload(project: :github_token)
   end
 
-  def synced_pull_request(agent_run)
-    agent_run.project.issues.find_by(
-      github_number: agent_run.pull_request_number,
-      is_pull_request: true
-    )
+  # Batch-loads synced Issue records for all candidate runs in a single query,
+  # keyed by [project_id, pull_request_number]. Eliminates N+1 lookups.
+  def prefetch_synced_prs(runs)
+    pr_keys = runs.map { |r| [ r.project_id, r.pull_request_number ] }.uniq
+
+    return {} if pr_keys.empty?
+
+    Issue
+      .where(is_pull_request: true)
+      .where(
+        project_id: pr_keys.map(&:first),
+        github_number: pr_keys.map(&:last)
+      )
+      .each_with_object({}) do |issue, hash|
+        key = [ issue.project_id, issue.github_number ]
+        hash[key] = issue if pr_keys.include?(key)
+      end
   end
 
   def recover_label(agent_run, synced_pr)
@@ -86,7 +108,7 @@ class RecoverMissingPrLabelsJob < ApplicationJob
       [ PAID_GENERATED_LABEL ]
     )
 
-    synced_pr&.update!(labels: (synced_pr.labels + [ PAID_GENERATED_LABEL ]).uniq)
+    synced_pr.update!(labels: (synced_pr.labels + [ PAID_GENERATED_LABEL ]).uniq)
 
     Rails.logger.info(
       message: "agent_execution.pr_label_recovered",
