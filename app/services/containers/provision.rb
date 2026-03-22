@@ -510,8 +510,9 @@ module Containers
     # Writable directories inside the container:
     #   /workspace          - bind mount of workspace dir (rw, for git clone and code changes)
     #   /tmp                - tmpfs (1GB, for scratch files)
-    #   /home/agent/.cache  - tmpfs (512MB, for tool caches)
+    #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
+    #   /home/agent/.codex  - tmpfs (64MB, for Codex CLI config/session data)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
       {
@@ -560,6 +561,9 @@ module Containers
       # compromising the read-only rootfs. Ownership is fixed by
       # fix_workspace_ownership!-style chown after container start.
       tmpfs["/home/agent/.claude"] = "size=#{256 * 1024 * 1024},mode=0700"
+
+      # Codex CLI stores config and session data under ~/.codex.
+      tmpfs["/home/agent/.codex"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       {
         "Memory" => options[:memory_bytes],

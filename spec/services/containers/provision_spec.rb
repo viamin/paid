@@ -145,6 +145,18 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "configures a writable tmpfs for Codex CLI config" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.codex")
+          expect(tmpfs["/home/agent/.codex"]).to include("mode=0700")
+          expect(tmpfs["/home/agent/.codex"]).to include("size=#{64 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
       it "configures worktree volume mount" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]

@@ -31,6 +31,13 @@ RSpec.describe Activities::RunAgentActivity do
       .and_return(git_ops)
   end
 
+  describe "AGENT_COMMANDS" do
+    it "includes a command mapping for codex" do
+      expect(described_class::AGENT_COMMANDS).to have_key("codex")
+      expect(described_class::AGENT_COMMANDS["codex"]).to include("codex")
+    end
+  end
+
   describe ".provider_order" do
     it "returns only the primary provider when fallback is disabled" do
       result = described_class.provider_order(
@@ -50,6 +57,16 @@ RSpec.describe Activities::RunAgentActivity do
       )
 
       expect(result).to eq(%w[claude_code cursor aider])
+    end
+
+    it "includes codex in fallback order when listed" do
+      result = described_class.provider_order(
+        agent_type: "claude_code",
+        fallback_enabled: true,
+        fallback_providers: %w[codex cursor]
+      )
+
+      expect(result).to eq(%w[claude_code codex cursor])
     end
   end
 
