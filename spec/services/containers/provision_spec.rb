@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "timeout"
 
 RSpec.describe Containers::Provision do
   let(:project) { create(:project) }
@@ -758,7 +759,7 @@ RSpec.describe Containers::Provision do
     context "with startup timeout" do
       it "fires when exec produces no output" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          sleep 0.01 until container_stopped.true?
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
           [ [], [], 137 ]
         end
 
@@ -782,7 +783,7 @@ RSpec.describe Containers::Provision do
       it "fires when output stops mid-stream" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "initial output\n") if block
-          sleep 0.01 until container_stopped.true?
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
           [ [ "initial output\n" ], [], 137 ]
         end
 
@@ -805,10 +806,40 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with wall-clock timeout" do
+      it "fires when exec runs past the deadline without output" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          [ [], [], 137 ]
+        end
+
+        expect {
+          service.execute("hung_command", timeout: 0.1)
+        }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
+      end
+
+      it "fires via post-exec deadline check when exec returns between watchdog ticks" do
+        # Exec returns normally (no watchdog stop) but takes longer than the
+        # wall-clock timeout. The post-exec check_deadline_exceeded! should catch it.
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          sleep 0.15 # exceed the 0.1s timeout
+          block&.call(:stdout, "partial output\n")
+          [ [ "partial output\n" ], [], 0 ]
+        end
+
+        # Use a long poll interval so the watchdog does NOT fire during exec
+        allow(service).to receive(:watchdog_poll_interval).and_return(10)
+
+        expect {
+          service.execute("slow_command", timeout: 0.1)
+        }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
+      end
+    end
+
     context "with startup timeout when exec raises Docker error" do
       it "detects the watchdog reason through the Docker error" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          sleep 0.01 until container_stopped.true?
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
           raise Docker::Error::ServerError, "connection closed"
         end
 
@@ -816,10 +847,76 @@ RSpec.describe Containers::Provision do
           service.execute("slow_command", timeout: 10, startup_timeout: 0.1)
         }.to raise_error(described_class::StartupTimeoutError)
       end
+
+      it "logs the timeout when raising through the Docker error path" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          raise Docker::Error::ServerError, "connection closed"
+        end
+        allow(agent_run).to receive(:log!)
+
+        expect {
+          service.execute("slow_command", timeout: 10, startup_timeout: 0.1)
+        }.to raise_error(described_class::StartupTimeoutError)
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.execute.timeout",
+          metadata: hash_including(timeout_type: "StartupTimeoutError")
+        )
+      end
     end
 
-    context "without watchdog timeouts" do
-      it "succeeds without watchdog when neither timeout is passed" do
+    context "with idle timeout when exec raises Docker error" do
+      it "detects the watchdog reason through the Docker error" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          raise Docker::Error::ServerError, "connection closed"
+        end
+
+        expect {
+          service.execute("stalling_command", timeout: 10, idle_timeout: 0.1)
+        }.to raise_error(described_class::IdleTimeoutError)
+      end
+
+      it "logs the timeout when raising through the Docker error path" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
+          raise Docker::Error::ServerError, "connection closed"
+        end
+        allow(agent_run).to receive(:log!)
+
+        expect {
+          service.execute("stalling_command", timeout: 10, idle_timeout: 0.1)
+        }.to raise_error(described_class::IdleTimeoutError)
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.execute.timeout",
+          metadata: hash_including(timeout_type: "IdleTimeoutError")
+        )
+      end
+    end
+
+    context "with wall-clock timeout when exec raises Docker error" do
+      it "detects wall-clock timeout via post-exec deadline check" do
+        # Exec raises a Docker error after the wall-clock deadline, but the
+        # watchdog hasn't fired yet (long poll interval). The post-exec
+        # check_deadline_exceeded! in the Docker error rescue should catch it.
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.15 # exceed the 0.1s timeout
+          raise Docker::Error::ServerError, "connection reset"
+        end
+        allow(service).to receive(:watchdog_poll_interval).and_return(10)
+
+        expect {
+          service.execute("hung_command", timeout: 0.1)
+        }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
+      end
+    end
+
+    context "without startup and idle timeouts" do
+      it "succeeds when only a wall-clock timeout is passed" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "output\n") if block
           [ [ "output\n" ], [], 0 ]
