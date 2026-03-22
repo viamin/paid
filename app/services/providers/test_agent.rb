@@ -9,6 +9,7 @@ module Providers
   #   result.success? # => true
   class TestAgent
     PROMPT = "Respond with exactly: PING OK"
+    EXPECTED_OUTPUT = "PING OK"
     TIMEOUT = 30
 
     attr_reader :provider
@@ -38,8 +39,9 @@ module Providers
     private
 
     def validate!
-      harness_key = ProviderSupport.harness_provider_key_for(provider.provider_key)
-      raise AgentHarness::Error, "Unknown provider: #{provider.provider_key}" unless harness_key
+      unless ProviderSupport.supported_provider_key?(provider.provider_key)
+        raise AgentHarness::Error, "Unknown provider: #{provider.provider_key}"
+      end
     end
 
     def execute_test
@@ -48,18 +50,27 @@ module Providers
       AgentHarness.send_message(
         PROMPT,
         provider: harness_key.to_sym,
-        timeout: TIMEOUT
+        timeout: TIMEOUT,
+        dangerous_mode: false
       )
     end
 
     def process_response(response)
-      if response.success?
+      unless response.success?
+        return Result.new(
+          success: false,
+          error_type: :connection,
+          message: response.error || "Agent exited with code #{response.exit_code}"
+        )
+      end
+
+      if response.output.to_s.strip.include?(EXPECTED_OUTPUT)
         Result.new(success: true, error_type: nil, message: "Agent is healthy")
       else
         Result.new(
           success: false,
-          error_type: :connection,
-          message: response.error || "Agent exited with code #{response.exit_code}"
+          error_type: :unexpected,
+          message: "Agent responded but output did not match expected ping"
         )
       end
     end

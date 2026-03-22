@@ -4,6 +4,10 @@ export default class extends Controller {
   static targets = ["button", "result"]
   static values = { url: String }
 
+  disconnect() {
+    this.clearDismissTimer()
+  }
+
   async test() {
     this.showLoading()
 
@@ -13,8 +17,14 @@ export default class extends Controller {
         headers: {
           "X-CSRF-Token": this.csrfToken,
           "Accept": "application/json"
-        }
+        },
+        redirect: "follow"
       })
+
+      if (response.redirected || !response.headers.get("content-type")?.includes("application/json")) {
+        this.showError("unexpected", "Session expired. Please refresh the page and sign in again.")
+        return
+      }
 
       if (!response.ok) {
         this.showError("unexpected", `Server responded with ${response.status}`)
@@ -34,6 +44,7 @@ export default class extends Controller {
   }
 
   showLoading() {
+    this.clearDismissTimer()
     this.buttonTarget.disabled = true
     this.buttonTarget.textContent = "Testing..."
     this.resultTarget.innerHTML = `
@@ -93,11 +104,19 @@ export default class extends Controller {
   }
 
   autoDismiss() {
-    window.setTimeout(() => {
-      if (this.resultTarget) {
+    this.clearDismissTimer()
+    this.dismissTimer = window.setTimeout(() => {
+      if (this.hasResultTarget) {
         this.resultTarget.innerHTML = ""
       }
     }, 10000)
+  }
+
+  clearDismissTimer() {
+    if (this.dismissTimer) {
+      window.clearTimeout(this.dismissTimer)
+      this.dismissTimer = null
+    }
   }
 
   escapeHtml(text) {

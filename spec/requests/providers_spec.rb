@@ -191,9 +191,9 @@ RSpec.describe "Providers" do
         other_user = create(:user)
         other_provider = create(:provider, user: other_user, provider_key: "cursor")
 
-        expect {
-          post test_agent_provider_path(other_provider), headers: { "Accept" => "application/json" }
-        }.to raise_error(ActiveRecord::RecordNotFound)
+        post test_agent_provider_path(other_provider), headers: { "Accept" => "application/json" }
+
+        expect(response).to have_http_status(:not_found)
       end
     end
   end
