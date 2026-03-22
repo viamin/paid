@@ -897,6 +897,23 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with wall clock timeout when exec raises Docker error" do
+      it "detects wall-clock timeout via post-exec deadline check" do
+        # Exec raises a Docker error after the wall-clock deadline, but the
+        # watchdog hasn't fired yet (long poll interval). The post-exec
+        # check_deadline_exceeded! in the Docker error rescue should catch it.
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.15 # exceed the 0.1s timeout
+          raise Docker::Error::ServerError, "connection reset"
+        end
+        allow(service).to receive(:watchdog_poll_interval).and_return(10)
+
+        expect {
+          service.execute("hung_command", timeout: 0.1)
+        }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
+      end
+    end
+
     context "without watchdog timeouts" do
       it "succeeds without watchdog when neither timeout is passed" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
