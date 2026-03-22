@@ -236,6 +236,30 @@ RSpec.describe Issue do
         expect(issue.sub_issue?).to be false
       end
     end
+
+    describe "#has_associated_pull_requests?" do
+      let(:project) { create(:project) }
+
+      it "returns true when issue has a sub-issue that is a pull request" do
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, project: project, parent_issue: issue)
+
+        expect(issue.has_associated_pull_requests?).to be true
+      end
+
+      it "returns false when issue has no sub-issues" do
+        issue = create(:issue, project: project)
+
+        expect(issue.has_associated_pull_requests?).to be false
+      end
+
+      it "returns false when issue has sub-issues that are not pull requests" do
+        issue = create(:issue, project: project)
+        create(:issue, project: project, parent_issue: issue)
+
+        expect(issue.has_associated_pull_requests?).to be false
+      end
+    end
   end
 
   describe "#ready_to_work?" do
@@ -406,6 +430,17 @@ RSpec.describe Issue do
         create(:issue, :pull_request, project: project)
 
         expect(project).not_to have_received(:broadcast_issues_update)
+        expect(project).to have_received(:broadcast_pull_requests_update)
+      end
+
+      it "broadcasts both sections for a pull request linked to an issue" do
+        parent = create(:issue, project: project)
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        create(:issue, :pull_request, project: project, parent_issue: parent)
+
+        expect(project).to have_received(:broadcast_issues_update)
         expect(project).to have_received(:broadcast_pull_requests_update)
       end
     end
