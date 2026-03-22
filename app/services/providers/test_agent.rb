@@ -9,6 +9,7 @@ module Providers
   #   result.success? # => true
   class TestAgent
     UnsupportedProviderError = Class.new(StandardError)
+    NotContainerExecutableError = Class.new(StandardError)
 
     PROMPT = "Respond with exactly: PING OK"
     EXPECTED_OUTPUT = "PING OK"
@@ -28,9 +29,12 @@ module Providers
       validate!
       response = execute_test
       process_response(response)
+    rescue NotContainerExecutableError
+      Result.new(success: false, error_type: :unexpected,
+        message: "Provider #{provider.provider_key} CLI is not installed in the agent container")
     rescue UnsupportedProviderError
       Result.new(success: false, error_type: :unexpected,
-        message: "Provider #{provider.provider_key} is not installed or available in the agent container")
+        message: "Provider #{provider.provider_key} is not recognized by the agent harness")
     rescue AgentHarness::AuthenticationError => e
       Result.new(success: false, error_type: :authentication, message: e.message)
     rescue AgentHarness::TimeoutError => e
@@ -46,6 +50,11 @@ module Providers
     def validate!
       unless ProviderSupport.supported_provider_key?(provider.provider_key)
         raise UnsupportedProviderError, "Unknown provider: #{provider.provider_key}"
+      end
+
+      unless ProviderSupport.container_executable_provider_key?(provider.provider_key)
+        raise NotContainerExecutableError,
+          "Provider #{provider.provider_key} is not installed in the agent container"
       end
     end
 
