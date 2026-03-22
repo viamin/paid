@@ -806,7 +806,7 @@ RSpec.describe Containers::Provision do
       end
     end
 
-    context "with wall clock timeout" do
+    context "with wall-clock timeout" do
       it "fires when exec runs past the deadline without output" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
           Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
@@ -898,7 +898,7 @@ RSpec.describe Containers::Provision do
       end
     end
 
-    context "with wall clock timeout when exec raises Docker error" do
+    context "with wall-clock timeout when exec raises Docker error" do
       it "detects wall-clock timeout via post-exec deadline check" do
         # Exec raises a Docker error after the wall-clock deadline, but the
         # watchdog hasn't fired yet (long poll interval). The post-exec

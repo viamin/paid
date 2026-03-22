@@ -227,7 +227,6 @@ module Containers
       begin
         watchdog = start_watchdog(watchdog_ctx)
 
-        exec_result = nil
         exec_result = container.exec(cmd_array, wait: timeout) do |stream_type, chunk|
           watchdog_mutex.synchronize do
             output_received = true
@@ -766,7 +765,7 @@ module Containers
       end
 
       # Check startup/idle before wall-clock to match the watchdog's precedence —
-      # more specific timeouts take priority over the catch-all wall clock.
+      # more specific timeouts take priority over the catch-all wall-clock.
       if !output_received && tc.startup_timeout && elapsed_since_activity >= tc.startup_timeout
         raise StartupTimeoutError, "No output received within #{tc.startup_timeout} seconds"
       elsif output_received && tc.idle_timeout && elapsed_since_activity >= tc.idle_timeout
