@@ -88,6 +88,87 @@ RSpec.describe Activities::DetectLabelsActivity do
       end
     end
 
+    context "when issue has open dependencies" do
+      let(:issue) { create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new") }
+      let(:blocking_issue) { create(:issue, project: project, github_state: "open") }
+
+      before do
+        create(:issue_dependency, issue: issue, depends_on_issue: blocking_issue)
+      end
+
+      it "returns none action" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("none")
+      end
+
+      it "does not change paid_state" do
+        activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(issue.reload.paid_state).to eq("new")
+      end
+
+      it "logs blocking issue numbers" do
+        allow(Rails.logger).to receive(:info)
+
+        activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "github_sync.blocked_by_dependencies",
+            blocking_issues: [ blocking_issue.github_number ]
+          )
+        )
+      end
+    end
+
+    context "when issue has mixed open and closed dependencies" do
+      let(:issue) { create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new") }
+      let(:closed_dep) { create(:issue, project: project, github_state: "closed") }
+      let(:open_dep) { create(:issue, project: project, github_state: "open") }
+
+      before do
+        create(:issue_dependency, issue: issue, depends_on_issue: closed_dep)
+        create(:issue_dependency, issue: issue, depends_on_issue: open_dep)
+      end
+
+      it "returns none action (all dependencies must be closed)" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("none")
+      end
+    end
+
+    context "when issue dependencies are all closed" do
+      let(:issue) { create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new") }
+      let(:closed_dep) { create(:issue, project: project, github_state: "closed") }
+
+      before do
+        create(:issue_dependency, issue: issue, depends_on_issue: closed_dep)
+      end
+
+      it "returns execute_agent action" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("execute_agent")
+      end
+    end
+
+    context "when plan label issue has open dependencies" do
+      let(:issue) { create(:issue, project: project, labels: [ "paid-plan" ], paid_state: "new") }
+      let(:blocking_issue) { create(:issue, project: project, github_state: "open") }
+
+      before do
+        create(:issue_dependency, issue: issue, depends_on_issue: blocking_issue)
+      end
+
+      it "returns none action" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("none")
+      end
+    end
+
     context "when issue is from an untrusted user" do
       let(:issue) do
         create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",
