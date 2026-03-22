@@ -134,8 +134,8 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
     && chmod +x /usr/local/bin/claude
 
 # Install OpenAI Codex CLI
-# Codex CLI is an npm package; install globally so it is available to the agent user.
-RUN npm install -g @openai/codex@latest
+# Pin version for reproducible builds; update intentionally when upgrading Codex.
+RUN npm install -g @openai/codex@0.2.4
 
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.

@@ -138,6 +138,7 @@ module Containers
       @container = create_container
       start_container
       fix_workspace_ownership!
+      fix_codex_tmpfs_ownership!
       seed_claude_credentials!
       apply_network_restrictions!
 
@@ -453,6 +454,18 @@ module Containers
       log_system("container.workspace_chown_failed", error: e.message)
     end
 
+    # Fixes ownership of the ~/.codex tmpfs so the non-root agent user can
+    # write to it. Tmpfs mounts are created as root-owned; this mirrors the
+    # pattern used by seed_claude_credentials! for ~/.claude.
+    def fix_codex_tmpfs_ownership!
+      container.exec(
+        [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
+        user: "root"
+      )
+    rescue Docker::Error::DockerError => e
+      log_system("container.codex_chown_failed", error: e.message)
+    end
+
     # Sets up the workspace for the container.
     # When worktree_path is provided, validates it exists (bind mount from host).
     # When nil, creates a Docker named volume for in-container git clone.
@@ -563,6 +576,7 @@ module Containers
       tmpfs["/home/agent/.claude"] = "size=#{256 * 1024 * 1024},mode=0700"
 
       # Codex CLI stores config and session data under ~/.codex.
+      # Ownership is fixed by fix_codex_tmpfs_ownership! after container start.
       tmpfs["/home/agent/.codex"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       {
