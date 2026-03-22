@@ -74,7 +74,11 @@ class Issue < ApplicationRecord
   end
 
   def has_associated_pull_requests?
-    sub_issues.where(is_pull_request: true).exists?
+    if sub_issues.loaded?
+      sub_issues.any?(&:is_pull_request?)
+    else
+      sub_issues.pull_requests_only.exists?
+    end
   end
 
   def draft_phase?
@@ -140,7 +144,7 @@ class Issue < ApplicationRecord
       project.broadcast_pull_requests_update
     elsif is_pull_request?
       project.broadcast_pull_requests_update
-      project.broadcast_issues_update if parent_issue_id.present? || saved_change_to_parent_issue_id?
+      project.broadcast_issues_update if saved_change_to_parent_issue_id?
     else
       project.broadcast_issues_update
     end
