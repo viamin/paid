@@ -10,7 +10,7 @@ class Provider < ApplicationRecord
   validates :provider_key, presence: true, length: { maximum: 50 }
   validates :provider_key, uniqueness: { scope: :user_id }
   validates :provider_key, inclusion: { in: ->(_) { supported_provider_keys }, message: "is not supported" },
-    if: -> { new_record? || will_save_change_to_provider_key? }
+    allow_blank: true, if: -> { new_record? || will_save_change_to_provider_key? }
 
   validate :must_keep_at_least_one_agent_run_provider
   validate :default_provider_must_remain_enabled_for_agent_runs
