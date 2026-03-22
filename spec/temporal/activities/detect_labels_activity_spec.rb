@@ -116,7 +116,9 @@ RSpec.describe Activities::DetectLabelsActivity do
         expect(Rails.logger).to have_received(:info).with(
           hash_including(
             message: "github_sync.blocked_by_dependencies",
-            blocking_issues: [ blocking_issue.github_number ]
+            blocking_issues: [ blocking_issue.github_number ],
+            blocking_issues_count: 1,
+            blocking_issues_truncated: false
           )
         )
       end
