@@ -385,11 +385,13 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "does not set ANTHROPIC_BASE_URL or OPENAI_BASE_URL" do
+      it "does not set ANTHROPIC_BASE_URL but still sets OpenAI proxy vars for Codex" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
           expect(env.none? { |e| e.start_with?("ANTHROPIC_BASE_URL=") }).to be true
-          expect(env.none? { |e| e.start_with?("OPENAI_BASE_URL=") }).to be true
+          expect(env).to include("OPENAI_BASE_URL=http://web:3000/api/proxy/openai")
+          expect(env).to include("OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
+          expect(env).to include("OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}")
           mock_container
         end
 

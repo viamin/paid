@@ -629,19 +629,25 @@ module Containers
         "HOME=/home/agent"
       ]
 
+      # OpenAI proxy env vars are always set so Codex CLI can route through
+      # the secrets proxy regardless of auth mode. Codex has no native login
+      # equivalent to `claude login`, so it always needs the proxy for auth.
+      env.concat([
+        "OPENAI_BASE_URL=#{proxy_base}/api/proxy/openai",
+        "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+        "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
+      ])
+
       if subscription_auth?
         # Subscription mode: Claude Code uses its native auth from ~/.claude/.
         # Don't override ANTHROPIC_BASE_URL — let it talk to Anthropic directly.
         log_system("container.auth_mode", mode: "subscription")
       else
-        # API key mode: route LLM calls through the secrets proxy.
+        # API key mode: route Anthropic calls through the secrets proxy too.
         env.concat([
           "ANTHROPIC_BASE_URL=#{proxy_base}/api/proxy/anthropic",
-          "OPENAI_BASE_URL=#{proxy_base}/api/proxy/openai",
           "ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
-          "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
-          "ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
-          "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
+          "ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
         ])
       end
 
