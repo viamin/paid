@@ -158,7 +158,19 @@ RSpec.describe "Providers" do
       patch provider_path(provider), params: { provider: { enabled_for_agent_runs: true } }
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to include("cannot be enabled for an unsupported provider")
+      expect(response.body).to include("must be disabled for an unsupported provider")
+    end
+
+    it "rejects enabling fallback on a provider that has become unsupported" do
+      provider = user.providers.create!(provider_key: "cursor")
+
+      allow(ProviderSupport).to receive(:supported_provider_key?).and_call_original
+      allow(ProviderSupport).to receive(:supported_provider_key?).with("cursor").and_return(false)
+
+      patch provider_path(provider), params: { provider: { enabled_for_fallback: true } }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("must be disabled for an unsupported provider")
     end
 
     it "does not allow changing provider_key after create" do

@@ -153,11 +153,15 @@ class ProvidersController < ApplicationController
     unless Provider.supported_provider_key?(@provider.provider_key)
       return if @provider.new_record?
 
+      # Unlike the container-executable check below, unsupported providers
+      # cannot function at all — block if either flag is true, regardless of
+      # whether the user changed it in this request. The message tells the
+      # user they need to disable the flag, not that they "cannot enable" it.
       if @provider.enabled_for_agent_runs
-        @provider.errors.add(:enabled_for_agent_runs, "cannot be enabled for an unsupported provider")
+        @provider.errors.add(:enabled_for_agent_runs, "must be disabled for an unsupported provider")
       end
       if @provider.enabled_for_fallback
-        @provider.errors.add(:enabled_for_fallback, "cannot be enabled for an unsupported provider")
+        @provider.errors.add(:enabled_for_fallback, "must be disabled for an unsupported provider")
       end
       return
     end
