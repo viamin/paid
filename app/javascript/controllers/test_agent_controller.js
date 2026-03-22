@@ -54,6 +54,13 @@ export default class extends Controller {
         return
       }
 
+      if (response.status === 429) {
+        const retryData = await response.json()
+        if (!this.element.isConnected) return
+        this.showError("rate_limited", retryData.message || "Please wait before testing again.")
+        return
+      }
+
       if (!response.ok) {
         this.showError("unexpected", `Server responded with ${response.status}`)
         return
@@ -125,6 +132,7 @@ export default class extends Controller {
       authentication: "Authentication failed. Check that the API key or token for this provider is valid and has not expired.",
       timeout: "The agent did not respond in time. Ensure the agent container has sufficient resources and is not in a crash loop.",
       installation: "The provider CLI is not installed in the agent container. Verify the container image includes this provider and that it is on the PATH.",
+      rate_limited: "A test was recently run for this provider. Please wait 30 seconds between tests.",
       unexpected: "An unexpected error occurred. Check the agent logs for more details."
     }
     return messages[errorType] || messages.unexpected
