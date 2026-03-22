@@ -422,10 +422,10 @@ RSpec.describe "Projects" do
 
       it "shows recent agent runs" do
         project = create(:project, account: account, github_token: github_token)
-        create(:agent_run, project: project, agent_type: "claude_code", status: "completed")
+        run = create(:agent_run, project: project, agent_type: "claude_code", status: "completed")
         get project_path(project)
         expect(response.body).to include("Recent Agent Runs")
-        expect(response.body).to include("Claude Code")
+        expect(response.body).to include(project_agent_run_path(project, run))
       end
 
       it "shows the Goal column with PR label for create_pr runs" do
