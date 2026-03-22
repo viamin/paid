@@ -22,9 +22,9 @@ module ProviderSupport
 
   # Provider keys whose CLIs are actually installed in the agent Docker container
   # (docker/agent/Dockerfile). Only these providers can execute in container-based
-  # runs. Currently only the Claude CLI is installed in the container image.
+  # runs. Currently Claude CLI and Codex CLI are installed in the container image.
   # Update this list when new CLIs are added to the Dockerfile.
-  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[claude]).freeze
+  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[claude codex]).freeze
 
   module_function
 

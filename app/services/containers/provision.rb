@@ -138,6 +138,8 @@ module Containers
       @container = create_container
       start_container
       fix_workspace_ownership!
+      fix_cache_tmpfs_ownership!
+      fix_codex_tmpfs_ownership!
       seed_claude_credentials!
       apply_network_restrictions!
 
@@ -453,6 +455,30 @@ module Containers
       log_system("container.workspace_chown_failed", error: e.message)
     end
 
+    # Fixes ownership of the ~/.cache tmpfs so the non-root agent user can
+    # write to it. Tmpfs mounts are created as root-owned; tools like Codex CLI,
+    # npm, and others expect to cache data here.
+    def fix_cache_tmpfs_ownership!
+      container.exec(
+        [ "chown", "-R", "agent:agent", "/home/agent/.cache" ],
+        user: "root"
+      )
+    rescue Docker::Error::DockerError => e
+      log_system("container.cache_chown_failed", error: e.message)
+    end
+
+    # Fixes ownership of the ~/.codex tmpfs so the non-root agent user can
+    # write to it. Tmpfs mounts are created as root-owned; this mirrors the
+    # pattern used by seed_claude_credentials! for ~/.claude.
+    def fix_codex_tmpfs_ownership!
+      container.exec(
+        [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
+        user: "root"
+      )
+    rescue Docker::Error::DockerError => e
+      log_system("container.codex_chown_failed", error: e.message)
+    end
+
     # Sets up the workspace for the container.
     # When worktree_path is provided, validates it exists (bind mount from host).
     # When nil, creates a Docker named volume for in-container git clone.
@@ -510,8 +536,9 @@ module Containers
     # Writable directories inside the container:
     #   /workspace          - bind mount of workspace dir (rw, for git clone and code changes)
     #   /tmp                - tmpfs (1GB, for scratch files)
-    #   /home/agent/.cache  - tmpfs (512MB, for tool caches)
+    #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
+    #   /home/agent/.codex  - tmpfs (64MB, for Codex CLI config/session data)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
       {
@@ -561,6 +588,10 @@ module Containers
       # fix_workspace_ownership!-style chown after container start.
       tmpfs["/home/agent/.claude"] = "size=#{256 * 1024 * 1024},mode=0700"
 
+      # Codex CLI stores config and session data under ~/.codex.
+      # Ownership is fixed by fix_codex_tmpfs_ownership! after container start.
+      tmpfs["/home/agent/.codex"] = "size=#{64 * 1024 * 1024},mode=0700"
+
       {
         "Memory" => options[:memory_bytes],
         # MemorySwap == Memory disables swap. Containers exceeding the memory
@@ -598,19 +629,25 @@ module Containers
         "HOME=/home/agent"
       ]
 
+      # OpenAI proxy env vars are always set so Codex CLI can route through
+      # the secrets proxy regardless of auth mode. Codex has no native login
+      # equivalent to `claude login`, so it always needs the proxy for auth.
+      env.concat([
+        "OPENAI_BASE_URL=#{proxy_base}/api/proxy/openai",
+        "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+        "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
+      ])
+
       if subscription_auth?
         # Subscription mode: Claude Code uses its native auth from ~/.claude/.
         # Don't override ANTHROPIC_BASE_URL — let it talk to Anthropic directly.
         log_system("container.auth_mode", mode: "subscription")
       else
-        # API key mode: route LLM calls through the secrets proxy.
+        # API key mode: route Anthropic calls through the secrets proxy too.
         env.concat([
           "ANTHROPIC_BASE_URL=#{proxy_base}/api/proxy/anthropic",
-          "OPENAI_BASE_URL=#{proxy_base}/api/proxy/openai",
           "ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
-          "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
-          "ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
-          "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
+          "ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
         ])
       end
 
