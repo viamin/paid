@@ -84,13 +84,21 @@ module Activities
       end
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
+      unresolved_threads = []
+      human_triggers = []
+      review_bot_triggers = []
+      reviews = nil
 
-      # Fetch review threads first; only fetch full reviews when needed.
-      unless skip_comment_signals
+      # Draft exit still requires an explicitly clean bot review even when
+      # other draft comment signals are skipped.
+      if skip_comment_signals
+        reviews = fetch_reviews(client, project, issue)
+        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads)
+      else
+        # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
         human_triggers = human_review_thread_triggers(project, unresolved_threads)
 
-        review_bot_triggers = []
         if human_triggers.blank?
           reviews = fetch_reviews(client, project, issue)
           review_bot_triggers = check_review_bot_status(reviews, unresolved_threads)
@@ -126,6 +134,7 @@ module Activities
       if all_triggers.empty?
         # If we couldn't fetch PR data, don't prematurely advance the phase.
         return nil if pr_data.nil?
+        return nil if reviews.nil?
 
         # A draft PR is only ready to leave draft after the latest review-bot
         # review is explicitly clean. Resolved threads alone are not enough.
