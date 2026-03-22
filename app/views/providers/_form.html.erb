@@ -1,4 +1,6 @@
 <%= form_with model: provider, class: "space-y-6" do |form| %>
+  <% selectable_provider = provider.persisted? || @provider_options.any? %>
+
   <% if provider.errors.any? %>
     <div class="rounded-md bg-red-50 p-4">
       <h3 class="text-sm font-medium text-red-800">
@@ -18,13 +20,18 @@
       <% if provider.persisted? %>
         <%= form.hidden_field :provider_key, value: provider.provider_key %>
         <input type="text" value="<%= provider.provider_key.titleize %>" disabled class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
-      <% else %>
+      <% elsif @provider_options.any? %>
         <%= form.select :provider_key,
             @provider_options.map { |key| [key.titleize, key] },
             {},
             class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+      <% else %>
+        <input type="text" value="No additional providers are installed in paid-agent yet" disabled class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-500 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
       <% end %>
     </div>
+    <% unless provider.persisted? || @provider_options.any? %>
+      <p class="mt-2 text-xs text-gray-500">Install and ship provider support in the paid-agent image before it can be added here.</p>
+    <% end %>
   </div>
 
   <div class="space-y-3 rounded-lg border border-gray-200 p-4">
@@ -41,6 +48,7 @@
 
   <div class="flex justify-end gap-3 border-t border-gray-200 pt-4">
     <%= link_to "Cancel", providers_path, class: "text-sm font-semibold text-gray-700 hover:text-gray-900" %>
-    <%= form.submit class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    <%= form.submit disabled: !selectable_provider,
+        class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-300" %>
   </div>
 <% end %>

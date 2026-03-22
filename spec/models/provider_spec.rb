@@ -27,6 +27,12 @@ RSpec.describe Provider do
     end
   end
 
+  describe ".addable_provider_keys" do
+    it "returns only providers installed in paid-agent" do
+      expect(described_class.addable_provider_keys).to eq([ "claude" ])
+    end
+  end
+
   describe ".harness_provider_key_for" do
     it "maps app provider keys to agent harness provider keys" do
       expect(described_class.harness_provider_key_for("copilot")).to eq("github_copilot")

@@ -59,6 +59,14 @@ class Provider < ApplicationRecord
     ProviderSupport.supported_provider_key?(provider_key)
   end
 
+  def self.addable_provider_keys
+    ProviderSupport.addable_provider_keys
+  end
+
+  def self.addable_provider_key?(provider_key)
+    ProviderSupport.addable_provider_key?(provider_key)
+  end
+
   def self.harness_provider_key_for(provider_key)
     ProviderSupport.harness_provider_key_for(provider_key)
   end
