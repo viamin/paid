@@ -11,9 +11,7 @@
                   <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Status</th>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Trigger</th>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Issue</th>
-                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Agent</th>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Duration</th>
-                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Cost</th>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Started</th>
                   <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
                     <span class="sr-only">Actions</span>
@@ -37,20 +35,10 @@
                       <% end %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      <%= run.agent_type.titleize %>
-                    </td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <% if run.duration_seconds.present? %>
                         <%= run.duration_seconds %>s
                       <% elsif run.running? && run.started_at.present? %>
                         <%= (Time.current - run.started_at).to_i %>s
-                      <% else %>
-                        <span class="text-gray-400">-</span>
-                      <% end %>
-                    </td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      <% if run.cost_cents.present? && run.cost_cents > 0 %>
-                        $<%= format("%.2f", run.cost_cents / 100.0) %>
                       <% else %>
                         <span class="text-gray-400">-</span>
                       <% end %>
