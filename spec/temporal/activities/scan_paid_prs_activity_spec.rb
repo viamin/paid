@@ -561,13 +561,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "advances to ready_for_owner with pending bot review request" do
+      it "keeps the PR in draft and requests a fresh bot review" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
-        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
-        expect(trigger[:pending_review_bot_request]).to be true
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
     end
 
@@ -671,13 +671,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(reviews: [])
       end
 
-      it "advances to ready_for_owner with pending bot review request" do
+      it "keeps the PR in draft and requests a bot review" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
-        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
-        expect(trigger[:pending_review_bot_request]).to be true
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
     end
 
@@ -758,6 +758,33 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
         expect(trigger[:owner_reviewer_login]).to eq("viamin")
+      end
+    end
+
+    context "when draft PR has green CI and only resolved bot threads from a non-clean review" do
+      before do
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+                       body: "Copilot reviewed 9 out of 9 changed files and generated 2 comments.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "does not advance to ready_for_owner until a clean bot review exists" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
     end
 
@@ -968,13 +995,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "advances to ready_for_owner when review had comments but threads are resolved" do
+      it "keeps the PR in draft until a clean bot review is posted" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
-        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
-        expect(trigger[:pending_review_bot_request]).to be true
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
     end
 
