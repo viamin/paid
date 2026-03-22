@@ -51,6 +51,9 @@ Rails.application.routes.draw do
     post :compress, on: :member
   end
 
+  # Quality metrics dashboard
+  resource :quality_dashboard, only: [ :show ]
+
   # Projects management
   resources :projects do
     post :toggle_auto_pick, on: :member
