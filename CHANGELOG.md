@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.6.0](https://github.com/viamin/paid/compare/v0.5.1...v0.6.0) (2026-03-22)
+
+
+### Features
+
+* **providers:** add Test Agent button to verify provider connectivity ([288203b](https://github.com/viamin/paid/commit/288203ba624e76c7151189deac1043959d34d78d)), closes [#385](https://github.com/viamin/paid/issues/385)
+
+
+### Bug Fixes
+
+* **containers:** align timeout precedence and log timeouts in Docker error path ([0500c0c](https://github.com/viamin/paid/commit/0500c0c37b07370549211e474b272457d4f00795))
+* **containers:** bound exec stub sleep loops in watchdog specs ([fb69eea](https://github.com/viamin/paid/commit/fb69eea48f8a676d947ce1508e6ca9e8fe0a56b7))
+* **containers:** clarify mutex comment on timeout_reason_ref lambda ([de66734](https://github.com/viamin/paid/commit/de667349dd6636ab29bb7ff1fd3ee916f664e31b))
+* **containers:** enforce wall clock exec timeouts via watchdog ([0a9d128](https://github.com/viamin/paid/commit/0a9d1283d5c3767564c1f73d5a6d8efd63409983))
+* **containers:** enforce wall clock exec timeouts via watchdog ([f761881](https://github.com/viamin/paid/commit/f761881f002d178225d115e740b0efb3f766c7d5))
+* **containers:** extract WatchdogContext struct and add deadline check in Docker error path ([422085d](https://github.com/viamin/paid/commit/422085d3138cd06088005847d947eb70bcbb7a73))
+* **containers:** log partial output on wall-clock timeout and add post-exec deadline spec ([fd01510](https://github.com/viamin/paid/commit/fd0151062394c44fe10285b58bb7f6d690a25cc8))
+* **containers:** log startup/idle timeouts from post-exec deadline check in Docker error path ([1bf9b07](https://github.com/viamin/paid/commit/1bf9b0702a53532df9ae5dee3ddfbb3d92da6a70))
+* **containers:** reduce timeout-check method params via TimeoutCheckState struct ([51db6aa](https://github.com/viamin/paid/commit/51db6aa889316e113fe5cea4a0927c33457fe2da))
+* **containers:** remove redundant exec_result init and standardize wall-clock spelling ([20a7cf2](https://github.com/viamin/paid/commit/20a7cf21e0559ae80bcd59cb21dd61691be48a14))
+* **containers:** update outdated timeout_reason comment and misleading spec description ([52e6e02](https://github.com/viamin/paid/commit/52e6e02f351e859cf0a09d3e4a5d1bf1d427d19d))
+* **providers:** add aria-hidden and focusable attrs to decorative SVG icons in test agent ([7699193](https://github.com/viamin/paid/commit/7699193e36e698a5b658556d5f9d5143cd038336))
+* **providers:** add installation error type and disconnect guards for test agent ([f25f928](https://github.com/viamin/paid/commit/f25f9284b78da2886c122810b67134c76340c1da))
+* **providers:** add per-provider rate limit to test_agent endpoint ([dd4df0c](https://github.com/viamin/paid/commit/dd4df0c4f069c428f979363aba378bef5cdbcbc9))
+* **providers:** address test agent review comments ([d2393af](https://github.com/viamin/paid/commit/d2393afd3475642227e5e0733118365424adb3d1))
+* **providers:** address test agent review feedback and fix CI failures ([229ce95](https://github.com/viamin/paid/commit/229ce95bc75deff2cc18f9e721d97a87bad142a3))
+* **providers:** move auth error shim to initializer and improve non-JSON response handling ([91da3de](https://github.com/viamin/paid/commit/91da3de0a6bc7ba6617dca75f933c7d36b8aabc3))
+* **providers:** stub ProviderSupport in test_agent specs and add ARIA roles for screen readers ([3083e7c](https://github.com/viamin/paid/commit/3083e7c9624e3aca0f6d9221651710029c09ea27))
+* **providers:** stub Rails.cache in rate-limit spec and add ARIA live region to loading state ([e0ec0bc](https://github.com/viamin/paid/commit/e0ec0bc790072942e163addf0f8bdd19c3b0a770))
+* **providers:** use atomic cache write for test_agent rate limiting ([bff665e](https://github.com/viamin/paid/commit/bff665e742ce775a3c6300dbe0aafc8f489bbbf9))
+* **providers:** use exact match for ping output and fix unsupported provider error type ([c6fcd2a](https://github.com/viamin/paid/commit/c6fcd2a9a7bb7e79ee7e6df401331e9b7b35eb84))
+* **providers:** use presence check for error fallback and handle 401/403/404 explicitly ([7011f97](https://github.com/viamin/paid/commit/7011f97f8c33a492889a7257bcddbbf9002e2680))
+* **providers:** validate container-executable status in test agent ([c2fdb95](https://github.com/viamin/paid/commit/c2fdb95e21aa3b4a0101be16f090ad6e0534bd56))
+
 ## [0.5.1](https://github.com/viamin/paid/compare/v0.5.0...v0.5.1) (2026-03-22)
 
 
