@@ -145,7 +145,23 @@ class ProvidersController < ApplicationController
 
   def validate_container_executable!
     return if @provider.provider_key.blank?
-    return unless Provider.supported_provider_key?(@provider.provider_key)
+
+    # On create, the model's inclusion validation catches unsupported keys.
+    # On update, provider_key is immutable so that validation does not fire —
+    # we must explicitly block enabling run/fallback flags for providers whose
+    # key has been removed from the supported registry after creation.
+    unless Provider.supported_provider_key?(@provider.provider_key)
+      return if @provider.new_record?
+
+      if @provider.enabled_for_agent_runs
+        @provider.errors.add(:enabled_for_agent_runs, "cannot be enabled for an unsupported provider")
+      end
+      if @provider.enabled_for_fallback
+        @provider.errors.add(:enabled_for_fallback, "cannot be enabled for an unsupported provider")
+      end
+      return
+    end
+
     return if ProviderSupport.container_executable_provider_key?(@provider.provider_key)
 
     setting_agent_runs = @provider.enabled_for_agent_runs && (@provider.new_record? || @provider.will_save_change_to_attribute?("enabled_for_agent_runs", to: true))
