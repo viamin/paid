@@ -21,6 +21,8 @@ export default class extends Controller {
         redirect: "follow"
       })
 
+      if (!this.element.isConnected) return
+
       if (response.redirected || !response.headers.get("content-type")?.includes("application/json")) {
         this.showError("unexpected", "Session expired. Please refresh the page and sign in again.")
         return
@@ -33,12 +35,15 @@ export default class extends Controller {
 
       const data = await response.json()
 
+      if (!this.element.isConnected) return
+
       if (data.success) {
         this.showSuccess(data.message)
       } else {
         this.showError(data.error_type, data.message)
       }
     } catch (error) {
+      if (!this.element.isConnected) return
       this.showError("unexpected", error.message)
     }
   }
@@ -93,6 +98,7 @@ export default class extends Controller {
       connection: "Could not reach the agent. Verify the provider URL is correct and the agent container is running.",
       authentication: "Authentication failed. Check that the API key or token for this provider is valid and has not expired.",
       timeout: "The agent did not respond in time. Ensure the agent container has sufficient resources and is not in a crash loop.",
+      installation: "The provider CLI is not installed in the agent container. Verify the container image includes this provider and that it is on the PATH.",
       unexpected: "An unexpected error occurred. Check the agent logs for more details."
     }
     return messages[errorType] || messages.unexpected
