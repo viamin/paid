@@ -993,6 +993,25 @@ RSpec.describe GithubClient do
         }
       end
     end
+
+    context "when GraphQL returns errors during node ID lookup" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              errors: [ { message: "Resource not accessible by integration" } ]
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "raises ApiError instead of NotFoundError" do
+        expect {
+          client.request_bot_review(repo, 42, bot_node_ids: [ bot_node_id ])
+        }.to raise_error(GithubClient::ApiError, /not accessible/)
+      end
+    end
   end
 
   describe "#rate_limit_remaining" do

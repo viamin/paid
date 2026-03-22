@@ -585,6 +585,12 @@ class GithubClient
     GRAPHQL
 
     data = graphql_request(query, owner: owner, name: name, number: number)
+
+    if data["errors"].present?
+      message = data["errors"].map { |e| e["message"] }.join(", ")
+      raise ApiError.new("GraphQL error resolving #{repo}##{number}: #{message}")
+    end
+
     data.dig("data", "repository", "pullRequest", "id")
   end
 
