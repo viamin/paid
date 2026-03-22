@@ -882,7 +882,7 @@ RSpec.describe GithubClient do
   describe "#request_bot_review" do
     let(:repo) { "owner/repo" }
     let(:pr_node_id) { "PR_kwDOTest123" }
-    let(:bot_node_id) { Activities::RequestReviewActivity::COPILOT_DEFAULT_NODE_ID }
+    let(:bot_node_id) { "BOT_NODE_ID_TEST_123" }
 
     context "when request succeeds" do
       let!(:graphql_stub) do
