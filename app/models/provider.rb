@@ -9,8 +9,8 @@ class Provider < ApplicationRecord
 
   validates :provider_key, presence: true, length: { maximum: 50 }
   validates :provider_key, uniqueness: { scope: :user_id }
-  validates :provider_key, inclusion: { in: ->(_) { supported_provider_keys } },
-    if: -> { new_record? || will_save_change_to_provider_key? }
+  validates :provider_key, inclusion: { in: ->(_) { supported_provider_keys }, message: "is not supported" },
+    allow_blank: true, if: -> { new_record? || will_save_change_to_provider_key? }
 
   validate :must_keep_at_least_one_agent_run_provider
   validate :default_provider_must_remain_enabled_for_agent_runs
@@ -57,6 +57,14 @@ class Provider < ApplicationRecord
 
   def self.supported_provider_key?(provider_key)
     ProviderSupport.supported_provider_key?(provider_key)
+  end
+
+  def self.addable_provider_keys
+    ProviderSupport.addable_provider_keys
+  end
+
+  def self.addable_provider_key?(provider_key)
+    ProviderSupport.addable_provider_key?(provider_key)
   end
 
   def self.harness_provider_key_for(provider_key)
