@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/src/test/modules/ssl_passphrase_callback/Makefile
