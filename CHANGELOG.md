@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.1](https://github.com/viamin/paid/compare/v0.5.0...v0.5.1) (2026-03-22)
+
+
+### Bug Fixes
+
+* **phase2:** eliminate double-lock, fix lint score, add cache invalidation ([0725749](https://github.com/viamin/paid/commit/0725749ccdcce6d063504c7657304b28beba0c55))
+* **pr-review:** address code review feedback ([20fd882](https://github.com/viamin/paid/commit/20fd882ef906482edf8161f09854d6932fde44b4))
+* **pr-review:** address round 4 review feedback ([c62f63b](https://github.com/viamin/paid/commit/c62f63bbb0d12f3985482103cb4648bd591d9b15))
+* **pr-review:** decouple GithubClient spec from activity constant ([4f205ff](https://github.com/viamin/paid/commit/4f205ff134d05de9ba6ee662a0d4aff50f7c6fe8))
+* **pr-review:** handle bot 422 separately, extract node ID constant ([d456f2d](https://github.com/viamin/paid/commit/d456f2d158de52fa73035a83048170740ca90cdb))
+* **pr-review:** surface GraphQL errors from PR node ID lookup ([9714185](https://github.com/viamin/paid/commit/971418518e454c5c276af2f4c4e4f3aceae16233))
+* **pr-review:** use GraphQL botIds for Copilot review re-requests ([2477ea6](https://github.com/viamin/paid/commit/2477ea6dbf8d2f7c5910b58d14ac9cfae54ed199))
+* **pr-review:** use GraphQL botIds for Copilot review re-requests ([459f2e5](https://github.com/viamin/paid/commit/459f2e54404d2e5742e0f6657cee317b9147a8bf))
+* **pr-review:** use GraphQL botIds for Copilot review re-requests ([ae56417](https://github.com/viamin/paid/commit/ae56417b595948a69e0e887b1f95ac1f7f7d638d))
+
 ## [0.5.0](https://github.com/viamin/paid/compare/v0.4.1...v0.5.0) (2026-03-22)
 
 
