@@ -145,6 +145,7 @@ class ProvidersController < ApplicationController
 
   def validate_container_executable!
     return if @provider.provider_key.blank?
+    return unless Provider.supported_provider_key?(@provider.provider_key)
     return if ProviderSupport.container_executable_provider_key?(@provider.provider_key)
 
     setting_agent_runs = @provider.enabled_for_agent_runs && (@provider.new_record? || @provider.will_save_change_to_attribute?("enabled_for_agent_runs", to: true))
