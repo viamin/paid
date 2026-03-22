@@ -259,6 +259,28 @@ RSpec.describe Issue do
 
         expect(issue.has_associated_pull_requests?).to be false
       end
+
+      context "when sub_issues are preloaded" do
+        it "returns true when preloaded sub-issues include a pull request" do
+          issue = create(:issue, project: project)
+          create(:issue, :pull_request, project: project, parent_issue: issue)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.has_associated_pull_requests?).to be true
+        end
+
+        it "returns false when preloaded sub-issues have no pull requests" do
+          issue = create(:issue, project: project)
+          create(:issue, project: project, parent_issue: issue)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.has_associated_pull_requests?).to be false
+        end
+      end
     end
   end
 
