@@ -1,0 +1,1 @@
+/tmp/postgresql-16.6/src/test/locale/koi8-to-win1251/Makefile
