@@ -758,7 +758,7 @@ RSpec.describe Containers::Provision do
     context "with startup timeout" do
       it "fires when exec produces no output" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          sleep 0.01 until container_stopped.true?
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
           [ [], [], 137 ]
         end
 
@@ -782,7 +782,7 @@ RSpec.describe Containers::Provision do
       it "fires when output stops mid-stream" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "initial output\n") if block
-          sleep 0.01 until container_stopped.true?
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
           [ [ "initial output\n" ], [], 137 ]
         end
 
@@ -808,7 +808,7 @@ RSpec.describe Containers::Provision do
     context "with wall clock timeout" do
       it "fires when exec runs past the deadline without output" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          sleep 0.01 until container_stopped.true?
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
           [ [], [], 137 ]
         end
 
@@ -838,7 +838,7 @@ RSpec.describe Containers::Provision do
     context "with startup timeout when exec raises Docker error" do
       it "detects the watchdog reason through the Docker error" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          sleep 0.01 until container_stopped.true?
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
           raise Docker::Error::ServerError, "connection closed"
         end
 
@@ -849,7 +849,7 @@ RSpec.describe Containers::Provision do
 
       it "logs the timeout when raising through the Docker error path" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          sleep 0.01 until container_stopped.true?
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
           raise Docker::Error::ServerError, "connection closed"
         end
         allow(agent_run).to receive(:log!)
@@ -869,7 +869,7 @@ RSpec.describe Containers::Provision do
       it "detects the watchdog reason through the Docker error" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "initial output\n") if block
-          sleep 0.01 until container_stopped.true?
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
           raise Docker::Error::ServerError, "connection closed"
         end
 
@@ -881,7 +881,7 @@ RSpec.describe Containers::Provision do
       it "logs the timeout when raising through the Docker error path" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "initial output\n") if block
-          sleep 0.01 until container_stopped.true?
+          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
           raise Docker::Error::ServerError, "connection closed"
         end
         allow(agent_run).to receive(:log!)
