@@ -69,6 +69,20 @@ RSpec.describe RecoverMissingPrLabelsJob do
       expect(pull_request.reload.labels).to eq([])
     end
 
+    it "skips runs with no locally-synced PR record" do
+      create(:agent_run, :completed,
+        project: project,
+        issue: nil,
+        custom_prompt: "Create PR",
+        goal: "create_pr",
+        pull_request_number: 416,
+        pull_request_url: "https://github.com/viamin/paid/pull/416")
+
+      described_class.perform_now
+
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
     it "deduplicates multiple completed runs for the same PR" do
       create(:agent_run, :completed,
         project: project,
