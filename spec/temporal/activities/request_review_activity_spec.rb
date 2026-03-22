@@ -6,6 +6,7 @@ RSpec.describe Activities::RequestReviewActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:github_client) { instance_double(GithubClient) }
+  let(:copilot_node_id) { "BOT_kgDOCnlnWA" }
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
@@ -31,7 +32,23 @@ RSpec.describe Activities::RequestReviewActivity do
         activity.execute(project_id: project.id, pr_number: 42, reviewers: [ nil, "", "  ", "copilot" ])
 
         expect(github_client).to have_received(:request_bot_review)
-          .with(project.full_name, 42, bot_node_id: described_class::COPILOT_BOT_NODE_ID)
+          .with(project.full_name, 42, bot_node_ids: [ copilot_node_id ])
+      end
+    end
+
+    context "when reviewers contain duplicates" do
+      before do
+        allow(github_client).to receive(:pull_request_review_requests)
+          .and_return({ users: [] })
+        allow(github_client).to receive(:request_bot_review)
+      end
+
+      it "deduplicates case-insensitively" do
+        activity.execute(project_id: project.id, pr_number: 42, reviewers: [ "copilot", "Copilot", "COPILOT" ])
+
+        expect(github_client).to have_received(:request_bot_review)
+          .with(project.full_name, 42, bot_node_ids: [ copilot_node_id ])
+          .once
       end
     end
 
@@ -56,12 +73,12 @@ RSpec.describe Activities::RequestReviewActivity do
         allow(github_client).to receive(:request_bot_review)
       end
 
-      it "uses GraphQL bot review request" do
+      it "uses GraphQL bot review request with batched node IDs" do
         result = activity.execute(project_id: project.id, pr_number: 42, reviewers: [ "copilot" ])
 
         expect(result[:requested]).to eq([ "copilot" ])
         expect(github_client).to have_received(:request_bot_review)
-          .with(project.full_name, 42, bot_node_id: described_class::COPILOT_BOT_NODE_ID)
+          .with(project.full_name, 42, bot_node_ids: [ copilot_node_id ])
       end
 
       it "does not use REST review request for bots" do
@@ -70,6 +87,24 @@ RSpec.describe Activities::RequestReviewActivity do
         activity.execute(project_id: project.id, pr_number: 42, reviewers: [ "copilot" ])
 
         expect(github_client).not_to have_received(:request_pull_request_review)
+      end
+    end
+
+    context "when copilot_bot_node_id is configured" do
+      let(:custom_node_id) { "BOT_kgDOCustom" }
+
+      before do
+        allow(github_client).to receive(:pull_request_review_requests)
+          .and_return({ users: [] })
+        allow(github_client).to receive(:request_bot_review)
+        allow(Rails.configuration.x).to receive(:copilot_bot_node_id).and_return(custom_node_id)
+      end
+
+      it "uses the configured node ID" do
+        activity.execute(project_id: project.id, pr_number: 42, reviewers: [ "copilot" ])
+
+        expect(github_client).to have_received(:request_bot_review)
+          .with(project.full_name, 42, bot_node_ids: [ custom_node_id ])
       end
     end
 
@@ -105,7 +140,7 @@ RSpec.describe Activities::RequestReviewActivity do
 
         expect(result[:requested]).to contain_exactly("copilot", "octocat")
         expect(github_client).to have_received(:request_bot_review)
-          .with(project.full_name, 42, bot_node_id: described_class::COPILOT_BOT_NODE_ID)
+          .with(project.full_name, 42, bot_node_ids: [ copilot_node_id ])
         expect(github_client).to have_received(:request_pull_request_review)
           .with(project.full_name, 42, reviewers: [ "octocat" ])
       end
