@@ -13,27 +13,30 @@ module Activities
 
     COPILOT_LOGIN = "copilot"
 
-    # GraphQL node ID for the copilot-pull-request-reviewer bot account.
-    # Stable across all repos — this is the bot's global identity.
-    COPILOT_BOT_NODE_ID = "BOT_kgDOCnlnWA"
-
+    # Login-to-node-ID map for bot reviewers that need the GraphQL path.
+    # Node IDs are looked up from Rails config so they can be overridden
+    # per environment without code changes.
+    #
+    # Configure via: config.x.copilot_bot_node_id = "BOT_kgDOCnlnWA"
+    # Falls back to the production default if unset.
     BOT_REVIEWERS = {
-      COPILOT_LOGIN => COPILOT_BOT_NODE_ID
+      COPILOT_LOGIN => :copilot
     }.freeze
 
     def execute(input)
       project = Project.find(input[:project_id])
       pr_number = input[:pr_number]
       reviewers = Array(input[:reviewers]).filter_map { |r| r.to_s.strip.presence }
+      reviewers.map!(&:downcase).uniq!
       return { requested: [] } if reviewers.empty?
 
       client = project.github_token.client
 
       already_pending = fetch_pending_reviewers(client, project, pr_number)
-      needed = reviewers.reject { |r| already_pending.include?(r.downcase) }
+      needed = reviewers.reject { |r| already_pending.include?(r) }
       return { requested: [], already_pending: already_pending } if needed.empty?
 
-      bots, humans = needed.partition { |r| BOT_REVIEWERS.key?(r.downcase) }
+      bots, humans = needed.partition { |r| BOT_REVIEWERS.key?(r) }
 
       request_human_reviews(client, project, pr_number, humans) if humans.any?
       request_bot_reviews(client, project, pr_number, bots) if bots.any?
@@ -68,9 +71,14 @@ module Activities
     end
 
     def request_bot_reviews(client, project, pr_number, reviewers)
-      reviewers.each do |reviewer|
-        bot_node_id = BOT_REVIEWERS.fetch(reviewer.downcase)
-        client.request_bot_review(project.full_name, pr_number, bot_node_id: bot_node_id)
+      bot_node_ids = reviewers.map { |r| bot_node_id_for(BOT_REVIEWERS.fetch(r)) }
+      client.request_bot_review(project.full_name, pr_number, bot_node_ids: bot_node_ids)
+    end
+
+    def bot_node_id_for(key)
+      case key
+      when :copilot
+        Rails.configuration.x.copilot_bot_node_id.presence || "BOT_kgDOCnlnWA"
       end
     end
 
