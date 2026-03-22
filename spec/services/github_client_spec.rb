@@ -885,7 +885,7 @@ RSpec.describe GithubClient do
     let(:bot_node_id) { "BOT_kgDOCnlnWA" }
 
     context "when request succeeds" do
-      before do
+      let!(:graphql_stub) do
         stub_request(:post, "#{api_base}/graphql")
           .to_return(
             status: 200,
@@ -911,6 +911,21 @@ RSpec.describe GithubClient do
         result = client.request_bot_review(repo, 42, bot_node_ids: [ bot_node_id ])
 
         expect(result.dig("data", "requestReviews", "pullRequest", "id")).to eq(pr_node_id)
+        expect(graphql_stub).to have_been_requested.twice
+      end
+
+      it "includes botIds in the mutation variables" do
+        client.request_bot_review(repo, 42, bot_node_ids: [ bot_node_id ])
+
+        expect(
+          a_request(:post, "#{api_base}/graphql")
+            .with { |req|
+              body = JSON.parse(req.body)
+              body["query"].include?("requestReviews") &&
+                body["variables"]["botIds"] == [ bot_node_id ] &&
+                body["variables"]["pullRequestId"] == pr_node_id
+            }
+        ).to have_been_made.once
       end
     end
 
