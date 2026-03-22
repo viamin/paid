@@ -23,6 +23,11 @@ Rails.application.configure do
       cron: "*/15 * * * *",
       class: "DockerOrphanCleanupJob"
     },
+    recover_missing_pr_labels: {
+      cron: "*/15 * * * *",
+      class: "RecoverMissingPrLabelsJob",
+      description: "Re-apply paid-generated labels to Paid-created pull requests"
+    },
     models_sync: {
       cron: "0 0 * * *",
       class: "ModelsSyncJob",
