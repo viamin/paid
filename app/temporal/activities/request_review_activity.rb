@@ -13,12 +13,9 @@ module Activities
 
     COPILOT_LOGIN = "copilot"
 
-    # Login-to-node-ID map for bot reviewers that need the GraphQL path.
-    # Node IDs are looked up from Rails config so they can be overridden
-    # per environment without code changes.
-    #
-    # Configure via: config.x.copilot_bot_node_id = "BOT_kgDOCnlnWA"
-    # Falls back to the production default if unset.
+    # Maps bot reviewer logins to a config key used to resolve their GraphQL
+    # node ID at runtime (see #bot_node_id_for). Indirection allows the node
+    # ID to be overridden per environment via Rails configuration.
     BOT_REVIEWERS = {
       COPILOT_LOGIN => :copilot
     }.freeze
