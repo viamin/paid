@@ -618,6 +618,19 @@ RSpec.describe "AgentRuns" do
         end
       end
 
+      it "rejects quick run for an issue with an associated pull request" do
+        pr_issue = create(:issue, project: project, github_number: 42, title: "Fix the bug")
+        create(:issue, :pull_request, project: project, parent_issue: pr_issue)
+
+        expect {
+          post quick_create_project_agent_runs_path(project), params: { issue_id: pr_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(project_path(project))
+        follow_redirect!
+        expect(response.body).to include("already has an associated pull request")
+      end
+
       it "ignores goal params and still uses quick-run defaults" do
         expect {
           post quick_create_project_agent_runs_path(project), params: {
