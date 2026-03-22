@@ -113,6 +113,9 @@ module Models
         synced += 1
       end
 
+      # Clear cached pricing so TokenUsageTracker picks up updated costs.
+      TokenUsageTracker.clear_model_cache!
+
       Rails.logger.info(message: "model_registry.seed_completed", models_synced: synced)
       synced
     end
