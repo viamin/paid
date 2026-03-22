@@ -101,11 +101,12 @@ module QualityMetrics
     def update_prompt_version_stats
       pv = agent_run.prompt_version
 
-      # Incremental update: use SQL to compute count + average in a single
-      # query scoped to the prompt version, avoiding full-table aggregation.
+      # Scope to automated metrics only so human feedback doesn't inflate
+      # usage_count (which represents distinct runs, not total metric rows).
       stats = QualityMetric.where(prompt_version: pv)
+                           .automated
                            .with_composite_score
-                           .pick(Arel.sql("COUNT(*), AVG(composite_score)"))
+                           .pick(Arel.sql("COUNT(DISTINCT agent_run_id), AVG(composite_score)"))
 
       count, avg = stats
       pv.update_columns(
