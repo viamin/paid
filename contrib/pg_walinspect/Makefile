@@ -1,0 +1,1 @@
+/tmp/postgresql-16.6/contrib/pg_walinspect/Makefile
