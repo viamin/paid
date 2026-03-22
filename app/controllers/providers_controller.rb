@@ -65,8 +65,23 @@ class ProvidersController < ApplicationController
     end
   end
 
+  # Rate-limited to one test per provider every 30 seconds to avoid
+  # tying up Puma threads — the agent harness call is synchronous and
+  # can block for up to TIMEOUT seconds.
+  PROVIDER_TEST_COOLDOWN = 30.seconds
+
   def test_agent
     authorize @provider
+
+    cache_key = "provider_test_cooldown:#{@provider.id}"
+    if Rails.cache.read(cache_key)
+      render json: { success: false, error_type: "rate_limited",
+                     message: "Please wait before testing this provider again." },
+             status: :too_many_requests
+      return
+    end
+
+    Rails.cache.write(cache_key, true, expires_in: PROVIDER_TEST_COOLDOWN)
     result = Providers::TestAgent.call(provider: @provider)
 
     render json: {
