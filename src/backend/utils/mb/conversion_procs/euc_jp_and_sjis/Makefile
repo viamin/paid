@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/src/backend/utils/mb/conversion_procs/euc_jp_and_sjis/Makefile
