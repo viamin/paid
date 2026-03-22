@@ -404,6 +404,38 @@ class GithubClient
     handle_errors { client.request_pull_request_review(repo, number, reviewers: reviewers) }
   end
 
+  # Requests review from bots on a pull request via GraphQL.
+  #
+  # The REST API for requesting reviews silently fails for bot re-requests
+  # (returns 201 but does not actually create the review request). The GraphQL
+  # requestReviews mutation with botIds reliably triggers bot reviews.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param bot_node_ids [Array<String>] GraphQL node IDs of the bots (e.g. ["BOT_kgDOCnlnWA"])
+  # @return [Hash] The response data
+  def request_bot_review(repo, number, bot_node_ids:)
+    pr_node_id = pull_request_node_id!(repo, number)
+
+    query = <<~GRAPHQL
+      mutation($pullRequestId: ID!, $botIds: [ID!]!) {
+        requestReviews(input: { pullRequestId: $pullRequestId, botIds: $botIds }) {
+          pullRequest { id }
+        }
+      }
+    GRAPHQL
+
+    response = graphql_request(query, pullRequestId: pr_node_id, botIds: bot_node_ids)
+
+    if response["errors"].present?
+      message = response["errors"].map { |e| e["message"] }.join(", ")
+      status = message.match?(/unprocessable|cannot request|not available/i) ? 422 : nil
+      raise ApiError.new(message, status: status)
+    end
+
+    response
+  end
+
   # Checks pending review requests on a pull request.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -425,8 +457,7 @@ class GithubClient
   # @param number [Integer] Pull request number
   # @return [Hash] The response data
   def mark_pull_request_ready(repo, number)
-    node_id = pull_request_node_id(repo, number)
-    raise ApiError.new("Could not find PR node ID for #{repo}##{number}") unless node_id
+    node_id = pull_request_node_id!(repo, number)
 
     query = <<~GRAPHQL
       mutation($pullRequestId: ID!) {
@@ -554,7 +585,20 @@ class GithubClient
     GRAPHQL
 
     data = graphql_request(query, owner: owner, name: name, number: number)
+
+    if data["errors"].present?
+      message = data["errors"].map { |e| e["message"] }.join(", ")
+      raise ApiError.new("GraphQL error resolving #{repo}##{number}: #{message}")
+    end
+
     data.dig("data", "repository", "pullRequest", "id")
+  end
+
+  def pull_request_node_id!(repo, number)
+    node_id = pull_request_node_id(repo, number)
+    raise NotFoundError, "Could not find PR node ID for #{repo}##{number}" unless node_id
+
+    node_id
   end
 
   def parse_timestamp(value)
