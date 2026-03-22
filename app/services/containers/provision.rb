@@ -270,7 +270,17 @@ module Containers
       rescue Docker::Error::DockerError => e
         # Log partial output first — raise_if_watchdog_timeout! may re-raise.
         log_partial_output(stdout_buffer, stderr_buffer)
-        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout, timeout)
+        begin
+          raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout, timeout)
+        rescue StartupTimeoutError, IdleTimeoutError => timeout_error
+          timeout_value = timeout_error.is_a?(StartupTimeoutError) ? startup_timeout : idle_timeout
+          log_system(
+            "container.execute.timeout",
+            timeout_type: timeout_error.class.name.demodulize,
+            timeout: timeout_value
+          )
+          raise
+        end
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
       ensure
@@ -718,13 +728,15 @@ module Containers
         [ now - last_activity_at, now - started_at ]
       end
 
-      if timeout && elapsed_since_start >= timeout
-        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: timeout)
-        raise TimeoutError, "Command timed out after #{timeout} seconds"
-      elsif !output_received && startup_timeout && elapsed_since_activity >= startup_timeout
+      # Check startup/idle before wall-clock to match the watchdog's precedence —
+      # more specific timeouts take priority over the catch-all wall clock.
+      if !output_received && startup_timeout && elapsed_since_activity >= startup_timeout
         raise StartupTimeoutError, "No output received within #{startup_timeout} seconds"
       elsif output_received && idle_timeout && elapsed_since_activity >= idle_timeout
         raise IdleTimeoutError, "No output received for #{idle_timeout} seconds"
+      elsif timeout && elapsed_since_start >= timeout
+        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: timeout)
+        raise TimeoutError, "Command timed out after #{timeout} seconds"
       end
     end
 

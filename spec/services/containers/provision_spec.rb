@@ -846,6 +846,55 @@ RSpec.describe Containers::Provision do
           service.execute("slow_command", timeout: 10, startup_timeout: 0.1)
         }.to raise_error(described_class::StartupTimeoutError)
       end
+
+      it "logs the timeout when raising through the Docker error path" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.01 until container_stopped.true?
+          raise Docker::Error::ServerError, "connection closed"
+        end
+        allow(agent_run).to receive(:log!)
+
+        expect {
+          service.execute("slow_command", timeout: 10, startup_timeout: 0.1)
+        }.to raise_error(described_class::StartupTimeoutError)
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.execute.timeout",
+          metadata: hash_including(timeout_type: "StartupTimeoutError")
+        )
+      end
+    end
+
+    context "with idle timeout when exec raises Docker error" do
+      it "detects the watchdog reason through the Docker error" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          sleep 0.01 until container_stopped.true?
+          raise Docker::Error::ServerError, "connection closed"
+        end
+
+        expect {
+          service.execute("stalling_command", timeout: 10, idle_timeout: 0.1)
+        }.to raise_error(described_class::IdleTimeoutError)
+      end
+
+      it "logs the timeout when raising through the Docker error path" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, "initial output\n") if block
+          sleep 0.01 until container_stopped.true?
+          raise Docker::Error::ServerError, "connection closed"
+        end
+        allow(agent_run).to receive(:log!)
+
+        expect {
+          service.execute("stalling_command", timeout: 10, idle_timeout: 0.1)
+        }.to raise_error(described_class::IdleTimeoutError)
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.execute.timeout",
+          metadata: hash_including(timeout_type: "IdleTimeoutError")
+        )
+      end
     end
 
     context "without watchdog timeouts" do
