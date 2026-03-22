@@ -124,12 +124,12 @@ class ProvidersController < ApplicationController
   end
 
   def load_provider_options
-    supported_keys = Provider.addable_provider_keys
+    addable_keys = Provider.addable_provider_keys
     existing_keys = current_user.providers.pluck(:provider_key)
     @provider_options = if @provider&.persisted?
-      (supported_keys - (existing_keys - [ @provider.provider_key ]))
+      (addable_keys - (existing_keys - [ @provider.provider_key ]))
     else
-      supported_keys - existing_keys
+      addable_keys - existing_keys
     end
   end
 

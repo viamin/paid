@@ -24,7 +24,22 @@ RSpec.describe "Providers" do
         expect(response.body).to include("Providers")
         expect(response.body).to include("Provider Priority")
         expect(response.body).to include("Primary Provider")
+      end
+
+      it "shows empty state when no addable providers remain" do
+        allow(ProviderSupport).to receive(:addable_provider_keys).and_return([ "claude" ])
+
+        get providers_path
+
         expect(response.body).to include("No More Providers Yet")
+      end
+
+      it "shows Add Provider link when addable providers are available" do
+        allow(ProviderSupport).to receive(:addable_provider_keys).and_return(%w[claude cursor])
+
+        get providers_path
+
+        expect(response.body).to include("Add Provider")
       end
     end
   end
