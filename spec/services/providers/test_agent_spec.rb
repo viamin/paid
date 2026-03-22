@@ -80,11 +80,11 @@ RSpec.describe Providers::TestAgent do
         allow(AgentHarness).to receive(:send_message).and_return(response)
       end
 
-      it "returns a connection error" do
+      it "returns an unexpected error" do
         result = described_class.call(provider: provider)
 
         expect(result).not_to be_success
-        expect(result.error_type).to eq(:connection)
+        expect(result.error_type).to eq(:unexpected)
         expect(result.message).to include("Process exited abnormally")
       end
     end
