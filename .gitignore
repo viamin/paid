@@ -65,6 +65,7 @@ WORKLOG.md
 /.*-build/
 /.*_build/
 config.log
+config.status
 
 # npm cache
 /.npm-cache

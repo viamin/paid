@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/contrib/old_snapshot/Makefile

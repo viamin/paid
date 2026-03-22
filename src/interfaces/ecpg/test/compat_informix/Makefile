@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/src/interfaces/ecpg/test/compat_informix/Makefile
