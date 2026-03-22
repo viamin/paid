@@ -39,6 +39,21 @@ export default class extends Controller {
         return
       }
 
+      if (response.status === 401) {
+        this.showError("authentication", "Session expired. Please refresh the page and sign in again.")
+        return
+      }
+
+      if (response.status === 403) {
+        this.showError("unexpected", "You do not have permission to test this provider.")
+        return
+      }
+
+      if (response.status === 404) {
+        this.showError("unexpected", "Provider not found. It may have been deleted. Please refresh the page.")
+        return
+      }
+
       if (!response.ok) {
         this.showError("unexpected", `Server responded with ${response.status}`)
         return
