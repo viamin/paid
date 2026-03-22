@@ -127,14 +127,27 @@ module Activities
         # If we couldn't fetch PR data, don't prematurely advance the phase.
         return nil if pr_data.nil?
 
+        # A draft PR is only ready to leave draft after the latest review-bot
+        # review is explicitly clean. Resolved threads alone are not enough.
+        if pending_triggers.any?
+          triggers = pending_triggers
+          log_triggers(project, issue, triggers)
+
+          return {
+            issue_id: issue.id,
+            pr_number: issue.github_number,
+            triggers: triggers,
+            phase: issue.pr_review_phase,
+            labels_to_remove: [],
+            current_draft_review_count: issue.draft_review_count
+          }
+        end
+
         # Only auto-advance when we have at least one check and all conclusions are green.
-        # all_checks_green? implicitly rejects nil conclusions (pending checks).
+        # all_checks_green? implicitly rejects nil conclusions (pending checks),
+        # and only after a clean review-bot review is present.
         if checks.present? && all_checks_green?(checks)
-          result = ready_for_owner_trigger(issue)
-          # Carry pending bot review requests so the workflow can request them
-          # alongside the phase transition.
-          result[:pending_review_bot_request] = true if pending_triggers.any?
-          return result
+          return ready_for_owner_trigger(issue)
         end
 
         return nil # CI still pending or checks unavailable
