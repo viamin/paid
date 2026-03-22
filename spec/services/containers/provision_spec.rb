@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "timeout"
 
 RSpec.describe Containers::Provision do
   let(:project) { create(:project) }
@@ -914,7 +915,7 @@ RSpec.describe Containers::Provision do
       end
     end
 
-    context "without watchdog timeouts" do
+    context "without startup and idle timeouts" do
       it "succeeds without watchdog when neither timeout is passed" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "output\n") if block
