@@ -3,6 +3,12 @@
 require "agent_harness"
 require Rails.root.join("lib/provider_support").to_s
 
+# Compatibility shim: ensure AuthenticationError exists for agent-harness
+# versions older than 0.4.0 that may not define it.
+if defined?(AgentHarness::Error) && !defined?(AgentHarness::AuthenticationError)
+  AgentHarness::AuthenticationError = Class.new(AgentHarness::Error)
+end
+
 agent_timeout = begin
   [ Integer(ENV.fetch("AGENT_TIMEOUT", 3600)), 1 ].max
 rescue ArgumentError

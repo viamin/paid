@@ -23,8 +23,19 @@ export default class extends Controller {
 
       if (!this.element.isConnected) return
 
-      if (response.redirected || !response.headers.get("content-type")?.includes("application/json")) {
+      const contentType = response.headers.get("content-type") || ""
+
+      if (response.redirected) {
         this.showError("unexpected", "Session expired. Please refresh the page and sign in again.")
+        return
+      }
+
+      if (!contentType.includes("application/json")) {
+        if (response.status === 404) {
+          this.showError("unexpected", "Provider not found. It may have been deleted. Please refresh the page.")
+        } else {
+          this.showError("unexpected", "Unexpected server response. Please try again.")
+        }
         return
       }
 
