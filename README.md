@@ -20,7 +20,7 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 ## How It Works
 
 1. User adds a GitHub project with a Personal Access Token
-2. Paid polls the repo for issues with a configured build label (default: `paid-build`)
+2. Paid polls the repo for issues matching the project's configured `label_mappings` (if no mappings are configured, all open issues are fetched)
 3. An `AgentExecutionWorkflow` starts in Temporal, orchestrating:
    - Docker container provisioning on a restricted network
    - Repository clone and branch creation inside the container
@@ -42,10 +42,10 @@ Paid uses GitHub labels to trigger workflows and communicate status. Some labels
 
 ### Labels Paid Responds To
 
-These are **configurable per project** via `label_mappings` in project settings.
+These are **configurable per project** via `label_mappings` in project settings. There is no global default: if no `label_mappings` are configured for a project, Paid will not trigger agent work from issue labels.
 
-| Label | Default | Behavior |
-| ----- | ------- | -------- |
+| Mapping | Example label | Behavior |
+| ------- | ------------- | -------- |
 | Build label | `paid-build` | Triggers agent execution on a new issue (creates a PR) |
 | Plan label | `paid-plan` | Starts planning phase on a new issue (no immediate agent run) |
 
@@ -147,7 +147,7 @@ bin/dev                 # Start dev server (Rails + JS + CSS watchers)
 1. Sign up at <http://localhost:3000>
 2. Add a GitHub token (Settings > GitHub Tokens) with `repo` scope
 3. Add a project (Projects > New) by entering the GitHub repo URL
-4. Label a GitHub issue with `paid-build` to trigger an agent run, or use the "Trigger Run" button in the UI
+4. Configure build/plan label mappings in project settings (e.g., `paid-build`), then label a GitHub issue to trigger an agent run, or use the "Trigger Run" button in the UI
 
 ## Environment Variables
 
