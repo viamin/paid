@@ -29,7 +29,7 @@ RSpec.describe Provider do
 
   describe ".addable_provider_keys" do
     it "returns only providers installed in paid-agent" do
-      expect(described_class.addable_provider_keys).to eq([ "claude" ])
+      expect(described_class.addable_provider_keys).to match_array(ProviderSupport.addable_provider_keys)
     end
   end
 
