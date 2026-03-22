@@ -24,3 +24,6 @@ application.register("sortable", SortableController)
 
 import DropdownController from "./dropdown_controller"
 application.register("dropdown", DropdownController)
+
+import TestAgentController from "./test_agent_controller"
+application.register("test-agent", TestAgentController)

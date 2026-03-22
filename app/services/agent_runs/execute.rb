@@ -1,11 +1,5 @@
 # frozen_string_literal: true
 
-# Compatibility shim: ensure AuthenticationError exists for agent-harness
-# versions older than 0.4.0 that may not define it.
-if defined?(AgentHarness) && defined?(AgentHarness::Error) && !defined?(AgentHarness::AuthenticationError)
-  AgentHarness::AuthenticationError = Class.new(AgentHarness::Error)
-end
-
 module AgentRuns
   # Executes an agent run using the agent-harness gem.
   #
