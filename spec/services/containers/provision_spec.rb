@@ -816,6 +816,23 @@ RSpec.describe Containers::Provision do
           service.execute("hung_command", timeout: 0.1)
         }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
       end
+
+      it "fires via post-exec deadline check when exec returns between watchdog ticks" do
+        # Exec returns normally (no watchdog stop) but takes longer than the
+        # wall-clock timeout. The post-exec check_deadline_exceeded! should catch it.
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          sleep 0.15 # exceed the 0.1s timeout
+          block&.call(:stdout, "partial output\n")
+          [ [ "partial output\n" ], [], 0 ]
+        end
+
+        # Use a long poll interval so the watchdog does NOT fire during exec
+        allow(service).to receive(:watchdog_poll_interval).and_return(10)
+
+        expect {
+          service.execute("slow_command", timeout: 0.1)
+        }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
+      end
     end
 
     context "with startup timeout when exec raises Docker error" do
