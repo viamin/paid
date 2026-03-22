@@ -24,14 +24,14 @@ RSpec.describe Activities::RequestReviewActivity do
       before do
         allow(github_client).to receive(:pull_request_review_requests)
           .and_return({ users: [] })
-        allow(github_client).to receive(:request_pull_request_review)
+        allow(github_client).to receive(:request_bot_review)
       end
 
       it "filters out nil and blank reviewers" do
         activity.execute(project_id: project.id, pr_number: 42, reviewers: [ nil, "", "  ", "copilot" ])
 
-        expect(github_client).to have_received(:request_pull_request_review)
-          .with(project.full_name, 42, reviewers: [ "copilot" ])
+        expect(github_client).to have_received(:request_bot_review)
+          .with(project.full_name, 42, bot_node_id: described_class::COPILOT_BOT_NODE_ID)
       end
     end
 
@@ -49,19 +49,65 @@ RSpec.describe Activities::RequestReviewActivity do
       end
     end
 
-    context "when requesting a new reviewer" do
+    context "when requesting copilot review (bot reviewer)" do
+      before do
+        allow(github_client).to receive(:pull_request_review_requests)
+          .and_return({ users: [] })
+        allow(github_client).to receive(:request_bot_review)
+      end
+
+      it "uses GraphQL bot review request" do
+        result = activity.execute(project_id: project.id, pr_number: 42, reviewers: [ "copilot" ])
+
+        expect(result[:requested]).to eq([ "copilot" ])
+        expect(github_client).to have_received(:request_bot_review)
+          .with(project.full_name, 42, bot_node_id: described_class::COPILOT_BOT_NODE_ID)
+      end
+
+      it "does not use REST review request for bots" do
+        allow(github_client).to receive(:request_pull_request_review)
+
+        activity.execute(project_id: project.id, pr_number: 42, reviewers: [ "copilot" ])
+
+        expect(github_client).not_to have_received(:request_pull_request_review)
+      end
+    end
+
+    context "when requesting a human reviewer" do
       before do
         allow(github_client).to receive(:pull_request_review_requests)
           .and_return({ users: [] })
         allow(github_client).to receive(:request_pull_request_review)
       end
 
-      it "requests the review and returns the reviewer" do
-        result = activity.execute(project_id: project.id, pr_number: 42, reviewers: [ "copilot" ])
+      it "uses REST review request for humans" do
+        result = activity.execute(project_id: project.id, pr_number: 42, reviewers: [ "octocat" ])
 
-        expect(result[:requested]).to eq([ "copilot" ])
+        expect(result[:requested]).to eq([ "octocat" ])
         expect(github_client).to have_received(:request_pull_request_review)
-          .with(project.full_name, 42, reviewers: [ "copilot" ])
+          .with(project.full_name, 42, reviewers: [ "octocat" ])
+      end
+    end
+
+    context "when requesting both bot and human reviewers" do
+      before do
+        allow(github_client).to receive(:pull_request_review_requests)
+          .and_return({ users: [] })
+        allow(github_client).to receive(:request_pull_request_review)
+        allow(github_client).to receive(:request_bot_review)
+      end
+
+      it "routes each to the correct mechanism" do
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ "copilot", "octocat" ]
+        )
+
+        expect(result[:requested]).to contain_exactly("copilot", "octocat")
+        expect(github_client).to have_received(:request_bot_review)
+          .with(project.full_name, 42, bot_node_id: described_class::COPILOT_BOT_NODE_ID)
+        expect(github_client).to have_received(:request_pull_request_review)
+          .with(project.full_name, 42, reviewers: [ "octocat" ])
       end
     end
 
@@ -69,7 +115,7 @@ RSpec.describe Activities::RequestReviewActivity do
       before do
         allow(github_client).to receive(:pull_request_review_requests)
           .and_return({ users: [] })
-        allow(github_client).to receive(:request_pull_request_review)
+        allow(github_client).to receive(:request_bot_review)
           .and_raise(GithubClient::ApiError.new("Copilot not available", status: 422))
       end
 
@@ -85,7 +131,7 @@ RSpec.describe Activities::RequestReviewActivity do
       before do
         allow(github_client).to receive(:pull_request_review_requests)
           .and_return({ users: [] })
-        allow(github_client).to receive(:request_pull_request_review)
+        allow(github_client).to receive(:request_bot_review)
           .and_raise(GithubClient::ApiError.new("Server error", status: 500))
       end
 
@@ -100,7 +146,7 @@ RSpec.describe Activities::RequestReviewActivity do
       before do
         allow(github_client).to receive(:pull_request_review_requests)
           .and_raise(GithubClient::Error, "API error")
-        allow(github_client).to receive(:request_pull_request_review)
+        allow(github_client).to receive(:request_bot_review)
       end
 
       it "proceeds with the request (assumes no pending)" do
