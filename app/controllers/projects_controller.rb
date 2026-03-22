@@ -21,7 +21,7 @@ class ProjectsController < ApplicationController
     authorize @project
     @recent_agent_runs = @project.agent_runs.recent.limit(10)
     open_items = @project.issues.where(github_state: "open").order(github_number: :desc)
-    @issues = open_items.issues_only.limit(25)
+    @issues = open_items.issues_only.includes(:sub_issues).limit(25)
     @pull_requests = open_items.pull_requests_only.limit(25)
     @quality_summary = QualityMetrics::DashboardStats.overview(project: @project)
   end
