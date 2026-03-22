@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/contrib/tsm_system_time/Makefile

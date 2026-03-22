@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/src/test/modules/dummy_index_am/Makefile
