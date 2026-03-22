@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe Providers::TestAgent do
   let(:user) { create(:user) }
-  let(:provider) { create(:provider, user: user, provider_key: "claude") }
+  let(:provider) { user.providers.find_by!(provider_key: "claude") }
 
   describe ".call" do
     context "when agent responds successfully" do
@@ -36,8 +36,33 @@ RSpec.describe Providers::TestAgent do
         expect(AgentHarness).to have_received(:send_message).with(
           "Respond with exactly: PING OK",
           provider: :claude,
-          timeout: 30
+          timeout: 30,
+          dangerous_mode: false
         )
+      end
+    end
+
+    context "when agent responds successfully but output does not match expected ping" do
+      let(:response) do
+        AgentHarness::Response.new(
+          output: "Hello! How can I help you?",
+          exit_code: 0,
+          duration: 1.0,
+          provider: :claude,
+          model: "claude-sonnet-4"
+        )
+      end
+
+      before do
+        allow(AgentHarness).to receive(:send_message).and_return(response)
+      end
+
+      it "returns an unexpected error" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:unexpected)
+        expect(result.message).to include("did not match expected ping")
       end
     end
 
