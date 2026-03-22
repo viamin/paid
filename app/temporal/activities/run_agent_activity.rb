@@ -16,7 +16,7 @@ module Activities
     AGENT_COMMANDS = {
       "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
-      "codex" => %w[codex --quiet --full-auto],
+      "codex" => %w[codex --quiet --full-auto --],
       "cursor" => %w[cursor-agent --message],
       "aider" => %w[aider --yes --no-auto-commits --message]
     }.freeze

@@ -138,6 +138,7 @@ module Containers
       @container = create_container
       start_container
       fix_workspace_ownership!
+      fix_cache_tmpfs_ownership!
       fix_codex_tmpfs_ownership!
       seed_claude_credentials!
       apply_network_restrictions!
@@ -452,6 +453,18 @@ module Containers
       )
     rescue Docker::Error::DockerError => e
       log_system("container.workspace_chown_failed", error: e.message)
+    end
+
+    # Fixes ownership of the ~/.cache tmpfs so the non-root agent user can
+    # write to it. Tmpfs mounts are created as root-owned; tools like Codex CLI,
+    # npm, and others expect to cache data here.
+    def fix_cache_tmpfs_ownership!
+      container.exec(
+        [ "chown", "-R", "agent:agent", "/home/agent/.cache" ],
+        user: "root"
+      )
+    rescue Docker::Error::DockerError => e
+      log_system("container.cache_chown_failed", error: e.message)
     end
 
     # Fixes ownership of the ~/.codex tmpfs so the non-root agent user can
