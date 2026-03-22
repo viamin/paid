@@ -169,6 +169,12 @@ RSpec.describe Activities::DetectLabelsActivity do
 
         expect(result[:action]).to eq("none")
       end
+
+      it "does not change paid_state" do
+        activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(issue.reload.paid_state).to eq("new")
+      end
     end
 
     context "when issue is from an untrusted user" do
