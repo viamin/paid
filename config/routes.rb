@@ -28,6 +28,7 @@ Rails.application.routes.draw do
   resource :user_settings, only: [ :edit, :update ]
   resources :providers, except: :show do
     patch :settings, on: :collection
+    post :test_agent, on: :member
   end
 
   # Service container management

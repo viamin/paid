@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ProvidersController < ApplicationController
-  before_action :set_provider, only: [ :edit, :update, :destroy ]
+  before_action :set_provider, only: [ :edit, :update, :destroy, :test_agent ]
   before_action :load_provider_options, only: [ :new, :create, :edit, :update ]
 
   def index
@@ -63,6 +63,40 @@ class ProvidersController < ApplicationController
     else
       redirect_to providers_path, alert: @provider.errors.full_messages.to_sentence
     end
+  end
+
+  # Rate-limited to one test per provider every 30 seconds to avoid
+  # tying up Puma threads — the agent harness call is synchronous and
+  # can block for up to TIMEOUT seconds.
+  PROVIDER_TEST_COOLDOWN = 30.seconds
+
+  def test_agent
+    authorize @provider
+
+    # Use an atomic cache write to avoid a race condition where two
+    # concurrent requests both see a miss and proceed to run the test.
+    cache_key = "provider_test_cooldown:#{@provider.id}"
+    acquired = Rails.cache.write(
+      cache_key,
+      true,
+      expires_in: PROVIDER_TEST_COOLDOWN,
+      unless_exist: true
+    )
+
+    unless acquired
+      render json: { success: false, error_type: "rate_limited",
+                     message: "Please wait before testing this provider again." },
+             status: :too_many_requests
+      return
+    end
+
+    result = Providers::TestAgent.call(provider: @provider)
+
+    render json: {
+      success: result.success?,
+      error_type: result.error_type,
+      message: result.message
+    }
   end
 
   def settings

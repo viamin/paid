@@ -141,6 +141,87 @@ RSpec.describe "Providers" do
     end
   end
 
+  describe "POST /providers/:id/test_agent" do
+    context "when not authenticated" do
+      it "redirects to sign in" do
+        provider = create(:provider, user: user, provider_key: "cursor")
+
+        post test_agent_provider_path(provider)
+
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "returns success when agent is healthy" do
+        provider = user.providers.find_by!(provider_key: "claude")
+        harness_response = AgentHarness::Response.new(
+          output: "PING OK",
+          exit_code: 0,
+          duration: 1.0,
+          provider: :claude
+        )
+        allow(AgentHarness).to receive(:send_message).and_return(harness_response)
+
+        post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
+
+        expect(response).to have_http_status(:ok)
+        json = JSON.parse(response.body)
+        expect(json["success"]).to be(true)
+        expect(json["message"]).to eq("Agent is healthy")
+      end
+
+      it "returns error details when agent test fails" do
+        provider = user.providers.find_by!(provider_key: "claude")
+        allow(AgentHarness).to receive(:send_message)
+          .and_raise(AgentHarness::AuthenticationError, "Invalid API key")
+
+        post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
+
+        expect(response).to have_http_status(:ok)
+        json = JSON.parse(response.body)
+        expect(json["success"]).to be(false)
+        expect(json["error_type"]).to eq("authentication")
+        expect(json["message"]).to eq("Invalid API key")
+      end
+
+      it "rate-limits repeated test requests for the same provider" do
+        provider = user.providers.find_by!(provider_key: "claude")
+        harness_response = AgentHarness::Response.new(
+          output: "PING OK",
+          exit_code: 0,
+          duration: 1.0,
+          provider: :claude
+        )
+        allow(AgentHarness).to receive(:send_message).and_return(harness_response)
+
+        # The test environment uses :null_store, so use a real store
+        # to exercise the atomic rate-limit logic without mutating global state.
+        store = ActiveSupport::Cache::MemoryStore.new
+        allow(Rails).to receive(:cache).and_return(store)
+
+        post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
+        expect(response).to have_http_status(:ok)
+
+        post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
+        expect(response).to have_http_status(:too_many_requests)
+        json = JSON.parse(response.body)
+        expect(json["error_type"]).to eq("rate_limited")
+      end
+
+      it "prevents testing another user's provider" do
+        other_user = create(:user)
+        other_provider = create(:provider, user: other_user, provider_key: "cursor")
+
+        post test_agent_provider_path(other_provider), headers: { "Accept" => "application/json" }
+
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+  end
+
   describe "DELETE /providers/:id" do
     before { sign_in user }
 

@@ -44,7 +44,11 @@
               <% end %>
             </td>
             <td class="px-4 py-3 text-right text-sm">
-              <%= link_to "Edit", edit_provider_path(provider), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+              <div data-controller="test-agent" data-test-agent-url-value="<%= test_agent_provider_path(provider) %>" class="inline">
+                <button data-test-agent-target="button" data-action="test-agent#test" type="button" class="font-medium text-emerald-600 hover:text-emerald-500">Test Agent</button>
+                <div data-test-agent-target="result"></div>
+              </div>
+              <%= link_to "Edit", edit_provider_path(provider), class: "ml-3 font-medium text-indigo-600 hover:text-indigo-500" %>
               <%= button_to "Delete", provider_path(provider), method: :delete, class: "ml-3 inline text-red-600 hover:text-red-500", form: { class: "inline" } %>
             </td>
           </tr>

@@ -25,6 +25,10 @@ class ProviderPolicy < ApplicationPolicy
     owner?
   end
 
+  def test_agent?
+    owner?
+  end
+
   class Scope
     def initialize(user, scope)
       @user = user
