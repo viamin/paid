@@ -135,6 +135,20 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when the provider is unsupported" do
+      before do
+        allow(ProviderSupport).to receive(:supported_provider_key?).and_return(false)
+      end
+
+      it "returns an unexpected error with installation guidance" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:unexpected)
+        expect(result.message).to include("not installed or available")
+      end
+    end
+
     context "when an unexpected error occurs" do
       before do
         allow(AgentHarness).to receive(:send_message)
