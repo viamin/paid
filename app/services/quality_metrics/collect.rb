@@ -43,7 +43,8 @@ module QualityMetrics
       merged = pr_merged_score
       scores["pr_merged"] = merged unless merged.nil?
       scores["iterations"] = iteration_score if agent_run.iterations&.positive?
-      scores["lint_clean"] = lint_clean_score
+      lint = lint_clean_score
+      scores["lint_clean"] = lint unless lint.nil?
       scores
     end
 
@@ -61,6 +62,10 @@ module QualityMetrics
     end
 
     def lint_clean_score
+      # Only score lint if the agent actually ran — failed/cancelled/timeout
+      # runs that never reached lint should not get a perfect score.
+      return nil unless agent_run.successful?
+
       has_lint_errors = agent_run.agent_run_logs
         .where(log_type: "stderr")
         .where("content ~ ?", "[1-9][0-9]* offense")
@@ -84,10 +89,21 @@ module QualityMetrics
           if old_score.present?
             adjust_variant_aggregates(variant, old_score: old_score, new_score: metric.composite_score)
           else
-            variant.record_quality_score!(metric.composite_score)
+            # Inline the aggregate update to avoid the redundant nested
+            # with_lock inside record_quality_score!.
+            add_variant_score(variant, metric.composite_score)
           end
         end
       end
+    end
+
+    # Adds a new score to variant aggregates. Assumes caller holds the lock.
+    def add_variant_score(variant, score)
+      score_decimal = BigDecimal(score.to_s)
+      variant.sample_count += 1
+      variant.total_quality_score = (variant.total_quality_score || BigDecimal("0")) + score_decimal
+      variant.avg_quality_score = variant.total_quality_score / variant.sample_count
+      variant.save!
     end
 
     def adjust_variant_aggregates(variant, old_score:, new_score:)
