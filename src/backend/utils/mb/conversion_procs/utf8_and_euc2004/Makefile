@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/src/backend/utils/mb/conversion_procs/utf8_and_euc2004/Makefile

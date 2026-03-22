@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/src/test/modules/test_rls_hooks/Makefile

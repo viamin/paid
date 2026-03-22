@@ -166,7 +166,7 @@ class ProvidersController < ApplicationController
       return
     end
 
-    return if ProviderSupport.container_executable_provider_key?(@provider.provider_key)
+    return if Provider.addable_provider_key?(@provider.provider_key)
 
     setting_agent_runs = @provider.enabled_for_agent_runs && (@provider.new_record? || @provider.will_save_change_to_attribute?("enabled_for_agent_runs", to: true))
     setting_fallback = @provider.enabled_for_fallback && (@provider.new_record? || @provider.will_save_change_to_attribute?("enabled_for_fallback", to: true))
