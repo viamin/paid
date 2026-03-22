@@ -8,6 +8,8 @@ module Providers
   #   result = Providers::TestAgent.call(provider: provider)
   #   result.success? # => true
   class TestAgent
+    UnsupportedProviderError = Class.new(StandardError)
+
     PROMPT = "Respond with exactly: PING OK"
     EXPECTED_OUTPUT = "PING OK"
     TIMEOUT = 30
@@ -26,6 +28,9 @@ module Providers
       validate!
       response = execute_test
       process_response(response)
+    rescue UnsupportedProviderError
+      Result.new(success: false, error_type: :unexpected,
+        message: "Provider #{provider.provider_key} is not installed or available in the agent container")
     rescue AgentHarness::AuthenticationError => e
       Result.new(success: false, error_type: :authentication, message: e.message)
     rescue AgentHarness::TimeoutError => e
@@ -40,7 +45,7 @@ module Providers
 
     def validate!
       unless ProviderSupport.supported_provider_key?(provider.provider_key)
-        raise AgentHarness::Error, "Unknown provider: #{provider.provider_key}"
+        raise UnsupportedProviderError, "Unknown provider: #{provider.provider_key}"
       end
     end
 
@@ -64,7 +69,7 @@ module Providers
         )
       end
 
-      if response.output.to_s.strip.include?(EXPECTED_OUTPUT)
+      if response.output.to_s.strip == EXPECTED_OUTPUT
         Result.new(success: true, error_type: nil, message: "Agent is healthy")
       else
         Result.new(
