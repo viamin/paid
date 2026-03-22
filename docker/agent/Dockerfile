@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Agent container image for running AI coding assistants (Claude Code, etc.)
+# Agent container image for running AI coding assistants (Claude Code, Codex, etc.)
 # This container provides an isolated environment for AI agents to execute code.
 
 FROM ubuntu:24.04
@@ -132,6 +132,10 @@ RUN SCC_VERSION=3.6.0 \
 RUN curl -fsSL https://claude.ai/install.sh | bash \
     && cp -L /root/.local/bin/claude /usr/local/bin/claude \
     && chmod +x /usr/local/bin/claude
+
+# Install OpenAI Codex CLI
+# Codex CLI is an npm package; install globally so it is available to the agent user.
+RUN npm install -g @openai/codex@latest
 
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.

@@ -8,14 +8,15 @@ module Activities
     # Each entry is an array of command parts; the prompt is appended as the last argument.
     #
     # NOTE: This hash defines command templates for all providers the system
-    # knows how to run. Currently only the Claude CLI is installed in the agent
-    # Docker container (docker/agent/Dockerfile). Actual container execution is
+    # knows how to run. Currently Claude CLI and Codex CLI are installed in the
+    # agent Docker container (docker/agent/Dockerfile). Actual container execution is
     # gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS — providers
     # not in that set are filtered out upstream (UserSetting, ProvidersController)
     # before reaching provider_order.
     AGENT_COMMANDS = {
       "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
+      "codex" => %w[codex --quiet --full-auto],
       "cursor" => %w[cursor-agent --message],
       "aider" => %w[aider --yes --no-auto-commits --message]
     }.freeze
