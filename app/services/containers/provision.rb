@@ -68,6 +68,15 @@ module Containers
       end
     end
 
+    # Bundles watchdog shared state (mutex, refs, timeouts) into a single
+    # object to keep start_watchdog's parameter list under 4.
+    WatchdogContext = Struct.new(
+      :container, :mutex, :output_received_ref, :last_activity_ref,
+      :exec_completed_ref, :timeout_reason_setter,
+      :startup_timeout, :idle_timeout, :wall_clock_timeout, :started_at_ref,
+      keyword_init: true
+    )
+
     # Default resource limits (per issue #23 requirements)
     DEFAULTS = {
       memory_bytes: Integer(ENV.fetch("CONTAINER_MEMORY_BYTES", 4 * 1024 * 1024 * 1024)), # 4GB RAM
@@ -185,19 +194,21 @@ module Containers
       timeout_reason_ref = -> { timeout_reason }
       watchdog = nil
 
+      watchdog_ctx = WatchdogContext.new(
+        container: container,
+        mutex: watchdog_mutex,
+        output_received_ref: -> { output_received },
+        last_activity_ref: -> { last_activity_at },
+        exec_completed_ref: -> { exec_completed },
+        timeout_reason_setter: ->(reason) { timeout_reason = reason },
+        startup_timeout: startup_timeout,
+        idle_timeout: idle_timeout,
+        wall_clock_timeout: timeout,
+        started_at_ref: -> { started_at }
+      )
+
       begin
-        watchdog = start_watchdog(
-          container: container,
-          watchdog_mutex: watchdog_mutex,
-          output_received_ref: -> { output_received },
-          last_activity_ref: -> { last_activity_at },
-          exec_completed_ref: -> { exec_completed },
-          timeout_reason_setter: ->(reason) { timeout_reason = reason },
-          startup_timeout: startup_timeout,
-          idle_timeout: idle_timeout,
-          wall_clock_timeout: timeout,
-          started_at_ref: -> { started_at }
-        )
+        watchdog = start_watchdog(watchdog_ctx)
 
         exec_result = nil
         exec_result = container.exec(cmd_array, wait: timeout) do |stream_type, chunk|
@@ -281,6 +292,15 @@ module Containers
           )
           raise
         end
+
+        # If exec raised after the overall wall-clock deadline and the watchdog
+        # has not already classified this as a startup/idle timeout, treat it
+        # as a wall-clock timeout rather than a generic execution failure.
+        check_deadline_exceeded!(
+          watchdog_mutex, output_received, last_activity_at, started_at,
+          startup_timeout, idle_timeout, timeout
+        )
+
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
       ensure
@@ -753,33 +773,31 @@ module Containers
     # or re-wrapped by the HTTP library (Excon) during blocking I/O.
     #
     # Returns nil if no timeouts are configured.
-    def start_watchdog(container:, watchdog_mutex:, output_received_ref:,
-      last_activity_ref:, exec_completed_ref:, timeout_reason_setter:,
-      startup_timeout:, idle_timeout:, wall_clock_timeout:, started_at_ref:)
-      return nil unless startup_timeout || idle_timeout || wall_clock_timeout
+    def start_watchdog(ctx)
+      return nil unless ctx.startup_timeout || ctx.idle_timeout || ctx.wall_clock_timeout
 
       Thread.new do
         loop do
           sleep watchdog_poll_interval
 
-          should_fire = watchdog_mutex.synchronize do
-            if exec_completed_ref.call
+          should_fire = ctx.mutex.synchronize do
+            if ctx.exec_completed_ref.call
               false
             else
               now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-              elapsed = now - last_activity_ref.call
-              total_elapsed = now - started_at_ref.call
+              elapsed = now - ctx.last_activity_ref.call
+              total_elapsed = now - ctx.started_at_ref.call
 
-              reason = if !output_received_ref.call && startup_timeout && elapsed >= startup_timeout
+              reason = if !ctx.output_received_ref.call && ctx.startup_timeout && elapsed >= ctx.startup_timeout
                 :startup
-              elsif output_received_ref.call && idle_timeout && elapsed >= idle_timeout
+              elsif ctx.output_received_ref.call && ctx.idle_timeout && elapsed >= ctx.idle_timeout
                 :idle
-              elsif wall_clock_timeout && total_elapsed >= wall_clock_timeout
+              elsif ctx.wall_clock_timeout && total_elapsed >= ctx.wall_clock_timeout
                 :wall_clock
               end
 
               if reason
-                timeout_reason_setter.call(reason)
+                ctx.timeout_reason_setter.call(reason)
                 true
               else
                 false
@@ -792,10 +810,10 @@ module Containers
           # Re-check exec_completed under the mutex to close the race window
           # between should_fire computation and container.stop — exec may have
           # returned between releasing the mutex above and reaching here.
-          break if watchdog_mutex.synchronize { exec_completed_ref.call }
+          break if ctx.mutex.synchronize { ctx.exec_completed_ref.call }
 
           begin
-            container.stop(timeout: 0)
+            ctx.container.stop(timeout: 0)
           rescue Docker::Error::DockerError => e
             log_system("container.watchdog.stop_failed", error: e.message)
           end
