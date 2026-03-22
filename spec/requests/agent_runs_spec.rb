@@ -28,7 +28,7 @@ RSpec.describe "AgentRuns" do
       it "shows agent runs across all projects" do
         create(:agent_run, project: project, agent_type: "claude_code", status: "completed")
         get agent_runs_path
-        expect(response.body).to include("Claude Code")
+        expect(response.body).to include(project.name)
       end
 
       it "shows empty state when no runs exist" do
@@ -130,9 +130,9 @@ RSpec.describe "AgentRuns" do
       end
 
       it "shows agent runs for the project" do
-        create(:agent_run, project: project, agent_type: "claude_code", status: "completed")
+        run = create(:agent_run, project: project, agent_type: "claude_code", status: "completed")
         get project_agent_runs_path(project)
-        expect(response.body).to include("Claude Code")
+        expect(response.body).to include(project_agent_run_path(project, run))
       end
 
       it "shows empty state when no runs exist" do
@@ -163,13 +163,13 @@ RSpec.describe "AgentRuns" do
       end
 
       it "sorts agent runs via Ransack sort params" do
-        create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
-        create(:agent_run, project: project, agent_type: "cursor", status: "completed", created_at: 1.day.ago)
+        older_run = create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
+        newer_run = create(:agent_run, project: project, agent_type: "cursor", status: "completed", created_at: 1.day.ago)
 
         get project_agent_runs_path(project), params: { q: { s: "created_at asc" } }
 
         expect(response).to have_http_status(:ok)
-        expect(response.body.index("Claude Code")).to be < response.body.index("Cursor")
+        expect(response.body.index(project_agent_run_path(project, older_run))).to be < response.body.index(project_agent_run_path(project, newer_run))
       end
 
       it "shows issue link in context column for create_issue goal runs" do
