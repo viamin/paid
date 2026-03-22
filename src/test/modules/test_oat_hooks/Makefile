@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/src/test/modules/test_oat_hooks/Makefile

@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/src/interfaces/ecpg/pgtypeslib/Makefile

@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/contrib/pg_stat_statements/Makefile
