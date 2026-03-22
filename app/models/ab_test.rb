@@ -15,6 +15,9 @@ class AbTest < ApplicationRecord
   has_many :ab_test_variants, dependent: :destroy
   has_many :ab_test_assignments, dependent: :destroy
 
+  accepts_nested_attributes_for :ab_test_variants, allow_destroy: true,
+    reject_if: ->(attrs) { attrs["prompt_version_id"].blank? && !ActiveModel::Type::Boolean.new.cast(attrs["_destroy"]) }
+
   validates :name, presence: true, length: { maximum: 255 }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :min_samples_per_variant, numericality: { only_integer: true, greater_than_or_equal_to: 2 }
@@ -28,6 +31,14 @@ class AbTest < ApplicationRecord
   scope :completed, -> { where(status: "completed") }
   scope :cancelled, -> { where(status: "cancelled") }
   scope :active, -> { where(status: %w[draft running]) }
+
+  def self.ransackable_attributes(auth_object = nil)
+    %w[name status created_at started_at completed_at]
+  end
+
+  def self.ransackable_associations(auth_object = nil)
+    %w[prompt]
+  end
 
   def draft?
     status == "draft"

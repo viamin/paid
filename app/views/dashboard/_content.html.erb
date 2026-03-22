@@ -1,0 +1,303 @@
+<div id="dashboard">
+  <%# Run Volume & Outcome %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Run Volume & Outcome</h2>
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Total Runs</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= number_with_delimiter(stats[:run_volume][:total]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Last 7 Days</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= number_with_delimiter(stats[:run_volume][:last_7_days]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Last 30 Days</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= number_with_delimiter(stats[:run_volume][:last_30_days]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Active Now</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-indigo-600">
+          <%= number_with_delimiter(stats[:run_volume][:active]) %>
+        </dd>
+      </div>
+    </div>
+
+    <%# Status breakdown %>
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-sm font-medium text-gray-500">Status Breakdown</h3>
+        <div class="mt-3 flex flex-wrap gap-4 text-sm">
+          <% %w[completed failed cancelled timeout queued pending running].each do |status| %>
+            <% count = stats[:run_volume][:by_status][status] || 0 %>
+            <% next if count.zero? %>
+            <div class="flex items-center gap-1.5">
+              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                <%= case status
+                    when 'completed' then 'bg-green-100 text-green-700'
+                    when 'failed' then 'bg-red-100 text-red-700'
+                    when 'cancelled' then 'bg-gray-100 text-gray-700'
+                    when 'timeout' then 'bg-yellow-100 text-yellow-700'
+                    when 'running' then 'bg-blue-100 text-blue-700'
+                    when 'pending' then 'bg-purple-100 text-purple-700'
+                    when 'queued' then 'bg-indigo-100 text-indigo-700'
+                    end %>">
+                <%= status.capitalize %>
+              </span>
+              <span class="font-semibold text-gray-900"><%= number_with_delimiter(count) %></span>
+            </div>
+          <% end %>
+          <div class="flex items-center gap-1.5">
+            <span class="text-gray-500">Failure rate:</span>
+            <span class="font-semibold <%= stats[:run_volume][:failure_rate] > 25 ? 'text-red-600' : 'text-gray-900' %>">
+              <%= stats[:run_volume][:failure_rate] %>%
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <%# Cost & Token Usage %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Cost & Token Usage</h2>
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          $<%= format("%.2f", stats[:cost_and_tokens][:total_cost_cents] / 100.0) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Cost (30 days)</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          $<%= format("%.2f", stats[:cost_and_tokens][:trailing_30d_cost_cents] / 100.0) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Tokens (30 days)</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= number_with_delimiter(stats[:cost_and_tokens][:trailing_30d_tokens]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Avg Cost / Run</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          $<%= format("%.2f", stats[:cost_and_tokens][:avg_cost_per_run_cents] / 100.0) %>
+        </dd>
+      </div>
+    </div>
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Avg Tokens / Run</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= number_with_delimiter(stats[:cost_and_tokens][:avg_tokens_per_run]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Avg Iterations / Run</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= stats[:cost_and_tokens][:avg_iterations_per_run] %>
+        </dd>
+      </div>
+    </div>
+  </div>
+
+  <%# Duration Percentiles %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Duration (Completed Runs)</h2>
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <% { "Median (p50)" => :p50, "p75" => :p75, "p90" => :p90, "Average" => :avg }.each do |label, key| %>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500"><%= label %></dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= format_duration(stats[:duration_percentiles][key]) %>
+          </dd>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <%# Phase Breakdown %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Run Phase Breakdown</h2>
+    <p class="mt-1 text-sm text-gray-500">Separate queue and setup overhead from prompt preparation, agent execution, and wrap-up work.</p>
+    <% phase_groups = stats[:phase_breakdown].keys %>
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <% phase_groups.each do |phase_group| %>
+        <% phase_stats = stats[:phase_breakdown][phase_group] %>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500"><%= phase_group_label(phase_group) %></dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= format_duration(phase_stats[:avg_seconds]) %>
+          </dd>
+          <dd class="mt-2 text-xs text-gray-500">
+            p50 <%= format_duration(phase_stats[:p50_seconds]) %>
+            · p75 <%= format_duration(phase_stats[:p75_seconds]) %>
+            · p90 <%= format_duration(phase_stats[:p90_seconds]) %>
+          </dd>
+        </div>
+      <% end %>
+    </div>
+
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-sm font-medium text-gray-500">Average End-to-End Composition</h3>
+        <% total_avg_seconds = phase_groups.sum { |group| stats[:phase_breakdown][group][:avg_seconds] } %>
+        <div class="mt-4 h-4 overflow-hidden rounded-full bg-gray-100"
+             role="img"
+             aria-label="Average end-to-end composition by phase">
+          <% phase_groups.each do |phase_group| %>
+            <% avg_seconds = stats[:phase_breakdown][phase_group][:avg_seconds] %>
+            <% width_pct = total_avg_seconds.zero? ? 0 : ((avg_seconds.to_f / total_avg_seconds) * 100).round(1) %>
+            <div class="<%= phase_group_bar_style(phase_group) %> h-4 float-left"
+                 style="width: <%= width_pct %>%"
+                 title="<%= "#{phase_group_label(phase_group)}: #{format_duration(avg_seconds)}" %>"
+                 aria-label="<%= "#{phase_group_label(phase_group)} average duration #{format_duration(avg_seconds)} (#{width_pct}%) of total run time" %>"
+                 tabindex="0"></div>
+          <% end %>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-3 text-sm text-gray-600">
+          <% phase_groups.each do |phase_group| %>
+            <div class="flex items-center gap-2">
+              <span class="<%= phase_group_bar_style(phase_group) %> h-3 w-3 rounded-full"></span>
+              <span><%= phase_group_label(phase_group) %>: <span class="font-medium text-gray-900"><%= format_duration(stats[:phase_breakdown][phase_group][:avg_seconds]) %></span></span>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <%# Issue Completion %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Issue Completion</h2>
+    <% ic = stats[:issue_completion] %>
+    <% if ic[:merged_count] > 0 %>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Merged PRs (with agent runs)</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-green-600">
+            <%= ic[:merged_count] %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Avg Runs / Issue</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= ic[:runs_per_issue][:avg] %>
+          </dd>
+          <dd class="mt-1 text-xs text-gray-500">
+            min <%= ic[:runs_per_issue][:min] %> / max <%= ic[:runs_per_issue][:max] %> / median <%= ic[:runs_per_issue][:median] %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Avg Time to Merge</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= format_duration(ic[:time_to_merge][:avg_seconds]) %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Avg Agent Time / Issue</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= format_duration(ic[:agent_run_seconds][:avg_seconds]) %>
+          </dd>
+        </div>
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <h3 class="text-sm font-medium text-gray-500">Time to Merge Percentiles</h3>
+          <div class="mt-3 flex flex-wrap gap-6 text-sm">
+            <% { "p50" => :p50_seconds, "p90" => :p90_seconds }.each do |label, key| %>
+              <div>
+                <span class="text-gray-500"><%= label %>:</span>
+                <span class="font-semibold text-gray-900">
+                  <%= format_duration(ic[:time_to_merge][key]) %>
+                </span>
+              </div>
+            <% end %>
+          </div>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <h3 class="text-sm font-medium text-gray-500">Agent Time Percentiles</h3>
+          <div class="mt-3 flex flex-wrap gap-6 text-sm">
+            <% { "p50" => :p50_seconds, "p90" => :p90_seconds }.each do |label, key| %>
+              <div>
+                <span class="text-gray-500"><%= label %>:</span>
+                <span class="font-semibold text-gray-900">
+                  <%= format_duration(ic[:agent_run_seconds][key]) %>
+                </span>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    <% else %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 text-sm text-gray-500">No merged PRs with agent runs yet.</div>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
+    <%# Runs by Agent Type %>
+    <div>
+      <h2 class="text-lg font-semibold text-gray-900">Runs by Agent Type</h2>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <% if stats[:runs_by_agent_type].any? %>
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Agent</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Runs</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% stats[:runs_by_agent_type].each do |agent_type, count| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= agent_type.titleize %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= number_with_delimiter(count) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        <% else %>
+          <div class="px-4 py-5 text-sm text-gray-500">No agent runs yet.</div>
+        <% end %>
+      </div>
+    </div>
+
+    <%# Runs by Project %>
+    <div>
+      <h2 class="text-lg font-semibold text-gray-900">Top Projects by Runs</h2>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <% if stats[:runs_by_project].any? %>
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Project</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Runs</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% stats[:runs_by_project].each do |project_name, count| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= project_name %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= number_with_delimiter(count) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        <% else %>
+          <div class="px-4 py-5 text-sm text-gray-500">No projects with runs yet.</div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>
