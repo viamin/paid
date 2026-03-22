@@ -136,14 +136,11 @@ class ProvidersController < ApplicationController
   def validate_provider_key_enabled!
     return if @provider.provider_key.blank?
     return if Provider.addable_provider_key?(@provider.provider_key)
+    # Unsupported keys are caught by the model's inclusion validation;
+    # here we only flag supported-but-not-yet-installed providers.
+    return unless Provider.supported_provider_key?(@provider.provider_key)
 
-    message = if Provider.supported_provider_key?(@provider.provider_key)
-      "is not available in paid-agent yet"
-    else
-      "is not supported"
-    end
-
-    @provider.errors.add(:provider_key, message)
+    @provider.errors.add(:provider_key, "is not available in paid-agent yet")
   end
 
   def validate_container_executable!
