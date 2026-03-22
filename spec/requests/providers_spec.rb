@@ -187,6 +187,25 @@ RSpec.describe "Providers" do
         expect(json["message"]).to eq("Invalid API key")
       end
 
+      it "rate-limits repeated test requests for the same provider" do
+        provider = user.providers.find_by!(provider_key: "claude")
+        harness_response = AgentHarness::Response.new(
+          output: "PING OK",
+          exit_code: 0,
+          duration: 1.0,
+          provider: :claude
+        )
+        allow(AgentHarness).to receive(:send_message).and_return(harness_response)
+
+        post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
+        expect(response).to have_http_status(:ok)
+
+        post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
+        expect(response).to have_http_status(:too_many_requests)
+        json = JSON.parse(response.body)
+        expect(json["error_type"]).to eq("rate_limited")
+      end
+
       it "prevents testing another user's provider" do
         other_user = create(:user)
         other_provider = create(:provider, user: other_user, provider_key: "cursor")
