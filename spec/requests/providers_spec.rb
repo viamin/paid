@@ -149,6 +149,18 @@ RSpec.describe "Providers" do
       expect(provider.reload.enabled_for_agent_runs).to be(false)
     end
 
+    it "rejects enabling agent runs on a provider that has become unsupported" do
+      provider = user.providers.create!(provider_key: "cursor")
+
+      allow(ProviderSupport).to receive(:supported_provider_key?).and_call_original
+      allow(ProviderSupport).to receive(:supported_provider_key?).with("cursor").and_return(false)
+
+      patch provider_path(provider), params: { provider: { enabled_for_agent_runs: true } }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("cannot be enabled for an unsupported provider")
+    end
+
     it "does not allow changing provider_key after create" do
       provider = user.providers.find_by!(provider_key: "claude")
       user.providers.create!(provider_key: "cursor")
