@@ -13,6 +13,11 @@ module Activities
 
     COPILOT_LOGIN = "copilot"
 
+    # Default GraphQL node ID for the copilot-pull-request-reviewer bot.
+    # Override per environment via config.x.copilot_bot_node_id.
+    # To verify: gh api users/copilot-pull-request-reviewer%5Bbot%5D --jq '.node_id'
+    COPILOT_DEFAULT_NODE_ID = "BOT_kgDOCnlnWA"
+
     # Maps bot reviewer logins to a config key used to resolve their GraphQL
     # node ID at runtime (see #bot_node_id_for). Indirection allows the node
     # ID to be overridden per environment via Rails configuration.
@@ -34,18 +39,25 @@ module Activities
       return { requested: [], already_pending: already_pending } if needed.empty?
 
       bots, humans = needed.partition { |r| BOT_REVIEWERS.key?(r) }
+      requested = []
 
-      request_human_reviews(client, project, pr_number, humans) if humans.any?
-      request_bot_reviews(client, project, pr_number, bots) if bots.any?
+      if humans.any?
+        request_human_reviews(client, project, pr_number, humans)
+        requested.concat(humans)
+      end
+
+      if bots.any? && request_bot_reviews(client, project, pr_number, bots)
+        requested.concat(bots)
+      end
 
       logger.info(
         message: "pr_review.review_requested",
         project_id: project.id,
         pr_number: pr_number,
-        reviewers: needed
-      )
+        reviewers: requested
+      ) if requested.any?
 
-      { requested: needed }
+      { requested: requested }
     rescue GithubClient::ApiError => e
       if e.status == 422
         logger.warn(
@@ -70,12 +82,26 @@ module Activities
     def request_bot_reviews(client, project, pr_number, reviewers)
       bot_node_ids = reviewers.map { |r| bot_node_id_for(BOT_REVIEWERS.fetch(r)) }
       client.request_bot_review(project.full_name, pr_number, bot_node_ids: bot_node_ids)
+      true
+    rescue GithubClient::ApiError => e
+      if e.status == 422
+        logger.warn(
+          message: "pr_review.bot_review_unprocessable",
+          project_id: project.id,
+          pr_number: pr_number,
+          reviewers: reviewers,
+          error: e.message
+        )
+        false
+      else
+        raise
+      end
     end
 
     def bot_node_id_for(key)
       case key
       when :copilot
-        Rails.configuration.x.copilot_bot_node_id.presence || "BOT_kgDOCnlnWA"
+        Rails.configuration.x.copilot_bot_node_id.presence || COPILOT_DEFAULT_NODE_ID
       else
         raise ArgumentError, "Unsupported bot reviewer key: #{key.inspect}"
       end
