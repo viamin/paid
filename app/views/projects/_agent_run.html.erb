@@ -6,9 +6,6 @@
     <%= agent_run_trigger_badge(agent_run.trigger_type) %>
   </td>
   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-    <%= agent_run.agent_type.titleize %>
-  </td>
-  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
     <% if agent_run.create_pr_goal? %>
       PR
     <% elsif agent_run.create_issue_goal? %>
@@ -31,20 +28,6 @@
       <%= agent_run.duration_seconds %>s
     <% elsif agent_run.running? && agent_run.started_at.present? %>
       <%= (Time.current - agent_run.started_at).to_i %>s
-    <% else %>
-      <span class="text-gray-400">-</span>
-    <% end %>
-  </td>
-  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-    <% if agent_run.tokens_input.present? || agent_run.tokens_output.present? %>
-      <%= number_with_delimiter((agent_run.tokens_input || 0) + (agent_run.tokens_output || 0)) %>
-    <% else %>
-      <span class="text-gray-400">-</span>
-    <% end %>
-  </td>
-  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-    <% if agent_run.cost_cents.present? && agent_run.cost_cents > 0 %>
-      $<%= format("%.2f", agent_run.cost_cents / 100.0) %>
     <% else %>
       <span class="text-gray-400">-</span>
     <% end %>

@@ -18,19 +18,10 @@
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Project</th>
                 <% end %>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                  <%= sort_link_to "Agent", :agent_type, q %>
-                </th>
-                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                   Context
                 </th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                   <%= sort_link_to "Duration", :duration_seconds, q %>
-                </th>
-                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                  <%= sort_link_to "Tokens", :tokens_total, q %>
-                </th>
-                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                  <%= sort_link_to "Cost", :cost_cents, q %>
                 </th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                   <%= sort_link_to "Created", :created_at, q %>
@@ -55,9 +46,6 @@
                     </td>
                   <% end %>
                   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                    <%= run.agent_type.titleize %>
-                  </td>
-                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                     <% context = agent_run_context(run) %>
                     <% case context[:type] %>
                     <% when :link %>
@@ -75,20 +63,6 @@
                       <%= run.duration_seconds %>s
                     <% elsif run.running? && run.started_at.present? %>
                       <%= (Time.current - run.started_at).to_i %>s
-                    <% else %>
-                      <span class="text-gray-400">-</span>
-                    <% end %>
-                  </td>
-                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                    <% if run.tokens_input.present? || run.tokens_output.present? %>
-                      <%= number_with_delimiter((run.tokens_input || 0) + (run.tokens_output || 0)) %>
-                    <% else %>
-                      <span class="text-gray-400">-</span>
-                    <% end %>
-                  </td>
-                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                    <% if run.cost_cents.present? && run.cost_cents > 0 %>
-                      $<%= format("%.2f", run.cost_cents / 100.0) %>
                     <% else %>
                       <span class="text-gray-400">-</span>
                     <% end %>
