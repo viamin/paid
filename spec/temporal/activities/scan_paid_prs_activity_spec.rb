@@ -681,6 +681,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when review bot data cannot be fetched and CI is green" do
+      before do
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error, "GitHub review API unavailable")
+      end
+
+      it "does not advance the PR out of draft" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "when no review bot review exists and CI is failing" do
       before do
         create(:issue, :pull_request,
@@ -1015,9 +1036,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft_review_count: 0)
       end
 
-      it "returns ready_for_owner trigger when CI is green" do
+      it "still requires a clean bot review before returning ready_for_owner" do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
           review_threads: []
         )
 
@@ -1025,12 +1047,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
-        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
 
       it "does not return ready_for_owner when CI is failing" do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "failure" } ],
+          reviews: [],
           review_threads: []
         )
 
@@ -1041,9 +1065,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:type]).to eq("ci_failure")
       end
 
-      it "ignores review threads and returns ready_for_owner when CI is green" do
+      it "ignores review threads but still requires a clean bot review when CI is green" do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
           review_threads: [
             {
               id: "thread_1",
@@ -1051,6 +1076,20 @@ RSpec.describe Activities::ScanPaidPrsActivity do
               comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "viamin" } ]
             }
           ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+
+      it "returns ready_for_owner when CI is green and the latest bot review is clean" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: []
         )
 
         result = activity.execute(project_id: project.id)
