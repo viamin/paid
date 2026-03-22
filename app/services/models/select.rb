@@ -43,8 +43,23 @@ module Models
         return override_result(model, "Project requires specific model") if model
       end
 
-      # Use rules-based selection
-      Models::RulesBasedSelector.call(agent_run: agent_run)
+      # Check for preferred models
+      preferred = preferred_model_result(project)
+      return preferred if preferred
+
+      # Try meta-agent selection, fall back to rules-based
+      Models::MetaAgentSelector.call(agent_run: agent_run) ||
+        Models::RulesBasedSelector.call(agent_run: agent_run)
+    end
+
+    def preferred_model_result(project)
+      preferred_ids = project.model_preferences["preferred_model_ids"]
+      return nil unless preferred_ids.is_a?(Array) && preferred_ids.any?
+
+      model = LlmModel.active.where(model_id: preferred_ids).order(Arel.sql("capability_score DESC NULLS LAST")).first
+      return nil unless model
+
+      override_result(model, "Project preferred model: #{model.display_name}")
     end
 
     def override_result(model, reason)
