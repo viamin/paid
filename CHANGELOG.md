@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.6.1](https://github.com/viamin/paid/compare/v0.6.0...v0.6.1) (2026-03-22)
+
+
+### Bug Fixes
+
+* **agent-execution:** cap blocking_issues log output to prevent large log lines ([4e1e6a2](https://github.com/viamin/paid/commit/4e1e6a2b05928050eb58af18afe819f3ab44de32))
+* **agent-execution:** check issue dependencies before triggering agent work ([a29eccd](https://github.com/viamin/paid/commit/a29eccd7fc9dba5d34cd1c2732b2ef80b2e7c6b7))
+* **agent-execution:** check issue dependencies before triggering agent work ([e01f476](https://github.com/viamin/paid/commit/e01f4769022ebeea5fdb424fc7a6ba3b867d488f))
+* **agent-execution:** check labels before dependencies to avoid unnecessary queries ([eebb03f](https://github.com/viamin/paid/commit/eebb03f8661961fa58a0fc8dbc42cf5591564c09))
+* **agent-execution:** clarify intentional label-before-dependency ordering ([ceb7ffa](https://github.com/viamin/paid/commit/ceb7ffa3ef36740cee0b3d1168c81c833739afec))
+* **agent-execution:** limit blocking_issues query and fix README docs ([f5342b9](https://github.com/viamin/paid/commit/f5342b9190433daeaf3181c6f04969b96190a401))
+* **agent-execution:** reduce blocking_issues queries by plucking first ([4cd588a](https://github.com/viamin/paid/commit/4cd588a9e7017bbfb482261aaf21e6057fd752b2))
+* **providers:** address PR review feedback for addable boundary ([da48dbe](https://github.com/viamin/paid/commit/da48dbeed93750ee7d710ba0d1113c50739987c6))
+* **providers:** block enabling flags on unsupported providers during update ([0e8504d](https://github.com/viamin/paid/commit/0e8504deeadefe5c3a8f66f0ae923a297a5559c4))
+* **providers:** deduplicate provider_key error for unsupported keys ([45880c5](https://github.com/viamin/paid/commit/45880c5a1206cf73e3b21e53669c6ab9f500b57b))
+* **providers:** improve unsupported provider validation message and test coverage ([7937450](https://github.com/viamin/paid/commit/7937450de8089841eb1ef7fd135f686873aba957))
+* **providers:** only offer paid-agent-ready providers ([e51c74d](https://github.com/viamin/paid/commit/e51c74dc3684f88cc405613c6c01f575ff50f101))
+* **providers:** only offer paid-agent-ready providers ([5f34cb9](https://github.com/viamin/paid/commit/5f34cb95b0e29ab7332e37b64dd7fce72a840d2f))
+* **providers:** remove accidentally committed PostgreSQL build artifacts ([6e103e5](https://github.com/viamin/paid/commit/6e103e5ec2ed71ac453dd6433e13dd78acb2fb28))
+* **providers:** remove build artifacts and use higher-level addable boundary check ([c6dd7b1](https://github.com/viamin/paid/commit/c6dd7b1bcb5724a644b96d14448a3e8472ef6306))
+* **providers:** remove re-added PostgreSQL build artifacts ([a73471d](https://github.com/viamin/paid/commit/a73471d9bbb8017bd664f3cf5aa7598e5aaa2e41))
+* **providers:** remove unused container_executable_provider_key? stubs from create specs ([c360905](https://github.com/viamin/paid/commit/c360905e55ca8656b538a5756d5cdbe9b589137a))
+* **providers:** skip container-executable check for unsupported keys ([009f4ff](https://github.com/viamin/paid/commit/009f4ffd434c1415235f0dde772e0c67c5a36ef4))
+* **providers:** skip inclusion validation when provider_key is blank ([c995cb2](https://github.com/viamin/paid/commit/c995cb255c1263bfc3ee9d54651e8661bce33a26))
+
 ## [0.6.0](https://github.com/viamin/paid/compare/v0.5.1...v0.6.0) (2026-03-22)
 
 
