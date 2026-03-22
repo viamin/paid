@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class TokenUsageTracker
-  # Default pricing per million tokens (Claude 3.5 Sonnet)
+  # Default pricing per million tokens (Claude Sonnet 4.6 fallback)
   DEFAULT_INPUT_COST_PER_MILLION = BigDecimal("3.00")
   DEFAULT_OUTPUT_COST_PER_MILLION = BigDecimal("15.00")
 
@@ -18,7 +18,7 @@ class TokenUsageTracker
     llm_model     = usage[:llm_model]
     request_type  = usage.fetch(:request_type, nil).presence || "agent"
     metadata      = usage.fetch(:metadata, nil).presence || {}
-    cost_cents    = calculate_cost(tokens_input, tokens_output)
+    cost_cents    = calculate_cost(tokens_input, tokens_output, llm_model: llm_model)
 
     ActiveRecord::Base.transaction do
       record_per_request_usage(
@@ -57,11 +57,42 @@ class TokenUsageTracker
     end
   end
 
-  def self.calculate_cost(input_tokens, output_tokens)
-    input_cost = BigDecimal(input_tokens.to_s) / BigDecimal("1000000") * DEFAULT_INPUT_COST_PER_MILLION
-    output_cost = BigDecimal(output_tokens.to_s) / BigDecimal("1000000") * DEFAULT_OUTPUT_COST_PER_MILLION
-    ((input_cost + output_cost) * 100).round.to_i
+  # Thread-safe in-memory cache of LlmModel records keyed by model_id string.
+  # Avoids a DB query per tracked request in the high-volume proxy path.
+  # Uses Concurrent::Map for safe concurrent access from Puma threads.
+  # Only caches hits (not misses) so: (1) cache size is bounded to the number
+  # of known LlmModel records, preventing DoS from arbitrary model strings;
+  # (2) newly synced models are picked up on the next request without restart.
+  @model_cache = Concurrent::Map.new
+
+  def self.calculate_cost(input_tokens, output_tokens, llm_model: nil, model_id: nil)
+    model = llm_model
+    model = lookup_model(model) if model.is_a?(String)
+    model ||= lookup_model(model_id) if model_id.present?
+
+    if model&.input_cost_per_million && model&.output_cost_per_million
+      model.estimated_cost(input_tokens, output_tokens)
+    else
+      input_cost = BigDecimal(input_tokens.to_s) / BigDecimal("1000000") * DEFAULT_INPUT_COST_PER_MILLION
+      output_cost = BigDecimal(output_tokens.to_s) / BigDecimal("1000000") * DEFAULT_OUTPUT_COST_PER_MILLION
+      ((input_cost + output_cost) * 100).round.to_i
+    end
   end
+
+  # Clears the cached model pricing data. Called by Models::SeedKnownModels
+  # after syncing so updated pricing takes effect without process restart.
+  def self.clear_model_cache!
+    @model_cache.clear
+  end
+
+  def self.lookup_model(model_id)
+    return nil if model_id.blank?
+
+    @model_cache.fetch(model_id) do
+      LlmModel.find_by(model_id: model_id)&.tap { |m| @model_cache[model_id] = m }
+    end
+  end
+  private_class_method :lookup_model
 
   def self.record_per_request_usage(agent_run:, input_tokens:, output_tokens:, cost_cents:, llm_model:, request_type:, metadata:)
     TokenUsage.create!(

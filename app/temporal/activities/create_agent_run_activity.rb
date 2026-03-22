@@ -69,6 +69,11 @@ module Activities
       ) do
         issue&.update!(paid_state: "in_progress")
 
+        # Select model for this run (creates a ModelSelection record for cost
+        # tracking and audit). Non-fatal — runs proceed with default pricing
+        # if no LlmModel records exist yet.
+        select_model(agent_run)
+
         logger.info(
           message: "agent_execution.agent_run_created",
           agent_run_id: agent_run.id,
@@ -104,6 +109,7 @@ module Activities
       end
 
       agent_run.issue&.update!(paid_state: "in_progress")
+      select_model(agent_run) unless agent_run.model_selection
 
       logger.info(
         message: "agent_execution.queued_run_resumed",
@@ -116,6 +122,18 @@ module Activities
         agent_run_id: agent_run.id,
         provider_attempt_count: provider_attempt_count_for(agent_run.agent_type, resolve_user_settings(agent_run.project))
       }
+    end
+
+    def select_model(agent_run)
+      Models::Select.call(agent_run: agent_run)
+    rescue => e
+      logger.warn(
+        message: "agent_execution.model_selection_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message,
+        backtrace: e.backtrace&.first(5)
+      )
     end
 
     def resolve_user_settings(project)

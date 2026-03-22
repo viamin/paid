@@ -16,11 +16,13 @@ class AgentRun < ApplicationRecord
   has_many :ab_test_assignments, dependent: :destroy
   has_many :quality_metrics, dependent: :destroy
   has_one :worktree, dependent: :nullify
+  has_one :model_selection, dependent: :destroy
 
   before_create :generate_proxy_token
 
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
+  after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_finished?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -635,11 +637,25 @@ class AgentRun < ApplicationRecord
       .update_all(last_agent_run_at: created_at, updated_at: Time.current)
   end
 
+  def just_finished?
+    previous_changes.key?("status") && finished?
+  end
+
+  def enqueue_quality_metrics_collection
+    QualityMetricsCollectionJob.perform_later(id)
+  end
+
   def broadcast_project_updates
     if previous_changes.key?("status") || previous_changes.key?("issue_id") || previous_changes.key?("agent_type")
       project.broadcast_agent_runs_update
       project.broadcast_agent_runs_list_update
       project.broadcast_stats_update
+
+      # Only broadcast dashboard stats on terminal status transitions to avoid
+      # a burst of expensive aggregate queries during intermediate transitions
+      # (queued→pending→running→completed). The Turbo Stream partials for
+      # project-level stats already cover the real-time detail view.
+      DashboardBroadcastJob.perform_later(project.account_id) if finished?
     end
 
     project.broadcast_agent_run_detail_update(self)

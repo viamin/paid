@@ -1,0 +1,106 @@
+<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
+  <div class="sm:flex sm:items-center">
+    <div class="sm:flex-auto">
+      <h1 class="text-2xl font-semibold leading-6 text-gray-900">Quality Metrics</h1>
+      <p class="mt-2 text-sm text-gray-700">Track agent output quality across prompts and models.</p>
+    </div>
+  </div>
+
+  <% if @projects.any? %>
+    <div class="mt-4">
+      <%= form_tag quality_dashboard_path, method: :get, class: "flex items-center gap-3" do %>
+        <label for="project_id" class="text-sm font-medium text-gray-700">Project</label>
+        <%= select_tag :project_id, options_from_collection_for_select(@projects, :id, :name, @project&.id), class: "rounded-md border-gray-300 text-sm", onchange: "this.form.submit()" %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if @stats %>
+    <%# Overview Stats %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Overview</h2>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Average Quality Score</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= @stats[:overview][:average_score] || "—" %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Total Metrics Collected</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= number_with_delimiter(@stats[:overview][:total_metrics]) %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Human Feedback</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= number_with_delimiter(@stats[:human_feedback][:total]) %>
+          </dd>
+        </div>
+      </div>
+    </div>
+
+    <%# Trends %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Recent Trends</h2>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <% if @stats[:trends].any? %>
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Date</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Score</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% @stats[:trends].each do |row| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-900"><%= row[:date] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:score] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:metric_type] %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        <% else %>
+          <div class="px-4 py-5 text-sm text-gray-500">No trend data yet.</div>
+        <% end %>
+      </div>
+    </div>
+
+    <%# Prompt Comparison %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Prompt Comparison</h2>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <% if @stats[:prompt_comparison].any? %>
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Prompt</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Version</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Score</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Samples</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% @stats[:prompt_comparison].each do |row| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= row[:prompt_name] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">v<%= row[:version_number] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:avg_score] %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= row[:sample_size] %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        <% else %>
+          <div class="px-4 py-5 text-sm text-gray-500">No prompt comparison data yet.</div>
+        <% end %>
+      </div>
+    </div>
+  <% else %>
+    <div class="mt-8 text-sm text-gray-500">No projects found. Create a project to start tracking quality metrics.</div>
+  <% end %>
+</div>
