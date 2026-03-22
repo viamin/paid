@@ -77,6 +77,14 @@ module Containers
       keyword_init: true
     )
 
+    # Bundles timeout-check state shared between raise_if_watchdog_timeout!
+    # and check_deadline_exceeded! to keep their parameter lists under 4.
+    TimeoutCheckState = Struct.new(
+      :mutex, :timeout_reason_ref, :startup_timeout, :idle_timeout,
+      :timeout, :started_at,
+      keyword_init: true
+    )
+
     # Default resource limits (per issue #23 requirements)
     DEFAULTS = {
       memory_bytes: Integer(ENV.fetch("CONTAINER_MEMORY_BYTES", 4 * 1024 * 1024 * 1024)), # 4GB RAM
@@ -194,6 +202,15 @@ module Containers
       timeout_reason_ref = -> { timeout_reason }
       watchdog = nil
 
+      timeout_check = TimeoutCheckState.new(
+        mutex: watchdog_mutex,
+        timeout_reason_ref: timeout_reason_ref,
+        startup_timeout: startup_timeout,
+        idle_timeout: idle_timeout,
+        timeout: timeout,
+        started_at: started_at
+      )
+
       watchdog_ctx = WatchdogContext.new(
         container: container,
         mutex: watchdog_mutex,
@@ -234,19 +251,11 @@ module Containers
 
         # Check if the watchdog stopped the container (exec returns normally
         # with a non-zero exit code when the process is killed).
-        raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout, timeout)
+        raise_if_watchdog_timeout!(timeout_check)
 
         # The watchdog polls periodically, so exec may return between ticks with a
         # deadline already exceeded. Check the deadline directly in the main thread.
-        check_deadline_exceeded!(
-          watchdog_mutex,
-          output_received,
-          last_activity_at,
-          started_at,
-          startup_timeout,
-          idle_timeout,
-          timeout
-        )
+        check_deadline_exceeded!(timeout_check, output_received: output_received, last_activity_at: last_activity_at)
 
         # container.exec returns [stdout_array, stderr_array, exit_code].
         # The third element is the actual exec exit code, unlike
@@ -282,7 +291,7 @@ module Containers
         # Log partial output first — raise_if_watchdog_timeout! may re-raise.
         log_partial_output(stdout_buffer, stderr_buffer)
         begin
-          raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout, timeout)
+          raise_if_watchdog_timeout!(timeout_check)
         rescue StartupTimeoutError, IdleTimeoutError => timeout_error
           timeout_value = timeout_error.is_a?(StartupTimeoutError) ? startup_timeout : idle_timeout
           log_system(
@@ -296,10 +305,7 @@ module Containers
         # If exec raised after the overall wall-clock deadline and the watchdog
         # has not already classified this as a startup/idle timeout, treat it
         # as a wall-clock timeout rather than a generic execution failure.
-        check_deadline_exceeded!(
-          watchdog_mutex, output_received, last_activity_at, started_at,
-          startup_timeout, idle_timeout, timeout
-        )
+        check_deadline_exceeded!(timeout_check, output_received: output_received, last_activity_at: last_activity_at)
 
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
@@ -719,44 +725,45 @@ module Containers
     # stops the container to unblock the exec (which may surface as a Docker error
     # or a normal return with a non-zero exit code).
     #
-    # timeout_reason_ref is a lambda that reads the shared timeout_reason variable
-    # under the mutex, ensuring we see the latest value rather than a stale snapshot.
-    def raise_if_watchdog_timeout!(watchdog_mutex, timeout_reason_ref, startup_timeout, idle_timeout, timeout)
-      reason = watchdog_mutex.synchronize { timeout_reason_ref.call }
+    # timeout_check.timeout_reason_ref is a lambda that reads the shared
+    # timeout_reason variable under the mutex, ensuring we see the latest
+    # value rather than a stale snapshot.
+    def raise_if_watchdog_timeout!(timeout_check)
+      reason = timeout_check.mutex.synchronize { timeout_check.timeout_reason_ref.call }
       return unless reason
 
       case reason
       when :startup
-        raise StartupTimeoutError, "No output received within #{startup_timeout} seconds"
+        raise StartupTimeoutError, "No output received within #{timeout_check.startup_timeout} seconds"
       when :idle
-        raise IdleTimeoutError, "No output received for #{idle_timeout} seconds"
+        raise IdleTimeoutError, "No output received for #{timeout_check.idle_timeout} seconds"
       when :wall_clock
-        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: timeout)
-        raise TimeoutError, "Command timed out after #{timeout} seconds"
+        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: timeout_check.timeout)
+        raise TimeoutError, "Command timed out after #{timeout_check.timeout} seconds"
       end
     end
 
     # Post-exec deadline check for when exec returns between watchdog polling
     # ticks. The watchdog sleeps 1s between checks, so a fast-completing exec
     # can slip through with a deadline already exceeded.
-    def check_deadline_exceeded!(watchdog_mutex, output_received, last_activity_at, started_at,
-      startup_timeout, idle_timeout, timeout)
-      return unless startup_timeout || idle_timeout || timeout
+    def check_deadline_exceeded!(timeout_check, output_received:, last_activity_at:)
+      tc = timeout_check
+      return unless tc.startup_timeout || tc.idle_timeout || tc.timeout
 
-      elapsed_since_activity, elapsed_since_start = watchdog_mutex.synchronize do
+      elapsed_since_activity, elapsed_since_start = tc.mutex.synchronize do
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        [ now - last_activity_at, now - started_at ]
+        [ now - last_activity_at, now - tc.started_at ]
       end
 
       # Check startup/idle before wall-clock to match the watchdog's precedence —
       # more specific timeouts take priority over the catch-all wall clock.
-      if !output_received && startup_timeout && elapsed_since_activity >= startup_timeout
-        raise StartupTimeoutError, "No output received within #{startup_timeout} seconds"
-      elsif output_received && idle_timeout && elapsed_since_activity >= idle_timeout
-        raise IdleTimeoutError, "No output received for #{idle_timeout} seconds"
-      elsif timeout && elapsed_since_start >= timeout
-        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: timeout)
-        raise TimeoutError, "Command timed out after #{timeout} seconds"
+      if !output_received && tc.startup_timeout && elapsed_since_activity >= tc.startup_timeout
+        raise StartupTimeoutError, "No output received within #{tc.startup_timeout} seconds"
+      elsif output_received && tc.idle_timeout && elapsed_since_activity >= tc.idle_timeout
+        raise IdleTimeoutError, "No output received for #{tc.idle_timeout} seconds"
+      elsif tc.timeout && elapsed_since_start >= tc.timeout
+        log_system("container.execute.timeout", timeout_type: "wall_clock", timeout: tc.timeout)
+        raise TimeoutError, "Command timed out after #{tc.timeout} seconds"
       end
     end
 
