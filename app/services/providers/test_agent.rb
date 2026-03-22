@@ -80,7 +80,7 @@ module Providers
         return Result.new(
           success: false,
           error_type: :unexpected,
-          message: response.error || "Agent exited with code #{response.exit_code}"
+          message: response.error.presence || "Agent exited with code #{response.exit_code}"
         )
       end
 
