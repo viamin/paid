@@ -20,13 +20,64 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 ## How It Works
 
 1. User adds a GitHub project with a Personal Access Token
-2. Paid polls the repo for issues labeled `paid-build`
+2. Paid polls the repo for issues matching the project's configured `label_mappings` (if no mappings are configured, all open issues are fetched)
 3. An `AgentExecutionWorkflow` starts in Temporal, orchestrating:
    - Docker container provisioning on a restricted network
    - Repository clone and branch creation inside the container
    - Agent execution (e.g., Claude Code) with the issue as prompt
    - Branch push, PR creation, and issue update
 4. User reviews and merges the PR
+
+## GitHub Labels
+
+Paid uses GitHub labels to trigger workflows and communicate status. Some labels are system-managed (Paid adds/removes them automatically), while others are user-configurable per project.
+
+### Labels Paid Adds
+
+| Label | Applied To | When | Purpose |
+| ----- | ---------- | ---- | ------- |
+| `paid-generated` | PRs, Issues | Agent creates a PR or issue | Identifies agent-generated content; enables PR follow-up scanning |
+| `paid-ready` | PRs | Draft review passes and PR is ready for owner review | Signals the PR is ready for human review |
+| `paid-escalated` | PRs | Draft review round limit exceeded | Signals owner intervention is needed |
+
+### Labels Paid Responds To
+
+These are **configurable per project** via `label_mappings` in project settings. There is no global default: if no `label_mappings` are configured for a project, Paid will not trigger agent work from issue labels.
+
+| Mapping | Example label | Behavior |
+| ------- | ------------- | -------- |
+| Build label | `paid-build` | Triggers agent execution on a new issue (creates a PR) |
+| Plan label | `paid-plan` | Starts planning phase on a new issue (no immediate agent run) |
+
+Issues with unsatisfied [dependencies](#issue-dependencies) are not triggered even if the label is present. They are re-evaluated each poll cycle until all dependencies are closed.
+
+**PR action labels** can also be configured per project (`pr_action_labels`). When an action label is detected on a `paid-generated` PR, Paid triggers a follow-up agent run and removes the label.
+
+### Labels That Affect Auto-Pick
+
+When auto-pick is enabled for a project, Paid automatically selects the next eligible issue to work on. Issues with any of these labels are skipped:
+
+| Label | Effect |
+| ----- | ------ |
+| `planning` | Skipped by auto-pick |
+| `research` | Skipped by auto-pick |
+| `waiting` | Skipped by auto-pick |
+
+### Issue Dependencies
+
+Paid parses issue bodies for dependency declarations and builds a dependency tree. Issues with open (unsatisfied) dependencies are not picked up by auto-pick or label-triggered workflows.
+
+Supported formats in issue bodies:
+
+```markdown
+## Dependencies
+
+- #101
+- #102
+
+Depends on #101, #102
+Blocked by #103
+```
 
 ## Quick Start
 
@@ -96,7 +147,7 @@ bin/dev                 # Start dev server (Rails + JS + CSS watchers)
 1. Sign up at <http://localhost:3000>
 2. Add a GitHub token (Settings > GitHub Tokens) with `repo` scope
 3. Add a project (Projects > New) by entering the GitHub repo URL
-4. Label a GitHub issue with `paid-build` to trigger an agent run, or use the "Trigger Run" button in the UI
+4. Configure build/plan label mappings in project settings (e.g., `paid-build`), then label a GitHub issue to trigger an agent run, or use the "Trigger Run" button in the UI
 
 ## Environment Variables
 

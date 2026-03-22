@@ -47,13 +47,37 @@ module Activities
       build_label = project.label_for_stage(:build)
       plan_label = project.label_for_stage(:plan)
 
-      if build_label && issue.has_label?(build_label)
+      action = if build_label && issue.has_label?(build_label)
         "execute_agent"
       elsif plan_label && issue.has_label?(plan_label)
         "start_planning"
-      else
-        "none"
       end
+
+      return "none" unless action
+
+      # Check dependencies after labels to avoid unnecessary DB queries for unlabeled issues.
+      # Pluck first (capped) to combine the existence check with data retrieval in one query.
+      max_logged = 10
+      blocking_relation = issue.blocking_issues
+      blocking_numbers = blocking_relation.limit(max_logged + 1).pluck(:github_number)
+
+      unless blocking_numbers.empty?
+        blocking_issues_truncated = blocking_numbers.length > max_logged
+        blocking_issues_to_log = blocking_numbers.first(max_logged)
+        blocking_issues_count = blocking_issues_truncated ? blocking_relation.count : blocking_numbers.length
+
+        logger.info(
+          message: "github_sync.blocked_by_dependencies",
+          project_id: project.id,
+          issue_id: issue.id,
+          blocking_issues: blocking_issues_to_log,
+          blocking_issues_count: blocking_issues_count,
+          blocking_issues_truncated: blocking_issues_truncated
+        )
+        return "none"
+      end
+
+      action
     end
   end
 end
