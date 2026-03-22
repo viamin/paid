@@ -1,1 +1,0 @@
-/tmp/postgresql-16.6/src/backend/storage/large_object/Makefile
