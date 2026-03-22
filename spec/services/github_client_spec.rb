@@ -879,6 +879,122 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#request_bot_review" do
+    let(:repo) { "owner/repo" }
+    let(:pr_node_id) { "PR_kwDOTest123" }
+    let(:bot_node_id) { "BOT_kgDOCnlnWA" }
+
+    context "when request succeeds" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: { pullRequest: { id: pr_node_id } }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          ).then
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                requestReviews: { pullRequest: { id: pr_node_id } }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "sends the correct bot node IDs via GraphQL" do
+        result = client.request_bot_review(repo, 42, bot_node_ids: [ bot_node_id ])
+
+        expect(result.dig("data", "requestReviews", "pullRequest", "id")).to eq(pr_node_id)
+      end
+    end
+
+    context "when PR is not found" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: { repository: { pullRequest: nil } }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "raises NotFoundError" do
+        expect {
+          client.request_bot_review(repo, 999, bot_node_ids: [ bot_node_id ])
+        }.to raise_error(GithubClient::NotFoundError, /999/)
+      end
+    end
+
+    context "when GraphQL returns errors" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: { pullRequest: { id: pr_node_id } }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          ).then
+          .to_return(
+            status: 200,
+            body: {
+              errors: [ { message: "Copilot not available for this repository" } ]
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "raises ApiError with status 422 for unprocessable messages" do
+        expect {
+          client.request_bot_review(repo, 42, bot_node_ids: [ bot_node_id ])
+        }.to raise_error(GithubClient::ApiError) { |e|
+          expect(e.status).to eq(422)
+          expect(e.message).to include("not available")
+        }
+      end
+    end
+
+    context "when GraphQL returns a generic error" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: { pullRequest: { id: pr_node_id } }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          ).then
+          .to_return(
+            status: 200,
+            body: {
+              errors: [ { message: "Something went wrong" } ]
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "raises ApiError with nil status" do
+        expect {
+          client.request_bot_review(repo, 42, bot_node_ids: [ bot_node_id ])
+        }.to raise_error(GithubClient::ApiError) { |e|
+          expect(e.status).to be_nil
+        }
+      end
+    end
+  end
+
   describe "#rate_limit_remaining" do
     context "when rate limit info is available" do
       it "returns remaining requests" do
