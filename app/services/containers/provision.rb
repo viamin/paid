@@ -305,7 +305,17 @@ module Containers
         # If exec raised after the overall wall-clock deadline and the watchdog
         # has not already classified this as a startup/idle timeout, treat it
         # as a wall-clock timeout rather than a generic execution failure.
-        check_deadline_exceeded!(timeout_check, output_received: output_received, last_activity_at: last_activity_at)
+        begin
+          check_deadline_exceeded!(timeout_check, output_received: output_received, last_activity_at: last_activity_at)
+        rescue StartupTimeoutError, IdleTimeoutError => timeout_error
+          timeout_value = timeout_error.is_a?(StartupTimeoutError) ? startup_timeout : idle_timeout
+          log_system(
+            "container.execute.timeout",
+            timeout_type: timeout_error.class.name.demodulize,
+            timeout: timeout_value
+          )
+          raise
+        end
 
         log_system("container.execute.failed", error: e.message)
         raise ExecutionError.new("Docker exec error: #{e.message}")
