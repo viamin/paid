@@ -236,6 +236,52 @@ RSpec.describe Issue do
         expect(issue.sub_issue?).to be false
       end
     end
+
+    describe "#has_associated_pull_requests?" do
+      let(:project) { create(:project) }
+
+      it "returns true when issue has a sub-issue that is a pull request" do
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, project: project, parent_issue: issue)
+
+        expect(issue.has_associated_pull_requests?).to be true
+      end
+
+      it "returns false when issue has no sub-issues" do
+        issue = create(:issue, project: project)
+
+        expect(issue.has_associated_pull_requests?).to be false
+      end
+
+      it "returns false when issue has sub-issues that are not pull requests" do
+        issue = create(:issue, project: project)
+        create(:issue, project: project, parent_issue: issue)
+
+        expect(issue.has_associated_pull_requests?).to be false
+      end
+
+      context "when sub_issues are preloaded" do
+        it "returns true when preloaded sub-issues include a pull request" do
+          issue = create(:issue, project: project)
+          create(:issue, :pull_request, project: project, parent_issue: issue)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.has_associated_pull_requests?).to be true
+        end
+
+        it "returns false when preloaded sub-issues have no pull requests" do
+          issue = create(:issue, project: project)
+          create(:issue, project: project, parent_issue: issue)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.has_associated_pull_requests?).to be false
+        end
+      end
+    end
   end
 
   describe "#ready_to_work?" do
@@ -408,6 +454,17 @@ RSpec.describe Issue do
         expect(project).not_to have_received(:broadcast_issues_update)
         expect(project).to have_received(:broadcast_pull_requests_update)
       end
+
+      it "broadcasts both sections for a pull request linked to an issue" do
+        parent = create(:issue, project: project)
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+
+        create(:issue, :pull_request, project: project, parent_issue: parent)
+
+        expect(project).to have_received(:broadcast_issues_update)
+        expect(project).to have_received(:broadcast_pull_requests_update)
+      end
     end
 
     context "when updating an issue" do
@@ -426,6 +483,42 @@ RSpec.describe Issue do
         allow(project).to receive(:broadcast_issues_update)
         allow(project).to receive(:broadcast_pull_requests_update)
         pr = create(:issue, :pull_request, project: project)
+
+        expect(project).not_to receive(:broadcast_issues_update)
+        expect(project).to receive(:broadcast_pull_requests_update).once
+
+        pr.update!(title: "Updated PR title")
+      end
+
+      it "broadcasts issues update when a PR is linked to an issue" do
+        parent = create(:issue, project: project)
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project)
+
+        expect(project).to receive(:broadcast_issues_update).once
+        expect(project).to receive(:broadcast_pull_requests_update).once
+
+        pr.update!(parent_issue_id: parent.id)
+      end
+
+      it "broadcasts issues update when a PR is unlinked from an issue" do
+        parent = create(:issue, project: project)
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project, parent_issue: parent)
+
+        expect(project).to receive(:broadcast_issues_update).once
+        expect(project).to receive(:broadcast_pull_requests_update).once
+
+        pr.update!(parent_issue_id: nil)
+      end
+
+      it "does not broadcast issues update when a linked PR title changes" do
+        parent = create(:issue, project: project)
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project, parent_issue: parent)
 
         expect(project).not_to receive(:broadcast_issues_update)
         expect(project).to receive(:broadcast_pull_requests_update).once
@@ -463,6 +556,18 @@ RSpec.describe Issue do
         pr = create(:issue, :pull_request, project: project)
 
         expect(project).not_to receive(:broadcast_issues_update)
+        expect(project).to receive(:broadcast_pull_requests_update).once
+
+        pr.destroy!
+      end
+
+      it "broadcasts both sections when destroying a PR linked to an issue" do
+        parent = create(:issue, project: project)
+        allow(project).to receive(:broadcast_issues_update)
+        allow(project).to receive(:broadcast_pull_requests_update)
+        pr = create(:issue, :pull_request, project: project, parent_issue: parent)
+
+        expect(project).to receive(:broadcast_issues_update).once
         expect(project).to receive(:broadcast_pull_requests_update).once
 
         pr.destroy!

@@ -171,7 +171,7 @@ class Project < ApplicationRecord
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :issues),
       partial: "projects/issues",
-      locals: { project: self, issues: open_items.issues_only.limit(25) }
+      locals: { project: self, issues: open_items.issues_only.includes(:sub_issues).limit(25) }
     )
   end
 
