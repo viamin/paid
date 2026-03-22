@@ -20,7 +20,7 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 ## How It Works
 
 1. User adds a GitHub project with a Personal Access Token
-2. Paid polls the repo for issues labeled `paid-build`
+2. Paid polls the repo for issues with a configured build label (default: `paid-build`)
 3. An `AgentExecutionWorkflow` starts in Temporal, orchestrating:
    - Docker container provisioning on a restricted network
    - Repository clone and branch creation inside the container

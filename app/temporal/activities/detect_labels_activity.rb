@@ -56,16 +56,21 @@ module Activities
       return "none" unless action
 
       # Check dependencies after labels to avoid unnecessary DB queries for unlabeled issues
-      blocking = issue.blocking_issues.pluck(:github_number)
-      if blocking.any?
+      blocking_relation = issue.blocking_issues
+      if blocking_relation.exists?
         max_logged = 10
+        blocking_numbers = blocking_relation.limit(max_logged + 1).pluck(:github_number)
+        blocking_issues_truncated = blocking_numbers.length > max_logged
+        blocking_issues_to_log = blocking_numbers.first(max_logged)
+        blocking_issues_count = blocking_relation.count
+
         logger.info(
           message: "github_sync.blocked_by_dependencies",
           project_id: project.id,
           issue_id: issue.id,
-          blocking_issues: blocking.first(max_logged),
-          blocking_issues_count: blocking.size,
-          blocking_issues_truncated: blocking.size > max_logged
+          blocking_issues: blocking_issues_to_log,
+          blocking_issues_count: blocking_issues_count,
+          blocking_issues_truncated: blocking_issues_truncated
         )
         return "none"
       end
