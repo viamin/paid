@@ -44,6 +44,17 @@ module Activities
         return "none"
       end
 
+      blocking = issue.blocking_issues.pluck(:github_number)
+      if blocking.any?
+        logger.info(
+          message: "github_sync.blocked_by_dependencies",
+          project_id: project.id,
+          issue_id: issue.id,
+          blocking_issues: blocking
+        )
+        return "none"
+      end
+
       build_label = project.label_for_stage(:build)
       plan_label = project.label_for_stage(:plan)
 
