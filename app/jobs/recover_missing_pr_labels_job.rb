@@ -1,11 +1,10 @@
 # frozen_string_literal: true
 
-require "set"
-
 # Re-applies the `paid-generated` label to pull requests created by Paid when
 # the original post-creation label API call failed transiently.
 #
-# Scheduled via GoodJob cron every 15 minutes.
+# Scheduled via GoodJob cron every hour. Only inspects runs from the last 24
+# hours so query cost stays bounded as the table grows.
 class RecoverMissingPrLabelsJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
@@ -18,23 +17,22 @@ class RecoverMissingPrLabelsJob < ApplicationJob
   )
 
   PAID_GENERATED_LABEL = "paid-generated"
+  CANDIDATE_WINDOW = 24.hours
 
   def perform
     recovered = 0
     skipped = 0
     failed = 0
-    seen_prs = Set.new
 
-    candidate_runs.find_each do |agent_run|
-      pr_key = [ agent_run.project_id, agent_run.pull_request_number ]
-      next unless seen_prs.add?(pr_key)
+    candidate_runs.each do |agent_run|
+      synced_pr = synced_pull_request(agent_run)
 
-      if pr_labeled_locally?(agent_run)
+      if synced_pr&.has_label?(PAID_GENERATED_LABEL)
         skipped += 1
         next
       end
 
-      if recover_label(agent_run)
+      if recover_label(agent_run, synced_pr)
         recovered += 1
       else
         failed += 1
@@ -60,17 +58,17 @@ class RecoverMissingPrLabelsJob < ApplicationJob
 
   private
 
+  # Returns one AgentRun per unique (project_id, pull_request_number),
+  # bounded to the last 24 hours. DISTINCT ON deduplicates in SQL so we
+  # don't need an in-memory Set.
   def candidate_runs
     AgentRun.completed
       .where(goal: "create_pr")
       .where.not(pull_request_number: nil)
-      .includes(project: :github_token)
-      .order(:id)
-  end
-
-  def pr_labeled_locally?(agent_run)
-    synced_pr = synced_pull_request(agent_run)
-    synced_pr&.has_label?(PAID_GENERATED_LABEL)
+      .where("agent_runs.created_at >= ?", CANDIDATE_WINDOW.ago)
+      .select("DISTINCT ON (project_id, pull_request_number) agent_runs.*")
+      .order(:project_id, :pull_request_number, id: :desc)
+      .preload(project: :github_token)
   end
 
   def synced_pull_request(agent_run)
@@ -80,7 +78,7 @@ class RecoverMissingPrLabelsJob < ApplicationJob
     )
   end
 
-  def recover_label(agent_run)
+  def recover_label(agent_run, synced_pr)
     project = agent_run.project
     project.github_token.client.add_labels_to_issue(
       project.full_name,
@@ -88,7 +86,6 @@ class RecoverMissingPrLabelsJob < ApplicationJob
       [ PAID_GENERATED_LABEL ]
     )
 
-    synced_pr = synced_pull_request(agent_run)
     synced_pr&.update!(labels: (synced_pr.labels + [ PAID_GENERATED_LABEL ]).uniq)
 
     Rails.logger.info(
