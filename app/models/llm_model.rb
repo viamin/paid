@@ -26,7 +26,7 @@ class LlmModel < ApplicationRecord
       .where.not(input_cost_per_million: nil)
       .where.not(output_cost_per_million: nil)
       .where(
-        "((input_cost_per_million + output_cost_per_million) / 2.0 * :tokens / 1000000.0 * 100) <= :budget",
+        "((input_cost_per_million + output_cost_per_million) / 2 * :tokens / 1000000 * 100) <= :budget",
         tokens: avg_tokens,
         budget: budget_cents
       )
