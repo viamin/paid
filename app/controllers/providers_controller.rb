@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ProvidersController < ApplicationController
-  before_action :set_provider, only: [ :edit, :update, :destroy ]
+  before_action :set_provider, only: [ :edit, :update, :destroy, :test_agent ]
   before_action :load_provider_options, only: [ :new, :create, :edit, :update ]
 
   def index
@@ -63,6 +63,17 @@ class ProvidersController < ApplicationController
     else
       redirect_to providers_path, alert: @provider.errors.full_messages.to_sentence
     end
+  end
+
+  def test_agent
+    authorize @provider
+    result = Providers::TestAgent.call(provider: @provider)
+
+    render json: {
+      success: result.success?,
+      error_type: result.error_type,
+      message: result.message
+    }
   end
 
   def settings

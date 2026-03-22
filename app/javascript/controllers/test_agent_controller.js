@@ -1,0 +1,113 @@
+import { Controller } from "@hotwired/stimulus"
+
+export default class extends Controller {
+  static targets = ["button", "result"]
+  static values = { url: String }
+
+  async test() {
+    this.showLoading()
+
+    try {
+      const response = await fetch(this.urlValue, {
+        method: "POST",
+        headers: {
+          "X-CSRF-Token": this.csrfToken,
+          "Accept": "application/json"
+        }
+      })
+
+      if (!response.ok) {
+        this.showError("unexpected", `Server responded with ${response.status}`)
+        return
+      }
+
+      const data = await response.json()
+
+      if (data.success) {
+        this.showSuccess(data.message)
+      } else {
+        this.showError(data.error_type, data.message)
+      }
+    } catch (error) {
+      this.showError("unexpected", error.message)
+    }
+  }
+
+  showLoading() {
+    this.buttonTarget.disabled = true
+    this.buttonTarget.textContent = "Testing..."
+    this.resultTarget.innerHTML = `
+      <span class="inline-flex items-center gap-1 text-xs text-gray-500">
+        <svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        Testing agent...
+      </span>
+    `
+  }
+
+  showSuccess(message) {
+    this.resetButton()
+    this.resultTarget.innerHTML = `
+      <span class="inline-flex items-center gap-1 rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+        </svg>
+        ${this.escapeHtml(message)}
+      </span>
+    `
+    this.autoDismiss()
+  }
+
+  showError(errorType, message) {
+    this.resetButton()
+    const troubleshooting = this.troubleshootingFor(errorType)
+    this.resultTarget.innerHTML = `
+      <div class="mt-1 rounded-md bg-red-50 px-2 py-1">
+        <span class="inline-flex items-center gap-1 text-xs font-medium text-red-700">
+          <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+          </svg>
+          Test failed
+        </span>
+        <p class="mt-0.5 text-xs text-red-600">${this.escapeHtml(message)}</p>
+        <p class="mt-0.5 text-xs text-gray-500">${this.escapeHtml(troubleshooting)}</p>
+      </div>
+    `
+  }
+
+  troubleshootingFor(errorType) {
+    const messages = {
+      connection: "Could not reach the agent. Verify the provider URL is correct and the agent container is running.",
+      authentication: "Authentication failed. Check that the API key or token for this provider is valid and has not expired.",
+      timeout: "The agent did not respond in time. Ensure the agent container has sufficient resources and is not in a crash loop.",
+      unexpected: "An unexpected error occurred. Check the agent logs for more details."
+    }
+    return messages[errorType] || messages.unexpected
+  }
+
+  resetButton() {
+    this.buttonTarget.disabled = false
+    this.buttonTarget.textContent = "Test Agent"
+  }
+
+  autoDismiss() {
+    window.setTimeout(() => {
+      if (this.resultTarget) {
+        this.resultTarget.innerHTML = ""
+      }
+    }, 10000)
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement("div")
+    div.textContent = text
+    return div.innerHTML
+  }
+
+  get csrfToken() {
+    const meta = document.querySelector("meta[name=csrf-token]")
+    return meta ? meta.content : ""
+  }
+}
