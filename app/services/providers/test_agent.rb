@@ -42,6 +42,12 @@ module Providers
     rescue AgentHarness::Error => e
       Result.new(success: false, error_type: :connection, message: e.message)
     rescue StandardError => e
+      Rails.logger.error(
+        message: "providers.test_agent.unexpected_error",
+        provider_key: provider&.provider_key,
+        error_class: e.class.name,
+        error_message: e.message
+      )
       Result.new(success: false, error_type: :unexpected, message: e.message)
     end
 
@@ -73,7 +79,7 @@ module Providers
       unless response.success?
         return Result.new(
           success: false,
-          error_type: :connection,
+          error_type: :unexpected,
           message: response.error || "Agent exited with code #{response.exit_code}"
         )
       end
