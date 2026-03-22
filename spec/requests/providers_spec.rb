@@ -76,8 +76,6 @@ RSpec.describe "Providers" do
     it "creates a container-executable provider with agent runs enabled" do
       allow(ProviderSupport).to receive(:addable_provider_key?).and_call_original
       allow(ProviderSupport).to receive(:addable_provider_key?).with("cursor").and_return(true)
-      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
-      allow(ProviderSupport).to receive(:container_executable_provider_key?).with("cursor").and_return(true)
 
       post providers_path, params: { provider: { provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
@@ -87,10 +85,7 @@ RSpec.describe "Providers" do
 
     it "handles an empty run-provider list during settings reconciliation" do
       allow(UserSetting).to receive(:enabled_agent_providers).with(user).and_return([], [ "claude" ])
-      allow(ProviderSupport).to receive_messages(
-        addable_provider_key?: true,
-        container_executable_provider_key?: true
-      )
+      allow(ProviderSupport).to receive(:addable_provider_key?).and_return(true)
 
       post providers_path, params: { provider: { provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
