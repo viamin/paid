@@ -73,15 +73,23 @@ class ProvidersController < ApplicationController
   def test_agent
     authorize @provider
 
+    # Use an atomic cache write to avoid a race condition where two
+    # concurrent requests both see a miss and proceed to run the test.
     cache_key = "provider_test_cooldown:#{@provider.id}"
-    if Rails.cache.read(cache_key)
+    acquired = Rails.cache.write(
+      cache_key,
+      true,
+      expires_in: PROVIDER_TEST_COOLDOWN,
+      unless_exist: true
+    )
+
+    unless acquired
       render json: { success: false, error_type: "rate_limited",
                      message: "Please wait before testing this provider again." },
              status: :too_many_requests
       return
     end
 
-    Rails.cache.write(cache_key, true, expires_in: PROVIDER_TEST_COOLDOWN)
     result = Providers::TestAgent.call(provider: @provider)
 
     render json: {

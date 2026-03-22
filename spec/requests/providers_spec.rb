@@ -197,13 +197,22 @@ RSpec.describe "Providers" do
         )
         allow(AgentHarness).to receive(:send_message).and_return(harness_response)
 
-        post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
-        expect(response).to have_http_status(:ok)
+        # The test environment uses :null_store, so swap in a real store
+        # to exercise the atomic rate-limit logic.
+        original_cache = Rails.cache
+        Rails.cache = ActiveSupport::Cache::MemoryStore.new
 
-        post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
-        expect(response).to have_http_status(:too_many_requests)
-        json = JSON.parse(response.body)
-        expect(json["error_type"]).to eq("rate_limited")
+        begin
+          post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
+          expect(response).to have_http_status(:ok)
+
+          post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
+          expect(response).to have_http_status(:too_many_requests)
+          json = JSON.parse(response.body)
+          expect(json["error_type"]).to eq("rate_limited")
+        ensure
+          Rails.cache = original_cache
+        end
       end
 
       it "prevents testing another user's provider" do
