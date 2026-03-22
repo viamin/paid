@@ -3,8 +3,7 @@
 require "rails_helper"
 
 RSpec.describe Providers::TestAgent do
-  let(:user) { create(:user) }
-  let(:provider) { user.providers.find_by!(provider_key: "claude") }
+  let(:provider) { Struct.new(:provider_key).new("claude") }
 
   describe ".call" do
     context "when agent responds successfully" do
@@ -140,12 +139,27 @@ RSpec.describe Providers::TestAgent do
         allow(ProviderSupport).to receive(:supported_provider_key?).and_return(false)
       end
 
-      it "returns an unexpected error with installation guidance" do
+      it "returns an unexpected error indicating the provider is unrecognized" do
         result = described_class.call(provider: provider)
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
-        expect(result.message).to include("not installed or available")
+        expect(result.message).to include("not recognized by the agent harness")
+      end
+    end
+
+    context "when the provider is supported but not container-executable" do
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: false)
+      end
+
+      it "returns an unexpected error indicating the CLI is not installed" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:unexpected)
+        expect(result.message).to include("CLI is not installed in the agent container")
       end
     end
 
