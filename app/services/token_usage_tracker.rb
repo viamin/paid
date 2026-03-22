@@ -79,6 +79,12 @@ class TokenUsageTracker
     end
   end
 
+  # Clears the cached model pricing data. Called by Models::SeedKnownModels
+  # after syncing so updated pricing takes effect without process restart.
+  def self.clear_model_cache!
+    @model_cache.clear
+  end
+
   def self.lookup_model(model_id)
     return nil if model_id.blank?
 
