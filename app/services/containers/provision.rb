@@ -735,8 +735,8 @@ module Containers
     # or a normal return with a non-zero exit code).
     #
     # timeout_check.timeout_reason_ref is a lambda that reads the shared
-    # timeout_reason variable under the mutex, ensuring we see the latest
-    # value rather than a stale snapshot.
+    # timeout_reason variable; this method invokes it while holding
+    # timeout_check.mutex so we see the latest value rather than a stale snapshot.
     def raise_if_watchdog_timeout!(timeout_check)
       reason = timeout_check.mutex.synchronize { timeout_check.timeout_reason_ref.call }
       return unless reason
