@@ -24,7 +24,7 @@ module Activities
       project = Project.find(input[:project_id])
       pr_number = input[:pr_number]
       reviewers = Array(input[:reviewers]).filter_map { |r| r.to_s.strip.presence }
-      reviewers.map!(&:downcase).uniq!
+      reviewers = reviewers.map(&:downcase).uniq
       return { requested: [] } if reviewers.empty?
 
       client = project.github_token.client
@@ -76,6 +76,8 @@ module Activities
       case key
       when :copilot
         Rails.configuration.x.copilot_bot_node_id.presence || "BOT_kgDOCnlnWA"
+      else
+        raise ArgumentError, "Unsupported bot reviewer key: #{key.inspect}"
       end
     end
 
