@@ -264,6 +264,9 @@ module Containers
         timeout_value = e.is_a?(StartupTimeoutError) ? startup_timeout : idle_timeout
         log_system("container.execute.timeout", timeout_type: e.class.name.demodulize, timeout: timeout_value)
         raise
+      rescue TimeoutError
+        log_partial_output(stdout_buffer, stderr_buffer)
+        raise
       rescue Docker::Error::DockerError => e
         # Log partial output first — raise_if_watchdog_timeout! may re-raise.
         log_partial_output(stdout_buffer, stderr_buffer)
