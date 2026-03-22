@@ -18,6 +18,8 @@ RSpec.describe Providers::TestAgent do
       end
 
       before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
         allow(AgentHarness).to receive(:send_message).and_return(response)
       end
 
@@ -53,6 +55,8 @@ RSpec.describe Providers::TestAgent do
       end
 
       before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
         allow(AgentHarness).to receive(:send_message).and_return(response)
       end
 
@@ -77,6 +81,8 @@ RSpec.describe Providers::TestAgent do
       end
 
       before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
         allow(AgentHarness).to receive(:send_message).and_return(response)
       end
 
@@ -91,6 +97,8 @@ RSpec.describe Providers::TestAgent do
 
     context "when authentication fails" do
       before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
         allow(AgentHarness).to receive(:send_message)
           .and_raise(AgentHarness::AuthenticationError, "Invalid API key")
       end
@@ -106,6 +114,8 @@ RSpec.describe Providers::TestAgent do
 
     context "when the agent times out" do
       before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
         allow(AgentHarness).to receive(:send_message)
           .and_raise(AgentHarness::TimeoutError, "Timed out after 30s")
       end
@@ -121,6 +131,8 @@ RSpec.describe Providers::TestAgent do
 
     context "when a generic agent harness error occurs" do
       before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
         allow(AgentHarness).to receive(:send_message)
           .and_raise(AgentHarness::Error, "Connection refused")
       end
@@ -165,6 +177,8 @@ RSpec.describe Providers::TestAgent do
 
     context "when an unexpected error occurs" do
       before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
         allow(AgentHarness).to receive(:send_message)
           .and_raise(RuntimeError, "Something went wrong")
       end
