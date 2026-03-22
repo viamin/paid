@@ -61,6 +61,18 @@ module ProviderSupport
     container_executable_provider_keys.include?(provider_key.to_s)
   end
 
+  # Returns providers that are both known to the app and runnable inside the
+  # prebuilt paid-agent image. These are the only providers that should be
+  # offered in the UI for new provider records, because the product contract is
+  # that added providers must be usable for agent runs and fallback once saved.
+  def addable_provider_keys
+    container_executable_provider_keys
+  end
+
+  def addable_provider_key?(provider_key)
+    addable_provider_keys.include?(provider_key.to_s)
+  end
+
   def harness_provider_key_for(provider_key)
     APP_TO_HARNESS_PROVIDER_KEYS.fetch(provider_key.to_s, provider_key.to_s)
   end

@@ -124,25 +124,49 @@ class ProvidersController < ApplicationController
   end
 
   def load_provider_options
-    supported_keys = Provider.supported_provider_keys
+    addable_keys = Provider.addable_provider_keys
     existing_keys = current_user.providers.pluck(:provider_key)
     @provider_options = if @provider&.persisted?
-      (supported_keys - (existing_keys - [ @provider.provider_key ]))
+      (addable_keys - (existing_keys - [ @provider.provider_key ]))
     else
-      supported_keys - existing_keys
+      addable_keys - existing_keys
     end
   end
 
   def validate_provider_key_enabled!
     return if @provider.provider_key.blank?
-    return if Provider.supported_provider_key?(@provider.provider_key)
+    return if Provider.addable_provider_key?(@provider.provider_key)
+    # Unsupported keys are caught by the model's inclusion validation;
+    # here we only flag supported-but-not-yet-installed providers.
+    return unless Provider.supported_provider_key?(@provider.provider_key)
 
-    @provider.errors.add(:provider_key, "is not currently available")
+    @provider.errors.add(:provider_key, "is not available in paid-agent yet")
   end
 
   def validate_container_executable!
     return if @provider.provider_key.blank?
-    return if ProviderSupport.container_executable_provider_key?(@provider.provider_key)
+
+    # On create, the model's inclusion validation catches unsupported keys.
+    # On update, provider_key is immutable so that validation does not fire —
+    # we must explicitly block enabling run/fallback flags for providers whose
+    # key has been removed from the supported registry after creation.
+    unless Provider.supported_provider_key?(@provider.provider_key)
+      return if @provider.new_record?
+
+      # Unlike the container-executable check below, unsupported providers
+      # cannot function at all — block if either flag is true, regardless of
+      # whether the user changed it in this request. The message tells the
+      # user they need to disable the flag, not that they "cannot enable" it.
+      if @provider.enabled_for_agent_runs
+        @provider.errors.add(:enabled_for_agent_runs, "must be disabled for an unsupported provider")
+      end
+      if @provider.enabled_for_fallback
+        @provider.errors.add(:enabled_for_fallback, "must be disabled for an unsupported provider")
+      end
+      return
+    end
+
+    return if Provider.addable_provider_key?(@provider.provider_key)
 
     setting_agent_runs = @provider.enabled_for_agent_runs && (@provider.new_record? || @provider.will_save_change_to_attribute?("enabled_for_agent_runs", to: true))
     setting_fallback = @provider.enabled_for_fallback && (@provider.new_record? || @provider.will_save_change_to_attribute?("enabled_for_fallback", to: true))
@@ -206,6 +230,7 @@ class ProvidersController < ApplicationController
     @user_setting = current_user.settings
     @enabled_agent_providers = UserSetting.enabled_agent_providers(current_user)
     @fallback_candidate_providers = UserSetting.fallback_candidate_providers(current_user)
+    @addable_provider_options = Provider.addable_provider_keys - current_user.providers.pluck(:provider_key)
   end
 
   def provider_settings_params
