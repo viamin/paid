@@ -198,7 +198,7 @@ module Containers
       output_received = false
       last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       exec_completed = false
-      timeout_reason = nil # :startup or :idle, set by watchdog
+      timeout_reason = nil # :startup, :idle, or :wall_clock, set by watchdog
       timeout_reason_ref = -> { timeout_reason }
       watchdog = nil
 

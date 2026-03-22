@@ -916,7 +916,7 @@ RSpec.describe Containers::Provision do
     end
 
     context "without startup and idle timeouts" do
-      it "succeeds without watchdog when neither timeout is passed" do
+      it "succeeds when only a wall-clock timeout is passed" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "output\n") if block
           [ [ "output\n" ], [], 0 ]
