@@ -57,11 +57,14 @@ module Activities
 
       blocking = issue.blocking_issues.pluck(:github_number)
       if blocking.any?
+        max_logged = 10
         logger.info(
           message: "github_sync.blocked_by_dependencies",
           project_id: project.id,
           issue_id: issue.id,
-          blocking_issues: blocking
+          blocking_issues: blocking.first(max_logged),
+          blocking_issues_count: blocking.size,
+          blocking_issues_truncated: blocking.size > max_logged
         )
         return "none"
       end
