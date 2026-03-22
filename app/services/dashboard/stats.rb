@@ -23,6 +23,7 @@ module Dashboard
         cost_and_tokens: cost_and_tokens,
         runs_by_agent_type: runs_by_agent_type,
         runs_by_project: runs_by_project,
+        cost_by_project: cost_by_project,
         issue_completion: issue_completion
       }
     end
@@ -157,6 +158,14 @@ module Dashboard
         .count
         .sort_by { |_, v| -v }
         .first(5)
+    end
+
+    def cost_by_project
+      Project.where(account_id: account.id)
+        .where("total_cost_cents > 0")
+        .order(total_cost_cents: :desc)
+        .limit(10)
+        .pluck(:name, :total_cost_cents)
     end
 
     def issue_completion
