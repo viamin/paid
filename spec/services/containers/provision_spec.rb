@@ -805,6 +805,19 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with wall clock timeout" do
+      it "fires when exec runs past the deadline without output" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.01 until container_stopped.true?
+          [ [], [], 137 ]
+        end
+
+        expect {
+          service.execute("hung_command", timeout: 0.1)
+        }.to raise_error(described_class::TimeoutError, /timed out after 0.1 seconds/)
+      end
+    end
+
     context "with startup timeout when exec raises Docker error" do
       it "detects the watchdog reason through the Docker error" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
