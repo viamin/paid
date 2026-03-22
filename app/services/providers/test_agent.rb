@@ -30,7 +30,7 @@ module Providers
       response = execute_test
       process_response(response)
     rescue NotContainerExecutableError
-      Result.new(success: false, error_type: :unexpected,
+      Result.new(success: false, error_type: :installation,
         message: "Provider #{provider.provider_key} CLI is not installed in the agent container")
     rescue UnsupportedProviderError
       Result.new(success: false, error_type: :unexpected,
