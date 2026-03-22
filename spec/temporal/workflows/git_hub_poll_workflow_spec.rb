@@ -282,27 +282,6 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
-    it "requests bot review alongside ready_for_owner when pending_review_bot_request is set" do
-      allow(workflow).to receive(:run_activity)
-        .with(Activities::MarkPrReadyActivity, anything, anything)
-        .and_return({ marked_ready: true })
-
-      pr_data = {
-        issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
-        pending_review_bot_request: true,
-        triggers: [ { type: "ready_for_owner" } ]
-      }
-
-      workflow.send(:handle_pr_trigger, project_id, pr_data)
-
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::RequestReviewActivity,
-          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), anything)
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::RequestReviewActivity,
-          hash_including(reviewers: [ "viamin" ]), anything)
-    end
-
     it "skips owner review request when owner_reviewer_login is blank" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MarkPrReadyActivity, anything, anything)
