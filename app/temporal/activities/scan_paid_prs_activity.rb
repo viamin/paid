@@ -141,15 +141,7 @@ module Activities
         if pending_triggers.any?
           triggers = pending_triggers
           log_triggers(project, issue, triggers)
-
-          return {
-            issue_id: issue.id,
-            pr_number: issue.github_number,
-            triggers: triggers,
-            phase: issue.pr_review_phase,
-            labels_to_remove: [],
-            current_draft_review_count: issue.draft_review_count
-          }
+          return draft_trigger_payload(issue, triggers)
         end
 
         # Only auto-advance when we have at least one check and all conclusions are green.
@@ -167,15 +159,7 @@ module Activities
 
       triggers = all_triggers
       log_triggers(project, issue, triggers)
-
-      {
-        issue_id: issue.id,
-        pr_number: issue.github_number,
-        triggers: triggers,
-        phase: issue.pr_review_phase,
-        labels_to_remove: [],
-        current_draft_review_count: issue.draft_review_count
-      }
+      draft_trigger_payload(issue, triggers)
     end
 
     # --- Ready phase scanning ---
@@ -268,6 +252,17 @@ module Activities
         pr_number: issue.github_number,
         triggers: [ { type: "owner_approved", details: "Owner approved PR" } ],
         phase: "ready"
+      }
+    end
+
+    def draft_trigger_payload(issue, triggers)
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: triggers,
+        phase: issue.pr_review_phase,
+        labels_to_remove: [],
+        current_draft_review_count: issue.draft_review_count
       }
     end
 
