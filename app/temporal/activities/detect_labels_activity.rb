@@ -55,14 +55,16 @@ module Activities
 
       return "none" unless action
 
-      # Check dependencies after labels to avoid unnecessary DB queries for unlabeled issues
+      # Check dependencies after labels to avoid unnecessary DB queries for unlabeled issues.
+      # Pluck first (capped) to combine the existence check with data retrieval in one query.
+      max_logged = 10
       blocking_relation = issue.blocking_issues
-      if blocking_relation.exists?
-        max_logged = 10
-        blocking_numbers = blocking_relation.limit(max_logged + 1).pluck(:github_number)
+      blocking_numbers = blocking_relation.limit(max_logged + 1).pluck(:github_number)
+
+      unless blocking_numbers.empty?
         blocking_issues_truncated = blocking_numbers.length > max_logged
         blocking_issues_to_log = blocking_numbers.first(max_logged)
-        blocking_issues_count = blocking_relation.count
+        blocking_issues_count = blocking_issues_truncated ? blocking_relation.count : blocking_numbers.length
 
         logger.info(
           message: "github_sync.blocked_by_dependencies",
