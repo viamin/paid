@@ -154,11 +154,11 @@ RSpec.describe Providers::TestAgent do
           container_executable_provider_key?: false)
       end
 
-      it "returns an unexpected error indicating the CLI is not installed" do
+      it "returns an installation error indicating the CLI is not installed" do
         result = described_class.call(provider: provider)
 
         expect(result).not_to be_success
-        expect(result.error_type).to eq(:unexpected)
+        expect(result.error_type).to eq(:installation)
         expect(result.message).to include("CLI is not installed in the agent container")
       end
     end
