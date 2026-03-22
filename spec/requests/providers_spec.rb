@@ -24,6 +24,7 @@ RSpec.describe "Providers" do
         expect(response.body).to include("Providers")
         expect(response.body).to include("Provider Priority")
         expect(response.body).to include("Primary Provider")
+        expect(response.body).to include("No More Providers Yet")
       end
     end
   end
@@ -58,6 +59,8 @@ RSpec.describe "Providers" do
     before { sign_in user }
 
     it "creates a container-executable provider with agent runs enabled" do
+      allow(ProviderSupport).to receive(:addable_provider_key?).and_call_original
+      allow(ProviderSupport).to receive(:addable_provider_key?).with("cursor").and_return(true)
       allow(ProviderSupport).to receive(:container_executable_provider_key?).and_call_original
       allow(ProviderSupport).to receive(:container_executable_provider_key?).with("cursor").and_return(true)
 
@@ -69,44 +72,36 @@ RSpec.describe "Providers" do
 
     it "handles an empty run-provider list during settings reconciliation" do
       allow(UserSetting).to receive(:enabled_agent_providers).with(user).and_return([], [ "claude" ])
-      allow(ProviderSupport).to receive(:container_executable_provider_key?).and_return(true)
+      allow(ProviderSupport).to receive_messages(
+        addable_provider_key?: true,
+        container_executable_provider_key?: true
+      )
 
       post providers_path, params: { provider: { provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
       expect(response).to redirect_to(providers_path)
     end
 
-    it "rejects unsupported providers" do
+    it "rejects providers that are not supported" do
       post providers_path, params: { provider: { provider_key: "unknown_provider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to include("is not currently available")
+      expect(response.body).to include("is not supported")
     end
 
-    it "accepts non-executable providers without agent run or fallback flags" do
+    it "rejects providers that are known to agent harness but not installed in paid-agent" do
       post providers_path, params: { provider: { provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false } }
 
-      expect(response).to redirect_to(providers_path)
-      expect(user.providers.find_by(provider_key: "gemini")).to be_present
-    end
-
-    it "rejects non-executable providers when enabled_for_agent_runs is set" do
-      post providers_path, params: { provider: { provider_key: "gemini", enabled_for_agent_runs: true, enabled_for_fallback: false } }
-
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to include("cannot be enabled")
-    end
-
-    it "accepts app provider aliases backed by agent harness providers" do
-      post providers_path, params: { provider: { provider_key: "copilot", enabled_for_agent_runs: false, enabled_for_fallback: false } }
-
-      expect(response).to redirect_to(providers_path)
-      expect(user.providers.find_by(provider_key: "copilot")).to be_present
+      expect(response.body).to include("is not available in paid-agent yet")
     end
   end
 
   describe "GET /providers/new" do
-    before { sign_in user }
+    before do
+      sign_in user
+      allow(ProviderSupport).to receive(:addable_provider_keys).and_return(%w[claude cursor])
+    end
 
     it "does not offer provider keys already configured for the user" do
       user.providers.create!(provider_key: "cursor")
@@ -115,6 +110,15 @@ RSpec.describe "Providers" do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).not_to include('value="cursor"')
+    end
+
+    it "shows an empty state when no additional paid-agent providers are installed" do
+      allow(ProviderSupport).to receive(:addable_provider_keys).and_return([ "claude" ])
+
+      get new_provider_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("No additional providers are installed in paid-agent yet")
     end
   end
 

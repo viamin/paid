@@ -124,7 +124,7 @@ class ProvidersController < ApplicationController
   end
 
   def load_provider_options
-    supported_keys = Provider.supported_provider_keys
+    supported_keys = Provider.addable_provider_keys
     existing_keys = current_user.providers.pluck(:provider_key)
     @provider_options = if @provider&.persisted?
       (supported_keys - (existing_keys - [ @provider.provider_key ]))
@@ -135,9 +135,15 @@ class ProvidersController < ApplicationController
 
   def validate_provider_key_enabled!
     return if @provider.provider_key.blank?
-    return if Provider.supported_provider_key?(@provider.provider_key)
+    return if Provider.addable_provider_key?(@provider.provider_key)
 
-    @provider.errors.add(:provider_key, "is not currently available")
+    message = if Provider.supported_provider_key?(@provider.provider_key)
+      "is not available in paid-agent yet"
+    else
+      "is not supported"
+    end
+
+    @provider.errors.add(:provider_key, message)
   end
 
   def validate_container_executable!
@@ -206,6 +212,7 @@ class ProvidersController < ApplicationController
     @user_setting = current_user.settings
     @enabled_agent_providers = UserSetting.enabled_agent_providers(current_user)
     @fallback_candidate_providers = UserSetting.fallback_candidate_providers(current_user)
+    @addable_provider_options = Provider.addable_provider_keys - current_user.providers.pluck(:provider_key)
   end
 
   def provider_settings_params
