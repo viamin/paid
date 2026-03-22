@@ -55,6 +55,7 @@ module Activities
 
       return "none" unless action
 
+      # Check dependencies after labels to avoid unnecessary DB queries for unlabeled issues
       blocking = issue.blocking_issues.pluck(:github_number)
       if blocking.any?
         max_logged = 10
