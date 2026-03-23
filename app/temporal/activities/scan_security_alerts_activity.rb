@@ -13,7 +13,6 @@ module Activities
     activity_name "ScanSecurityAlerts"
 
     SEVERITY_ORDER = %w[critical high medium low].freeze
-    ALERT_SOURCE_PREFIX = "security_alert"
     # Synthetic issues use source "dependabot_alert" so FetchIssuesActivity's
     # stale-close logic (which only targets source "github") won't close them.
     SYNTHETIC_SOURCE = "dependabot_alert"
@@ -26,6 +25,7 @@ module Activities
 
       client = project.github_token.client
       alerts = fetch_alerts(project, client)
+      reconcile_resolved_alerts(project, alerts)
       actionable = filter_actionable_alerts(project, alerts)
 
       issues_created = actionable.first(project.max_security_fix_runs).filter_map do |alert|
@@ -78,10 +78,9 @@ module Activities
     end
 
     def existing_issue_for_alert?(project, alert)
-      identifier = alert_identifier(alert)
+      synthetic_id = generate_synthetic_issue_id(alert)
       project.issues
-        .where(github_state: "open")
-        .where("title LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(identifier)}%")
+        .where(github_state: "open", source: SYNTHETIC_SOURCE, github_issue_id: synthetic_id)
         .exists?
     end
 
@@ -149,6 +148,28 @@ module Activities
       lines << ""
       lines << "[View alert on GitHub](#{alert[:html_url]})" if alert[:html_url]
       lines.join("\n")
+    end
+
+    # Close synthetic issues whose Dependabot alerts are no longer open
+    # (fixed, dismissed, or auto_dismissed upstream).
+    def reconcile_resolved_alerts(project, current_open_alerts)
+      open_alert_ids = current_open_alerts
+        .select { |a| a[:state] == "open" }
+        .map { |a| generate_synthetic_issue_id(a) }
+        .to_set
+
+      stale_scope = project.issues.where(github_state: "open", source: SYNTHETIC_SOURCE)
+      stale_scope = stale_scope.where.not(github_issue_id: open_alert_ids) if open_alert_ids.any?
+      count = stale_scope.count
+
+      if count > 0
+        stale_scope.update_all(github_state: "closed", paid_state: "resolved", updated_at: Time.current)
+        logger.info(
+          message: "security_scanner.reconciled_resolved_alerts",
+          project_id: project.id,
+          closed_count: count
+        )
+      end
     end
 
     def alert_identifier(alert)

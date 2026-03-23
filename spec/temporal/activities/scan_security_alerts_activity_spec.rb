@@ -95,7 +95,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       it "creates Issue records with correct attributes" do
         activity.execute(project_id: project.id)
 
-        issue = project.issues.find_by("title LIKE ?", "%minimatch%")
+        issue = project.issues.find_by(source: "dependabot_alert", github_issue_id: 9_000_000_001)
         expect(issue).to be_present
         expect(issue.title).to include("[Security]")
         expect(issue.title).to include("minimatch")
@@ -111,7 +111,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       it "sets a trusted creator login" do
         activity.execute(project_id: project.id)
 
-        issue = project.issues.find_by("title LIKE ?", "%minimatch%")
+        issue = project.issues.find_by(source: "dependabot_alert", github_issue_id: 9_000_000_001)
         expect(issue.trusted?).to be true
       end
 
@@ -152,10 +152,14 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           .with(project.full_name, severity: %w[critical high])
           .and_return(alerts)
 
+        # Use the same synthetic github_issue_id that the activity generates
+        # (9_000_000_000 + alert number) so the duplicate check matches.
         create(:issue,
           project: project,
           title: "[Security] Upgrade minimatch — dependabot-alert-1",
-          github_state: "open")
+          github_issue_id: 9_000_000_001,
+          github_state: "open",
+          source: "dependabot_alert")
       end
 
       it "skips alerts that already have issues" do
@@ -220,6 +224,29 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         expect(github_client).to have_received(:dependabot_alerts)
           .with(project.full_name, severity: %w[critical high medium])
+      end
+    end
+
+    context "when a previously created synthetic issue is no longer in open alerts" do
+      before do
+        allow(github_client).to receive(:dependabot_alerts)
+          .with(project.full_name, severity: %w[critical high])
+          .and_return([])
+
+        create(:issue,
+          project: project,
+          title: "[Security] Upgrade old-pkg — dependabot-alert-99",
+          github_issue_id: 9_000_000_099,
+          github_state: "open",
+          source: "dependabot_alert")
+      end
+
+      it "closes the stale synthetic issue" do
+        activity.execute(project_id: project.id)
+
+        stale_issue = project.issues.find_by(github_issue_id: 9_000_000_099)
+        expect(stale_issue.github_state).to eq("closed")
+        expect(stale_issue.paid_state).to eq("resolved")
       end
     end
 
