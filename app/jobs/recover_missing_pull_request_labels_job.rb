@@ -69,33 +69,36 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   private
 
   # Returns one AgentRun per unique (project_id, pull_request_number),
-  # bounded to the last 24 hours based on completion time. Completed runs
-  # always have completed_at set, so no COALESCE fallback is needed.
+  # bounded to the last 24 hours based on creation time. This keeps the
+  # candidate set small for the hourly job while using the indexed
+  # created_at column instead of the unindexed completed_at.
   # DISTINCT ON deduplicates in SQL so we don't need an in-memory Set.
   def candidate_runs
     AgentRun.completed
       .where(goal: "create_pr")
       .where.not(pull_request_number: nil)
-      .where("agent_runs.completed_at >= ?", CANDIDATE_WINDOW.ago)
+      .where("agent_runs.created_at >= ?", CANDIDATE_WINDOW.ago)
       .select("DISTINCT ON (project_id, pull_request_number) agent_runs.*")
       .order(:project_id, :pull_request_number, id: :desc)
       .preload(project: :github_token)
   end
 
   # Batch-loads synced Issue records for all candidate runs in a single query,
-  # keyed by [project_id, pull_request_number]. Uses a row-value IN predicate
-  # for efficient composite key matching in PostgreSQL.
+  # keyed by [project_id, pull_request_number]. Builds an OR chain of exact
+  # (project_id, github_number) pairs to avoid raw SQL interpolation.
   def prefetch_synced_prs(runs)
     pr_keys = runs.map { |r| [ r.project_id, r.pull_request_number ] }.uniq
 
     return {} if pr_keys.empty?
 
-    placeholders = pr_keys.map { "(?, ?)" }.join(", ")
-    bind_values = pr_keys.flatten
+    table = Issue.arel_table
+    composite_condition = pr_keys
+      .map { |pid, num| table[:project_id].eq(pid).and(table[:github_number].eq(num)) }
+      .reduce(:or)
 
     Issue
       .where(is_pull_request: true)
-      .where("(project_id, github_number) IN (#{placeholders})", *bind_values)
+      .where(composite_condition)
       .each_with_object({}) do |issue, hash|
         hash[[ issue.project_id, issue.github_number ]] = issue
       end
@@ -109,7 +112,9 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       [ PAID_GENERATED_LABEL ]
     )
 
-    synced_pr.update!(labels: (synced_pr.labels + [ PAID_GENERATED_LABEL ]).uniq)
+    synced_pr.with_lock do
+      synced_pr.update!(labels: (synced_pr.labels + [ PAID_GENERATED_LABEL ]).uniq)
+    end
 
     Rails.logger.info(
       message: "agent_execution.pr_label_recovered",
