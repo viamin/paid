@@ -83,25 +83,32 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       .preload(project: :github_token)
   end
 
-  # Batch-loads synced Issue records for all candidate runs in a single query,
-  # keyed by [project_id, pull_request_number]. Builds an OR chain of exact
-  # (project_id, github_number) pairs to avoid raw SQL interpolation.
+  # Batch-loads synced Issue records for all candidate runs, keyed by
+  # [project_id, pull_request_number]. Groups by project_id and queries
+  # github_number values in bounded chunks to avoid building a single large
+  # OR predicate in SQL.
   def prefetch_synced_prs(runs)
     pr_keys = runs.map { |r| [ r.project_id, r.pull_request_number ] }.uniq
 
     return {} if pr_keys.empty?
 
-    table = Issue.arel_table
-    composite_condition = pr_keys
-      .map { |pid, num| table[:project_id].eq(pid).and(table[:github_number].eq(num)) }
-      .reduce(:or)
+    result = {}
 
-    Issue
-      .where(is_pull_request: true)
-      .where(composite_condition)
-      .each_with_object({}) do |issue, hash|
-        hash[[ issue.project_id, issue.github_number ]] = issue
+    # Group by project_id so we can use a simple IN clause on github_number
+    pr_keys.group_by(&:first).each do |project_id, pairs|
+      numbers = pairs.map(&:second).uniq
+
+      # Query in chunks to keep the IN list size bounded.
+      numbers.each_slice(500) do |number_slice|
+        Issue
+          .where(is_pull_request: true, project_id: project_id, github_number: number_slice)
+          .find_each do |issue|
+            result[[ issue.project_id, issue.github_number ]] = issue
+          end
       end
+    end
+
+    result
   end
 
   def recover_label(agent_run, synced_pr)
