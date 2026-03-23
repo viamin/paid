@@ -33,23 +33,18 @@ module Projects
       today_start = now.beginning_of_day
       month_start = now.beginning_of_month
 
+      completed = project.agent_runs.where(status: "completed")
+      run_count = completed.count
+      avg_cost = run_count.zero? ? 0 : (completed.sum(:cost_cents).to_f / run_count).round
+
       {
         total_cost_cents: project.total_cost_cents,
         total_tokens: project.total_tokens_used,
         cost_today_cents: billable_scope.by_time_period(today_start, now).total_cost_cents,
         cost_this_month_cents: billable_scope.by_time_period(month_start, now).total_cost_cents,
-        avg_cost_per_run_cents: avg_cost_per_run_cents,
-        total_runs: project.agent_runs.where(status: "completed").count
+        avg_cost_per_run_cents: avg_cost,
+        total_runs: run_count
       }
-    end
-
-    def avg_cost_per_run_cents
-      completed = project.agent_runs.where(status: "completed")
-      count = completed.count
-      return 0 if count.zero?
-
-      total = completed.sum(:cost_cents)
-      (total.to_f / count).round
     end
 
     def cost_by_model

@@ -32,9 +32,9 @@ module CostBudgets
     end
 
     def call
-      # Uses count.zero? instead of none? to avoid stale association cache
-      # returning empty when budgets exist but were loaded earlier.
-      return allowed_result if project.cost_budgets.count.zero?
+      # Uses exists? for an efficient existence check while still bypassing
+      # any potentially stale association target cache.
+      return allowed_result unless project.cost_budgets.exists?
 
       rollover_expired_periods
 

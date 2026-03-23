@@ -10,7 +10,7 @@ class CostBudget < ApplicationRecord
   before_validation :convert_limit_dollars_to_cents, if: -> { limit_dollars.present? }
 
   validates :budget_type, presence: true, inclusion: { in: BUDGET_TYPES }, uniqueness: { scope: :project_id }
-  validates :limit_cents, presence: true, numericality: { greater_than: 0 }
+  validates :limit_cents, presence: true, numericality: { greater_than: 0 }, unless: -> { errors.include?(:limit_dollars) }
   validates :current_usage_cents, numericality: { greater_than_or_equal_to: 0 }
   validates :alert_threshold_percent, numericality: { greater_than: 0, less_than_or_equal_to: 100 }
 
