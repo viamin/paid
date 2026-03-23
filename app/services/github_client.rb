@@ -496,6 +496,37 @@ class GithubClient
     handle_errors { client.put(path, options) }
   end
 
+  # Fetches open Dependabot alerts for a repository.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param severity [Array<String>, nil] Filter by severity levels (e.g. ["critical", "high"])
+  # @param state [String] Alert state: "open", "dismissed", "fixed", or "auto_dismissed"
+  # @param per_page [Integer] Number of results per page
+  # @return [Array<Hash>] Alerts with :number, :state, :severity, :package_name,
+  #   :package_ecosystem, :patched_version, :summary, :html_url keys
+  def dependabot_alerts(repo, severity: nil, state: "open", per_page: 100)
+    handle_errors do
+      params = { state: state, per_page: per_page }
+      params[:severity] = severity.join(",") if severity.present?
+
+      response = client.get("#{Octokit::Repository.path(repo)}/dependabot/alerts", params)
+
+      Array(response).map do |alert|
+        vulnerability = alert.security_vulnerability || alert.security_advisory || OpenStruct.new
+        {
+          number: alert.number,
+          state: alert.state,
+          severity: alert.security_advisory&.severity || vulnerability.severity,
+          package_name: alert.dependency&.package&.name,
+          package_ecosystem: alert.dependency&.package&.ecosystem,
+          patched_version: vulnerability.first_patched_version&.identifier,
+          summary: alert.security_advisory&.summary,
+          html_url: alert.html_url
+        }
+      end
+    end
+  end
+
   # Gets the remaining rate limit.
   #
   # @return [Integer] Number of requests remaining
