@@ -183,11 +183,12 @@
                   </div>
                 <% end %>
                 <div class="mt-3 flex gap-2">
-                  <% budget_record = @cost_budgets[budget[:id]] %>
+                  <%# Use @failed_budget when present so the user's submitted value is preserved on validation failure %>
+                  <% budget_record = (@failed_budget&.id == budget[:id] ? @failed_budget : @cost_budgets[budget[:id]]) %>
                   <%= form_with model: [@project, budget_record], url: project_cost_budget_path(@project, budget[:id]), method: :patch, class: "flex items-center gap-2" do |f| %>
                     <div class="relative">
                       <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2 text-gray-400 text-sm">$</span>
-                      <%= number_field_tag "cost_budget[limit_dollars]", format("%.2f", budget[:limit_cents] / 100.0), step: 0.01, min: 0.01, class: "block w-24 rounded-md border-0 py-1 pl-6 pr-2 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
+                      <%= f.number_field :limit_dollars, value: (budget_record.limit_dollars || format("%.2f", budget[:limit_cents] / 100.0)), step: 0.01, min: 0.01, class: "block w-24 rounded-md border-0 py-1 pl-6 pr-2 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
                     </div>
                     <%= f.submit "Update", class: "rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
                   <% end %>
@@ -207,7 +208,12 @@
     <%# Add new budget %>
     <% if policy(@project).update? %>
       <% existing_types = budgets.map { |b| b[:budget_type] } %>
-      <% available_types = CostBudget::BUDGET_TYPES - existing_types %>
+      <%# Include the submitted budget_type when the create form has errors, so the user can correct the error %>
+      <% available_types = if @cost_budget&.errors&.any? && @cost_budget.budget_type.present? %>
+      <%                     (CostBudget::BUDGET_TYPES - existing_types) | [@cost_budget.budget_type] %>
+      <%                   else %>
+      <%                     CostBudget::BUDGET_TYPES - existing_types %>
+      <%                   end %>
       <% if available_types.any? %>
         <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
           <div class="px-4 py-5 sm:p-6">
