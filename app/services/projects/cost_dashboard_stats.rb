@@ -39,7 +39,7 @@ module Projects
         cost_today_cents: billable_scope.by_time_period(today_start, now).total_cost_cents,
         cost_this_month_cents: billable_scope.by_time_period(month_start, now).total_cost_cents,
         avg_cost_per_run_cents: avg_cost_per_run_cents,
-        total_runs: project.agent_runs.count
+        total_runs: project.agent_runs.where(status: "completed").count
       }
     end
 
