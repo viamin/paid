@@ -26,6 +26,7 @@ module Projects
       else
         @stats = Projects::CostDashboardStats.call(project: @project)
         @cost_budgets = @project.cost_budgets.index_by(&:id)
+        @cost_budget = @project.cost_budgets.build
         render "projects/cost_dashboards/show", status: :unprocessable_content
       end
     end

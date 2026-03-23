@@ -97,7 +97,11 @@ class CostBudget < ApplicationRecord
   private
 
   def convert_limit_dollars_to_cents
-    self.limit_cents = (BigDecimal(limit_dollars.to_s) * 100).to_i
+    value = BigDecimal(limit_dollars.to_s)
+    self.limit_cents = (value * 100).round.to_i
+  rescue ArgumentError
+    errors.add(:limit_dollars, "is not a number")
+    self.limit_cents = nil
   end
 
   def rollover_period_if_needed!

@@ -15,12 +15,14 @@ RSpec.describe Projects::CostDashboardStats do
     end
 
     it "calculates today and monthly costs" do
-      run = create(:agent_run, project: project, status: "completed", cost_cents: 300)
-      create(:token_usage, agent_run: run, cost_cents: 300, request_type: "agent")
+      travel_to(Time.zone.local(2024, 1, 15, 12, 0, 0)) do
+        run = create(:agent_run, project: project, status: "completed", cost_cents: 300)
+        create(:token_usage, agent_run: run, cost_cents: 300, request_type: "agent")
 
-      result = described_class.call(project: project)
-      expect(result[:summary][:cost_today_cents]).to eq(300)
-      expect(result[:summary][:cost_this_month_cents]).to eq(300)
+        result = described_class.call(project: project)
+        expect(result[:summary][:cost_today_cents]).to eq(300)
+        expect(result[:summary][:cost_this_month_cents]).to eq(300)
+      end
     end
 
     it "calculates average cost per run" do
