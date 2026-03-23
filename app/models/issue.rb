@@ -53,10 +53,9 @@ class Issue < ApplicationRecord
   }
 
   def github_url
-    # Synthetic issues from Dependabot alerts link to the specific alert.
-    # The alert number is encoded in github_issue_id with a 9 billion offset.
-    if source == "dependabot_alert"
-      alert_number = github_issue_id - 9_000_000_000
+    # Synthetic Dependabot alert issues link to the specific alert page.
+    if source == Activities::ScanSecurityAlertsActivity::SYNTHETIC_SOURCE
+      alert_number = github_issue_id - Activities::ScanSecurityAlertsActivity::SYNTHETIC_ISSUE_ID_OFFSET
       return "#{project.github_url}/security/dependabot/#{alert_number}"
     end
 
