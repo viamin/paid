@@ -3,7 +3,11 @@
 class CostBudget < ApplicationRecord
   BUDGET_TYPES = %w[daily monthly per_run].freeze
 
+  attr_accessor :limit_dollars
+
   belongs_to :project
+
+  before_validation :convert_limit_dollars_to_cents, if: -> { limit_dollars.present? }
 
   validates :budget_type, presence: true, inclusion: { in: BUDGET_TYPES }, uniqueness: { scope: :project_id }
   validates :limit_cents, presence: true, numericality: { greater_than: 0 }
@@ -91,6 +95,10 @@ class CostBudget < ApplicationRecord
   end
 
   private
+
+  def convert_limit_dollars_to_cents
+    self.limit_cents = (BigDecimal(limit_dollars.to_s) * 100).to_i
+  end
 
   def rollover_period_if_needed!
     return if budget_type == "per_run"

@@ -16,22 +16,21 @@
       <span class="font-medium text-gray-500">Tokens:</span>
       <span class="font-semibold text-gray-900"><%= number_with_delimiter(project.total_tokens_used) %></span>
     </div>
-    <% monthly_cost = project.token_usages.billable.by_time_period(Time.current.beginning_of_month, Time.current).total_cost_cents %>
+    <% monthly_cost_cents = local_assigns.fetch(:monthly_cost_cents, project.token_usages.billable.by_time_period(Time.current.beginning_of_month, Time.current).total_cost_cents) %>
     <div class="flex items-center gap-1.5 px-4 py-3">
       <span class="font-medium text-gray-500">This Month:</span>
-      <span class="font-semibold text-gray-900">$<%= format("%.2f", monthly_cost / 100.0) %></span>
+      <span class="font-semibold text-gray-900">$<%= format("%.2f", monthly_cost_cents / 100.0) %></span>
     </div>
-    <% today_cost = project.token_usages.billable.by_time_period(Time.current.beginning_of_day, Time.current).total_cost_cents %>
+    <% today_cost_cents = local_assigns.fetch(:today_cost_cents, project.token_usages.billable.by_time_period(Time.current.beginning_of_day, Time.current).total_cost_cents) %>
     <div class="flex items-center gap-1.5 px-4 py-3">
       <span class="font-medium text-gray-500">Today:</span>
-      <span class="font-semibold text-gray-900">$<%= format("%.2f", today_cost / 100.0) %></span>
+      <span class="font-semibold text-gray-900">$<%= format("%.2f", today_cost_cents / 100.0) %></span>
     </div>
-    <% budgets = project.cost_budgets.reload %>
+    <% budgets = project.cost_budgets.load %>
     <% if budgets.any? %>
       <div class="flex items-center gap-1.5 px-4 py-3">
         <% budgets.each do |budget| %>
-          <% budget.rollover_if_period_expired! %>
-          <% color = budget_status_color(budget.usage_percent) %>
+          <% color = budget_status_color(budget.usage_percent, budget.alert_threshold_percent) %>
           <% classes = budget_status_classes(color) %>
           <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= classes[:bg] %> <%= classes[:text] %> mr-1">
             <%= budget_type_label(budget.budget_type) %>: <%= budget.usage_percent %>%
