@@ -125,14 +125,14 @@ RSpec.describe Issues::AutoPick do
       expect(result).to be_nil
     end
 
-    it "skips issues that already have an active agent run" do
+    it "returns nil when an issue already has an active agent run (per-project concurrency)" do
       issue_with_run = create(:issue, project: project)
       create(:agent_run, :queued, project: project, issue: issue_with_run)
-      eligible = create(:issue, project: project)
+      create(:issue, project: project)
 
       result = described_class.new(project).call
 
-      expect(result.issue).to eq(eligible)
+      expect(result).to be_nil
     end
 
     it "picks the issue with the lowest github_number first" do
@@ -271,8 +271,9 @@ RSpec.describe Issues::AutoPick do
       end
 
       it "picks an issue when all project runs are finished" do
-        create(:agent_run, :completed, project: project)
-        create(:agent_run, :failed, project: project)
+        closed_issue = create(:issue, :closed, project: project)
+        create(:agent_run, :completed, project: project, issue: closed_issue)
+        create(:agent_run, :failed, project: project, issue: closed_issue)
         issue = create(:issue, project: project)
 
         result = described_class.new(project).call
@@ -312,7 +313,7 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
-      it "picks an issue when open PRs already have active agent runs" do
+      it "returns nil when open PRs already have active agent runs (per-project concurrency limit)" do
         pr = create(:issue, :pull_request, :in_progress, project: project)
         create(:agent_run, :running, project: project, issue: pr)
         create(:issue, project: project)
