@@ -39,7 +39,7 @@ RSpec.describe "Projects::CostBudgets" do
   end
 
   describe "PATCH /projects/:project_id/cost_budgets/:id" do
-    let!(:budget) { create(:cost_budget, project: project, budget_type: "daily", limit_cents: 1000) }
+    let!(:budget) { create(:cost_budget, :daily, project: project, limit_cents: 1000) }
 
     context "when user has update permission" do
       before do
@@ -58,7 +58,7 @@ RSpec.describe "Projects::CostBudgets" do
   end
 
   describe "DELETE /projects/:project_id/cost_budgets/:id" do
-    let!(:budget) { create(:cost_budget, project: project, budget_type: "daily", limit_cents: 1000) }
+    let!(:budget) { create(:cost_budget, :daily, project: project, limit_cents: 1000) }
 
     context "when user has update permission" do
       before do

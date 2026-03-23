@@ -13,6 +13,7 @@ module Projects
         redirect_to project_cost_dashboard_path(@project), notice: "Budget limit created."
       else
         @stats = Projects::CostDashboardStats.call(project: @project)
+        @cost_budgets = @project.cost_budgets.index_by(&:id)
         render "projects/cost_dashboards/show", status: :unprocessable_content
       end
     end
@@ -24,6 +25,7 @@ module Projects
         redirect_to project_cost_dashboard_path(@project), notice: "Budget limit updated."
       else
         @stats = Projects::CostDashboardStats.call(project: @project)
+        @cost_budgets = @project.cost_budgets.index_by(&:id)
         render "projects/cost_dashboards/show", status: :unprocessable_content
       end
     end
@@ -45,11 +47,7 @@ module Projects
     end
 
     def cost_budget_params
-      params.require(:cost_budget).permit(:budget_type, :limit_dollars, :alert_threshold_percent).tap do |p|
-        if p[:limit_dollars].present?
-          p[:limit_cents] = (p.delete(:limit_dollars).to_f * 100).round
-        end
-      end
+      params.require(:cost_budget).permit(:budget_type, :limit_dollars, :alert_threshold_percent)
     end
   end
 end

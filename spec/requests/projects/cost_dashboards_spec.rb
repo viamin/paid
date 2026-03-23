@@ -53,7 +53,7 @@ RSpec.describe "Projects::CostDashboards" do
       end
 
       it "shows budget status when budgets exist" do
-        create(:cost_budget, project: project, budget_type: "daily", limit_cents: 1000, current_usage_cents: 800)
+        create(:cost_budget, :daily, project: project, limit_cents: 1000, current_usage_cents: 800)
 
         get project_cost_dashboard_path(project)
 

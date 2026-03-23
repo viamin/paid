@@ -32,7 +32,7 @@ module CostBudgets
     end
 
     def call
-      return allowed_result if project.cost_budgets.none?
+      return allowed_result if project.cost_budgets.count.zero?
 
       rollover_expired_periods
 

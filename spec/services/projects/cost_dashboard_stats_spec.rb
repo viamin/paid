@@ -51,7 +51,7 @@ RSpec.describe Projects::CostDashboardStats do
     end
 
     it "returns budget information" do
-      create(:cost_budget, project: project, budget_type: "daily", limit_cents: 1000, current_usage_cents: 500)
+      create(:cost_budget, :daily, project: project, limit_cents: 1000, current_usage_cents: 500)
 
       result = described_class.call(project: project)
       expect(result[:budgets].length).to eq(1)

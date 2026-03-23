@@ -5,10 +5,10 @@ module CostDashboardHelper
     "$#{format('%.2f', cents / 100.0)}"
   end
 
-  def budget_status_color(usage_percent)
+  def budget_status_color(usage_percent, alert_threshold_percent = 80)
     if usage_percent >= 100
       "red"
-    elsif usage_percent >= 80
+    elsif usage_percent >= alert_threshold_percent
       "yellow"
     else
       "green"

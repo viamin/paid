@@ -7,6 +7,8 @@ module Projects
     def show
       authorize @project, :show?
       @stats = Projects::CostDashboardStats.call(project: @project)
+      @cost_budgets = @project.cost_budgets.index_by(&:id)
+      @cost_budget ||= CostBudget.new
     end
 
     private
