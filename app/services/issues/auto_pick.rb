@@ -5,6 +5,10 @@ module Issues
   # a queued agent run for it. Used when the run queue is empty and the
   # system has capacity, keeping agents productive without manual intervention.
   #
+  # Guards (checked before issue selection):
+  # - Project must not have any active/queued agent runs (one at a time)
+  # - Project must not have open PRs needing attention (finish before start)
+  #
   # Selection criteria:
   # - Open, non-PR issues with all dependencies satisfied
   # - No existing active (queued/pending/running) agent run
@@ -21,6 +25,8 @@ module Issues
 
     def call
       return nil unless @project.auto_pick_enabled?
+      return nil if project_has_active_runs?
+      return nil if project_has_prs_needing_attention?
 
       issue = find_next_eligible_issue
       return nil unless issue
@@ -67,6 +73,31 @@ module Issues
     end
 
     private
+
+    # Returns true if the project already has any active or queued agent
+    # runs. Limits auto-pick to one concurrent run per project so agents
+    # focus on finishing work before starting new issues.
+    def project_has_active_runs?
+      AgentRun.where(project: @project, status: %w[queued pending running]).exists?
+    end
+
+    # Returns true if the project has open pull requests that need
+    # attention — e.g. PRs in "in_progress" or "failed" state without an
+    # active agent run. Prioritises completing existing PRs over starting
+    # new issues.
+    def project_has_prs_needing_attention?
+      Issue.where(
+        project: @project,
+        is_pull_request: true,
+        github_state: "open",
+        paid_state: %w[in_progress failed]
+      ).where.not(
+        id: Issue.where(project: @project, is_pull_request: true)
+          .joins(:agent_runs)
+          .where(agent_runs: { status: %w[queued pending running] })
+          .select(:id)
+      ).exists?
+    end
 
     def find_next_eligible_issue
       scope = Issue.ready_for_work(@project)
