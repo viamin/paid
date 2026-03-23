@@ -69,34 +69,40 @@ class RecoverMissingPrLabelsJob < ApplicationJob
   private
 
   # Returns one AgentRun per unique (project_id, pull_request_number),
-  # bounded to the last 24 hours. DISTINCT ON deduplicates in SQL so we
-  # don't need an in-memory Set.
+  # bounded to the last 24 hours based on completion time (falling back to
+  # creation time). DISTINCT ON deduplicates in SQL so we don't need an
+  # in-memory Set.
   def candidate_runs
     AgentRun.completed
       .where(goal: "create_pr")
       .where.not(pull_request_number: nil)
-      .where("agent_runs.created_at >= ?", CANDIDATE_WINDOW.ago)
+      .where("COALESCE(agent_runs.completed_at, agent_runs.created_at) >= ?", CANDIDATE_WINDOW.ago)
       .select("DISTINCT ON (project_id, pull_request_number) agent_runs.*")
       .order(:project_id, :pull_request_number, id: :desc)
       .preload(project: :github_token)
   end
 
   # Batch-loads synced Issue records for all candidate runs in a single query,
-  # keyed by [project_id, pull_request_number]. Eliminates N+1 lookups.
+  # keyed by [project_id, pull_request_number]. Uses composite key matching
+  # to avoid cross-product from independent IN clauses.
   def prefetch_synced_prs(runs)
     pr_keys = runs.map { |r| [ r.project_id, r.pull_request_number ] }.uniq
 
     return {} if pr_keys.empty?
 
+    table = Issue.arel_table
+    condition = pr_keys
+      .map { |project_id, github_number|
+        table[:project_id].eq(project_id).and(table[:github_number].eq(github_number))
+      }
+      .reduce { |acc, expr| acc.or(expr) }
+
     Issue
       .where(is_pull_request: true)
-      .where(
-        project_id: pr_keys.map(&:first),
-        github_number: pr_keys.map(&:last)
-      )
+      .where(condition)
       .each_with_object({}) do |issue, hash|
         key = [ issue.project_id, issue.github_number ]
-        hash[key] = issue if pr_keys.include?(key)
+        hash[key] = issue
       end
   end
 
