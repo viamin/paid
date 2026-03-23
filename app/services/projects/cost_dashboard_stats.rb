@@ -61,16 +61,27 @@ module Projects
 
     def budgets
       project.cost_budgets.order(:budget_type).map do |budget|
-        {
+        base_stats = {
           id: budget.id,
           budget_type: budget.budget_type,
           limit_cents: budget.limit_cents,
-          current_usage_cents: budget.current_usage_cents,
-          usage_percent: budget.usage_percent,
-          remaining_cents: budget.remaining_cents,
           exceeded: budget.exceeded?,
           alert_threshold_percent: budget.alert_threshold_percent
         }
+
+        # Per-run budgets are enforced per agent run via
+        # agent_run.token_usages.sum(:cost_cents) in CostBudgets::Check,
+        # not via current_usage_cents. Omit period-based usage fields to
+        # avoid showing misleading "0% used" stats.
+        if budget.budget_type == "per_run"
+          base_stats
+        else
+          base_stats.merge(
+            current_usage_cents: budget.current_usage_cents,
+            usage_percent: budget.usage_percent,
+            remaining_cents: budget.remaining_cents
+          )
+        end
       end
     end
   end
