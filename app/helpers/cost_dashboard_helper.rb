@@ -21,6 +21,8 @@ module CostDashboardHelper
       { bg: "bg-red-100", text: "text-red-700", bar: "bg-red-500", ring: "ring-red-200" }
     when "yellow"
       { bg: "bg-yellow-100", text: "text-yellow-700", bar: "bg-yellow-500", ring: "ring-yellow-200" }
+    when "gray"
+      { bg: "bg-gray-100", text: "text-gray-600", bar: "bg-gray-400", ring: "ring-gray-200" }
     else
       { bg: "bg-green-100", text: "text-green-700", bar: "bg-green-500", ring: "ring-green-200" }
     end

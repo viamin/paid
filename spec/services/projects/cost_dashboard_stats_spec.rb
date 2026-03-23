@@ -52,13 +52,28 @@ RSpec.describe Projects::CostDashboardStats do
       expect(result[:daily_costs]).to be_an(Array)
     end
 
-    it "returns budget information" do
+    it "returns budget information with usage for daily budgets" do
       create(:cost_budget, :daily, project: project, limit_cents: 1000, current_usage_cents: 500)
 
       result = described_class.call(project: project)
       expect(result[:budgets].length).to eq(1)
-      expect(result[:budgets].first[:budget_type]).to eq("daily")
-      expect(result[:budgets].first[:usage_percent]).to eq(50.0)
+      budget = result[:budgets].first
+      expect(budget[:budget_type]).to eq("daily")
+      expect(budget[:usage_percent]).to eq(50.0)
+      expect(budget[:current_usage_cents]).to eq(500)
+      expect(budget[:remaining_cents]).to eq(500)
+    end
+
+    it "omits period-based usage fields for per_run budgets" do
+      create(:cost_budget, project: project, budget_type: "per_run", limit_cents: 2000)
+
+      result = described_class.call(project: project)
+      budget = result[:budgets].first
+      expect(budget[:budget_type]).to eq("per_run")
+      expect(budget[:limit_cents]).to eq(2000)
+      expect(budget).not_to have_key(:usage_percent)
+      expect(budget).not_to have_key(:current_usage_cents)
+      expect(budget).not_to have_key(:remaining_cents)
     end
   end
 end

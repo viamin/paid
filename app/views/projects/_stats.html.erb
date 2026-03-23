@@ -31,11 +31,18 @@
     <% if budgets.any? %>
       <div class="flex items-center gap-1.5 px-4 py-3">
         <% budgets.each do |budget| %>
-          <% color = budget_status_color(budget.usage_percent, budget.alert_threshold_percent) %>
-          <% classes = budget_status_classes(color) %>
-          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= classes[:bg] %> <%= classes[:text] %> mr-1">
-            <%= budget_type_label(budget.budget_type) %>: <%= budget.usage_percent %>%
-          </span>
+          <% if budget.budget_type == "per_run" %>
+            <%# Per-run budgets are enforced per agent run, not via current_usage_cents %>
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 mr-1">
+              <%= budget_type_label(budget.budget_type) %>: <%= format("$%.2f", budget.limit_cents / 100.0) %>/run
+            </span>
+          <% else %>
+            <% color = budget_status_color(budget.usage_percent, budget.alert_threshold_percent) %>
+            <% classes = budget_status_classes(color) %>
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= classes[:bg] %> <%= classes[:text] %> mr-1">
+              <%= budget_type_label(budget.budget_type) %>: <%= budget.usage_percent %>%
+            </span>
+          <% end %>
         <% end %>
       </div>
     <% end %>

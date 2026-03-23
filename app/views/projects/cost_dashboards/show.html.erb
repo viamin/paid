@@ -151,27 +151,40 @@
     <% if budgets.any? %>
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <% budgets.each do |budget| %>
-          <% color = budget_status_color(budget[:usage_percent], budget[:alert_threshold_percent]) %>
+          <% is_per_run = budget[:budget_type] == "per_run" %>
+          <% usage_percent = budget[:usage_percent] || 0 %>
+          <% color = is_per_run ? "gray" : budget_status_color(usage_percent, budget[:alert_threshold_percent]) %>
           <% classes = budget_status_classes(color) %>
           <div class="overflow-hidden rounded-lg bg-white shadow">
             <div class="px-4 py-5 sm:p-6">
               <div class="flex items-center justify-between">
                 <dt class="text-sm font-medium text-gray-500"><%= budget_type_label(budget[:budget_type]) %> Limit</dt>
-                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= classes[:bg] %> <%= classes[:text] %>">
-                  <%= budget[:exceeded] ? "Exceeded" : "#{budget[:usage_percent]}%" %>
-                </span>
+                <% if is_per_run %>
+                  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">
+                    Per Run
+                  </span>
+                <% else %>
+                  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= classes[:bg] %> <%= classes[:text] %>">
+                    <%= budget[:exceeded] ? "Exceeded" : "#{usage_percent}%" %>
+                  </span>
+                <% end %>
               </div>
               <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= format_cost_cents(budget[:limit_cents]) %></dd>
-              <div class="mt-3">
-                <div class="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-                  <div class="h-2 rounded-full <%= classes[:bar] %> transition-all"
-                       style="width: <%= [budget[:usage_percent], 100].min %>%"></div>
+              <% if is_per_run %>
+                <%# Per-run budgets are enforced per agent run, not via period-based usage tracking %>
+                <p class="mt-2 text-xs text-gray-500">Enforced per agent run. Each run is limited to this amount.</p>
+              <% else %>
+                <div class="mt-3">
+                  <div class="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div class="h-2 rounded-full <%= classes[:bar] %> transition-all"
+                         style="width: <%= [usage_percent, 100].min %>%"></div>
+                  </div>
+                  <div class="mt-1 flex justify-between text-xs text-gray-500">
+                    <span>Used: <%= format_cost_cents(budget[:current_usage_cents]) %></span>
+                    <span>Remaining: <%= format_cost_cents(budget[:remaining_cents]) %></span>
+                  </div>
                 </div>
-                <div class="mt-1 flex justify-between text-xs text-gray-500">
-                  <span>Used: <%= format_cost_cents(budget[:current_usage_cents]) %></span>
-                  <span>Remaining: <%= format_cost_cents(budget[:remaining_cents]) %></span>
-                </div>
-              </div>
+              <% end %>
               <% if policy(@project).update? %>
                 <% if @failed_budget&.id == budget[:id] && @failed_budget.errors.any? %>
                   <div class="mt-3 w-full rounded-md bg-red-50 p-3 text-sm text-red-700">
