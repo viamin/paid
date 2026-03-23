@@ -16,6 +16,13 @@ module Activities
     # Synthetic issues use source "dependabot_alert" so FetchIssuesActivity's
     # stale-close logic (which only targets source "github") won't close them.
     SYNTHETIC_SOURCE = "dependabot_alert"
+    # Large offset for synthetic github_issue_id values (bigint column).
+    # Dependabot alert numbers are small integers; this avoids collisions.
+    SYNTHETIC_ISSUE_ID_OFFSET = 9_000_000_000
+    # Offset for synthetic github_number values (integer column, max ~2.1B).
+    # GitHub issue/PR numbers are sequential; even the busiest repos rarely
+    # exceed a few hundred thousand, so 100M provides ample headroom.
+    SYNTHETIC_NUMBER_OFFSET = 100_000_000
 
     def execute(input)
       project_id = input[:project_id]
@@ -54,6 +61,11 @@ module Activities
     private
 
     def fetch_alerts(project, client)
+      # Return nil when no alert types are enabled so reconciliation is skipped.
+      # An empty array means "we checked and found nothing" — nil means "we
+      # didn't check" and stale synthetic issues should not be closed.
+      return nil if project.security_alert_types.empty?
+
       alerts = []
 
       if project.security_alert_types.include?("dependabot")
@@ -185,16 +197,12 @@ module Activities
     end
 
     def generate_synthetic_issue_id(alert)
-      # Use a large offset to avoid collisions with real GitHub issue IDs.
-      # Dependabot alert numbers are scoped per-repo and are small integers.
-      9_000_000_000 + alert[:number]
+      SYNTHETIC_ISSUE_ID_OFFSET + alert[:number]
     end
 
     def generate_synthetic_number(project)
-      # Use a large offset (900_000) to avoid collisions with real GitHub
-      # issue/PR numbers, which are sequential small integers.
       max_number = project.issues.maximum(:github_number) || 0
-      [ max_number + 1, 900_000 ].max
+      [ max_number + 1, SYNTHETIC_NUMBER_OFFSET ].max
     end
 
     def severities_at_or_above(threshold)
