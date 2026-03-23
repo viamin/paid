@@ -66,7 +66,6 @@ module Projects
 
     def budgets
       project.cost_budgets.order(:budget_type).map do |budget|
-        budget.rollover_if_period_expired!
         {
           id: budget.id,
           budget_type: budget.budget_type,

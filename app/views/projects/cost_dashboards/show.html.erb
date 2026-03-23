@@ -151,7 +151,7 @@
     <% if budgets.any? %>
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <% budgets.each do |budget| %>
-          <% color = budget_status_color(budget[:usage_percent]) %>
+          <% color = budget_status_color(budget[:usage_percent], budget[:alert_threshold_percent]) %>
           <% classes = budget_status_classes(color) %>
           <div class="overflow-hidden rounded-lg bg-white shadow">
             <div class="px-4 py-5 sm:p-6">
@@ -174,10 +174,11 @@
               </div>
               <% if policy(@project).update? %>
                 <div class="mt-3 flex gap-2">
-                  <%= form_with model: [@project, CostBudget.find(budget[:id])], url: project_cost_budget_path(@project, budget[:id]), method: :patch, class: "flex items-center gap-2" do |f| %>
+                  <% budget_record = @cost_budgets[budget[:id]] %>
+                  <%= form_with model: [@project, budget_record], url: project_cost_budget_path(@project, budget[:id]), method: :patch, class: "flex items-center gap-2" do |f| %>
                     <div class="relative">
                       <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2 text-gray-400 text-sm">$</span>
-                      <%= f.number_field :limit_dollars, value: format("%.2f", budget[:limit_cents] / 100.0), step: 0.01, min: 0.01, class: "block w-24 rounded-md border-0 py-1 pl-6 pr-2 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
+                      <%= number_field_tag "cost_budget[limit_dollars]", format("%.2f", budget[:limit_cents] / 100.0), step: 0.01, min: 0.01, class: "block w-24 rounded-md border-0 py-1 pl-6 pr-2 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
                     </div>
                     <%= f.submit "Update", class: "rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
                   <% end %>
@@ -202,7 +203,7 @@
         <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
           <div class="px-4 py-5 sm:p-6">
             <h3 class="text-sm font-medium text-gray-900">Add Budget Limit</h3>
-            <%= form_with model: [@project, CostBudget.new], url: project_cost_budgets_path(@project), class: "mt-3 flex flex-wrap items-end gap-3" do |f| %>
+            <%= form_with model: [@project, @cost_budget], url: project_cost_budgets_path(@project), class: "mt-3 flex flex-wrap items-end gap-3" do |f| %>
               <div>
                 <%= f.label :budget_type, "Type", class: "block text-xs font-medium text-gray-700" %>
                 <%= f.select :budget_type, available_types.map { |t| [budget_type_label(t), t] }, {}, class: "mt-1 block rounded-md border-0 py-1.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
@@ -216,7 +217,7 @@
               </div>
               <div>
                 <%= f.label :alert_threshold_percent, "Alert at %", class: "block text-xs font-medium text-gray-700" %>
-                <%= f.number_field :alert_threshold_percent, value: 80, min: 1, max: 100, class: "mt-1 block w-20 rounded-md border-0 py-1.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
+                <%= f.number_field :alert_threshold_percent, value: (@cost_budget.alert_threshold_percent || 80), min: 1, max: 100, class: "mt-1 block w-20 rounded-md border-0 py-1.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
               </div>
               <%= f.submit "Add Limit", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
             <% end %>
