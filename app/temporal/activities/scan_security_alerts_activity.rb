@@ -25,8 +25,10 @@ module Activities
 
       client = project.github_token.client
       alerts = fetch_alerts(project, client)
-      reconcile_resolved_alerts(project, alerts)
-      actionable = filter_actionable_alerts(project, alerts)
+      # Only reconcile when the fetch succeeded. A nil return means the API
+      # call failed, so we can't treat an empty list as authoritative.
+      reconcile_resolved_alerts(project, alerts) unless alerts.nil?
+      actionable = filter_actionable_alerts(project, alerts || [])
 
       issues_created = actionable.first(project.max_security_fix_runs).filter_map do |alert|
         create_issue_for_alert(project, alert)
@@ -35,7 +37,7 @@ module Activities
       logger.info(
         message: "security_scanner.scan_complete",
         project_id: project_id,
-        alerts_fetched: alerts.size,
+        alerts_fetched: alerts&.size || 0,
         alerts_actionable: actionable.size,
         issues_created: issues_created.size
       )
@@ -68,7 +70,7 @@ module Activities
         project_id: project.id,
         error: e.message
       )
-      []
+      nil
     end
 
     def filter_actionable_alerts(project, alerts)
@@ -163,7 +165,13 @@ module Activities
       count = stale_scope.count
 
       if count > 0
-        stale_scope.update_all(github_state: "closed", paid_state: "resolved", updated_at: Time.current)
+        now = Time.current
+        stale_scope.update_all(
+          github_state: "closed",
+          paid_state: "resolved",
+          updated_at: now,
+          github_updated_at: now
+        )
         logger.info(
           message: "security_scanner.reconciled_resolved_alerts",
           project_id: project.id,

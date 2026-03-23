@@ -53,9 +53,12 @@ class Issue < ApplicationRecord
   }
 
   def github_url
-    # Synthetic issues (e.g. from Dependabot alerts) don't correspond to real
-    # GitHub issues, so the standard URL would be misleading.
-    return "#{project.github_url}/security/dependabot" if source == "dependabot_alert"
+    # Synthetic issues from Dependabot alerts link to the specific alert.
+    # The alert number is encoded in github_issue_id with a 9 billion offset.
+    if source == "dependabot_alert"
+      alert_number = github_issue_id - 9_000_000_000
+      return "#{project.github_url}/security/dependabot/#{alert_number}"
+    end
 
     path = is_pull_request? ? "pull" : "issues"
     "#{project.github_url}/#{path}/#{github_number}"

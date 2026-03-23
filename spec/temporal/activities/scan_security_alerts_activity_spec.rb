@@ -209,6 +209,20 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         expect(result[:alerts_to_fix]).to eq([])
       end
+
+      it "does not reconcile synthetic issues when fetch fails" do
+        stale_issue = create(:issue,
+          project: project,
+          title: "[Security] Upgrade old-pkg — dependabot-alert-99",
+          github_issue_id: 9_000_000_099,
+          github_state: "open",
+          source: "dependabot_alert")
+
+        activity.execute(project_id: project.id)
+
+        stale_issue.reload
+        expect(stale_issue.github_state).to eq("open")
+      end
     end
 
     context "when severity threshold is medium" do
@@ -241,12 +255,13 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           source: "dependabot_alert")
       end
 
-      it "closes the stale synthetic issue" do
+      it "closes the stale synthetic issue and updates timestamps" do
         activity.execute(project_id: project.id)
 
         stale_issue = project.issues.find_by(github_issue_id: 9_000_000_099)
         expect(stale_issue.github_state).to eq("closed")
         expect(stale_issue.paid_state).to eq("resolved")
+        expect(stale_issue.github_updated_at).to be_within(5.seconds).of(Time.current)
       end
     end
 
