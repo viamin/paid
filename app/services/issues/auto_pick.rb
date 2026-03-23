@@ -82,20 +82,18 @@ module Issues
     end
 
     # Returns true if the project has open pull requests that need
-    # attention — e.g. PRs in "in_progress" or "failed" state without an
-    # active agent run. Prioritises completing existing PRs over starting
-    # new issues.
+    # attention — e.g. PRs in "in_progress" or "failed" state. Prioritises
+    # completing existing PRs over starting new issues.
+    #
+    # Note: the active-runs exclusion is unnecessary here because
+    # project_has_active_runs? already short-circuits before this method
+    # is called.
     def project_has_prs_needing_attention?
       Issue.where(
         project: @project,
         is_pull_request: true,
         github_state: "open",
         paid_state: %w[in_progress failed]
-      ).where.not(
-        id: Issue.where(project: @project, is_pull_request: true)
-          .joins(:agent_runs)
-          .where(agent_runs: { status: %w[queued pending running] })
-          .select(:id)
       ).exists?
     end
 
