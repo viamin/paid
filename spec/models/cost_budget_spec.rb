@@ -31,6 +31,13 @@ RSpec.describe CostBudget do
       expect(budget.errors[:limit_dollars]).to include("must be greater than 0")
     end
 
+    it "produces a single error for non-numeric limit_dollars" do
+      budget = build(:cost_budget, limit_dollars: "abc")
+      budget.valid?
+
+      expect(budget.errors[:limit_dollars]).to eq([ "is not a number" ])
+    end
+
     it { is_expected.to validate_numericality_of(:alert_threshold_percent).is_greater_than(0) }
 
     it "enforces uniqueness of budget_type per project" do

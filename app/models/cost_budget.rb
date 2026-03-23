@@ -102,7 +102,6 @@ class CostBudget < ApplicationRecord
     value = BigDecimal(limit_dollars.to_s)
     self.limit_cents = (value * 100).round.to_i
   rescue ArgumentError
-    errors.add(:limit_dollars, "is not a number")
     self.limit_cents = nil
   end
 
