@@ -510,7 +510,9 @@ class GithubClient
       params = { state: state, per_page: per_page }
       params[:severity] = severity.join(",") if severity.present?
 
-      response = client.get("#{Octokit::Repository.path(repo)}/dependabot/alerts", params)
+      response = with_auto_paginate do
+        client.get("#{Octokit::Repository.path(repo)}/dependabot/alerts", params)
+      end
 
       Array(response).map do |alert|
         vulnerability = alert.security_vulnerability || alert.security_advisory || OpenStruct.new
