@@ -24,9 +24,11 @@ module Projects
       if @cost_budget.update(cost_budget_params)
         redirect_to project_cost_dashboard_path(@project), notice: "Budget limit updated."
       else
+        failed_budget = @cost_budget
         @stats = Projects::CostDashboardStats.call(project: @project)
         @cost_budgets = @project.cost_budgets.index_by(&:id)
         @cost_budget = @project.cost_budgets.build
+        @failed_budget = failed_budget
         render "projects/cost_dashboards/show", status: :unprocessable_content
       end
     end
