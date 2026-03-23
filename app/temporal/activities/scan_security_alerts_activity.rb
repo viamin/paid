@@ -14,6 +14,9 @@ module Activities
 
     SEVERITY_ORDER = %w[critical high medium low].freeze
     ALERT_SOURCE_PREFIX = "security_alert"
+    # Synthetic issues use source "dependabot_alert" so FetchIssuesActivity's
+    # stale-close logic (which only targets source "github") won't close them.
+    SYNTHETIC_SOURCE = "dependabot_alert"
 
     def execute(input)
       project_id = input[:project_id]
@@ -41,7 +44,7 @@ module Activities
     rescue GithubClient::RateLimitError => e
       raise Temporalio::Error::ApplicationError.new(
         e.message,
-        type: "RateLimitError",
+        type: "RateLimit",
         non_retryable: false
       )
     end
@@ -78,7 +81,7 @@ module Activities
       identifier = alert_identifier(alert)
       project.issues
         .where(github_state: "open")
-        .where("title LIKE ?", "%#{sanitize_like(identifier)}%")
+        .where("title LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(identifier)}%")
         .exists?
     end
 
@@ -93,11 +96,14 @@ module Activities
         title: title,
         body: body,
         github_state: "open",
-        github_creator_login: "dependabot[bot]",
+        # Use the project owner as creator so the issue is trusted for prompt building.
+        # Dependabot alerts are system-verified, so trust is appropriate here.
+        github_creator_login: trusted_login_for(project),
         github_created_at: now,
         github_updated_at: now,
         paid_state: "new",
-        labels: [ "security", "dependabot" ]
+        labels: [ "security", "dependabot" ],
+        source: SYNTHETIC_SOURCE
       )
 
       { issue_id: issue.id, alert_number: alert[:number], alert_type: "dependabot" }
@@ -156,8 +162,10 @@ module Activities
     end
 
     def generate_synthetic_number(project)
+      # Use a large offset (900_000) to avoid collisions with real GitHub
+      # issue/PR numbers, which are sequential small integers.
       max_number = project.issues.maximum(:github_number) || 0
-      max_number + 1
+      [ max_number + 1, 900_000 ].max
     end
 
     def severities_at_or_above(threshold)
@@ -165,8 +173,10 @@ module Activities
       SEVERITY_ORDER[0..idx]
     end
 
-    def sanitize_like(value)
-      value.gsub("%", "\\%").gsub("_", "\\_")
+    # Returns the first allowed username for the project, so synthetic issues
+    # are trusted and their body can be used as the agent prompt.
+    def trusted_login_for(project)
+      project.allowed_github_usernames.first || "paid[bot]"
     end
   end
 end

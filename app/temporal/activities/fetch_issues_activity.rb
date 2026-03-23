@@ -153,10 +153,13 @@ module Activities
 
     def close_stale_issues(project, github_issues)
       fetched_github_ids = github_issues.map(&:id).to_set
+      # Only close stale issues sourced from GitHub. Synthetic issues (e.g.
+      # from Dependabot alert scanning) are managed by their own activities.
+      github_sourced = project.issues.where(github_state: "open", source: "github")
       stale_issues = if fetched_github_ids.empty?
-        project.issues.where(github_state: "open")
+        github_sourced
       else
-        project.issues.where(github_state: "open").where.not(github_issue_id: fetched_github_ids)
+        github_sourced.where.not(github_issue_id: fetched_github_ids)
       end
       count = stale_issues.count
 

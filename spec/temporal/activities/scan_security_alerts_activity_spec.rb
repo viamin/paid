@@ -105,6 +105,21 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(issue.labels).to include("security")
         expect(issue.paid_state).to eq("new")
         expect(issue.github_state).to eq("open")
+        expect(issue.source).to eq("dependabot_alert")
+      end
+
+      it "sets a trusted creator login" do
+        activity.execute(project_id: project.id)
+
+        issue = project.issues.find_by("title LIKE ?", "%minimatch%")
+        expect(issue.trusted?).to be true
+      end
+
+      it "assigns synthetic github_numbers starting at 900_000" do
+        activity.execute(project_id: project.id)
+
+        numbers = project.issues.order(:id).pluck(:github_number)
+        expect(numbers.first).to be >= 900_000
       end
 
       it "respects max_security_fix_runs limit" do
