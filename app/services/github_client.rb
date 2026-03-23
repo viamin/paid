@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "octokit"
+require "ostruct"
 require "faraday/retry"
 
 # GitHub API client wrapper with error handling and rate limit awareness.
