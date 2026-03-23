@@ -1190,4 +1190,100 @@ RSpec.describe GithubClient do
       end
     end
   end
+
+  describe "#dependabot_alerts" do
+    let(:repo) { "owner/repo" }
+
+    context "when alerts exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
+          .with(query: hash_including("state" => "open"))
+          .to_return(
+            status: 200,
+            body: [
+              {
+                number: 1,
+                state: "open",
+                html_url: "https://github.com/owner/repo/security/dependabot/1",
+                dependency: {
+                  package: { name: "minimatch", ecosystem: "npm" }
+                },
+                security_advisory: {
+                  severity: "high",
+                  summary: "ReDoS vulnerability in minimatch"
+                },
+                security_vulnerability: {
+                  severity: "high",
+                  first_patched_version: { identifier: "3.0.5" }
+                }
+              }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns parsed alert data" do
+        result = client.dependabot_alerts(repo)
+
+        expect(result.size).to eq(1)
+        alert = result.first
+        expect(alert[:number]).to eq(1)
+        expect(alert[:state]).to eq("open")
+        expect(alert[:severity]).to eq("high")
+        expect(alert[:package_name]).to eq("minimatch")
+        expect(alert[:package_ecosystem]).to eq("npm")
+        expect(alert[:patched_version]).to eq("3.0.5")
+        expect(alert[:summary]).to eq("ReDoS vulnerability in minimatch")
+      end
+    end
+
+    context "when filtering by severity" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
+          .with(query: hash_including("severity" => "critical,high", "state" => "open"))
+          .to_return(
+            status: 200,
+            body: [].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "passes severity filter to the API" do
+        client.dependabot_alerts(repo, severity: %w[critical high])
+
+        expect(WebMock).to have_requested(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
+          .with(query: hash_including("severity" => "critical,high"))
+      end
+    end
+
+    context "when Dependabot is not enabled" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
+          .with(query: hash_including("state" => "open"))
+          .to_return(status: 404, body: { message: "Not Found" }.to_json)
+      end
+
+      it "raises NotFoundError" do
+        expect { client.dependabot_alerts(repo) }.to raise_error(GithubClient::NotFoundError)
+      end
+    end
+
+    context "when no alerts exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
+          .with(query: hash_including("state" => "open"))
+          .to_return(
+            status: 200,
+            body: [].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns an empty array" do
+        result = client.dependabot_alerts(repo)
+
+        expect(result).to eq([])
+      end
+    end
+  end
 end
