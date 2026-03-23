@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe RecoverMissingPrLabelsJob do
+RSpec.describe RecoverMissingPullRequestLabelsJob do
   describe "#perform" do
     let(:project) { create(:project, owner: "viamin", repo: "paid") }
     let(:github_client) { instance_double(GithubClient) }
