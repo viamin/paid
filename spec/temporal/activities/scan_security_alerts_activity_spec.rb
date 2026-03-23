@@ -115,11 +115,11 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(issue.trusted?).to be true
       end
 
-      it "assigns synthetic github_numbers starting at 900_000" do
+      it "assigns synthetic github_numbers starting at SYNTHETIC_NUMBER_OFFSET" do
         activity.execute(project_id: project.id)
 
         numbers = project.issues.order(:id).pluck(:github_number)
-        expect(numbers.first).to be >= 900_000
+        expect(numbers.first).to be >= 100_000_000
       end
 
       it "respects max_security_fix_runs limit" do
@@ -274,6 +274,20 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:alerts_to_fix]).to eq([])
+      end
+
+      it "does not close existing synthetic dependabot issues" do
+        stale_issue = create(:issue,
+          project: project,
+          title: "[Security] Upgrade old-pkg — dependabot-alert-99",
+          github_issue_id: 9_000_000_099,
+          github_state: "open",
+          source: "dependabot_alert")
+
+        activity.execute(project_id: project.id)
+
+        stale_issue.reload
+        expect(stale_issue.github_state).to eq("open")
       end
     end
   end
