@@ -15,6 +15,22 @@ RSpec.describe CostBudget do
     it { is_expected.to validate_presence_of(:limit_cents) }
     it { is_expected.to validate_numericality_of(:limit_cents).is_greater_than(0) }
     it { is_expected.to validate_numericality_of(:current_usage_cents).is_greater_than_or_equal_to(0) }
+
+    it "validates limit_dollars is greater than 0 when present" do
+      budget = build(:cost_budget, limit_dollars: "0")
+      budget.valid?
+
+      expect(budget.errors[:limit_dollars]).to include("must be greater than 0")
+      expect(budget.errors[:limit_cents]).to be_empty
+    end
+
+    it "validates limit_dollars rejects negative values" do
+      budget = build(:cost_budget, limit_dollars: "-5")
+      budget.valid?
+
+      expect(budget.errors[:limit_dollars]).to include("must be greater than 0")
+    end
+
     it { is_expected.to validate_numericality_of(:alert_threshold_percent).is_greater_than(0) }
 
     it "enforces uniqueness of budget_type per project" do
