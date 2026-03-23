@@ -241,5 +241,118 @@ RSpec.describe Issues::AutoPick do
         hash_including(message: "auto_pick.issue_selected", issue_id: issue.id)
       )
     end
+
+    context "with per-project concurrency limit" do
+      it "returns nil when project has a queued agent run" do
+        create(:agent_run, :queued, project: project)
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "returns nil when project has a running agent run" do
+        create(:agent_run, :running, project: project)
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "returns nil when project has a pending agent run" do
+        create(:agent_run, project: project, status: "pending")
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "picks an issue when all project runs are finished" do
+        create(:agent_run, :completed, project: project)
+        create(:agent_run, :failed, project: project)
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "does not count runs from other projects" do
+        other_project = create(:project, auto_pick_enabled: true)
+        create(:agent_run, :running, project: other_project)
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+    end
+
+    context "when project has PRs needing attention" do
+      it "returns nil when project has an open PR in in_progress state" do
+        create(:issue, :pull_request, :in_progress, project: project)
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "returns nil when project has an open PR in failed state" do
+        create(:issue, :pull_request, :failed, project: project)
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "picks an issue when open PRs already have active agent runs" do
+        pr = create(:issue, :pull_request, :in_progress, project: project)
+        create(:agent_run, :running, project: project, issue: pr)
+        create(:issue, project: project)
+
+        # Project has an active run, so it should return nil due to
+        # per-project concurrency limit (not PR check)
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "picks an issue when all PRs are completed" do
+        create(:issue, :pull_request, :completed, project: project)
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "picks an issue when all PRs are closed" do
+        create(:issue, :pull_request, project: project, github_state: "closed")
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "picks an issue when PRs are in new state" do
+        create(:issue, :pull_request, project: project, paid_state: "new")
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+    end
   end
 end
