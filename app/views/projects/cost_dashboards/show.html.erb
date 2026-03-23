@@ -173,6 +173,15 @@
                 </div>
               </div>
               <% if policy(@project).update? %>
+                <% if @failed_budget&.id == budget[:id] && @failed_budget.errors.any? %>
+                  <div class="mt-3 w-full rounded-md bg-red-50 p-3 text-sm text-red-700">
+                    <ul class="list-disc pl-5">
+                      <% @failed_budget.errors.full_messages.each do |message| %>
+                        <li><%= message %></li>
+                      <% end %>
+                    </ul>
+                  </div>
+                <% end %>
                 <div class="mt-3 flex gap-2">
                   <% budget_record = @cost_budgets[budget[:id]] %>
                   <%= form_with model: [@project, budget_record], url: project_cost_budget_path(@project, budget[:id]), method: :patch, class: "flex items-center gap-2" do |f| %>
@@ -204,6 +213,15 @@
           <div class="px-4 py-5 sm:p-6">
             <h3 class="text-sm font-medium text-gray-900">Add Budget Limit</h3>
             <%= form_with model: [@project, @cost_budget], url: project_cost_budgets_path(@project), class: "mt-3 flex flex-wrap items-end gap-3" do |f| %>
+              <% if @cost_budget&.errors&.any? %>
+                <div class="mb-3 w-full rounded-md bg-red-50 p-3 text-sm text-red-700">
+                  <ul class="list-disc pl-5">
+                    <% @cost_budget.errors.full_messages.each do |message| %>
+                      <li><%= message %></li>
+                    <% end %>
+                  </ul>
+                </div>
+              <% end %>
               <div>
                 <%= f.label :budget_type, "Type", class: "block text-xs font-medium text-gray-700" %>
                 <%= f.select :budget_type, available_types.map { |t| [budget_type_label(t), t] }, {}, class: "mt-1 block rounded-md border-0 py-1.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
