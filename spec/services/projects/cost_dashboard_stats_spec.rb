@@ -44,12 +44,21 @@ RSpec.describe Projects::CostDashboardStats do
       expect(models["claude-3-haiku"]).to eq(100)
     end
 
-    it "returns daily cost data" do
-      run = create(:agent_run, project: project)
-      create(:token_usage, agent_run: run, cost_cents: 150, request_type: "agent")
+    it "returns a full 30-day daily cost array with zero-filled gaps" do
+      travel_to(Time.zone.local(2024, 6, 15, 12, 0, 0)) do
+        run = create(:agent_run, project: project)
+        create(:token_usage, agent_run: run, cost_cents: 150, request_type: "agent")
 
-      result = described_class.call(project: project)
-      expect(result[:daily_costs]).to be_an(Array)
+        result = described_class.call(project: project)
+        daily = result[:daily_costs]
+        expect(daily).to be_an(Array)
+        expect(daily.length).to eq(30)
+        expect(daily.first.first).to eq(Date.new(2024, 5, 17))
+        expect(daily.last.first).to eq(Date.new(2024, 6, 15))
+        expect(daily.last.last).to eq(150)
+        # Days without usage should be zero-filled
+        expect(daily[0..28].map(&:last)).to all(eq(0))
+      end
     end
 
     it "returns budget information with usage for daily budgets" do
