@@ -1,0 +1,100 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "net/http"
+require "pathname"
+require "uri"
+
+APP_ROOT = Pathname(__dir__).join("..").expand_path
+DOCKERFILE_PATH = APP_ROOT.join("docker/agent/Dockerfile")
+PACKAGE_JSON_PATH = APP_ROOT.join("package.json")
+DOCKERFILE_NPM_PACKAGES = {
+  "yarn" => /^(\s*&& corepack prepare yarn@)([^\s]+)( --activate\s*)$/,
+  "@openai/codex" => /^(RUN npm install -g @openai\/codex@)([^\s]+)(\s*)$/
+}.freeze
+
+def system!(*args)
+  system(*args, exception: true)
+end
+
+def fetch_latest_npm_version(package_name)
+  escaped_package_name = package_name.gsub("/", "%2F")
+  uri = URI("https://registry.npmjs.org/#{escaped_package_name}/latest")
+  response = Net::HTTP.get_response(uri)
+  raise "Failed to fetch #{package_name}: #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+
+  JSON.parse(response.body).fetch("version")
+end
+
+def replace_version(contents, pattern, new_version)
+  updated = false
+
+  rewritten = contents.gsub(pattern) do
+    updated = true
+    "#{Regexp.last_match(1)}#{new_version}#{Regexp.last_match(3)}"
+  end
+
+  [rewritten, updated]
+end
+
+def usage
+  puts "Usage: bin/update"
+  puts "Updates Ruby gems, Yarn packages, and supported Dockerfile-pinned npm tools."
+end
+
+def update_dockerfile(latest_versions)
+  contents = DOCKERFILE_PATH.read
+  updates = []
+  failures = []
+
+  DOCKERFILE_NPM_PACKAGES.each do |package_name, pattern|
+    latest_version = latest_versions.fetch(package_name)
+    contents, updated = replace_version(contents, pattern, latest_version)
+    updates << "#{package_name} -> #{latest_version}" if updated
+  rescue StandardError => error
+    failures << "#{package_name} (#{error.message})"
+  end
+
+  DOCKERFILE_PATH.write(contents)
+  [updates, failures]
+end
+
+def update_package_manager(latest_yarn)
+  package_json = JSON.parse(PACKAGE_JSON_PATH.read)
+  package_json["packageManager"] = "yarn@#{latest_yarn}"
+  PACKAGE_JSON_PATH.write(JSON.pretty_generate(package_json) << "\n")
+end
+
+if ARGV.any? { |arg| %w[-h --help].include?(arg) }
+  usage
+  exit 0
+end
+
+Dir.chdir(APP_ROOT) do
+  puts "== Updating Ruby gems =="
+  system! "bundle", "update"
+
+  puts "\n== Updating JavaScript packages =="
+  system! "yarn", "upgrade"
+
+  puts "\n== Updating Dockerfile-pinned npm tools =="
+  latest_versions = DOCKERFILE_NPM_PACKAGES.keys.to_h do |package_name|
+    [package_name, fetch_latest_npm_version(package_name)]
+  end
+  update_package_manager(latest_versions.fetch("yarn"))
+
+  updates, failures = update_dockerfile(latest_versions)
+  if updates.empty?
+    puts "No npm-pinned Dockerfile dependencies matched."
+  else
+    updates.each { |update| puts "Updated #{update}" }
+  end
+
+  failures.each { |failure| warn "Skipped #{failure}" }
+
+  puts "\n== Skipped checksum-pinned Dockerfile installs =="
+  puts "Skipped Node.js, Ruby, ast-grep, and scc because they require checksum-aware release updates."
+
+  puts "\n== Update complete =="
+end
