@@ -685,6 +685,15 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Priority bumped")
       end
 
+      it "enqueues ProcessRunQueueJob" do
+        create(:agent_run, :queued, :automatic, project: project,
+          source_pull_request_number: 77, custom_prompt: "Fix PR")
+
+        expect {
+          post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+        }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
       it "bumps queued auto-continue runs only for the selected pull request" do
         _pr2 = create(:issue, :pull_request, project: project, github_number: 78, title: "Other PR")
         run1 = create(:agent_run, :queued, :automatic, project: project,

@@ -177,11 +177,21 @@ class Project < ApplicationRecord
 
   def broadcast_pull_requests_update
     open_items = issues.where(github_state: "open").order(github_number: :desc)
+    active_auto_continue = agent_runs
+      .where(trigger_type: "automatic", status: "queued")
+      .where.not(source_pull_request_number: nil)
+      .distinct
+      .pluck(:source_pull_request_number)
+      .to_set
     broadcast_replace_to(
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :pull_requests),
       partial: "projects/pull_requests",
-      locals: { project: self, pull_requests: open_items.pull_requests_only.limit(25) }
+      locals: {
+        project: self,
+        pull_requests: open_items.pull_requests_only.limit(25),
+        pr_numbers_with_active_auto_continue: active_auto_continue
+      }
     )
   end
 
