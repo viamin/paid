@@ -28,6 +28,7 @@ class ProjectsController < ApplicationController
     @issues = open_items.issues_only.includes(:sub_issues).limit(25)
     @pull_requests = open_items.pull_requests_only.limit(25)
     @pr_numbers_with_queued_auto_continue = @project.pr_numbers_with_queued_auto_continue
+    @pr_numbers_with_active_runs = @project.pr_numbers_with_active_runs
     @cost_budgets = @project.cost_budgets.load
     @quality_summary = QualityMetrics::DashboardStats.overview(project: @project)
   end

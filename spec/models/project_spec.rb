@@ -329,6 +329,63 @@ RSpec.describe Project do
     end
   end
 
+  describe "#pr_numbers_with_queued_auto_continue" do
+    let(:project) { create(:project) }
+
+    it "returns PR numbers with queued automatic runs" do
+      create(:agent_run, :queued, :automatic, project: project,
+        source_pull_request_number: 42, custom_prompt: "Fix PR")
+
+      expect(project.pr_numbers_with_queued_auto_continue).to eq(Set[42])
+    end
+
+    it "excludes completed automatic runs" do
+      create(:agent_run, :completed, :automatic, project: project,
+        source_pull_request_number: 42, custom_prompt: "Fix PR")
+
+      expect(project.pr_numbers_with_queued_auto_continue).to be_empty
+    end
+
+    it "excludes queued manual runs" do
+      create(:agent_run, :queued, :manual, project: project,
+        source_pull_request_number: 42, custom_prompt: "Fix PR")
+
+      expect(project.pr_numbers_with_queued_auto_continue).to be_empty
+    end
+  end
+
+  describe "#pr_numbers_with_active_runs" do
+    let(:project) { create(:project) }
+
+    it "returns PR numbers with queued runs" do
+      create(:agent_run, :queued, :manual, project: project,
+        source_pull_request_number: 42, custom_prompt: "Fix PR")
+
+      expect(project.pr_numbers_with_active_runs).to eq(Set[42])
+    end
+
+    it "returns PR numbers with running runs" do
+      create(:agent_run, :running, project: project,
+        source_pull_request_number: 42, custom_prompt: "Fix PR")
+
+      expect(project.pr_numbers_with_active_runs).to eq(Set[42])
+    end
+
+    it "excludes completed runs" do
+      create(:agent_run, :completed, project: project,
+        source_pull_request_number: 42, custom_prompt: "Fix PR")
+
+      expect(project.pr_numbers_with_active_runs).to be_empty
+    end
+
+    it "excludes runs without a source PR number" do
+      create(:agent_run, :queued, :manual, project: project,
+        source_pull_request_number: nil, custom_prompt: "Fix something")
+
+      expect(project.pr_numbers_with_active_runs).to be_empty
+    end
+  end
+
   describe "#has_running_database_container?" do
     let(:project) { create(:project) }
 

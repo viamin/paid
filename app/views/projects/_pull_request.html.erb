@@ -24,6 +24,8 @@
                     method: :post,
                     class: "text-xs font-medium text-amber-600 hover:text-amber-900",
                     form: { data: { action_button: true } } %>
+    <% elsif pr_numbers_with_active_runs&.include?(pull_request.github_number) %>
+      <span class="text-xs font-medium text-gray-400">Run in progress</span>
     <% else %>
       <%= button_to "Quick Run",
                     quick_create_project_agent_runs_path(project, pull_request_id: pull_request.id),

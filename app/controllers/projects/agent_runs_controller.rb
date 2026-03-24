@@ -107,13 +107,14 @@ module Projects
         .where(source_pull_request_number: pr.github_number, trigger_type: "automatic")
         .where(status: "queued")
 
-      affected = runs.update_all(trigger_type: "manual")
+      affected = runs.update_all(trigger_type: "manual", updated_at: Time.current)
 
       if affected.zero?
         redirect_to project_path(@project), alert: "No queued auto-continue runs for this pull request."
         return
       end
 
+      @project.broadcast_pull_requests_update
       ProcessRunQueueJob.perform_later
 
       redirect_to project_path(@project), notice: "Priority bumped for PR ##{pr.github_number}."
