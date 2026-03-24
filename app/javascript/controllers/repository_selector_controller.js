@@ -115,9 +115,9 @@ export default class extends Controller {
   }
 
   updateRepoVisibility() {
-    if (this.hasRepoGroupTarget) {
-      const hasToken = this.tokenSelectTarget.value !== ""
-      this.repoGroupTarget.classList.toggle("hidden", !hasToken)
+    const hasToken = this.tokenSelectTarget.value !== ""
+    if (this.hasRepoSelectTarget) {
+      this.repoSelectTarget.disabled = !hasToken
     }
   }
 }
