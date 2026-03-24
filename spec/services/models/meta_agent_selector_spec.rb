@@ -6,7 +6,7 @@ RSpec.describe Models::MetaAgentSelector do
   describe ".call" do
     let(:agent_run) { create(:agent_run) }
     let!(:capable_model) { create(:llm_model, model_id: "claude-sonnet-4-6", capability_score: 9.0) }
-    let!(:cheap_model) { create(:llm_model, :cheap, model_id: "claude-haiku-4-5") }
+    let!(:cheap_model) { create(:llm_model, :cheap, model_id: "claude-haiku-4-5-20251001") }
 
     let(:successful_response) do
       instance_double(
@@ -35,7 +35,7 @@ RSpec.describe Models::MetaAgentSelector do
 
       expect(result[:candidates]).to contain_exactly(
         { model_id: "claude-sonnet-4-6", score: 9.0 },
-        { model_id: "claude-haiku-4-5", score: 5.0 }
+        { model_id: "claude-haiku-4-5-20251001", score: 5.0 }
       )
     end
 
@@ -55,7 +55,7 @@ RSpec.describe Models::MetaAgentSelector do
         instance_double(
           AgentHarness::Response,
           success?: true,
-          output: '{"model": "claude-haiku-4-5", "reasoning": "Simple task, cheap model sufficient", "complexity_score": 2.0}'
+          output: '{"model": "claude-haiku-4-5-20251001", "reasoning": "Simple task, cheap model sufficient", "complexity_score": 2.0}'
         )
       end
 
@@ -128,7 +128,7 @@ RSpec.describe Models::MetaAgentSelector do
 
     context "when project has excluded models" do
       before do
-        agent_run.project.update!(model_preferences: { "excluded_model_ids" => [ "claude-haiku-4-5" ] })
+        agent_run.project.update!(model_preferences: { "excluded_model_ids" => [ "claude-haiku-4-5-20251001" ] })
       end
 
       it "excludes those models from candidates" do
