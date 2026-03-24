@@ -105,15 +105,13 @@ module Projects
 
       runs = @project.agent_runs
         .where(source_pull_request_number: pr.github_number, trigger_type: "automatic")
-        .where(status: %w[queued pending running])
+        .where(status: "queued")
 
-      unless runs.exists?
-        redirect_to project_path(@project), alert: "No active auto-continue runs for this pull request."
+      affected = runs.update_all(trigger_type: "manual")
+
+      if affected.zero?
+        redirect_to project_path(@project), alert: "No queued auto-continue runs for this pull request."
         return
-      end
-
-      runs.find_each do |run|
-        run.update!(trigger_type: "manual")
       end
 
       ProcessRunQueueJob.perform_later

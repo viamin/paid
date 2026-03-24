@@ -28,7 +28,7 @@ class ProjectsController < ApplicationController
     @issues = open_items.issues_only.includes(:sub_issues).limit(25)
     @pull_requests = open_items.pull_requests_only.limit(25)
     @pr_numbers_with_active_auto_continue = @project.agent_runs
-      .where(trigger_type: "automatic", status: %w[queued pending running])
+      .where(trigger_type: "automatic", status: "queued")
       .where.not(source_pull_request_number: nil)
       .distinct
       .pluck(:source_pull_request_number)

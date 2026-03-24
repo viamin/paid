@@ -81,15 +81,6 @@ class Issue < ApplicationRecord
     end
   end
 
-  def has_active_auto_continue_runs?
-    return false unless is_pull_request?
-
-    project.agent_runs
-      .where(source_pull_request_number: github_number, trigger_type: "automatic")
-      .where(status: %w[queued pending running])
-      .exists?
-  end
-
   def draft_phase?
     pr_review_phase.in?(%w[draft restarted])
   end
