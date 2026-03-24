@@ -58,6 +58,14 @@ module ApplicationHelper
     "error" => { bg: "bg-red-100", text: "text-red-700", label: "Error" }
   }.freeze
 
+  LOCAL_TIME_FORMATS = {
+    long: "%B %d, %Y at %l:%M %p UTC",
+    short: "%b %d, %Y %H:%M UTC",
+    date: "%b %d, %Y",
+    time: "%H:%M:%S UTC",
+    relative: nil
+  }.freeze
+
   def service_container_status_badge(status)
     styles = SERVICE_CONTAINER_STATUS_STYLES[status] || SERVICE_CONTAINER_STATUS_STYLES["stopped"]
     tag.span(
@@ -158,16 +166,11 @@ module ApplicationHelper
     end
   end
 
-  LOCAL_TIME_FORMATS = {
-    long: "%B %d, %Y at %l:%M %p UTC",
-    short: "%b %d, %Y %H:%M UTC",
-    date: "%b %d, %Y",
-    time: "%H:%M:%S UTC",
-    relative: nil
-  }.freeze
-
   def local_time_fallback(utc, format)
-    fmt = LOCAL_TIME_FORMATS[format.to_sym]
+    format_key = format&.to_sym || :long
+    raise ArgumentError, "Unknown local_time format: #{format_key.inspect}" unless LOCAL_TIME_FORMATS.key?(format_key)
+
+    fmt = LOCAL_TIME_FORMATS[format_key]
     if fmt
       utc.strftime(fmt).squish
     else
