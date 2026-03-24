@@ -74,9 +74,10 @@ Rails.application.routes.draw do
 
   # API endpoints for agent containers
   namespace :api do
-    match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :post
-    match "proxy/openai/*path", to: "secrets_proxy#openai", via: :post
-    match "proxy/github/*path", to: "github_proxy#proxy", via: [ :get, :post, :patch ]
+    match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :post, format: false
+    match "proxy/openai/*path", to: "secrets_proxy#openai", via: :post, format: false
+    match "proxy/google/*path", to: "secrets_proxy#google", via: :post, format: false
+    match "proxy/github/*path", to: "github_proxy#proxy", via: [ :get, :post, :patch ], format: false
     get "proxy/git-credentials", to: "git_credentials#show"
   end
 

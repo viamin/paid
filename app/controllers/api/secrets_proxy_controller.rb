@@ -33,6 +33,18 @@ module Api
       )
     end
 
+    # POST /api/proxy/google/*path
+    def google
+      api_key = fetch_api_key(:google)
+      return if performed?
+
+      proxy_request(
+        base_url: "https://generativelanguage.googleapis.com",
+        auth_header: "x-goog-api-key",
+        api_key: api_key
+      )
+    end
+
     private
 
     def check_rate_limit
@@ -44,6 +56,7 @@ module Api
     def proxy_request(base_url:, auth_header:, api_key:)
       path = params[:path] || ""
       target_url = "#{base_url}/#{path}"
+      target_url = "#{target_url}?#{request.query_string}" if request.query_string.present?
 
       response = build_connection.run_request(
         request.method.downcase.to_sym,
@@ -69,8 +82,8 @@ module Api
     end
 
     def forwarded_headers
-      # Forward essential headers, including Anthropic-specific ones required by the API.
-      %w[Content-Type Accept anthropic-version anthropic-beta].each_with_object({}) do |header, hash|
+      # Forward essential headers, including provider-specific ones (Anthropic and Google).
+      %w[Content-Type Accept anthropic-version anthropic-beta x-goog-api-client].each_with_object({}) do |header, hash|
         value = request.headers[header]
         hash[header] = value if value.present?
       end
@@ -80,20 +93,44 @@ module Api
       return unless response.success?
 
       body = parse_response_body(response.body)
-      return unless body.is_a?(Hash) && body["usage"]
+      return unless body.is_a?(Hash)
 
-      usage = body["usage"]
+      input_tokens, output_tokens, model = extract_usage(body)
+      return unless input_tokens
+
       TokenUsageTracker.track(
         agent_run: @agent_run,
         usage: {
-          tokens_input: usage["input_tokens"] || usage["prompt_tokens"] || 0,
-          tokens_output: usage["output_tokens"] || usage["completion_tokens"] || 0,
-          llm_model: body["model"],
+          tokens_input: input_tokens,
+          tokens_output: output_tokens,
+          llm_model: model,
           request_type: "agent"
         }
       )
     rescue => e
       log_error("secrets_proxy.track_usage_failed", e.message)
+    end
+
+    # Extracts token counts and model from provider-specific response shapes.
+    # Returns [input_tokens, output_tokens, model] or nil if no usage data found.
+    def extract_usage(body)
+      if body["usage"]
+        # Anthropic (input_tokens/output_tokens) and OpenAI (prompt_tokens/completion_tokens)
+        usage = body["usage"]
+        [
+          usage["input_tokens"] || usage["prompt_tokens"] || 0,
+          usage["output_tokens"] || usage["completion_tokens"] || 0,
+          body["model"]
+        ]
+      elsif body["usageMetadata"]
+        # Google Generative Language API (promptTokenCount/candidatesTokenCount)
+        meta = body["usageMetadata"]
+        [
+          meta["promptTokenCount"] || 0,
+          meta["candidatesTokenCount"] || 0,
+          body.dig("modelVersion") || body["model"]
+        ]
+      end
     end
 
     def parse_response_body(body)
