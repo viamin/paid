@@ -494,23 +494,21 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.reload.provider_switches).to eq(1)
       end
 
-      it "continues to next provider when the first provider times out" do
-        call_count = 0
-        allow(container_service).to receive(:execute) do |_cmd, **_opts|
-          call_count += 1
-          if call_count == 1
-            raise Containers::Provision::TimeoutError, "took too long"
-          else
-            exec_success
-          end
-        end
+      it "does not continue to the next provider when the first provider times out" do
+        allow(container_service).to receive(:execute)
+          .and_raise(Containers::Provision::TimeoutError, "took too long")
 
-        result = activity.execute(agent_run_id: agent_run.id)
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+          .and have_enqueued_job(ProcessRunQueueJob)
+
         agent_run.reload
 
-        expect(result[:success]).to be true
-        expect(result[:final_provider]).to eq("cursor")
-        expect(agent_run.status).to eq("running")
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("wall_clock_timeout")
+        expect(agent_run.providers_attempted.map { |attempt| attempt["provider"] }).to eq([ "claude_code" ])
+        expect(agent_run.final_provider).to be_nil
       end
 
       it "raises AllProvidersExhausted when all fallbacks fail" do
