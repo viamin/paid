@@ -13,15 +13,10 @@ module Activities
     activity_name "ScanSecurityAlerts"
 
     SEVERITY_ORDER = %w[critical high medium low].freeze
-    # Synthetic issues use source "dependabot_alert" so FetchIssuesActivity's
-    # stale-close logic (which only targets source "github") won't close them.
-    SYNTHETIC_SOURCE = "dependabot_alert"
-    # Large offset for synthetic github_issue_id values (bigint column).
-    # GitHub's REST API issue.id is a global integer that currently ranges
-    # in the low billions (~1–3B). This offset is set well above that range
-    # to make collisions impossible for the foreseeable future. Alert numbers
-    # are small sequential integers added to this base.
-    SYNTHETIC_ISSUE_ID_OFFSET = 900_000_000_000
+    # Canonical constants live in Issue to avoid coupling the model to this
+    # activity class. Local aliases keep activity code concise.
+    SYNTHETIC_SOURCE = Issue::SYNTHETIC_DEPENDABOT_SOURCE
+    SYNTHETIC_ISSUE_ID_OFFSET = Issue::SYNTHETIC_ISSUE_ID_OFFSET
     # Offset for synthetic github_number values (integer column, max ~2.1B).
     # GitHub issue/PR numbers are sequential; even the busiest repos rarely
     # exceed a few hundred thousand, so 100M provides ample headroom.
@@ -231,7 +226,7 @@ module Activities
     # Returns the first allowed username for the project, so synthetic issues
     # are trusted and their body can be used as the agent prompt.
     def trusted_login_for(project)
-      project.allowed_github_usernames.first || "paid[bot]"
+      project.allowed_github_usernames.find(&:present?) || "paid[bot]"
     end
   end
 end

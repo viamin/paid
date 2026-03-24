@@ -4,6 +4,13 @@ class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
 
+  # Constants for synthetic Dependabot alert issues. Shared with
+  # Activities::ScanSecurityAlertsActivity which creates these issues.
+  SYNTHETIC_DEPENDABOT_SOURCE = "dependabot_alert"
+  # Large offset so synthetic github_issue_id values never collide with real
+  # GitHub issue IDs (which currently range in the low billions).
+  SYNTHETIC_ISSUE_ID_OFFSET = 900_000_000_000
+
   belongs_to :project
   belongs_to :parent_issue, class_name: "Issue", optional: true
 
@@ -54,8 +61,8 @@ class Issue < ApplicationRecord
 
   def github_url
     # Synthetic Dependabot alert issues link to the specific alert page.
-    if source == Activities::ScanSecurityAlertsActivity::SYNTHETIC_SOURCE
-      alert_number = github_issue_id - Activities::ScanSecurityAlertsActivity::SYNTHETIC_ISSUE_ID_OFFSET
+    if source == SYNTHETIC_DEPENDABOT_SOURCE
+      alert_number = github_issue_id - SYNTHETIC_ISSUE_ID_OFFSET
       return "#{project.github_url}/security/dependabot/#{alert_number}"
     end
 
