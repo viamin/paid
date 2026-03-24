@@ -1,10 +1,10 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["tokenSelect", "repoSelect", "owner", "repo", "githubId", "defaultBranch", "loading", "repoGroup"]
+  static targets = ["tokenSelect", "repoSelect", "owner", "repo", "githubId", "defaultBranch", "loading"]
 
   connect() {
-    this.updateRepoVisibility()
+    this.updateRepoDisabledState()
   }
 
   async tokenChanged() {
@@ -12,7 +12,7 @@ export default class extends Controller {
     this.clearRepoSelect()
 
     if (!tokenId) {
-      this.updateRepoVisibility()
+      this.updateRepoDisabledState()
       return
     }
 
@@ -44,7 +44,7 @@ export default class extends Controller {
       this.showError("Failed to load repositories. Please check your connection and try again.")
     } finally {
       this.hideLoading()
-      this.updateRepoVisibility()
+      this.updateRepoDisabledState()
     }
   }
 
@@ -99,6 +99,7 @@ export default class extends Controller {
   }
 
   showLoading() {
+    this.repoSelectTarget.innerHTML = '<option value="">Loading repositories...</option>'
     if (this.hasLoadingTarget) this.loadingTarget.classList.remove("hidden")
   }
 
@@ -114,7 +115,7 @@ export default class extends Controller {
     this.repoSelectTarget.appendChild(errorOption)
   }
 
-  updateRepoVisibility() {
+  updateRepoDisabledState() {
     const hasToken = this.tokenSelectTarget.value !== ""
     if (this.hasRepoSelectTarget) {
       this.repoSelectTarget.disabled = !hasToken
