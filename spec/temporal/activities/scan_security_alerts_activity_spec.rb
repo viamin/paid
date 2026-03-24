@@ -388,7 +388,9 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
 
       before do
-        project.update!(allowed_github_usernames: [])
+        # Bypass validation to simulate a project with no trusted usernames,
+        # since the model validates allowed_github_usernames is not empty.
+        project.update_column(:allowed_github_usernames, [])
         allow(github_client).to receive(:dependabot_alerts)
           .with(project.full_name)
           .and_return(alerts)
