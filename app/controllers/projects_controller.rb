@@ -1,13 +1,17 @@
 # frozen_string_literal: true
 
 class ProjectsController < ApplicationController
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :detect_services ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :detect_services ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
   AUTO_PICK_PARTIALS = {
     "index" => "projects/auto_pick_toggle_index",
     "show" => "projects/auto_pick_toggle"
+  }.freeze
+  AUTO_MERGE_PARTIALS = {
+    "index" => "projects/auto_merge_toggle_index",
+    "show" => "projects/auto_merge_toggle"
   }.freeze
 
   def index
@@ -92,6 +96,24 @@ class ProjectsController < ApplicationController
     end
   end
 
+  def toggle_auto_merge
+    authorize @project, :update?
+    @project.update!(auto_merge_enabled: !@project.auto_merge_enabled?)
+
+    partial = AUTO_MERGE_PARTIALS.fetch(params[:context], "projects/auto_merge_toggle")
+
+    respond_to do |format|
+      format.turbo_stream do
+        render turbo_stream: turbo_stream.replace(
+          ActionView::RecordIdentifier.dom_id(@project, :auto_merge_toggle),
+          partial: partial,
+          locals: { project: @project }
+        )
+      end
+      format.html { redirect_to @project }
+    end
+  end
+
   def detect_services
     authorize @project, :update?
 
@@ -131,7 +153,7 @@ class ProjectsController < ApplicationController
   def project_params
     params.require(:project).permit(:github_token_id, :owner, :repo, :name, :active,
       :poll_interval_seconds, :github_id, :default_branch,
-      :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled,
+      :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_enabled,
       allowed_github_usernames: [])
   end
 

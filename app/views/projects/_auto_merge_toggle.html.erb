@@ -1,0 +1,28 @@
+<%= tag.div id: dom_id(project, :auto_merge_toggle), class: "px-4 py-5 sm:p-6" do %>
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h4 class="text-sm font-semibold leading-6 text-gray-900">Auto-Merge</h4>
+      <p class="mt-1 text-sm text-gray-500">
+        <% if project.auto_merge_enabled? %>
+          Paid will automatically merge PRs that it generated, are in a paid-ready state, have no unresolved review comments, and pass all CI checks.
+        <% else %>
+          Enable to let Paid automatically merge PRs that pass all quality gates.
+        <% end %>
+      </p>
+    </div>
+    <% if policy(project).update? %>
+      <div class="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
+        <%= button_to toggle_auto_merge_project_path(project), method: :post, class: "group relative inline-flex h-8 w-14 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 #{project.auto_merge_enabled? ? 'bg-indigo-600' : 'bg-gray-200'}" do %>
+          <span class="sr-only">Toggle auto-merge</span>
+          <span class="pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out <%= project.auto_merge_enabled? ? 'translate-x-6' : 'translate-x-0' %>"></span>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
+        <span class="inline-flex items-center rounded-md px-3 py-1 text-sm font-medium <%= project.auto_merge_enabled? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
+          <%= project.auto_merge_enabled? ? "On" : "Off" %>
+        </span>
+      </div>
+    <% end %>
+  </div>
+<% end %>
