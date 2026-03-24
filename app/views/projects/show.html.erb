@@ -111,7 +111,7 @@
   </div>
 
   <div data-show-actions="<%= policy(@project).run_agent? %>">
-    <%= render "projects/stats", project: @project %>
+    <%= render "projects/stats", project: @project, budgets: @cost_budgets %>
 
     <%= render "projects/issues", project: @project, issues: @issues %>
 
