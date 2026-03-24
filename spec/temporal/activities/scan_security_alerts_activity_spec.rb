@@ -199,15 +199,17 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           source: "dependabot_alert")
       end
 
-      it "re-opens the existing issue instead of creating a duplicate" do
+      it "re-opens the existing issue and returns it as actionable" do
         result = activity.execute(project_id: project.id)
-
-        expect(result[:alerts_to_fix]).to eq([])
 
         issue = project.issues.find_by(github_issue_id: 900_000_000_001)
         expect(issue.github_state).to eq("open")
         expect(issue.paid_state).to eq("new")
         expect(issue.github_updated_at).to be_within(5.seconds).of(Time.current)
+
+        expect(result[:alerts_to_fix].size).to eq(1)
+        expect(result[:alerts_to_fix].first[:issue_id]).to eq(issue.id)
+        expect(result[:alerts_to_fix].first[:alert_number]).to eq(1)
       end
     end
 
@@ -373,6 +375,29 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         stale_issue.reload
         expect(stale_issue.github_state).to eq("open")
+      end
+    end
+
+    context "when no trusted GitHub usernames are configured" do
+      let(:alerts) do
+        [
+          { number: 1, state: "open", severity: "high", package_name: "minimatch",
+            package_ecosystem: "npm", patched_version: "3.0.5", summary: "ReDoS vulnerability",
+            html_url: "https://github.com/owner/repo/security/dependabot/1" }
+        ]
+      end
+
+      before do
+        project.update!(allowed_github_usernames: [])
+        allow(github_client).to receive(:dependabot_alerts)
+          .with(project.full_name)
+          .and_return(alerts)
+      end
+
+      it "raises an error instead of creating an untrusted issue" do
+        expect { activity.execute(project_id: project.id) }.to raise_error(
+          RuntimeError, /No trusted GitHub usernames configured/
+        )
       end
     end
 
