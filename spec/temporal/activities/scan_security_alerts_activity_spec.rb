@@ -115,11 +115,12 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(issue.trusted?).to be true
       end
 
-      it "assigns synthetic github_numbers starting at SYNTHETIC_NUMBER_OFFSET" do
+      it "assigns deterministic github_numbers derived from alert numbers" do
         activity.execute(project_id: project.id)
 
         numbers = project.issues.order(:id).pluck(:github_number)
-        expect(numbers.first).to be >= 100_000_000
+        # SYNTHETIC_NUMBER_OFFSET (100_000_000) + alert[:number]
+        expect(numbers).to contain_exactly(100_000_001, 100_000_002)
       end
 
       it "respects max_security_fix_runs limit" do
@@ -409,9 +410,9 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           .and_return(alerts)
       end
 
-      it "raises an error instead of creating an untrusted issue" do
+      it "raises a non-retryable error instead of creating an untrusted issue" do
         expect { activity.execute(project_id: project.id) }.to raise_error(
-          RuntimeError, /No trusted GitHub usernames configured/
+          Temporalio::Error::ApplicationError, /No trusted GitHub usernames configured/
         )
       end
     end

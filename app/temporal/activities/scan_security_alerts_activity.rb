@@ -94,10 +94,10 @@ module Activities
       )
       nil
     rescue GithubClient::ApiError => e
-      # Only swallow expected non-retryable cases (403 permission denied,
-      # 404 Dependabot not enabled). For 5xx or unknown status codes,
-      # re-raise so Temporal can apply its retry policy.
-      if [ 403, 404 ].include?(e.status)
+      # Swallow 403 (permission denied). NotFoundError (a subclass of Error,
+      # not ApiError) already handles 404 above. For 5xx or unknown status
+      # codes, re-raise so Temporal can apply its retry policy.
+      if e.status == 403
         logger.warn(
           message: "security_scanner.fetch_failed",
           project_id: project.id,
@@ -152,7 +152,7 @@ module Activities
 
       issue = project.issues.create!(
         github_issue_id: generate_synthetic_issue_id(alert),
-        github_number: generate_synthetic_number(project),
+        github_number: generate_synthetic_number(alert),
         title: title,
         body: body,
         github_state: "open",
@@ -241,6 +241,15 @@ module Activities
       count = stale_scope.count
 
       if count > 0
+        active_runs = AgentRun.where(issue_id: stale_scope.select(:id), status: %w[queued pending running])
+        if active_runs.exists?
+          logger.warn(
+            message: "security_scanner.active_runs_for_resolved_alerts",
+            project_id: project.id,
+            active_run_count: active_runs.count
+          )
+        end
+
         now = Time.current
         stale_scope.update_all(
           github_state: "closed",
@@ -277,9 +286,11 @@ module Activities
       SYNTHETIC_ISSUE_ID_OFFSET + alert[:number]
     end
 
-    def generate_synthetic_number(project)
-      max_number = project.issues.maximum(:github_number) || 0
-      [ max_number + 1, SYNTHETIC_NUMBER_OFFSET ].max
+    # Derive github_number deterministically from the alert number.
+    # This eliminates the race condition that a MAX query + increment
+    # would have under concurrent poll cycles.
+    def generate_synthetic_number(alert)
+      SYNTHETIC_NUMBER_OFFSET + alert[:number]
     end
 
     def severities_at_or_above(threshold)
@@ -295,7 +306,11 @@ module Activities
       login = project.allowed_github_usernames.find(&:present?)
       return login if login.present?
 
-      raise "No trusted GitHub usernames configured for project #{project.id}"
+      raise Temporalio::Error::ApplicationError.new(
+        "No trusted GitHub usernames configured for project #{project.id}",
+        type: "ConfigurationError",
+        non_retryable: true
+      )
     end
   end
 end

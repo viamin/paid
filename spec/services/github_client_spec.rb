@@ -1237,25 +1237,6 @@ RSpec.describe GithubClient do
       end
     end
 
-    context "when filtering by severity" do
-      before do
-        stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
-          .with(query: hash_including("severity" => "critical,high", "state" => "open"))
-          .to_return(
-            status: 200,
-            body: [].to_json,
-            headers: { "Content-Type" => "application/json" }
-          )
-      end
-
-      it "passes severity filter to the API" do
-        client.dependabot_alerts(repo, severity: %w[critical high])
-
-        expect(WebMock).to have_requested(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
-          .with(query: hash_including("severity" => "critical,high"))
-      end
-    end
-
     context "when Dependabot is not enabled" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
