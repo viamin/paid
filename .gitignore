@@ -89,6 +89,9 @@ config.status
 # Node corepack cache (created by corepack enable / yarn install)
 /.corepack/
 
+# Yarn offline mirror cache (created by yarn install with enableGlobalCache: false)
+/.yarn-cache/
+
 # PostgreSQL installation directory (created by bin/setup on some hosts)
 /.pg-install/
 /.pg-local/

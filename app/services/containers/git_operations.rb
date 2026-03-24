@@ -39,8 +39,10 @@ module Containers
     # even when the repo's .gitignore doesn't cover them.
     CONTAINER_ARTIFACT_EXCLUDES = <<~PATTERNS.freeze
       #{CONTAINER_ARTIFACT_EXCLUDES_MARKER}
-      # Node/corepack
+      # Node corepack cache
       .corepack/
+      # Yarn cache/offline mirror
+      .yarn-cache/
       # NOTE: .yarn/cache/, .yarn/unplugged/, and .pnp.* are intentionally
       # omitted — Yarn zero-installs repos commit these by design.
       # Ruby
