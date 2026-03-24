@@ -140,6 +140,26 @@ class AgentRun < ApplicationRecord
   # downstream PR work.
   # Within each goal type, runs are processed FIFO by created_at, with
   # id as a stable tiebreaker for runs created in the same timestamp.
+  QUEUE_PRIORITIES = {
+    manual: { value: 0, label: "Manual" },
+    auto_continue: { value: 1, label: "Auto-continue" },
+    auto_pick: { value: 2, label: "Auto-pick" }
+  }.freeze
+
+  def queue_priority
+    if trigger_type == "manual"
+      :manual
+    elsif trigger_type == "automatic" && source_pull_request_number.present?
+      :auto_continue
+    else
+      :auto_pick
+    end
+  end
+
+  def queue_priority_label
+    QUEUE_PRIORITIES[queue_priority][:label]
+  end
+
   QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
     CASE
       WHEN trigger_type = 'manual' THEN 0
