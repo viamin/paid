@@ -96,6 +96,34 @@ RSpec.describe "Projects" do
         expect(response.body).not_to include(toggle_auto_pick_project_path(project))
       end
 
+      it "shows auto-merge toggle on project cards" do
+        create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+        get projects_path
+        expect(response.body).to include("Auto-Merge")
+        expect(response.body).to include("bg-gray-100 text-gray-600")
+      end
+
+      it "shows auto-merge enabled state on project cards" do
+        create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+        get projects_path
+        expect(response.body).to include("Auto-Merge")
+        expect(response.body).to include("bg-green-100 text-green-700")
+      end
+
+      it "shows auto-merge status but no toggle controls for viewers" do
+        viewer_user = create(:user, :viewer, account: account)
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+
+        sign_out user
+        sign_in viewer_user
+
+        get projects_path
+
+        expect(response.body).to include("Auto-Merge")
+        expect(response.body).to include("bg-green-100 text-green-700")
+        expect(response.body).not_to include(toggle_auto_merge_project_path(project))
+      end
+
       it "sorts projects by name ascending via Ransack sort params" do
         create(:project, account: account, github_token: github_token, name: "Zebra")
         create(:project, account: account, github_token: github_token, name: "Alpha")
@@ -478,6 +506,26 @@ RSpec.describe "Projects" do
         get project_path(project)
         expect(response.body).to include(quick_create_project_agent_runs_path(project, pull_request_id: pr.id))
         expect(response.body).to include("Quick Run")
+      end
+
+      it "shows auto-merge toggle on project show page" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+        get project_path(project)
+        expect(response.body).to include("Auto-Merge")
+        expect(response.body).to include(toggle_auto_merge_project_path(project))
+      end
+
+      it "shows auto-merge status but no toggle controls for viewers on show page" do
+        viewer_user = create(:user, :viewer, account: account)
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+
+        sign_out user
+        sign_in viewer_user
+
+        get project_path(project)
+
+        expect(response.body).to include("Auto-Merge")
+        expect(response.body).not_to include(toggle_auto_merge_project_path(project))
       end
 
       it "does not allow viewing projects from other accounts" do
