@@ -10,7 +10,7 @@ import { Controller } from "@hotwired/stimulus"
 //   "long"     → "January 15, 2024 at 3:45 PM EST"
 //   "short"    → "Jan 15, 2024 3:45 PM"
 //   "date"     → "Jan 15, 2024"
-//   "time"     → "3:45:00 PM"
+//   "time"     → "15:45:00"
 //   "relative" → "2 hours ago" (updates periodically)
 
 // Shared timer for all relative-format instances to avoid per-element setInterval overhead.
@@ -77,7 +77,7 @@ export default class extends Controller {
         })
       case "time":
         return date.toLocaleTimeString(undefined, {
-          hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
+          hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
         })
       case "relative":
         return this.relativeTime(date)
@@ -90,25 +90,27 @@ export default class extends Controller {
     const now = new Date()
     const diffMs = date.getTime() - now.getTime()
     const diffSeconds = Math.round(diffMs / 1000)
-    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
+    if (!this._rtf) {
+      this._rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
+    }
 
     const absSeconds = Math.abs(diffSeconds)
     if (absSeconds < 60) {
-      return rtf.format(0, "minute")
+      return this._rtf.format(0, "minute")
     }
 
     const diffMinutes = Math.round(diffSeconds / 60)
     if (Math.abs(diffMinutes) < 60) {
-      return rtf.format(diffMinutes, "minute")
+      return this._rtf.format(diffMinutes, "minute")
     }
 
     const diffHours = Math.round(diffMinutes / 60)
     if (Math.abs(diffHours) < 24) {
-      return rtf.format(diffHours, "hour")
+      return this._rtf.format(diffHours, "hour")
     }
 
     const diffDays = Math.round(diffHours / 24)
-    return rtf.format(diffDays, "day")
+    return this._rtf.format(diffDays, "day")
   }
 
 }
