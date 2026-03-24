@@ -96,6 +96,33 @@ RSpec.describe "Projects" do
         expect(response.body).not_to include(toggle_auto_pick_project_path(project))
       end
 
+      it "shows auto-merge toggle on project cards" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+        get projects_path
+        expect(response.body).to match(/Auto-Merge[\s\S]*?bg-gray-100 text-gray-600/)
+        expect(response.body).to include(toggle_auto_merge_project_path(project))
+      end
+
+      it "shows auto-merge enabled state on project cards" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+        get projects_path
+        expect(response.body).to match(/Auto-Merge[\s\S]*?bg-green-100 text-green-700/)
+        expect(response.body).to include(toggle_auto_merge_project_path(project))
+      end
+
+      it "shows auto-merge status but no toggle controls for viewers" do
+        viewer_user = create(:user, :viewer, account: account)
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+
+        sign_out user
+        sign_in viewer_user
+
+        get projects_path
+
+        expect(response.body).to match(/Auto-Merge[\s\S]*?bg-green-100 text-green-700/)
+        expect(response.body).not_to include(toggle_auto_merge_project_path(project))
+      end
+
       it "sorts projects by name ascending via Ransack sort params" do
         create(:project, account: account, github_token: github_token, name: "Zebra")
         create(:project, account: account, github_token: github_token, name: "Alpha")
@@ -480,6 +507,26 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Quick Run")
       end
 
+      it "shows auto-merge toggle on project show page" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+        get project_path(project)
+        expect(response.body).to include("Auto-Merge")
+        expect(response.body).to include(toggle_auto_merge_project_path(project))
+      end
+
+      it "shows auto-merge status but no toggle controls for viewers on show page" do
+        viewer_user = create(:user, :viewer, account: account)
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+
+        sign_out user
+        sign_in viewer_user
+
+        get project_path(project)
+
+        expect(response.body).to include("Auto-Merge")
+        expect(response.body).not_to include(toggle_auto_merge_project_path(project))
+      end
+
       it "does not allow viewing projects from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)
@@ -657,6 +704,72 @@ RSpec.describe "Projects" do
       it "redirects with authorization error" do
         project = create(:project, account: account, github_token: github_token)
         post toggle_auto_pick_project_path(project)
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+  end
+
+  describe "POST /projects/:id/toggle_auto_merge" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        project = create(:project, account: account, github_token: github_token)
+        post toggle_auto_merge_project_path(project)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as owner" do
+      before { sign_in user }
+
+      it "enables auto_merge when currently disabled" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+        post toggle_auto_merge_project_path(project)
+        expect(project.reload.auto_merge_enabled).to be true
+      end
+
+      it "disables auto_merge when currently enabled" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+        post toggle_auto_merge_project_path(project)
+        expect(project.reload.auto_merge_enabled).to be false
+      end
+
+      it "redirects to the project for HTML requests" do
+        project = create(:project, account: account, github_token: github_token)
+        post toggle_auto_merge_project_path(project)
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      it "responds with turbo_stream when requested" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+        post toggle_auto_merge_project_path(project), headers: { "Accept" => "text/vnd.turbo-stream.html" }
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include("turbo-stream")
+        expect(response.body).to include("auto_merge_toggle_project_#{project.id}")
+      end
+
+      it "responds with index partial for turbo_stream index context" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+
+        post toggle_auto_merge_project_path(project),
+          params: { context: "index" },
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include("auto_merge_toggle_project_#{project.id}")
+        expect(response.body).to include("Auto-Merge")
+      end
+    end
+
+    context "when authenticated as viewer" do
+      let(:viewer_user) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer_user }
+
+      it "redirects with authorization error" do
+        project = create(:project, account: account, github_token: github_token)
+        post toggle_auto_merge_project_path(project)
         expect(response).to redirect_to(root_path)
         expect(flash[:alert]).to include("not authorized")
       end
