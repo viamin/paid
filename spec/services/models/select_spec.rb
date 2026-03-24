@@ -33,9 +33,12 @@ RSpec.describe Models::Select do
       end
 
       it "does not call meta-agent or rules-based selector" do
+        allow(Models::RulesBasedSelector).to receive(:call)
+
         described_class.call(agent_run: agent_run)
 
         expect(Models::MetaAgentSelector).not_to have_received(:call)
+        expect(Models::RulesBasedSelector).not_to have_received(:call)
       end
     end
 
