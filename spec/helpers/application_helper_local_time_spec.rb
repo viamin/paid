@@ -51,9 +51,21 @@ RSpec.describe ApplicationHelper, "#local_time" do
       expect(result).to include("14:30:00 UTC")
     end
 
-    it "renders a relative fallback for relative format" do
-      result = helper.local_time(time, format: :relative)
-      expect(result).to include("ago")
+    it "renders a relative fallback for past times" do
+      travel_to(time + 1.hour) do
+        result = helper.local_time(time, format: :relative)
+        expect(result).to include("ago")
+        expect(result).not_to include("in ")
+      end
+    end
+
+    it "renders a relative fallback for future times" do
+      travel_to(time) do
+        future_time = time + 5.minutes
+        result = helper.local_time(future_time, format: :relative)
+        expect(result).to include("in ")
+        expect(result).not_to include("ago")
+      end
     end
 
     it "wraps content in a <time> tag" do
