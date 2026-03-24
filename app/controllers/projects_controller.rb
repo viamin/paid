@@ -79,39 +79,11 @@ class ProjectsController < ApplicationController
   end
 
   def toggle_auto_pick
-    authorize @project, :update?
-    @project.update!(auto_pick_enabled: !@project.auto_pick_enabled?)
-
-    partial = AUTO_PICK_PARTIALS.fetch(params[:context], "projects/auto_pick_toggle")
-
-    respond_to do |format|
-      format.turbo_stream do
-        render turbo_stream: turbo_stream.replace(
-          ActionView::RecordIdentifier.dom_id(@project, :auto_pick_toggle),
-          partial: partial,
-          locals: { project: @project }
-        )
-      end
-      format.html { redirect_to @project }
-    end
+    toggle_automation(:auto_pick, AUTO_PICK_PARTIALS)
   end
 
   def toggle_auto_merge
-    authorize @project, :update?
-    @project.update!(auto_merge_enabled: !@project.auto_merge_enabled?)
-
-    partial = AUTO_MERGE_PARTIALS.fetch(params[:context], "projects/auto_merge_toggle")
-
-    respond_to do |format|
-      format.turbo_stream do
-        render turbo_stream: turbo_stream.replace(
-          ActionView::RecordIdentifier.dom_id(@project, :auto_merge_toggle),
-          partial: partial,
-          locals: { project: @project }
-        )
-      end
-      format.html { redirect_to @project }
-    end
+    toggle_automation(:auto_merge, AUTO_MERGE_PARTIALS)
   end
 
   def detect_services
@@ -136,6 +108,25 @@ class ProjectsController < ApplicationController
   end
 
   private
+
+  def toggle_automation(feature, partials)
+    authorize @project, :update?
+    attribute = :"#{feature}_enabled"
+    @project.update!(attribute => !@project.public_send(:"#{attribute}?"))
+
+    partial = partials.fetch(params[:context], partials["show"])
+
+    respond_to do |format|
+      format.turbo_stream do
+        render turbo_stream: turbo_stream.replace(
+          ActionView::RecordIdentifier.dom_id(@project, :"#{feature}_toggle"),
+          partial: partial,
+          locals: { project: @project }
+        )
+      end
+      format.html { redirect_to @project }
+    end
+  end
 
   def apply_nulls_last_ordering(scope)
     sort = @q.sorts.first
