@@ -169,6 +169,48 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
     end
 
+    context "when a previously closed synthetic issue has its alert re-opened" do
+      let(:alerts) do
+        [
+          {
+            number: 1,
+            state: "open",
+            severity: "high",
+            package_name: "minimatch",
+            package_ecosystem: "npm",
+            patched_version: "3.0.5",
+            summary: "ReDoS vulnerability",
+            html_url: "https://github.com/owner/repo/security/dependabot/1"
+          }
+        ]
+      end
+
+      before do
+        allow(github_client).to receive(:dependabot_alerts)
+          .with(project.full_name)
+          .and_return(alerts)
+
+        create(:issue,
+          project: project,
+          title: "[Security] Upgrade minimatch — dependabot-alert-1",
+          github_issue_id: 900_000_000_001,
+          github_state: "closed",
+          paid_state: "completed",
+          source: "dependabot_alert")
+      end
+
+      it "re-opens the existing issue instead of creating a duplicate" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:alerts_to_fix]).to eq([])
+
+        issue = project.issues.find_by(github_issue_id: 900_000_000_001)
+        expect(issue.github_state).to eq("open")
+        expect(issue.paid_state).to eq("new")
+        expect(issue.github_updated_at).to be_within(5.seconds).of(Time.current)
+      end
+    end
+
     context "when a dismissed alert is returned" do
       let(:alerts) do
         [

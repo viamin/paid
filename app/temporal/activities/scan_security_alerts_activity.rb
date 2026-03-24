@@ -93,14 +93,22 @@ module Activities
       open_alerts = alerts.select { |a| a[:state] == "open" }
       return [] if open_alerts.empty?
 
-      # Batch-load existing open synthetic issue IDs to avoid N+1 queries.
+      # Batch-load ALL existing synthetic issues (open and closed) to detect
+      # both duplicates and re-opened alerts that need their Issue re-opened.
       synthetic_ids = open_alerts.map { |a| generate_synthetic_issue_id(a) }
-      existing_ids = project.issues
-        .where(github_state: "open", source: SYNTHETIC_SOURCE, github_issue_id: synthetic_ids)
-        .pluck(:github_issue_id)
-        .to_set
+      existing_issues = project.issues
+        .where(source: SYNTHETIC_SOURCE, github_issue_id: synthetic_ids)
+        .index_by(&:github_issue_id)
 
-      open_alerts.reject { |a| existing_ids.include?(generate_synthetic_issue_id(a)) }
+      open_alerts.reject do |alert|
+        existing = existing_issues[generate_synthetic_issue_id(alert)]
+        next false unless existing
+
+        # If the synthetic Issue was previously closed but the upstream alert
+        # is open again, re-open the Issue so it's treated as actionable.
+        reopen_closed_issue(existing) if existing.github_state != "open"
+        true
+      end
     end
 
     def create_issue_for_alert(project, alert)
@@ -127,8 +135,8 @@ module Activities
       { issue_id: issue.id, alert_number: alert[:number], alert_type: "dependabot" }
     rescue ActiveRecord::RecordNotUnique => e
       # Race condition: another poll cycle created the issue after our
-      # existence check. Look up the existing issue so the agent run is
-      # still triggered rather than silently skipped.
+      # existence check. Look up the existing issue and re-open if needed
+      # so the agent run is still triggered rather than silently skipped.
       logger.warn(
         message: "security_scanner.issue_creation_race",
         project_id: project.id,
@@ -138,7 +146,10 @@ module Activities
 
       synthetic_id = generate_synthetic_issue_id(alert)
       existing = project.issues.find_by(github_issue_id: synthetic_id, source: SYNTHETIC_SOURCE)
-      existing ? { issue_id: existing.id, alert_number: alert[:number], alert_type: "dependabot" } : nil
+      return nil unless existing
+
+      reopen_closed_issue(existing) if existing.github_state != "open"
+      { issue_id: existing.id, alert_number: alert[:number], alert_type: "dependabot" }
     rescue ActiveRecord::RecordInvalid => e
       logger.warn(
         message: "security_scanner.issue_creation_failed",
@@ -211,6 +222,17 @@ module Activities
           closed_count: count
         )
       end
+    end
+
+    # Re-opens a previously closed synthetic Issue when the upstream
+    # Dependabot alert has been re-opened. Resets state so downstream
+    # code (agent runs, UI) treats it as freshly actionable.
+    def reopen_closed_issue(issue)
+      issue.update!(
+        github_state: "open",
+        paid_state: "new",
+        github_updated_at: Time.current
+      )
     end
 
     def alert_identifier(alert)
