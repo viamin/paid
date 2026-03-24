@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Agent container image for running AI coding assistants (Claude Code, Codex, etc.)
+# Agent container image for running AI coding assistants (Claude Code, Codex, Gemini CLI, etc.)
 # This container provides an isolated environment for AI agents to execute code.
 
 FROM ubuntu:24.04
@@ -136,6 +136,10 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
 # Install OpenAI Codex CLI
 # Pin version for reproducible builds; update intentionally when upgrading Codex.
 RUN npm install -g @openai/codex@0.116.0
+
+# Install Gemini CLI
+# Pin version for reproducible builds; update intentionally when upgrading Gemini.
+RUN npm install -g @google/gemini-cli@0.5.5
 
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
