@@ -105,12 +105,13 @@ module ApplicationHelper
     return if time.nil?
 
     utc = time.utc
-    fallback = local_time_fallback(utc, format)
+    format_key = format || :long
+    fallback = local_time_fallback(utc, format_key)
 
     tag.time(
       fallback,
       datetime: utc.iso8601,
-      data: { controller: "local-time", local_time_format_value: format.to_s }
+      data: { controller: "local-time", local_time_format_value: format_key.to_s }
     )
   end
 
@@ -167,7 +168,7 @@ module ApplicationHelper
   end
 
   def local_time_fallback(utc, format)
-    format_key = format&.to_sym || :long
+    format_key = format.to_sym
     raise ArgumentError, "Unknown local_time format: #{format_key.inspect}" unless LOCAL_TIME_FORMATS.key?(format_key)
 
     fmt = LOCAL_TIME_FORMATS[format_key]
