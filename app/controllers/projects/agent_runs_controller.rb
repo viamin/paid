@@ -263,7 +263,7 @@ module Projects
     def resolve_pull_request_record
       return nil if params[:pull_request_id].blank?
 
-      @project.issues.pull_requests_only.find(params[:pull_request_id])
+      @project.issues.pull_requests_only.find_by(id: params[:pull_request_id])
     end
 
     def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, goal: nil)
