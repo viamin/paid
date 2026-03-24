@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Check for too many staged files (catches accidental cache/binary commits)
+if [ "${SKIP_FILE_COUNT_CHECK:-0}" != "1" ]; then
+  MAX_FILES=100
+  file_count=$(git diff --cached --name-only | wc -l)
+  if [ "$file_count" -gt "$MAX_FILES" ]; then
+    echo "ERROR: This commit stages $file_count files (limit: $MAX_FILES)."
+    echo "This usually indicates unintended files (caches, binaries, data dirs)."
+    echo "Please review your staged files with 'git diff --cached --name-only'."
+    echo "To override, run: SKIP_FILE_COUNT_CHECK=1 git commit ..."
+    exit 1
+  fi
+fi
+
 echo "Running pre-commit checks..."
 bin/lint --staged
