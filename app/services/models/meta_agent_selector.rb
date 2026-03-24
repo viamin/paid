@@ -80,16 +80,65 @@ module Models
       complexity_float = complexity.present? ? Float(complexity).clamp(1.0, 10.0) : nil
 
       { model_id: model_id, reasoning: reasoning, complexity_score: complexity_float }
-    rescue ArgumentError
+    rescue ArgumentError, TypeError
       nil
     end
 
     def extract_json(text)
-      if (match = text.match(/\{[^{}]*\}/m))
-        match[0]
-      else
-        text
+      return text if text.blank?
+
+      # Prefer explicitly fenced ```json code blocks
+      if (code_block = text[/```json\s*(.*?)```/m, 1])
+        return code_block.strip
       end
+
+      # Fallback: any fenced code block that looks like a JSON object
+      if (generic_block = text[/```\s*(\{.*?\})\s*```/m, 1])
+        return generic_block.strip
+      end
+
+      # If the entire text is valid JSON, use it as-is
+      begin
+        JSON.parse(text)
+        return text
+      rescue JSON::ParserError
+        # ignore and try balanced-brace extraction
+      end
+
+      # Balanced-brace extraction starting from the first '{'
+      extract_balanced_json(text)
+    end
+
+    def extract_balanced_json(text)
+      start_index = text.index("{")
+      return text unless start_index
+
+      depth = 0
+      in_string = false
+      escape_next = false
+
+      (start_index...text.length).each do |i|
+        ch = text[i]
+
+        if in_string
+          if escape_next
+            escape_next = false
+          elsif ch == "\\"
+            escape_next = true
+          elsif ch == '"'
+            in_string = false
+          end
+        elsif ch == '"'
+          in_string = true
+        elsif ch == "{"
+          depth += 1
+        elsif ch == "}"
+          depth -= 1 if depth > 0
+          return text[start_index..i] if depth == 0
+        end
+      end
+
+      text
     end
 
     def build_prompt(candidates)
