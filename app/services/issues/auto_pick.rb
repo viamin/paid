@@ -18,6 +18,8 @@ module Issues
   # Returns the created AgentRun or nil if no eligible issue is found.
   class AutoPick
     EXCLUDED_LABELS = %w[planning research waiting].freeze
+    PAID_GENERATED_LABEL = "paid-generated"
+    PAID_READY_LABEL = "paid-ready"
 
     def initialize(project)
       @project = project
@@ -81,20 +83,35 @@ module Issues
       AgentRun.where(project: @project, status: %w[queued pending running]).exists?
     end
 
-    # Returns true if the project has open pull requests that need
-    # attention — e.g. PRs in "in_progress" or "failed" state. Prioritises
-    # completing existing PRs over starting new issues.
+    # Returns true if the project has open pull requests that still need
+    # Paid's attention. Performs up to two lightweight EXISTS-style queries
+    # (leveraging the GIN labels index) instead of loading PR records into Ruby:
     #
-    # Note: the active-runs exclusion is unnecessary here because
-    # project_has_active_runs? already short-circuits before this method
-    # is called.
+    # Blocking rules:
+    # - failed PRs always block (need investigation)
+    # - in_progress PRs block unless fully handed off (paid-generated +
+    #   paid-ready labels and out of draft/restarted phase)
     def project_has_prs_needing_attention?
-      Issue.where(
+      base = Issue.where(
         project: @project,
         is_pull_request: true,
         github_state: "open",
         paid_state: %w[in_progress failed]
-      ).exists?
+      )
+
+      # Failed PRs always block — check first for a fast short-circuit.
+      return true if base.where(paid_state: "failed").exists?
+
+      # In-progress PRs block unless handed off: both labels present and
+      # not in a draft/restarted review phase.
+      handed_off = base
+        .where(paid_state: "in_progress")
+        .where("labels @> ?::jsonb", [ PAID_GENERATED_LABEL, PAID_READY_LABEL ].to_json)
+        .where.not(pr_review_phase: %w[draft restarted])
+
+      base.where(paid_state: "in_progress")
+        .where.not(id: handed_off)
+        .exists?
     end
 
     def find_next_eligible_issue
