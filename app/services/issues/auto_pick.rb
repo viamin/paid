@@ -18,6 +18,8 @@ module Issues
   # Returns the created AgentRun or nil if no eligible issue is found.
   class AutoPick
     EXCLUDED_LABELS = %w[planning research waiting].freeze
+    PAID_GENERATED_LABEL = "paid-generated"
+    PAID_READY_LABEL = "paid-ready"
 
     def initialize(project)
       @project = project
@@ -81,20 +83,37 @@ module Issues
       AgentRun.where(project: @project, status: %w[queued pending running]).exists?
     end
 
-    # Returns true if the project has open pull requests that need
-    # attention — e.g. PRs in "in_progress" or "failed" state. Prioritises
-    # completing existing PRs over starting new issues.
+    # Returns true if the project has open pull requests that still need
+    # Paid's attention. PRs already handed off for human review no longer
+    # block auto-pick once they are paid-generated, explicitly labeled
+    # paid-ready, and out of draft/restarted.
     #
     # Note: the active-runs exclusion is unnecessary here because
     # project_has_active_runs? already short-circuits before this method
     # is called.
     def project_has_prs_needing_attention?
-      Issue.where(
+      open_prs = Issue.where(
         project: @project,
         is_pull_request: true,
-        github_state: "open",
-        paid_state: %w[in_progress failed]
-      ).exists?
+        github_state: "open"
+      )
+
+      open_prs.any? do |pr|
+        pr_needs_attention?(pr)
+      end
+    end
+
+    def pr_needs_attention?(pr)
+      return true if pr.paid_state == "failed"
+      return false if paid_ready_handoff?(pr)
+
+      pr.paid_state == "in_progress"
+    end
+
+    def paid_ready_handoff?(pr)
+      pr.has_label?(PAID_GENERATED_LABEL) &&
+        pr.has_label?(PAID_READY_LABEL) &&
+        !pr.draft_phase?
     end
 
     def find_next_eligible_issue

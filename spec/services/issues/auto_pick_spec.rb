@@ -313,6 +313,67 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
+      it "picks an issue when a paid-generated PR is paid-ready and out of draft" do
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          labels: [ "paid-generated", "paid-ready" ],
+          pr_review_phase: "ready")
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "returns nil when a paid-generated PR is paid-ready but still in draft" do
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          labels: [ "paid-generated", "paid-ready" ],
+          pr_review_phase: "draft")
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "returns nil when a paid-generated PR leaves draft without the paid-ready label" do
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "ready")
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "returns nil when a paid-ready PR is reopened back to draft" do
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          labels: [ "paid-generated", "paid-ready" ],
+          pr_review_phase: "restarted")
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "returns nil when a paid-ready PR has failed" do
+        create(:issue, :pull_request, :failed,
+          project: project,
+          labels: [ "paid-generated", "paid-ready" ],
+          pr_review_phase: "ready")
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
       it "returns nil when open PRs already have active agent runs (per-project concurrency limit)" do
         pr = create(:issue, :pull_request, :in_progress, project: project)
         create(:agent_run, :running, project: project, issue: pr)
