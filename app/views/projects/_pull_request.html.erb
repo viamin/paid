@@ -18,10 +18,18 @@
   </div>
   <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
     <%= paid_state_badge(pull_request.paid_state) %>
-    <%= button_to "Quick Run",
-                  quick_create_project_agent_runs_path(project, pull_request_id: pull_request.id),
-                  method: :post,
-                  class: "text-xs font-medium text-indigo-600 hover:text-indigo-900",
-                  form: { data: { action_button: true } } %>
+    <% if pull_request.has_active_auto_continue_runs? %>
+      <%= button_to "Bump Priority",
+                    bump_priority_project_agent_runs_path(project, pull_request_id: pull_request.id),
+                    method: :post,
+                    class: "text-xs font-medium text-amber-600 hover:text-amber-900",
+                    form: { data: { action_button: true } } %>
+    <% else %>
+      <%= button_to "Quick Run",
+                    quick_create_project_agent_runs_path(project, pull_request_id: pull_request.id),
+                    method: :post,
+                    class: "text-xs font-medium text-indigo-600 hover:text-indigo-900",
+                    form: { data: { action_button: true } } %>
+    <% end %>
   </div>
 </li>

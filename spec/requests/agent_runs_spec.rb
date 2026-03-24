@@ -660,6 +660,75 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/bump_priority" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: 1 }
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      let(:pr) { create(:issue, :pull_request, project: project, github_number: 77, title: "Fix styles") }
+
+      before { sign_in user }
+
+      it "bumps auto-continue runs to manual trigger_type" do
+        run = create(:agent_run, :running, :automatic, project: project,
+          source_pull_request_number: 77, custom_prompt: "Fix PR")
+
+        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(run.reload.trigger_type).to eq("manual")
+        expect(response).to redirect_to(project_path(project))
+        follow_redirect!
+        expect(response.body).to include("Priority bumped")
+      end
+
+      it "bumps multiple active auto-continue runs" do
+        run1 = create(:agent_run, :queued, :automatic, project: project,
+          source_pull_request_number: 77, custom_prompt: "Fix PR 1")
+        run2 = create(:agent_run, :running, :automatic, project: project,
+          source_pull_request_number: 77, custom_prompt: "Fix PR 2")
+
+        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(run1.reload.trigger_type).to eq("manual")
+        expect(run2.reload.trigger_type).to eq("manual")
+      end
+
+      it "redirects with error when no pull request selected" do
+        post bump_priority_project_agent_runs_path(project)
+        expect(response).to redirect_to(project_path(project))
+        follow_redirect!
+        expect(response.body).to include("Please select a pull request")
+      end
+
+      it "redirects with error when no active auto-continue runs exist" do
+        create(:agent_run, :completed, :automatic, project: project,
+          source_pull_request_number: 77, custom_prompt: "Fix PR")
+
+        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(response).to redirect_to(project_path(project))
+        follow_redirect!
+        expect(response.body).to include("No active auto-continue runs")
+      end
+
+      it "does not affect manual runs" do
+        manual_run = create(:agent_run, :running, :manual, project: project,
+          source_pull_request_number: 77, custom_prompt: "Manual fix")
+        auto_run = create(:agent_run, :running, :automatic, project: project,
+          source_pull_request_number: 77, custom_prompt: "Auto fix")
+
+        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(manual_run.reload.trigger_type).to eq("manual")
+        expect(auto_run.reload.trigger_type).to eq("manual")
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/:id/retry" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
