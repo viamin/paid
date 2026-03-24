@@ -224,6 +224,13 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Select a token first...")
       end
 
+      it "renders the repository select as disabled initially" do
+        github_token # create the token
+        get new_project_path
+        expect(response.body).to include('name="repository_selection"')
+        expect(response.body).to match(/<select[^>]*name="repository_selection"[^>]*disabled/)
+      end
+
       it "does not show revoked tokens in the dropdown" do
         create(:github_token, :revoked, account: account, name: "Revoked Token")
         create(:github_token, account: account, name: "Active Token")
