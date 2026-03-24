@@ -29,11 +29,17 @@ module Activities
       return { alerts_to_fix: [] } unless project.auto_scan_security
 
       client = project.github_token.client
-      alerts = fetch_alerts(project, client)
+      # Fetch all open alerts (unfiltered) so reconciliation has the full
+      # picture. Severity filtering is applied locally when selecting
+      # actionable alerts, preventing incorrect closure of lower-severity
+      # synthetic issues when the threshold is raised.
+      all_alerts = fetch_alerts(project, client)
       # Only reconcile when the fetch succeeded. A nil return means the API
       # call failed, so we can't treat an empty list as authoritative.
-      reconcile_resolved_alerts(project, alerts) unless alerts.nil?
-      actionable = filter_actionable_alerts(project, alerts || [])
+      reconcile_resolved_alerts(project, all_alerts) unless all_alerts.nil?
+      severity_filter = severities_at_or_above(project.security_severity_threshold)
+      filtered_alerts = (all_alerts || []).select { |a| severity_filter.include?(a[:severity]) }
+      actionable = filter_actionable_alerts(project, filtered_alerts)
 
       issues_created = actionable.first(project.max_security_fix_runs).filter_map do |alert|
         create_issue_for_alert(project, alert)
@@ -42,7 +48,7 @@ module Activities
       logger.info(
         message: "security_scanner.scan_complete",
         project_id: project_id,
-        alerts_fetched: alerts&.size || 0,
+        alerts_fetched: all_alerts&.size || 0,
         alerts_actionable: actionable.size,
         issues_created: issues_created.size
       )
@@ -70,8 +76,10 @@ module Activities
       # reconcile/close existing synthetic Dependabot issues).
       return nil unless project.security_alert_types.include?("dependabot")
 
-      severity_filter = severities_at_or_above(project.security_severity_threshold)
-      client.dependabot_alerts(project.full_name, severity: severity_filter)
+      # Fetch all open alerts without severity filtering. Severity is applied
+      # locally in execute so reconciliation sees the full set of open alerts,
+      # preventing incorrect closure when the threshold is raised.
+      client.dependabot_alerts(project.full_name)
     rescue GithubClient::NotFoundError, GithubClient::ApiError => e
       logger.warn(
         message: "security_scanner.fetch_failed",
