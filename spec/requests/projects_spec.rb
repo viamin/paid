@@ -99,15 +99,13 @@ RSpec.describe "Projects" do
       it "shows auto-merge toggle on project cards" do
         create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
         get projects_path
-        expect(response.body).to include("Auto-Merge")
-        expect(response.body).to include("bg-gray-100 text-gray-600")
+        expect(response.body).to match(/Auto-Merge[\s\S]*?bg-gray-100 text-gray-600/)
       end
 
       it "shows auto-merge enabled state on project cards" do
         create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
         get projects_path
-        expect(response.body).to include("Auto-Merge")
-        expect(response.body).to include("bg-green-100 text-green-700")
+        expect(response.body).to match(/Auto-Merge[\s\S]*?bg-green-100 text-green-700/)
       end
 
       it "shows auto-merge status but no toggle controls for viewers" do
@@ -119,8 +117,7 @@ RSpec.describe "Projects" do
 
         get projects_path
 
-        expect(response.body).to include("Auto-Merge")
-        expect(response.body).to include("bg-green-100 text-green-700")
+        expect(response.body).to match(/Auto-Merge[\s\S]*?bg-green-100 text-green-700/)
         expect(response.body).not_to include(toggle_auto_merge_project_path(project))
       end
 
