@@ -56,7 +56,9 @@ module Models
       preferred_ids = project.model_preferences["preferred_model_ids"]
       return nil unless preferred_ids.is_a?(Array) && preferred_ids.any?
 
-      model = LlmModel.active.where(model_id: preferred_ids).order(Arel.sql("capability_score DESC NULLS LAST")).first
+      # Respect preference list ordering: select the first active model in the provided order
+      models_by_id = LlmModel.active.where(model_id: preferred_ids).index_by(&:model_id)
+      model = preferred_ids.map { |id| models_by_id[id] }.compact.first
       return nil unless model
 
       override_result(model, "Project preferred model: #{model.display_name}")

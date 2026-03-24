@@ -65,6 +65,22 @@ RSpec.describe Models::Select do
       end
     end
 
+    context "with multiple preferred models respects ordering" do
+      let!(:higher_capability) { create(:llm_model, model_id: "claude-sonnet-4-6", capability_score: 9.0) }
+      let!(:first_choice) { create(:llm_model, model_id: "gpt-4o", capability_score: 7.0) }
+
+      before do
+        project.update!(model_preferences: { "preferred_model_ids" => [ "gpt-4o", "claude-sonnet-4-6" ] })
+      end
+
+      it "selects the first active model in preference order, not by capability" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.llm_model).to eq(first_choice)
+        expect(selection.llm_model).not_to eq(higher_capability)
+      end
+    end
+
     context "when preferred model is inactive" do
       before do
         create(:llm_model, model_id: "gpt-4o", active: false)
