@@ -322,6 +322,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_24_023748) do
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
     t.bigint "project_id", null: false
+    t.string "source", default: "github", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
@@ -332,6 +333,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_24_023748) do
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id"], name: "index_issues_on_project_id"
+    t.index ["source"], name: "index_issues_on_source"
   end
 
   create_table "llm_models", force: :cascade do |t|
@@ -405,6 +407,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_24_023748) do
     t.boolean "auto_merge_enabled", default: false, null: false
     t.boolean "auto_pick_enabled", default: false, null: false
     t.boolean "auto_scan_prs", default: true, null: false
+    t.boolean "auto_scan_security", default: false, null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
@@ -416,6 +419,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_24_023748) do
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_pr_followup_runs", default: 8, null: false
+    t.integer "max_security_fix_runs", default: 3, null: false
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
@@ -424,6 +428,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_24_023748) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.string "repo", null: false
+    t.jsonb "security_alert_types", default: ["dependabot"], null: false
+    t.string "security_severity_threshold", default: "high", null: false
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false
