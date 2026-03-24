@@ -16,6 +16,15 @@ module Activities
       pr_number = input[:pr_number]
       issue = Issue.find(input[:issue_id])
 
+      unless project.auto_merge_enabled?
+        logger.info(
+          message: "pr_review.auto_merge_disabled",
+          project_id: project.id,
+          pr_number: pr_number
+        )
+        return { merged: false, skipped: true, pr_number: pr_number }
+      end
+
       client = project.github_token.client
       pr_data = client.pull_request(project.full_name, pr_number)
 
