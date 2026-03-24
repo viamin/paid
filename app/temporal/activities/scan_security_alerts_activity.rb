@@ -41,12 +41,15 @@ module Activities
       filtered_alerts = (all_alerts || []).select { |a| severity_filter.include?(a[:severity]) }
       actionable, reopened = filter_actionable_alerts(project, filtered_alerts)
 
-      issues_created = actionable.first(project.max_security_fix_runs).filter_map do |alert|
+      # Apply the project-level cap across both newly created and re-opened
+      # issues so the total never exceeds max_security_fix_runs per cycle.
+      max_runs = project.max_security_fix_runs
+      issues_created = actionable.first(max_runs).filter_map do |alert|
         create_issue_for_alert(project, alert)
       end
 
-      # Re-opened issues already exist — include them so agent workflows start.
-      issues_created.concat(reopened)
+      remaining_slots = max_runs - issues_created.size
+      issues_created.concat(reopened.first(remaining_slots)) if remaining_slots.positive?
 
       logger.info(
         message: "security_scanner.scan_complete",
