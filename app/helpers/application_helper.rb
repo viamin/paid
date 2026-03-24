@@ -43,7 +43,7 @@ module ApplicationHelper
 
   def agent_run_priority_badge(run)
     priority = run.queue_priority
-    styles = PRIORITY_STYLES[priority]
+    styles = PRIORITY_STYLES[priority] || PRIORITY_STYLES[:auto_pick]
     tag.span(
       run.queue_priority_label,
       class: "inline-flex items-center rounded-md #{styles[:bg]} px-2 py-1 text-xs font-medium #{styles[:text]}"

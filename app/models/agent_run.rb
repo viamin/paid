@@ -141,9 +141,9 @@ class AgentRun < ApplicationRecord
   # Within each goal type, runs are processed FIFO by created_at, with
   # id as a stable tiebreaker for runs created in the same timestamp.
   QUEUE_PRIORITIES = {
-    manual: { value: 0, label: "Manual" },
-    auto_continue: { value: 1, label: "Auto-continue" },
-    auto_pick: { value: 2, label: "Auto-pick" }
+    manual: { label: "Manual" },
+    auto_continue: { label: "Auto-continue" },
+    auto_pick: { label: "Auto-pick" }
   }.freeze
 
   def queue_priority
@@ -157,7 +157,7 @@ class AgentRun < ApplicationRecord
   end
 
   def queue_priority_label
-    QUEUE_PRIORITIES[queue_priority][:label]
+    QUEUE_PRIORITIES.fetch(queue_priority, { label: "Unknown" })[:label]
   end
 
   QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
