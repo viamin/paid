@@ -472,24 +472,26 @@ module Containers
     # write to it. Tmpfs mounts are created as root-owned; this mirrors the
     # pattern used by seed_claude_credentials! for ~/.claude.
     def fix_codex_tmpfs_ownership!
-      container.exec(
-        [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
-        user: "root"
-      )
-    rescue Docker::Error::DockerError => e
-      log_system("container.codex_chown_failed", error: e.message)
+      fix_tmpfs_ownership!(".codex")
     end
 
     # Fixes ownership of the ~/.gemini tmpfs so the non-root agent user can
-    # write to it. Tmpfs mounts are created as root-owned; this mirrors the
-    # pattern used by fix_codex_tmpfs_ownership! for ~/.codex.
+    # write to it. Tmpfs mounts are created as root-owned.
     def fix_gemini_tmpfs_ownership!
+      fix_tmpfs_ownership!(".gemini")
+    end
+
+    # Fixes ownership of a tmpfs mount under /home/agent so the non-root
+    # agent user can write to it. Tmpfs mounts are created as root-owned.
+    #
+    # @param subdir [String] The directory name under /home/agent (e.g. ".codex", ".gemini")
+    def fix_tmpfs_ownership!(subdir)
       container.exec(
-        [ "chown", "-R", "agent:agent", "/home/agent/.gemini" ],
+        [ "chown", "-R", "agent:agent", "/home/agent/#{subdir}" ],
         user: "root"
       )
     rescue Docker::Error::DockerError => e
-      log_system("container.gemini_chown_failed", error: e.message)
+      log_system("container.#{subdir.delete_prefix('.')}_chown_failed", error: e.message)
     end
 
     # Sets up the workspace for the container.
