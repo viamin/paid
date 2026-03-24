@@ -12,6 +12,25 @@ import { Controller } from "@hotwired/stimulus"
 //   "date"     → "Jan 15, 2024"
 //   "time"     → "3:45:00 PM"
 //   "relative" → "2 hours ago" (updates periodically)
+
+// Shared timer for all relative-format instances to avoid per-element setInterval overhead.
+const relativeInstances = new Set()
+let sharedTimer = null
+
+function startSharedTimer() {
+  if (sharedTimer) return
+  sharedTimer = window.setInterval(() => {
+    relativeInstances.forEach((instance) => instance.formatTime())
+  }, 60000)
+}
+
+function stopSharedTimer() {
+  if (relativeInstances.size === 0 && sharedTimer) {
+    window.clearInterval(sharedTimer)
+    sharedTimer = null
+  }
+}
+
 export default class extends Controller {
   static values = { format: { type: String, default: "long" } }
 
@@ -19,12 +38,14 @@ export default class extends Controller {
     this.formatTime()
 
     if (this.formatValue === "relative") {
-      this.startRefreshing()
+      relativeInstances.add(this)
+      startSharedTimer()
     }
   }
 
   disconnect() {
-    this.stopRefreshing()
+    relativeInstances.delete(this)
+    stopSharedTimer()
   }
 
   formatTime() {
@@ -56,7 +77,7 @@ export default class extends Controller {
         })
       case "time":
         return date.toLocaleTimeString(undefined, {
-          hour: "numeric", minute: "2-digit", second: "2-digit"
+          hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
         })
       case "relative":
         return this.relativeTime(date)
@@ -67,36 +88,27 @@ export default class extends Controller {
 
   relativeTime(date) {
     const now = new Date()
-    const diffMs = now - date
-    const absDiffMs = Math.abs(diffMs)
-    const future = diffMs < 0
+    const diffMs = date.getTime() - now.getTime()
+    const diffSeconds = Math.round(diffMs / 1000)
+    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
 
-    const seconds = Math.floor(absDiffMs / 1000)
-    const minutes = Math.floor(seconds / 60)
-    const hours = Math.floor(minutes / 60)
-    const days = Math.floor(hours / 24)
-
-    let result
-    if (seconds < 60) {
-      result = "less than a minute"
-    } else if (minutes < 60) {
-      result = minutes === 1 ? "1 minute" : `${minutes} minutes`
-    } else if (hours < 24) {
-      result = hours === 1 ? "about 1 hour" : `about ${hours} hours`
-    } else {
-      result = days === 1 ? "1 day" : `${days} days`
+    const absSeconds = Math.abs(diffSeconds)
+    if (absSeconds < 60) {
+      return rtf.format(0, "minute")
     }
 
-    return future ? `in ${result}` : `${result} ago`
-  }
-
-  startRefreshing() {
-    this.refreshTimer = window.setInterval(() => this.formatTime(), 60000)
-  }
-
-  stopRefreshing() {
-    if (this.refreshTimer) {
-      window.clearInterval(this.refreshTimer)
+    const diffMinutes = Math.round(diffSeconds / 60)
+    if (Math.abs(diffMinutes) < 60) {
+      return rtf.format(diffMinutes, "minute")
     }
+
+    const diffHours = Math.round(diffMinutes / 60)
+    if (Math.abs(diffHours) < 24) {
+      return rtf.format(diffHours, "hour")
+    }
+
+    const diffDays = Math.round(diffHours / 24)
+    return rtf.format(diffDays, "day")
   }
+
 }
