@@ -832,7 +832,7 @@ RSpec.describe Containers::GitOperations do
       git_ops.install_artifact_excludes
     end
 
-    it "includes corepack and pg-install patterns" do
+    it "includes corepack, yarn-cache, and pg-install patterns" do
       script = nil
       allow(container_service).to receive(:execute) { |cmd, **|
         script = cmd
@@ -842,6 +842,7 @@ RSpec.describe Containers::GitOperations do
       git_ops.install_artifact_excludes
 
       expect(script).to include(".corepack/")
+      expect(script).to include(".yarn-cache/")
       expect(script).to include(".pg-install/")
       expect(script).to include("vendor/bundle/")
     end
