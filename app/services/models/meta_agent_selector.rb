@@ -51,7 +51,7 @@ module Models
       excluded = agent_run.project.model_preferences["excluded_model_ids"]
       scope = scope.where.not(model_id: excluded) if excluded.present?
 
-      scope.order(Arel.sql("capability_score DESC NULLS LAST")).limit(10).to_a
+      scope.order(Arel.sql("capability_score DESC NULLS LAST")).to_a
     end
 
     def request_selection(candidates)
@@ -105,14 +105,16 @@ module Models
 
         ## Project
         Repository: #{project.full_name}
+        #{budget_context(project)}
 
         ## Available Models
         #{format_candidates(candidates)}
 
         ## Instructions
-        Consider task complexity, reasoning requirements, and cost-effectiveness.
+        Consider task complexity, reasoning requirements, cost-effectiveness, and any budget constraints.
         Simple tasks (typo fixes, small edits) should use cheaper models.
         Complex tasks (architecture, multi-file refactors) need the most capable models.
+        If budget is limited, prefer cost-effective models unless the task clearly requires high capability.
 
         Respond with ONLY a JSON object:
         {"model": "model-id", "reasoning": "brief explanation", "complexity_score": 5.0}
@@ -122,10 +124,20 @@ module Models
     end
 
     def task_details(issue)
-      return "Custom prompt provided" unless issue
+      return "No linked issue" unless issue
 
       body = issue.body.to_s.truncate(MAX_BODY_LENGTH, omission: "...")
       "Title: #{issue.title}\nDescription: #{body}"
+    end
+
+    def budget_context(project)
+      budgets = project.cost_budgets.select { |b| b.limit_cents.positive? }
+      return "" if budgets.empty?
+
+      lines = budgets.map do |b|
+        "#{b.budget_type} budget: $#{"%.2f" % (b.remaining_cents / 100.0)} remaining of $#{"%.2f" % (b.limit_cents / 100.0)}"
+      end
+      "Budget: #{lines.join(", ")}"
     end
 
     def format_candidates(candidates)
