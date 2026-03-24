@@ -112,7 +112,11 @@ module Projects
         return
       end
 
-      runs.update_all(trigger_type: "manual")
+      runs.find_each do |run|
+        run.update!(trigger_type: "manual")
+      end
+
+      ProcessRunQueueJob.perform_later
 
       redirect_to project_path(@project), notice: "Priority bumped for PR ##{pr.github_number}."
     end
