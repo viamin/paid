@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Check for too many staged files (catches accidental cache/binary commits)
 if [ "${SKIP_FILE_COUNT_CHECK:-0}" != "1" ]; then
-  MAX_FILES=100
+  MAX_FILES="${PRE_COMMIT_MAX_FILES:-100}"
   file_count=$(git diff --cached --name-only | wc -l)
   if [ "$file_count" -gt "$MAX_FILES" ]; then
     echo "ERROR: This commit stages $file_count files (limit: $MAX_FILES)."
