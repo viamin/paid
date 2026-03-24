@@ -30,6 +30,12 @@ RSpec.describe ApplicationHelper do
       expect(result).to include('data-local-time-format-value="short"')
     end
 
+    it "normalizes nil format to long for both fallback and data attribute" do
+      result = helper.local_time(time, format: nil)
+      expect(result).to include('data-local-time-format-value="long"')
+      expect(result).to include("June 15, 2024")
+    end
+
     it "renders a UTC fallback for long format" do
       result = helper.local_time(time)
       expect(result).to include("June 15, 2024")
