@@ -40,7 +40,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
     context "when there are no open alerts" do
       before do
         allow(github_client).to receive(:dependabot_alerts)
-          .with(project.full_name, severity: %w[critical high])
+          .with(project.full_name)
           .and_return([])
       end
 
@@ -79,7 +79,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
       before do
         allow(github_client).to receive(:dependabot_alerts)
-          .with(project.full_name, severity: %w[critical high])
+          .with(project.full_name)
           .and_return(alerts)
       end
 
@@ -149,7 +149,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
       before do
         allow(github_client).to receive(:dependabot_alerts)
-          .with(project.full_name, severity: %w[critical high])
+          .with(project.full_name)
           .and_return(alerts)
 
         # Use the same synthetic github_issue_id that the activity generates
@@ -187,7 +187,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
       before do
         allow(github_client).to receive(:dependabot_alerts)
-          .with(project.full_name, severity: %w[critical high])
+          .with(project.full_name)
           .and_return(alerts)
       end
 
@@ -226,25 +226,68 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
     end
 
     context "when severity threshold is medium" do
+      let(:alerts) do
+        [
+          { number: 1, state: "open", severity: "high", package_name: "foo",
+            package_ecosystem: "npm", patched_version: "1.0.1", summary: "High vuln",
+            html_url: "https://github.com/owner/repo/security/dependabot/1" },
+          { number: 2, state: "open", severity: "low", package_name: "bar",
+            package_ecosystem: "npm", patched_version: "2.0.0", summary: "Low vuln",
+            html_url: "https://github.com/owner/repo/security/dependabot/2" }
+        ]
+      end
+
       before do
         project.update!(security_severity_threshold: "medium")
         allow(github_client).to receive(:dependabot_alerts)
-          .with(project.full_name, severity: %w[critical high medium])
-          .and_return([])
+          .with(project.full_name)
+          .and_return(alerts)
       end
 
-      it "includes medium severity in the filter" do
+      it "fetches all alerts and filters by severity locally" do
+        result = activity.execute(project_id: project.id)
+
+        # Only the high-severity alert should produce an issue; the low one
+        # is below the "medium" threshold (critical/high/medium pass).
+        expect(result[:alerts_to_fix].size).to eq(1)
+        expect(result[:alerts_to_fix].first[:alert_number]).to eq(1)
+      end
+    end
+
+    context "when severity threshold is raised above an existing synthetic issue" do
+      let(:low_alert) do
+        { number: 5, state: "open", severity: "low", package_name: "low-pkg",
+          package_ecosystem: "npm", patched_version: "1.0.0", summary: "Low vuln",
+          html_url: "https://github.com/owner/repo/security/dependabot/5" }
+      end
+
+      before do
+        # Threshold is "high", so only critical/high pass, but alert #5 is low
+        # and still open upstream.
+        allow(github_client).to receive(:dependabot_alerts)
+          .with(project.full_name)
+          .and_return([ low_alert ])
+
+        create(:issue,
+          project: project,
+          title: "[Security] Upgrade low-pkg — dependabot-alert-5",
+          github_issue_id: 900_000_000_005,
+          github_state: "open",
+          source: "dependabot_alert")
+      end
+
+      it "does not close the synthetic issue for an alert still open upstream" do
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:dependabot_alerts)
-          .with(project.full_name, severity: %w[critical high medium])
+        issue = project.issues.find_by(github_issue_id: 900_000_000_005)
+        expect(issue.github_state).to eq("open")
       end
     end
 
     context "when a previously created synthetic issue is no longer in open alerts" do
       before do
         allow(github_client).to receive(:dependabot_alerts)
-          .with(project.full_name, severity: %w[critical high])
+          .with(project.full_name)
           .and_return([])
 
         create(:issue,
