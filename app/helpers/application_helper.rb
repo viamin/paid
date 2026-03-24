@@ -168,7 +168,12 @@ module ApplicationHelper
 
   def local_time_fallback(utc, format)
     fmt = LOCAL_TIME_FORMATS[format.to_sym]
-    fmt ? utc.strftime(fmt).squish : time_ago_in_words(utc) + " ago"
+    if fmt
+      utc.strftime(fmt).squish
+    else
+      distance = time_ago_in_words(utc)
+      utc > Time.current ? "in #{distance}" : "#{distance} ago"
+    end
   end
 
   def github_link_or_text(link_label, text_label, url)
