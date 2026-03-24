@@ -39,11 +39,14 @@ module Activities
       reconcile_resolved_alerts(project, all_alerts) unless all_alerts.nil?
       severity_filter = severities_at_or_above(project.security_severity_threshold)
       filtered_alerts = (all_alerts || []).select { |a| severity_filter.include?(a[:severity]) }
-      actionable = filter_actionable_alerts(project, filtered_alerts)
+      actionable, reopened = filter_actionable_alerts(project, filtered_alerts)
 
       issues_created = actionable.first(project.max_security_fix_runs).filter_map do |alert|
         create_issue_for_alert(project, alert)
       end
+
+      # Re-opened issues already exist — include them so agent workflows start.
+      issues_created.concat(reopened)
 
       logger.info(
         message: "security_scanner.scan_complete",
@@ -89,9 +92,13 @@ module Activities
       nil
     end
 
+    # Returns [new_alerts, reopened_issues]:
+    #   new_alerts   — alert hashes that need a new Issue created
+    #   reopened_issues — issue data hashes for re-opened synthetic Issues
+    #     (already exist in DB, just need an agent workflow started)
     def filter_actionable_alerts(project, alerts)
       open_alerts = alerts.select { |a| a[:state] == "open" }
-      return [] if open_alerts.empty?
+      return [ [], [] ] if open_alerts.empty?
 
       # Batch-load ALL existing synthetic issues (open and closed) to detect
       # both duplicates and re-opened alerts that need their Issue re-opened.
@@ -100,15 +107,24 @@ module Activities
         .where(source: SYNTHETIC_SOURCE, github_issue_id: synthetic_ids)
         .index_by(&:github_issue_id)
 
-      open_alerts.reject do |alert|
-        existing = existing_issues[generate_synthetic_issue_id(alert)]
-        next false unless existing
+      new_alerts = []
+      reopened = []
 
-        # If the synthetic Issue was previously closed but the upstream alert
-        # is open again, re-open the Issue so it's treated as actionable.
-        reopen_closed_issue(existing) if existing.github_state != "open"
-        true
+      open_alerts.each do |alert|
+        existing = existing_issues[generate_synthetic_issue_id(alert)]
+
+        if existing.nil?
+          new_alerts << alert
+        elsif existing.github_state != "open"
+          # The synthetic Issue was previously closed but the upstream alert
+          # is open again — re-open it and trigger an agent workflow.
+          reopen_closed_issue(existing)
+          reopened << { issue_id: existing.id, alert_number: alert[:number], alert_type: "dependabot" }
+        end
+        # else: existing issue is already open — no action needed
       end
+
+      [ new_alerts, reopened ]
     end
 
     def create_issue_for_alert(project, alert)
@@ -122,8 +138,8 @@ module Activities
         title: title,
         body: body,
         github_state: "open",
-        # Use a trusted login (from allowed GitHub usernames, or a bot fallback)
-        # as the creator so the issue is trusted for prompt building.
+        # Use a trusted login (from allowed GitHub usernames) as the creator
+        # so the issue is trusted for prompt building. Raises if none configured.
         github_creator_login: trusted_login_for(project),
         github_created_at: now,
         github_updated_at: now,
@@ -255,8 +271,13 @@ module Activities
 
     # Returns the first allowed username for the project, so synthetic issues
     # are trusted and their body can be used as the agent prompt.
+    # Raises if no trusted username is configured — creating an untrusted
+    # synthetic issue would cause prompt building to fail downstream.
     def trusted_login_for(project)
-      project.allowed_github_usernames.find(&:present?) || "paid[bot]"
+      login = project.allowed_github_usernames.find(&:present?)
+      return login if login.present?
+
+      raise "No trusted GitHub usernames configured for project #{project.id}"
     end
   end
 end
