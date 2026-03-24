@@ -1,0 +1,16 @@
+<%= tag.div id: dom_id(project, :auto_merge_toggle), class: "border-t border-gray-200 px-5 py-3" do %>
+  <div class="flex items-center justify-between">
+    <div class="flex items-center">
+      <span class="text-sm font-medium text-gray-700">Auto-Merge</span>
+      <span class="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= project.auto_merge_enabled? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
+        <%= project.auto_merge_enabled? ? "On" : "Off" %>
+      </span>
+    </div>
+    <% if policy(project).update? %>
+      <%= button_to toggle_auto_merge_project_path(project), method: :post, params: { context: "index" }, class: "group relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 #{project.auto_merge_enabled? ? 'bg-indigo-600' : 'bg-gray-200'}" do %>
+        <span class="sr-only">Toggle auto-merge</span>
+        <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out <%= project.auto_merge_enabled? ? 'translate-x-5' : 'translate-x-0' %>"></span>
+      <% end %>
+    <% end %>
+  </div>
+<% end %>

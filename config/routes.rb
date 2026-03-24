@@ -58,6 +58,7 @@ Rails.application.routes.draw do
   # Projects management
   resources :projects do
     post :toggle_auto_pick, on: :member
+    post :toggle_auto_merge, on: :member
     resource :workflow_status, only: [ :show ]
     resource :quality_dashboard, only: [ :show ], controller: "projects/quality_dashboards"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
