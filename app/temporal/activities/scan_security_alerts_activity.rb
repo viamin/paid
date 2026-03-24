@@ -17,8 +17,11 @@ module Activities
     # stale-close logic (which only targets source "github") won't close them.
     SYNTHETIC_SOURCE = "dependabot_alert"
     # Large offset for synthetic github_issue_id values (bigint column).
-    # Dependabot alert numbers are small integers; this avoids collisions.
-    SYNTHETIC_ISSUE_ID_OFFSET = 9_000_000_000
+    # GitHub's REST API issue.id is a global integer that currently ranges
+    # in the low billions (~1–3B). This offset is set well above that range
+    # to make collisions impossible for the foreseeable future. Alert numbers
+    # are small sequential integers added to this base.
+    SYNTHETIC_ISSUE_ID_OFFSET = 900_000_000_000
     # Offset for synthetic github_number values (integer column, max ~2.1B).
     # GitHub issue/PR numbers are sequential; even the busiest repos rarely
     # exceed a few hundred thousand, so 100M provides ample headroom.
@@ -84,16 +87,17 @@ module Activities
     end
 
     def filter_actionable_alerts(project, alerts)
-      alerts.select do |alert|
-        alert[:state] == "open" && !existing_issue_for_alert?(project, alert)
-      end
-    end
+      open_alerts = alerts.select { |a| a[:state] == "open" }
+      return [] if open_alerts.empty?
 
-    def existing_issue_for_alert?(project, alert)
-      synthetic_id = generate_synthetic_issue_id(alert)
-      project.issues
-        .where(github_state: "open", source: SYNTHETIC_SOURCE, github_issue_id: synthetic_id)
-        .exists?
+      # Batch-load existing open synthetic issue IDs to avoid N+1 queries.
+      synthetic_ids = open_alerts.map { |a| generate_synthetic_issue_id(a) }
+      existing_ids = project.issues
+        .where(github_state: "open", source: SYNTHETIC_SOURCE, github_issue_id: synthetic_ids)
+        .pluck(:github_issue_id)
+        .to_set
+
+      open_alerts.reject { |a| existing_ids.include?(generate_synthetic_issue_id(a)) }
     end
 
     def create_issue_for_alert(project, alert)
@@ -118,7 +122,21 @@ module Activities
       )
 
       { issue_id: issue.id, alert_number: alert[:number], alert_type: "dependabot" }
-    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
+    rescue ActiveRecord::RecordNotUnique => e
+      # Race condition: another poll cycle created the issue after our
+      # existence check. Look up the existing issue so the agent run is
+      # still triggered rather than silently skipped.
+      logger.warn(
+        message: "security_scanner.issue_creation_race",
+        project_id: project.id,
+        alert_number: alert[:number],
+        error: e.message
+      )
+
+      synthetic_id = generate_synthetic_issue_id(alert)
+      existing = project.issues.find_by(github_issue_id: synthetic_id, source: SYNTHETIC_SOURCE)
+      existing ? { issue_id: existing.id, alert_number: alert[:number], alert_type: "dependabot" } : nil
+    rescue ActiveRecord::RecordInvalid => e
       logger.warn(
         message: "security_scanner.issue_creation_failed",
         project_id: project.id,
