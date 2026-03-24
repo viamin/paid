@@ -685,16 +685,17 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Priority bumped")
       end
 
-      it "bumps multiple active auto-continue runs" do
+      it "bumps auto-continue runs only for the selected pull request" do
+        pr2 = create(:issue, :pull_request, project: project, github_number: 78, title: "Other PR")
         run1 = create(:agent_run, :queued, :automatic, project: project,
           source_pull_request_number: 77, custom_prompt: "Fix PR 1")
         run2 = create(:agent_run, :running, :automatic, project: project,
-          source_pull_request_number: 77, custom_prompt: "Fix PR 2")
+          source_pull_request_number: 78, custom_prompt: "Fix PR 2")
 
         post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
 
         expect(run1.reload.trigger_type).to eq("manual")
-        expect(run2.reload.trigger_type).to eq("manual")
+        expect(run2.reload.trigger_type).to eq("automatic")
       end
 
       it "redirects with error when no pull request selected" do
@@ -718,13 +719,13 @@ RSpec.describe "AgentRuns" do
       it "does not affect manual runs" do
         manual_run = create(:agent_run, :running, :manual, project: project,
           source_pull_request_number: 77, custom_prompt: "Manual fix")
-        auto_run = create(:agent_run, :running, :automatic, project: project,
-          source_pull_request_number: 77, custom_prompt: "Auto fix")
 
         post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
 
         expect(manual_run.reload.trigger_type).to eq("manual")
-        expect(auto_run.reload.trigger_type).to eq("manual")
+        expect(response).to redirect_to(project_path(project))
+        follow_redirect!
+        expect(response.body).to include("No active auto-continue runs")
       end
     end
   end
