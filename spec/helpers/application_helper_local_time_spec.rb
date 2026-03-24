@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe ApplicationHelper, "#local_time" do
+RSpec.describe ApplicationHelper do
   describe "#local_time" do
     let(:time) { Time.utc(2024, 6, 15, 14, 30, 0) }
 
