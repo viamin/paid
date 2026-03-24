@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe Activities::MergePullRequestActivity do
   let(:activity) { described_class.new }
-  let(:project) { create(:project, merge_method: "squash") }
+  let(:project) { create(:project, merge_method: "squash", auto_merge_enabled: true) }
   let(:issue) do
     create(:issue, :pull_request,
       project: project,
@@ -18,6 +18,23 @@ RSpec.describe Activities::MergePullRequestActivity do
   end
 
   describe "#execute" do
+    context "when auto_merge is disabled" do
+      before { project.update!(auto_merge_enabled: false) }
+
+      it "returns skipped without calling GitHub" do
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(GithubClient).not_to have_received(:new)
+      end
+
+      it "does not update issue phase" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(issue.reload.pr_review_phase).to eq("ready")
+      end
+    end
+
     context "when PR is not yet merged" do
       let(:pr_data) { double("pr_data", merged_at: nil) } # rubocop:disable RSpec/VerifiedDoubles
 
