@@ -171,7 +171,8 @@ module Activities
       reviews = fetch_reviews(client, project, issue)
       mergeable = pr_data && pr_data[:mergeable]
 
-      if pr_data.present? &&
+      if project.auto_merge_enabled? &&
+          pr_data.present? &&
           owner_approved_from_reviews?(project, reviews) &&
           checks.present? &&
           all_checks_green?(checks) &&
