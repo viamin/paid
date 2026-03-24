@@ -426,5 +426,29 @@ RSpec.describe Issues::AutoPick do
         expect(result.issue).to eq(issue)
       end
     end
+
+    context "with synthetic Dependabot issues" do
+      it "skips synthetic Dependabot issues (managed by ScanSecurityAlertsActivity)" do
+        create(:issue, project: project, source: "dependabot_alert",
+          github_issue_id: Issue::SYNTHETIC_ISSUE_ID_OFFSET + 1,
+          github_number: 100_000_001)
+        github_issue = create(:issue, project: project, source: "github")
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(github_issue)
+      end
+
+      it "returns nil when only synthetic Dependabot issues exist" do
+        create(:issue, project: project, source: "dependabot_alert",
+          github_issue_id: Issue::SYNTHETIC_ISSUE_ID_OFFSET + 1,
+          github_number: 100_000_001)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+    end
   end
 end

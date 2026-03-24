@@ -86,13 +86,28 @@ module Activities
       # locally in execute so reconciliation sees the full set of open alerts,
       # preventing incorrect closure when the threshold is raised.
       client.dependabot_alerts(project.full_name)
-    rescue GithubClient::NotFoundError, GithubClient::ApiError => e
+    rescue GithubClient::NotFoundError => e
       logger.warn(
         message: "security_scanner.fetch_failed",
         project_id: project.id,
         error: e.message
       )
       nil
+    rescue GithubClient::ApiError => e
+      # Only swallow expected non-retryable cases (403 permission denied,
+      # 404 Dependabot not enabled). For 5xx or unknown status codes,
+      # re-raise so Temporal can apply its retry policy.
+      if [ 403, 404 ].include?(e.status)
+        logger.warn(
+          message: "security_scanner.fetch_failed",
+          project_id: project.id,
+          error: e.message,
+          status: e.status
+        )
+        nil
+      else
+        raise
+      end
     end
 
     # Returns [new_alerts, reopened_issues]:
