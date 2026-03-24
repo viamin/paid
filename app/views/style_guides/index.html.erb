@@ -75,7 +75,7 @@
                 <% end %>
               </td>
               <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                <%= style_guide.updated_at.strftime("%b %d, %Y") %>
+                <%= local_time(style_guide.updated_at, format: :date) %>
               </td>
               <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                 <%= link_to "View", style_guide_path(style_guide), class: "text-indigo-600 hover:text-indigo-900" %>
