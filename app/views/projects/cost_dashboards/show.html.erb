@@ -52,7 +52,7 @@
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Cost Trend (Last 30 Days)</h2>
     <% daily_costs = @stats[:daily_costs] %>
-    <% if daily_costs.any? %>
+    <% if daily_costs.any? { |_, cost_cents| cost_cents.to_i > 0 } %>
       <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
         <div class="px-4 py-5 sm:p-6">
           <% max_cost = [daily_costs.map { |_, v| v }.max, 1].max %>
