@@ -89,6 +89,23 @@ module ApplicationHelper
     end
   end
 
+  # Renders a <time> element that displays in the user's local timezone via Stimulus.
+  # Falls back to a UTC-formatted string for non-JS clients.
+  #
+  # Formats: :long, :short, :date, :time, :relative
+  def local_time(time, format: :long)
+    return if time.nil?
+
+    utc = time.utc
+    fallback = local_time_fallback(utc, format)
+
+    tag.time(
+      fallback,
+      datetime: utc.iso8601,
+      data: { controller: "local-time", local_time_format_value: format.to_s }
+    )
+  end
+
   RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
 
   def sort_link_to(label, attribute, q)
@@ -139,6 +156,19 @@ module ApplicationHelper
     else
       { type: :placeholder }
     end
+  end
+
+  LOCAL_TIME_FORMATS = {
+    long: "%B %d, %Y at %l:%M %p UTC",
+    short: "%b %d, %Y %H:%M UTC",
+    date: "%b %d, %Y",
+    time: "%H:%M:%S UTC",
+    relative: nil
+  }.freeze
+
+  def local_time_fallback(utc, format)
+    fmt = LOCAL_TIME_FORMATS[format.to_sym]
+    fmt ? utc.strftime(fmt).squish : time_ago_in_words(utc) + " ago"
   end
 
   def github_link_or_text(link_label, text_label, url)

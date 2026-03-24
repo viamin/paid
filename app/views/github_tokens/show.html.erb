@@ -81,7 +81,7 @@
           <div class="ml-3">
             <h3 class="text-sm font-medium text-yellow-800">Token Expiring Soon</h3>
             <p class="mt-1 text-sm text-yellow-700">
-              This token will expire on <%= @github_token.expires_at.strftime("%B %d, %Y at %I:%M %p %Z") %>.
+              This token will expire on <%= local_time(@github_token.expires_at) %>.
               Please create a new token before it expires to avoid service interruption.
             </p>
           </div>
@@ -120,14 +120,14 @@
         <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
           <dt class="text-sm font-medium text-gray-500">Last Used</dt>
           <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-            <%= @github_token.last_used_at ? @github_token.last_used_at.strftime("%B %d, %Y at %I:%M %p %Z") : "Never" %>
+            <%= @github_token.last_used_at ? local_time(@github_token.last_used_at) : "Never" %>
           </dd>
         </div>
 
         <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
           <dt class="text-sm font-medium text-gray-500">Created</dt>
           <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-            <%= @github_token.created_at.strftime("%B %d, %Y at %I:%M %p %Z") %>
+            <%= local_time(@github_token.created_at) %>
           </dd>
         </div>
 
@@ -135,7 +135,7 @@
           <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
             <dt class="text-sm font-medium text-gray-500">Expires</dt>
             <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-              <%= @github_token.expires_at.strftime("%B %d, %Y at %I:%M %p %Z") %>
+              <%= local_time(@github_token.expires_at) %>
               <% if @github_token.expired? %>
                 <span class="ml-2 text-red-600">(Expired)</span>
               <% end %>
@@ -147,7 +147,7 @@
           <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
             <dt class="text-sm font-medium text-gray-500">Revoked</dt>
             <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-              <%= @github_token.revoked_at.strftime("%B %d, %Y at %I:%M %p %Z") %>
+              <%= local_time(@github_token.revoked_at) %>
             </dd>
           </div>
         <% end %>
