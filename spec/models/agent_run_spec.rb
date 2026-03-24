@@ -1191,23 +1191,23 @@ RSpec.describe AgentRun do
     end
   end
 
-  describe "#queue_priority" do
+  describe "#queue_priority_tier" do
     it "returns :manual for manual trigger type" do
       run = create(:agent_run, trigger_type: "manual")
 
-      expect(run.queue_priority).to eq(:manual)
+      expect(run.queue_priority_tier).to eq(:manual)
     end
 
     it "returns :auto_continue for automatic runs with a source PR" do
       run = create(:agent_run, trigger_type: "automatic", source_pull_request_number: 42)
 
-      expect(run.queue_priority).to eq(:auto_continue)
+      expect(run.queue_priority_tier).to eq(:auto_continue)
     end
 
     it "returns :auto_pick for automatic runs without a source PR" do
       run = create(:agent_run, trigger_type: "automatic")
 
-      expect(run.queue_priority).to eq(:auto_pick)
+      expect(run.queue_priority_tier).to eq(:auto_pick)
     end
   end
 
