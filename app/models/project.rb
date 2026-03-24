@@ -195,7 +195,7 @@ class Project < ApplicationRecord
       locals: {
         project: self,
         pull_requests: open_items.pull_requests_only.limit(25),
-        pr_numbers_with_active_auto_continue: pr_numbers_with_queued_auto_continue
+        pr_numbers_with_queued_auto_continue: pr_numbers_with_queued_auto_continue
       }
     )
   end
