@@ -229,6 +229,69 @@ RSpec.describe Dashboard::Stats do
       end
     end
 
+    describe "cost_by_project" do
+      context "with no projects having costs" do
+        it "returns an empty array" do
+          expect(stats[:cost_by_project]).to be_empty
+        end
+      end
+
+      context "with projects having costs" do
+        let(:expensive_project) { create(:project, account: account, name: "Expensive Project", total_cost_cents: 5000) }
+        let(:cheap_project) { create(:project, account: account, name: "Cheap Project", total_cost_cents: 100) }
+
+        before do
+          project.update!(total_cost_cents: 1000)
+          expensive_project
+          cheap_project
+        end
+
+        it "only includes projects with non-zero costs" do
+          names = stats[:cost_by_project].map(&:first)
+          expect(names).to include(project.name, "Expensive Project", "Cheap Project")
+        end
+
+        it "orders by cost descending" do
+          result = stats[:cost_by_project]
+          expect(result.first).to eq([ "Expensive Project", 5000 ])
+          expect(result.last).to eq([ "Cheap Project", 100 ])
+        end
+
+        it "excludes zero-cost projects" do
+          create(:project, account: account, name: "Free Project", total_cost_cents: 0)
+          names = stats[:cost_by_project].map(&:first)
+          expect(names).not_to include("Free Project")
+        end
+      end
+
+      context "with projects from another account" do
+        let(:other_account) { create(:account) }
+
+        before do
+          create(:project, account: other_account, name: "Other Project", total_cost_cents: 9999)
+          project.update!(total_cost_cents: 500)
+        end
+
+        it "only includes projects from the specified account" do
+          names = stats[:cost_by_project].map(&:first)
+          expect(names).to include(project.name)
+          expect(names).not_to include("Other Project")
+        end
+      end
+
+      context "with more than 10 projects" do
+        before do
+          12.times do |i|
+            create(:project, account: account, name: "Project #{i}", total_cost_cents: (i + 1) * 100)
+          end
+        end
+
+        it "limits results to 10" do
+          expect(stats[:cost_by_project].length).to eq(10)
+        end
+      end
+    end
+
     context "with merged PRs" do
       let(:merged_issue) do
         create(:issue, :pull_request, :closed, project: project,

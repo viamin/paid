@@ -9,12 +9,45 @@
       <span class="font-semibold text-green-600"><%= project.agent_runs.completed.count %></span>
     </div>
     <div class="flex items-center gap-1.5 px-4 py-3">
-      <span class="font-medium text-gray-500">Cost:</span>
+      <span class="font-medium text-gray-500">Total Cost:</span>
       <span class="font-semibold text-gray-900">$<%= format("%.2f", project.total_cost_cents / 100.0) %></span>
     </div>
     <div class="flex items-center gap-1.5 px-4 py-3">
       <span class="font-medium text-gray-500">Tokens:</span>
       <span class="font-semibold text-gray-900"><%= number_with_delimiter(project.total_tokens_used) %></span>
+    </div>
+    <% now = local_assigns.fetch(:now, Time.current) %>
+    <% monthly_cost_cents = local_assigns.fetch(:monthly_cost_cents, project.token_usages.billable.by_time_period(now.beginning_of_month, now).total_cost_cents) %>
+    <div class="flex items-center gap-1.5 px-4 py-3">
+      <span class="font-medium text-gray-500">This Month:</span>
+      <span class="font-semibold text-gray-900">$<%= format("%.2f", monthly_cost_cents / 100.0) %></span>
+    </div>
+    <% today_cost_cents = local_assigns.fetch(:today_cost_cents, project.token_usages.billable.by_time_period(now.beginning_of_day, now).total_cost_cents) %>
+    <div class="flex items-center gap-1.5 px-4 py-3">
+      <span class="font-medium text-gray-500">Today:</span>
+      <span class="font-semibold text-gray-900">$<%= format("%.2f", today_cost_cents / 100.0) %></span>
+    </div>
+    <% budgets = local_assigns.fetch(:budgets, project.cost_budgets.load) %>
+    <% if budgets.any? %>
+      <div class="flex items-center gap-1.5 px-4 py-3">
+        <% budgets.each do |budget| %>
+          <% if budget.budget_type == "per_run" %>
+            <%# Per-run budgets are enforced per agent run, not via current_usage_cents %>
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 mr-1">
+              <%= budget_type_label(budget.budget_type) %>: <%= format("$%.2f", budget.limit_cents / 100.0) %>/run
+            </span>
+          <% else %>
+            <% color = budget_status_color(budget.usage_percent, budget.alert_threshold_percent) %>
+            <% classes = budget_status_classes(color) %>
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= classes[:bg] %> <%= classes[:text] %> mr-1">
+              <%= budget_type_label(budget.budget_type) %>: <%= budget.usage_percent %>%
+            </span>
+          <% end %>
+        <% end %>
+      </div>
+    <% end %>
+    <div class="flex items-center gap-1.5 px-4 py-3">
+      <%= link_to "Cost Details", project_cost_dashboard_path(project), class: "text-indigo-600 hover:text-indigo-900 font-medium" %>
     </div>
   </div>
 </div>
