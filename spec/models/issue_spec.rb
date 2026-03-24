@@ -284,6 +284,54 @@ RSpec.describe Issue do
     end
   end
 
+  describe "#has_active_auto_continue_runs?" do
+    let(:project) { create(:project) }
+
+    it "returns false for non-pull-request issues" do
+      issue = create(:issue, project: project)
+
+      expect(issue.has_active_auto_continue_runs?).to be false
+    end
+
+    it "returns false when PR has no auto-continue runs" do
+      pr = create(:issue, :pull_request, project: project, github_number: 50)
+
+      expect(pr.has_active_auto_continue_runs?).to be false
+    end
+
+    it "returns true when PR has queued automatic runs" do
+      pr = create(:issue, :pull_request, project: project, github_number: 50)
+      create(:agent_run, :queued, :automatic, project: project,
+        source_pull_request_number: 50, custom_prompt: "Fix PR")
+
+      expect(pr.has_active_auto_continue_runs?).to be true
+    end
+
+    it "returns true when PR has running automatic runs" do
+      pr = create(:issue, :pull_request, project: project, github_number: 50)
+      create(:agent_run, :running, :automatic, project: project,
+        source_pull_request_number: 50, custom_prompt: "Fix PR")
+
+      expect(pr.has_active_auto_continue_runs?).to be true
+    end
+
+    it "returns false when PR has only completed automatic runs" do
+      pr = create(:issue, :pull_request, project: project, github_number: 50)
+      create(:agent_run, :completed, :automatic, project: project,
+        source_pull_request_number: 50, custom_prompt: "Fix PR")
+
+      expect(pr.has_active_auto_continue_runs?).to be false
+    end
+
+    it "returns false when PR has only manual runs" do
+      pr = create(:issue, :pull_request, project: project, github_number: 50)
+      create(:agent_run, :running, :manual, project: project,
+        source_pull_request_number: 50, custom_prompt: "Fix PR")
+
+      expect(pr.has_active_auto_continue_runs?).to be false
+    end
+  end
+
   describe "#ready_to_work?" do
     let(:project) { create(:project) }
 

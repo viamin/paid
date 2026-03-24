@@ -67,6 +67,7 @@ Rails.application.routes.draw do
       post :retry, on: :member
       post :refresh_auth, on: :member
       post :quick_create, on: :collection
+      post :bump_priority, on: :collection
     end
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
     post :detect_services, on: :member

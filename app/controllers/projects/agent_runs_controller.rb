@@ -94,6 +94,29 @@ module Projects
       )
     end
 
+    def bump_priority
+      authorize @project, :run_agent?
+
+      pr = resolve_pull_request_record
+      unless pr
+        redirect_to project_path(@project), alert: "Please select a pull request."
+        return
+      end
+
+      runs = @project.agent_runs
+        .where(source_pull_request_number: pr.github_number, trigger_type: "automatic")
+        .where(status: %w[queued pending running])
+
+      unless runs.exists?
+        redirect_to project_path(@project), alert: "No active auto-continue runs for this pull request."
+        return
+      end
+
+      runs.update_all(trigger_type: "manual")
+
+      redirect_to project_path(@project), notice: "Priority bumped for PR ##{pr.github_number}."
+    end
+
     def retry
       authorize @agent_run
 
@@ -232,6 +255,12 @@ module Projects
 
       pr = @project.issues.pull_requests_only.find(params[:pull_request_id])
       pr.github_number
+    end
+
+    def resolve_pull_request_record
+      return nil if params[:pull_request_id].blank?
+
+      @project.issues.pull_requests_only.find(params[:pull_request_id])
     end
 
     def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, goal: nil)
