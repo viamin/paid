@@ -32,7 +32,9 @@ module CostBudgets
     end
 
     def call
-      return allowed_result if project.cost_budgets.none?
+      # Uses exists? for an efficient existence check while still bypassing
+      # any potentially stale association target cache.
+      return allowed_result unless project.cost_budgets.exists?
 
       rollover_expired_periods
 

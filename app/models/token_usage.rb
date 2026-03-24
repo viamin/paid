@@ -57,7 +57,7 @@ class TokenUsage < ApplicationRecord
 
   def self.daily_costs(days: 30)
     where(created_at: days.days.ago..)
-      .group("DATE(created_at)")
+      .group(Arel.sql("DATE(token_usages.created_at)"))
       .sum(:cost_cents)
   end
 end

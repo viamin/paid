@@ -1,0 +1,266 @@
+<% content_for(:title) { "Cost Dashboard - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">Cost Dashboard</h1>
+      <p class="mt-1 text-sm text-gray-500"><%= @project.name %></p>
+    </div>
+  </div>
+
+  <% summary = @stats[:summary] %>
+
+  <%# Cost Summary Cards %>
+  <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+      <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
+      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+        <%= format_cost_cents(summary[:total_cost_cents]) %>
+      </dd>
+    </div>
+    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+      <dt class="truncate text-sm font-medium text-gray-500">Cost This Month</dt>
+      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+        <%= format_cost_cents(summary[:cost_this_month_cents]) %>
+      </dd>
+    </div>
+    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+      <dt class="truncate text-sm font-medium text-gray-500">Cost Today</dt>
+      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+        <%= format_cost_cents(summary[:cost_today_cents]) %>
+      </dd>
+    </div>
+    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+      <dt class="truncate text-sm font-medium text-gray-500">Avg Cost / Run</dt>
+      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+        <%= format_cost_cents(summary[:avg_cost_per_run_cents]) %>
+      </dd>
+      <dd class="mt-1 text-xs text-gray-500"><%= number_with_delimiter(summary[:total_runs]) %> completed runs</dd>
+    </div>
+  </div>
+
+  <%# Cost Trend Chart (30 days) %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Cost Trend (Last 30 Days)</h2>
+    <% daily_costs = @stats[:daily_costs] %>
+    <% if daily_costs.any? { |_, cost_cents| cost_cents.to_i > 0 } %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:p-6">
+          <% max_cost = [daily_costs.map { |_, v| v }.max, 1].max %>
+          <div class="flex items-end gap-1" style="height: 160px;" role="img" aria-label="Daily cost trend chart">
+            <% daily_costs.each do |date, cost_cents| %>
+              <% height_pct = (cost_cents.to_f / max_cost * 100).round %>
+              <div class="group relative flex-1" style="min-width: 4px;">
+                <div class="w-full rounded-t bg-indigo-400 hover:bg-indigo-500 transition-colors"
+                     style="height: <%= height_pct %>%;"
+                     title="<%= date %>: <%= format_cost_cents(cost_cents) %>">
+                </div>
+              </div>
+            <% end %>
+          </div>
+          <div class="mt-2 flex justify-between text-xs text-gray-400">
+            <span><%= daily_costs.first&.first %></span>
+            <span><%= daily_costs.last&.first %></span>
+          </div>
+        </div>
+      </div>
+    <% else %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 text-sm text-gray-500">No cost data available yet.</div>
+      </div>
+    <% end %>
+  </div>
+
+  <%# Cost Breakdown %>
+  <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
+    <%# By Model %>
+    <div>
+      <h2 class="text-lg font-semibold text-gray-900">Cost by Model</h2>
+      <% cost_by_model = @stats[:cost_by_model] %>
+      <% if cost_by_model.any? %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Model</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Cost</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% cost_by_model.each do |model_name, cost_cents| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= model_name || "Unknown" %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= format_cost_cents(cost_cents) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 text-sm text-gray-500">No model breakdown available.</div>
+        </div>
+      <% end %>
+    </div>
+
+    <%# By Request Type %>
+    <div>
+      <h2 class="text-lg font-semibold text-gray-900">Cost by Request Type</h2>
+      <% cost_by_type = @stats[:cost_by_request_type] %>
+      <% if cost_by_type.any? %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Cost</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% cost_by_type.each do |type, cost_cents| %>
+                <tr>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= type.titleize %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= format_cost_cents(cost_cents) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 text-sm text-gray-500">No request type breakdown available.</div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <%# Budget Status & Configuration %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Budget Limits</h2>
+
+    <% budgets = @stats[:budgets] %>
+    <% if budgets.any? %>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <% budgets.each do |budget| %>
+          <% is_per_run = budget[:budget_type] == "per_run" %>
+          <% usage_percent = budget[:usage_percent] || 0 %>
+          <% color = is_per_run ? "gray" : budget_status_color(usage_percent, budget[:alert_threshold_percent]) %>
+          <% classes = budget_status_classes(color) %>
+          <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 sm:p-6">
+              <div class="flex items-center justify-between">
+                <dt class="text-sm font-medium text-gray-500"><%= budget_type_label(budget[:budget_type]) %> Limit</dt>
+                <% if is_per_run %>
+                  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">
+                    Per Run
+                  </span>
+                <% else %>
+                  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= classes[:bg] %> <%= classes[:text] %>">
+                    <%= budget[:exceeded] ? "Exceeded" : "#{usage_percent}%" %>
+                  </span>
+                <% end %>
+              </div>
+              <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= format_cost_cents(budget[:limit_cents]) %></dd>
+              <% if is_per_run %>
+                <%# Per-run budgets are enforced per agent run, not via period-based usage tracking %>
+                <p class="mt-2 text-xs text-gray-500">Enforced per agent run. Each run is limited to this amount.</p>
+              <% else %>
+                <div class="mt-3">
+                  <div class="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div class="h-2 rounded-full <%= classes[:bar] %> transition-all"
+                         style="width: <%= [usage_percent, 100].min %>%"></div>
+                  </div>
+                  <div class="mt-1 flex justify-between text-xs text-gray-500">
+                    <span>Used: <%= format_cost_cents(budget[:current_usage_cents]) %></span>
+                    <span>Remaining: <%= format_cost_cents(budget[:remaining_cents]) %></span>
+                  </div>
+                </div>
+              <% end %>
+              <% if policy(@project).update? %>
+                <% if @failed_budget&.id == budget[:id] && @failed_budget.errors.any? %>
+                  <div class="mt-3 w-full rounded-md bg-red-50 p-3 text-sm text-red-700">
+                    <ul class="list-disc pl-5">
+                      <% @failed_budget.errors.full_messages.each do |message| %>
+                        <li><%= message %></li>
+                      <% end %>
+                    </ul>
+                  </div>
+                <% end %>
+                <div class="mt-3 flex gap-2">
+                  <%# Use @failed_budget when present so the user's submitted value is preserved on validation failure %>
+                  <% budget_record = (@failed_budget&.id == budget[:id] ? @failed_budget : @cost_budgets[budget[:id]]) %>
+                  <%= form_with model: [@project, budget_record], url: project_cost_budget_path(@project, budget[:id]), method: :patch, class: "flex items-center gap-2" do |f| %>
+                    <div class="relative">
+                      <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2 text-gray-400 text-sm">$</span>
+                      <%= f.number_field :limit_dollars, value: (budget_record.limit_dollars || format("%.2f", budget[:limit_cents] / 100.0)), step: 0.01, min: 0.01, class: "block w-24 rounded-md border-0 py-1 pl-6 pr-2 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
+                    </div>
+                    <%= f.submit "Update", class: "rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+                  <% end %>
+                  <%= button_to "Remove", project_cost_budget_path(@project, budget[:id]), method: :delete, class: "rounded-md bg-white px-2 py-1 text-xs font-medium text-red-600 ring-1 ring-inset ring-red-200 hover:bg-red-50 cursor-pointer", form: { data: { turbo_confirm: "Remove this budget limit?" } } %>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 text-sm text-gray-500">No budget limits configured.</div>
+      </div>
+    <% end %>
+
+    <%# Add new budget %>
+    <% if policy(@project).update? %>
+      <% existing_types = budgets.map { |b| b[:budget_type] } %>
+      <%# Include the submitted budget_type when the create form has errors, so the user can correct the error %>
+      <% available_types = if @cost_budget&.errors&.any? && @cost_budget.budget_type.present? %>
+      <%                     (CostBudget::BUDGET_TYPES - existing_types) | [@cost_budget.budget_type] %>
+      <%                   else %>
+      <%                     CostBudget::BUDGET_TYPES - existing_types %>
+      <%                   end %>
+      <% if available_types.any? %>
+        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+          <div class="px-4 py-5 sm:p-6">
+            <h3 class="text-sm font-medium text-gray-900">Add Budget Limit</h3>
+            <%= form_with model: [@project, @cost_budget], url: project_cost_budgets_path(@project), class: "mt-3 flex flex-wrap items-end gap-3" do |f| %>
+              <% if @cost_budget&.errors&.any? %>
+                <div class="mb-3 w-full rounded-md bg-red-50 p-3 text-sm text-red-700">
+                  <ul class="list-disc pl-5">
+                    <% @cost_budget.errors.full_messages.each do |message| %>
+                      <li><%= message %></li>
+                    <% end %>
+                  </ul>
+                </div>
+              <% end %>
+              <div>
+                <%= f.label :budget_type, "Type", class: "block text-xs font-medium text-gray-700" %>
+                <%= f.select :budget_type, available_types.map { |t| [budget_type_label(t), t] }, {}, class: "mt-1 block rounded-md border-0 py-1.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
+              </div>
+              <div>
+                <%= f.label :limit_dollars, "Limit", class: "block text-xs font-medium text-gray-700" %>
+                <div class="relative mt-1">
+                  <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2 text-gray-400 text-sm">$</span>
+                  <%= f.number_field :limit_dollars, step: 0.01, min: 0.01, placeholder: "10.00", class: "block w-28 rounded-md border-0 py-1.5 pl-6 pr-2 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
+                </div>
+              </div>
+              <div>
+                <%= f.label :alert_threshold_percent, "Alert at %", class: "block text-xs font-medium text-gray-700" %>
+                <%= f.number_field :alert_threshold_percent, value: (@cost_budget.alert_threshold_percent || 80), min: 1, max: 100, class: "mt-1 block w-20 rounded-md border-0 py-1.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
+              </div>
+              <%= f.submit "Add Limit", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    <% end %>
+  </div>
+</div>
