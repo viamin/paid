@@ -92,6 +92,8 @@ module Activities
         skipped_rate_limited_count = 0
 
         providers.each do |provider|
+          break if timeout_error.present?
+
           # Skip unavailable providers, tracking rate-limited skips separately
           if provider_unavailable?(user_settings, provider, provider_states)
             canonical = canonical_provider(provider)
@@ -142,6 +144,7 @@ module Activities
             record_provider_failure(user_settings, provider, provider_states)
             agent_run.record_provider_attempt(provider, success: false, error_type: "timeout")
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
+            break
           rescue ProviderExecutionError => e
             last_error = "error"
             record_provider_failure(user_settings, provider, provider_states)
