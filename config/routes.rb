@@ -76,6 +76,7 @@ Rails.application.routes.draw do
   namespace :api do
     match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :post
     match "proxy/openai/*path", to: "secrets_proxy#openai", via: :post
+    match "proxy/google/*path", to: "secrets_proxy#google", via: :post
     match "proxy/github/*path", to: "github_proxy#proxy", via: [ :get, :post, :patch ]
     get "proxy/git-credentials", to: "git_credentials#show"
   end

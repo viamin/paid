@@ -33,6 +33,18 @@ module Api
       )
     end
 
+    # POST /api/proxy/google/*path
+    def google
+      api_key = fetch_api_key(:google)
+      return if performed?
+
+      proxy_request(
+        base_url: "https://generativelanguage.googleapis.com",
+        auth_header: "x-goog-api-key",
+        api_key: api_key
+      )
+    end
+
     private
 
     def check_rate_limit
