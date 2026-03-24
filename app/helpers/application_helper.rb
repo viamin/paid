@@ -43,7 +43,7 @@ module ApplicationHelper
   }.freeze
 
   def agent_run_priority_badge(run)
-    priority = run.queue_priority
+    priority = run.queue_priority_tier
     styles = AGENT_RUN_PRIORITY_STYLES.fetch(priority, AGENT_RUN_PRIORITY_STYLES[:unknown])
     tag.span(
       run.queue_priority_label,

@@ -146,7 +146,7 @@ class AgentRun < ApplicationRecord
     auto_pick: { label: "Auto-pick" }
   }.freeze
 
-  def queue_priority
+  def queue_priority_tier
     if manual?
       :manual
     elsif automatic? && existing_pr?
@@ -157,7 +157,7 @@ class AgentRun < ApplicationRecord
   end
 
   def queue_priority_label
-    QUEUE_PRIORITIES.fetch(queue_priority, { label: "Unknown" })[:label]
+    QUEUE_PRIORITIES.fetch(queue_priority_tier, { label: "Unknown" })[:label]
   end
 
   QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
