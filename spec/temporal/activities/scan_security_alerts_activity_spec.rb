@@ -260,14 +260,40 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         stale_issue = project.issues.find_by(github_issue_id: 9_000_000_099)
         expect(stale_issue.github_state).to eq("closed")
-        expect(stale_issue.paid_state).to eq("resolved")
+        expect(stale_issue.paid_state).to eq("completed")
         expect(stale_issue.github_updated_at).to be_within(5.seconds).of(Time.current)
       end
     end
 
-    context "when dependabot is not in alert types" do
+    context "when dependabot is not in alert types (empty)" do
       before do
         project.update!(security_alert_types: [])
+      end
+
+      it "does not fetch dependabot alerts" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:alerts_to_fix]).to eq([])
+      end
+
+      it "does not close existing synthetic dependabot issues" do
+        stale_issue = create(:issue,
+          project: project,
+          title: "[Security] Upgrade old-pkg — dependabot-alert-99",
+          github_issue_id: 9_000_000_099,
+          github_state: "open",
+          source: "dependabot_alert")
+
+        activity.execute(project_id: project.id)
+
+        stale_issue.reload
+        expect(stale_issue.github_state).to eq("open")
+      end
+    end
+
+    context "when alert types includes other types but not dependabot" do
+      before do
+        project.update!(security_alert_types: [ "code_scanning" ])
       end
 
       it "does not fetch dependabot alerts" do

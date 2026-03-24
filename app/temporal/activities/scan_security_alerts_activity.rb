@@ -66,16 +66,14 @@ module Activities
       # didn't check" and stale synthetic issues should not be closed.
       return nil if project.security_alert_types.empty?
 
-      alerts = []
+      # For now this activity only fetches Dependabot alerts. If Dependabot is
+      # not in the enabled alert types, return nil so callers don't treat the
+      # result as an authoritative "no alerts" snapshot (which would incorrectly
+      # reconcile/close existing synthetic Dependabot issues).
+      return nil unless project.security_alert_types.include?("dependabot")
 
-      if project.security_alert_types.include?("dependabot")
-        severity_filter = severities_at_or_above(project.security_severity_threshold)
-        alerts.concat(
-          client.dependabot_alerts(project.full_name, severity: severity_filter)
-        )
-      end
-
-      alerts
+      severity_filter = severities_at_or_above(project.security_severity_threshold)
+      client.dependabot_alerts(project.full_name, severity: severity_filter)
     rescue GithubClient::NotFoundError, GithubClient::ApiError => e
       logger.warn(
         message: "security_scanner.fetch_failed",
@@ -109,8 +107,8 @@ module Activities
         title: title,
         body: body,
         github_state: "open",
-        # Use the project owner as creator so the issue is trusted for prompt building.
-        # Dependabot alerts are system-verified, so trust is appropriate here.
+        # Use a trusted login (from allowed GitHub usernames, or a bot fallback)
+        # as the creator so the issue is trusted for prompt building.
         github_creator_login: trusted_login_for(project),
         github_created_at: now,
         github_updated_at: now,
@@ -180,10 +178,12 @@ module Activities
         now = Time.current
         stale_scope.update_all(
           github_state: "closed",
-          paid_state: "resolved",
+          paid_state: "completed",
           updated_at: now,
           github_updated_at: now
         )
+        # update_all bypasses callbacks, so manually broadcast UI updates.
+        project.broadcast_issues_update
         logger.info(
           message: "security_scanner.reconciled_resolved_alerts",
           project_id: project.id,
