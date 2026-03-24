@@ -147,9 +147,9 @@ class AgentRun < ApplicationRecord
   }.freeze
 
   def queue_priority
-    if trigger_type == "manual"
+    if manual?
       :manual
-    elsif trigger_type == "automatic" && source_pull_request_number.present?
+    elsif automatic? && existing_pr?
       :auto_continue
     else
       :auto_pick
