@@ -80,7 +80,7 @@
                    nil
                  end %>
               <% if compressed_at %>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= compressed_at.strftime("%b %d, %Y %H:%M %Z") %></dd>
+                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= local_time(compressed_at, format: :short) %></dd>
               <% else %>
                 <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= @style_guide.compression_metadata["compressed_at"] %></dd>
               <% end %>

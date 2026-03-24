@@ -22,14 +22,14 @@
       <div class="grid grid-cols-2 divide-x divide-gray-200">
         <div class="px-4 py-3 bg-gray-50">
           <span class="text-sm font-medium text-gray-900">v<%= @version_a.version %></span>
-          <span class="ml-2 text-xs text-gray-500"><%= @version_a.created_at.strftime("%b %d, %Y %H:%M") %></span>
+          <span class="ml-2 text-xs text-gray-500"><%= local_time(@version_a.created_at, format: :short) %></span>
           <% if @version_a.change_notes.present? %>
             <p class="mt-1 text-xs text-gray-500"><%= @version_a.change_notes %></p>
           <% end %>
         </div>
         <div class="px-4 py-3 bg-gray-50">
           <span class="text-sm font-medium text-gray-900">v<%= @version_b.version %></span>
-          <span class="ml-2 text-xs text-gray-500"><%= @version_b.created_at.strftime("%b %d, %Y %H:%M") %></span>
+          <span class="ml-2 text-xs text-gray-500"><%= local_time(@version_b.created_at, format: :short) %></span>
           <% if @version_b == @prompt.current_version %>
             <span class="ml-2 inline-flex items-center rounded-md bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">current</span>
           <% end %>
