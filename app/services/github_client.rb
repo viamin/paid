@@ -497,24 +497,43 @@ class GithubClient
     handle_errors { client.put(path, options) }
   end
 
+  DEPENDABOT_ALERTS_MAX_PAGES = 5
+
   # Fetches open Dependabot alerts for a repository.
   #
   # @param repo [String] Repository in "owner/name" format
-  # @param severity [Array<String>, nil] Filter by severity levels (e.g. ["critical", "high"])
   # @param state [String] Alert state: "open", "dismissed", "fixed", or "auto_dismissed"
   # @param per_page [Integer] Number of results per page
   # @return [Array<Hash>] Alerts with :number, :state, :severity, :package_name,
   #   :package_ecosystem, :patched_version, :summary, :html_url keys
-  def dependabot_alerts(repo, severity: nil, state: "open", per_page: 100)
+  def dependabot_alerts(repo, state: "open", per_page: 100)
     handle_errors do
-      params = { state: state, per_page: per_page }
-      params[:severity] = severity.join(",") if severity.present?
+      all_alerts = []
+      page = 1
 
-      response = with_auto_paginate do
-        client.get("#{Octokit::Repository.path(repo)}/dependabot/alerts", params)
+      loop do
+        response = client.get(
+          "#{Octokit::Repository.path(repo)}/dependabot/alerts",
+          state: state, per_page: per_page, page: page
+        )
+        batch = Array(response)
+        all_alerts.concat(batch)
+        break if batch.size < per_page
+
+        page += 1
+        break if page > DEPENDABOT_ALERTS_MAX_PAGES
       end
 
-      Array(response).map do |alert|
+      if page > DEPENDABOT_ALERTS_MAX_PAGES
+        Rails.logger.warn(
+          message: "github_client.dependabot_alerts_pagination_truncated",
+          repo: repo,
+          fetched_count: all_alerts.size,
+          max_pages: DEPENDABOT_ALERTS_MAX_PAGES
+        )
+      end
+
+      all_alerts.map do |alert|
         vulnerability = alert.security_vulnerability || alert.security_advisory || OpenStruct.new
         {
           number: alert.number,
