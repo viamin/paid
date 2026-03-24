@@ -242,7 +242,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
     end
 
-    context "when GitHub API returns an error" do
+    context "when GitHub API returns a 403 error" do
       before do
         allow(github_client).to receive(:dependabot_alerts)
           .and_raise(GithubClient::ApiError.new("Dependabot alerts are not enabled", status: 403))
@@ -266,6 +266,19 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         stale_issue.reload
         expect(stale_issue.github_state).to eq("open")
+      end
+    end
+
+    context "when GitHub API returns a 5xx error" do
+      before do
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::ApiError.new("Internal Server Error", status: 500))
+      end
+
+      it "re-raises so Temporal can retry" do
+        expect { activity.execute(project_id: project.id) }.to raise_error(
+          GithubClient::ApiError, /Internal Server Error/
+        )
       end
     end
 
