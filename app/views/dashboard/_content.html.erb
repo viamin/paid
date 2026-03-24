@@ -245,6 +245,35 @@
     <% end %>
   </div>
 
+  <%# Cost by Project %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Cost by Project</h2>
+    <% if stats[:cost_by_project].any? %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Project</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Total Cost</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% stats[:cost_by_project].each do |project_name, cost_cents| %>
+              <tr>
+                <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= project_name %></td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">$<%= format("%.2f", cost_cents / 100.0) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 text-sm text-gray-500">No project costs recorded yet.</div>
+      </div>
+    <% end %>
+  </div>
+
   <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
     <%# Runs by Agent Type %>
     <div>
