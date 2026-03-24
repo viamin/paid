@@ -33,12 +33,22 @@ RSpec.describe "Api::SecretsProxy" do
     }
   end
 
+  let(:google_response_body) do
+    {
+      candidates: [ { content: { parts: [ { text: "Hello!" } ] } } ],
+      usageMetadata: { promptTokenCount: 80, candidatesTokenCount: 40, totalTokenCount: 120 },
+      modelVersion: "gemini-2.0-flash"
+    }.to_json
+  end
+
   before do
     allow(Rails.application.credentials).to receive(:dig).and_call_original
     allow(Rails.application.credentials).to receive(:dig)
       .with(:llm, :anthropic_api_key).and_return("sk-ant-test-key")
     allow(Rails.application.credentials).to receive(:dig)
       .with(:llm, :openai_api_key).and_return("sk-test-key")
+    allow(Rails.application.credentials).to receive(:dig)
+      .with(:llm, :google_api_key).and_return("google-test-key")
   end
 
   describe "POST /api/proxy/anthropic/*path" do
@@ -227,6 +237,61 @@ RSpec.describe "Api::SecretsProxy" do
           headers: valid_headers
       }.to change { agent_run.reload.tokens_input }.by(100)
         .and change { agent_run.reload.tokens_output }.by(50)
+    end
+  end
+
+  describe "POST /api/proxy/google/*path" do
+    let(:target_url) { "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent" }
+
+    before do
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: google_response_body, headers: { "Content-Type" => "application/json" })
+    end
+
+    it "proxies the request to Google and returns the response" do
+      post "/api/proxy/google/v1beta/models/gemini-2.0-flash:generateContent",
+        params: { contents: [ { parts: [ { text: "Hello" } ] } ] }.to_json,
+        headers: valid_headers
+
+      expect(response).to have_http_status(:ok)
+      body = JSON.parse(response.body)
+      expect(body["usageMetadata"]).to be_present
+    end
+
+    it "injects the API key into the forwarded request" do
+      post "/api/proxy/google/v1beta/models/gemini-2.0-flash:generateContent",
+        params: {}.to_json,
+        headers: valid_headers
+
+      expect(WebMock).to have_requested(:post, target_url)
+        .with(headers: { "x-goog-api-key" => "google-test-key" })
+    end
+
+    it "tracks token usage with Google usageMetadata field names" do
+      expect {
+        post "/api/proxy/google/v1beta/models/gemini-2.0-flash:generateContent",
+          params: {}.to_json,
+          headers: valid_headers
+      }.to change { agent_run.reload.tokens_input }.by(80)
+        .and change { agent_run.reload.tokens_output }.by(40)
+    end
+  end
+
+  describe "query string forwarding" do
+    let(:target_url_with_params) { "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse" }
+
+    before do
+      stub_request(:post, target_url_with_params)
+        .to_return(status: 200, body: google_response_body, headers: { "Content-Type" => "application/json" })
+    end
+
+    it "preserves query string parameters when proxying" do
+      post "/api/proxy/google/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse",
+        params: {}.to_json,
+        headers: valid_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).to have_requested(:post, target_url_with_params)
     end
   end
 

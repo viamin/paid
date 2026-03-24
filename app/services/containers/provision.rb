@@ -140,6 +140,7 @@ module Containers
       fix_workspace_ownership!
       fix_cache_tmpfs_ownership!
       fix_codex_tmpfs_ownership!
+      fix_gemini_tmpfs_ownership!
       seed_claude_credentials!
       apply_network_restrictions!
 
@@ -471,12 +472,26 @@ module Containers
     # write to it. Tmpfs mounts are created as root-owned; this mirrors the
     # pattern used by seed_claude_credentials! for ~/.claude.
     def fix_codex_tmpfs_ownership!
+      fix_tmpfs_ownership!(".codex")
+    end
+
+    # Fixes ownership of the ~/.gemini tmpfs so the non-root agent user can
+    # write to it. Tmpfs mounts are created as root-owned.
+    def fix_gemini_tmpfs_ownership!
+      fix_tmpfs_ownership!(".gemini")
+    end
+
+    # Fixes ownership of a tmpfs mount under /home/agent so the non-root
+    # agent user can write to it. Tmpfs mounts are created as root-owned.
+    #
+    # @param subdir [String] The directory name under /home/agent (e.g. ".codex", ".gemini")
+    def fix_tmpfs_ownership!(subdir)
       container.exec(
-        [ "chown", "-R", "agent:agent", "/home/agent/.codex" ],
+        [ "chown", "-R", "agent:agent", "/home/agent/#{subdir}" ],
         user: "root"
       )
     rescue Docker::Error::DockerError => e
-      log_system("container.codex_chown_failed", error: e.message)
+      log_system("container.#{subdir.delete_prefix('.')}_chown_failed", error: e.message)
     end
 
     # Sets up the workspace for the container.
@@ -539,6 +554,7 @@ module Containers
     #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
     #   /home/agent/.codex  - tmpfs (64MB, for Codex CLI config/session data)
+    #   /home/agent/.gemini - tmpfs (64MB, for Gemini CLI config/session data)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
       {
@@ -592,6 +608,10 @@ module Containers
       # Ownership is fixed by fix_codex_tmpfs_ownership! after container start.
       tmpfs["/home/agent/.codex"] = "size=#{64 * 1024 * 1024},mode=0700"
 
+      # Gemini CLI stores config and session data under ~/.gemini.
+      # Ownership is fixed by fix_gemini_tmpfs_ownership! after container start.
+      tmpfs["/home/agent/.gemini"] = "size=#{64 * 1024 * 1024},mode=0700"
+
       {
         "Memory" => options[:memory_bytes],
         # MemorySwap == Memory disables swap. Containers exceeding the memory
@@ -636,6 +656,15 @@ module Containers
         "OPENAI_BASE_URL=#{proxy_base}/api/proxy/openai",
         "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
         "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
+      ])
+
+      # Google proxy env vars are always set so Gemini CLI can route through
+      # the secrets proxy. Gemini CLI has no native login equivalent to
+      # `claude login`, so it always needs the proxy for auth.
+      env.concat([
+        "GOOGLE_GENAI_BASE_URL=#{proxy_base}/api/proxy/google",
+        "GOOGLE_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+        "GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
       ])
 
       if subscription_auth?
