@@ -84,8 +84,8 @@ module Issues
     end
 
     # Returns true if the project has open pull requests that still need
-    # Paid's attention. Uses a single EXISTS query (leveraging the GIN
-    # labels index) instead of loading PR records into Ruby.
+    # Paid's attention. Performs up to two lightweight EXISTS-style queries
+    # (leveraging the GIN labels index) instead of loading PR records into Ruby:
     #
     # Blocking rules:
     # - failed PRs always block (need investigation)
