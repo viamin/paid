@@ -350,7 +350,7 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
-      it "returns nil when a paid-ready PR is reopened back to draft" do
+      it "returns nil when a paid-ready PR is in restarted review phase" do
         create(:issue, :pull_request, :in_progress,
           project: project,
           labels: [ "paid-generated", "paid-ready" ],

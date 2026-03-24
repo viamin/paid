@@ -84,36 +84,35 @@ module Issues
     end
 
     # Returns true if the project has open pull requests that still need
-    # Paid's attention. PRs already handed off for human review no longer
-    # block auto-pick once they are paid-generated, explicitly labeled
-    # paid-ready, and out of draft/restarted.
+    # Paid's attention. Uses a single EXISTS query (leveraging the GIN
+    # labels index) instead of loading PR records into Ruby.
     #
-    # Note: the active-runs exclusion is unnecessary here because
-    # project_has_active_runs? already short-circuits before this method
-    # is called.
+    # Blocking rules:
+    # - failed PRs always block (need investigation)
+    # - in_progress PRs block unless fully handed off (paid-generated +
+    #   paid-ready labels and out of draft/restarted phase)
     def project_has_prs_needing_attention?
-      open_prs = Issue.where(
+      base = Issue.where(
         project: @project,
         is_pull_request: true,
-        github_state: "open"
+        github_state: "open",
+        paid_state: %w[in_progress failed]
       )
 
-      open_prs.any? do |pr|
-        pr_needs_attention?(pr)
-      end
-    end
+      # Failed PRs always block — check first for a fast short-circuit.
+      return true if base.where(paid_state: "failed").exists?
 
-    def pr_needs_attention?(pr)
-      return true if pr.paid_state == "failed"
-      return false if paid_ready_handoff?(pr)
+      # In-progress PRs block unless handed off: both labels present and
+      # not in a draft/restarted review phase.
+      handed_off = base
+        .where(paid_state: "in_progress")
+        .where("labels @> ?::jsonb", [ PAID_GENERATED_LABEL ].to_json)
+        .where("labels @> ?::jsonb", [ PAID_READY_LABEL ].to_json)
+        .where.not(pr_review_phase: %w[draft restarted])
 
-      pr.paid_state == "in_progress"
-    end
-
-    def paid_ready_handoff?(pr)
-      pr.has_label?(PAID_GENERATED_LABEL) &&
-        pr.has_label?(PAID_READY_LABEL) &&
-        !pr.draft_phase?
+      base.where(paid_state: "in_progress")
+        .where.not(id: handed_off)
+        .exists?
     end
 
     def find_next_eligible_issue
