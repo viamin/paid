@@ -35,15 +35,16 @@ module ApplicationHelper
     )
   end
 
-  PRIORITY_STYLES = {
+  AGENT_RUN_PRIORITY_STYLES = {
     manual: { bg: "bg-sky-100", text: "text-sky-700" },
     auto_continue: { bg: "bg-violet-100", text: "text-violet-700" },
-    auto_pick: { bg: "bg-teal-100", text: "text-teal-700" }
+    auto_pick: { bg: "bg-teal-100", text: "text-teal-700" },
+    unknown: { bg: "bg-gray-100", text: "text-gray-600" }
   }.freeze
 
   def agent_run_priority_badge(run)
     priority = run.queue_priority
-    styles = PRIORITY_STYLES[priority] || PRIORITY_STYLES[:auto_pick]
+    styles = AGENT_RUN_PRIORITY_STYLES.fetch(priority, AGENT_RUN_PRIORITY_STYLES[:unknown])
     tag.span(
       run.queue_priority_label,
       class: "inline-flex items-center rounded-md #{styles[:bg]} px-2 py-1 text-xs font-medium #{styles[:text]}"
