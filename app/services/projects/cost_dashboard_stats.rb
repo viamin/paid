@@ -56,7 +56,13 @@ module Projects
     end
 
     def daily_costs
-      billable_scope.daily_costs(days: 30).sort_by { |date, _| date }
+      raw_costs = billable_scope.daily_costs(days: 30)
+      today = Time.current.to_date
+      start_date = today - 29
+
+      (start_date..today).map do |date|
+        [ date, raw_costs[date] || 0 ]
+      end
     end
 
     def budgets
