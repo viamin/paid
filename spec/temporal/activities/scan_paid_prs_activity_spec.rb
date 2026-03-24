@@ -1115,7 +1115,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when owner has approved the PR" do
       before do
-        project.update!(owner_reviewer_login: "viamin")
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated" ],
@@ -1134,6 +1134,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+
+      it "does not emit owner_approved when auto_merge is disabled" do
+        project.update!(auto_merge_enabled: false)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
       end
     end
 
