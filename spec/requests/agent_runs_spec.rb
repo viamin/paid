@@ -673,13 +673,16 @@ RSpec.describe "AgentRuns" do
 
       before { sign_in user }
 
-      it "bumps queued auto-continue runs to manual trigger_type" do
+      it "bumps queued auto-continue runs to manual trigger_type and updates updated_at" do
         run = create(:agent_run, :queued, :automatic, project: project,
           source_pull_request_number: 77, custom_prompt: "Fix PR")
+        original_updated_at = run.updated_at
 
         post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
 
-        expect(run.reload.trigger_type).to eq("manual")
+        run.reload
+        expect(run.trigger_type).to eq("manual")
+        expect(run.updated_at).to be > original_updated_at
         expect(response).to redirect_to(project_path(project))
         follow_redirect!
         expect(response.body).to include("Priority bumped")

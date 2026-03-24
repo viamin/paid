@@ -7,7 +7,8 @@
         <ul role="list" class="divide-y divide-gray-200">
           <% pull_requests.each do |pr| %>
             <%= render "projects/pull_request", pull_request: pr, project: project,
-                     pr_numbers_with_queued_auto_continue: pr_numbers_with_queued_auto_continue %>
+                     pr_numbers_with_queued_auto_continue: pr_numbers_with_queued_auto_continue,
+                     pr_numbers_with_active_runs: pr_numbers_with_active_runs %>
           <% end %>
         </ul>
       </div>
