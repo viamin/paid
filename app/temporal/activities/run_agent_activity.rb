@@ -92,8 +92,6 @@ module Activities
         skipped_rate_limited_count = 0
 
         providers.each do |provider|
-          break if timeout_error.present?
-
           # Skip unavailable providers, tracking rate-limited skips separately
           if provider_unavailable?(user_settings, provider, provider_states)
             canonical = canonical_provider(provider)
