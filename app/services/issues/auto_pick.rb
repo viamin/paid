@@ -106,8 +106,7 @@ module Issues
       # not in a draft/restarted review phase.
       handed_off = base
         .where(paid_state: "in_progress")
-        .where("labels @> ?::jsonb", [ PAID_GENERATED_LABEL ].to_json)
-        .where("labels @> ?::jsonb", [ PAID_READY_LABEL ].to_json)
+        .where("labels @> ?::jsonb", [ PAID_GENERATED_LABEL, PAID_READY_LABEL ].to_json)
         .where.not(pr_review_phase: %w[draft restarted])
 
       base.where(paid_state: "in_progress")
