@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.7.0](https://github.com/viamin/paid/compare/v0.6.1...v0.7.0) (2026-03-24)
+
+
+### Features
+
+* add dependency update script ([2b1ab33](https://github.com/viamin/paid/commit/2b1ab334ebb63a68fa2ddd5b473fb97a6e8db1e6))
+* add dependency update script ([5430163](https://github.com/viamin/paid/commit/54301637fd7042d49cdfb5ac561c4a1f9ae711b8))
+* **auto-pick:** limit to one queued run per project and prioritize PR completion ([f255449](https://github.com/viamin/paid/commit/f2554497318be930e6303e6ecd2a3fc533403a47)), closes [#425](https://github.com/viamin/paid/issues/425)
+* **cost-tracking:** add per-project cost dashboard and budget management UI ([af6f135](https://github.com/viamin/paid/commit/af6f135cd97b3c378d1a7ef792379f58fcb19972)), closes [#142](https://github.com/viamin/paid/issues/142)
+
+
+### Bug Fixes
+
+* **agent-execution:** address PR review feedback for label recovery job ([bf9ecf1](https://github.com/viamin/paid/commit/bf9ecf123ed13b9c7b18e463d406495ffe5c0b85))
+* **agent-execution:** batch PR lookups and skip unsynced PRs in label recovery ([4b35898](https://github.com/viamin/paid/commit/4b358987fc00f6c35eeb5e323b018573b3a4bdcd))
+* **agent-execution:** recover missing paid-generated PR labels ([761f74e](https://github.com/viamin/paid/commit/761f74e32fe0eb5b4f3c3c2326728256e1ae0b4f))
+* **agent-execution:** recover missing paid-generated PR labels ([4ac386d](https://github.com/viamin/paid/commit/4ac386d33bf58b3afc82b792c75f7a908ca0771f))
+* **agent-execution:** resolve Brakeman SQL injection warning and address review feedback ([daa0c69](https://github.com/viamin/paid/commit/daa0c69d517ba53baae57f38cad877f90427bc98))
+* **agent-execution:** use bounded chunked queries in PR label recovery prefetch ([bf85cca](https://github.com/viamin/paid/commit/bf85ccafe241dbfcb1a433c012ec2dd32d0c09cf))
+* **agent-execution:** use completion time and composite keys in label recovery ([9da715a](https://github.com/viamin/paid/commit/9da715afb99580a3e31a6454271f1aced2abc0df))
+* **agent-image:** pin codex to a published version ([cd720f2](https://github.com/viamin/paid/commit/cd720f218ec90b1fe1b0e82733f18e3e5188e5b4))
+* **agent-image:** pin codex to a published version ([25065ce](https://github.com/viamin/paid/commit/25065ceb6965f02da5ae8333b77497880b9d523d))
+* **agent-runs:** allow auto-pick after paid-ready handoff ([d8530f4](https://github.com/viamin/paid/commit/d8530f408abfc555c7419e1325f9bd127bcf0e50))
+* **agent-runs:** allow auto-pick after paid-ready handoff ([37b64b5](https://github.com/viamin/paid/commit/37b64b5cb8034b5ca722bba072f83ead79e01e56))
+* **agent-runs:** combine label containment predicates into single query ([77fc7a2](https://github.com/viamin/paid/commit/77fc7a27f730800250cb290f95a7d9e6d6d33ed2))
+* **agent-runs:** correct comment about query count in PR attention check ([18f590a](https://github.com/viamin/paid/commit/18f590a8e63f09df5f06e6ec8224264a0c3c78ea))
+* **agent-runs:** push PR-attention check into SQL exists? queries ([2fef151](https://github.com/viamin/paid/commit/2fef1511921484188f2031d03ad1c89126b9ccf9))
+* **auto-pick:** address review feedback and fix test failures ([8d2a6ee](https://github.com/viamin/paid/commit/8d2a6ee2f05c389bebe6582efaf964a72d0e89f3))
+* **cost-tracking:** address code review feedback and fix CI failures ([44f576f](https://github.com/viamin/paid/commit/44f576f620c991466766f18a7ae5152426be1ca3))
+* **cost-tracking:** address PR review feedback for cost dashboard ([528c116](https://github.com/viamin/paid/commit/528c1168d04715bc932d758897a6f3551df52615))
+* **cost-tracking:** address remaining PR review feedback ([cf5856f](https://github.com/viamin/paid/commit/cf5856fbb895040cf849ae2ec9324a3065d1e19d))
+* **cost-tracking:** address review feedback on budgets, chart empty state, and specs ([dcd0524](https://github.com/viamin/paid/commit/dcd0524eecc33bd1c791ca657dd84827a3f955ba))
+* **cost-tracking:** normalize daily_costs to full 30-day range with zero-filled gaps ([11ab4d9](https://github.com/viamin/paid/commit/11ab4d99112eb035cf9517592d52378c8a387b32))
+* **cost-tracking:** preserve user input on validation failure in budget forms ([982f3a3](https://github.com/viamin/paid/commit/982f3a3d4ed80d3b3307c0e048d391e477f67efc))
+* **cost-tracking:** remove duplicate error on non-numeric limit_dollars ([65b2194](https://github.com/viamin/paid/commit/65b2194f9ce47444570ef9ae5112b1ffa2350f57))
+* **cost-tracking:** render per_run budgets without misleading usage stats ([00ace07](https://github.com/viamin/paid/commit/00ace07a0de1b92a009107c3ba3c048f1dcbb848))
+* **cost-tracking:** validate limit_dollars directly so errors show on correct field ([412fb44](https://github.com/viamin/paid/commit/412fb44b0e0516ba6470c62876c41d05d2aea093))
+
 ## [0.6.1](https://github.com/viamin/paid/compare/v0.6.0...v0.6.1) (2026-03-22)
 
 
