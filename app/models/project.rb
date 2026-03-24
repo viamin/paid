@@ -90,6 +90,17 @@ class Project < ApplicationRecord
     worktree_service.push_branch(agent_run)
   end
 
+  # Returns the set of PR numbers that have queued automatic agent runs,
+  # used by both the controller and Turbo broadcasts to drive the "Bump Priority" UI.
+  def pr_numbers_with_queued_auto_continue
+    agent_runs
+      .where(trigger_type: "automatic", status: "queued")
+      .where.not(source_pull_request_number: nil)
+      .distinct
+      .pluck(:source_pull_request_number)
+      .to_set
+  end
+
   def has_running_database_container?
     service_containers.running.where("image LIKE ?", "%postgres%").exists?
   end
@@ -177,12 +188,6 @@ class Project < ApplicationRecord
 
   def broadcast_pull_requests_update
     open_items = issues.where(github_state: "open").order(github_number: :desc)
-    active_auto_continue = agent_runs
-      .where(trigger_type: "automatic", status: "queued")
-      .where.not(source_pull_request_number: nil)
-      .distinct
-      .pluck(:source_pull_request_number)
-      .to_set
     broadcast_replace_to(
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :pull_requests),
@@ -190,7 +195,7 @@ class Project < ApplicationRecord
       locals: {
         project: self,
         pull_requests: open_items.pull_requests_only.limit(25),
-        pr_numbers_with_active_auto_continue: active_auto_continue
+        pr_numbers_with_active_auto_continue: pr_numbers_with_queued_auto_continue
       }
     )
   end
