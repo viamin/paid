@@ -261,6 +261,50 @@
     </div>
   <% end %>
 
+  <% if agent_run.model_selection.present? %>
+    <div class="mt-6 rounded-lg bg-white p-4 shadow">
+      <h2 class="text-sm font-semibold text-gray-900">Model Selection</h2>
+      <dl class="mt-2 divide-y divide-gray-200">
+        <div class="flex justify-between py-2">
+          <dt class="text-sm text-gray-500">Selected Model</dt>
+          <dd class="text-sm font-medium text-gray-900"><%= agent_run.model_selection.llm_model.display_name %></dd>
+        </div>
+        <div class="flex justify-between py-2">
+          <dt class="text-sm text-gray-500">Selection Method</dt>
+          <dd class="text-sm text-gray-900">
+            <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium
+              <%= case agent_run.model_selection.selector_type
+                  when 'meta_agent' then 'bg-purple-100 text-purple-700'
+                  when 'rules' then 'bg-blue-100 text-blue-700'
+                  when 'override' then 'bg-amber-100 text-amber-700'
+                  else 'bg-gray-100 text-gray-700'
+                  end %>">
+              <%= agent_run.model_selection.selector_type.titleize %>
+            </span>
+          </dd>
+        </div>
+        <% if agent_run.model_selection.complexity_score.present? %>
+          <div class="flex justify-between py-2">
+            <dt class="text-sm text-gray-500">Complexity Score</dt>
+            <dd class="text-sm text-gray-900"><%= agent_run.model_selection.complexity_score %> / 10</dd>
+          </div>
+        <% end %>
+        <% if agent_run.model_selection.reasoning.present? %>
+          <div class="py-2">
+            <dt class="text-sm text-gray-500">Reasoning</dt>
+            <dd class="mt-1 text-sm text-gray-700"><%= agent_run.model_selection.reasoning %></dd>
+          </div>
+        <% end %>
+        <% if agent_run.model_selection.selection_duration_ms.present? %>
+          <div class="flex justify-between py-2">
+            <dt class="text-sm text-gray-500">Selection Time</dt>
+            <dd class="text-sm text-gray-900"><%= agent_run.model_selection.selection_duration_ms %>ms</dd>
+          </div>
+        <% end %>
+      </dl>
+    </div>
+  <% end %>
+
   <% if agent_run.branch_name.present? %>
     <div class="mt-6 rounded-lg bg-white p-4 shadow">
       <h2 class="text-sm font-semibold text-gray-500">Git Details</h2>
