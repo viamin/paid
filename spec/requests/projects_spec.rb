@@ -228,7 +228,7 @@ RSpec.describe "Projects" do
         github_token # create the token
         get new_project_path
         expect(response.body).to include('name="repository_selection"')
-        expect(response.body).to match(/<select[^>]*name="repository_selection"[^>]*disabled/)
+        expect(response.body).to match(/<select[^>]*name="repository_selection"[^>]*\sdisabled[\s>]/)
       end
 
       it "does not show revoked tokens in the dropdown" do

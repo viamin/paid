@@ -97,6 +97,11 @@ config.status
 /.pg-local/
 /.pg-src/
 /.pg.jar
+/.pg-run/
+
+# PostgreSQL helper scripts (local tooling, not application source)
+.pg-start.sh
+.pg-stop.sh
 
 # APT cache and cached package extracts (created during container setup)
 /.apt-cache/
