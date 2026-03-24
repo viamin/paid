@@ -717,6 +717,13 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Please select a pull request")
       end
 
+      it "redirects with error when pull_request_id is invalid" do
+        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: 999_999 }
+        expect(response).to redirect_to(project_path(project))
+        follow_redirect!
+        expect(response.body).to include("Please select a pull request")
+      end
+
       it "redirects with error when no queued auto-continue runs exist" do
         create(:agent_run, :completed, :automatic, project: project,
           source_pull_request_number: 77, custom_prompt: "Fix PR")
