@@ -87,7 +87,9 @@ export default class extends Controller {
   }
 
   clearRepoSelect() {
-    this.repoSelectTarget.innerHTML = '<option value="">Select a token first...</option>'
+    const hasToken = this.tokenSelectTarget.value !== ""
+    const placeholder = hasToken ? "Select a repository..." : "Select a token first..."
+    this.repoSelectTarget.innerHTML = `<option value="">${placeholder}</option>`
     this.clearHiddenFields()
   }
 
