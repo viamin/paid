@@ -141,6 +141,7 @@ module Containers
       fix_cache_tmpfs_ownership!
       fix_codex_tmpfs_ownership!
       fix_gemini_tmpfs_ownership!
+      fix_kilocode_tmpfs_ownership!
       seed_claude_credentials!
       apply_network_restrictions!
 
@@ -481,6 +482,12 @@ module Containers
       fix_tmpfs_ownership!(".gemini")
     end
 
+    # Fixes ownership of the ~/.kilocode tmpfs so the non-root agent user can
+    # write to it. Tmpfs mounts are created as root-owned.
+    def fix_kilocode_tmpfs_ownership!
+      fix_tmpfs_ownership!(".kilocode")
+    end
+
     # Fixes ownership of a tmpfs mount under /home/agent so the non-root
     # agent user can write to it. Tmpfs mounts are created as root-owned.
     #
@@ -553,8 +560,9 @@ module Containers
     #   /tmp                - tmpfs (1GB, for scratch files)
     #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
-    #   /home/agent/.codex  - tmpfs (64MB, for Codex CLI config/session data)
-    #   /home/agent/.gemini - tmpfs (64MB, for Gemini CLI config/session data)
+    #   /home/agent/.codex    - tmpfs (64MB, for Codex CLI config/session data)
+    #   /home/agent/.gemini   - tmpfs (64MB, for Gemini CLI config/session data)
+    #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI config/session data)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
       {
@@ -611,6 +619,10 @@ module Containers
       # Gemini CLI stores config and session data under ~/.gemini.
       # Ownership is fixed by fix_gemini_tmpfs_ownership! after container start.
       tmpfs["/home/agent/.gemini"] = "size=#{64 * 1024 * 1024},mode=0700"
+
+      # Kilocode CLI stores config and session data under ~/.kilocode.
+      # Ownership is fixed by fix_kilocode_tmpfs_ownership! after container start.
+      tmpfs["/home/agent/.kilocode"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       {
         "Memory" => options[:memory_bytes],
