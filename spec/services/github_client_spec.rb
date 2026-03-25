@@ -1236,8 +1236,15 @@ RSpec.describe GithubClient do
         expect(alert[:package_ecosystem]).to eq("npm")
         expect(alert[:patched_version]).to eq("3.0.5")
         expect(alert[:summary]).to eq("ReDoS vulnerability in minimatch")
-        expect(alert[:created_at]).to eq("2026-03-20T10:00:00Z")
-        expect(alert[:updated_at]).to eq("2026-03-21T12:00:00Z")
+      end
+
+      it "returns timestamps as Time objects" do
+        alert = client.dependabot_alerts(repo).first
+
+        expect(alert[:created_at]).to be_a(Time)
+        expect(alert[:created_at].iso8601).to eq("2026-03-20T10:00:00Z")
+        expect(alert[:updated_at]).to be_a(Time)
+        expect(alert[:updated_at].iso8601).to eq("2026-03-21T12:00:00Z")
       end
     end
 

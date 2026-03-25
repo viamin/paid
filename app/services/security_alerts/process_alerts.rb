@@ -1,12 +1,20 @@
 # frozen_string_literal: true
 
 module SecurityAlerts
+  # Raised when a project lacks required configuration for security alert processing
+  # (e.g. no trusted GitHub usernames configured).
+  class ConfigurationError < StandardError; end
+
   # Filters actionable Dependabot alerts, creates synthetic issues for new
   # ones, reopens closed issues for re-opened alerts, and updates metadata
   # on existing open issues when the upstream alert payload changes.
   #
   # Returns an array of hashes ({ issue_id:, alert_number:, alert_type: })
   # representing issues that should trigger agent runs.
+  #
+  # Note: FormatAlert handles title/body generation and ReconcileResolved
+  # handles closing stale synthetic issues. If this class grows further,
+  # consider extracting CapacityLimiter or IssueCreator collaborators.
   class ProcessAlerts
     SEVERITY_ORDER = Issue::SEVERITY_ORDER
     SYNTHETIC_SOURCE = Issue::SYNTHETIC_DEPENDABOT_SOURCE
@@ -170,11 +178,8 @@ module SecurityAlerts
           .first
         return login if login
 
-        raise Temporalio::Error::ApplicationError.new(
-          "No trusted GitHub usernames configured for project #{@project.id}",
-          type: "ConfigurationError",
-          non_retryable: true
-        )
+        raise SecurityAlerts::ConfigurationError,
+          "No trusted GitHub usernames configured for project #{@project.id}"
       end
     end
   end
