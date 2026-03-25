@@ -20,8 +20,9 @@ Rails.application.configure do
       class: "StaleRunDetectorJob"
     },
     docker_orphan_cleanup: {
-      cron: "*/15 * * * *",
-      class: "DockerOrphanCleanupJob"
+      cron: "*/5 * * * *",
+      class: "DockerOrphanCleanupJob",
+      description: "Remove orphaned Docker containers and volumes"
     },
     recover_missing_pull_request_labels: {
       cron: "0 * * * *",
