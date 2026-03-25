@@ -27,13 +27,16 @@ class DockerOrphanCleanupJob < ApplicationJob
   def perform
     agent_removed = cleanup_agent_containers
     service_removed = cleanup_service_containers
-    volume_removed = cleanup_volumes
+    volume_result = cleanup_volumes
 
     Rails.logger.info(
       message: "container_manager.orphan_cleanup_complete",
       agent_containers_removed: agent_removed,
       service_containers_removed: service_removed,
-      volumes_removed: volume_removed
+      volumes_found: volume_result[:found],
+      volumes_removed: volume_result[:removed],
+      volumes_failed: volume_result[:failed],
+      volumes_active: volume_result[:active]
     )
   end
 
@@ -90,7 +93,7 @@ class DockerOrphanCleanupJob < ApplicationJob
   # Phase 3: Remove orphaned workspace volumes.
   def cleanup_volumes
     volumes = list_paid_volumes
-    return 0 if volumes.empty?
+    return { found: 0, removed: 0, failed: 0, active: 0 } if volumes.empty?
 
     numeric_agent_run_ids = volumes
                               .map { |v| v.id.delete_prefix(VOLUME_PREFIX) }
@@ -98,13 +101,22 @@ class DockerOrphanCleanupJob < ApplicationJob
     active_ids = AgentRun.active.where(id: numeric_agent_run_ids).pluck(:id).map(&:to_s).to_set
 
     removed = 0
+    failed = 0
+    active = 0
     volumes.each do |volume|
       agent_run_id = volume.id.delete_prefix(VOLUME_PREFIX)
-      next if active_ids.include?(agent_run_id)
+      if active_ids.include?(agent_run_id)
+        active += 1
+        next
+      end
 
-      removed += 1 if remove_volume(volume, agent_run_id)
+      if remove_volume(volume, agent_run_id)
+        removed += 1
+      else
+        failed += 1
+      end
     end
-    removed
+    { found: volumes.size, removed: removed, failed: failed, active: active }
   end
 
   def list_containers_by_label(label)

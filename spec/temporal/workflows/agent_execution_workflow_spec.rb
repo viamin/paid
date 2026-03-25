@@ -30,6 +30,16 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "CLEANUP_RETRY_POLICY" do
+    it "defines a retry policy with 5 attempts and backoff" do
+      policy = described_class::CLEANUP_RETRY_POLICY
+      expect(policy).to be_a(Temporalio::RetryPolicy)
+      expect(policy.max_attempts).to eq(5)
+      expect(policy.initial_interval).to eq(2)
+      expect(policy.backoff_coefficient).to eq(2)
+    end
+  end
+
   describe "create_issue fallback" do
     let(:input) { { project_id: 1, issue_id: 1, goal: "create_issue" } }
 

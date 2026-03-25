@@ -17,6 +17,13 @@ module Workflows
   class AgentExecutionWorkflow < BaseWorkflow
     NO_RETRY = Temporalio::RetryPolicy.new(max_attempts: 1)
 
+    CLEANUP_RETRY_POLICY = Temporalio::RetryPolicy.new(
+      initial_interval: 2,
+      max_interval: 15,
+      backoff_coefficient: 2,
+      max_attempts: 5
+    )
+
     def execute(input)
       project_id = input[:project_id]
       issue_id = input[:issue_id]
@@ -185,12 +192,12 @@ module Workflows
 
       ensure
         # Always cleanup container (including workspace directory) and worktree DB records.
-        # Each cleanup is best-effort: failures are logged but do not
-        # mask the primary workflow outcome.
+        # Each cleanup retries transient Docker failures (up to 5 attempts over ~1 min).
+        # Failures are logged but do not mask the primary workflow outcome.
         begin
           run_activity(Activities::CleanupContainerActivity,
             { agent_run_id: agent_run_id },
-            start_to_close_timeout: 60, retry_policy: NO_RETRY)
+            start_to_close_timeout: 120, retry_policy: CLEANUP_RETRY_POLICY)
         rescue => e
           Temporalio::Workflow.logger.warn(
             message: "agent_execution.cleanup_container_failed",
@@ -203,7 +210,7 @@ module Workflows
         begin
           run_activity(Activities::CleanupServicesActivity,
             { agent_run_id: agent_run_id },
-            start_to_close_timeout: 60, retry_policy: NO_RETRY)
+            start_to_close_timeout: 120, retry_policy: CLEANUP_RETRY_POLICY)
         rescue => e
           Temporalio::Workflow.logger.warn(
             message: "agent_execution.cleanup_services_failed",
@@ -216,10 +223,26 @@ module Workflows
         begin
           run_activity(Activities::CleanupWorktreeActivity,
             { agent_run_id: agent_run_id },
-            start_to_close_timeout: 60, retry_policy: NO_RETRY)
+            start_to_close_timeout: 120, retry_policy: CLEANUP_RETRY_POLICY)
         rescue => e
           Temporalio::Workflow.logger.warn(
             message: "agent_execution.cleanup_worktree_failed",
+            agent_run_id: agent_run_id,
+            error_class: e.class.name,
+            error: e.message
+          )
+        end
+
+        # Enqueue a janitor job as a second cleanup pass outside the workflow
+        # lifecycle. If the retries above succeeded this is a no-op; if they
+        # failed the janitor gets another shot after a short delay.
+        begin
+          run_activity(Activities::EnqueueJanitorActivity,
+            { agent_run_id: agent_run_id },
+            start_to_close_timeout: 10, retry_policy: NO_RETRY)
+        rescue => e
+          Temporalio::Workflow.logger.warn(
+            message: "agent_execution.enqueue_janitor_failed",
             agent_run_id: agent_run_id,
             error_class: e.class.name,
             error: e.message
