@@ -149,8 +149,9 @@ module Activities
         is_pull_request: false
       )
 
+      adjacency = IssueDependency.account_adjacency(project.account)
+
       issues_relation.find_each do |issue|
-        adjacency = IssueDependency.project_adjacency(project)
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency)
       rescue => e
         logger.warn(
@@ -162,6 +163,61 @@ module Activities
           error: e.message
         )
       end
+
+      synced_numbers = synced_issues.filter_map { |si| si[:github_number] }
+      resolve_external_dependencies(project, synced_numbers)
+    end
+
+    def resolve_external_dependencies(project, synced_numbers)
+      scope = IssueDependency
+        .joins(issue: :project)
+        .where(depends_on_issue_id: nil)
+        .where(depends_on_owner: project.owner.downcase, depends_on_repo: project.repo.downcase)
+        .where(projects: { account_id: project.account_id })
+
+      # Only check external deps whose depends_on_number was synced in this run
+      scope = scope.where(depends_on_number: synced_numbers) if synced_numbers.any?
+
+      issues_by_number = project.issues
+        .where(is_pull_request: false, github_number: scope.select(:depends_on_number))
+        .index_by(&:github_number)
+
+      scope.find_each do |dep|
+        resolved_issue = issues_by_number[dep.depends_on_number]
+        next unless resolved_issue
+
+        if IssueDependency.exists?(issue_id: dep.issue_id, depends_on_issue_id: resolved_issue.id)
+          dep.destroy!
+          next
+        end
+
+        begin
+          dep.update!(
+            depends_on_issue: resolved_issue,
+            depends_on_owner: nil,
+            depends_on_repo: nil,
+            depends_on_number: nil
+          )
+        rescue ActiveRecord::RecordNotUnique => e
+          logger.warn(
+            message: "github_sync.resolve_external_dependency_duplicate",
+            project_id: project.id,
+            dependency_id: dep.id,
+            issue_id: dep.issue_id,
+            depends_on_issue_id: resolved_issue.id,
+            error_class: e.class.name,
+            error: e.message
+          )
+          dep.destroy!
+        end
+      end
+    rescue => e
+      logger.warn(
+        message: "github_sync.resolve_external_dependencies_failed",
+        project_id: project.id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     def close_stale_issues(project, github_issues, truncated: false)
