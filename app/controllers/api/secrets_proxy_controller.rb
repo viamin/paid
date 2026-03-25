@@ -157,8 +157,10 @@ module Api
     end
 
     def resolve_max_tokens_per_run
-      settings = AgentRuns::UserSettingsResolver.call(project: @agent_run.project, strict: false)
-      settings&.max_tokens_per_run || DEFAULT_MAX_TOKENS_PER_RUN
+      @max_tokens_per_run ||= begin
+        settings = AgentRuns::UserSettingsResolver.call(project: @agent_run.project, strict: false)
+        settings&.max_tokens_per_run || DEFAULT_MAX_TOKENS_PER_RUN
+      end
     end
 
     def log_error(message, error)

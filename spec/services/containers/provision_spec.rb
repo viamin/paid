@@ -82,8 +82,7 @@ RSpec.describe Containers::Provision do
     end
 
     it "applies container_memory_bytes from user settings" do
-      user_settings = instance_double(UserSetting, container_memory_bytes: 2 * 1024 * 1024 * 1024)
-      allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
+      create(:user_setting, user: project.created_by, container_memory_bytes: 2 * 1024 * 1024 * 1024)
 
       svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
 
@@ -91,8 +90,7 @@ RSpec.describe Containers::Provision do
     end
 
     it "prefers caller-supplied memory_bytes over user settings" do
-      user_settings = instance_double(UserSetting, container_memory_bytes: 2 * 1024 * 1024 * 1024)
-      allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
+      create(:user_setting, user: project.created_by, container_memory_bytes: 2 * 1024 * 1024 * 1024)
 
       svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path, memory_bytes: 1024 * 1024 * 1024)
 
@@ -100,8 +98,6 @@ RSpec.describe Containers::Provision do
     end
 
     it "falls back to defaults when user settings are unavailable" do
-      allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(nil)
-
       svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
 
       expect(svc.options[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)

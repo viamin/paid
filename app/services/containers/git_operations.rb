@@ -644,7 +644,12 @@ module Containers
     end
 
     def user_settings
-      @user_settings ||= AgentRuns::UserSettingsResolver.call(project: agent_run.project, strict: false)
+      return @user_settings if defined?(@user_settings)
+
+      @user_settings = AgentRuns::UserSettingsResolver.call(
+        project: agent_run.project,
+        strict: false
+      )
     end
 
     def clone_timeout

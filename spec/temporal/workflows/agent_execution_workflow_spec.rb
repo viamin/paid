@@ -108,6 +108,23 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       workflow.execute(input)
     end
+
+    it "falls back to defaults when CreateAgentRunActivity omits timeout keys (replay compatibility)" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity"
+          expected_timeout = (Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT * 1) + 300
+          expect(opts[:start_to_close_timeout]).to eq(expected_timeout)
+          { success: true }
+        when "Activities::CompleteIssueGoalActivity"
+          { agent_run_id: 42, success: true, issue_created: true }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+    end
   end
 
   describe "review goal" do

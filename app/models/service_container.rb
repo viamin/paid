@@ -51,11 +51,8 @@ class ServiceContainer < ApplicationRecord
     new_record? || will_save_change_to_image?
   end
 
-  # Validates image against a global allowlist sourced from the
-  # SERVICE_CONTAINER_ALLOWED_IMAGES env var (comma-separated).
-  #
-  # Falls back to UserSettings from account admins/owners when the
-  # env var is not set.
+  # Checks the image against the allowlist from UserSettings of
+  # account admins/owners.
   def image_in_allowlist
     return if image.blank?
 

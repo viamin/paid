@@ -331,7 +331,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         end
       end
 
-      it "stops after MAX_PAGES and logs a warning" do
+      it "stops after DEFAULT_MAX_PAGES and logs a warning" do
         allow(Rails.logger).to receive(:warn)
 
         result = activity.execute(project_id: project.id)
