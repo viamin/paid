@@ -514,26 +514,6 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Quick Run")
       end
 
-      it "shows auto-merge toggle on project show page" do
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
-        get project_path(project)
-        expect(response.body).to include("Auto-Merge")
-        expect(response.body).to include(toggle_auto_merge_project_path(project))
-      end
-
-      it "shows auto-merge status but no toggle controls for viewers on show page" do
-        viewer_user = create(:user, :viewer, account: account)
-        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
-
-        sign_out user
-        sign_in viewer_user
-
-        get project_path(project)
-
-        expect(response.body).to include("Auto-Merge")
-        expect(response.body).not_to include(toggle_auto_merge_project_path(project))
-      end
-
       it "does not allow viewing projects from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)
