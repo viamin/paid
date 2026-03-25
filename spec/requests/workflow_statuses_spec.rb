@@ -45,7 +45,7 @@ RSpec.describe "WorkflowStatuses" do
       it "shows 'Not running' when no poll workflow exists" do
         get project_workflow_status_path(project)
         expect(response.body).to include("Not running")
-        expect(response.body).to include("automatically restarted")
+        expect(response.body).to include("automatically restarted shortly if eligible")
       end
 
       it "shows 'Not running' when poll workflow is not running" do
@@ -87,11 +87,14 @@ RSpec.describe "WorkflowStatuses" do
           temporal_workflow_id: "github-poll-#{project.id}",
           workflow_type: "GitHubPoll",
           status: "running")
-        project.update_column(:last_polled_at, 2.minutes.ago)
 
-        get project_workflow_status_path(project)
-        expect(response.body).to include("Last checked")
-        expect(response.body).to include("2 minutes ago")
+        freeze_time do
+          project.update_column(:last_polled_at, 2.minutes.ago)
+
+          get project_workflow_status_path(project)
+          expect(response.body).to include("Last checked")
+          expect(response.body).to include("2 minutes ago")
+        end
       end
 
       it "shows poll interval for active projects" do

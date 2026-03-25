@@ -151,6 +151,21 @@ class Project < ApplicationRecord
     update_column(:last_polled_at, timestamp)
   end
 
+  # Shared staleness threshold used by both the health-check job and the
+  # automation health UI. A poll workflow is considered stale when it has not
+  # completed a poll cycle within 3× the configured interval plus a buffer.
+  STALENESS_BUFFER = 3.minutes
+
+  def poll_staleness_threshold
+    (3 * poll_interval_seconds).seconds + STALENESS_BUFFER
+  end
+
+  def poll_stale?
+    return false unless last_polled_at
+
+    last_polled_at < poll_staleness_threshold.ago
+  end
+
   def broadcast_stats_update
     broadcast_replace_to(
       self, :project_updates,

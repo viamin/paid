@@ -17,8 +17,6 @@
 class PollWorkflowHealthCheckJob < ApplicationJob
   queue_as :maintenance
 
-  STALENESS_BUFFER = 3.minutes
-
   def perform
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     checked = 0
@@ -72,14 +70,11 @@ class PollWorkflowHealthCheckJob < ApplicationJob
   end
 
   def check_stale_running(project)
-    return unless project.last_polled_at
-
-    staleness_threshold = (3 * project.poll_interval_seconds).seconds + STALENESS_BUFFER
-    return unless project.last_polled_at < staleness_threshold.ago
+    return unless project.poll_stale?
 
     # Double-check after reload to avoid race with a just-completed poll
     project.reload
-    return unless project.last_polled_at < staleness_threshold.ago
+    return unless project.poll_stale?
 
     restart_workflow(
       project,

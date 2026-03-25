@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 class WorkflowStatusesController < ApplicationController
-  STALENESS_BUFFER = 3.minutes
-
   def show
     @project = policy_scope(Project).find(params[:project_id])
     authorize @project, :show?
@@ -22,7 +20,7 @@ class WorkflowStatusesController < ApplicationController
     )
 
     unless poll_workflow&.running?
-      return { status: :unhealthy, label: "Not running", description: "The issue monitor is not running. It will be automatically restarted shortly." }
+      return { status: :unhealthy, label: "Not running", description: "The issue monitor is not running. It may be automatically restarted shortly if eligible." }
     end
 
     if stale?
@@ -33,9 +31,11 @@ class WorkflowStatusesController < ApplicationController
   end
 
   def stale?
-    return false unless @project.last_polled_at
+    return false unless @project.poll_stale?
 
-    staleness_threshold = (3 * @project.poll_interval_seconds).seconds + STALENESS_BUFFER
-    @project.last_polled_at < staleness_threshold.ago
+    # Double-check after reload to avoid racey false positives if the poller
+    # has just updated last_polled_at.
+    @project.reload
+    @project.poll_stale?
   end
 end
