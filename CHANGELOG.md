@@ -1,5 +1,72 @@
 # Changelog
 
+## [0.8.0](https://github.com/viamin/paid/compare/v0.7.0...v0.8.0) (2026-03-25)
+
+
+### Features
+
+* **agent-runs:** link to GitHub review from agent run detail page ([#456](https://github.com/viamin/paid/issues/456)) ([c5faa63](https://github.com/viamin/paid/commit/c5faa630dd7431cd05e18d9747cc55992ea4a54c))
+* **agent-runs:** replace Quick Run with Bump Priority button for PRs with active auto-continue runs ([5c7b58f](https://github.com/viamin/paid/commit/5c7b58fcba67c96a916a60b616033869129956b6)), closes [#347](https://github.com/viamin/paid/issues/347)
+* **agent-runs:** show queue priority in agent run tables ([e84ab97](https://github.com/viamin/paid/commit/e84ab97ba17d740317cea3a217fc6eb11fd80a25)), closes [#345](https://github.com/viamin/paid/issues/345)
+* **hooks:** add pre-commit check to reject commits with too many files ([fffdffb](https://github.com/viamin/paid/commit/fffdffbdd13fb0d1caba1200791eed99391cf50d)), closes [#441](https://github.com/viamin/paid/issues/441)
+* **model-selection:** implement LLM meta-agent, UI, and per-project preferences ([b0955e0](https://github.com/viamin/paid/commit/b0955e0dd01616a2985debbb6a6064d5d713237e))
+* **projects:** replace Auto-pick issues section with Automation section ([94504a0](https://github.com/viamin/paid/commit/94504a0c620d6617bcdeaef6b3689321601da53c)), closes [#419](https://github.com/viamin/paid/issues/419)
+* **providers:** add Gemini support to paid-agent containers ([bacc3e4](https://github.com/viamin/paid/commit/bacc3e49195fd07b424be9cd95b73ce96e4f1885)), closes [#406](https://github.com/viamin/paid/issues/406)
+* **providers:** add Kilocode support to paid-agent containers ([f2c74f6](https://github.com/viamin/paid/commit/f2c74f66aee2f9971703be24551cabc7915d902b))
+* **ui:** convert UTC times to user's local timezone ([#386](https://github.com/viamin/paid/issues/386)) ([2742eb0](https://github.com/viamin/paid/commit/2742eb082d674fcc9aff8e13c7953315f9f8dd10))
+
+
+### Bug Fixes
+
+* 407: feat(providers): add OpenCode support to paid-agent containers ([#449](https://github.com/viamin/paid/issues/449)) ([b4d509f](https://github.com/viamin/paid/commit/b4d509f3fb60fe939b2601b1cc5fb306d2c16b9c))
+* 455: feat(auto-pick): prefer unblocked leaf issues from dependency trees ([#459](https://github.com/viamin/paid/issues/459)) ([fae3de1](https://github.com/viamin/paid/commit/fae3de181e3d56e32e1bac3c38a8a9d330b62a04))
+* **agent-image:** restore bin/setup Kilocode install ([3d78e24](https://github.com/viamin/paid/commit/3d78e24f46034b63fa0de5862f54e95d4cbe10bb))
+* **agent-image:** restore bin/setup Kilocode install ([0e5a8b9](https://github.com/viamin/paid/commit/0e5a8b9a19289df7eb8186daa7195b634c63692b))
+* **agent-runs:** address code review feedback for bump priority ([7d4c67f](https://github.com/viamin/paid/commit/7d4c67f6025d12b12b8477a1d2df1f219e2bcd54))
+* **agent-runs:** address PR review feedback for priority badge naming and fallback ([44eb17c](https://github.com/viamin/paid/commit/44eb17c5dd248e94607d77e7db24f8ea39bedb84))
+* **agent-runs:** address PR review feedback for priority badges ([ee96ca0](https://github.com/viamin/paid/commit/ee96ca0e791d672133803207f6856992f59072f0))
+* **agent-runs:** address review feedback for bump priority feature ([f47b14b](https://github.com/viamin/paid/commit/f47b14bf9841cb453d363ae70e4609bb9ca97840))
+* **agent-runs:** address review feedback for bump priority feature ([9ef5b00](https://github.com/viamin/paid/commit/9ef5b0078257c159eb5b3f3e7f79d6ab3520f861))
+* **agent-runs:** address review feedback for bump priority UI and broadcasts ([9fb851c](https://github.com/viamin/paid/commit/9fb851c733033e0e32b240e5e5c0e177635bb069))
+* **agent-runs:** exclude .yarn-cache/ from agent commits ([c2bad59](https://github.com/viamin/paid/commit/c2bad597933de6c655437b74eb8d9b56c257e869))
+* **agent-runs:** exclude .yarn-cache/ from agent commits ([60eeed8](https://github.com/viamin/paid/commit/60eeed8dcca5fdf387cda1da9112a88dba17b2ed))
+* **agent-runs:** pass pr_numbers_with_active_auto_continue as local to fix Turbo broadcasts ([8ffb56b](https://github.com/viamin/paid/commit/8ffb56b4eec7003ed91e7bf1a52d240e56ac7178))
+* **agent-runs:** preserve timeout status on provider fallback ([53fa2de](https://github.com/viamin/paid/commit/53fa2de16bbc387cdb6318a650efa6f910ffd049))
+* **agent-runs:** preserve timeout status on provider fallback ([e86c10d](https://github.com/viamin/paid/commit/e86c10d09e86dcda186a0260e76a345a4791bba1))
+* **agent-runs:** rename active_auto_continue to queued_auto_continue for naming consistency ([83f2329](https://github.com/viamin/paid/commit/83f232980339e993fd84954919e94a95bec94da1))
+* **agent-runs:** separate comments for corepack and yarn-cache excludes ([1b70eed](https://github.com/viamin/paid/commit/1b70eedfb3299357795227c1d9b24fa93d98e1ba))
+* **agent-runs:** use factory create in queue_priority specs ([4bf7595](https://github.com/viamin/paid/commit/4bf759563313c4297d2188f501df9774b1f31e4d))
+* **auto-merge:** address PR review feedback ([8a789a3](https://github.com/viamin/paid/commit/8a789a35f34c8210b466b033f674492afa23166b))
+* **auto-merge:** allow self-authored owner PRs ([3fd15ac](https://github.com/viamin/paid/commit/3fd15acf423ec9c27224c25ec8411e14fe881615))
+* **auto-merge:** allow self-authored owner PRs ([87ff690](https://github.com/viamin/paid/commit/87ff690c5ea7ad6dfc136d131671940f466b4974))
+* **auto-merge:** assert toggle endpoint in owner auto-merge tests ([829b629](https://github.com/viamin/paid/commit/829b6297076110dc1cef20e7d85395d468171588))
+* **auto-merge:** gate merge on auto_merge_enabled flag and add view tests ([69998bf](https://github.com/viamin/paid/commit/69998bf6878f07e5ba6e13cd8c6a77f81bc1d386))
+* **auto-merge:** scope auto-merge badge assertions to Auto-Merge section ([6ff80b3](https://github.com/viamin/paid/commit/6ff80b37968e78cd9de2887d7bdd6049a67813ba))
+* **auto-pick:** address PR review feedback ([b1a4762](https://github.com/viamin/paid/commit/b1a4762e1da3e69be9870df5ff4acc694093ff19))
+* **auto-pick:** balance idle capacity across projects ([32fcce4](https://github.com/viamin/paid/commit/32fcce463ca7cdb74afbb978f4c1b3fa4f940da3))
+* **auto-pick:** balance idle capacity across projects ([eb2cd08](https://github.com/viamin/paid/commit/eb2cd08825fd48163824971684269d59cfbcd2e0))
+* **auto-pick:** memoize project ordering and collapse aggregate queries ([35afcbd](https://github.com/viamin/paid/commit/35afcbde65b352fb07b1494ef48d00b2b08f04f7))
+* **dependencies:** update agent-harness to version 0.5.2 and brace-expansion to version 5.0.5 ([b71601a](https://github.com/viamin/paid/commit/b71601ac61d7fe5d501f60483f75c955c55c930c))
+* **dependencies:** update agent-harness to version 0.5.2 and brace-expansion to version 5.0.5 ([7a678d3](https://github.com/viamin/paid/commit/7a678d3af9c52868a3ed749ef763b8531a7c7e24))
+* **github:** avoid nil commit_message in PR merges ([afacfbc](https://github.com/viamin/paid/commit/afacfbc4393db2b13213131ee6d2407ee635d90b))
+* **github:** avoid nil commit_message in PR merges ([c7efcc2](https://github.com/viamin/paid/commit/c7efcc22f9483b9405a64e0200d18f15fd80eda0))
+* **hooks:** make file count threshold configurable via env var ([12221dd](https://github.com/viamin/paid/commit/12221dd9e20d0db86858571659407bdc6e34ddd3))
+* **model-selection:** address code review feedback on meta-agent selector ([f1afb93](https://github.com/viamin/paid/commit/f1afb933a6d9309b558d6a65f0491774fadf8dc2))
+* **model-selection:** respect preference list ordering and use realistic model IDs in tests ([225b2f7](https://github.com/viamin/paid/commit/225b2f7874a9d1d7ea9e83a0fdc4188e1ac2cdd5))
+* **model-selection:** robust JSON extraction and TypeError handling in meta-agent ([ae75c08](https://github.com/viamin/paid/commit/ae75c0804c561ae38d205488183aba0d47109f17))
+* **projects:** address PR review feedback on repository selector ([095213a](https://github.com/viamin/paid/commit/095213a496b23fbec25bf8b82e4a9583e6444f54))
+* **projects:** address review feedback on repository selector ([8f098b6](https://github.com/viamin/paid/commit/8f098b65aba3664aed07eeda4c0dcec1115ef9bf))
+* **projects:** fix regex in disabled select spec to handle &gt; in attributes ([e25a432](https://github.com/viamin/paid/commit/e25a432b27c3c249cb18dbadc5fca260c0761754))
+* **projects:** show project dropdown as disabled instead of hidden before token selection ([07a5d06](https://github.com/viamin/paid/commit/07a5d06d49a0606e18a64e75407129e9b17ff40a)), closes [#359](https://github.com/viamin/paid/issues/359)
+* **providers:** address PR review feedback for Gemini support ([90f34ae](https://github.com/viamin/paid/commit/90f34ae05b19d0d14f4a444441eee2d723794fb0))
+* **secrets-proxy:** preserve query strings and track Google usage metadata ([7b78b94](https://github.com/viamin/paid/commit/7b78b9493b4103436e89e88e0d4b40f1a7794089))
+* **ui:** address code review feedback for local_time helper ([86d6675](https://github.com/viamin/paid/commit/86d6675c252afc4e6842875fbcf605bb4e51b581))
+* **ui:** address JS code review feedback for local_time_controller ([c742b79](https://github.com/viamin/paid/commit/c742b7956830856ed400bb7547c66868bb4de287))
+* **ui:** handle future timestamps in relative time fallback ([c2814c7](https://github.com/viamin/paid/commit/c2814c72187669e310c89139114b43bbc15d2ce7))
+* **ui:** normalize format once in local_time to keep JS/non-JS consistent ([0100010](https://github.com/viamin/paid/commit/0100010b0bd6f6e6d291d0ed43daa7fc4fc8b231))
+* **ui:** use 24-hour time format and cache RelativeTimeFormat instance ([bb5de08](https://github.com/viamin/paid/commit/bb5de08921fedbfaa11fbc732d47494ed8997bb3))
+* **ui:** use seconds unit for sub-minute relative times ([71c3662](https://github.com/viamin/paid/commit/71c36622c81ce0dff95feda12c3ecda5bfeee5e2))
+
 ## [0.7.0](https://github.com/viamin/paid/compare/v0.6.1...v0.7.0) (2026-03-24)
 
 
