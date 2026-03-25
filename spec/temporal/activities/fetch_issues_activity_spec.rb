@@ -342,6 +342,19 @@ RSpec.describe Activities::FetchIssuesActivity do
           hash_including(message: "github_sync.fetch_issues_page_limit")
         )
       end
+
+      it "does not close locally-open issues when the fetch is truncated" do
+        # This issue is locally open but not in the truncated fetch results —
+        # it should NOT be closed because the fetch is not authoritative.
+        stale = create(:issue, project: project, github_issue_id: 99_999, github_number: 999, github_state: "open")
+
+        allow(Rails.logger).to receive(:warn)
+
+        activity.execute(project_id: project.id)
+
+        stale.reload
+        expect(stale.github_state).to eq("open")
+      end
     end
 
     context "when project has no label mappings" do
@@ -523,6 +536,59 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(project.issues.where(github_state: "open").count).to eq(0)
         expect(project.issues.where(github_state: "closed").count).to eq(2)
+      end
+    end
+
+    context "when fetching comment dependencies" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: %w[viamin trusted-dev]) }
+      let(:github_issue) do
+        OpenStruct.new(
+          id: 7001,
+          number: 70,
+          title: "Issue with comments",
+          body: "Some issue",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago,
+          updated_at: 1.day.ago
+        )
+      end
+
+      before do
+        stub_issues_by_label("paid-build" => [ github_issue ])
+      end
+
+      it "only includes comments from trusted users" do
+        allow(github_client).to receive(:issue_comments).and_return([
+          OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Depends on #100"),
+          OpenStruct.new(user: OpenStruct.new(login: "attacker"), body: "Depends on #999"),
+          OpenStruct.new(user: OpenStruct.new(login: "trusted-dev"), body: "Depends on #200")
+        ])
+
+        allow(Issues::ParseDependencies).to receive(:call)
+
+        activity.execute(project_id: project.id)
+
+        expect(Issues::ParseDependencies).to have_received(:call).with(
+          hash_including(comments: [ "Depends on #100", "Depends on #200" ])
+        )
+      end
+
+      it "returns nil and skips parsing when comment fetch fails" do
+        allow(github_client).to receive(:issue_comments)
+          .and_raise(StandardError.new("API error"))
+        allow(Rails.logger).to receive(:warn)
+
+        allow(Issues::ParseDependencies).to receive(:call)
+
+        activity.execute(project_id: project.id)
+
+        expect(Issues::ParseDependencies).not_to have_received(:call)
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(message: "github_sync.fetch_comments_failed")
+        )
       end
     end
 
