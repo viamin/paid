@@ -292,6 +292,16 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_a(AgentRun)
         expect(result.issue).to eq(issue)
       end
+
+      it "can allow concurrent runs when explicitly enabled by the scheduler" do
+        create(:agent_run, :running, project: project)
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project, allow_concurrent_runs: true).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
     end
 
     context "when project has PRs needing attention" do

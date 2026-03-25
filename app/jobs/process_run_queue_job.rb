@@ -119,8 +119,12 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   # Auto-picks unblocked issues for active projects, creating new queued
-  # agent runs. Returns true if any runs were created so the main loop
-  # can process them through the normal claim-and-start flow.
+  # agent runs. Picks at most one project per invocation, favoring
+  # projects with fewer active auto-pick runs and then the oldest
+  # prior auto-pick assignment. This preserves round-robin fairness
+  # across job invocations while still allowing a single busy project
+  # to fill otherwise idle slots. Returns true if a run was created so
+  # the main loop can process it through the normal claim-and-start flow.
   def auto_pick_unblocked_issues
     # If the last auto-pick pass created no runs, skip further attempts to
     # avoid spinning when no eligible issues exist.
@@ -128,13 +132,44 @@ class ProcessRunQueueJob < ApplicationJob
       return false
     end
 
-    created_any = false
+    projects = ordered_auto_pick_projects
+    return @auto_pick_last_created_any = false if projects.empty?
 
-    Project.active.where(auto_pick_enabled: true).find_each do |project|
-      created_any = true if Issues::AutoPick.new(project).call
+    projects.each do |project|
+      user = project.effective_owner
+      next unless user
+      next unless user_has_capacity?(user)
+
+      run = Issues::AutoPick.new(project, allow_concurrent_runs: true).call
+      next unless run
+
+      @auto_pick_last_created_any = true
+      return true
     end
 
-    @auto_pick_last_created_any = created_any
+    @auto_pick_last_created_any = false
+  end
+
+  def ordered_auto_pick_projects
+    projects = Project.active.where(auto_pick_enabled: true).order(:id).to_a
+    return projects if projects.empty?
+
+    project_ids = projects.map(&:id)
+    active_counts = AgentRun.where(
+      project_id: project_ids,
+      status: %w[queued pending running],
+      trigger_type: "automatic",
+      source_pull_request_number: nil
+    ).where.not(issue_id: nil).group(:project_id).count
+    last_picked_at = AgentRun.where(
+      project_id: project_ids,
+      trigger_type: "automatic",
+      source_pull_request_number: nil
+    ).where.not(issue_id: nil).group(:project_id).maximum(:created_at)
+
+    projects.sort_by do |project|
+      [ active_counts.fetch(project.id, 0), last_picked_at.fetch(project.id, Time.at(0)), project.id ]
+    end
   end
 
   def start_claimed_run(agent_run)

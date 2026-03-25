@@ -21,13 +21,14 @@ module Issues
     PAID_GENERATED_LABEL = "paid-generated"
     PAID_READY_LABEL = "paid-ready"
 
-    def initialize(project)
+    def initialize(project, allow_concurrent_runs: false)
       @project = project
+      @allow_concurrent_runs = allow_concurrent_runs
     end
 
     def call
       return nil unless @project.auto_pick_enabled?
-      return nil if project_has_active_runs?
+      return nil if project_has_active_runs? && !@allow_concurrent_runs
       return nil if project_has_prs_needing_attention?
 
       issue = find_next_eligible_issue
