@@ -451,11 +451,11 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           source: source)
       end
 
-      it "preserves the failed state instead of overwriting to completed" do
+      it "closes the github_state but preserves the failed paid_state" do
         activity.execute(project_id: project.id)
 
         issue = project.issues.find_by(github_issue_id: id_offset + 60)
-        expect(issue.github_state).to eq("open")
+        expect(issue.github_state).to eq("closed")
         expect(issue.paid_state).to eq("failed")
       end
     end
