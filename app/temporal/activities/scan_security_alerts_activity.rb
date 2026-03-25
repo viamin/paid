@@ -39,6 +39,12 @@ module Activities
       )
 
       { alerts_to_fix: issues_created }
+    rescue SecurityAlerts::ConfigurationError => e
+      raise Temporalio::Error::ApplicationError.new(
+        e.message,
+        type: "ConfigurationError",
+        non_retryable: true
+      )
     rescue GithubClient::RateLimitError => e
       raise Temporalio::Error::ApplicationError.new(
         e.message,
