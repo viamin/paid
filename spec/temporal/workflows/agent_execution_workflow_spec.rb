@@ -287,6 +287,76 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "ensure block cleanup and janitor enqueue" do
+    let(:input) { { project_id: 1, issue_id: 1 } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    def stub_successful_run
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        when "Activities::EnqueueJanitorActivity" then { agent_run_id: 42 }
+        else {}
+        end
+      end
+    end
+
+    it "enqueues the janitor activity in the ensure block" do
+      stub_successful_run
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::EnqueueJanitorActivity,
+              { agent_run_id: 42 },
+              start_to_close_timeout: 10,
+              retry_policy: an_instance_of(Temporalio::RetryPolicy))
+    end
+
+    it "invokes cleanup activities with CLEANUP_RETRY_POLICY and schedule_to_close_timeout" do
+      stub_successful_run
+
+      workflow.execute(input)
+
+      [
+        Activities::CleanupContainerActivity,
+        Activities::CleanupServicesActivity,
+        Activities::CleanupWorktreeActivity
+      ].each do |activity_class|
+        expect(workflow).to have_received(:run_activity)
+          .with(activity_class, { agent_run_id: 42 },
+                start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+                retry_policy: described_class::CLEANUP_RETRY_POLICY)
+      end
+    end
+
+    it "does not enqueue janitor when agent_run_id is nil" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: nil }
+        when "Activities::RunAgentActivity"
+          raise Temporalio::Error::ApplicationError.new("failed", type: "AgentExecutionFailed")
+        when "Activities::MarkAgentRunFailedActivity" then {}
+        else {}
+        end
+      end
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::EnqueueJanitorActivity, anything, anything)
+    end
+  end
+
   describe "#unwrap_error_message" do
     let(:workflow) { described_class.new }
 

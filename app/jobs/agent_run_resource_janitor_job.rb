@@ -9,7 +9,7 @@
 class AgentRunResourceJanitorJob < ApplicationJob
   queue_as :maintenance
 
-  retry_on StandardError, wait: :polynomially_longer, attempts: 3
+  retry_on Docker::Error::DockerError, wait: :polynomially_longer, attempts: 3
 
   VOLUME_PREFIX = "paid-workspace-"
 

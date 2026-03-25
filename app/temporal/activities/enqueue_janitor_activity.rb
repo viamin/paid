@@ -2,8 +2,9 @@
 
 module Activities
   # Enqueues a janitor job as a second-chance cleanup pass after a workflow
-  # completes or fails. Runs outside the Temporal activity lifecycle so it
-  # can recover resources that the in-workflow cleanup activities missed.
+  # completes or fails. The janitor job itself runs outside the Temporal
+  # workflow/activity lifecycle so it can recover resources that in-workflow
+  # cleanup activities might miss; this activity only schedules that job.
   class EnqueueJanitorActivity < BaseActivity
     activity_name "EnqueueJanitor"
 

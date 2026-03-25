@@ -192,12 +192,15 @@ module Workflows
 
       ensure
         # Always cleanup container (including workspace directory) and worktree DB records.
-        # Each cleanup retries transient Docker failures (up to 5 attempts over ~1 min).
+        # Each cleanup retries transient Docker failures (up to 5 attempts with exponential
+        # backoff). Per-attempt timeout is 120s; schedule_to_close_timeout caps total wall
+        # time per cleanup activity at 5 minutes to prevent the ensure block from stalling.
         # Failures are logged but do not mask the primary workflow outcome.
         begin
           run_activity(Activities::CleanupContainerActivity,
             { agent_run_id: agent_run_id },
-            start_to_close_timeout: 120, retry_policy: CLEANUP_RETRY_POLICY)
+            start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+            retry_policy: CLEANUP_RETRY_POLICY)
         rescue => e
           Temporalio::Workflow.logger.warn(
             message: "agent_execution.cleanup_container_failed",
@@ -210,7 +213,8 @@ module Workflows
         begin
           run_activity(Activities::CleanupServicesActivity,
             { agent_run_id: agent_run_id },
-            start_to_close_timeout: 120, retry_policy: CLEANUP_RETRY_POLICY)
+            start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+            retry_policy: CLEANUP_RETRY_POLICY)
         rescue => e
           Temporalio::Workflow.logger.warn(
             message: "agent_execution.cleanup_services_failed",
@@ -223,7 +227,8 @@ module Workflows
         begin
           run_activity(Activities::CleanupWorktreeActivity,
             { agent_run_id: agent_run_id },
-            start_to_close_timeout: 120, retry_policy: CLEANUP_RETRY_POLICY)
+            start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+            retry_policy: CLEANUP_RETRY_POLICY)
         rescue => e
           Temporalio::Workflow.logger.warn(
             message: "agent_execution.cleanup_worktree_failed",
