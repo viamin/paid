@@ -11,6 +11,14 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
 
+      if agent_run_id.blank?
+        logger.warn(
+          message: "agent_execution.janitor_not_enqueued_missing_agent_run_id",
+          input: input
+        )
+        return { agent_run_id: agent_run_id }
+      end
+
       AgentRunResourceJanitorJob.perform_later(agent_run_id)
 
       logger.info(

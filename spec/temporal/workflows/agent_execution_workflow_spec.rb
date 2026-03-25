@@ -340,20 +340,42 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
 
     it "does not enqueue janitor when agent_run_id is nil" do
-      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+      janitor_calls = []
+      allow(workflow).to receive(:run_activity) do |activity_class, input, **opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity" then { agent_run_id: nil }
         when "Activities::RunAgentActivity"
           raise Temporalio::Error::ApplicationError.new("failed", type: "AgentExecutionFailed")
         when "Activities::MarkAgentRunFailedActivity" then {}
+        else
+          janitor_calls << { class: activity_class, input: input, opts: opts }
+          {}
+        end
+      end
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
+
+      janitor_enqueued = janitor_calls.any? { |c| c[:class] == Activities::EnqueueJanitorActivity }
+      expect(janitor_enqueued).to be false
+    end
+
+    it "skips cleanup activities when agent_run_id is nil" do
+      called_activities = []
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        called_activities << activity_class
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: nil }
+        when "Activities::RunAgentActivity"
+          raise Temporalio::Error::ApplicationError.new("failed", type: "AgentExecutionFailed")
         else {}
         end
       end
 
       expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
 
-      expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::EnqueueJanitorActivity, anything, anything)
+      skipped = [ Activities::CleanupContainerActivity, Activities::CleanupServicesActivity,
+                  Activities::CleanupWorktreeActivity, Activities::EnqueueJanitorActivity ]
+      expect(called_activities & skipped).to be_empty
     end
   end
 
