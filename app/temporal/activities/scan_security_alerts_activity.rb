@@ -21,8 +21,7 @@ module Activities
       return { alerts_to_fix: [], project_missing: true } unless project
       return { alerts_to_fix: [] } unless project.auto_scan_security
 
-      client = project.github_token.client
-      all_alerts = fetch_alerts(project, client)
+      all_alerts = fetch_alerts(project)
       SecurityAlerts::ReconcileResolved.new(project, all_alerts).call unless all_alerts.nil?
 
       severity_filter = severities_at_or_above(project.security_severity_threshold)
@@ -55,10 +54,11 @@ module Activities
 
     private
 
-    def fetch_alerts(project, client)
+    def fetch_alerts(project)
       return nil if project.security_alert_types.empty?
       return nil unless project.security_alert_types.include?("dependabot")
 
+      client = project.github_token.client
       client.dependabot_alerts(project.full_name)
     rescue GithubClient::NotFoundError => e
       logger.warn(
