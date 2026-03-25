@@ -173,7 +173,7 @@ module Activities
 
       if project.auto_merge_enabled? &&
           pr_data.present? &&
-          owner_approved_from_reviews?(project, reviews) &&
+          owner_approved_or_self_authored?(project, reviews, pr_data) &&
           checks.present? &&
           all_checks_green?(checks) &&
           mergeable == true
@@ -251,7 +251,7 @@ module Activities
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "owner_approved", details: "Owner approved PR" } ],
+        triggers: [ { type: "owner_approved", details: "Owner approval requirement satisfied" } ],
         phase: "ready"
       }
     end
@@ -509,6 +509,12 @@ module Activities
 
     # --- Owner approval check ---
 
+    def owner_approved_or_self_authored?(project, reviews, pr_data)
+      return true if owner_is_pr_author?(project, pr_data)
+
+      owner_approved_from_reviews?(project, reviews)
+    end
+
     def owner_approved_from_reviews?(project, reviews)
       return false if reviews.nil?
 
@@ -520,6 +526,15 @@ module Activities
 
       latest = owner_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
       latest[:state] == "APPROVED"
+    end
+
+    def owner_is_pr_author?(project, pr_data)
+      owner_login = project.owner_reviewer_login
+      author_login = pr_data&.user&.login
+
+      return false if owner_login.blank? || author_login.blank?
+
+      owner_login.casecmp?(author_login)
     end
 
     # --- Helpers ---
