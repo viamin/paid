@@ -154,6 +154,27 @@
       </dl>
     </div>
 
+    <% if @projects.present? %>
+      <div class="border-t border-gray-200 px-4 py-5 sm:px-6">
+        <h3 class="text-sm font-medium text-gray-900">Projects (<%= @github_token.projects_count %>)</h3>
+        <ul class="mt-3 divide-y divide-gray-200">
+          <% @projects.each do |project| %>
+            <li class="flex items-center justify-between py-3">
+              <div class="flex items-center">
+                <span class="text-sm font-medium text-gray-900"><%= project.full_name %></span>
+                <% if project.active? %>
+                  <span class="ml-2 inline-flex items-center rounded-md bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>
+                <% else %>
+                  <span class="ml-2 inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Inactive</span>
+                <% end %>
+              </div>
+              <%= link_to "View", project_path(project), class: "text-sm text-indigo-600 hover:text-indigo-900" %>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
     <% if @github_token.active? && policy(@github_token).destroy? %>
       <div class="border-t border-gray-200 bg-gray-50 px-4 py-4 sm:px-6">
         <div class="flex items-center justify-between">

@@ -212,6 +212,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_162327) do
     t.datetime "expires_at"
     t.datetime "last_used_at"
     t.string "name", null: false
+    t.integer "projects_count", default: 0, null: false
     t.datetime "repositories_synced_at"
     t.datetime "revoked_at"
     t.jsonb "scopes", default: [], null: false

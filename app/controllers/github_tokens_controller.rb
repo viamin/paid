@@ -10,6 +10,7 @@ class GithubTokensController < ApplicationController
 
   def show
     authorize @github_token
+    @projects = policy_scope(Project).where(github_token: @github_token).order(:owner, :repo)
   end
 
   def new
