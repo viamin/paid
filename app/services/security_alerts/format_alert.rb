@@ -26,7 +26,11 @@ module SecurityAlerts
       lines << "## Dependabot Security Alert ##{alert[:number]}"
       lines << ""
       lines << "**Severity:** #{alert[:severity]}" if alert[:severity]
-      lines << "**Package:** #{alert[:package_name]} (#{alert[:package_ecosystem]})" if alert[:package_name]
+      if alert[:package_name]
+        package_label = alert[:package_name]
+        package_label = "#{package_label} (#{alert[:package_ecosystem]})" if alert[:package_ecosystem]
+        lines << "**Package:** #{package_label}"
+      end
       lines << "**Patched version:** #{alert[:patched_version]}" if alert[:patched_version]
       lines << "**Summary:** #{alert[:summary]}" if alert[:summary]
       lines << ""

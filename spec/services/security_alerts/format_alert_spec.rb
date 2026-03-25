@@ -57,5 +57,14 @@ RSpec.describe SecurityAlerts::FormatAlert do
 
       expect(body).to include("Fix the security vulnerability described above")
     end
+
+    it "omits ecosystem parentheses when package_ecosystem is nil" do
+      alert_without_ecosystem = alert.except(:package_ecosystem)
+
+      body = described_class.body(alert_without_ecosystem)
+
+      expect(body).to include("**Package:** minimatch")
+      expect(body).not_to include("()")
+    end
   end
 end
