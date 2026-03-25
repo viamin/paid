@@ -15,13 +15,20 @@ export default class extends Controller {
     // On hover-capable devices the info icon is hidden via CSS, so no
     // listeners are needed — the native title tooltip handles everything.
     this.hoverDevice = window.matchMedia("(hover: hover)").matches
+
+    // Track whether any coarse (typically touch) pointer is available.
+    // This lets hybrid devices (touch + mouse) still use the JS tooltip
+    // when interacting via touch, instead of relying solely on the
+    // unreliable native `title` behaviour for touch.
+    this.coarsePointer = window.matchMedia("(any-pointer: coarse)").matches
   }
 
   toggle() {
-    // On hover-capable devices the info icon is CSS-hidden, but guard here
-    // too so hybrid touch/hover devices can't open a tooltip that lacks
-    // close listeners (click-outside / Escape).
-    if (this.hoverDevice) return
+    // On pure hover/precise-pointer devices the info icon is CSS-hidden,
+    // so skip JS and rely on the native title tooltip. On devices that
+    // report any coarse pointer (e.g., touch), allow the JS tooltip even
+    // if hover is also supported.
+    if (this.hoverDevice && !this.coarsePointer) return
 
     const isHidden = this.contentTarget.classList.toggle("hidden")
     const expanded = !isHidden
