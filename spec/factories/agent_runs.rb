@@ -157,5 +157,15 @@ FactoryBot.define do
       goal { "review" }
       source_pull_request_number { 10 }
     end
+
+    trait :with_review do
+      review_goal
+      status { "completed" }
+      started_at { 10.minutes.ago }
+      completed_at { Time.current }
+      duration_seconds { 600 }
+      review_url { "https://github.com/example/repo/pull/10#pullrequestreview-123456" }
+      review_posted_at { Time.current }
+    end
   end
 end
