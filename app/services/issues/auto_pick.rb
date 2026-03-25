@@ -163,7 +163,8 @@ module Issues
       # dependency (another issue that blocks the same downstream
       # issue) has already been closed. Only consider in-project,
       # open downstream issues and in-project siblings to avoid
-      # cross-project or closed-tree skew.
+      # cross-project or closed-tree skew. PRs are excluded so the
+      # priority signal stays limited to issue dependency trees.
       tree_progress = <<~SQL.squish
         CASE WHEN EXISTS (
           SELECT 1
@@ -176,14 +177,17 @@ module Issues
               ON sibling.id = id2.depends_on_issue_id
            WHERE id1.depends_on_issue_id = issues.id
              AND downstream.github_state = 'open'
+             AND downstream.is_pull_request = FALSE
              AND downstream.project_id = #{pid}
              AND sibling.github_state = 'closed'
+             AND sibling.is_pull_request = FALSE
              AND sibling.project_id = #{pid}
              AND sibling.id != issues.id
         ) THEN 1 ELSE 0 END
       SQL
 
       # Count of open issues that directly depend on this issue.
+      # PRs are excluded to keep the signal limited to issue trees.
       unblock_count = <<~SQL.squish
         (SELECT COUNT(*)
            FROM issue_dependencies
@@ -191,6 +195,7 @@ module Issues
              ON dep_issues.id = issue_dependencies.issue_id
           WHERE issue_dependencies.depends_on_issue_id = issues.id
             AND dep_issues.github_state = 'open'
+            AND dep_issues.is_pull_request = FALSE
             AND dep_issues.project_id = #{pid})
       SQL
 
