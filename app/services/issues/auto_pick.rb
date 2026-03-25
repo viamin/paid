@@ -27,6 +27,13 @@ module Issues
     PAID_GENERATED_LABEL = "paid-generated"
     PAID_READY_LABEL = "paid-ready"
 
+    # Returns the IDs of issues currently eligible for auto-picking,
+    # based on per-issue criteria only (ignores transient project-level
+    # guards like active runs or PRs needing attention).
+    def self.eligible_issue_ids(project)
+      new(project).send(:eligible_issue_scope).pluck(:id).to_set
+    end
+
     def initialize(project, allow_concurrent_runs: false)
       @project = project
       @allow_concurrent_runs = allow_concurrent_runs
@@ -123,7 +130,7 @@ module Issues
         .exists?
     end
 
-    def find_next_eligible_issue
+    def eligible_issue_scope
       scope = Issue.ready_for_work(@project)
         .where(paid_state: %w[new planning failed])
         .where.not(id: issues_with_active_runs)
@@ -134,6 +141,10 @@ module Issues
       scope = scope.where(github_creator_login: trusted_usernames) if trusted_usernames
 
       exclude_labeled_issues(scope)
+    end
+
+    def find_next_eligible_issue
+      eligible_issue_scope
         .joins(priority_joins)
         .order(
           Arel.sql("COALESCE(started_trees.in_started_tree, 0) DESC"),
