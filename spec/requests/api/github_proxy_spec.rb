@@ -188,6 +188,7 @@ RSpec.describe "Api::GithubProxy" do
 
       agent_run.reload
       expect(agent_run.review_posted_at).to be_present
+      expect(agent_run.review_url).to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-999")
     end
 
     it "does not track review_posted_at when PR number does not match" do
@@ -221,7 +222,7 @@ RSpec.describe "Api::GithubProxy" do
 
     it "does not overwrite review_posted_at when already set" do
       original_time = 1.hour.ago
-      agent_run.update!(review_posted_at: original_time)
+      agent_run.update!(review_posted_at: original_time, review_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-original")
 
       post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
         params: { body: "Second review", event: "COMMENT" }.to_json,
@@ -229,6 +230,7 @@ RSpec.describe "Api::GithubProxy" do
 
       agent_run.reload
       expect(agent_run.review_posted_at).to be_within(1.second).of(original_time)
+      expect(agent_run.review_url).to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-original")
     end
 
     it "does not track review_posted_at on upstream error" do
