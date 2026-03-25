@@ -9,7 +9,7 @@
       <span class="truncate text-sm text-gray-900"><%= issue.title %></span>
       <% if local_assigns.fetch(:auto_pickable, false) %>
         <span title="Auto-pickable" class="flex-shrink-0 text-amber-500">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3.5 w-3.5">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3.5 w-3.5" role="img" aria-label="Auto-pickable">
             <path d="M9.58 1.077a.75.75 0 0 1 .405.82L9.165 6h4.085a.75.75 0 0 1 .567 1.241l-6.5 7.5a.75.75 0 0 1-1.302-.638L6.835 10H2.75a.75.75 0 0 1-.567-1.241l6.5-7.5a.75.75 0 0 1 .897-.182Z" />
           </svg>
         </span>

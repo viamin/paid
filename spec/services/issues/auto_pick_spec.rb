@@ -509,6 +509,19 @@ RSpec.describe Issues::AutoPick do
       end
     end
 
+    context "with per-issue agent run exclusion" do
+      it "skips issues that already have active agent runs but picks others" do
+        issue_with_run = create(:issue, project: project)
+        create(:agent_run, :queued, project: project, issue: issue_with_run)
+        eligible = create(:issue, project: project)
+
+        # Use allow_concurrent_runs so project-level guard doesn't block
+        result = described_class.new(project, allow_concurrent_runs: true).call
+
+        expect(result.issue).to eq(eligible)
+      end
+    end
+
     context "with synthetic Dependabot issues" do
       it "skips synthetic Dependabot issues (managed by ScanSecurityAlertsActivity)" do
         create(:issue, project: project, source: Issue::SYNTHETIC_DEPENDABOT_SOURCE,
@@ -531,6 +544,56 @@ RSpec.describe Issues::AutoPick do
 
         expect(result).to be_nil
       end
+    end
+  end
+
+  describe ".eligible_issue_ids" do
+    it "returns a Set of eligible issue IDs scoped to the given collection" do
+      eligible = create(:issue, project: project, github_state: "open")
+      _other = create(:issue, project: project, github_state: "open")
+
+      result = described_class.eligible_issue_ids([ eligible ])
+
+      expect(result).to be_a(Set)
+      expect(result).to include(eligible.id)
+    end
+
+    it "excludes issues with excluded labels" do
+      planning = create(:issue, project: project, labels: [ "planning" ])
+      normal = create(:issue, project: project, labels: [])
+
+      result = described_class.eligible_issue_ids([ planning, normal ])
+
+      expect(result).not_to include(planning.id)
+      expect(result).to include(normal.id)
+    end
+
+    it "excludes parent issues that have sub-issues" do
+      parent = create(:issue, project: project, github_number: 1)
+      create(:issue, project: project, github_number: 2, parent_issue: parent)
+      standalone = create(:issue, project: project, github_number: 3)
+
+      result = described_class.eligible_issue_ids([ parent, standalone ])
+
+      expect(result).not_to include(parent.id)
+      expect(result).to include(standalone.id)
+    end
+
+    it "excludes issues with active agent runs" do
+      with_run = create(:issue, project: project)
+      create(:agent_run, :running, project: project, issue: with_run)
+      without_run = create(:issue, project: project)
+
+      result = described_class.eligible_issue_ids([ with_run, without_run ])
+
+      expect(result).not_to include(with_run.id)
+      expect(result).to include(without_run.id)
+    end
+
+    it "returns an empty set when given an empty collection" do
+      result = described_class.eligible_issue_ids([])
+
+      expect(result).to eq(Set.new)
     end
   end
 end

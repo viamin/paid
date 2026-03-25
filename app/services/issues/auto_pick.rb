@@ -27,11 +27,21 @@ module Issues
     PAID_GENERATED_LABEL = "paid-generated"
     PAID_READY_LABEL = "paid-ready"
 
-    # Returns the IDs of issues currently eligible for auto-picking,
-    # based on per-issue criteria only (ignores transient project-level
-    # guards like active runs or PRs needing attention).
-    def self.eligible_issue_ids(project)
-      new(project).send(:eligible_issue_scope).pluck(:id).to_set
+    # Returns the Set of issue IDs from +displayed_issues+ that are
+    # currently eligible for auto-picking (per-issue criteria only;
+    # ignores transient project-level guards like active runs or PRs
+    # needing attention).  Scoping to the displayed issues keeps the
+    # query cost bounded regardless of total project size.
+    def self.eligible_issue_ids(displayed_issues)
+      return Set.new if displayed_issues.empty?
+
+      displayed_ids = displayed_issues.map(&:id)
+      project = displayed_issues.first.project
+      new(project)
+        .send(:eligible_issue_scope)
+        .where(id: displayed_ids)
+        .pluck(:id)
+        .to_set
     end
 
     def initialize(project, allow_concurrent_runs: false)
