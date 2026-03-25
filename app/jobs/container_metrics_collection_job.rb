@@ -34,7 +34,7 @@ class ContainerMetricsCollectionJob < ApplicationJob
 
   private
 
-  # Exponential backoff: 15s, 30s, 60s, 120s, 240s, then capped at 5 minutes.
+  # Exponential backoff: 30s, 60s, 120s, 240s, then capped at 5 minutes.
   # Resets to 15s on success (consecutive_failures == 0).
   def backoff_interval(consecutive_failures)
     return COLLECTION_INTERVAL if consecutive_failures.zero?

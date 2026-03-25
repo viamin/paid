@@ -1460,6 +1460,8 @@ RSpec.describe AgentRun do
     end
   end
 
+  # Note: Rails 5.1+ fires after_commit callbacks within transactional tests,
+  # so these specs work correctly with use_transactional_fixtures = true.
   describe "container metrics collection callback" do
     it "enqueues ContainerMetricsCollectionJob when transitioning to running with container_id" do
       agent_run = create(:agent_run, status: "pending", container_id: "abc123")

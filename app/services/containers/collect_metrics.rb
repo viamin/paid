@@ -29,9 +29,6 @@ module Containers
       metric = record_metric(stats)
       update_agent_run_summaries(metric)
       metric
-    rescue Docker::Error::DockerError => e
-      log_failure(e)
-      nil
     rescue StandardError => e
       log_failure(e)
       nil
@@ -112,7 +109,7 @@ module Containers
               peak_cpu_percent = GREATEST(COALESCE(peak_cpu_percent, 0), ?),
               peak_memory_bytes = GREATEST(COALESCE(peak_memory_bytes, 0), ?),
               avg_cpu_percent = ROUND((COALESCE(avg_cpu_percent, 0) * (container_metrics_count - 1) + ?)::numeric / container_metrics_count, 2),
-              avg_memory_bytes = (COALESCE(avg_memory_bytes, 0) * (container_metrics_count - 1) + ?) / container_metrics_count
+              avg_memory_bytes = ((COALESCE(avg_memory_bytes, 0) * (container_metrics_count - 1) + ?)::numeric / container_metrics_count)::bigint
             SQL
             metric.cpu_percent,
             metric.memory_bytes,
