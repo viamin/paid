@@ -233,6 +233,20 @@ RSpec.describe "Api::GithubProxy" do
       expect(agent_run.review_url).to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-original")
     end
 
+    it "does not track review_posted_at when html_url is missing from response" do
+      no_url_response = { id: 999, body: "Review summary", state: "commented" }.to_json
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: no_url_response, headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_posted_at).to be_nil
+      expect(agent_run.review_url).to be_nil
+    end
+
     it "does not track review_posted_at on upstream error" do
       stub_request(:post, target_url)
         .to_return(status: 422, body: { message: "Validation Failed" }.to_json,

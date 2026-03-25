@@ -144,7 +144,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_034844) do
     t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
     t.datetime "review_posted_at"
-    t.string "review_url"
+    t.string "review_url", limit: 500
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
