@@ -30,7 +30,9 @@ module Issues
     /xi
 
     # Matches cross-repo references like owner/repo#123
-    CROSS_REPO_REF_PATTERN = /([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)\#(\d+)/
+    # Uses [1-9]\d* to reject #0 — GitHub issues start at 1 and the DB
+    # CHECK constraint requires depends_on_number > 0.
+    CROSS_REPO_REF_PATTERN = /([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)\#([1-9]\d*)/
 
     # Matches same-project references like #123
     ISSUE_REF_PATTERN = /\#(\d+)/

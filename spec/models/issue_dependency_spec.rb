@@ -127,6 +127,26 @@ RSpec.describe IssueDependency do
       expect(dep.errors[:base]).to include("cannot reference both a local issue and an external issue")
     end
 
+    it "rejects external dependency with depends_on_number zero" do
+      issue = create(:issue)
+      dep = build(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                     depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                     depends_on_number: 0)
+
+      expect(dep).not_to be_valid
+      expect(dep.errors[:depends_on_number]).to include("must be greater than 0")
+    end
+
+    it "rejects external dependency with negative depends_on_number" do
+      issue = create(:issue)
+      dep = build(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                     depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                     depends_on_number: -1)
+
+      expect(dep).not_to be_valid
+      expect(dep.errors[:depends_on_number]).to include("must be greater than 0")
+    end
+
     it "rejects records with local issue and partial external columns" do
       issue = create(:issue)
       other_issue = create(:issue, project: issue.project)

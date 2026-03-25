@@ -9,6 +9,7 @@ class IssueDependency < ApplicationRecord
     scope: %i[issue_id depends_on_repo depends_on_number],
     case_sensitive: false
   }, if: :external?
+  validates :depends_on_number, numericality: { only_integer: true, greater_than: 0 }, if: :external?
   validate :not_self_referential
   validate :must_have_local_or_external_ref
   validate :local_and_external_mutually_exclusive

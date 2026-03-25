@@ -279,6 +279,15 @@ RSpec.describe Issues::ParseDependencies do
         expect(issue.issue_dependencies.count).to eq(1)
       end
 
+      it "ignores cross-project references with issue number zero" do
+        issue = create(:issue, project: project,
+                       body: "Depends on unknown-org/unknown-repo#0")
+
+        described_class.call(issue: issue)
+
+        expect(issue.issue_dependencies.reload).to be_empty
+      end
+
       it "skips cross-project dependencies that would create a cycle" do
         cross_issue = create(:issue, project: other_project, github_number: 9001)
         local_issue = create(:issue, project: project, github_number: 9002)
