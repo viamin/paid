@@ -39,6 +39,7 @@ module Workflows
         end
 
         maybe_scan_paid_prs(project_id)
+        maybe_scan_security_alerts(project_id)
 
         poll_config = run_activity(Activities::GetPollIntervalActivity,
           { project_id: project_id }, timeout: 10)
@@ -77,6 +78,23 @@ module Workflows
         { project_id: project_id }, timeout: 120)
 
       handle_pr_scan_results(scan_result, project_id)
+    end
+
+    # Scan for security alerts (Dependabot) and create issues for new alerts.
+    # Synthetic issues are created with a trusted login (from allowed_github_usernames)
+    # so the standard prompt-building pipeline trusts them — no custom_prompt needed.
+    # TODO(#220): Remove patch guard after all pre-v220 workflows have continued-as-new
+    def maybe_scan_security_alerts(project_id)
+      return unless Temporalio::Workflow.patched("add-scan-security-alerts-v1")
+
+      scan_result = run_activity(Activities::ScanSecurityAlertsActivity,
+        { project_id: project_id }, timeout: 120)
+
+      return if scan_result[:alerts_to_fix].blank?
+
+      scan_result[:alerts_to_fix].each do |alert_data|
+        start_agent_workflow(project_id, alert_data[:issue_id])
+      end
     end
 
     def handle_detection(detection, project_id)
