@@ -450,6 +450,15 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue.dependencies).to contain_exactly(dep)
     end
 
+    it "parses dependency sections in comments" do
+      dep = create(:issue, project: project, github_number: 9101)
+      issue = create(:issue, project: project, body: nil)
+
+      described_class.call(issue: issue, comments: [ "## Dependencies\n- #9101\n" ])
+
+      expect(issue.dependencies).to contain_exactly(dep)
+    end
+
     it "is idempotent with comments" do
       create(:issue, project: project, github_number: 9010)
       issue = create(:issue, project: project, body: nil)

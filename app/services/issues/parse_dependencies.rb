@@ -52,7 +52,7 @@ module Issues
     INLINE_REMOVAL_PATTERN = /
       \b(?:
         no\s+longer\s+(?:depends?\s+on|blocked?\s+by)\b # "no longer depends on"
-        |unblocked?\s+by\b                              # "unblocked by"
+        |unblocked\s+by\b                               # "unblocked by"
         |remove\s+dependenc(?:y|ies)\b(?:\s+on\b)?      # "remove dependency [on]"
       )
       :?\s*                                             # Optional colon
@@ -117,7 +117,7 @@ module Issues
 
         added_local = Set.new
         added_cross = Set.new
-        extract_inline_refs(comment_body, added_local, added_cross)
+        extract_body_refs(comment_body, added_local, added_cross)
 
         removed = Set.new
         extract_removal_numbers(comment_body, removed)
