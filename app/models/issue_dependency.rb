@@ -96,7 +96,8 @@ class IssueDependency < ApplicationRecord
   end
 
   def normalize_external_ref
-    self.depends_on_owner = depends_on_owner.downcase if depends_on_owner.present?
-    self.depends_on_repo = depends_on_repo.downcase if depends_on_repo.present?
+    self.depends_on_owner = depends_on_owner.presence&.downcase
+    self.depends_on_repo = depends_on_repo.presence&.downcase
+    self.depends_on_number = depends_on_number.presence if depends_on_number.is_a?(String)
   end
 end

@@ -166,10 +166,12 @@ module Activities
       # Only check external deps whose depends_on_number was synced in this run
       scope = scope.where(depends_on_number: synced_numbers) if synced_numbers.any?
 
+      issues_by_number = project.issues
+        .where(is_pull_request: false, github_number: scope.select(:depends_on_number))
+        .index_by(&:github_number)
+
       scope.find_each do |dep|
-        resolved_issue = project.issues.find_by(
-          github_number: dep.depends_on_number, is_pull_request: false
-        )
+        resolved_issue = issues_by_number[dep.depends_on_number]
         next unless resolved_issue
 
         if IssueDependency.exists?(issue_id: dep.issue_id, depends_on_issue_id: resolved_issue.id)

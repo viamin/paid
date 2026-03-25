@@ -104,6 +104,18 @@ RSpec.describe IssueDependency do
       expect(dep.depends_on_repo).to eq("agent-harness")
     end
 
+    it "normalizes blank strings to nil in external columns" do
+      issue = create(:issue)
+      other_issue = create(:issue, project: issue.project)
+      dep = build(:issue_dependency, issue: issue, depends_on_issue: other_issue,
+                                     depends_on_owner: "", depends_on_repo: "",
+                                     depends_on_number: nil)
+
+      dep.valid?
+      expect(dep.depends_on_owner).to be_nil
+      expect(dep.depends_on_repo).to be_nil
+    end
+
     it "rejects records with both local and external references" do
       issue = create(:issue)
       other_issue = create(:issue, project: issue.project)
