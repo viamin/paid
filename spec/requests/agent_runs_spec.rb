@@ -253,6 +253,13 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(agent_run.pull_request_url)
       end
 
+      it "shows review link when available" do
+        agent_run = create(:agent_run, :with_review, project: project)
+        get project_agent_run_path(project, agent_run)
+        expect(response.body).to include("Review Posted")
+        expect(response.body).to include(agent_run.review_url)
+      end
+
       it "shows error message when run failed" do
         agent_run = create(:agent_run, :failed, project: project)
         get project_agent_run_path(project, agent_run)
