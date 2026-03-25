@@ -41,7 +41,7 @@
                 <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">
                   Rate Limited
                 </span>
-                <p class="mt-1 text-xs text-gray-500">Resets in <%= time_ago_in_words(state.rate_limited_until) %></p>
+                <p class="mt-1 text-xs text-gray-500">Resets <%= local_time(state.rate_limited_until, format: :relative) %></p>
               <% elsif state&.circuit_open? %>
                 <span class="inline-flex items-center rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
                   Circuit Open
