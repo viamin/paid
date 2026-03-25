@@ -161,12 +161,13 @@ module ApplicationHelper
     when :text
       tag.span(context[:label], class: context[:classes], title: context[:tooltip])
     when :pending
-      tag.span("Creating issue\u2026".html_safe, class: "italic text-gray-500")
+      tag.span("Creating issue\u2026", class: "italic text-gray-500")
     else
       tag.span("-", class: "text-gray-400")
     end
 
     if context[:tooltip].present?
+      tooltip_id = "tooltip_#{run.id}"
       tag.span(class: "relative inline-flex items-center gap-1", data: { controller: "tooltip" }) do
         safe_join([
           inner,
@@ -178,10 +179,14 @@ module ApplicationHelper
             ),
             type: "button",
             class: "sm:hidden text-gray-400 hover:text-gray-600",
-            data: { action: "click->tooltip#toggle" }
+            data: { action: "click->tooltip#toggle" },
+            aria: { label: context[:tooltip], expanded: "false", controls: tooltip_id }
           ),
           tag.span(
             context[:tooltip],
+            id: tooltip_id,
+            role: "tooltip",
+            aria: { hidden: "true" },
             class: "hidden absolute left-0 top-full z-10 mt-1 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg",
             data: { tooltip_target: "content" }
           )
@@ -219,6 +224,8 @@ module ApplicationHelper
     end
   end
 
+  # Tooltip not available here: source_pull_request_number has no associated title
+  # column, and fetching titles from GitHub would introduce N+1 queries.
   def review_context(run)
     if run.source_pull_request_number.present?
       { type: :text, label: "PR ##{run.source_pull_request_number}", classes: "text-gray-700" }

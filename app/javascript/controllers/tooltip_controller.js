@@ -5,14 +5,15 @@ import { Controller } from "@hotwired/stimulus"
 export default class extends Controller {
   static targets = ["content"]
 
-  toggle(event) {
-    event.stopPropagation()
-    this.contentTarget.classList.toggle("hidden")
+  toggle() {
+    const isHidden = this.contentTarget.classList.toggle("hidden")
+    this.#updateAria(!isHidden)
   }
 
   hide(event) {
     if (!this.element.contains(event.target)) {
       this.contentTarget.classList.add("hidden")
+      this.#updateAria(false)
     }
   }
 
@@ -23,5 +24,11 @@ export default class extends Controller {
 
   disconnect() {
     document.removeEventListener("click", this.boundHide)
+  }
+
+  #updateAria(expanded) {
+    const button = this.element.querySelector("button[aria-controls]")
+    if (button) button.setAttribute("aria-expanded", expanded)
+    this.contentTarget.setAttribute("aria-hidden", !expanded)
   }
 }
