@@ -770,6 +770,33 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#recent_issue_comments" do
+    let(:repo) { "owner/repo" }
+
+    context "when comments exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .with(query: hash_including("per_page" => "100", "sort" => "created", "direction" => "desc"))
+          .to_return(
+            status: 200,
+            body: [
+              { id: 2, body: "Newest comment", user: { login: "maintainer" } },
+              { id: 1, body: "Oldest comment", user: { login: "reviewer" } }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns comments newest first without auto-pagination" do
+        result = client.recent_issue_comments(repo, 42)
+
+        expect(result.size).to eq(2)
+        expect(result.first.body).to eq("Newest comment")
+        expect(client.client.auto_paginate).to be false
+      end
+    end
+  end
+
   describe "#review_threads" do
     let(:repo) { "owner/repo" }
 

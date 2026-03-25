@@ -50,7 +50,7 @@ module Activities
     # Returns true when a prior escalation comment is found. On fetch failure,
     # returns false so we fall through to attempt posting.
     def escalation_comment_exists?(client, project, issue)
-      comments = client.issue_comments(project.full_name, issue.github_number)
+      comments = client.recent_issue_comments(project.full_name, issue.github_number)
       exists = comments.any? { |c| c.respond_to?(:body) && c.body&.include?(COMMENT_MARKER) }
 
       if exists

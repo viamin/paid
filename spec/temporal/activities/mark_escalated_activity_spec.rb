@@ -9,7 +9,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:add_comment)
-    allow(github_client).to receive(:issue_comments).and_return([])
+    allow(github_client).to receive(:recent_issue_comments).and_return([])
   end
 
   describe "#execute" do
@@ -74,7 +74,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
 
       it "skips posting when an escalation comment already exists" do
         existing = OpenStruct.new(body: "<!-- paid:escalation-note -->\n**Escalation Note**")
-        allow(github_client).to receive(:issue_comments).and_return([ existing ])
+        allow(github_client).to receive(:recent_issue_comments).and_return([ existing ])
 
         activity.execute(issue_id: issue.id)
 

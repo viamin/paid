@@ -169,17 +169,17 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), anything)
     end
 
-    it "passes trigger details as reason to MarkEscalatedActivity" do
+    it "lets MarkEscalatedActivity compute the default reason" do
       pr_data = {
         issue_id: 10, pr_number: 42, owner_reviewer_login: "viamin",
-        triggers: [ { type: "escalate_to_owner", details: "Custom escalation reason" } ]
+        triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ]
       }
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::MarkEscalatedActivity,
-          hash_including(issue_id: 10, reason: "Custom escalation reason"), anything)
+          { issue_id: 10 }, anything)
     end
 
     it "routes owner_approved to MergePullRequestActivity" do
