@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
-# Configure GoodJob cron schedule. Disable cron with GOOD_JOB_ENABLE_CRON=false.
+# Configure GoodJob cron schedule.
 Rails.application.configure do
-  config.good_job.enable_cron = ActiveModel::Type::Boolean.new.cast(
+  config.x.good_job_enable_cron = ActiveModel::Type::Boolean.new.cast(
     ENV.fetch("GOOD_JOB_ENABLE_CRON", "true")
   )
+  config.good_job.enable_cron = config.x.good_job_enable_cron
 
   config.good_job.cron = {
     worktree_cleanup: {

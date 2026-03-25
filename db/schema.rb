@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_25_034844) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_25_074842) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -587,11 +587,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_034844) do
     t.boolean "default_project_active", default: true, null: false
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_providers", default: [], null: false
+    t.integer "git_clone_timeout_seconds", default: 600, null: false
+    t.integer "git_push_timeout_seconds", default: 60, null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
+    t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
+    t.integer "issue_goal_timeout_seconds", default: 600, null: false
+    t.integer "max_comment_length", default: 2000, null: false
     t.integer "max_concurrent_runs", default: 2, null: false
+    t.integer "max_prompt_comments", default: 20, null: false
+    t.integer "max_tokens_per_run", default: 10000000, null: false
+    t.integer "review_goal_idle_timeout_seconds", default: 300, null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
+    t.integer "style_guide_max_raw_bytes", default: 100000, null: false
+    t.integer "style_guide_max_raw_prompt_bytes", default: 8000, null: false
+    t.integer "style_guide_max_total_bytes", default: 32000, null: false
     t.integer "token_validation_stale_minutes", default: 2, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false

@@ -54,7 +54,8 @@ class StaleRunDetectorJob < ApplicationJob
   private
 
   def agent_timeout_with_grace
-    Rails.application.config.x.agent_timeout.seconds + GRACE_PERIOD
+    max_timeout = UserSetting.maximum(:agent_timeout_seconds) || AGENT_TIMEOUT_DEFAULT
+    max_timeout.seconds + GRACE_PERIOD
   end
 
   # Runs stuck in "running" that started before the threshold.

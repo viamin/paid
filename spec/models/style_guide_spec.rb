@@ -167,8 +167,8 @@ RSpec.describe StyleGuide do
         guide = build(:style_guide, :global, raw_content: long_content)
 
         result = guide.content_for_prompt
-        expect(result.bytesize).to be <= StyleGuide::MAX_RAW_PROMPT_BYTES
-        expect(result.bytesize).to eq(StyleGuide::MAX_RAW_PROMPT_BYTES)
+        expect(result.bytesize).to be <= StyleGuide::DEFAULT_MAX_RAW_PROMPT_BYTES
+        expect(result.bytesize).to eq(StyleGuide::DEFAULT_MAX_RAW_PROMPT_BYTES)
       end
 
       it "returns nil when raw content is blank" do

@@ -19,15 +19,10 @@ module Containers
     class CloneError < Error; end
     class PushError < Error; end
 
-    CLONE_TIMEOUT = begin
-      [ Integer(ENV.fetch("CONTAINER_GIT_CLONE_TIMEOUT_SECONDS", 600)), 1 ].max
-    rescue ArgumentError
-      Rails.logger.warn(message: "container_git.invalid_clone_timeout",
-        value: ENV["CONTAINER_GIT_CLONE_TIMEOUT_SECONDS"],
-        fallback: 600)
-      600
-    end
-    PUSH_TIMEOUT = 60
+    # Default timeouts used when user settings are unavailable.
+    # Runtime code resolves per-user values via UserSetting.
+    DEFAULT_CLONE_TIMEOUT = 600
+    DEFAULT_PUSH_TIMEOUT = 60
 
     # Marker comment used as a grep guard so Temporal retries don't
     # duplicate the exclude block.  Defined once and referenced both
@@ -360,7 +355,7 @@ module Containers
     end
 
     def push_new_branch
-      execute_git("push", "--no-verify", "origin", agent_run.branch_name, timeout: PUSH_TIMEOUT)
+      execute_git("push", "--no-verify", "origin", agent_run.branch_name, timeout: push_timeout)
     end
 
     def push_existing_pr_branch
@@ -400,7 +395,7 @@ module Containers
         "origin",
         agent_run.branch_name,
         "--force-with-lease=#{agent_run.branch_name}:#{expected_remote_sha}",
-        timeout: PUSH_TIMEOUT
+        timeout: push_timeout
       )
     end
 
@@ -430,7 +425,7 @@ module Containers
       check = execute_git("rev-parse", "--is-shallow-repository")
       return if check.success? && check[:stdout].to_s.strip == "false"
 
-      result = execute_git("fetch", "--unshallow", timeout: CLONE_TIMEOUT)
+      result = execute_git("fetch", "--unshallow", timeout: clone_timeout)
       return if result.success?
 
       raise Error, "Failed to unshallow repository: #{error_with_stderr(result)}"
@@ -453,7 +448,7 @@ module Containers
       project = agent_run.project
       url = "https://github.com/#{project.full_name}.git"
 
-      result = execute_git("clone", "--depth", "1", url, ".", timeout: CLONE_TIMEOUT)
+      result = execute_git("clone", "--depth", "1", url, ".", timeout: clone_timeout)
       raise CloneError, "Clone failed: #{error_with_stderr(result)}" if result.failure?
     end
 
@@ -646,6 +641,18 @@ module Containers
     def execute_git(*args, timeout: nil)
       cmd = [ "git" ] + args
       container_service.execute(cmd, timeout: timeout, stream: false)
+    end
+
+    def user_settings
+      @user_settings ||= AgentRuns::UserSettingsResolver.call(project: agent_run.project, strict: false)
+    end
+
+    def clone_timeout
+      user_settings&.git_clone_timeout_seconds || DEFAULT_CLONE_TIMEOUT
+    end
+
+    def push_timeout
+      user_settings&.git_push_timeout_seconds || DEFAULT_PUSH_TIMEOUT
     end
 
     # Builds a descriptive error string that includes stderr when available.

@@ -66,17 +66,10 @@ class ServiceContainer < ApplicationRecord
   end
 
   def allowed_images
-    allowed_images_from_env || allowed_images_from_settings
+    allowed_images_from_settings
   end
 
-  def allowed_images_from_env
-    raw = ENV["SERVICE_CONTAINER_ALLOWED_IMAGES"]
-    return unless raw.present?
-
-    raw.split(",").map(&:strip).reject(&:blank?).uniq
-  end
-
-  # Falls back to settings from account admins/owners when no env var is set.
+  # Falls back to settings from account admins/owners.
   # Scoped to associated projects' accounts when the container already
   # belongs to projects (i.e. on image update). On create the record is
   # not yet persisted, so falls back to all admin/owner settings.

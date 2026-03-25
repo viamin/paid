@@ -319,7 +319,7 @@ RSpec.describe Prompts::BuildForIssue do
         end
       end
 
-      context "when a comment body exceeds MAX_COMMENT_LENGTH" do
+      context "when a comment body exceeds DEFAULT_MAX_COMMENT_LENGTH" do
         let(:long_body) { "x" * 2500 }
         let(:long_comment) do
           OpenStruct.new(user: OpenStruct.new(login: trusted_login), body: long_body)
@@ -339,7 +339,7 @@ RSpec.describe Prompts::BuildForIssue do
         end
       end
 
-      context "when there are more than MAX_COMMENTS trusted comments" do
+      context "when there are more than DEFAULT_MAX_COMMENTS trusted comments" do
         before do
           comments = (1..25).map do |i|
             OpenStruct.new(user: OpenStruct.new(login: trusted_login), body: "Comment #{i}")
@@ -349,7 +349,7 @@ RSpec.describe Prompts::BuildForIssue do
             .and_return(comments)
         end
 
-        it "includes only the last MAX_COMMENTS comments" do
+        it "includes only the last DEFAULT_MAX_COMMENTS comments" do
           prompt = described_class.call(issue: issue, project: project, github_client: github_client)
 
           expect(prompt).to include("Comment 25")

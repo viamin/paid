@@ -6,8 +6,9 @@ module Api
 
     before_action :check_rate_limit
 
-    # Maximum tokens per agent run before rate limiting kicks in
-    MAX_TOKENS_PER_RUN = 10_000_000
+    # Default maximum tokens per agent run before rate limiting kicks in.
+    # Overridden by UserSetting#max_tokens_per_run at runtime.
+    DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
 
     # POST /api/proxy/anthropic/*path
     def anthropic
@@ -48,7 +49,8 @@ module Api
     private
 
     def check_rate_limit
-      return unless @agent_run.total_tokens > MAX_TOKENS_PER_RUN
+      limit = resolve_max_tokens_per_run
+      return unless @agent_run.total_tokens > limit
 
       render json: { error: "Token limit exceeded for this agent run" }, status: :too_many_requests
     end
@@ -152,6 +154,11 @@ module Api
       end
 
       key
+    end
+
+    def resolve_max_tokens_per_run
+      settings = AgentRuns::UserSettingsResolver.call(project: @agent_run.project, strict: false)
+      settings&.max_tokens_per_run || DEFAULT_MAX_TOKENS_PER_RUN
     end
 
     def log_error(message, error)
