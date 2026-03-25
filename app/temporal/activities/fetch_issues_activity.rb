@@ -136,8 +136,9 @@ module Activities
         is_pull_request: false
       )
 
+      adjacency = IssueDependency.account_adjacency(project.account)
+
       issues_relation.find_each do |issue|
-        adjacency = IssueDependency.account_adjacency(project.account)
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency)
       rescue => e
         logger.warn(
@@ -159,7 +160,7 @@ module Activities
         .where(
           depends_on_issue_id: nil,
         )
-        .where("LOWER(depends_on_owner) = ? AND LOWER(depends_on_repo) = ?", project.owner.downcase, project.repo.downcase)
+        .where(depends_on_owner: project.owner.downcase, depends_on_repo: project.repo.downcase)
         .where(
           projects: { account_id: project.account_id }
         )

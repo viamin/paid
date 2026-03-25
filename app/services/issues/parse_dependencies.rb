@@ -57,7 +57,7 @@ module Issues
       current_deps = issue.issue_dependencies.to_a
       current_local_ids = current_deps.select(&:local?).map(&:depends_on_issue_id).to_set
       current_external_keys = current_deps.select(&:external?).map { |d|
-        [ d.depends_on_owner, d.depends_on_repo, d.depends_on_number ]
+        [ d.depends_on_owner.downcase, d.depends_on_repo.downcase, d.depends_on_number ]
       }.to_set
 
       return if local_numbers.empty? && cross_refs.empty? &&
@@ -137,19 +137,17 @@ module Issues
       return { resolved_ids: resolved_ids, external_keys: external_keys } if cross_refs.empty?
 
       account = issue.project.account
-      adj = adjacency || IssueDependency.account_adjacency(issue.project.account)
+      adj = adjacency || IssueDependency.account_adjacency(account)
+
+      project_lookup = build_project_lookup(account, cross_refs)
+      issues_by_project = build_issue_lookup(project_lookup, cross_refs)
 
       cross_refs.each do |owner, repo, number|
-        # Resolve self-project references as local deps instead of dropping them
-        project =
-          if owner.casecmp?(issue.project.owner) && repo.casecmp?(issue.project.repo)
-            issue.project
-          else
-            account.projects.where("LOWER(owner) = ? AND LOWER(repo) = ?", owner.downcase, repo.downcase).first
-          end
+        project_key = [ owner.downcase, repo.downcase ]
+        project = project_lookup[project_key]
 
         if project
-          dep_issue = project.issues.find_by(github_number: number, is_pull_request: false)
+          dep_issue = issues_by_project.dig(project.id, number)
 
           if dep_issue
             resolved_ids << dep_issue.id
@@ -161,19 +159,58 @@ module Issues
           end
         end
 
-        # Store as external reference
-        key = [ owner, repo, number ]
+        # Store as external reference with normalized (downcased) owner/repo
+        key = [ owner.downcase, repo.downcase, number ]
         external_keys << key
         next if current_external_keys.include?(key)
 
         issue.issue_dependencies.create!(
-          depends_on_owner: owner,
-          depends_on_repo: repo,
+          depends_on_owner: owner.downcase,
+          depends_on_repo: repo.downcase,
           depends_on_number: number
         )
       end
 
       { resolved_ids: resolved_ids, external_keys: external_keys }
+    end
+
+    # Batch-loads projects for all unique owner/repo pairs in cross_refs
+    def build_project_lookup(account, cross_refs)
+      lookup = {}
+      self_key = [ issue.project.owner.downcase, issue.project.repo.downcase ]
+      lookup[self_key] = issue.project
+
+      other_pairs = cross_refs
+        .map { |owner, repo, _| [ owner.downcase, repo.downcase ] }
+        .uniq
+        .reject { |pair| pair == self_key }
+
+      if other_pairs.any?
+        conditions = other_pairs.map { "(LOWER(owner) = ? AND LOWER(repo) = ?)" }.join(" OR ")
+        values = other_pairs.flatten
+        account.projects.where(conditions, *values).each do |project|
+          lookup[[ project.owner.downcase, project.repo.downcase ]] = project
+        end
+      end
+
+      lookup
+    end
+
+    # Batch-loads issues for all resolved projects and referenced numbers
+    def build_issue_lookup(project_lookup, cross_refs)
+      refs_by_project_id = Hash.new { |h, k| h[k] = Set.new }
+
+      cross_refs.each do |owner, repo, number|
+        project = project_lookup[[ owner.downcase, repo.downcase ]]
+        refs_by_project_id[project.id] << number if project
+      end
+
+      result = {}
+      refs_by_project_id.each do |project_id, numbers|
+        issues = Issue.where(project_id: project_id, github_number: numbers.to_a, is_pull_request: false)
+        result[project_id] = issues.index_by(&:github_number)
+      end
+      result
     end
 
     def remove_stale_local_deps(current_local_ids, new_local_ids)
@@ -185,13 +222,16 @@ module Issues
 
     def remove_stale_external_deps(current_external_keys, new_external_keys)
       stale_keys = current_external_keys - new_external_keys
-      stale_keys.each do |owner, repo, number|
-        issue.issue_dependencies.where(
-          depends_on_owner: owner,
-          depends_on_repo: repo,
-          depends_on_number: number
-        ).delete_all
-      end
+      return if stale_keys.empty?
+
+      deps_table = IssueDependency.arel_table
+      combined = stale_keys.map do |owner, repo, number|
+        deps_table[:depends_on_owner].eq(owner)
+          .and(deps_table[:depends_on_repo].eq(repo))
+          .and(deps_table[:depends_on_number].eq(number))
+      end.reduce(:or)
+
+      issue.issue_dependencies.where(combined).delete_all
     end
 
     def would_create_cycle?(dep_issue, adjacency)

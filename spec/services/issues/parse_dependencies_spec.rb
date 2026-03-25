@@ -256,6 +256,29 @@ RSpec.describe Issues::ParseDependencies do
         expect { described_class.call(issue: issue) }.not_to change(IssueDependency, :count)
       end
 
+      it "normalizes external dependency owner/repo to lowercase" do
+        issue = create(:issue, project: project,
+                       body: "Depends on Unknown-Org/Unknown-REPO#9042")
+
+        described_class.call(issue: issue)
+
+        ext_dep = issue.issue_dependencies.find_by(depends_on_owner: "unknown-org")
+        expect(ext_dep).to be_present
+        expect(ext_dep.depends_on_repo).to eq("unknown-repo")
+      end
+
+      it "deduplicates external deps with different casing" do
+        issue = create(:issue, project: project,
+                       body: "Depends on Unknown-Org/Repo#9042")
+
+        described_class.call(issue: issue)
+        expect(issue.issue_dependencies.count).to eq(1)
+
+        issue.update!(body: "Depends on unknown-org/repo#9042")
+        described_class.call(issue: issue)
+        expect(issue.issue_dependencies.count).to eq(1)
+      end
+
       it "skips cross-project dependencies that would create a cycle" do
         cross_issue = create(:issue, project: other_project, github_number: 9001)
         local_issue = create(:issue, project: project, github_number: 9002)
