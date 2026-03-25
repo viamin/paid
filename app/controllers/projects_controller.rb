@@ -6,12 +6,10 @@ class ProjectsController < ApplicationController
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
   AUTO_PICK_PARTIALS = {
-    "index" => "projects/auto_pick_toggle_index",
-    "show" => "projects/auto_pick_toggle"
+    "index" => "projects/auto_pick_toggle_index"
   }.freeze
   AUTO_MERGE_PARTIALS = {
-    "index" => "projects/auto_merge_toggle_index",
-    "show" => "projects/auto_merge_toggle"
+    "index" => "projects/auto_merge_toggle_index"
   }.freeze
 
   def index
@@ -117,10 +115,9 @@ class ProjectsController < ApplicationController
     attribute = :"#{feature}_enabled"
     @project.update!(attribute => !@project.public_send(:"#{attribute}?"))
 
-    partial = partials.fetch(params[:context], partials["show"])
-
     respond_to do |format|
       format.turbo_stream do
+        partial = partials.fetch(params[:context]) { partials.values.first }
         render turbo_stream: turbo_stream.replace(
           ActionView::RecordIdentifier.dom_id(@project, :"#{feature}_toggle"),
           partial: partial,
