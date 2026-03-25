@@ -20,8 +20,14 @@
     <% end %>
   </td>
   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-    <% if agent_run.branch_name.present? %>
-      <code class="rounded bg-gray-100 px-1 py-0.5 text-xs"><%= agent_run.branch_name %></code>
+    <% context = agent_run_context(agent_run) %>
+    <% case context[:type] %>
+    <% when :link %>
+      <%= link_to context[:label], context[:url], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+    <% when :text %>
+      <span class="<%= context[:classes] %>"><%= context[:label] %></span>
+    <% when :pending %>
+      <span class="italic text-gray-500">Creating issue&hellip;</span>
     <% else %>
       <span class="text-gray-400">-</span>
     <% end %>
