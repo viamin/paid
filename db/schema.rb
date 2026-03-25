@@ -160,8 +160,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_074842) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -596,10 +596,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_074842) do
     t.integer "max_concurrent_runs", default: 2, null: false
     t.integer "max_prompt_comments", default: 20, null: false
     t.integer "max_tokens_per_run", default: 10000000, null: false
-    t.integer "review_goal_idle_timeout_seconds", default: 300, null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
+    t.integer "review_goal_idle_timeout_seconds", default: 300, null: false
     t.integer "style_guide_max_raw_bytes", default: 100000, null: false
     t.integer "style_guide_max_raw_prompt_bytes", default: 8000, null: false
     t.integer "style_guide_max_total_bytes", default: 32000, null: false
