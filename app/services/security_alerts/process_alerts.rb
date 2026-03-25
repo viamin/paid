@@ -63,7 +63,7 @@ module SecurityAlerts
       issue.update!(
         title: new_title,
         body: new_body,
-        github_updated_at: Time.current
+        github_updated_at: parse_alert_time(alert[:updated_at]) || Time.current
       )
     end
 
@@ -90,7 +90,7 @@ module SecurityAlerts
         else
           issue = entry[1]
           alert = entry[2]
-          reopen_closed_issue(issue)
+          reopen_closed_issue(issue, alert)
           issues_to_run << { issue_id: issue.id, alert_number: alert[:number], alert_type: "dependabot" }
         end
       end
@@ -127,7 +127,7 @@ module SecurityAlerts
       existing = @project.issues.find_by(github_issue_id: synthetic_issue_id(alert), source: SYNTHETIC_SOURCE)
       return nil unless existing
 
-      reopen_closed_issue(existing) if existing.github_state != "open"
+      reopen_closed_issue(existing, alert) if existing.github_state != "open"
       { issue_id: existing.id, alert_number: alert[:number], alert_type: "dependabot" }
     rescue ActiveRecord::RecordInvalid => e
       Rails.logger.warn(
@@ -139,11 +139,11 @@ module SecurityAlerts
       nil
     end
 
-    def reopen_closed_issue(issue)
+    def reopen_closed_issue(issue, alert)
       issue.update!(
         github_state: "open",
         paid_state: "new",
-        github_updated_at: Time.current
+        github_updated_at: parse_alert_time(alert[:updated_at]) || Time.current
       )
     end
 
