@@ -7,6 +7,7 @@ module Activities
     activity_name "MarkEscalated"
 
     PAID_ESCALATED_LABEL = "paid-escalated"
+    COMMENT_MARKER = "<!-- paid:escalation-note -->"
 
     def execute(input)
       issue = Issue.find_by(id: input[:issue_id])
@@ -17,6 +18,7 @@ module Activities
       issue.update!(pr_review_phase: "escalated")
 
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
+      post_escalation_comment(client, project, issue, input[:reason])
 
       logger.info(
         message: "pr_review.marked_escalated",
@@ -25,6 +27,70 @@ module Activities
       )
 
       { updated: true }
+    end
+
+    private
+
+    # Best-effort dedupe: skips posting if COMMENT_MARKER is found in the most
+    # recent 100 comments. On very long-lived PRs with 100+ comments after the
+    # escalation note, a retry could post a duplicate. Acceptable because
+    # escalation is rare and full pagination would waste API rate limit.
+    def post_escalation_comment(client, project, issue, reason)
+      return if escalation_comment_exists?(client, project, issue)
+
+      body = build_escalation_comment(reason, project, issue)
+      client.add_comment(project.full_name, issue.github_number, body)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_review.escalation_comment_failed",
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        error: e.message
+      )
+    end
+
+    # Checks the most recent 100 comments for an existing escalation note.
+    # On fetch failure, returns false so we fall through to attempt posting.
+    def escalation_comment_exists?(client, project, issue)
+      comments = client.recent_issue_comments(project.full_name, issue.github_number)
+      exists = comments.any? { |c| c.respond_to?(:body) && c.body&.include?(COMMENT_MARKER) }
+
+      if exists
+        logger.info(
+          message: "pr_review.escalation_comment_exists",
+          issue_id: issue.id,
+          pr_number: issue.github_number
+        )
+      end
+
+      exists
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_review.fetch_escalation_comments_failed",
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        error: e.message
+      )
+      false
+    end
+
+    def build_escalation_comment(reason, project, issue)
+      reason = default_reason(project, issue) if reason.blank?
+
+      lines = [ COMMENT_MARKER, "**Escalation Note**", "" ]
+      lines << "This has been escalated because #{reason}."
+      lines << ""
+      lines << "**Questions:**"
+      lines << "- Are there specific changes you'd like to see in the pull request?"
+      lines << "- Should the automated review cycle be restarted with different guidance?"
+      lines.join("\n")
+    end
+
+    def default_reason(project, issue)
+      "the automated draft review limit " \
+        "(#{project.max_draft_review_rounds} rounds) " \
+        "has been reached after #{issue.draft_review_count} review cycles " \
+        "and the PR requires human intervention"
     end
   end
 end
