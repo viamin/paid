@@ -28,6 +28,22 @@ RSpec.describe UserSetting do
 
     # Container Resources
     it { is_expected.to validate_numericality_of(:container_memory_bytes).only_integer.is_greater_than_or_equal_to(512 * 1024 * 1024).is_less_than_or_equal_to(described_class::MAX_CONTAINER_MEMORY_BYTES) }
+    # Token & rate limits
+    it { is_expected.to validate_numericality_of(:max_tokens_per_run).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    # Goal-specific timeouts
+    it { is_expected.to validate_numericality_of(:issue_goal_timeout_seconds).only_integer.is_greater_than_or_equal_to(30).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:issue_goal_idle_timeout_seconds).only_integer.is_greater_than_or_equal_to(30).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:review_goal_idle_timeout_seconds).only_integer.is_greater_than_or_equal_to(30).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    # Git operation timeouts
+    it { is_expected.to validate_numericality_of(:git_clone_timeout_seconds).only_integer.is_greater_than_or_equal_to(30).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:git_push_timeout_seconds).only_integer.is_greater_than_or_equal_to(10).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    # Prompt building limits
+    it { is_expected.to validate_numericality_of(:max_prompt_comments).only_integer.is_greater_than_or_equal_to(0).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:max_comment_length).only_integer.is_greater_than_or_equal_to(100).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    # Style guide byte limits
+    it { is_expected.to validate_numericality_of(:style_guide_max_raw_bytes).only_integer.is_greater_than_or_equal_to(1000).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:style_guide_max_total_bytes).only_integer.is_greater_than_or_equal_to(1000).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_numericality_of(:style_guide_max_raw_prompt_bytes).only_integer.is_greater_than_or_equal_to(1000).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
     # Concurrency
     it { is_expected.to validate_numericality_of(:max_concurrent_runs).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(100) }
     it { is_expected.to validate_numericality_of(:container_timeout_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(described_class::PG_INT_MAX) }

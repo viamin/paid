@@ -77,6 +77,70 @@
             </div>
             <p class="mt-1 text-xs text-gray-500">Maximum time an agent can run before being stopped. Minimum 60 seconds.</p>
           </div>
+
+          <div>
+            <%= form.label :max_tokens_per_run, "Max Tokens Per Run", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :max_tokens_per_run, min: 1, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum number of tokens an agent run can consume. Default is 10,000,000.</p>
+          </div>
+
+          <div>
+            <%= form.label :issue_goal_timeout_seconds, "Issue Goal Timeout (seconds)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :issue_goal_timeout_seconds, min: 30, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum time for issue creation goals. Default is 600 seconds (10 minutes).</p>
+          </div>
+
+          <div>
+            <%= form.label :issue_goal_idle_timeout_seconds, "Issue Goal Idle Timeout (seconds)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :issue_goal_idle_timeout_seconds, min: 30, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum idle time for issue creation goals before considered stuck. Default is 120 seconds.</p>
+          </div>
+
+          <div>
+            <%= form.label :review_goal_idle_timeout_seconds, "Review Goal Idle Timeout (seconds)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :review_goal_idle_timeout_seconds, min: 30, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum idle time for review goals before considered stuck. Default is 300 seconds.</p>
+          </div>
+
+          <div>
+            <%= form.label :git_clone_timeout_seconds, "Git Clone Timeout (seconds)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :git_clone_timeout_seconds, min: 30, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum time for git clone operations. Default is 600 seconds.</p>
+          </div>
+
+          <div>
+            <%= form.label :git_push_timeout_seconds, "Git Push Timeout (seconds)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :git_push_timeout_seconds, min: 10, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum time for git push operations. Default is 60 seconds.</p>
+          </div>
+
+          <div>
+            <%= form.label :max_prompt_comments, "Max Prompt Comments", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :max_prompt_comments, min: 0, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum number of issue comments to include in agent prompts. Default is 20.</p>
+          </div>
+
+          <div>
+            <%= form.label :max_comment_length, "Max Comment Length", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.number_field :max_comment_length, min: 100, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Maximum character length per comment in agent prompts. Default is 2000.</p>
+          </div>
         </fieldset>
 
         <hr class="my-8 border-gray-200">
@@ -115,7 +179,7 @@
             <div class="mt-2">
               <%= form.text_field :allowed_service_images_csv, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "postgres:16, redis:7-alpine" %>
             </div>
-            <p class="mt-1 text-xs text-gray-500">Comma-separated list of Docker images allowed for service containers. Can also be set via the <code class="rounded bg-gray-100 px-1 py-0.5">SERVICE_CONTAINER_ALLOWED_IMAGES</code> environment variable.</p>
+            <p class="mt-1 text-xs text-gray-500">Comma-separated list of Docker images allowed for service containers.</p>
           </div>
         </fieldset>
 
@@ -155,7 +219,7 @@
         <details class="group">
           <summary class="cursor-pointer text-base font-semibold leading-7 text-gray-900">
             Advanced Settings
-            <span class="ml-1 text-sm font-normal text-gray-500">(retry policies, circuit breakers)</span>
+            <span class="ml-1 text-sm font-normal text-gray-500">(retry policies, circuit breakers, style guide limits)</span>
           </summary>
 
           <div class="mt-4 space-y-6">
@@ -212,6 +276,33 @@
                 <%= form.number_field :retry_max_delay, min: 0.1, step: 0.1, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
               </div>
               <p class="mt-1 text-xs text-gray-500">Maximum delay between retries.</p>
+            </div>
+
+            <hr class="my-6 border-gray-200">
+            <h4 class="text-sm font-semibold text-gray-700">Style Guide Limits</h4>
+
+            <div>
+              <%= form.label :style_guide_max_raw_bytes, "Max Raw Style Guide Bytes", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.number_field :style_guide_max_raw_bytes, min: 1000, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Maximum raw content bytes sent to LLM for style guide compression. Default is 100,000.</p>
+            </div>
+
+            <div>
+              <%= form.label :style_guide_max_total_bytes, "Max Total Style Guide Injection Bytes", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.number_field :style_guide_max_total_bytes, min: 1000, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Total byte budget for all injected style guide sections in prompts. Default is 32,000.</p>
+            </div>
+
+            <div>
+              <%= form.label :style_guide_max_raw_prompt_bytes, "Max Uncompressed Style Guide Prompt Bytes", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.number_field :style_guide_max_raw_prompt_bytes, min: 1000, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Maximum raw content bytes injected when no compressed version is available. Default is 8,000.</p>
             </div>
           </div>
         </details>

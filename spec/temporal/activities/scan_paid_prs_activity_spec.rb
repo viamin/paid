@@ -369,6 +369,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a ready paid-ready PR has merge conflicts and auto_fix is enabled" do
+      before do
+        project.update!(auto_fix_merge_conflicts: true)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-ready" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(mergeable: false)
+      end
+
+      it "triggers a ready-phase follow-up for merge conflicts" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("ready")
+        expect(trigger[:triggers].first[:type]).to eq("merge_conflicts")
+      end
+    end
+
     context "when an active agent run already exists" do
       before do
         create(:issue, :pull_request,

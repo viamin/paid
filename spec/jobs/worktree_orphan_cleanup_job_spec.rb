@@ -23,7 +23,7 @@ RSpec.describe WorktreeOrphanCleanupJob do
 
     it "prunes active projects" do
       project.update!(active: true)
-      repo_path = File.join(WorktreeService::WORKSPACE_ROOT, project.account_id.to_s, project.id.to_s, "repo")
+      repo_path = File.join(WorktreeService.workspace_root, project.account_id.to_s, project.id.to_s, "repo")
 
       allow(Dir).to receive(:exist?).and_call_original
       allow(Dir).to receive(:exist?).with(repo_path).and_return(true)

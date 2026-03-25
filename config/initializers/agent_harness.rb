@@ -9,16 +9,12 @@ if defined?(AgentHarness::Error) && !defined?(AgentHarness::AuthenticationError)
   AgentHarness::AuthenticationError = Class.new(AgentHarness::Error)
 end
 
-agent_timeout = begin
-  [ Integer(ENV.fetch("AGENT_TIMEOUT", 3600)), 1 ].max
-rescue ArgumentError
-  Rails.logger.warn(message: "agent_harness.invalid_timeout",
-    value: ENV["AGENT_TIMEOUT"],
-    fallback: 3600)
-  3600
-end
-
-Rails.application.config.x.agent_timeout = agent_timeout
+# Default agent timeout used for AgentHarness boot-time config and as a
+# fallback when per-user settings are unavailable. Runtime code should
+# prefer UserSetting#agent_timeout_seconds resolved via
+# AgentRuns::UserSettingsResolver.
+AGENT_TIMEOUT_DEFAULT = 3600
+Rails.application.config.x.agent_timeout = AGENT_TIMEOUT_DEFAULT
 
 AgentHarness.configure do |config|
   # Order is deterministic: follows APP_TO_HARNESS_PROVIDER_KEYS declaration order.
@@ -39,7 +35,7 @@ AgentHarness.configure do |config|
 
     harness_provider_key
   end
-  config.default_timeout = Rails.application.config.x.agent_timeout
+  config.default_timeout = AGENT_TIMEOUT_DEFAULT
 
   supported_provider_keys.each_with_index do |provider_key, index|
     harness_provider_key = ProviderSupport.harness_provider_key_for(provider_key).to_sym
@@ -47,7 +43,7 @@ AgentHarness.configure do |config|
     config.provider(harness_provider_key) do |provider|
       provider.enabled = true
       provider.priority = (index + 1) * 10
-      provider.timeout = Rails.application.config.x.agent_timeout if harness_provider_key == :claude
+      provider.timeout = AGENT_TIMEOUT_DEFAULT if harness_provider_key == :claude
     end
   end
 

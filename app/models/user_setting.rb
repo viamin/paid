@@ -35,6 +35,38 @@ class UserSetting < ApplicationRecord
   validates :max_concurrent_runs,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
 
+  # Token & rate limits
+  validates :max_tokens_per_run,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: PG_INT_MAX }
+
+  # Goal-specific timeouts
+  validates :issue_goal_timeout_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }
+  validates :issue_goal_idle_timeout_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }
+  validates :review_goal_idle_timeout_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }
+
+  # Git operation timeouts
+  validates :git_clone_timeout_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 30, less_than_or_equal_to: PG_INT_MAX }
+  validates :git_push_timeout_seconds,
+    numericality: { only_integer: true, greater_than_or_equal_to: 10, less_than_or_equal_to: PG_INT_MAX }
+
+  # Prompt building limits
+  validates :max_prompt_comments,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: PG_INT_MAX }
+  validates :max_comment_length,
+    numericality: { only_integer: true, greater_than_or_equal_to: 100, less_than_or_equal_to: PG_INT_MAX }
+
+  # Style guide byte limits
+  validates :style_guide_max_raw_bytes,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1000, less_than_or_equal_to: PG_INT_MAX }
+  validates :style_guide_max_total_bytes,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1000, less_than_or_equal_to: PG_INT_MAX }
+  validates :style_guide_max_raw_prompt_bytes,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1000, less_than_or_equal_to: PG_INT_MAX }
+
   # Project Defaults
   validates :default_branch, presence: true
 

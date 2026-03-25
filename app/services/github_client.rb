@@ -15,8 +15,8 @@ require "faraday/retry"
 #   issues = client.issues("owner/repo", labels: "bug")
 #
 class GithubClient
-  CHECK_RUNS_PER_PAGE = 100
-  CHECK_RUNS_MAX_PAGES = 10
+  DEFAULT_CHECK_RUNS_PER_PAGE = 100
+  DEFAULT_CHECK_RUNS_MAX_PAGES = 10
 
   # Base error for all GitHub client errors
   class Error < StandardError; end
@@ -263,13 +263,13 @@ class GithubClient
       page = 1
 
       loop do
-        response = client.check_runs_for_ref(repo, ref, per_page: CHECK_RUNS_PER_PAGE, page: page)
+        response = client.check_runs_for_ref(repo, ref, per_page: DEFAULT_CHECK_RUNS_PER_PAGE, page: page)
         total_count = response.total_count
         all_check_runs.concat(response.check_runs)
-        break if all_check_runs.size >= response.total_count || response.check_runs.size < CHECK_RUNS_PER_PAGE
+        break if all_check_runs.size >= response.total_count || response.check_runs.size < DEFAULT_CHECK_RUNS_PER_PAGE
 
         page += 1
-        break if page > CHECK_RUNS_MAX_PAGES
+        break if page > DEFAULT_CHECK_RUNS_MAX_PAGES
       end
 
       if all_check_runs.size < total_count
@@ -279,7 +279,7 @@ class GithubClient
           ref: ref,
           total_count: total_count,
           fetched_count: all_check_runs.size,
-          max_pages: CHECK_RUNS_MAX_PAGES
+          max_pages: DEFAULT_CHECK_RUNS_MAX_PAGES
         )
       end
 

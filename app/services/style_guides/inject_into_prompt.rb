@@ -16,7 +16,9 @@ module StyleGuides
     # separators added by `style_guide_section`. Guides are prioritized by
     # specificity (project > account > global); once the budget is exhausted,
     # remaining guides are omitted.
-    MAX_TOTAL_BYTES = 32_000
+    # Default total byte budget for injected style guide sections.
+    # Overridden by UserSetting#style_guide_max_total_bytes at runtime.
+    DEFAULT_MAX_TOTAL_BYTES = 32_000
 
     attr_reader :prompt, :project
 
@@ -43,15 +45,21 @@ module StyleGuides
     private
 
     def collect_sections_within_budget(guides)
+      budget = max_total_bytes
       total_bytes = 0
       guides.filter_map do |guide|
         section = format_guide(guide)
         next if section.nil?
-        next if total_bytes + section.bytesize > MAX_TOTAL_BYTES
+        next if total_bytes + section.bytesize > budget
 
         total_bytes += section.bytesize
         section
       end
+    end
+
+    def max_total_bytes
+      settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+      settings&.style_guide_max_total_bytes || DEFAULT_MAX_TOTAL_BYTES
     end
 
     def style_guide_section(sections)

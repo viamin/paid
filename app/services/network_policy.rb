@@ -42,7 +42,7 @@ class NetworkPolicy
     20.201.28.0/24
   ].freeze
 
-  SECRETS_PROXY_PORT = ENV.fetch("PAID_PROXY_PORT", "3000").to_i
+  SECRETS_PROXY_PORT = Rails.application.config.x.paid_proxy_port
 
   class << self
     # Returns the network name that agent containers should use.

@@ -610,6 +610,12 @@ RSpec.describe "Projects" do
         expect(project.reload.active).to be false
       end
 
+      it "allows updating auto_fix_merge_conflicts" do
+        project = create(:project, account: account, github_token: github_token, auto_fix_merge_conflicts: false)
+        patch project_path(project), params: { project: { auto_fix_merge_conflicts: true } }
+        expect(project.reload.auto_fix_merge_conflicts).to be true
+      end
+
       it "allows updating github_token to another valid token" do
         project = create(:project, account: account, github_token: github_token)
         new_token = create(:github_token, account: account, name: "New Token")

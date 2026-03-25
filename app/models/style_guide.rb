@@ -74,9 +74,9 @@ class StyleGuide < ApplicationRecord
     where(id: deduped_ids).order(specificity_order, :name)
   end
 
-  # Maximum raw content bytes to inject when compression hasn't been performed.
-  # Prevents unbounded prompt growth from large uncompressed style guides.
-  MAX_RAW_PROMPT_BYTES = 8_000
+  # Default maximum raw content bytes to inject when compression hasn't been performed.
+  # Overridden by UserSetting#style_guide_max_raw_prompt_bytes at runtime.
+  DEFAULT_MAX_RAW_PROMPT_BYTES = 8_000
 
   # Returns compressed content for injection into agent prompts.
   # Falls back to truncated raw content if compression has not been performed.
@@ -85,9 +85,11 @@ class StyleGuide < ApplicationRecord
   def content_for_prompt
     return compressed_content if compressed_content.present?
     return if raw_content.blank?
-    return raw_content if raw_content.bytesize <= MAX_RAW_PROMPT_BYTES
 
-    truncate_to_byte_limit(raw_content, MAX_RAW_PROMPT_BYTES)
+    max_bytes = resolve_max_raw_prompt_bytes
+    return raw_content if raw_content.bytesize <= max_bytes
+
+    truncate_to_byte_limit(raw_content, max_bytes)
   end
 
   private
@@ -99,6 +101,13 @@ class StyleGuide < ApplicationRecord
       truncated << char
     end
     truncated
+  end
+
+  def resolve_max_raw_prompt_bytes
+    return DEFAULT_MAX_RAW_PROMPT_BYTES unless project
+
+    settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+    settings&.style_guide_max_raw_prompt_bytes || DEFAULT_MAX_RAW_PROMPT_BYTES
   end
 
   def clear_compression

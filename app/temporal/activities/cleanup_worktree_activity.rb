@@ -11,7 +11,15 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      agent_run = AgentRun.find(agent_run_id)
+      agent_run = AgentRun.find_by(id: agent_run_id)
+      unless agent_run
+        logger.info(
+          message: "agent_execution.cleanup_worktree_skipped_missing_run",
+          agent_run_id: agent_run_id
+        )
+        return { agent_run_id: agent_run_id }
+      end
+
       track_phase(agent_run_id: agent_run_id, phase_key: "cleanup_worktree", phase_group: "cleanup", agent_run: agent_run) do
         worktree = agent_run.worktree
         worktree&.mark_cleaned! if worktree&.active?

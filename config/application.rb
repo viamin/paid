@@ -41,6 +41,10 @@ module Paid
     # Don't generate system test files.
     config.generators.system_tests = nil
 
+    # App-level configurable settings (ENV fallbacks for deployment flexibility)
+    config.x.workspace_root = ENV.fetch("WORKSPACE_ROOT", "/var/paid/workspaces")
+    config.x.paid_proxy_port = Integer(ENV.fetch("PAID_PROXY_PORT", "3000"))
+
     # Use GoodJob for background jobs across environments.
     config.active_job.queue_adapter = :good_job
   end
