@@ -10,7 +10,7 @@
 class ContainerMetricsCollectionJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
-  queue_as :default
+  queue_as :metrics
 
   COLLECTION_INTERVAL = 15.seconds
   MAX_BACKOFF_INTERVAL = 5.minutes
