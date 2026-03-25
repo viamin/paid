@@ -505,14 +505,18 @@ module Containers
     # Fixes ownership of a tmpfs mount under /home/agent so the non-root
     # agent user can write to it. Tmpfs mounts are created as root-owned.
     #
-    # @param subdir [String] The directory name under /home/agent (e.g. ".codex", ".gemini")
-    def fix_tmpfs_ownership!(subdir)
+    # @param subdir [String] The directory path under /home/agent (e.g. ".codex", ".config/opencode")
+    # @param log_key [String, nil] Override for the log event name segment. When nil, derived from
+    #   subdir by stripping the leading dot. Callers should pass an explicit log_key when subdir
+    #   contains slashes to avoid `/` in dot-delimited log event names.
+    def fix_tmpfs_ownership!(subdir, log_key: nil)
+      log_key ||= subdir.delete_prefix(".").tr("/", "_")
       container.exec(
         [ "chown", "-R", "agent:agent", "/home/agent/#{subdir}" ],
         user: "root"
       )
     rescue Docker::Error::DockerError => e
-      log_system("container.#{subdir.delete_prefix('.')}_chown_failed", error: e.message)
+      log_system("container.#{log_key}_chown_failed", error: e.message)
     end
 
     # Sets up the workspace for the container.
