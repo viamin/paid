@@ -359,6 +359,58 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
+    context "when UserSetting overrides prompt limits" do
+      let(:real_project) { create(:project) }
+      let(:github_client) { instance_double(GithubClient) }
+      let(:trusted_login) { real_project.allowed_github_usernames.first }
+      let(:real_issue) do
+        OpenStruct.new(
+          title: "Custom limits issue",
+          github_number: 77,
+          body: "Test body",
+          github_creator_login: trusted_login
+        ).tap { |i| i.define_singleton_method(:trusted?) { true } }
+      end
+
+      before do
+        create(:user_setting,
+          user: real_project.created_by,
+          max_prompt_comments: 3,
+          max_comment_length: 100)
+      end
+
+      it "truncates to fewer comments when max_prompt_comments is lowered" do
+        comments = (1..10).map do |i|
+          OpenStruct.new(user: OpenStruct.new(login: trusted_login), body: "Comment #{i}")
+        end
+        allow(github_client).to receive(:issue_comments)
+          .with(real_project.full_name, real_issue.github_number)
+          .and_return(comments)
+
+        prompt = described_class.call(issue: real_issue, project: real_project, github_client: github_client)
+
+        expect(prompt).to include("Comment 10")
+        expect(prompt).to include("Comment 8")
+        expect(prompt).not_to include("Comment 7")
+      end
+
+      it "truncates comment bodies earlier when max_comment_length is lowered" do
+        long_comment = OpenStruct.new(
+          user: OpenStruct.new(login: trusted_login),
+          body: "A" * 200
+        )
+        allow(github_client).to receive(:issue_comments)
+          .with(real_project.full_name, real_issue.github_number)
+          .and_return([ long_comment ])
+
+        prompt = described_class.call(issue: real_issue, project: real_project, github_client: github_client)
+
+        expect(prompt).to include("[truncated]")
+        expect(prompt).to include("A" * 100)
+        expect(prompt).not_to include("A" * 200)
+      end
+    end
+
     context "when github_client is not provided" do
       it "omits the conversation section" do
         prompt = described_class.call(issue: issue, project: project)
