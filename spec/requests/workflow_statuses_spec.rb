@@ -19,33 +19,36 @@ RSpec.describe "WorkflowStatuses" do
     context "when authenticated" do
       before { sign_in user }
 
-      it "renders the workflow status page" do
+      it "renders the automation health page" do
         get project_workflow_status_path(project)
         expect(response).to have_http_status(:ok)
       end
 
-      it "shows the GitHub Polling section" do
+      it "renders within a turbo_frame" do
         get project_workflow_status_path(project)
-        expect(response.body).to include("GitHub Polling")
+        expect(response.body).to include('turbo-frame id="workflow-status"')
       end
 
-      it "shows 'Not connected' when no poll workflow exists" do
-        get project_workflow_status_path(project)
-        expect(response.body).to include("Not connected")
-      end
-
-      it "shows 'Active' when poll workflow is running" do
+      it "shows 'Active' when poll workflow is running and project was recently polled" do
         create(:workflow_state,
           project: project,
           temporal_workflow_id: "github-poll-#{project.id}",
           workflow_type: "GitHubPoll",
           status: "running")
+        project.update_column(:last_polled_at, 30.seconds.ago)
 
         get project_workflow_status_path(project)
         expect(response.body).to include("Active")
+        expect(response.body).to include("monitoring this repository")
       end
 
-      it "shows workflow status when poll workflow is not running" do
+      it "shows 'Not running' when no poll workflow exists" do
+        get project_workflow_status_path(project)
+        expect(response.body).to include("Not running")
+        expect(response.body).to include("automatically restarted")
+      end
+
+      it "shows 'Not running' when poll workflow is not running" do
         create(:workflow_state,
           project: project,
           temporal_workflow_id: "github-poll-#{project.id}",
@@ -53,78 +56,65 @@ RSpec.describe "WorkflowStatuses" do
           status: "completed")
 
         get project_workflow_status_path(project)
-        expect(response.body).to include("Completed")
+        expect(response.body).to include("Not running")
       end
 
-      it "shows recent non-poll workflows" do
-        create(:workflow_state, :with_project,
-          project: project,
-          workflow_type: "AgentExecutionWorkflow",
-          status: "completed")
+      it "shows 'Paused' when project is inactive" do
+        project.update_column(:active, false)
 
         get project_workflow_status_path(project)
-        expect(response.body).to include("AgentExecutionWorkflow")
+        expect(response.body).to include("Paused")
+        expect(response.body).to include("monitoring is paused")
       end
 
-      it "excludes GitHubPoll workflows from the recent list" do
+      it "shows 'Delayed' when poll workflow is running but stale" do
         create(:workflow_state,
           project: project,
           temporal_workflow_id: "github-poll-#{project.id}",
           workflow_type: "GitHubPoll",
           status: "running")
+        # Set last_polled_at to well beyond the staleness threshold
+        project.update_column(:last_polled_at, 10.minutes.ago)
 
         get project_workflow_status_path(project)
-        # The page should not display GitHubPoll workflows in the recent list
-        expect(response.body).not_to include("GitHubPoll")
+        expect(response.body).to include("Delayed")
+        expect(response.body).to include("behind schedule")
       end
 
-      it "shows empty state when no workflows exist" do
-        get project_workflow_status_path(project)
-        expect(response.body).to include("No workflow executions yet")
-        expect(response.body).to include("Workflows are created when agent runs are triggered")
-      end
-
-      it "limits recent workflows to 10" do
-        12.times do |i|
-          create(:workflow_state,
-            project: project,
-            workflow_type: "AgentExecutionWorkflow",
-            status: "completed",
-            started_at: i.hours.ago,
-            completed_at: (i.hours.ago + 5.minutes))
-        end
-
-        get project_workflow_status_path(project)
-        expect(response.body.scan("AgentExecutionWorkflow").count).to eq(10)
-      end
-
-      it "includes Temporal UI links" do
-        get project_workflow_status_path(project)
-        expect(response.body).to include("View in Temporal UI")
-      end
-
-      it "includes auto-refresh script when workflows are running" do
+      it "shows last checked time when available" do
         create(:workflow_state,
           project: project,
-          workflow_type: "AgentExecutionWorkflow",
+          temporal_workflow_id: "github-poll-#{project.id}",
+          workflow_type: "GitHubPoll",
           status: "running")
+        project.update_column(:last_polled_at, 2.minutes.ago)
 
         get project_workflow_status_path(project)
-        expect(response.body).to include("setTimeout")
+        expect(response.body).to include("Last checked")
+        expect(response.body).to include("2 minutes ago")
       end
 
-      it "does not include auto-refresh when no workflows are running" do
+      it "shows poll interval for active projects" do
         create(:workflow_state,
           project: project,
-          workflow_type: "AgentExecutionWorkflow",
-          status: "completed",
-          completed_at: Time.current)
+          temporal_workflow_id: "github-poll-#{project.id}",
+          workflow_type: "GitHubPoll",
+          status: "running")
+        project.update_column(:last_polled_at, 30.seconds.ago)
 
         get project_workflow_status_path(project)
-        expect(response.body).not_to include("setTimeout")
+        expect(response.body).to include("Check interval")
+        expect(response.body).to include("Every #{project.poll_interval_seconds} seconds")
       end
 
-      it "does not allow viewing workflow status for other accounts' projects" do
+      it "does not show poll interval for inactive projects" do
+        project.update_column(:active, false)
+
+        get project_workflow_status_path(project)
+        expect(response.body).not_to include("Check interval")
+      end
+
+      it "does not allow viewing for other accounts' projects" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)
         other_project = create(:project, account: other_account, github_token: other_token)
@@ -133,9 +123,11 @@ RSpec.describe "WorkflowStatuses" do
         expect(response).to have_http_status(:not_found)
       end
 
-      it "renders within a turbo_frame" do
+      it "does not show raw Temporal terms" do
         get project_workflow_status_path(project)
-        expect(response.body).to include('turbo-frame id="workflow-status"')
+        expect(response.body).not_to include("Not connected")
+        expect(response.body).not_to include("View in Temporal UI")
+        expect(response.body).not_to include("GitHubPoll")
       end
     end
   end

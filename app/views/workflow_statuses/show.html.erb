@@ -1,98 +1,38 @@
 <%= turbo_frame_tag "workflow-status" do %>
-  <div class="space-y-4">
-    <div class="border rounded-lg p-4">
-      <div class="flex justify-between items-center">
-        <div>
-          <h3 class="font-semibold text-gray-900">GitHub Polling</h3>
-          <p class="text-sm text-gray-600">Monitoring for labeled issues</p>
-        </div>
-        <div class="flex items-center space-x-4">
-          <% if @poll_workflow&.running? %>
-            <span class="flex items-center text-green-600">
-              <span class="animate-pulse mr-2">&#9679;</span>
-              Active
+  <div class="border rounded-lg p-4">
+    <div class="flex items-start justify-between">
+      <div class="flex items-start space-x-3">
+        <div class="mt-0.5">
+          <% case @health[:status] %>
+          <% when :healthy %>
+            <span class="flex h-3 w-3">
+              <span class="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-green-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
             </span>
-          <% elsif @poll_workflow %>
-            <span class="text-yellow-600"><%= @poll_workflow.status.to_s.humanize %></span>
-          <% else %>
-            <span class="text-gray-500">Not connected</span>
+          <% when :stale %>
+            <span class="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+          <% when :unhealthy %>
+            <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+          <% when :inactive %>
+            <span class="relative inline-flex rounded-full h-3 w-3 bg-gray-400"></span>
           <% end %>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-gray-900"><%= @health[:label] %></p>
+          <p class="mt-1 text-sm text-gray-600"><%= @health[:description] %></p>
 
-          <a href="<%= Paid.temporal_ui_url %>/namespaces/<%= Paid.temporal_namespace %>/workflows/github-poll-<%= @project.id %>"
-             target="_blank"
-             rel="noopener noreferrer"
-             class="text-indigo-600 hover:text-indigo-900 text-sm">
-            View in Temporal UI &rarr;
-          </a>
+          <% if @project.active? %>
+            <dl class="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-500">
+              <% if @project.last_polled_at %>
+                <dt>Last checked</dt>
+                <dd class="text-gray-900"><%= time_ago_in_words(@project.last_polled_at) %> ago</dd>
+              <% end %>
+              <dt>Check interval</dt>
+              <dd class="text-gray-900">Every <%= pluralize(@project.poll_interval_seconds, "second") %></dd>
+            </dl>
+          <% end %>
         </div>
       </div>
     </div>
-
-    <% if @recent_workflows.any? %>
-      <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
-        <table class="min-w-full divide-y divide-gray-300">
-          <thead class="bg-gray-50">
-            <tr>
-              <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Type</th>
-              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
-              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Started</th>
-              <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Duration</th>
-              <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                <span class="sr-only">Details</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-200 bg-white">
-            <% @recent_workflows.each do |workflow| %>
-              <tr>
-                <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm text-gray-900 sm:pl-6"><%= workflow.workflow_type %></td>
-                <td class="whitespace-nowrap px-3 py-4 text-sm">
-                  <span class="<%= workflow_status_class(workflow.status) %> inline-flex items-center rounded-md px-2 py-1 text-xs font-medium">
-                    <%= workflow.status.to_s.humanize %>
-                  </span>
-                </td>
-                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                  <%= workflow.started_at ? time_ago_in_words(workflow.started_at) + " ago" : "-" %>
-                </td>
-                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                  <%= workflow_duration(workflow) %>
-                </td>
-                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                  <a href="<%= Paid.temporal_ui_url %>/namespaces/<%= Paid.temporal_namespace %>/workflows/<%= workflow.temporal_workflow_id %>"
-                     target="_blank"
-                     rel="noopener noreferrer"
-                     class="text-indigo-600 hover:text-indigo-900">
-                    Details &rarr;
-                  </a>
-                </td>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
-      </div>
-    <% else %>
-      <p class="text-gray-500 text-sm">No workflow executions yet. Workflows are created when agent runs are triggered for this project.</p>
-    <% end %>
   </div>
-
-  <% if @poll_workflow&.running? || @recent_workflows.any?(&:running?) %>
-    <script>
-      (function() {
-        setTimeout(function() {
-          var frame = document.getElementById("workflow-status");
-          if (frame) {
-            if (typeof frame.reload === "function") {
-              frame.reload();
-            } else if (frame.src) {
-              frame.src = frame.src;
-            } else {
-              window.location.reload();
-            }
-          } else {
-            window.location.reload();
-          }
-        }, 5000);
-      })();
-    </script>
-  <% end %>
 <% end %>
