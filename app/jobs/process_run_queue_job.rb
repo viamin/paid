@@ -155,20 +155,25 @@ class ProcessRunQueueJob < ApplicationJob
     return projects if projects.empty?
 
     project_ids = projects.map(&:id)
-    active_counts = AgentRun.where(
-      project_id: project_ids,
-      status: %w[queued pending running],
-      trigger_type: "automatic",
-      source_pull_request_number: nil
-    ).where.not(issue_id: nil).group(:project_id).count
-    last_picked_at = AgentRun.where(
+    auto_pick_scope = AgentRun.where(
       project_id: project_ids,
       trigger_type: "automatic",
       source_pull_request_number: nil
-    ).where.not(issue_id: nil).group(:project_id).maximum(:created_at)
+    ).where.not(issue_id: nil)
+
+    active_counts = auto_pick_scope.where(
+      status: %w[queued pending running]
+    ).group(:project_id).count
+    last_picked_at = auto_pick_scope.group(:project_id).maximum(:created_at)
+    last_picked_id = auto_pick_scope.group(:project_id).maximum(:id)
 
     projects.sort_by do |project|
-      [ active_counts.fetch(project.id, 0), last_picked_at.fetch(project.id, Time.at(0)), project.id ]
+      [
+        active_counts.fetch(project.id, 0),
+        last_picked_at.fetch(project.id, Time.at(0)),
+        last_picked_id.fetch(project.id, 0),
+        project.id
+      ]
     end
   end
 
