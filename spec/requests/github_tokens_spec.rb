@@ -86,6 +86,16 @@ RSpec.describe "GithubTokens" do
         expect(response.body).to include("Validation Stuck")
       end
 
+      it "shows the projects count from counter cache" do
+        token = create(:github_token, account: account)
+        create(:project, account: account, github_token: token, owner: "acme", repo: "web")
+        create(:project, account: account, github_token: token, owner: "acme", repo: "api")
+        get github_tokens_path
+        document = Nokogiri::HTML(response.body)
+        row = document.css("tr").detect { |tr| tr.text.include?(token.name) }
+        expect(row.text).to include("2")
+      end
+
       it "does not show a Deactivate button" do
         create(:github_token, account: account, name: "My Token")
         get github_tokens_path
@@ -273,6 +283,28 @@ RSpec.describe "GithubTokens" do
         token.update_column(:updated_at, 3.minutes.ago)
         get github_token_path(token)
         expect(response.body).to include("Validation Stuck")
+      end
+
+      it "shows associated projects with active badge" do
+        token = create(:github_token, account: account)
+        create(:project, account: account, github_token: token, owner: "acme", repo: "web", active: true)
+        get github_token_path(token)
+        expect(response.body).to include("acme/web")
+        expect(response.body).to include("Active")
+      end
+
+      it "shows associated projects with inactive badge" do
+        token = create(:github_token, account: account)
+        create(:project, :inactive, account: account, github_token: token, owner: "acme", repo: "api")
+        get github_token_path(token)
+        expect(response.body).to include("acme/api")
+        expect(response.body).to include("Inactive")
+      end
+
+      it "does not show projects section when no projects exist" do
+        token = create(:github_token, account: account)
+        get github_token_path(token)
+        expect(response.body).not_to include("Projects (")
       end
 
       it "shows Deactivate button for active tokens" do
