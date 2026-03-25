@@ -14,7 +14,7 @@ class AgentRun < ApplicationRecord
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
   has_many :token_usages, dependent: :destroy
   has_many :ab_test_assignments, dependent: :destroy
-  has_many :container_metrics, dependent: :destroy
+  has_many :container_metrics, dependent: :delete_all
   has_many :quality_metrics, dependent: :destroy
   has_one :worktree, dependent: :nullify
   has_one :model_selection, dependent: :destroy

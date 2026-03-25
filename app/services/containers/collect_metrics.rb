@@ -124,7 +124,8 @@ module Containers
       Rails.logger.warn(
         message: "container_manager.metrics_collection_failed",
         agent_run_id: agent_run.id,
-        error: error.message
+        error_class: error.class.name,
+        error_message: error.message
       )
     end
   end
