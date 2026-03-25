@@ -300,6 +300,19 @@ class GithubClient
     end
   end
 
+  # Fetches the most recent page of conversation comments (newest first).
+  # Use this for idempotency checks where auto-paginating all comments is
+  # unnecessary and wastes API rate limit on long-lived PRs.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @return [Array<Sawyer::Resource>] Recent comments (each has .user.login, .body, .created_at)
+  def recent_issue_comments(repo, number)
+    handle_errors do
+      client.issue_comments(repo, number, per_page: 100, page: 1, sort: :created, direction: :desc)
+    end
+  end
+
   # Fetches review threads on a pull request via GraphQL.
   #
   # @param repo [String] Repository in "owner/name" format
