@@ -26,6 +26,11 @@ class ContainerMetricsCollectionJob < ApplicationJob
     return unless agent_run&.running? && agent_run.container_id.present?
 
     result = Containers::CollectMetrics.call(agent_run: agent_run)
+
+    # Stop re-enqueuing when the container no longer exists — continued
+    # retries would just produce log noise with no chance of recovery.
+    return if result == :not_found
+
     next_failures = result ? 0 : consecutive_failures + 1
     wait = backoff_interval(next_failures)
 

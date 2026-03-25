@@ -86,6 +86,13 @@ RSpec.describe ContainerMetricsCollectionJob do
       }.not_to raise_error
     end
 
+    it "stops re-enqueuing when container is not found" do
+      allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
+      expect {
+        described_class.perform_now(agent_run.id)
+      }.not_to have_enqueued_job(described_class)
+    end
+
     it "tracks consecutive failures when Docker API fails and re-enqueues with incremented count" do
       allow(Docker::Container).to receive(:get).and_raise(Docker::Error::DockerError)
       expect {

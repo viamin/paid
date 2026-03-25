@@ -24,6 +24,7 @@ module Containers
       return unless collectible?
 
       stats = fetch_stats
+      return stats if stats == :not_found
       return unless stats
 
       metric = nil
@@ -55,7 +56,7 @@ module Containers
         agent_run_id: agent_run.id,
         container_id: agent_run.container_id
       )
-      nil
+      :not_found
     end
 
     def parse_stats(raw)
@@ -132,6 +133,7 @@ module Containers
       Rails.logger.warn(
         message: "container_manager.metrics_collection_failed",
         agent_run_id: agent_run.id,
+        container_id: agent_run.container_id,
         error_class: error.class.name,
         error_message: error.message
       )
