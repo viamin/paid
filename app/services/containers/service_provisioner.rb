@@ -42,6 +42,18 @@ module Containers
     HEALTH_CHECK_TIMEOUT = 30
     HEALTH_CHECK_INTERVAL = 1
 
+    # Default resource limits per image pattern. Keys are matched against the
+    # image name with String#include?. The first match wins.
+    # Limits mirror the agent container pattern (Memory, MemorySwap equal = no swap).
+    RESOURCE_LIMITS = {
+      "postgres" => { memory: 2 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 200 },
+      "redis"    => { memory: 1 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 100 },
+      "selenium" => { memory: 2 * 1024 * 1024 * 1024, cpu_quota: 200_000, pids_limit: 300 },
+      "chromium" => { memory: 2 * 1024 * 1024 * 1024, cpu_quota: 200_000, pids_limit: 300 }
+    }.freeze
+
+    DEFAULT_RESOURCE_LIMITS = { memory: 1 * 1024 * 1024 * 1024, cpu_quota: 100_000, pids_limit: 200 }.freeze
+
     # Provisions all service containers needed by an agent run's project.
     #
     # Records the run→container association before starting containers so
@@ -72,8 +84,12 @@ module Containers
             ensure_running!(sc)
             env_vars.merge!(generate_env_vars(sc))
           end
-        rescue Error
+        rescue Error => e
           sc.update!(status: "error", docker_container_id: nil)
+          log_error("service_provisioner.container_error",
+            name: sc.name,
+            image: sc.image,
+            error: e.message)
           raise
         end
       end
@@ -234,12 +250,19 @@ module Containers
     end
 
     def create_docker_container(service_container)
+      limits = resource_limits_for(service_container.image)
+
       Docker::Container.create(
         "Image" => service_container.image,
         "name" => service_container.name,
         "Env" => service_container.env.map { |k, v| "#{k}=#{v}" },
         "HostConfig" => {
-          "NetworkMode" => @network
+          "NetworkMode" => @network,
+          "Memory" => limits[:memory],
+          "MemorySwap" => limits[:memory],
+          "CpuPeriod" => 100_000,
+          "CpuQuota" => limits[:cpu_quota],
+          "PidsLimit" => limits[:pids_limit]
         },
         "NetworkingConfig" => {
           "EndpointsConfig" => {
@@ -255,6 +278,13 @@ module Containers
       )
     end
 
+    def resource_limits_for(image)
+      RESOURCE_LIMITS.each do |pattern, limits|
+        return limits if image.include?(pattern)
+      end
+      DEFAULT_RESOURCE_LIMITS
+    end
+
     def pull_image(image)
       Docker::Image.create("fromImage" => image)
     rescue Docker::Error::NotFoundError
@@ -267,7 +297,7 @@ module Containers
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
 
       loop do
-        if tcp_port_open?(service_container.name, service_container.port)
+        if docker_healthcheck_healthy?(service_container) || tcp_port_open?(service_container.name, service_container.port)
           log_info("service_provisioner.healthy", name: service_container.name)
           return
         end
@@ -278,6 +308,21 @@ module Containers
 
         sleep HEALTH_CHECK_INTERVAL
       end
+    end
+
+    # Checks the Docker-native HEALTHCHECK status when available.
+    # Returns true only when the container reports "healthy". Returns false
+    # for containers without a HEALTHCHECK so the caller falls back to TCP.
+    def docker_healthcheck_healthy?(service_container)
+      return false if service_container.docker_container_id.blank?
+
+      container = Docker::Container.get(service_container.docker_container_id)
+      health_status = container.json.dig("State", "Health", "Status")
+      return false if health_status.nil?
+
+      health_status == "healthy"
+    rescue Docker::Error::DockerError
+      false
     end
 
     def tcp_port_open?(host, port)
@@ -318,6 +363,10 @@ module Containers
 
     def log_warn(message, **metadata)
       Rails.logger.warn(message: message, **metadata)
+    end
+
+    def log_error(message, **metadata)
+      Rails.logger.error(message: message, **metadata)
     end
   end
 end
