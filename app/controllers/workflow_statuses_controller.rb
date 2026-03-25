@@ -12,7 +12,11 @@ class WorkflowStatusesController < ApplicationController
 
   def compute_automation_health
     unless @project.active?
-      return { status: :inactive, label: "Paused", description: "Issue monitoring is paused. Activate the project to resume." }
+      return {
+        status: :inactive,
+        label: "Paused",
+        description: "Issue monitoring is paused. Activate the project to resume."
+      }
     end
 
     poll_workflow = @project.workflow_states.find_by(
@@ -20,20 +24,34 @@ class WorkflowStatusesController < ApplicationController
     )
 
     unless poll_workflow&.running?
-      return { status: :unhealthy, label: "Not running", description: "The issue monitor is not running. It may be automatically restarted shortly if eligible." }
+      return {
+        status: :unhealthy,
+        label: "Not running",
+        description: "The issue monitor is not running. " \
+                     "It may be automatically restarted shortly if eligible."
+      }
     end
 
     if stale?
-      return { status: :stale, label: "Delayed", description: "The issue monitor appears to be behind schedule. It will be automatically recovered." }
+      return {
+        status: :stale,
+        label: "Delayed",
+        description: "The issue monitor appears to be behind schedule. " \
+                     "It will be automatically recovered."
+      }
     end
 
-    { status: :healthy, label: "Active", description: "Paid is monitoring this repository for labeled issues." }
+    {
+      status: :healthy,
+      label: "Active",
+      description: "Paid is monitoring this repository for labeled issues."
+    }
   end
 
   def stale?
     return false unless @project.poll_stale?
 
-    # Double-check after reload to avoid racey false positives if the poller
+    # Double-check after reload to avoid race-condition-related false positives if the poller
     # has just updated last_polled_at.
     @project.reload
     @project.poll_stale?
