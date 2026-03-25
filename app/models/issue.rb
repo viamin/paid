@@ -6,8 +6,10 @@ class Issue < ApplicationRecord
 
   # Constants for synthetic Dependabot alert issues. Shared with
   # Activities::ScanSecurityAlertsActivity which creates these issues.
+  GITHUB_SOURCE = "github"
   SYNTHETIC_DEPENDABOT_SOURCE = "dependabot_alert"
-  VALID_SOURCES = %w[github dependabot_alert].freeze
+  VALID_SOURCES = [ GITHUB_SOURCE, SYNTHETIC_DEPENDABOT_SOURCE ].freeze
+  SEVERITY_ORDER = %w[critical high medium low].freeze
   # Large offset so synthetic github_issue_id values never collide with real
   # GitHub issue IDs (which currently range in the low billions).
   SYNTHETIC_ISSUE_ID_OFFSET = 900_000_000_000
@@ -35,7 +37,7 @@ class Issue < ApplicationRecord
   validates :github_created_at, presence: true
   validates :github_updated_at, presence: true
   validates :paid_state, presence: true, inclusion: { in: PAID_STATES }
-  before_validation { self.source ||= "github" }
+  before_validation { self.source ||= GITHUB_SOURCE }
   validates :source, presence: true, inclusion: { in: VALID_SOURCES }
   validates :pr_review_phase, inclusion: { in: PR_REVIEW_PHASES }, if: :is_pull_request?
   validate :parent_issue_belongs_to_same_project, if: -> { parent_issue.present? }

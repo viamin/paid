@@ -13,7 +13,7 @@ module Activities
   class ScanSecurityAlertsActivity < BaseActivity
     activity_name "ScanSecurityAlerts"
 
-    SEVERITY_ORDER = %w[critical high medium low].freeze
+    SEVERITY_ORDER = Issue::SEVERITY_ORDER
 
     def execute(input)
       project_id = input[:project_id]
