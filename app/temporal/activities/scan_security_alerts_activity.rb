@@ -2,13 +2,14 @@
 
 module Activities
   # Scans a project's GitHub repository for open Dependabot security alerts
-  # and returns actionable alerts that don't already have associated agent runs.
+  # and identifies alerts that should have synthetic issues created or existing
+  # issues reopened, subject to severity and capacity limits.
   #
   # Runs after ScanPaidPrsActivity in the GitHubPollWorkflow poll cycle.
   # Phase 1 covers Dependabot alerts only; code scanning and secret scanning
   # will be added in later phases.
   #
-  # Returns a list of alerts that need agent runs to fix them.
+  # Returns a list of issues that were created or reopened to fix outstanding alerts.
   class ScanSecurityAlertsActivity < BaseActivity
     activity_name "ScanSecurityAlerts"
 
