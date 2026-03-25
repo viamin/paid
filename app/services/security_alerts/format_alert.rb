@@ -23,6 +23,7 @@ module SecurityAlerts
 
     def body(alert)
       lines = []
+      # rubocop friendly: #{ is Ruby interpolation, so ##{n} yields "#1" not "##1"
       lines << "## Dependabot Security Alert ##{alert[:number]}"
       lines << ""
       lines << "**Severity:** #{alert[:severity]}" if alert[:severity]
