@@ -15,10 +15,10 @@ module Prompts
     LANGUAGE_TEST_COMMANDS = LanguageCommands::LANGUAGE_TEST_COMMANDS
     LANGUAGE_LINT_COMMANDS = LanguageCommands::LANGUAGE_LINT_COMMANDS
 
-    # Maximum number of trusted comments to include in the prompt
-    MAX_COMMENTS = 20
-    # Maximum character length per comment body before truncation
-    MAX_COMMENT_LENGTH = 2000
+    # Default limits used when user settings are unavailable.
+    # Runtime code resolves per-user values via UserSetting.
+    DEFAULT_MAX_COMMENTS = 20
+    DEFAULT_MAX_COMMENT_LENGTH = 2000
 
     attr_reader :issue, :project, :github_client
 
@@ -82,30 +82,35 @@ module Prompts
     def self.conversation_section_for(project:, issue:, github_client: nil)
       return "" unless github_client
 
+      settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+      max_comments = settings&.max_prompt_comments || DEFAULT_MAX_COMMENTS
+      max_length = settings&.max_comment_length || DEFAULT_MAX_COMMENT_LENGTH
+
       comments = fetch_trusted_comments(
         github_client: github_client,
         repo: project.full_name,
         number: issue.github_number,
-        project: project
+        project: project,
+        max_comments: max_comments
       )
-      format_conversation_section(comments)
+      format_conversation_section(comments, max_comment_length: max_length)
     end
 
-    def self.fetch_trusted_comments(github_client:, repo:, number:, project:)
+    def self.fetch_trusted_comments(github_client:, repo:, number:, project:, max_comments: DEFAULT_MAX_COMMENTS)
       all_comments = github_client.issue_comments(repo, number)
       all_comments
         .select { |c| project.trusted_github_user?(c.user&.login) }
-        .last(MAX_COMMENTS)
+        .last(max_comments)
     rescue GithubClient::Error
       []
     end
 
-    def self.format_conversation_section(comments)
+    def self.format_conversation_section(comments, max_comment_length: DEFAULT_MAX_COMMENT_LENGTH)
       return "" unless comments.any?
 
       comment_text = comments.map do |c|
         body = c.body.to_s
-        body = "#{body[0, MAX_COMMENT_LENGTH]}… [truncated]" if body.length > MAX_COMMENT_LENGTH
+        body = "#{body[0, max_comment_length]}… [truncated]" if body.length > max_comment_length
         "- **#{c.user.login}**: #{body}"
       end.join("\n")
 

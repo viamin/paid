@@ -9,7 +9,7 @@ module Llm
   #   title = Llm::GenerateIssueTitle.call(summary: "# Auth Analysis\n\nThe auth system...")
   #   # => "Authentication system security review"
   class GenerateIssueTitle
-    MODEL = "claude-haiku-4-5-20251001"
+    DEFAULT_MODEL = "claude-haiku-4-5-20251001"
     MAX_TITLE_LENGTH = 255
     MAX_SUMMARY_INPUT = 4000
     TIMEOUT = 30
@@ -41,7 +41,7 @@ module Llm
     private
 
     def request_title
-      response = AgentHarness.send_message(prompt, provider: :claude, model: MODEL, timeout: TIMEOUT)
+      response = AgentHarness.send_message(prompt, provider: :claude, model: DEFAULT_MODEL, timeout: TIMEOUT)
       return nil unless response.success?
 
       clean_title(response.output)
