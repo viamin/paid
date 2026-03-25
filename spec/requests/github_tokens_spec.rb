@@ -93,7 +93,8 @@ RSpec.describe "GithubTokens" do
         get github_tokens_path
         document = Nokogiri::HTML(response.body)
         row = document.css("tr").detect { |tr| tr.text.include?(token.name) }
-        expect(row.text).to include("2")
+        projects_cell = row.css("td")[1]
+        expect(projects_cell.text.strip).to eq("2")
       end
 
       it "does not show a Deactivate button" do
@@ -289,16 +290,20 @@ RSpec.describe "GithubTokens" do
         token = create(:github_token, account: account)
         create(:project, account: account, github_token: token, owner: "acme", repo: "web", active: true)
         get github_token_path(token)
-        expect(response.body).to include("acme/web")
-        expect(response.body).to include("Active")
+        document = Nokogiri::HTML(response.body)
+        project_item = document.css("li").detect { |li| li.text.include?("acme/web") }
+        expect(project_item).to be_present
+        expect(project_item.text).to include("Active")
       end
 
       it "shows associated projects with inactive badge" do
         token = create(:github_token, account: account)
         create(:project, :inactive, account: account, github_token: token, owner: "acme", repo: "api")
         get github_token_path(token)
-        expect(response.body).to include("acme/api")
-        expect(response.body).to include("Inactive")
+        document = Nokogiri::HTML(response.body)
+        project_item = document.css("li").detect { |li| li.text.include?("acme/api") }
+        expect(project_item).to be_present
+        expect(project_item.text).to include("Inactive")
       end
 
       it "does not show projects section when no projects exist" do
