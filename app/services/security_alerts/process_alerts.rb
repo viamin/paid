@@ -69,21 +69,33 @@ module SecurityAlerts
 
     def apply_capacity_limit(actionable, reopen_candidates)
       max_runs = @project.max_security_fix_runs
-      sorted_new = sort_by_severity(actionable)
-      issues_created = sorted_new.first(max_runs).filter_map do |alert|
-        create_issue_for_alert(alert)
+      return [] unless max_runs.to_i.positive?
+
+      combined = actionable.map { |alert| [ :new, alert ] } +
+                 reopen_candidates.map { |issue, alert| [ :reopen, issue, alert ] }
+
+      sorted = combined.sort_by do |entry|
+        alert = entry[0] == :new ? entry[1] : entry[2]
+        SEVERITY_ORDER.index(alert[:severity]) || SEVERITY_ORDER.size
       end
 
-      remaining_slots = max_runs - issues_created.size
-      if remaining_slots.positive?
-        sorted_reopen = sort_by_severity_pair(reopen_candidates)
-        sorted_reopen.first(remaining_slots).each do |issue, alert|
+      issues_to_run = []
+
+      sorted.each do |entry|
+        break if issues_to_run.size >= max_runs
+
+        if entry[0] == :new
+          result = create_issue_for_alert(entry[1])
+          issues_to_run << result if result
+        else
+          issue = entry[1]
+          alert = entry[2]
           reopen_closed_issue(issue)
-          issues_created << { issue_id: issue.id, alert_number: alert[:number], alert_type: "dependabot" }
+          issues_to_run << { issue_id: issue.id, alert_number: alert[:number], alert_type: "dependabot" }
         end
       end
 
-      issues_created
+      issues_to_run
     end
 
     def create_issue_for_alert(alert)
@@ -141,14 +153,6 @@ module SecurityAlerts
 
     def synthetic_number(alert)
       SYNTHETIC_NUMBER_OFFSET + alert[:number]
-    end
-
-    def sort_by_severity(alerts)
-      alerts.sort_by { |a| SEVERITY_ORDER.index(a[:severity]) || SEVERITY_ORDER.size }
-    end
-
-    def sort_by_severity_pair(pairs)
-      pairs.sort_by { |_issue, alert| SEVERITY_ORDER.index(alert[:severity]) || SEVERITY_ORDER.size }
     end
 
     def trusted_login

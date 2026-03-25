@@ -302,7 +302,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       it "does not reopen closed issues that exceed max_security_fix_runs" do
         result = activity.execute(project_id: project.id)
 
-        # Only 1 slot: the new alert (#10) consumes it
+        # Only 1 slot: critical (#10) beats high (#1) regardless of new vs reopen
         expect(result[:alerts_to_fix].size).to eq(1)
         expect(result[:alerts_to_fix].first[:alert_number]).to eq(10)
 
@@ -310,6 +310,50 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         issue = project.issues.find_by(github_issue_id: id_offset + 1)
         expect(issue.github_state).to eq("closed")
         expect(issue.paid_state).to eq("completed")
+      end
+    end
+
+    context "when a reopen candidate has higher severity than a new alert" do
+      let(:alerts) do
+        [
+          { number: 20, state: "open", severity: "high", package_name: "new-pkg",
+            package_ecosystem: "npm", patched_version: "1.0.0", summary: "New high vuln",
+            html_url: "https://github.com/owner/repo/security/dependabot/20" },
+          { number: 3, state: "open", severity: "critical", package_name: "old-pkg",
+            package_ecosystem: "npm", patched_version: "2.0.0", summary: "Critical reopen vuln",
+            html_url: "https://github.com/owner/repo/security/dependabot/3" }
+        ]
+      end
+
+      before do
+        project.update!(max_security_fix_runs: 1)
+        allow(github_client).to receive(:dependabot_alerts)
+          .with(project.full_name)
+          .and_return(alerts)
+
+        # Pre-existing closed issue for alert #3 — a critical reopen candidate
+        create(:issue,
+          project: project,
+          title: "[Security] Upgrade old-pkg — dependabot-alert-3",
+          github_issue_id: id_offset + 3,
+          github_state: "closed",
+          paid_state: "completed",
+          source: source)
+      end
+
+      it "picks the critical reopen candidate over the new high alert" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:alerts_to_fix].size).to eq(1)
+        expect(result[:alerts_to_fix].first[:alert_number]).to eq(3)
+
+        # The reopen candidate should be reopened
+        issue = project.issues.find_by(github_issue_id: id_offset + 3)
+        expect(issue.github_state).to eq("open")
+        expect(issue.paid_state).to eq("new")
+
+        # The new high alert should NOT have an issue created
+        expect(project.issues.find_by(github_issue_id: id_offset + 20)).to be_nil
       end
     end
 
