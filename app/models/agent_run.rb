@@ -14,6 +14,7 @@ class AgentRun < ApplicationRecord
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
   has_many :token_usages, dependent: :destroy
   has_many :ab_test_assignments, dependent: :destroy
+  has_many :container_metrics, dependent: :destroy
   has_many :quality_metrics, dependent: :destroy
   has_one :worktree, dependent: :nullify
   has_one :model_selection, dependent: :destroy
@@ -23,6 +24,7 @@ class AgentRun < ApplicationRecord
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_finished?
+  after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -254,6 +256,16 @@ class AgentRun < ApplicationRecord
 
   def total_tokens
     tokens_input + tokens_output
+  end
+
+  def resource_summary
+    {
+      peak_cpu_percent: peak_cpu_percent,
+      peak_memory_bytes: peak_memory_bytes,
+      avg_cpu_percent: avg_cpu_percent,
+      avg_memory_bytes: avg_memory_bytes,
+      samples: container_metrics_count
+    }
   end
 
   def phase_timeline
@@ -664,6 +676,14 @@ class AgentRun < ApplicationRecord
 
   def enqueue_quality_metrics_collection
     QualityMetricsCollectionJob.perform_later(id)
+  end
+
+  def just_started_running?
+    previous_changes.key?("status") && status == "running"
+  end
+
+  def enqueue_container_metrics_collection
+    ContainerMetricsCollectionJob.perform_later(id) if container_id.present?
   end
 
   def broadcast_project_updates
