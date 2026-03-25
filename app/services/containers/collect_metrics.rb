@@ -50,6 +50,11 @@ module Containers
       raw = container.stats(stream: false)
       parse_stats(raw)
     rescue Docker::Error::NotFoundError
+      Rails.logger.warn(
+        message: "container_manager.container_not_found",
+        agent_run_id: agent_run.id,
+        container_id: agent_run.container_id
+      )
       nil
     end
 

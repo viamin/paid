@@ -93,9 +93,14 @@ RSpec.describe Containers::CollectMetrics do
       expect(described_class.call(agent_run: agent_run)).to be_nil
     end
 
-    it "handles missing container gracefully" do
+    it "handles missing container gracefully and logs a warning" do
       allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
+      allow(Rails.logger).to receive(:warn)
+
       expect(described_class.call(agent_run: agent_run)).to be_nil
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(message: "container_manager.container_not_found")
+      )
     end
   end
 end
