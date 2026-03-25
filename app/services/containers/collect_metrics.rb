@@ -26,8 +26,11 @@ module Containers
       stats = fetch_stats
       return unless stats
 
-      metric = record_metric(stats)
-      update_agent_run_summaries(metric)
+      metric = nil
+      ActiveRecord::Base.transaction do
+        metric = record_metric(stats)
+        update_agent_run_summaries(metric)
+      end
       metric
     rescue StandardError => e
       log_failure(e)
