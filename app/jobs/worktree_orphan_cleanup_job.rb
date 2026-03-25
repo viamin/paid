@@ -105,7 +105,7 @@ class WorktreeOrphanCleanupJob < ApplicationJob
 
   def worktree_repo_path(project)
     File.join(
-      WorktreeService::WORKSPACE_ROOT,
+      WorktreeService.workspace_root,
       project.account_id.to_s,
       project.id.to_s,
       "repo"

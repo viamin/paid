@@ -278,7 +278,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
-        stub_const("Activities::FetchIssuesActivity::PER_PAGE", 5)
+        stub_const("Activities::FetchIssuesActivity::DEFAULT_PER_PAGE", 5)
         allow(github_client).to receive(:issues) do |_repo, **opts|
           label = Array(opts[:labels]).first
           page = opts[:page] || 1
@@ -302,8 +302,8 @@ RSpec.describe Activities::FetchIssuesActivity do
       let(:project) { create(:project, label_mappings: { "build" => "paid-build" }) }
 
       before do
-        stub_const("Activities::FetchIssuesActivity::PER_PAGE", 5)
-        stub_const("Activities::FetchIssuesActivity::MAX_PAGES", 3)
+        stub_const("Activities::FetchIssuesActivity::DEFAULT_PER_PAGE", 5)
+        stub_const("Activities::FetchIssuesActivity::DEFAULT_MAX_PAGES", 3)
 
         allow(github_client).to receive(:issues) do |_repo, **opts|
           label = Array(opts[:labels]).first
@@ -331,7 +331,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         end
       end
 
-      it "stops after MAX_PAGES and logs a warning" do
+      it "stops after DEFAULT_MAX_PAGES and logs a warning" do
         allow(Rails.logger).to receive(:warn)
 
         result = activity.execute(project_id: project.id)
