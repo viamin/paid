@@ -434,8 +434,8 @@ RSpec.describe Activities::RunAgentActivity do
       it "uses the shorter issue goal timeout" do
         expect(container_service).to receive(:execute).with(
           anything,
-          timeout: described_class::ISSUE_GOAL_TIMEOUT,
-          idle_timeout: described_class::ISSUE_GOAL_IDLE_TIMEOUT
+          timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT,
+          idle_timeout: described_class::DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
         ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
@@ -460,7 +460,7 @@ RSpec.describe Activities::RunAgentActivity do
 
         expect(container_service).to receive(:execute).with(
           anything,
-          timeout: Rails.application.config.x.agent_timeout,
+          timeout: AGENT_TIMEOUT_DEFAULT,
           idle_timeout: nil
         ).and_return(exec_success)
 

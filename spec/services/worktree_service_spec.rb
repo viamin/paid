@@ -12,16 +12,16 @@ RSpec.describe WorktreeService do
   let(:worktrees_path) { File.join(workspace_root, project.account_id.to_s, project.id.to_s, "worktrees") }
 
   before do
-    stub_const("WorktreeService::WORKSPACE_ROOT", workspace_root)
+    allow(described_class).to receive(:workspace_root).and_return(workspace_root)
   end
 
   after do
     FileUtils.rm_rf(workspace_root)
   end
 
-  describe "constants" do
-    it "defines WORKSPACE_ROOT with a default" do
-      expect(described_class::WORKSPACE_ROOT).to be_a(String)
+  describe ".workspace_root" do
+    it "returns a string path" do
+      expect(described_class.workspace_root).to be_a(String)
     end
   end
 
