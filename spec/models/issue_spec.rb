@@ -175,6 +175,17 @@ RSpec.describe Issue do
 
         expect(pr.github_url).to eq("https://github.com/viamin/paid/pull/43")
       end
+
+      it "returns the Dependabot alert URL for synthetic Dependabot issues" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        issue = build(:issue,
+          project: project,
+          source: Issue::SYNTHETIC_DEPENDABOT_SOURCE,
+          github_issue_id: Issue::SYNTHETIC_ISSUE_ID_OFFSET + 7,
+          github_number: 100_000_007)
+
+        expect(issue.github_url).to eq("https://github.com/viamin/paid/security/dependabot/7")
+      end
     end
 
     describe "#has_label?" do

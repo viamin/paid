@@ -496,6 +496,55 @@ class GithubClient
     handle_errors { client.put(path, options) }
   end
 
+  # Fetches Dependabot alerts for a repository.
+  #
+  # Uses Octokit's auto-pagination to fetch all pages so callers get an
+  # authoritative snapshot. This prevents reconciliation from incorrectly
+  # closing synthetic issues for alerts that would have been truncated
+  # by a manual page cap.
+  #
+  # The GitHub Dependabot alerts API supports server-side severity
+  # filtering via the +severity+ query parameter (comma-separated).
+  # Pass a single severity string to filter on the server, or omit it
+  # to fetch all severities and filter locally.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param severity [String, nil] Filter by severity: "low", "medium", "high", or "critical"
+  # @param state [String] Alert state: "open", "dismissed", "fixed", or "auto_dismissed"
+  # @param per_page [Integer] Number of results per page
+  # @return [Array<Hash>] Alerts with :number, :state, :severity, :package_name,
+  #   :package_ecosystem, :patched_version, :summary, :html_url,
+  #   :created_at, :updated_at keys
+  def dependabot_alerts(repo, severity: nil, state: "open", per_page: 100)
+    handle_errors do
+      params = { state: state, per_page: per_page }
+      params[:severity] = severity if severity.present?
+
+      all_alerts = client.paginate(
+        "#{Octokit::Repository.path(repo)}/dependabot/alerts",
+        **params
+      )
+
+      Array(all_alerts).map do |alert|
+        security_vulnerability = alert.security_vulnerability
+        security_advisory = alert.security_advisory
+
+        {
+          number: alert.number,
+          state: alert.state,
+          severity: security_advisory&.severity || security_vulnerability&.severity,
+          package_name: alert.dependency&.package&.name,
+          package_ecosystem: alert.dependency&.package&.ecosystem,
+          patched_version: security_vulnerability&.first_patched_version&.identifier,
+          summary: security_advisory&.summary,
+          html_url: alert.html_url,
+          created_at: alert.created_at,
+          updated_at: alert.updated_at
+        }
+      end
+    end
+  end
+
   # Gets the remaining rate limit.
   #
   # @return [Integer] Number of requests remaining
