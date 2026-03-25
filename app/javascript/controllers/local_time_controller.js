@@ -96,7 +96,7 @@ export default class extends Controller {
 
     const absSeconds = Math.abs(diffSeconds)
     if (absSeconds < 60) {
-      return this._rtf.format(0, "minute")
+      return this._rtf.format(diffSeconds, "second")
     }
 
     const diffMinutes = Math.round(diffSeconds / 60)
