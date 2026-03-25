@@ -560,38 +560,36 @@ RSpec.describe Activities::FetchIssuesActivity do
         stub_issues_by_label("paid-build" => [ github_issue ])
       end
 
-      it "only includes comments from trusted users" do
+      it "only persists dependencies from trusted user comments" do
+        dep_100 = create(:issue, project: project, github_number: 100, github_state: "open")
+        dep_200 = create(:issue, project: project, github_number: 200, github_state: "open")
+        dep_999 = create(:issue, project: project, github_number: 999, github_state: "open")
+
         allow(github_client).to receive(:issue_comments).and_return([
           OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Depends on #100"),
           OpenStruct.new(user: OpenStruct.new(login: "attacker"), body: "Depends on #999"),
           OpenStruct.new(user: OpenStruct.new(login: "trusted-dev"), body: "Depends on #200")
         ])
 
-        allow(Issues::ParseDependencies).to receive(:call)
-
         activity.execute(project_id: project.id)
 
-        expect(Issues::ParseDependencies).to have_received(:call).with(
-          hash_including(comments: [ "Depends on #100", "Depends on #200" ])
-        )
+        synced_issue = project.issues.find_by(github_issue_id: github_issue.id)
+        dep_issue_ids = synced_issue.issue_dependencies.pluck(:depends_on_issue_id)
+        expect(dep_issue_ids).to contain_exactly(dep_100.id, dep_200.id)
+        expect(dep_issue_ids).not_to include(dep_999.id)
       end
 
-      it "skips parsing when comment fetch fails" do
+      it "skips dependency parsing when comment fetch fails" do
+        create(:issue, project: project, github_number: 50, github_state: "open")
+        github_issue.body = "Depends on #50"
+
         allow(github_client).to receive(:issue_comments)
           .and_raise(StandardError.new("API error"))
-        allow(Rails.logger).to receive(:warn)
-
-        allow(Issues::ParseDependencies).to receive(:call)
 
         activity.execute(project_id: project.id)
 
-        expect(Issues::ParseDependencies).not_to have_received(:call)
-        expect(Rails.logger).to have_received(:warn).with(
-          hash_including(
-            message: "github_sync.fetch_comments_failed",
-            github_number: issue.github_number
-          )
-        )
+        synced_issue = project.issues.find_by(github_issue_id: github_issue.id)
+        expect(synced_issue.issue_dependencies).to be_empty
       end
     end
 
