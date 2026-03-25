@@ -19,7 +19,9 @@ module Issues
   #   - "Remove dependency #101"
   #
   # Comment-declared dependencies are additive to body-declared ones.
-  # Removal patterns in comments override both body and comment additions.
+  # Comments are processed chronologically: within a single comment,
+  # removals take precedence over additions; across comments, the latest
+  # directive wins (a later "Depends on #N" can re-add a previously removed dep).
   #
   # @example
   #   Issues::ParseDependencies.call(issue: issue, comments: ["Depends on #101"])
@@ -61,10 +63,7 @@ module Issues
     end
 
     def call
-      body_numbers = issue.body.present? ? extract_dependency_numbers(issue.body) : []
-      comment_numbers, removal_numbers = extract_comment_dependencies
-
-      referenced_numbers = ((body_numbers + comment_numbers) - removal_numbers).uniq
+      referenced_numbers = resolve_dependencies.to_a
 
       current_dep_ids = issue.issue_dependencies.pluck(:depends_on_issue_id).to_set
       return if referenced_numbers.empty? && current_dep_ids.empty?
@@ -119,18 +118,28 @@ module Issues
       end
     end
 
-    def extract_comment_dependencies
-      added = Set.new
-      removed = Set.new
+    # Processes body then comments chronologically. Within a single comment,
+    # removals take precedence over additions. Across comments, a later
+    # directive can override an earlier one (e.g., re-add after removal).
+    def resolve_dependencies
+      dep_numbers = Set.new
+      dep_numbers.merge(extract_dependency_numbers(issue.body)) if issue.body.present?
 
       comments.each do |comment_body|
         next if comment_body.blank?
 
+        added = Set.new(extract_dependency_numbers(comment_body))
+        removed = Set.new
         extract_removal_numbers(comment_body, removed)
-        extract_dependency_numbers(comment_body).each { |n| added << n }
+
+        # Within a single comment, removals win over additions
+        added.subtract(removed)
+
+        dep_numbers.merge(added)
+        dep_numbers.subtract(removed)
       end
 
-      [ added.to_a, removed.to_a ]
+      dep_numbers
     end
 
     def extract_removal_numbers(text, numbers)

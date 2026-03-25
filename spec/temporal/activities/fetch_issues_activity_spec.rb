@@ -576,7 +576,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         )
       end
 
-      it "returns nil and skips parsing when comment fetch fails" do
+      it "skips parsing when comment fetch fails" do
         allow(github_client).to receive(:issue_comments)
           .and_raise(StandardError.new("API error"))
         allow(Rails.logger).to receive(:warn)
@@ -587,7 +587,10 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(Issues::ParseDependencies).not_to have_received(:call)
         expect(Rails.logger).to have_received(:warn).with(
-          hash_including(message: "github_sync.fetch_comments_failed")
+          hash_including(
+            message: "github_sync.fetch_comments_failed",
+            github_number: issue.github_number
+          )
         )
       end
     end

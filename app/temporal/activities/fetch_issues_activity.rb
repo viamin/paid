@@ -197,6 +197,7 @@ module Activities
         message: "github_sync.fetch_comments_failed",
         project_id: project.id,
         issue_id: issue.id,
+        github_number: issue.github_number,
         error_class: e.class.name,
         error: e.message
       )

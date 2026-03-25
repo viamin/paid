@@ -283,6 +283,18 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue.dependencies).to be_empty
     end
 
+    it "re-adds a dependency removed by an earlier comment" do
+      dep = create(:issue, project: project, github_number: 9010)
+      issue = create(:issue, project: project, body: "Depends on #9010")
+
+      described_class.call(issue: issue, comments: [
+        "No longer depends on #9010",
+        "Depends on #9010"
+      ])
+
+      expect(issue.dependencies).to contain_exactly(dep)
+    end
+
     it "does not affect body-only parsing when comments are empty" do
       dep = create(:issue, project: project, github_number: 9010)
       issue = create(:issue, project: project, body: "Depends on #9010")
