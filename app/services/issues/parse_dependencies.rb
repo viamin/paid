@@ -66,7 +66,7 @@ module Issues
                current_local_ids.empty? && current_external_keys.empty?
 
       new_local_ids = sync_local_deps(local_numbers, current_local_ids)
-      new_cross_refs = sync_cross_project_deps(cross_refs, current_local_ids, current_external_keys)
+      new_cross_refs = sync_cross_project_deps(cross_refs, current_local_ids | new_local_ids, current_external_keys)
 
       remove_stale_local_deps(current_local_ids, new_local_ids | new_cross_refs[:resolved_ids])
       remove_stale_external_deps(current_external_keys, new_cross_refs[:external_keys])

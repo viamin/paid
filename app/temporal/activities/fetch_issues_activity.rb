@@ -151,8 +151,7 @@ module Activities
         )
       end
 
-      synced_numbers = synced_issue_ids.any? ?
-        project.issues.where(id: synced_issue_ids).pluck(:github_number) : []
+      synced_numbers = synced_issues.filter_map { |si| si[:github_number] }
       resolve_external_dependencies(project, synced_numbers)
     end
 

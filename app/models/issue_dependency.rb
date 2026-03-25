@@ -5,6 +5,7 @@ class IssueDependency < ApplicationRecord
   belongs_to :depends_on_issue, class_name: "Issue", optional: true
 
   validates :depends_on_issue_id, uniqueness: { scope: :issue_id }, if: :local?
+  validates :depends_on_issue, presence: true, if: :local?
   validates :depends_on_owner, uniqueness: {
     scope: %i[issue_id depends_on_repo depends_on_number],
     case_sensitive: false

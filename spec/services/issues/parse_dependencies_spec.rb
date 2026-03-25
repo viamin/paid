@@ -288,6 +288,17 @@ RSpec.describe Issues::ParseDependencies do
         expect(issue.issue_dependencies.reload).to be_empty
       end
 
+      it "deduplicates when same issue is referenced as both local and cross-project" do
+        dep = create(:issue, project: project, github_number: 9050)
+        body = "Depends on #9050, #{project.owner}/#{project.repo}#9050"
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(dep)
+        expect(issue.issue_dependencies.count).to eq(1)
+      end
+
       it "skips cross-project dependencies that would create a cycle" do
         cross_issue = create(:issue, project: other_project, github_number: 9001)
         local_issue = create(:issue, project: project, github_number: 9002)
