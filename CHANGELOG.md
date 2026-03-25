@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.9.0](https://github.com/viamin/paid/compare/v0.8.0...v0.9.0) (2026-03-25)
+
+
+### Features
+
+* **agent-runs:** show PR/issue context instead of branch name in project runs table ([#469](https://github.com/viamin/paid/issues/469)) ([89e3880](https://github.com/viamin/paid/commit/89e388082281173035b928c78e128f06517cafee)), closes [#325](https://github.com/viamin/paid/issues/325)
+* **projects:** auto-fix merge conflicts by default ([#474](https://github.com/viamin/paid/issues/474)) ([09d79fb](https://github.com/viamin/paid/commit/09d79fb88fe8e571738b03606c49e1909d99ebda))
+
+
+### Bug Fixes
+
+* 331: Fix Docker resource leaks from best-effort cleanup (paid-workspace volumes + exited containers) ([#470](https://github.com/viamin/paid/issues/470)) ([d99bf53](https://github.com/viamin/paid/commit/d99bf53b35ce8dba5716bd9b48a1b8ec85920cfd))
+* 341: Replace hardcoded settings and ENV-based config with in-app configurable settings ([#471](https://github.com/viamin/paid/issues/471)) ([9714d60](https://github.com/viamin/paid/commit/9714d6086c1c36936976298280a84ba333bc0cdb))
+* 344: Show associated projects on token pages with counter cache ([#457](https://github.com/viamin/paid/issues/457)) ([eac0eba](https://github.com/viamin/paid/commit/eac0eba9ed2775933dd097facf8045ee359e22ce))
+* 429: feat(dependencies): support cross-project issue dependencies ([#473](https://github.com/viamin/paid/issues/473)) ([03b041d](https://github.com/viamin/paid/commit/03b041dd4f9fdfd2153615a0598c83131e83f289))
+* 450: Track container CPU and memory metrics for automatic resource tuning ([#472](https://github.com/viamin/paid/issues/472)) ([9283aaf](https://github.com/viamin/paid/commit/9283aafa081caf02eaea968537af89fbe8321363))
+* 461: feat(projects): show user-facing automation health instead of raw workflow status ([#466](https://github.com/viamin/paid/issues/466)) ([b683591](https://github.com/viamin/paid/commit/b6835916838c37018f329ddb25a84dd00fb2e7a4))
+* 465: Add paid-auto-merged label to PRs merged via auto-merge ([#467](https://github.com/viamin/paid/issues/467)) ([47efcdb](https://github.com/viamin/paid/commit/47efcdb74fc4d121c61f573e6c8491fd8d916436))
+* **auto-pick:** add periodic cron trigger for ProcessRunQueueJob ([83b459a](https://github.com/viamin/paid/commit/83b459aad4a089a2ec61f9b69589088f0ac0319d))
+* **auto-pick:** add periodic cron trigger for ProcessRunQueueJob ([6147cc7](https://github.com/viamin/paid/commit/6147cc758ceaab1fd21116358bf0a4ef71f6a0aa))
+* **ci:** smoke test the agent image build ([#463](https://github.com/viamin/paid/issues/463)) ([1c3e7c5](https://github.com/viamin/paid/commit/1c3e7c5ce539d9b9fb9c6604e5512958c2607c43))
+* **ci:** split agent-image into a dedicated workflow ([#477](https://github.com/viamin/paid/issues/477)) ([72592fb](https://github.com/viamin/paid/commit/72592fb5b05746f573a22d20edcd977e7cfe0870))
+* **pr-review:** break infinite review request loop when bot threads are resolved ([#478](https://github.com/viamin/paid/issues/478)) ([4f407ed](https://github.com/viamin/paid/commit/4f407ed945181bbc7182f9974dae3cb5c1eb7695))
+* resolve merge conflict with main in fetch_issues_activity ([ffb28bd](https://github.com/viamin/paid/commit/ffb28bdcf5d493c4a0001a3996e81dc28568f931))
+* **security:** address code review feedback ([886a9f0](https://github.com/viamin/paid/commit/886a9f0e719d7e564efa7f21c503938d1baa29a4))
+* **security:** address review feedback on temporal coupling, timestamps, and class size ([c1d4ae7](https://github.com/viamin/paid/commit/c1d4ae780f670f5b9ec146611059260e2c279974))
+* **security:** address review feedback on trusted login and alert timestamps ([f4cec40](https://github.com/viamin/paid/commit/f4cec40407156b05046d0365cbd7a62797df6c1f))
+* **security:** unify severity prioritization across new and reopen candidates ([3482fb9](https://github.com/viamin/paid/commit/3482fb988f8321799f8b32f491ccaf4120838090))
+* **security:** use alert timestamps for github_updated_at instead of Time.current ([098d284](https://github.com/viamin/paid/commit/098d2843bcca9898a074eb6fac3360ca84f396ec))
+* **security:** use Issue constants instead of hardcoded source strings in auto_pick_spec ([13fb9f6](https://github.com/viamin/paid/commit/13fb9f6e504526ebd3b885ff76d36c2fc7c0dc1c))
+
 ## [0.8.0](https://github.com/viamin/paid/compare/v0.7.0...v0.8.0) (2026-03-25)
 
 
