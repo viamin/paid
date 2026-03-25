@@ -14,9 +14,10 @@ module Issues
   #   - "Blocked by viamin/other-project#42"
   #   - Checklist items: "- [ ] #101"
   #
-  # Comments support the same addition patterns plus removal patterns:
+  # Comments support the same addition patterns plus removal patterns.
+  # Removals work for both local (#N) and cross-repo (owner/repo#N) refs:
   #   - "No longer depends on #101"
-  #   - "No longer blocked by #101"
+  #   - "No longer blocked by viamin/agent-harness#31"
   #   - "Unblocked by #101"
   #   - "Remove dependency #101"
   #
@@ -56,7 +57,7 @@ module Issues
         |remove\s+dependenc(?:y|ies)\b(?:\s+on\b)?      # "remove dependency [on]"
       )
       :?\s*                                             # Optional colon
-      ((?:\#\d+[\s,]*)+)                                # One or more #N references
+      ((?:(?:[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)?\#\d+[\s,]*)+) # local or cross-repo refs
     /xi
 
     # Matches cross-repo references like owner/repo#123
@@ -119,28 +120,34 @@ module Issues
         added_cross = Set.new
         extract_body_refs(comment_body, added_local, added_cross)
 
-        removed = Set.new
-        extract_removal_numbers(comment_body, removed)
+        removed_local = Set.new
+        removed_cross = Set.new
+        extract_removal_refs(comment_body, removed_local, removed_cross)
 
         # Within a single comment, removals win over additions.
-        # Removals only apply to local #N refs; cross-project removal
-        # patterns (owner/repo#N) are not supported by INLINE_REMOVAL_PATTERN.
-        added_local.subtract(removed)
+        added_local.subtract(removed_local)
+        added_cross.subtract(removed_cross)
 
         local_numbers.merge(added_local)
         cross_refs.merge(added_cross)
-        local_numbers.subtract(removed)
+        local_numbers.subtract(removed_local)
+        cross_refs.subtract(removed_cross)
       end
 
       [ local_numbers.to_a, cross_refs.to_a ]
     end
 
+    # Extracts both local (#N) and cross-repo (owner/repo#N) removal refs.
     # INLINE_REMOVAL_PATTERN has a single capture group, so scan yields
     # one-element arrays. Parenthesized destructuring |(refs_str)| extracts
     # the captured String directly — without it, refs_str would be an Array.
-    def extract_removal_numbers(text, numbers)
+    def extract_removal_refs(text, local_numbers, cross_refs)
       text.scan(INLINE_REMOVAL_PATTERN) do |(refs_str)|
-        refs_str.scan(ISSUE_REF_PATTERN) { |(num)| numbers << num.to_i }
+        refs_str.scan(CROSS_REPO_REF_PATTERN) do |owner, repo, number|
+          cross_refs << [ owner.downcase, repo.downcase, number.to_i ]
+        end
+        stripped = refs_str.gsub(CROSS_REPO_REF_PATTERN, "")
+        stripped.scan(ISSUE_REF_PATTERN) { |(num)| local_numbers << num.to_i }
       end
     end
 
@@ -163,9 +170,11 @@ module Issues
     end
 
     # Extracts both cross-repo and local issue refs from a string of refs.
+    # Cross-repo tuples are normalized to lowercase for consistent Set comparison
+    # (e.g., removal of "Owner/Repo#1" matches addition of "owner/repo#1").
     def extract_all_refs(text, local_numbers, cross_refs)
       text.scan(CROSS_REPO_REF_PATTERN) do |owner, repo, number|
-        cross_refs << [ owner, repo, number.to_i ]
+        cross_refs << [ owner.downcase, repo.downcase, number.to_i ]
       end
 
       stripped = text.gsub(CROSS_REPO_REF_PATTERN, "")
