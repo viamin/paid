@@ -117,7 +117,7 @@ class ProjectsController < ApplicationController
 
     respond_to do |format|
       format.turbo_stream do
-        partial = partials.fetch(params[:context]) { partials.values.first }
+        partial = partials.fetch(params[:context], partials.fetch("index"))
         render turbo_stream: turbo_stream.replace(
           ActionView::RecordIdentifier.dom_id(@project, :"#{feature}_toggle"),
           partial: partial,
