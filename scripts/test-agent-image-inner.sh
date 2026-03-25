@@ -58,11 +58,11 @@ check_tool "   ast-grep" ast-grep --version
 check_tool "   scc" scc --version
 
 echo ""
-echo "2. Agent CLIs (allow auth-gated version failures):"
-check_tool "   Claude Code CLI" claude --version allow_failure
-check_tool "   OpenAI Codex CLI" codex --version allow_failure
-check_tool "   Gemini CLI" gemini --version allow_failure
-check_tool "   Kilocode CLI" kilo --version allow_failure
+echo "2. Agent CLIs (help should succeed without auth):"
+check_tool "   Claude Code CLI" claude --help
+check_tool "   OpenAI Codex CLI" codex --help
+check_tool "   Gemini CLI" gemini --help
+check_tool "   Kilocode CLI" kilo --help
 
 echo ""
 echo "3. User check (should be agent, not root):"

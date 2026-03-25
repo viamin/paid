@@ -25,8 +25,8 @@ if ! docker image inspect "${FULL_IMAGE}" > /dev/null 2>&1; then
 fi
 
 # Run tests inside the container.
-# The inner script is mounted read-only so it can be linted by shellcheck
-# independently (review feedback: avoid single-quoted bash -c strings).
+# The inner script is mounted read-only so it can be linted independently by shellcheck
+# and to avoid complex quoting/escaping issues that arise with large bash -c strings.
 docker run --rm \
     -v "${SCRIPT_DIR}/test-agent-image-inner.sh:/tmp/test.sh:ro" \
     "${FULL_IMAGE}" bash /tmp/test.sh
