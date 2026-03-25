@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_25_074842) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_25_080816) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -119,10 +119,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_074842) do
   create_table "agent_runs", force: :cascade do |t|
     t.string "agent_type", limit: 50, null: false
     t.string "auth_provider", limit: 50
+    t.float "avg_cpu_percent"
+    t.decimal "avg_memory_bytes", precision: 20, scale: 4
     t.string "base_commit_sha", limit: 40
     t.string "branch_name", limit: 255
     t.datetime "completed_at"
     t.string "container_id", limit: 128
+    t.integer "container_metrics_count", default: 0, null: false
     t.integer "cost_cents", default: 0
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
@@ -134,6 +137,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_074842) do
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.bigint "issue_id"
     t.integer "iterations", default: 0
+    t.float "peak_cpu_percent"
+    t.bigint "peak_memory_bytes"
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
     t.integer "provider_switches", default: 0, null: false
@@ -168,6 +173,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_074842) do
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
+  end
+
+  create_table "container_metrics", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.string "container_id", limit: 128, null: false
+    t.float "cpu_percent", default: 0.0, null: false
+    t.datetime "created_at", null: false
+    t.bigint "memory_bytes", default: 0, null: false
+    t.bigint "memory_limit_bytes", default: 0, null: false
+    t.float "memory_percent", default: 0.0, null: false
+    t.integer "pids_count"
+    t.datetime "recorded_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "recorded_at"], name: "index_container_metrics_on_run_and_recorded"
+    t.index ["container_id"], name: "index_container_metrics_on_container_id"
+    t.index ["recorded_at"], name: "index_container_metrics_on_recorded_at"
   end
 
   create_table "cost_budgets", force: :cascade do |t|
@@ -674,6 +695,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_074842) do
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
+  add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
