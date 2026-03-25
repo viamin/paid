@@ -1249,6 +1249,24 @@ RSpec.describe GithubClient do
       end
     end
 
+    context "when severity filter is provided" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
+          .with(query: hash_including("state" => "open", "severity" => "critical"))
+          .to_return(
+            status: 200,
+            body: [].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "passes severity to the API" do
+        result = client.dependabot_alerts(repo, severity: "critical")
+
+        expect(result).to eq([])
+      end
+    end
+
     context "when no alerts exist" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
