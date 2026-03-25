@@ -27,6 +27,11 @@ module Issues
   # The final dependency set is NOT simply (body + comments) - removals;
   # it is the result of replaying all directives in order.
   #
+  # @param issue [Issue] the issue to parse dependencies for
+  # @param adjacency [Hash] optional pre-computed adjacency map for cycle detection
+  # @param comments [Array<String>] comment bodies, pre-sorted oldest-first.
+  #   Order matters because directives are replayed chronologically.
+  #
   # @example
   #   Issues::ParseDependencies.call(issue: issue, comments: ["Depends on #101"])
   class ParseDependencies
@@ -122,9 +127,10 @@ module Issues
       end
     end
 
-    # Processes body then comments chronologically. Within a single comment,
+    # Processes body then comments in the order given. Within a single comment,
     # removals take precedence over additions. Across comments, a later
     # directive can override an earlier one (e.g., re-add after removal).
+    # Callers must supply comments sorted oldest-first for correct semantics.
     def resolve_dependencies
       dep_numbers = Set.new
       dep_numbers.merge(extract_dependency_numbers(issue.body)) if issue.body.present?
