@@ -76,7 +76,7 @@
                     <% if version.change_notes.present? %>
                       <span class="ml-2 text-sm text-gray-500"><%= version.change_notes %></span>
                     <% end %>
-                    <div class="mt-0.5 text-xs text-gray-400"><%= version.created_at.strftime("%b %d, %Y %H:%M") %></div>
+                    <div class="mt-0.5 text-xs text-gray-400"><%= local_time(version.created_at, format: :short) %></div>
                   </div>
                 </label>
               <% end %>

@@ -58,6 +58,14 @@ module ApplicationHelper
     "error" => { bg: "bg-red-100", text: "text-red-700", label: "Error" }
   }.freeze
 
+  LOCAL_TIME_FORMATS = {
+    long: "%B %d, %Y at %l:%M %p UTC",
+    short: "%b %d, %Y %H:%M UTC",
+    date: "%b %d, %Y",
+    time: "%H:%M:%S UTC",
+    relative: nil
+  }.freeze
+
   def service_container_status_badge(status)
     styles = SERVICE_CONTAINER_STATUS_STYLES[status] || SERVICE_CONTAINER_STATUS_STYLES["stopped"]
     tag.span(
@@ -87,6 +95,24 @@ module ApplicationHelper
     else
       { type: :placeholder }
     end
+  end
+
+  # Renders a <time> element that displays in the user's local timezone via Stimulus.
+  # Falls back to a UTC-formatted string for non-JS clients.
+  #
+  # Formats: :long, :short, :date, :time, :relative
+  def local_time(time, format: :long)
+    return if time.nil?
+
+    utc = time.utc
+    format_key = format || :long
+    fallback = local_time_fallback(utc, format_key)
+
+    tag.time(
+      fallback,
+      datetime: utc.iso8601,
+      data: { controller: "local-time", local_time_format_value: format_key.to_s }
+    )
   end
 
   RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
@@ -138,6 +164,19 @@ module ApplicationHelper
       { type: :text, label: "PR ##{run.source_pull_request_number}", classes: "text-gray-700" }
     else
       { type: :placeholder }
+    end
+  end
+
+  def local_time_fallback(utc, format)
+    format_key = format.to_sym
+    raise ArgumentError, "Unknown local_time format: #{format_key.inspect}" unless LOCAL_TIME_FORMATS.key?(format_key)
+
+    fmt = LOCAL_TIME_FORMATS[format_key]
+    if fmt
+      utc.strftime(fmt).squish
+    else
+      distance = time_ago_in_words(utc)
+      utc > Time.current ? "in #{distance}" : "#{distance} ago"
     end
   end
 

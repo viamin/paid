@@ -150,7 +150,7 @@
                   <%= version.created_by_user&.email || version.created_by || "-" %>
                 </td>
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                  <%= version.created_at.strftime("%b %d, %Y %H:%M") %>
+                  <%= local_time(version.created_at, format: :short) %>
                 </td>
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                   <%= version.usage_count %> runs
