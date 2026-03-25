@@ -18,8 +18,8 @@ class AddSourceToIssues < ActiveRecord::Migration[8.1]
   end
 
   def down
-    remove_index :issues, name: "idx_issues_on_project_source_state" if index_exists?(:issues, name: "idx_issues_on_project_source_state")
-    remove_index :issues, :source if index_exists?(:issues, :source)
+    remove_index :issues, name: "idx_issues_on_project_source_state", algorithm: :concurrently, if_exists: true
+    remove_index :issues, :source, algorithm: :concurrently, if_exists: true
     remove_column :issues, :source if column_exists?(:issues, :source)
   end
 end
