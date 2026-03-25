@@ -1,0 +1,23 @@
+0 verbose cli /usr/local/bin/node /usr/local/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@10.9.2
+2 info using node@v22.13.0
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/workspace/.npmrc
+5 silly config load:file:/usr/local/etc/npmrc
+6 verbose title npm exec eslint app/javascript/controllers/tooltip_controller.js
+7 verbose argv "exec" "--" "eslint" "app/javascript/controllers/tooltip_controller.js"
+8 verbose logfile logs-max:10 dir:/workspace/.npm/_logs/2026-03-25T07_24_15_463Z-
+9 verbose logfile /workspace/.npm/_logs/2026-03-25T07_24_15_463Z-debug-0.log
+10 silly logfile done cleaning log files
+11 http fetch GET 200 https://registry.npmjs.org/npm 145ms
+12 verbose cwd /workspace
+13 verbose os Linux 6.17.8-orbstack-00308-g8f9c941121b1
+14 verbose node v22.13.0
+15 verbose npm  v10.9.2
+16 notice
+16 notice New major version of npm available! 10.9.2 -> 11.12.0
+16 notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.0
+16 notice To update run: npm install -g npm@11.12.0
+16 notice  { force: true, [Symbol(proc-log.meta)]: true }
+17 verbose exit 0
+18 info ok
