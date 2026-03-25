@@ -93,6 +93,7 @@ config.status
 /.yarn-cache/
 
 # PostgreSQL installation directory (created by bin/setup on some hosts)
+/.pg-bld/
 /.pg-install/
 /.pg-local/
 /.pg-src/
