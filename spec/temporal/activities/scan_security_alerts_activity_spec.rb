@@ -182,6 +182,51 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
     end
 
+    context "when an existing open issue has stale alert metadata" do
+      let(:alerts) do
+        [
+          {
+            number: 1,
+            state: "open",
+            severity: "critical",
+            package_name: "minimatch",
+            package_ecosystem: "npm",
+            patched_version: "5.0.0",
+            summary: "Updated advisory for minimatch",
+            html_url: "https://github.com/owner/repo/security/dependabot/1"
+          }
+        ]
+      end
+
+      let!(:existing_issue) do
+        create(:issue,
+          project: project,
+          title: "[Security] Upgrade minimatch to 3.0.5 (high) — dependabot-alert-1",
+          body: "old body",
+          github_issue_id: id_offset + 1,
+          github_state: "open",
+          source: source)
+      end
+
+      before do
+        allow(github_client).to receive(:dependabot_alerts)
+          .with(project.full_name)
+          .and_return(alerts)
+      end
+
+      it "updates title, body, and github_updated_at without triggering a new agent run" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:alerts_to_fix]).to eq([])
+
+        existing_issue.reload
+        expect(existing_issue.title).to include("5.0.0")
+        expect(existing_issue.title).to include("critical")
+        expect(existing_issue.body).to include("Updated advisory for minimatch")
+        expect(existing_issue.github_updated_at).to be_within(5.seconds).of(Time.current)
+      end
+    end
+
     context "when a previously closed synthetic issue has its alert re-opened" do
       let(:alerts) do
         [
