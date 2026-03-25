@@ -57,13 +57,14 @@ module Containers
       cpu = parse_cpu(raw)
       memory = parse_memory(raw)
       pids = raw.dig("pids_stats", "current")
+      pids_count = pids.nil? ? nil : pids.to_i
 
       {
         cpu_percent: cpu,
         memory_bytes: memory[:usage],
         memory_limit_bytes: memory[:limit],
         memory_percent: memory[:percent],
-        pids_count: pids.to_i
+        pids_count: pids_count
       }
     end
 
@@ -101,14 +102,12 @@ module Containers
     end
 
     def update_agent_run_summaries
-      metrics = agent_run.container_metrics
-
-      agent_run.update_columns(
-        peak_cpu_percent: metrics.maximum(:cpu_percent),
-        peak_memory_bytes: metrics.maximum(:memory_bytes),
-        avg_cpu_percent: metrics.average(:cpu_percent)&.round(2),
-        avg_memory_bytes: metrics.average(:memory_bytes)&.to_i
-      )
+      AgentRun.where(id: agent_run.id).update_all(<<~SQL.squish)
+        peak_cpu_percent = GREATEST(COALESCE(peak_cpu_percent, 0), (SELECT MAX(cpu_percent) FROM container_metrics WHERE agent_run_id = agent_runs.id)),
+        peak_memory_bytes = GREATEST(COALESCE(peak_memory_bytes, 0), (SELECT MAX(memory_bytes) FROM container_metrics WHERE agent_run_id = agent_runs.id)),
+        avg_cpu_percent = (SELECT ROUND(AVG(cpu_percent)::numeric, 2) FROM container_metrics WHERE agent_run_id = agent_runs.id),
+        avg_memory_bytes = (SELECT AVG(memory_bytes)::bigint FROM container_metrics WHERE agent_run_id = agent_runs.id)
+      SQL
     end
 
     def log_failure(error)

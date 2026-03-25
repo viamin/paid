@@ -62,6 +62,12 @@ RSpec.describe Containers::CollectMetrics do
       expect(ContainerMetric.last.pids_count).to eq(42)
     end
 
+    it "stores nil pids_count when pids_stats.current is absent" do
+      docker_stats["pids_stats"] = {}
+      described_class.call(agent_run: agent_run)
+      expect(ContainerMetric.last.pids_count).to be_nil
+    end
+
     it "updates agent run summary fields" do
       described_class.call(agent_run: agent_run)
       agent_run.reload
