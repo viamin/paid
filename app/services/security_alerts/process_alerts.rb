@@ -8,7 +8,7 @@ module SecurityAlerts
   # Returns an array of hashes ({ issue_id:, alert_number:, alert_type: })
   # representing issues that should trigger agent runs.
   class ProcessAlerts
-    SEVERITY_ORDER = %w[critical high medium low].freeze
+    SEVERITY_ORDER = Issue::SEVERITY_ORDER
     SYNTHETIC_SOURCE = Issue::SYNTHETIC_DEPENDABOT_SOURCE
     SYNTHETIC_ISSUE_ID_OFFSET = Issue::SYNTHETIC_ISSUE_ID_OFFSET
     SYNTHETIC_NUMBER_OFFSET = 100_000_000

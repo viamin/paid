@@ -29,7 +29,7 @@ class Project < ApplicationRecord
   validates :merge_method, inclusion: { in: MERGE_METHODS }
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validates :max_security_fix_runs, numericality: { greater_than_or_equal_to: 0 }
-  validates :security_severity_threshold, inclusion: { in: %w[critical high medium low] }
+  validates :security_severity_threshold, inclusion: { in: Issue::SEVERITY_ORDER }
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
