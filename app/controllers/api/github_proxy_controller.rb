@@ -138,9 +138,11 @@ module Api
       body = parse_response_body(response.body)
       return unless body.is_a?(Hash) && body["id"].present?
       return if @agent_run.review_posted_at.present?
-      return unless body["html_url"].present?
 
-      @agent_run.update!(review_posted_at: Time.current, review_url: body["html_url"])
+      @agent_run.update!(
+        review_posted_at: Time.current,
+        review_url: body["html_url"].presence
+      )
 
       log_info("github_proxy.review_created",
         review_id: body["id"],

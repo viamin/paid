@@ -233,7 +233,7 @@ RSpec.describe "Api::GithubProxy" do
       expect(agent_run.review_url).to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-original")
     end
 
-    it "does not track review_posted_at when html_url is missing from response" do
+    it "sets review_posted_at but not review_url when html_url is missing from response" do
       no_url_response = { id: 999, body: "Review summary", state: "commented" }.to_json
       stub_request(:post, target_url)
         .to_return(status: 200, body: no_url_response, headers: { "Content-Type" => "application/json" })
@@ -243,7 +243,7 @@ RSpec.describe "Api::GithubProxy" do
         headers: valid_headers
 
       agent_run.reload
-      expect(agent_run.review_posted_at).to be_nil
+      expect(agent_run.review_posted_at).to be_present
       expect(agent_run.review_url).to be_nil
     end
 
