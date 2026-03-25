@@ -7,16 +7,14 @@
 
 FAILURES=0
 
-# check_tool verifies a CLI is installed and (optionally) runs a version check.
+# check_tool verifies a CLI is installed and runs a version/help check.
 #   $1 - human-readable label
 #   $2 - command name
-#   $3 - version flag (default: --version)
-#   $4 - "allow_failure" to tolerate a non-zero version exit (e.g. CLIs that require auth)
+#   $3 - version/help flag (default: --version)
 check_tool() {
     local label="$1"
     local command_name="$2"
     local version_args="${3:---version}"
-    local allow_failure="${4:-}"
 
     echo "${label}:"
     if ! command -v "${command_name}" >/dev/null 2>&1; then
@@ -35,12 +33,8 @@ check_tool() {
     echo "   ${first_line}"
 
     if [ "$rc" -ne 0 ]; then
-        if [ "${allow_failure}" = "allow_failure" ]; then
-            echo "   (version check exited non-zero — allowed for CLIs that require auth)"
-        else
-            echo "   ERROR: ${command_name} ${version_args} failed (exit code ${rc})"
-            FAILURES=$((FAILURES + 1))
-        fi
+        echo "   ERROR: ${command_name} ${version_args} failed (exit code ${rc})"
+        FAILURES=$((FAILURES + 1))
     fi
 }
 
