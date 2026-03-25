@@ -150,11 +150,55 @@ module ApplicationHelper
     )
   end
 
+  # Renders the context cell for an agent run, including tooltip support.
+  # Desktop: native title tooltip on hover. Mobile: tappable info icon.
+  def agent_run_context_display(run)
+    context = agent_run_context(run)
+    inner = case context[:type]
+    when :link
+      link_to(context[:label], context[:url], target: "_blank", rel: "noopener noreferrer",
+        class: "text-indigo-600 hover:text-indigo-900", title: context[:tooltip])
+    when :text
+      tag.span(context[:label], class: context[:classes], title: context[:tooltip])
+    when :pending
+      tag.span("Creating issue\u2026".html_safe, class: "italic text-gray-500")
+    else
+      tag.span("-", class: "text-gray-400")
+    end
+
+    if context[:tooltip].present?
+      tag.span(class: "relative inline-flex items-center gap-1", data: { controller: "tooltip" }) do
+        safe_join([
+          inner,
+          tag.button(
+            tag.svg(
+              tag.path(d: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"),
+              class: "h-4 w-4", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor",
+              "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round"
+            ),
+            type: "button",
+            class: "sm:hidden text-gray-400 hover:text-gray-600",
+            data: { action: "click->tooltip#toggle" }
+          ),
+          tag.span(
+            context[:tooltip],
+            class: "hidden absolute left-0 top-full z-10 mt-1 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg",
+            data: { tooltip_target: "content" }
+          )
+        ])
+      end
+    else
+      inner
+    end
+  end
+
   private
 
   def create_pr_context(run)
     if run.issue.present?
-      github_link_or_text("##{run.issue.github_number}", "Issue ##{run.issue.github_number}", run.issue.github_url)
+      prefix = run.issue.is_pull_request? ? "PR" : "Issue"
+      label = "#{prefix} ##{run.issue.github_number}"
+      github_link_or_text(label, label, run.issue.github_url, tooltip: run.issue.title)
     elsif run.source_pull_request_number.present?
       { type: :text, label: "PR ##{run.source_pull_request_number}", classes: "text-gray-700" }
     elsif run.pull_request_number.present?
@@ -196,11 +240,11 @@ module ApplicationHelper
     end
   end
 
-  def github_link_or_text(link_label, text_label, url)
+  def github_link_or_text(link_label, text_label, url, tooltip: nil)
     if safe_github_url?(url)
-      { type: :link, label: link_label, url: url }
+      { type: :link, label: link_label, url: url, tooltip: tooltip }
     else
-      { type: :text, label: text_label, classes: "text-gray-700" }
+      { type: :text, label: text_label, classes: "text-gray-700", tooltip: tooltip }
     end
   end
 end
