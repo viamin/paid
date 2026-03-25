@@ -60,7 +60,7 @@ module Activities
       end
 
       logger.info(
-        message: "security_scanner.scan_complete",
+        message: "github_sync.security_scan_complete",
         project_id: project_id,
         alerts_fetched: all_alerts&.size,
         alerts_fetch_skipped: all_alerts.nil?,
@@ -97,7 +97,7 @@ module Activities
       client.dependabot_alerts(project.full_name)
     rescue GithubClient::NotFoundError => e
       logger.warn(
-        message: "security_scanner.fetch_failed",
+        message: "github_sync.security_fetch_failed",
         project_id: project.id,
         error: e.message
       )
@@ -108,7 +108,7 @@ module Activities
       # codes, re-raise so Temporal can apply its retry policy.
       if e.status == 403
         logger.warn(
-          message: "security_scanner.fetch_failed",
+          message: "github_sync.security_fetch_failed",
           project_id: project.id,
           error: e.message,
           status: e.status
@@ -184,7 +184,7 @@ module Activities
       # existence check. Look up the existing issue and re-open if needed
       # so the agent run is still triggered rather than silently skipped.
       logger.warn(
-        message: "security_scanner.issue_creation_race",
+        message: "github_sync.security_issue_creation_race",
         project_id: project.id,
         alert_number: alert[:number],
         error: e.message
@@ -198,7 +198,7 @@ module Activities
       { issue_id: existing.id, alert_number: alert[:number], alert_type: "dependabot" }
     rescue ActiveRecord::RecordInvalid => e
       logger.warn(
-        message: "security_scanner.issue_creation_failed",
+        message: "github_sync.security_issue_creation_failed",
         project_id: project.id,
         alert_number: alert[:number],
         error: e.message
@@ -257,7 +257,7 @@ module Activities
         active_run_count = active_runs.count
         if active_run_count.positive?
           logger.warn(
-            message: "security_scanner.active_runs_for_resolved_alerts",
+            message: "github_sync.security_active_runs_for_resolved_alerts",
             project_id: project.id,
             active_run_count: active_run_count
           )
@@ -273,7 +273,7 @@ module Activities
         # update_all bypasses callbacks, so manually broadcast UI updates.
         project.broadcast_issues_update
         logger.info(
-          message: "security_scanner.reconciled_resolved_alerts",
+          message: "github_sync.security_reconciled_resolved_alerts",
           project_id: project.id,
           closed_count: count
         )
