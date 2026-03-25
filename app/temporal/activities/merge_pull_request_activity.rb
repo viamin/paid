@@ -10,6 +10,7 @@ module Activities
     activity_name "MergePullRequest"
 
     EXPECTED_MERGE_STATUSES = [ 405, 409, 422 ].freeze
+    PAID_AUTO_MERGED_LABEL = "paid-auto-merged"
 
     def execute(input)
       project = Project.find(input[:project_id])
@@ -39,12 +40,26 @@ module Activities
         attempt_merge(client, project, pr_number)
       end
 
-      issue.update!(pr_review_phase: "merged") if merged
+      if merged
+        issue.update!(pr_review_phase: "merged")
+        add_auto_merged_label(client, project, pr_number)
+      end
 
       { merged: merged, pr_number: pr_number }
     end
 
     private
+
+    def add_auto_merged_label(client, project, pr_number)
+      client.add_labels_to_issue(project.full_name, pr_number, [ PAID_AUTO_MERGED_LABEL ])
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_review.add_auto_merged_label_failed",
+        project_id: project.id,
+        pr_number: pr_number,
+        error: e.message
+      )
+    end
 
     def attempt_merge(client, project, pr_number)
       client.merge_pull_request(
