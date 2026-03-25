@@ -513,7 +513,8 @@ class GithubClient
   # @param state [String] Alert state: "open", "dismissed", "fixed", or "auto_dismissed"
   # @param per_page [Integer] Number of results per page
   # @return [Array<Hash>] Alerts with :number, :state, :severity, :package_name,
-  #   :package_ecosystem, :patched_version, :summary, :html_url keys
+  #   :package_ecosystem, :patched_version, :summary, :html_url,
+  #   :created_at, :updated_at keys
   def dependabot_alerts(repo, severity: nil, state: "open", per_page: 100)
     handle_errors do
       params = { state: state, per_page: per_page }
@@ -536,7 +537,9 @@ class GithubClient
           package_ecosystem: alert.dependency&.package&.ecosystem,
           patched_version: security_vulnerability&.first_patched_version&.identifier,
           summary: security_advisory&.summary,
-          html_url: alert.html_url
+          html_url: alert.html_url,
+          created_at: alert.created_at,
+          updated_at: alert.updated_at
         }
       end
     end

@@ -118,6 +118,22 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(issue.trusted?).to be true
       end
 
+      it "uses alert timestamps when present instead of Time.current" do
+        alert_time = Time.zone.parse("2026-03-20T10:00:00Z")
+        alerts_with_timestamps = [
+          alerts.first.merge(created_at: "2026-03-20T10:00:00Z", updated_at: "2026-03-20T12:00:00Z")
+        ]
+        allow(github_client).to receive(:dependabot_alerts)
+          .with(project.full_name)
+          .and_return(alerts_with_timestamps)
+
+        activity.execute(project_id: project.id)
+
+        issue = project.issues.find_by(source: source, github_issue_id: id_offset + 1)
+        expect(issue.github_created_at).to be_within(1.second).of(alert_time)
+        expect(issue.github_updated_at).to be_within(1.second).of(Time.zone.parse("2026-03-20T12:00:00Z"))
+      end
+
       it "assigns deterministic github_numbers derived from alert numbers" do
         activity.execute(project_id: project.id)
 
