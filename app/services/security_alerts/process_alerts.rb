@@ -108,8 +108,8 @@ module SecurityAlerts
         body: FormatAlert.body(alert),
         github_state: "open",
         github_creator_login: trusted_login,
-        github_created_at: now,
-        github_updated_at: now,
+        github_created_at: parse_alert_time(alert[:created_at]) || now,
+        github_updated_at: parse_alert_time(alert[:updated_at]) || now,
         paid_state: "new",
         labels: [ "security", "dependabot" ],
         source: SYNTHETIC_SOURCE
@@ -147,6 +147,14 @@ module SecurityAlerts
       )
     end
 
+    def parse_alert_time(value)
+      return nil if value.nil?
+
+      value.is_a?(String) ? Time.zone.parse(value) : value
+    rescue ArgumentError
+      nil
+    end
+
     def synthetic_issue_id(alert)
       SYNTHETIC_ISSUE_ID_OFFSET + alert[:number]
     end
@@ -157,8 +165,10 @@ module SecurityAlerts
 
     def trusted_login
       @trusted_login ||= begin
-        login = @project.allowed_github_usernames.find(&:present?)
-        return login if login.present?
+        login = @project.allowed_github_usernames
+          .filter_map { |u| u.strip.presence }
+          .first
+        return login if login
 
         raise Temporalio::Error::ApplicationError.new(
           "No trusted GitHub usernames configured for project #{@project.id}",
