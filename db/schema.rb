@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_24_023748) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_25_162327) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -401,7 +401,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_24_023748) do
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
     t.jsonb "allowed_github_usernames", default: [], null: false
-    t.boolean "auto_fix_merge_conflicts", default: false, null: false
+    t.boolean "auto_fix_merge_conflicts", default: true, null: false
     t.boolean "auto_merge_enabled", default: false, null: false
     t.boolean "auto_pick_enabled", default: false, null: false
     t.boolean "auto_scan_prs", default: true, null: false
