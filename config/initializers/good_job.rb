@@ -39,6 +39,11 @@ Rails.application.configure do
       cron: "0 */4 * * *",
       class: "AbTestAnalysisCheckJob",
       description: "Check running A/B tests for auto-completion"
+    },
+    process_run_queue: {
+      cron: "*/5 * * * *",
+      class: "ProcessRunQueueJob",
+      description: "Process queued agent runs and auto-pick eligible issues"
     }
   }
 end
