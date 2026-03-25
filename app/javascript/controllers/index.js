@@ -30,3 +30,6 @@ application.register("test-agent", TestAgentController)
 
 import LocalTimeController from "./local_time_controller"
 application.register("local-time", LocalTimeController)
+
+import TooltipController from "./tooltip_controller"
+application.register("tooltip", TooltipController)
