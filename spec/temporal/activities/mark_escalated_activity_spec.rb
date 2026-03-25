@@ -9,6 +9,7 @@ RSpec.describe Activities::MarkEscalatedActivity do
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:add_comment)
+    allow(github_client).to receive(:issue_comments).and_return([])
   end
 
   describe "#execute" do
@@ -57,11 +58,27 @@ RSpec.describe Activities::MarkEscalatedActivity do
           .with(anything, anything, a_string_including("**Questions:**"))
       end
 
+      it "includes the hidden comment marker for future identification" do
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).to have_received(:add_comment)
+          .with(anything, anything, a_string_including("<!-- paid:escalation-note -->"))
+      end
+
       it "uses a custom reason when provided" do
         activity.execute(issue_id: issue.id, reason: "Draft review limit reached")
 
         expect(github_client).to have_received(:add_comment)
           .with(anything, anything, a_string_including("Draft review limit reached"))
+      end
+
+      it "skips posting when an escalation comment already exists" do
+        existing = OpenStruct.new(body: "<!-- paid:escalation-note -->\n**Escalation Note**")
+        allow(github_client).to receive(:issue_comments).and_return([ existing ])
+
+        activity.execute(issue_id: issue.id)
+
+        expect(github_client).not_to have_received(:add_comment)
       end
 
       it "returns updated: true" do

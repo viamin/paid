@@ -31,7 +31,11 @@ module Activities
 
     private
 
+    # Idempotent: skips posting if a comment with COMMENT_MARKER already exists.
+    # This guards against duplicates when Temporal retries the activity.
     def post_escalation_comment(client, project, issue, reason)
+      return if escalation_comment_exists?(client, project, issue)
+
       body = build_escalation_comment(reason, project, issue)
       client.add_comment(project.full_name, issue.github_number, body)
     rescue GithubClient::Error => e
@@ -41,6 +45,31 @@ module Activities
         pr_number: issue.github_number,
         error: e.message
       )
+    end
+
+    # Returns true when a prior escalation comment is found. On fetch failure,
+    # returns false so we fall through to attempt posting.
+    def escalation_comment_exists?(client, project, issue)
+      comments = client.issue_comments(project.full_name, issue.github_number)
+      exists = comments.any? { |c| c.respond_to?(:body) && c.body&.include?(COMMENT_MARKER) }
+
+      if exists
+        logger.info(
+          message: "pr_review.escalation_comment_exists",
+          issue_id: issue.id,
+          pr_number: issue.github_number
+        )
+      end
+
+      exists
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_review.fetch_escalation_comments_failed",
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        error: e.message
+      )
+      false
     end
 
     def build_escalation_comment(reason, project, issue)
