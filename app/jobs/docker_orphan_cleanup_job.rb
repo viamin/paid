@@ -10,7 +10,7 @@
 # Cleans up in order: agent containers, service containers, then volumes.
 # Order matters because volumes can't be removed while containers reference them.
 #
-# Scheduled via GoodJob cron every 15 minutes.
+# Scheduled via GoodJob cron every 5 minutes.
 class DockerOrphanCleanupJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 

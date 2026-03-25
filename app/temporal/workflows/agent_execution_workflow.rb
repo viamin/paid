@@ -237,9 +237,12 @@ module Workflows
         # lifecycle. If the retries above succeeded this is a no-op; if they
         # failed the janitor gets another shot after a short delay.
         begin
-          run_activity(Activities::EnqueueJanitorActivity,
-            { agent_run_id: agent_run_id },
-            start_to_close_timeout: 10, retry_policy: NO_RETRY)
+          if agent_run_id.present?
+            run_activity(Activities::EnqueueJanitorActivity,
+              { agent_run_id: agent_run_id },
+              start_to_close_timeout: 10,
+              retry_policy: Temporalio::RetryPolicy.new(max_attempts: 3, initial_interval: 1))
+          end
         rescue => e
           Temporalio::Workflow.logger.warn(
             message: "agent_execution.enqueue_janitor_failed",

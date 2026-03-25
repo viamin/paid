@@ -37,20 +37,22 @@ RSpec.describe AgentRunResourceJanitorJob do
         expect { described_class.new.perform(agent_run.id) }.not_to raise_error
       end
 
-      it "handles Docker errors during container cleanup without raising" do
+      it "re-raises Docker errors during container cleanup so retry_on can retry" do
         agent_run.update_columns(container_id: "abc123")
         allow(Docker::Container).to receive(:get)
           .and_raise(Docker::Error::DockerError, "daemon unavailable")
         allow(Docker::Volume).to receive(:get).and_raise(Docker::Error::NotFoundError)
 
-        expect { described_class.new.perform(agent_run.id) }.not_to raise_error
+        expect { described_class.new.perform(agent_run.id) }
+          .to raise_error(Docker::Error::DockerError, "daemon unavailable")
       end
 
-      it "handles Docker errors during volume cleanup without raising" do
+      it "re-raises Docker errors during volume cleanup so retry_on can retry" do
         allow(Docker::Volume).to receive(:get)
           .and_raise(Docker::Error::DockerError, "daemon unavailable")
 
-        expect { described_class.new.perform(agent_run.id) }.not_to raise_error
+        expect { described_class.new.perform(agent_run.id) }
+          .to raise_error(Docker::Error::DockerError, "daemon unavailable")
       end
 
       it "skips volume cleanup for worktree-based runs" do

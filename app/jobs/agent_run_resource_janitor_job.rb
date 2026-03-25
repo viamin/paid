@@ -57,7 +57,7 @@ class AgentRunResourceJanitorJob < ApplicationJob
       error_class: e.class.name,
       error: e.message
     )
-    false
+    raise
   end
 
   def cleanup_volume(agent_run)
@@ -76,6 +76,6 @@ class AgentRunResourceJanitorJob < ApplicationJob
       error_class: e.class.name,
       error: e.message
     )
-    false
+    raise
   end
 end
