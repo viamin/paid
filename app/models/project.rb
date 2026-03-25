@@ -4,7 +4,7 @@ class Project < ApplicationRecord
   MERGE_METHODS = %w[squash merge rebase].freeze
 
   belongs_to :account
-  belongs_to :github_token
+  belongs_to :github_token, counter_cache: true
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :project_memberships, dependent: :destroy
