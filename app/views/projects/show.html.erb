@@ -122,7 +122,7 @@
   <div data-show-actions="<%= policy(@project).run_agent? %>">
     <%= render "projects/stats", project: @project, budgets: @cost_budgets %>
 
-    <%= render "projects/issues", project: @project, issues: @issues %>
+    <%= render "projects/issues", project: @project, issues: @issues, auto_pickable_issue_ids: @auto_pickable_issue_ids %>
 
     <%= render "projects/pull_requests", project: @project, pull_requests: @pull_requests,
                pr_numbers_with_queued_auto_continue: @pr_numbers_with_queued_auto_continue,
