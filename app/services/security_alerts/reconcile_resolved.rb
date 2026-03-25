@@ -4,8 +4,9 @@ module SecurityAlerts
   # Closes synthetic issues whose Dependabot alerts are no longer open
   # (fixed, dismissed, or auto_dismissed upstream).
   #
-  # Skips issues with active agent runs to avoid orphaned work, and
-  # preserves failed state for diagnostic value.
+  # Skips issues with active agent runs to avoid orphaned work.
+  # Sets github_state to "closed" for all resolved alerts; preserves
+  # paid_state "failed" for diagnostic value while marking others "completed".
   class ReconcileResolved
     def initialize(project, current_open_alerts)
       @project = project
@@ -41,19 +42,18 @@ module SecurityAlerts
 
       issue_ids_with_active_runs = active_runs.distinct.pluck(:issue_id)
       scope = scope.where.not(id: issue_ids_with_active_runs) if issue_ids_with_active_runs.any?
-      # Preserve failed state — it carries diagnostic value and should not be
-      # silently overwritten to completed.
-      scope = scope.where.not(paid_state: "failed")
 
       count = scope.count
       return unless count > 0
 
       now = Time.current
+      # Close github_state for all resolved alerts. Preserve paid_state for
+      # failed issues (diagnostic value) while marking others as completed.
       scope.update_all(
-        github_state: "closed",
-        paid_state: "completed",
-        updated_at: now,
-        github_updated_at: now
+        ActiveRecord::Base.sanitize_sql_array([
+          "github_state = 'closed', paid_state = CASE WHEN paid_state = 'failed' THEN paid_state ELSE 'completed' END, updated_at = ?, github_updated_at = ?",
+          now, now
+        ])
       )
       # update_all bypasses callbacks, so manually broadcast UI updates.
       @project.broadcast_issues_update
