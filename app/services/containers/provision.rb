@@ -507,8 +507,8 @@ module Containers
     #
     # @param subdir [String] The directory path under /home/agent (e.g. ".codex", ".config/opencode")
     # @param log_key [String, nil] Override for the log event name segment. When nil, derived from
-    #   subdir by stripping the leading dot. Callers should pass an explicit log_key when subdir
-    #   contains slashes to avoid `/` in dot-delimited log event names.
+    #   subdir by stripping the leading dot and replacing "/" with "_". Callers may pass an explicit
+    #   log_key for more intentional log event names (e.g. "opencode_config", "opencode_data").
     def fix_tmpfs_ownership!(subdir, log_key: nil)
       log_key ||= subdir.delete_prefix(".").tr("/", "_")
       container.exec(
