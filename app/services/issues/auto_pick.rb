@@ -6,7 +6,9 @@ module Issues
   # system has capacity, keeping agents productive without manual intervention.
   #
   # Guards (checked before issue selection):
-  # - Project must not have any active/queued agent runs (one at a time)
+  # - Project must not have any active/queued agent runs (default; the
+  #   scheduler can override this via +allow_concurrent_runs: true+ to
+  #   fill idle owner capacity across projects)
   # - Project must not have open PRs needing attention (finish before start)
   #
   # Selection criteria:
@@ -21,13 +23,14 @@ module Issues
     PAID_GENERATED_LABEL = "paid-generated"
     PAID_READY_LABEL = "paid-ready"
 
-    def initialize(project)
+    def initialize(project, allow_concurrent_runs: false)
       @project = project
+      @allow_concurrent_runs = allow_concurrent_runs
     end
 
     def call
       return nil unless @project.auto_pick_enabled?
-      return nil if project_has_active_runs?
+      return nil if project_has_active_runs? && !@allow_concurrent_runs
       return nil if project_has_prs_needing_attention?
 
       issue = find_next_eligible_issue
@@ -77,8 +80,10 @@ module Issues
     private
 
     # Returns true if the project already has any active or queued agent
-    # runs. Limits auto-pick to one concurrent run per project so agents
-    # focus on finishing work before starting new issues.
+    # runs. By default limits auto-pick to one concurrent run per project
+    # so agents focus on finishing work before starting new issues. The
+    # scheduler bypasses this guard via +allow_concurrent_runs+ when
+    # distributing idle capacity across projects.
     def project_has_active_runs?
       AgentRun.where(project: @project, status: %w[queued pending running]).exists?
     end
