@@ -18,6 +18,11 @@ export default class extends Controller {
   }
 
   toggle() {
+    // On hover-capable devices the info icon is CSS-hidden, but guard here
+    // too so hybrid touch/hover devices can't open a tooltip that lacks
+    // close listeners (click-outside / Escape).
+    if (this.hoverDevice) return
+
     const isHidden = this.contentTarget.classList.toggle("hidden")
     const expanded = !isHidden
     this.#updateAria(expanded)
@@ -65,8 +70,6 @@ export default class extends Controller {
   }
 
   #addGlobalListeners() {
-    if (this.hoverDevice) return
-
     document.addEventListener("click", this.boundHide)
     document.addEventListener("keydown", this.boundKeydown)
     this.element.addEventListener("focusout", this.boundFocusOut)
