@@ -135,9 +135,12 @@ module Issues
       [ local_numbers.to_a, cross_refs.to_a ]
     end
 
+    # INLINE_REMOVAL_PATTERN has a single capture group, so scan yields
+    # one-element arrays. Parenthesized destructuring |(refs_str)| extracts
+    # the captured String directly — without it, refs_str would be an Array.
     def extract_removal_numbers(text, numbers)
-      text.scan(INLINE_REMOVAL_PATTERN) do |refs|
-        refs[0].scan(ISSUE_REF_PATTERN) { |match| numbers << match[0].to_i }
+      text.scan(INLINE_REMOVAL_PATTERN) do |(refs_str)|
+        refs_str.scan(ISSUE_REF_PATTERN) { |(num)| numbers << num.to_i }
       end
     end
 
@@ -145,7 +148,7 @@ module Issues
     # Only dependency-scoped text is parsed — incidental #N mentions (e.g. in a
     # "Notes" section) are intentionally ignored.
     def extract_body_refs(body, local_numbers, cross_refs)
-      body.scan(DEPENDENCY_SECTION_PATTERN) do |section_body|
+      body.scan(DEPENDENCY_SECTION_PATTERN) do |(section_body)|
         extract_all_refs(section_body, local_numbers, cross_refs)
       end
 
@@ -154,7 +157,7 @@ module Issues
 
     # Extracts refs from inline "Depends on" / "Blocked by" patterns only.
     def extract_inline_refs(text, local_numbers, cross_refs)
-      text.scan(INLINE_DEPENDS_PATTERN) do |refs_str|
+      text.scan(INLINE_DEPENDS_PATTERN) do |(refs_str)|
         extract_all_refs(refs_str, local_numbers, cross_refs)
       end
     end
@@ -166,7 +169,7 @@ module Issues
       end
 
       stripped = text.gsub(CROSS_REPO_REF_PATTERN, "")
-      stripped.scan(ISSUE_REF_PATTERN) { |match| local_numbers << match[0].to_i }
+      stripped.scan(ISSUE_REF_PATTERN) { |(num)| local_numbers << num.to_i }
     end
 
     def sync_local_deps(referenced_numbers, current_local_ids)
