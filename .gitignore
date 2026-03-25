@@ -155,6 +155,9 @@ config.status
 /.tmp_ruby.tar.gz
 /.tmp_yaml.tar.gz
 
+# npm debug logs and caches
+/.npm/
+
 # Python virtual environments and caches
 /.venv/
 __pycache__/
