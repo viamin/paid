@@ -9,7 +9,7 @@ class CreateContainerMetrics < ActiveRecord::Migration[8.1]
       t.bigint :memory_bytes, null: false, default: 0
       t.bigint :memory_limit_bytes, null: false, default: 0
       t.float :memory_percent, null: false, default: 0.0
-      t.integer :pids_count, default: 0
+      t.integer :pids_count
       t.datetime :recorded_at, null: false
 
       t.timestamps

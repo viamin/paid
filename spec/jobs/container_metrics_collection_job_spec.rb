@@ -60,11 +60,11 @@ RSpec.describe ContainerMetricsCollectionJob do
       }.to have_enqueued_job(described_class).with(agent_run.id, consecutive_failures: 3)
     end
 
-    it "stops re-enqueuing after max consecutive failures" do
+    it "continues re-enqueuing after many consecutive failures with backoff" do
       allow(Containers::CollectMetrics).to receive(:call).and_return(nil)
       expect {
         described_class.perform_now(agent_run.id, consecutive_failures: 4)
-      }.not_to have_enqueued_job(described_class)
+      }.to have_enqueued_job(described_class).with(agent_run.id, consecutive_failures: 5)
     end
 
     it "resets failure count on successful collection" do

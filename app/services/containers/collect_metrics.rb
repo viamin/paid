@@ -105,12 +105,22 @@ module Containers
     # newly inserted metric and the existing counter, avoiding O(n)
     # aggregate scans that grow more expensive as samples accumulate.
     def update_agent_run_summaries(metric)
-      AgentRun.where(id: agent_run.id).update_all(<<~SQL.squish)
-        peak_cpu_percent = GREATEST(COALESCE(peak_cpu_percent, 0), #{metric.cpu_percent}),
-        peak_memory_bytes = GREATEST(COALESCE(peak_memory_bytes, 0), #{metric.memory_bytes}),
-        avg_cpu_percent = ROUND((COALESCE(avg_cpu_percent, 0) * (container_metrics_count - 1) + #{metric.cpu_percent})::numeric / container_metrics_count, 2),
-        avg_memory_bytes = (COALESCE(avg_memory_bytes, 0) * (container_metrics_count - 1) + #{metric.memory_bytes}) / container_metrics_count
-      SQL
+      AgentRun.where(id: agent_run.id).update_all(
+        AgentRun.sanitize_sql_array(
+          [
+            <<~SQL.squish,
+              peak_cpu_percent = GREATEST(COALESCE(peak_cpu_percent, 0), ?),
+              peak_memory_bytes = GREATEST(COALESCE(peak_memory_bytes, 0), ?),
+              avg_cpu_percent = ROUND((COALESCE(avg_cpu_percent, 0) * (container_metrics_count - 1) + ?)::numeric / container_metrics_count, 2),
+              avg_memory_bytes = (COALESCE(avg_memory_bytes, 0) * (container_metrics_count - 1) + ?) / container_metrics_count
+            SQL
+            metric.cpu_percent,
+            metric.memory_bytes,
+            metric.cpu_percent,
+            metric.memory_bytes
+          ]
+        )
+      )
     end
 
     def log_failure(error)

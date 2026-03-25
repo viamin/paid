@@ -183,7 +183,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_080816) do
     t.bigint "memory_bytes", default: 0, null: false
     t.bigint "memory_limit_bytes", default: 0, null: false
     t.float "memory_percent", default: 0.0, null: false
-    t.integer "pids_count", default: 0
+    t.integer "pids_count"
     t.datetime "recorded_at", null: false
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "recorded_at"], name: "index_container_metrics_on_run_and_recorded"
