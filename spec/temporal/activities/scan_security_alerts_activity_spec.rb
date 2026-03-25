@@ -410,6 +410,56 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
     end
 
+    context "when a stale synthetic issue has an active agent run" do
+      let!(:stale_issue) do
+        create(:issue,
+          project: project,
+          title: "[Security] Upgrade active-pkg — dependabot-alert-50",
+          github_issue_id: id_offset + 50,
+          github_state: "open",
+          source: source)
+      end
+
+      before do
+        allow(github_client).to receive(:dependabot_alerts)
+          .with(project.full_name)
+          .and_return([])
+
+        create(:agent_run, project: project, issue: stale_issue, status: "running")
+      end
+
+      it "does not close the issue while an agent run is active" do
+        activity.execute(project_id: project.id)
+
+        stale_issue.reload
+        expect(stale_issue.github_state).to eq("open")
+      end
+    end
+
+    context "when a stale synthetic issue has paid_state failed" do
+      before do
+        allow(github_client).to receive(:dependabot_alerts)
+          .with(project.full_name)
+          .and_return([])
+
+        create(:issue,
+          project: project,
+          title: "[Security] Upgrade failed-pkg — dependabot-alert-60",
+          github_issue_id: id_offset + 60,
+          github_state: "open",
+          paid_state: "failed",
+          source: source)
+      end
+
+      it "preserves the failed state instead of overwriting to completed" do
+        activity.execute(project_id: project.id)
+
+        issue = project.issues.find_by(github_issue_id: id_offset + 60)
+        expect(issue.github_state).to eq("open")
+        expect(issue.paid_state).to eq("failed")
+      end
+    end
+
     context "when dependabot is not in alert types (empty)" do
       before do
         project.update!(security_alert_types: [])
