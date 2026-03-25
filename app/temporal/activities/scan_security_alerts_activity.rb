@@ -254,11 +254,12 @@ module Activities
 
       if count > 0
         active_runs = AgentRun.where(issue_id: stale_scope.select(:id), status: %w[queued pending running])
-        if active_runs.exists?
+        active_run_count = active_runs.count
+        if active_run_count.positive?
           logger.warn(
             message: "security_scanner.active_runs_for_resolved_alerts",
             project_id: project.id,
-            active_run_count: active_runs.count
+            active_run_count: active_run_count
           )
         end
 
