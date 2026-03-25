@@ -123,8 +123,9 @@ class ProcessRunQueueJob < ApplicationJob
   # projects with fewer active auto-pick runs and then the oldest
   # prior auto-pick assignment. This preserves round-robin fairness
   # across job invocations while still allowing a single busy project
-  # to fill otherwise idle slots. Returns true if a run was created so
-  # the main loop can process it through the normal claim-and-start flow.
+  # to fill otherwise idle slots. Returns true if a run exists or was
+  # enqueued so the main loop can attempt to process it through the
+  # normal claim-and-start flow.
   def auto_pick_unblocked_issues
     # If the last auto-pick pass created no runs, skip further attempts to
     # avoid spinning when no eligible issues exist.
@@ -143,6 +144,9 @@ class ProcessRunQueueJob < ApplicationJob
       run = Issues::AutoPick.new(project, allow_concurrent_runs: true).call
       next unless run
 
+      # Invalidate the memoized project ordering so the next pass
+      # reflects the newly created run in its active counts.
+      @ordered_auto_pick_projects = nil
       @auto_pick_last_created_any = true
       return true
     end
@@ -150,30 +154,43 @@ class ProcessRunQueueJob < ApplicationJob
     @auto_pick_last_created_any = false
   end
 
+  # Memoized within a single perform so repeated auto-pick passes
+  # don't re-query the project list and aggregate stats each time.
   def ordered_auto_pick_projects
-    projects = Project.active.where(auto_pick_enabled: true).order(:id).to_a
-    return projects if projects.empty?
+    @ordered_auto_pick_projects ||= begin
+      projects = Project.active.where(auto_pick_enabled: true).order(:id).to_a
+      return projects if projects.empty?
 
-    project_ids = projects.map(&:id)
-    auto_pick_scope = AgentRun.where(
-      project_id: project_ids,
-      trigger_type: "automatic",
-      source_pull_request_number: nil
-    ).where.not(issue_id: nil)
+      project_ids = projects.map(&:id)
+      auto_pick_scope = AgentRun.where(
+        project_id: project_ids,
+        trigger_type: "automatic",
+        source_pull_request_number: nil
+      ).where.not(issue_id: nil)
 
-    active_counts = auto_pick_scope.where(
-      status: %w[queued pending running]
-    ).group(:project_id).count
-    last_picked_at = auto_pick_scope.group(:project_id).maximum(:created_at)
-    last_picked_id = auto_pick_scope.group(:project_id).maximum(:id)
+      active_counts = auto_pick_scope.where(
+        status: %w[queued pending running]
+      ).group(:project_id).count
 
-    projects.sort_by do |project|
-      [
-        active_counts.fetch(project.id, 0),
-        last_picked_at.fetch(project.id, Time.at(0)),
-        last_picked_id.fetch(project.id, 0),
-        project.id
-      ]
+      # Collapse the two aggregate queries (max created_at, max id)
+      # into a single grouped pluck to reduce DB round-trips.
+      last_stats = {}
+      auto_pick_scope
+        .group(:project_id)
+        .pluck(:project_id, Arel.sql("MAX(created_at)"), Arel.sql("MAX(id)"))
+        .each do |project_id, max_created_at, max_id|
+          last_stats[project_id] = { at: max_created_at, id: max_id }
+        end
+
+      projects.sort_by do |project|
+        stats = last_stats[project.id]
+        [
+          active_counts.fetch(project.id, 0),
+          stats ? stats[:at] : Time.at(0),
+          stats ? stats[:id] : 0,
+          project.id
+        ]
+      end
     end
   end
 
