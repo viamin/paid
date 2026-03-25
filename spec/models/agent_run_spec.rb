@@ -1460,8 +1460,11 @@ RSpec.describe AgentRun do
     end
   end
 
-  # Note: Rails 5.1+ fires after_commit callbacks within transactional tests,
-  # so these specs work correctly with use_transactional_fixtures = true.
+  # Rails 5.0+ fires after_commit callbacks within transactional test fixtures
+  # (the test_after_commit gem was absorbed into Rails core). These specs rely
+  # on that behavior and work correctly with use_transactional_fixtures = true.
+  # We intentionally use after_commit (not after_save) so the job only enqueues
+  # after the AgentRun record is visible to other database connections.
   describe "container metrics collection callback" do
     it "enqueues ContainerMetricsCollectionJob when transitioning to running with container_id" do
       agent_run = create(:agent_run, status: "pending", container_id: "abc123")
