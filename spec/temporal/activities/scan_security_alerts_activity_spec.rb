@@ -231,15 +231,17 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
 
       it "updates title, body, and github_updated_at without triggering a new agent run" do
-        result = activity.execute(project_id: project.id)
+        freeze_time do
+          result = activity.execute(project_id: project.id)
 
-        expect(result[:alerts_to_fix]).to eq([])
+          expect(result[:alerts_to_fix]).to eq([])
 
-        existing_issue.reload
-        expect(existing_issue.title).to include("5.0.0")
-        expect(existing_issue.title).to include("critical")
-        expect(existing_issue.body).to include("Updated advisory for minimatch")
-        expect(existing_issue.github_updated_at).to be_within(5.seconds).of(Time.current)
+          existing_issue.reload
+          expect(existing_issue.title).to include("5.0.0")
+          expect(existing_issue.title).to include("critical")
+          expect(existing_issue.body).to include("Updated advisory for minimatch")
+          expect(existing_issue.github_updated_at).to eq(Time.current)
+        end
       end
     end
 
@@ -274,16 +276,18 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
 
       it "re-opens the existing issue and returns it as actionable" do
-        result = activity.execute(project_id: project.id)
+        freeze_time do
+          result = activity.execute(project_id: project.id)
 
-        issue = project.issues.find_by(github_issue_id: id_offset + 1)
-        expect(issue.github_state).to eq("open")
-        expect(issue.paid_state).to eq("new")
-        expect(issue.github_updated_at).to be_within(5.seconds).of(Time.current)
+          issue = project.issues.find_by(github_issue_id: id_offset + 1)
+          expect(issue.github_state).to eq("open")
+          expect(issue.paid_state).to eq("new")
+          expect(issue.github_updated_at).to eq(Time.current)
 
-        expect(result[:alerts_to_fix].size).to eq(1)
-        expect(result[:alerts_to_fix].first[:issue_id]).to eq(issue.id)
-        expect(result[:alerts_to_fix].first[:alert_number]).to eq(1)
+          expect(result[:alerts_to_fix].size).to eq(1)
+          expect(result[:alerts_to_fix].first[:issue_id]).to eq(issue.id)
+          expect(result[:alerts_to_fix].first[:alert_number]).to eq(1)
+        end
       end
     end
 
@@ -516,12 +520,14 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
 
       it "closes the stale synthetic issue and updates timestamps" do
-        activity.execute(project_id: project.id)
+        freeze_time do
+          activity.execute(project_id: project.id)
 
-        stale_issue = project.issues.find_by(github_issue_id: id_offset + 99)
-        expect(stale_issue.github_state).to eq("closed")
-        expect(stale_issue.paid_state).to eq("completed")
-        expect(stale_issue.github_updated_at).to be_within(5.seconds).of(Time.current)
+          stale_issue = project.issues.find_by(github_issue_id: id_offset + 99)
+          expect(stale_issue.github_state).to eq("closed")
+          expect(stale_issue.paid_state).to eq("completed")
+          expect(stale_issue.github_updated_at).to eq(Time.current)
+        end
       end
     end
 
