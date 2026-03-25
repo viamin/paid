@@ -141,6 +141,10 @@ RUN npm install -g @openai/codex@0.116.0
 # Pin version for reproducible builds; update intentionally when upgrading Gemini.
 RUN npm install -g @google/gemini-cli@0.5.5
 
+# Install Kilocode CLI
+# Pin version for reproducible builds; update intentionally when upgrading Kilocode.
+RUN npm install -g @nicepkg/kilocode@0.0.14
+
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
 COPY scripts/git-credential-paid /usr/local/bin/git-credential-paid
