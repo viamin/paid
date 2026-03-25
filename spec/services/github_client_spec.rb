@@ -158,6 +158,53 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#merge_pull_request" do
+    let(:repo) { "owner/repo" }
+    let(:merge_url) { "#{api_base}/repos/#{repo}/pulls/42/merge" }
+
+    it "omits commit_message when none is provided" do
+      stub = stub_request(:put, merge_url)
+        .with do |request|
+          body = JSON.parse(request.body)
+
+          expect(body).to include("merge_method" => "squash")
+          expect(body).not_to have_key("commit_message")
+        end
+        .to_return(
+          status: 200,
+          body: { merged: true }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      client.merge_pull_request(repo, 42, merge_method: "squash")
+
+      expect(stub).to have_been_requested.once
+    end
+
+    it "includes commit_message when provided" do
+      stub = stub_request(:put, merge_url)
+        .with do |request|
+          body = JSON.parse(request.body)
+
+          expect(body).to include(
+            "merge_method" => "squash",
+            "commit_message" => "Custom merge message"
+          )
+        end
+        .to_return(
+          status: 200,
+          body: { merged: true }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      client.merge_pull_request(repo, 42,
+        merge_method: "squash",
+        commit_message: "Custom merge message")
+
+      expect(stub).to have_been_requested.once
+    end
+  end
+
   describe "#repositories" do
     let(:repo_with_push) do
       { id: 1, full_name: "owner/repo1", name: "repo1", private: false,
