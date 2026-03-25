@@ -4,6 +4,8 @@ require "rails_helper"
 
 RSpec.describe Activities::ScanSecurityAlertsActivity do
   let(:activity) { described_class.new }
+  let(:id_offset) { Issue::SYNTHETIC_ISSUE_ID_OFFSET }
+  let(:source) { Issue::SYNTHETIC_DEPENDABOT_SOURCE }
   let(:project) do
     create(:project,
       auto_scan_security: true,
@@ -95,7 +97,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       it "creates Issue records with correct attributes" do
         activity.execute(project_id: project.id)
 
-        issue = project.issues.find_by(source: "dependabot_alert", github_issue_id: 900_000_000_001)
+        issue = project.issues.find_by(source: source, github_issue_id: id_offset + 1)
         expect(issue).to be_present
         expect(issue.title).to include("[Security]")
         expect(issue.title).to include("minimatch")
@@ -105,13 +107,13 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(issue.labels).to include("security")
         expect(issue.paid_state).to eq("new")
         expect(issue.github_state).to eq("open")
-        expect(issue.source).to eq("dependabot_alert")
+        expect(issue.source).to eq(source)
       end
 
       it "sets a trusted creator login" do
         activity.execute(project_id: project.id)
 
-        issue = project.issues.find_by(source: "dependabot_alert", github_issue_id: 900_000_000_001)
+        issue = project.issues.find_by(source: source, github_issue_id: id_offset + 1)
         expect(issue.trusted?).to be true
       end
 
@@ -154,13 +156,13 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           .and_return(alerts)
 
         # Use the same synthetic github_issue_id that the activity generates
-        # (900_000_000_000 + alert number) so the duplicate check matches.
+        # (Issue::SYNTHETIC_ISSUE_ID_OFFSET + alert number) so the duplicate check matches.
         create(:issue,
           project: project,
           title: "[Security] Upgrade minimatch — dependabot-alert-1",
-          github_issue_id: 900_000_000_001,
+          github_issue_id: id_offset + 1,
           github_state: "open",
-          source: "dependabot_alert")
+          source: source)
       end
 
       it "skips alerts that already have issues" do
@@ -194,16 +196,16 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         create(:issue,
           project: project,
           title: "[Security] Upgrade minimatch — dependabot-alert-1",
-          github_issue_id: 900_000_000_001,
+          github_issue_id: id_offset + 1,
           github_state: "closed",
           paid_state: "completed",
-          source: "dependabot_alert")
+          source: source)
       end
 
       it "re-opens the existing issue and returns it as actionable" do
         result = activity.execute(project_id: project.id)
 
-        issue = project.issues.find_by(github_issue_id: 900_000_000_001)
+        issue = project.issues.find_by(github_issue_id: id_offset + 1)
         expect(issue.github_state).to eq("open")
         expect(issue.paid_state).to eq("new")
         expect(issue.github_updated_at).to be_within(5.seconds).of(Time.current)
@@ -236,10 +238,10 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         create(:issue,
           project: project,
           title: "[Security] Upgrade minimatch — dependabot-alert-1",
-          github_issue_id: 900_000_000_001,
+          github_issue_id: id_offset + 1,
           github_state: "closed",
           paid_state: "completed",
-          source: "dependabot_alert")
+          source: source)
       end
 
       it "does not reopen closed issues that exceed max_security_fix_runs" do
@@ -250,7 +252,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(result[:alerts_to_fix].first[:alert_number]).to eq(10)
 
         # The closed issue for alert #1 should NOT be reopened
-        issue = project.issues.find_by(github_issue_id: 900_000_000_001)
+        issue = project.issues.find_by(github_issue_id: id_offset + 1)
         expect(issue.github_state).to eq("closed")
         expect(issue.paid_state).to eq("completed")
       end
@@ -301,9 +303,9 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         stale_issue = create(:issue,
           project: project,
           title: "[Security] Upgrade old-pkg — dependabot-alert-99",
-          github_issue_id: 900_000_000_099,
+          github_issue_id: id_offset + 99,
           github_state: "open",
-          source: "dependabot_alert")
+          source: source)
 
         activity.execute(project_id: project.id)
 
@@ -371,15 +373,15 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         create(:issue,
           project: project,
           title: "[Security] Upgrade low-pkg — dependabot-alert-5",
-          github_issue_id: 900_000_000_005,
+          github_issue_id: id_offset + 5,
           github_state: "open",
-          source: "dependabot_alert")
+          source: source)
       end
 
       it "does not close the synthetic issue for an alert still open upstream" do
         activity.execute(project_id: project.id)
 
-        issue = project.issues.find_by(github_issue_id: 900_000_000_005)
+        issue = project.issues.find_by(github_issue_id: id_offset + 5)
         expect(issue.github_state).to eq("open")
       end
     end
@@ -393,15 +395,15 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         create(:issue,
           project: project,
           title: "[Security] Upgrade old-pkg — dependabot-alert-99",
-          github_issue_id: 900_000_000_099,
+          github_issue_id: id_offset + 99,
           github_state: "open",
-          source: "dependabot_alert")
+          source: source)
       end
 
       it "closes the stale synthetic issue and updates timestamps" do
         activity.execute(project_id: project.id)
 
-        stale_issue = project.issues.find_by(github_issue_id: 900_000_000_099)
+        stale_issue = project.issues.find_by(github_issue_id: id_offset + 99)
         expect(stale_issue.github_state).to eq("closed")
         expect(stale_issue.paid_state).to eq("completed")
         expect(stale_issue.github_updated_at).to be_within(5.seconds).of(Time.current)
@@ -423,9 +425,9 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         stale_issue = create(:issue,
           project: project,
           title: "[Security] Upgrade old-pkg — dependabot-alert-99",
-          github_issue_id: 900_000_000_099,
+          github_issue_id: id_offset + 99,
           github_state: "open",
-          source: "dependabot_alert")
+          source: source)
 
         activity.execute(project_id: project.id)
 
@@ -474,9 +476,9 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         stale_issue = create(:issue,
           project: project,
           title: "[Security] Upgrade old-pkg — dependabot-alert-99",
-          github_issue_id: 900_000_000_099,
+          github_issue_id: id_offset + 99,
           github_state: "open",
-          source: "dependabot_alert")
+          source: source)
 
         activity.execute(project_id: project.id)
 
