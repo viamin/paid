@@ -1205,6 +1205,8 @@ RSpec.describe GithubClient do
                 number: 1,
                 state: "open",
                 html_url: "https://github.com/owner/repo/security/dependabot/1",
+                created_at: "2026-03-20T10:00:00Z",
+                updated_at: "2026-03-21T12:00:00Z",
                 dependency: {
                   package: { name: "minimatch", ecosystem: "npm" }
                 },
@@ -1234,6 +1236,8 @@ RSpec.describe GithubClient do
         expect(alert[:package_ecosystem]).to eq("npm")
         expect(alert[:patched_version]).to eq("3.0.5")
         expect(alert[:summary]).to eq("ReDoS vulnerability in minimatch")
+        expect(alert[:created_at]).to eq("2026-03-20T10:00:00Z")
+        expect(alert[:updated_at]).to eq("2026-03-21T12:00:00Z")
       end
     end
 
