@@ -40,8 +40,7 @@ module SecurityAlerts
         )
       end
 
-      issue_ids_with_active_runs = active_runs.distinct.pluck(:issue_id)
-      scope = scope.where.not(id: issue_ids_with_active_runs) if issue_ids_with_active_runs.any?
+      scope = scope.where.not(id: active_runs.select(:issue_id))
 
       count = scope.count
       return unless count > 0
