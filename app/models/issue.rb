@@ -64,7 +64,9 @@ class Issue < ApplicationRecord
 
   def github_url
     # Synthetic Dependabot alert issues link to the specific alert page.
-    if source == SYNTHETIC_DEPENDABOT_SOURCE
+    if source == SYNTHETIC_DEPENDABOT_SOURCE &&
+       github_issue_id.present? &&
+       github_issue_id >= SYNTHETIC_ISSUE_ID_OFFSET
       alert_number = github_issue_id - SYNTHETIC_ISSUE_ID_OFFSET
       return "#{project.github_url}/security/dependabot/#{alert_number}"
     end
