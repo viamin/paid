@@ -151,6 +151,31 @@ class Project < ApplicationRecord
     update_column(:last_polled_at, timestamp)
   end
 
+  # Shared staleness window used by both the health-check job and the
+  # automation health UI. A poll workflow is considered stale when it has not
+  # completed a poll cycle within 3× the configured interval plus a buffer.
+  STALENESS_BUFFER = 3.minutes
+
+  def poll_staleness_window
+    (3 * poll_interval_seconds).seconds + STALENESS_BUFFER
+  end
+
+  def poll_stale?
+    return false unless last_polled_at
+
+    last_polled_at < poll_staleness_window.ago
+  end
+
+  # Double-checks staleness after a reload to avoid false positives from
+  # a race with a just-completed poll cycle. Used by both the automation
+  # health UI and the PollWorkflowHealthCheckJob.
+  def poll_stale_with_recheck?
+    return false unless poll_stale?
+
+    reload
+    poll_stale?
+  end
+
   def broadcast_stats_update
     broadcast_replace_to(
       self, :project_updates,
