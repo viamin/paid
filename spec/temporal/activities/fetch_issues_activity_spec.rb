@@ -566,9 +566,9 @@ RSpec.describe Activities::FetchIssuesActivity do
         dep_999 = create(:issue, project: project, github_number: 999, github_state: "open")
 
         allow(github_client).to receive(:issue_comments).and_return([
-          OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Depends on #100"),
-          OpenStruct.new(user: OpenStruct.new(login: "attacker"), body: "Depends on #999"),
-          OpenStruct.new(user: OpenStruct.new(login: "trusted-dev"), body: "Depends on #200")
+          OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Depends on #100", created_at: 2.hours.ago),
+          OpenStruct.new(user: OpenStruct.new(login: "attacker"), body: "Depends on #999", created_at: 1.hour.ago),
+          OpenStruct.new(user: OpenStruct.new(login: "trusted-dev"), body: "Depends on #200", created_at: 30.minutes.ago)
         ])
 
         activity.execute(project_id: project.id)

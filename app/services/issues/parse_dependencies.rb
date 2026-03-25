@@ -19,9 +19,13 @@ module Issues
   #   - "Remove dependency #101"
   #
   # Comment-declared dependencies are additive to body-declared ones.
-  # Comments are processed chronologically: within a single comment,
-  # removals take precedence over additions; across comments, the latest
-  # directive wins (a later "Depends on #N" can re-add a previously removed dep).
+  # Comments are processed chronologically — the latest directive wins:
+  #   - Within a single comment, removals take precedence over additions.
+  #   - Across comments, a later "Depends on #N" re-adds a previously removed
+  #     dep, and a later "No longer depends on #N" removes it again.
+  #
+  # The final dependency set is NOT simply (body + comments) - removals;
+  # it is the result of replaying all directives in order.
   #
   # @example
   #   Issues::ParseDependencies.call(issue: issue, comments: ["Depends on #101"])

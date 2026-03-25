@@ -141,6 +141,9 @@ module Activities
       { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted }
     end
 
+    # TODO(#430): Fetching comments per issue is an N+1 API call pattern that
+    # increases sync time and rate-limit pressure. Consider skipping unchanged
+    # issues (via github_updated_at) or batching comment fetches.
     def parse_dependencies(project, synced_issues)
       synced_issue_ids = synced_issues.filter_map { |si| si[:id] }
       issues_relation = project.issues.where(
@@ -187,7 +190,11 @@ module Activities
     # "fetch failed", avoiding accidental deletion of comment-derived dependencies.
     def fetch_trusted_comment_bodies(client, project, issue)
       github_comments = client.issue_comments(project.full_name, issue.github_number)
+      # Sort by created_at to guarantee chronological processing regardless
+      # of API response ordering. ParseDependencies relies on comment order
+      # to resolve "latest directive wins" semantics.
       github_comments
+        .sort_by { |c| c.created_at || Time.at(0) }
         .select { |c| project.trusted_github_user?(c.user&.login) }
         .map { |c| c.body.to_s }
     rescue GithubClient::RateLimitError
