@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_25_162327) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_25_230902) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -173,6 +173,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_162327) do
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
+  end
+
+  create_table "collector_runs", force: :cascade do |t|
+    t.integer "artifacts_count", default: 0
+    t.string "collector_type", limit: 100, null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.integer "duration_ms"
+    t.text "error_message"
+    t.jsonb "metadata", default: {}
+    t.bigint "project_version_id", null: false
+    t.datetime "started_at"
+    t.string "status", limit: 50, default: "pending", null: false
+    t.string "tool_version", limit: 100
+    t.datetime "updated_at", null: false
+    t.index ["project_version_id", "collector_type"], name: "index_collector_runs_on_project_version_id_and_collector_type"
+    t.index ["project_version_id"], name: "index_collector_runs_on_project_version_id"
+    t.index ["status"], name: "index_collector_runs_on_status"
   end
 
   create_table "container_metrics", force: :cascade do |t|
@@ -360,9 +378,58 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_162327) do
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
-    t.index ["project_id"], name: "index_issues_on_project_id"
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
+    t.index ["project_id"], name: "index_issues_on_project_id"
     t.index ["source"], name: "index_issues_on_source"
+  end
+
+  create_table "knowledge_artifacts", force: :cascade do |t|
+    t.string "artifact_type", limit: 100, null: false
+    t.bigint "collector_run_id", null: false
+    t.text "content"
+    t.string "content_hash", limit: 64, null: false
+    t.datetime "created_at", null: false
+    t.string "identifier", limit: 500
+    t.jsonb "metadata", default: {}
+    t.bigint "project_id", null: false
+    t.string "scope_path", limit: 1000
+    t.string "status", limit: 50, default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.index ["collector_run_id"], name: "index_knowledge_artifacts_on_collector_run_id"
+    t.index ["content_hash"], name: "index_knowledge_artifacts_on_content_hash"
+    t.index ["project_id", "artifact_type", "identifier"], name: "idx_on_project_id_artifact_type_identifier_88383c0c31"
+    t.index ["project_id"], name: "index_knowledge_artifacts_on_project_id"
+    t.index ["status"], name: "index_knowledge_artifacts_on_status"
+  end
+
+  create_table "knowledge_chunks", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "chunk_type", limit: 50, null: false
+    t.text "content", null: false
+    t.string "content_hash", limit: 64, null: false
+    t.datetime "created_at", null: false
+    t.string "embedding_model", limit: 100
+    t.bigint "knowledge_artifact_id", null: false
+    t.bigint "project_id", null: false
+    t.jsonb "scope_tags", default: []
+    t.integer "sequence", default: 0
+    t.string "status", limit: 50, default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.index ["content_hash"], name: "index_knowledge_chunks_on_content_hash"
+    t.index ["knowledge_artifact_id"], name: "index_knowledge_chunks_on_knowledge_artifact_id"
+    t.index ["project_id", "status"], name: "index_knowledge_chunks_on_project_id_and_status"
+    t.index ["project_id"], name: "index_knowledge_chunks_on_project_id"
+  end
+
+  create_table "knowledge_links", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "link_type", limit: 50, null: false
+    t.jsonb "metadata", default: {}
+    t.uuid "source_chunk_id", null: false
+    t.uuid "target_chunk_id", null: false
+    t.decimal "weight", precision: 5, scale: 3, default: "1.0"
+    t.index ["link_type"], name: "index_knowledge_links_on_link_type"
+    t.index ["source_chunk_id", "target_chunk_id", "link_type"], name: "idx_knowledge_links_uniqueness", unique: true
+    t.index ["target_chunk_id"], name: "index_knowledge_links_on_target_chunk_id"
   end
 
   create_table "llm_models", force: :cascade do |t|
@@ -426,6 +493,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_162327) do
     t.index ["project_id", "service_container_id"], name: "idx_project_service_containers_unique", unique: true
     t.index ["project_id"], name: "index_project_service_containers_on_project_id"
     t.index ["service_container_id"], name: "index_project_service_containers_on_service_container_id"
+  end
+
+  create_table "project_versions", force: :cascade do |t|
+    t.string "branch", default: "main", null: false
+    t.string "commit_sha", limit: 40, null: false
+    t.datetime "committed_at"
+    t.datetime "created_at", null: false
+    t.jsonb "metadata", default: {}
+    t.string "parent_sha", limit: 40
+    t.bigint "project_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "commit_sha"], name: "index_project_versions_on_project_id_and_commit_sha", unique: true
+    t.index ["project_id", "committed_at"], name: "index_project_versions_on_project_id_and_committed_at", order: { committed_at: :desc }
+    t.index ["project_id"], name: "index_project_versions_on_project_id"
   end
 
   create_table "projects", force: :cascade do |t|
@@ -708,6 +789,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_162327) do
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
+  add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "github_tokens", "accounts"
@@ -716,12 +798,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_162327) do
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
+  add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
+  add_foreign_key "knowledge_artifacts", "projects"
+  add_foreign_key "knowledge_chunks", "knowledge_artifacts", on_delete: :cascade
+  add_foreign_key "knowledge_chunks", "projects"
+  add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade
+  add_foreign_key "knowledge_links", "knowledge_chunks", column: "target_chunk_id", on_delete: :cascade
   add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "project_memberships", "projects"
   add_foreign_key "project_memberships", "users"
   add_foreign_key "project_service_containers", "projects", on_delete: :cascade
   add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
+  add_foreign_key "project_versions", "projects"
   add_foreign_key "projects", "accounts"
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "users", column: "created_by_id"
