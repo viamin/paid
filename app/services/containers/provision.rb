@@ -87,7 +87,7 @@ module Containers
 
     # Default resource limits (per issue #23 requirements)
     DEFAULTS = {
-      memory_bytes: 4 * 1024 * 1024 * 1024, # 4GB RAM (overridden by UserSetting#container_memory_bytes at runtime)
+      memory_bytes: 4 * 1024 * 1024 * 1024, # 4GB RAM default; overridden by UserSetting#container_memory_bytes
       cpu_quota: 200_000,                        # 2 CPUs (100_000 per CPU)
       pids_limit: 500,                           # 500 process limit
       timeout_seconds: 1800,                     # 30 minutes default timeout
@@ -121,7 +121,7 @@ module Containers
       @agent_run = agent_run
       @worktree_path = worktree_path
       @workspace_volume = nil
-      @options = DEFAULTS.merge(options)
+      @options = DEFAULTS.merge(resolve_user_setting_overrides(agent_run)).merge(options)
       @container = nil
     end
 
@@ -415,6 +415,19 @@ module Containers
     end
 
     private
+
+    # Resolves user-configurable container settings from the project's UserSetting.
+    # Returns a hash of overrides that sit between DEFAULTS and caller-supplied options.
+    def resolve_user_setting_overrides(agent_run)
+      settings = AgentRuns::UserSettingsResolver.call(
+        project: agent_run.project, strict: false
+      )
+      return {} unless settings
+
+      overrides = {}
+      overrides[:memory_bytes] = settings.container_memory_bytes if settings.container_memory_bytes.present?
+      overrides
+    end
 
     def stop_container(force: false)
       return unless container_running?

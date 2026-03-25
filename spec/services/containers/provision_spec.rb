@@ -80,6 +80,32 @@ RSpec.describe Containers::Provision do
       expect(custom_service.options[:memory_bytes]).to eq(1024 * 1024 * 1024)
       expect(custom_service.options[:cpu_quota]).to eq(200_000)
     end
+
+    it "applies container_memory_bytes from user settings" do
+      user_settings = instance_double(UserSetting, container_memory_bytes: 2 * 1024 * 1024 * 1024)
+      allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect(svc.options[:memory_bytes]).to eq(2 * 1024 * 1024 * 1024)
+    end
+
+    it "prefers caller-supplied memory_bytes over user settings" do
+      user_settings = instance_double(UserSetting, container_memory_bytes: 2 * 1024 * 1024 * 1024)
+      allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path, memory_bytes: 1024 * 1024 * 1024)
+
+      expect(svc.options[:memory_bytes]).to eq(1024 * 1024 * 1024)
+    end
+
+    it "falls back to defaults when user settings are unavailable" do
+      allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(nil)
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect(svc.options[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)
+    end
   end
 
   describe "#provision" do
