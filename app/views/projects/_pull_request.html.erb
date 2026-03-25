@@ -18,10 +18,24 @@
   </div>
   <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
     <%= paid_state_badge(pull_request.paid_state) %>
-    <%= button_to "Quick Run",
-                  quick_create_project_agent_runs_path(project, pull_request_id: pull_request.id),
-                  method: :post,
-                  class: "text-xs font-medium text-indigo-600 hover:text-indigo-900",
-                  form: { data: { action_button: true } } %>
+    <%# Three states: "Bump Priority" when queued automatic runs exist (only queued runs can be
+        reprioritized — pending/running are already claimed by a worker), "Run in progress" when
+        any active run exists (prevents Quick Run which would violate the unique active-run index),
+        and "Quick Run" when no active runs exist. %>
+    <% if pr_numbers_with_queued_auto_continue&.include?(pull_request.github_number) %>
+      <%= button_to "Bump Priority",
+                    bump_priority_project_agent_runs_path(project, pull_request_id: pull_request.id),
+                    method: :post,
+                    class: "text-xs font-medium text-amber-600 hover:text-amber-900",
+                    form: { data: { action_button: true } } %>
+    <% elsif pr_numbers_with_active_runs&.include?(pull_request.github_number) %>
+      <span class="text-xs font-medium text-gray-400">Run in progress</span>
+    <% else %>
+      <%= button_to "Quick Run",
+                    quick_create_project_agent_runs_path(project, pull_request_id: pull_request.id),
+                    method: :post,
+                    class: "text-xs font-medium text-indigo-600 hover:text-indigo-900",
+                    form: { data: { action_button: true } } %>
+    <% end %>
   </div>
 </li>
