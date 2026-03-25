@@ -15,7 +15,7 @@ module SecurityAlerts
     def title(alert)
       parts = [ "[Security]" ]
       parts << "Upgrade #{alert[:package_name]}" if alert[:package_name]
-      parts << "to #{alert[:patched_version]}" if alert[:patched_version]
+      parts << "to #{alert[:patched_version]}" if alert[:patched_version] && alert[:package_name]
       parts << "(#{alert[:severity]})" if alert[:severity]
       parts << "— #{alert_identifier(alert)}"
       parts.join(" ")

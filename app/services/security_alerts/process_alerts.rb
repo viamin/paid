@@ -84,7 +84,7 @@ module SecurityAlerts
 
       sorted = combined.sort_by do |entry|
         alert = entry[0] == :new ? entry[1] : entry[2]
-        SEVERITY_ORDER.index(alert[:severity]) || SEVERITY_ORDER.size
+        [ SEVERITY_ORDER.index(alert[:severity]) || SEVERITY_ORDER.size, alert[:number] ]
       end
 
       issues_to_run = []
@@ -134,8 +134,9 @@ module SecurityAlerts
 
       existing = @project.issues.find_by(github_issue_id: synthetic_issue_id(alert), source: SYNTHETIC_SOURCE)
       return nil unless existing
+      return nil if existing.github_state == "open"
 
-      reopen_closed_issue(existing, alert) if existing.github_state != "open"
+      reopen_closed_issue(existing, alert)
       { issue_id: existing.id, alert_number: alert[:number], alert_type: "dependabot" }
     rescue ActiveRecord::RecordInvalid => e
       Rails.logger.warn(
@@ -149,6 +150,8 @@ module SecurityAlerts
 
     def reopen_closed_issue(issue, alert)
       issue.update!(
+        title: FormatAlert.title(alert),
+        body: FormatAlert.body(alert),
         github_state: "open",
         paid_state: "new",
         github_updated_at: parse_alert_time(alert[:updated_at]) || Time.current
@@ -173,8 +176,8 @@ module SecurityAlerts
 
     def trusted_login
       @trusted_login ||= begin
-        login = @project.allowed_github_usernames
-          .filter_map { |u| u.strip.presence }
+        login = Array(@project.allowed_github_usernames)
+          .filter_map { |u| u.to_s.strip.presence }
           .first
         return login if login
 
