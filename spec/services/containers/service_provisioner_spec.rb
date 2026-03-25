@@ -317,6 +317,8 @@ RSpec.describe Containers::ServiceProvisioner do
       allow(Docker::Image).to receive(:create)
       allow(Docker::Container).to receive(:create).and_return(docker_container)
       allow(docker_container).to receive(:start)
+      allow(Docker::Container).to receive(:get).with("abc123")
+        .and_raise(Docker::Error::DockerError)
       allow(provisioner).to receive(:tcp_port_open?).and_return(true)
 
       provisioner.provision(agent_run)
@@ -344,7 +346,7 @@ RSpec.describe Containers::ServiceProvisioner do
         "State" => { "Running" => true, "Health" => { "Status" => "healthy" } }
       })
 
-      result = provisioner.send(:docker_healthcheck_healthy?, sc)
+      result = provisioner.send(:docker_healthcheck_status, sc)
       expect(result).to be true
     end
 
@@ -356,11 +358,11 @@ RSpec.describe Containers::ServiceProvisioner do
         "State" => { "Running" => true, "Health" => { "Status" => "unhealthy" } }
       })
 
-      result = provisioner.send(:docker_healthcheck_healthy?, sc)
+      result = provisioner.send(:docker_healthcheck_status, sc)
       expect(result).to be false
     end
 
-    it "returns false when no HEALTHCHECK is configured" do
+    it "returns nil when no HEALTHCHECK is configured" do
       sc = create(:service_container, status: "running", docker_container_id: "nohc123")
       container = instance_double(Docker::Container)
       allow(Docker::Container).to receive(:get).with("nohc123").and_return(container)
@@ -368,15 +370,15 @@ RSpec.describe Containers::ServiceProvisioner do
         "State" => { "Running" => true }
       })
 
-      result = provisioner.send(:docker_healthcheck_healthy?, sc)
-      expect(result).to be false
+      result = provisioner.send(:docker_healthcheck_status, sc)
+      expect(result).to be_nil
     end
 
-    it "returns false when docker_container_id is blank" do
+    it "returns nil when docker_container_id is blank" do
       sc = create(:service_container, status: "stopped", docker_container_id: nil)
 
-      result = provisioner.send(:docker_healthcheck_healthy?, sc)
-      expect(result).to be false
+      result = provisioner.send(:docker_healthcheck_status, sc)
+      expect(result).to be_nil
     end
   end
 

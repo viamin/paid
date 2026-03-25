@@ -54,7 +54,7 @@ RSpec.describe ServiceContainerReconciliationJob do
       expect(sc.reload.status).to eq("stopped")
     end
 
-    it "handles Docker API errors gracefully and continues" do
+    it "skips containers on transient Docker API errors" do
       sc1 = create(:service_container, status: "running", docker_container_id: "err123")
       sc2 = create(:service_container, status: "running", docker_container_id: "gone456")
 
@@ -65,8 +65,9 @@ RSpec.describe ServiceContainerReconciliationJob do
 
       job.perform
 
-      # sc1 is corrected because docker_container_running? returns false on DockerError
-      expect(sc1.reload.status).to eq("stopped")
+      # sc1 remains running because transient errors are not treated as drift
+      expect(sc1.reload.status).to eq("running")
+      # sc2 is corrected because NotFoundError confirms the container is gone
       expect(sc2.reload.status).to eq("stopped")
     end
 

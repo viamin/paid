@@ -99,6 +99,14 @@ module Containers
       env_vars
     end
 
+    # Stops a single service container unconditionally. Intended for cleanup
+    # of orphaned containers that have no active agent runs.
+    #
+    # @param service_container [ServiceContainer] The container to stop
+    def stop_orphaned_container!(service_container)
+      stop_container!(service_container)
+    end
+
     # Cleans up service containers that are no longer needed.
     # Only stops containers with no active agent runs still using them.
     #
@@ -297,7 +305,8 @@ module Containers
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
 
       loop do
-        if docker_healthcheck_healthy?(service_container) || tcp_port_open?(service_container.name, service_container.port)
+        healthcheck = docker_healthcheck_status(service_container)
+        if healthcheck == true || (healthcheck.nil? && tcp_port_open?(service_container.name, service_container.port))
           log_info("service_provisioner.healthy", name: service_container.name)
           return
         end
@@ -311,18 +320,19 @@ module Containers
     end
 
     # Checks the Docker-native HEALTHCHECK status when available.
-    # Returns true only when the container reports "healthy". Returns false
-    # for containers without a HEALTHCHECK so the caller falls back to TCP.
-    def docker_healthcheck_healthy?(service_container)
-      return false if service_container.docker_container_id.blank?
+    # Returns true when the container reports "healthy", false when a
+    # HEALTHCHECK is configured but not yet healthy/unhealthy, and nil
+    # when no HEALTHCHECK is configured (so the caller falls back to TCP).
+    def docker_healthcheck_status(service_container)
+      return nil if service_container.docker_container_id.blank?
 
       container = Docker::Container.get(service_container.docker_container_id)
       health_status = container.json.dig("State", "Health", "Status")
-      return false if health_status.nil?
+      return nil if health_status.nil?
 
       health_status == "healthy"
     rescue Docker::Error::DockerError
-      false
+      nil
     end
 
     def tcp_port_open?(host, port)

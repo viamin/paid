@@ -24,7 +24,11 @@ class ServiceContainerReconciliationJob < ApplicationJob
     errors = 0
 
     ServiceContainer.running.find_each do |sc|
-      unless docker_container_running?(sc.docker_container_id)
+      status = docker_container_status(sc.docker_container_id)
+
+      case status
+      when :not_running
+        previous_id = sc.docker_container_id
         sc.update!(status: "stopped", docker_container_id: nil)
         corrected += 1
         Rails.logger.warn(
@@ -32,7 +36,15 @@ class ServiceContainerReconciliationJob < ApplicationJob
           service_container_id: sc.id,
           name: sc.name,
           image: sc.image,
-          previous_docker_id: sc.docker_container_id_before_last_save
+          previous_docker_id: previous_id
+        )
+      when :unknown
+        errors += 1
+        Rails.logger.warn(
+          message: "container_manager.service_container_reconciliation_skipped",
+          service_container_id: sc.id,
+          name: sc.name,
+          reason: "transient Docker API error"
         )
       end
     rescue ActiveRecord::ActiveRecordError => e
@@ -55,12 +67,17 @@ class ServiceContainerReconciliationJob < ApplicationJob
 
   private
 
-  def docker_container_running?(container_id)
-    return false if container_id.blank?
+  # Returns :running, :not_running, or :unknown.
+  # :not_running means the container is confirmed missing or stopped.
+  # :unknown means a transient API error occurred and we should not correct.
+  def docker_container_status(container_id)
+    return :not_running if container_id.blank?
 
     container = Docker::Container.get(container_id)
-    container.json.dig("State", "Running") == true
+    container.json.dig("State", "Running") == true ? :running : :not_running
+  rescue Docker::Error::NotFoundError
+    :not_running
   rescue Docker::Error::DockerError
-    false
+    :unknown
   end
 end

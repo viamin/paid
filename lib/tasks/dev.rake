@@ -27,7 +27,7 @@ module DevCleanup
     ServiceContainer.running.find_each do |sc|
       next if sc.active_agent_run_count > 0
 
-      provisioner.send(:stop_container!, sc)
+      provisioner.stop_orphaned_container!(sc)
       count += 1
     rescue => e
       warn "  WARNING: Failed to stop service container #{sc.name}: #{e.message}"
