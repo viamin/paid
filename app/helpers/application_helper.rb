@@ -35,6 +35,22 @@ module ApplicationHelper
     )
   end
 
+  AGENT_RUN_PRIORITY_STYLES = {
+    manual: { bg: "bg-sky-100", text: "text-sky-700" },
+    auto_continue: { bg: "bg-violet-100", text: "text-violet-700" },
+    auto_pick: { bg: "bg-teal-100", text: "text-teal-700" },
+    unknown: { bg: "bg-gray-100", text: "text-gray-600" }
+  }.freeze
+
+  def agent_run_priority_badge(run)
+    priority = run.queue_priority_tier
+    styles = AGENT_RUN_PRIORITY_STYLES.fetch(priority, AGENT_RUN_PRIORITY_STYLES[:unknown])
+    tag.span(
+      run.queue_priority_label,
+      class: "inline-flex items-center rounded-md #{styles[:bg]} px-2 py-1 text-xs font-medium #{styles[:text]}"
+    )
+  end
+
   PAID_STATE_STYLES = {
     "new" => { bg: "bg-gray-100", text: "text-gray-700", label: "New" },
     "planning" => { bg: "bg-purple-100", text: "text-purple-700", label: "Planning" },

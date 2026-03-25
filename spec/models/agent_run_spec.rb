@@ -1191,6 +1191,46 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "#queue_priority_tier" do
+    it "returns :manual for manual trigger type" do
+      run = create(:agent_run, trigger_type: "manual")
+
+      expect(run.queue_priority_tier).to eq(:manual)
+    end
+
+    it "returns :auto_continue for automatic runs with a source PR" do
+      run = create(:agent_run, trigger_type: "automatic", source_pull_request_number: 42)
+
+      expect(run.queue_priority_tier).to eq(:auto_continue)
+    end
+
+    it "returns :auto_pick for automatic runs without a source PR" do
+      run = create(:agent_run, trigger_type: "automatic")
+
+      expect(run.queue_priority_tier).to eq(:auto_pick)
+    end
+  end
+
+  describe "#queue_priority_label" do
+    it "returns 'Manual' for manual runs" do
+      run = create(:agent_run, trigger_type: "manual")
+
+      expect(run.queue_priority_label).to eq("Manual")
+    end
+
+    it "returns 'Auto-continue' for automatic runs with a source PR" do
+      run = create(:agent_run, trigger_type: "automatic", source_pull_request_number: 42)
+
+      expect(run.queue_priority_label).to eq("Auto-continue")
+    end
+
+    it "returns 'Auto-pick' for automatic runs without a source PR" do
+      run = create(:agent_run, trigger_type: "automatic")
+
+      expect(run.queue_priority_label).to eq("Auto-pick")
+    end
+  end
+
   describe "constants" do
     it "defines valid STATUSES" do
       expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout retried auth_expired rate_limited])
