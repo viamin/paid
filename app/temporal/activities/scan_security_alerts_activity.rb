@@ -39,7 +39,7 @@ module Activities
       reconcile_resolved_alerts(project, all_alerts) unless all_alerts.nil?
       severity_filter = severities_at_or_above(project.security_severity_threshold)
       filtered_alerts = (all_alerts || []).select { |a| severity_filter.include?(a[:severity]) }
-      actionable, reopened = filter_actionable_alerts(project, filtered_alerts)
+      actionable, reopen_candidates = filter_actionable_alerts(project, filtered_alerts)
 
       # Apply the project-level cap across both newly created and re-opened
       # issues so the total never exceeds max_security_fix_runs per cycle.
@@ -48,8 +48,16 @@ module Activities
         create_issue_for_alert(project, alert)
       end
 
+      # Only reopen closed issues that fit within the remaining capacity.
+      # Deferring the reopen avoids orphaning issues in "new" state without
+      # an agent workflow when capacity is exhausted.
       remaining_slots = max_runs - issues_created.size
-      issues_created.concat(reopened.first(remaining_slots)) if remaining_slots.positive?
+      if remaining_slots.positive?
+        reopen_candidates.first(remaining_slots).each do |issue, alert|
+          reopen_closed_issue(issue)
+          issues_created << { issue_id: issue.id, alert_number: alert[:number], alert_type: "dependabot" }
+        end
+      end
 
       logger.info(
         message: "security_scanner.scan_complete",
@@ -110,10 +118,12 @@ module Activities
       end
     end
 
-    # Returns [new_alerts, reopened_issues]:
-    #   new_alerts   — alert hashes that need a new Issue created
-    #   reopened_issues — issue data hashes for re-opened synthetic Issues
-    #     (already exist in DB, just need an agent workflow started)
+    # Returns [new_alerts, reopen_candidates]:
+    #   new_alerts         — alert hashes that need a new Issue created
+    #   reopen_candidates  — [issue, alert] pairs for closed synthetic Issues
+    #     whose upstream alert is open again. The caller must call
+    #     reopen_closed_issue only on candidates it will actually trigger a
+    #     workflow for, to avoid orphaning reopened issues without an agent run.
     def filter_actionable_alerts(project, alerts)
       open_alerts = alerts.select { |a| a[:state] == "open" }
       return [ [], [] ] if open_alerts.empty?
@@ -126,7 +136,7 @@ module Activities
         .index_by(&:github_issue_id)
 
       new_alerts = []
-      reopened = []
+      reopen_candidates = []
 
       open_alerts.each do |alert|
         existing = existing_issues[generate_synthetic_issue_id(alert)]
@@ -135,14 +145,15 @@ module Activities
           new_alerts << alert
         elsif existing.github_state != "open"
           # The synthetic Issue was previously closed but the upstream alert
-          # is open again — re-open it and trigger an agent workflow.
-          reopen_closed_issue(existing)
-          reopened << { issue_id: existing.id, alert_number: alert[:number], alert_type: "dependabot" }
+          # is open again. Don't reopen here — defer until after capacity
+          # limits are applied so we never orphan a reopened issue without
+          # an agent workflow.
+          reopen_candidates << [ existing, alert ]
         end
         # else: existing issue is already open — no action needed
       end
 
-      [ new_alerts, reopened ]
+      [ new_alerts, reopen_candidates ]
     end
 
     def create_issue_for_alert(project, alert)

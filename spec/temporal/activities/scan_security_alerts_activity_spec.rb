@@ -214,6 +214,48 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
     end
 
+    context "when re-opened alerts exceed remaining capacity" do
+      let(:alerts) do
+        [
+          { number: 10, state: "open", severity: "critical", package_name: "new-pkg",
+            package_ecosystem: "npm", patched_version: "1.0.0", summary: "New vuln",
+            html_url: "https://github.com/owner/repo/security/dependabot/10" },
+          { number: 1, state: "open", severity: "high", package_name: "minimatch",
+            package_ecosystem: "npm", patched_version: "3.0.5", summary: "ReDoS vulnerability",
+            html_url: "https://github.com/owner/repo/security/dependabot/1" }
+        ]
+      end
+
+      before do
+        project.update!(max_security_fix_runs: 1)
+        allow(github_client).to receive(:dependabot_alerts)
+          .with(project.full_name)
+          .and_return(alerts)
+
+        # Pre-existing closed issue for alert #1 — a re-open candidate
+        create(:issue,
+          project: project,
+          title: "[Security] Upgrade minimatch — dependabot-alert-1",
+          github_issue_id: 900_000_000_001,
+          github_state: "closed",
+          paid_state: "completed",
+          source: "dependabot_alert")
+      end
+
+      it "does not reopen closed issues that exceed max_security_fix_runs" do
+        result = activity.execute(project_id: project.id)
+
+        # Only 1 slot: the new alert (#10) consumes it
+        expect(result[:alerts_to_fix].size).to eq(1)
+        expect(result[:alerts_to_fix].first[:alert_number]).to eq(10)
+
+        # The closed issue for alert #1 should NOT be reopened
+        issue = project.issues.find_by(github_issue_id: 900_000_000_001)
+        expect(issue.github_state).to eq("closed")
+        expect(issue.paid_state).to eq("completed")
+      end
+    end
+
     context "when a dismissed alert is returned" do
       let(:alerts) do
         [
