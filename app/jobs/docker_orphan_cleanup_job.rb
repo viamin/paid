@@ -161,6 +161,8 @@ class DockerOrphanCleanupJob < ApplicationJob
   def remove_volume(volume, agent_run_id)
     volume.remove
     true
+  rescue Docker::Error::NotFoundError
+    true # Volume disappeared between listing and removal (race condition)
   rescue Docker::Error::DockerError => e
     Rails.logger.warn(
       message: "container_manager.orphaned_volume_removal_failed",
