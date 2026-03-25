@@ -4,8 +4,6 @@ module Knowledge
   class CollectorRunner
     attr_reader :project, :commit_sha, :branch
 
-    REGISTRY = {}.freeze
-
     def initialize(project:, commit_sha:, branch: "main")
       @project = project
       @commit_sha = commit_sha
@@ -16,8 +14,19 @@ module Knowledge
       new(...).run
     end
 
+    def self.register(type, klass)
+      raise ArgumentError, "collector type must be provided" if type.nil?
+      raise ArgumentError, "collector class must be provided" if klass.nil?
+
+      registry[type.to_s] = klass
+    end
+
     def self.registry
-      REGISTRY
+      @registry ||= {}
+    end
+
+    def self.reset_registry!
+      @registry = {}
     end
 
     def run
@@ -34,7 +43,7 @@ module Knowledge
     private
 
     def resolve_project_version
-      ProjectVersion.find_or_create_by!(
+      ProjectVersion.create_or_find_by!(
         project: project,
         commit_sha: commit_sha
       ) do |pv|
@@ -49,14 +58,13 @@ module Knowledge
     end
 
     def run_single_collector(project_version, collector_type, collector_class)
-      collector_run = CollectorRun.find_or_initialize_by(
+      collector_run = CollectorRun.create_or_find_by!(
         project_version: project_version,
         collector_type: collector_type
       )
 
-      return skip_result(collector_type) if collector_run.persisted? && collector_run.status == "completed"
+      return skip_result(collector_type) if collector_run.status == "completed"
 
-      collector_run.save! if collector_run.new_record?
       collector_run.mark_running!
 
       collector = collector_class.new(

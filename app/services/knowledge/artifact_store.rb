@@ -9,8 +9,8 @@ module Knowledge
       @collector_run = collector_run
     end
 
-    def self.call(...)
-      new(...).store_all
+    def self.call(project:, collector_run:, artifact_data_list: [])
+      new(project: project, collector_run: collector_run).store_all(artifact_data_list)
     end
 
     # Accepts an array of artifact hashes and upserts them idempotently.

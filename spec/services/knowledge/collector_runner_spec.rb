@@ -35,7 +35,12 @@ RSpec.describe Knowledge::CollectorRunner do
   end
 
   before do
-    stub_const("Knowledge::CollectorRunner::REGISTRY", { "test_collector" => test_collector_class })
+    described_class.reset_registry!
+    described_class.register("test_collector", test_collector_class)
+  end
+
+  after do
+    described_class.reset_registry!
   end
 
   describe ".call" do
@@ -136,10 +141,9 @@ RSpec.describe Knowledge::CollectorRunner do
       end
 
       before do
-        stub_const("Knowledge::CollectorRunner::REGISTRY", {
-          "failing_collector" => failing_collector_class,
-          "test_collector" => test_collector_class
-        })
+        described_class.reset_registry!
+        described_class.register("failing_collector", failing_collector_class)
+        described_class.register("test_collector", test_collector_class)
       end
 
       it "does not block other collectors" do
