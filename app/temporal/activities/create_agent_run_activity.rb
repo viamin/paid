@@ -85,7 +85,9 @@ module Activities
 
         {
           agent_run_id: agent_run.id,
-          provider_attempt_count: provider_attempt_count_for(agent_type, user_settings)
+          provider_attempt_count: provider_attempt_count_for(agent_type, user_settings),
+          agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
+          issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
         }
       end
     end
@@ -118,9 +120,12 @@ module Activities
         issue_id: agent_run.issue_id
       )
 
+      user_settings = resolve_user_settings(agent_run.project)
       {
         agent_run_id: agent_run.id,
-        provider_attempt_count: provider_attempt_count_for(agent_run.agent_type, resolve_user_settings(agent_run.project))
+        provider_attempt_count: provider_attempt_count_for(agent_run.agent_type, user_settings),
+        agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
+        issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
       }
     end
 

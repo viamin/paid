@@ -446,6 +446,34 @@ RSpec.describe "Api::SecretsProxy" do
       end
     end
 
+    context "when UserSetting overrides max_tokens_per_run" do
+      before do
+        create(:user_setting,
+          user: project.created_by,
+          max_tokens_per_run: 5_000)
+      end
+
+      it "returns 429 when usage exceeds the custom limit" do
+        agent_run.update!(tokens_input: 4_000, tokens_output: 2_000)
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:too_many_requests)
+      end
+
+      it "allows the request when usage is within the custom limit" do
+        agent_run.update!(tokens_input: 1_000, tokens_output: 500)
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
     context "when agent run is within token limit" do
       let(:agent_run) do
         create(:agent_run, :running, project: project,

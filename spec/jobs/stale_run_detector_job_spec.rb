@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe StaleRunDetectorJob do
   # agent_timeout + GRACE_PERIOD = total threshold before a run is considered stale
-  let(:stale_threshold) { Rails.application.config.x.agent_timeout + described_class::GRACE_PERIOD.to_i }
+  let(:stale_threshold) { AGENT_TIMEOUT_DEFAULT + described_class::GRACE_PERIOD.to_i }
 
   describe "#perform" do
     it "times out runs stuck in running beyond the threshold" do
