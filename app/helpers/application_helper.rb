@@ -168,7 +168,7 @@ module ApplicationHelper
 
     if context[:tooltip].present?
       tooltip_id = "tooltip_#{run.id}"
-      tag.span(class: "relative inline-flex items-center gap-1", data: { controller: "tooltip" }) do
+      tag.span(class: "inline-flex items-center gap-1", data: { controller: "tooltip" }) do
         safe_join([
           inner,
           tag.button(
@@ -188,7 +188,7 @@ module ApplicationHelper
             id: tooltip_id,
             role: "tooltip",
             aria: { hidden: "true" },
-            class: "hidden absolute left-0 top-full z-10 mt-1 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg",
+            class: "hidden fixed z-50 w-48 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow-lg",
             data: { tooltip_target: "content" }
           )
         ])

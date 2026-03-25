@@ -1,9 +1,10 @@
 import { Controller } from "@hotwired/stimulus"
 
-// Manages a mobile-only tappable tooltip (info icon).
-// Desktop (hover-capable) devices skip JS listeners entirely and rely on
-// the native HTML `title` attribute — the info icon is hidden via
-// `@media(hover:hover) and (pointer:fine) and (not (any-pointer:coarse))` in the template.
+// Manages a tappable tooltip (info icon) for devices that do not support
+// a pure hover/fine-pointer experience.
+// Devices that match `@media (hover:hover) and (pointer:fine) and (not (any-pointer:coarse))`
+// (typically non-touch desktops) skip JS listeners entirely and rely on the native
+// HTML `title` attribute — the info icon is hidden via that media query in the template.
 export default class extends Controller {
   static targets = ["content"]
 
@@ -35,6 +36,7 @@ export default class extends Controller {
     this.#updateAria(expanded)
 
     if (expanded) {
+      this.#positionTooltip()
       this.#addGlobalListeners()
     } else {
       this.#removeGlobalListeners()
@@ -67,6 +69,15 @@ export default class extends Controller {
   }
 
   // -- private ---------------------------------------------------------------
+
+  #positionTooltip() {
+    const button = this.element.querySelector("button[aria-controls]")
+    if (!button) return
+
+    const rect = button.getBoundingClientRect()
+    this.contentTarget.style.top = `${rect.bottom + 4}px`
+    this.contentTarget.style.left = `${rect.left}px`
+  }
 
   #close() {
     if (!this.contentTarget.classList.contains("hidden")) {
