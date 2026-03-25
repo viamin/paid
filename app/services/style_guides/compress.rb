@@ -10,12 +10,13 @@ module StyleGuides
   class CompressionError < StandardError; end
 
   class Compress
-    MODEL = "claude-sonnet-4-6"
+    DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 120
 
-    # Maximum raw content size sent to the LLM for compression.
+    # Default maximum raw content size sent to the LLM for compression.
     # Content beyond this limit is truncated; metadata records the truncation.
-    MAX_RAW_BYTES = 100_000
+    # Overridden by UserSetting#style_guide_max_raw_bytes at runtime.
+    DEFAULT_MAX_RAW_BYTES = 100_000
 
     COMPRESSION_PROMPT = <<~PROMPT
       You are a technical writing assistant. Compress the following coding style guide into a concise, LLM-friendly format.
@@ -57,13 +58,15 @@ module StyleGuides
 
     def compress_content
       raw = style_guide.raw_content
-      @truncated = raw.bytesize > MAX_RAW_BYTES
-      raw = raw.byteslice(0, MAX_RAW_BYTES).scrub("") if @truncated
+      max_bytes = user_settings&.style_guide_max_raw_bytes || DEFAULT_MAX_RAW_BYTES
+      @truncated = raw.bytesize > max_bytes
+      @max_raw_bytes_used = max_bytes
+      raw = raw.byteslice(0, max_bytes).scrub("") if @truncated
 
       response = AgentHarness.send_message(
         "#{COMPRESSION_PROMPT}\n\n#{raw}",
         provider: :claude,
-        model: MODEL,
+        model: DEFAULT_MODEL,
         timeout: TIMEOUT,
         dangerous_mode: false
       )
@@ -90,13 +93,20 @@ module StyleGuides
 
       meta = {
         "compressed_at" => Time.current.iso8601,
-        "model" => MODEL,
+        "model" => DEFAULT_MODEL,
         "raw_length" => raw_bytes,
         "compressed_length" => compressed_bytes,
         "compression_ratio" => (compressed_bytes.to_f / raw_bytes).round(2)
       }
-      meta["truncated_at_bytes"] = MAX_RAW_BYTES if @truncated
+      meta["truncated_at_bytes"] = @max_raw_bytes_used if @truncated
       meta
+    end
+
+    def user_settings
+      return @user_settings if defined?(@user_settings)
+
+      project = style_guide.project
+      @user_settings = project ? AgentRuns::UserSettingsResolver.call(project: project, strict: false) : nil
     end
   end
 end

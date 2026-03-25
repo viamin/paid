@@ -1459,4 +1459,43 @@ RSpec.describe AgentRun do
       expect(summary[:observed_seconds]).to eq(540)
     end
   end
+
+  # Rails 5.0+ fires after_commit callbacks within transactional test fixtures
+  # (the test_after_commit gem was absorbed into Rails core). These specs rely
+  # on that behavior and work correctly with use_transactional_fixtures = true.
+  # We intentionally use after_commit (not after_save) so the job only enqueues
+  # after the AgentRun record is visible to other database connections.
+  describe "container metrics collection callback" do
+    it "enqueues ContainerMetricsCollectionJob when transitioning to running with container_id" do
+      agent_run = create(:agent_run, status: "pending", container_id: "abc123")
+
+      expect {
+        agent_run.update!(status: "running", started_at: Time.current)
+      }.to have_enqueued_job(ContainerMetricsCollectionJob).with(agent_run.id)
+    end
+
+    it "does not enqueue when transitioning to running without container_id" do
+      agent_run = create(:agent_run, status: "pending", container_id: nil)
+
+      expect {
+        agent_run.update!(status: "running", started_at: Time.current)
+      }.not_to have_enqueued_job(ContainerMetricsCollectionJob)
+    end
+
+    it "does not enqueue when transitioning to a non-running status" do
+      agent_run = create(:agent_run, :running, container_id: "abc123")
+
+      expect {
+        agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10)
+      }.not_to have_enqueued_job(ContainerMetricsCollectionJob)
+    end
+
+    it "does not enqueue when updating a running run without status change" do
+      agent_run = create(:agent_run, :running, container_id: "abc123")
+
+      expect {
+        agent_run.update!(branch_name: "feature/test")
+      }.not_to have_enqueued_job(ContainerMetricsCollectionJob)
+    end
+  end
 end

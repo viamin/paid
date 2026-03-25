@@ -7,7 +7,7 @@ module Activities
   # Handles rate limiting by re-raising as a retryable Temporal error.
   class FetchIssuesActivity < BaseActivity
     PAID_GENERATED_LABEL = "paid-generated"
-    PER_PAGE = 100
+    DEFAULT_PER_PAGE = 100
 
     def execute(input)
       project_id = input[:project_id]
@@ -41,13 +41,13 @@ module Activities
 
     private
 
-    MAX_PAGES = 10
+    DEFAULT_MAX_PAGES = 10
 
     # Fetches open issues for each label separately, then deduplicates.
     # GitHub's API treats multiple labels as AND (all required), so we
     # must query per-label to get OR behavior (any label matches).
     # Returns [issues, truncated] where truncated is true if any label
-    # fetch hit the MAX_PAGES cap (meaning the result is not authoritative).
+    # fetch hit the DEFAULT_MAX_PAGES cap (meaning the result is not authoritative).
     def fetch_all_issues(client, repo_full_name, labels)
       if labels.empty?
         issues, truncated = fetch_issues_for_label(client, repo_full_name, nil)
@@ -74,7 +74,7 @@ module Activities
     end
 
     # Returns [issues, truncated] where truncated is true when the
-    # MAX_PAGES cap was reached before all pages were fetched.
+    # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
     def fetch_issues_for_label(client, repo_full_name, label)
       issues = []
       page = 1
@@ -85,25 +85,25 @@ module Activities
           repo_full_name,
           labels: label ? [ label ] : nil,
           state: "open",
-          per_page: PER_PAGE,
+          per_page: DEFAULT_PER_PAGE,
           page: page
         )
 
         break if page_issues.empty?
 
         issues.concat(page_issues)
-        break if page_issues.size < PER_PAGE
+        break if page_issues.size < DEFAULT_PER_PAGE
 
         page += 1
 
-        if page > MAX_PAGES
+        if page > DEFAULT_MAX_PAGES
           truncated = true
           logger.warn(
             message: "github_sync.fetch_issues_page_limit",
             repo: repo_full_name,
             label: label,
             fetched_count: issues.size,
-            max_pages: MAX_PAGES
+            max_pages: DEFAULT_MAX_PAGES
           )
           break
         end
@@ -165,7 +165,7 @@ module Activities
     end
 
     def close_stale_issues(project, github_issues, truncated: false)
-      # When the fetch was truncated by the MAX_PAGES cap, the fetched list
+      # When the fetch was truncated by the DEFAULT_MAX_PAGES cap, the fetched list
       # is not an authoritative snapshot. Closing issues not in this list
       # would incorrectly close still-open GitHub issues that were beyond
       # the page limit. Skip stale-closure entirely in this case.
