@@ -331,7 +331,7 @@ module Containers
       return nil if health_status.nil?
 
       health_status == "healthy"
-    rescue Docker::Error::DockerError
+    rescue Docker::Error::DockerError, Excon::Error
       nil
     end
 
@@ -348,7 +348,7 @@ module Containers
 
       container = Docker::Container.get(container_id)
       container.info.dig("State", "Running") == true
-    rescue Docker::Error::DockerError
+    rescue Docker::Error::DockerError, Excon::Error
       false
     end
 

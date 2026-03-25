@@ -77,7 +77,7 @@ class ServiceContainerReconciliationJob < ApplicationJob
     container.json.dig("State", "Running") == true ? :running : :not_running
   rescue Docker::Error::NotFoundError
     :not_running
-  rescue Docker::Error::DockerError
+  rescue Docker::Error::DockerError, Excon::Error
     :unknown
   end
 end

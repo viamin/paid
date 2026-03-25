@@ -46,7 +46,7 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
         allow(docker_container).to receive(:start)
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
 
         result = provisioner.provision(agent_run)
 
@@ -77,7 +77,7 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(new_container)
         allow(new_container).to receive(:start)
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
 
         result = provisioner.provision(agent_run)
 
@@ -160,7 +160,7 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(stale).to receive(:stop)
         allow(stale).to receive(:delete)
         allow(new_container).to receive(:start)
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
 
         result = provisioner.provision(agent_run)
 
@@ -177,7 +177,7 @@ RSpec.describe Containers::ServiceProvisioner do
           .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
         allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(existing)
         allow(existing).to receive_messages(json: running_json, stop: nil, delete: nil)
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
 
         result = provisioner.provision(agent_run)
 
@@ -219,12 +219,9 @@ RSpec.describe Containers::ServiceProvisioner do
       before do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(
-          instance_double(Docker::Container, id: "test123")
-        )
-        allow(Docker::Container).to receive(:create).and_return(
           instance_double(Docker::Container, id: "test123").tap { |c| allow(c).to receive(:start) }
         )
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
       end
 
       it "generates DATABASE_URL for postgres images" do
