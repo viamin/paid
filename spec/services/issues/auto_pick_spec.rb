@@ -211,7 +211,6 @@ RSpec.describe Issues::AutoPick do
 
     it "selects dependency tree issues in correct order" do
       # Build tree: A depends on B and C; B depends on D
-      # Correct pick order: D first (leaf, unblocks B), then C
       issue_d = create(:issue, project: project, github_number: 4)
       issue_c = create(:issue, project: project, github_number: 3)
       issue_b = create(:issue, project: project, github_number: 2)
@@ -221,10 +220,9 @@ RSpec.describe Issues::AutoPick do
       create(:issue_dependency, issue: issue_a, depends_on_issue: issue_c)
       create(:issue_dependency, issue: issue_b, depends_on_issue: issue_d)
 
-      # A and B are blocked; only C and D are eligible
-      # D unblocks B (which in turn unblocks A) — 1 direct unblock
-      # C unblocks A — 1 direct unblock
-      # Tie on unblock count, so github_number breaks tie: C (#3) before D (#4)
+      # A and B are blocked; only C and D are eligible.
+      # Both have 1 direct unblock (C -> A, D -> B) and neither is in a
+      # started tree, so github_number breaks the tie: C (#3) before D (#4).
       result = described_class.new(project).call
       expect(result.issue).to eq(issue_c)
     end

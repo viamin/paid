@@ -148,6 +148,7 @@ module Issues
     def parent_issue_ids
       Issue.where(project: @project)
         .where.not(parent_issue_id: nil)
+        .distinct
         .select(:parent_issue_id)
     end
 
@@ -160,17 +161,25 @@ module Issues
 
       # An issue is in a "started tree" when at least one sibling
       # dependency (another issue that blocks the same downstream
-      # issue) has already been closed.
+      # issue) has already been closed. Only consider in-project,
+      # open downstream issues and in-project siblings to avoid
+      # cross-project or closed-tree skew.
       tree_progress = <<~SQL.squish
         CASE WHEN EXISTS (
-          SELECT 1 FROM issue_dependencies id1
-          INNER JOIN issue_dependencies id2
-            ON id1.issue_id = id2.issue_id
-          INNER JOIN issues sibling
-            ON id2.depends_on_issue_id = sibling.id
-          WHERE id1.depends_on_issue_id = issues.id
-            AND sibling.github_state = 'closed'
-            AND sibling.id != issues.id
+          SELECT 1
+            FROM issue_dependencies id1
+            INNER JOIN issues downstream
+              ON downstream.id = id1.issue_id
+            INNER JOIN issue_dependencies id2
+              ON id1.issue_id = id2.issue_id
+            INNER JOIN issues sibling
+              ON sibling.id = id2.depends_on_issue_id
+           WHERE id1.depends_on_issue_id = issues.id
+             AND downstream.github_state = 'open'
+             AND downstream.project_id = #{pid}
+             AND sibling.github_state = 'closed'
+             AND sibling.project_id = #{pid}
+             AND sibling.id != issues.id
         ) THEN 1 ELSE 0 END
       SQL
 
