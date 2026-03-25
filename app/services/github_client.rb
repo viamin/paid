@@ -15,8 +15,8 @@ require "faraday/retry"
 #   issues = client.issues("owner/repo", labels: "bug")
 #
 class GithubClient
-  CHECK_RUNS_PER_PAGE = 100
-  CHECK_RUNS_MAX_PAGES = 10
+  DEFAULT_CHECK_RUNS_PER_PAGE = 100
+  DEFAULT_CHECK_RUNS_MAX_PAGES = 10
 
   # Base error for all GitHub client errors
   class Error < StandardError; end
@@ -263,13 +263,13 @@ class GithubClient
       page = 1
 
       loop do
-        response = client.check_runs_for_ref(repo, ref, per_page: CHECK_RUNS_PER_PAGE, page: page)
+        response = client.check_runs_for_ref(repo, ref, per_page: DEFAULT_CHECK_RUNS_PER_PAGE, page: page)
         total_count = response.total_count
         all_check_runs.concat(response.check_runs)
-        break if all_check_runs.size >= response.total_count || response.check_runs.size < CHECK_RUNS_PER_PAGE
+        break if all_check_runs.size >= response.total_count || response.check_runs.size < DEFAULT_CHECK_RUNS_PER_PAGE
 
         page += 1
-        break if page > CHECK_RUNS_MAX_PAGES
+        break if page > DEFAULT_CHECK_RUNS_MAX_PAGES
       end
 
       if all_check_runs.size < total_count
@@ -279,7 +279,7 @@ class GithubClient
           ref: ref,
           total_count: total_count,
           fetched_count: all_check_runs.size,
-          max_pages: CHECK_RUNS_MAX_PAGES
+          max_pages: DEFAULT_CHECK_RUNS_MAX_PAGES
         )
       end
 
@@ -494,6 +494,55 @@ class GithubClient
 
     path = "#{Octokit::Repository.path repo}/pulls/#{number}/merge"
     handle_errors { client.put(path, options) }
+  end
+
+  # Fetches Dependabot alerts for a repository.
+  #
+  # Uses Octokit's auto-pagination to fetch all pages so callers get an
+  # authoritative snapshot. This prevents reconciliation from incorrectly
+  # closing synthetic issues for alerts that would have been truncated
+  # by a manual page cap.
+  #
+  # The GitHub Dependabot alerts API supports server-side severity
+  # filtering via the +severity+ query parameter (comma-separated).
+  # Pass a single severity string to filter on the server, or omit it
+  # to fetch all severities and filter locally.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param severity [String, nil] Filter by severity: "low", "medium", "high", or "critical"
+  # @param state [String] Alert state: "open", "dismissed", "fixed", or "auto_dismissed"
+  # @param per_page [Integer] Number of results per page
+  # @return [Array<Hash>] Alerts with :number, :state, :severity, :package_name,
+  #   :package_ecosystem, :patched_version, :summary, :html_url,
+  #   :created_at, :updated_at keys
+  def dependabot_alerts(repo, severity: nil, state: "open", per_page: 100)
+    handle_errors do
+      params = { state: state, per_page: per_page }
+      params[:severity] = severity if severity.present?
+
+      all_alerts = client.paginate(
+        "#{Octokit::Repository.path(repo)}/dependabot/alerts",
+        **params
+      )
+
+      Array(all_alerts).map do |alert|
+        security_vulnerability = alert.security_vulnerability
+        security_advisory = alert.security_advisory
+
+        {
+          number: alert.number,
+          state: alert.state,
+          severity: security_advisory&.severity || security_vulnerability&.severity,
+          package_name: alert.dependency&.package&.name,
+          package_ecosystem: alert.dependency&.package&.ecosystem,
+          patched_version: security_vulnerability&.first_patched_version&.identifier,
+          summary: security_advisory&.summary,
+          html_url: alert.html_url,
+          created_at: alert.created_at,
+          updated_at: alert.updated_at
+        }
+      end
+    end
   end
 
   # Gets the remaining rate limit.

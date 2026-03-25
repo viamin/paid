@@ -5,9 +5,10 @@
 #   ./scripts/test-agent-image.sh              # Test default image
 #   IMAGE_NAME=myregistry/paid-agent ./scripts/test-agent-image.sh  # Test custom image
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INNER_SCRIPT="${SCRIPT_DIR}/test-agent-image-inner.sh"
 
 IMAGE_NAME="${IMAGE_NAME:-paid-agent}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
@@ -24,11 +25,16 @@ if ! docker image inspect "${FULL_IMAGE}" > /dev/null 2>&1; then
     exit 1
 fi
 
+if [ ! -f "${INNER_SCRIPT}" ]; then
+    echo "Error: inner test script not found: ${INNER_SCRIPT}"
+    exit 1
+fi
+
 # Run tests inside the container.
 # The inner script is mounted read-only so it can be linted independently by shellcheck
 # and to avoid complex quoting/escaping issues that arise with large bash -c strings.
 docker run --rm \
-    -v "${SCRIPT_DIR}/test-agent-image-inner.sh:/tmp/test.sh:ro" \
+    -v "${INNER_SCRIPT}:/tmp/test.sh:ro" \
     "${FULL_IMAGE}" bash /tmp/test.sh
 
 echo ""
