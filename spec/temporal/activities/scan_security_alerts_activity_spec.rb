@@ -511,6 +511,49 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
       end
     end
 
+    context "when rate limited" do
+      before do
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::RateLimitError.new(Time.current + 3600))
+      end
+
+      it "raises a retryable Temporal application error" do
+        expect {
+          activity.execute(project_id: project.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |e|
+          expect(e.type).to eq("RateLimit")
+          expect(e.non_retryable).to be false
+        }
+      end
+    end
+
+    context "when Dependabot is not enabled (NotFoundError)" do
+      before do
+        allow(github_client).to receive(:dependabot_alerts)
+          .and_raise(GithubClient::NotFoundError)
+      end
+
+      it "returns empty actionable list" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:alerts_to_fix]).to eq([])
+      end
+
+      it "does not close existing synthetic issues" do
+        stale_issue = create(:issue,
+          project: project,
+          title: "[Security] Upgrade old-pkg — dependabot-alert-99",
+          github_issue_id: id_offset + 99,
+          github_state: "open",
+          source: source)
+
+        activity.execute(project_id: project.id)
+
+        stale_issue.reload
+        expect(stale_issue.github_state).to eq("open")
+      end
+    end
+
     context "when alert types includes other types but not dependabot" do
       before do
         project.update!(security_alert_types: [ "code_scanning" ])
