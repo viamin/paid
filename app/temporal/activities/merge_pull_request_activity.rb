@@ -10,6 +10,7 @@ module Activities
     activity_name "MergePullRequest"
 
     EXPECTED_MERGE_STATUSES = [ 405, 409, 422 ].freeze
+    PAID_AUTO_MERGED_LABEL = "paid-auto-merged"
 
     def execute(input)
       project = Project.find(input[:project_id])
@@ -39,7 +40,12 @@ module Activities
         attempt_merge(client, project, pr_number)
       end
 
-      issue.update!(pr_review_phase: "merged") if merged
+      if merged
+        issue.update!(pr_review_phase: "merged")
+        # Only label PRs that this activity actually merged — already-merged
+        # PRs may have been merged manually by a human.
+        add_phase_label(client, project, pr_number, PAID_AUTO_MERGED_LABEL) unless pr_data.merged_at
+      end
 
       { merged: merged, pr_number: pr_number }
     end

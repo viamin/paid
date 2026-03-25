@@ -135,7 +135,7 @@ RSpec.describe Issues::AutoPick do
       expect(result).to be_nil
     end
 
-    it "picks the issue with the lowest github_number first" do
+    it "picks the issue with the lowest github_number first (no dependencies)" do
       later = create(:issue, project: project, github_number: 200)
       earlier = create(:issue, project: project, github_number: 100)
 
@@ -143,6 +143,88 @@ RSpec.describe Issues::AutoPick do
 
       expect(result.issue).to eq(earlier)
       expect(later.reload.agent_runs).to be_empty
+    end
+
+    it "skips issues labeled tracking" do
+      create(:issue, project: project, labels: [ "tracking" ])
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
+    end
+
+    it "skips issues labeled epic" do
+      create(:issue, project: project, labels: [ "epic" ])
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
+    end
+
+    it "skips parent issues that have sub-issues" do
+      parent = create(:issue, project: project, github_number: 1)
+      create(:issue, project: project, github_number: 3, parent_issue: parent)
+      standalone = create(:issue, project: project, github_number: 2)
+
+      result = described_class.new(project).call
+
+      # Parent (github_number: 1) is skipped; standalone (#2) picked over sub-issue (#3)
+      expect(result.issue).to eq(standalone)
+    end
+
+    it "prefers issues that unblock more downstream work" do
+      # leaf_a unblocks 2 issues, leaf_b unblocks 1 issue
+      leaf_a = create(:issue, project: project, github_number: 10)
+      leaf_b = create(:issue, project: project, github_number: 5)
+      downstream1 = create(:issue, project: project, github_number: 20)
+      downstream2 = create(:issue, project: project, github_number: 21)
+      downstream3 = create(:issue, project: project, github_number: 22)
+
+      create(:issue_dependency, issue: downstream1, depends_on_issue: leaf_a)
+      create(:issue_dependency, issue: downstream2, depends_on_issue: leaf_a)
+      create(:issue_dependency, issue: downstream3, depends_on_issue: leaf_b)
+
+      result = described_class.new(project).call
+
+      # leaf_a unblocks 2, leaf_b unblocks 1 — pick leaf_a despite higher number
+      expect(result.issue).to eq(leaf_a)
+    end
+
+    it "prefers issues in partially-complete dependency trees" do
+      # Tree 1: partially complete (sibling_closed is done)
+      tree1_issue = create(:issue, project: project, github_number: 10)
+      sibling_closed = create(:issue, :closed, project: project, github_number: 11)
+      downstream = create(:issue, project: project, github_number: 20)
+      create(:issue_dependency, issue: downstream, depends_on_issue: tree1_issue)
+      create(:issue_dependency, issue: downstream, depends_on_issue: sibling_closed)
+
+      # Tree 2: not started (standalone unblocking issue)
+      tree2_issue = create(:issue, project: project, github_number: 1)
+      tree2_downstream = create(:issue, project: project, github_number: 30)
+      create(:issue_dependency, issue: tree2_downstream, depends_on_issue: tree2_issue)
+
+      result = described_class.new(project).call
+
+      # tree1_issue is in a started tree — prefer it over tree2_issue
+      expect(result.issue).to eq(tree1_issue)
+    end
+
+    it "selects dependency tree issues in correct order" do
+      # Build tree: A depends on B and C; B depends on D
+      issue_d = create(:issue, project: project, github_number: 4)
+      issue_c = create(:issue, project: project, github_number: 3)
+      issue_b = create(:issue, project: project, github_number: 2)
+      issue_a = create(:issue, project: project, github_number: 1)
+
+      create(:issue_dependency, issue: issue_a, depends_on_issue: issue_b)
+      create(:issue_dependency, issue: issue_a, depends_on_issue: issue_c)
+      create(:issue_dependency, issue: issue_b, depends_on_issue: issue_d)
+
+      # A and B are blocked; only C and D are eligible.
+      # Both have 1 direct unblock (C -> A, D -> B) and neither is in a
+      # started tree, so github_number breaks the tie: C (#3) before D (#4).
+      result = described_class.new(project).call
+      expect(result.issue).to eq(issue_c)
     end
 
     it "returns nil when no eligible issues exist" do
@@ -424,6 +506,30 @@ RSpec.describe Issues::AutoPick do
 
         expect(result).to be_a(AgentRun)
         expect(result.issue).to eq(issue)
+      end
+    end
+
+    context "with synthetic Dependabot issues" do
+      it "skips synthetic Dependabot issues (managed by ScanSecurityAlertsActivity)" do
+        create(:issue, project: project, source: Issue::SYNTHETIC_DEPENDABOT_SOURCE,
+          github_issue_id: Issue::SYNTHETIC_ISSUE_ID_OFFSET + 1,
+          github_number: 100_000_001)
+        github_issue = create(:issue, project: project, source: Issue::GITHUB_SOURCE)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(github_issue)
+      end
+
+      it "returns nil when only synthetic Dependabot issues exist" do
+        create(:issue, project: project, source: Issue::SYNTHETIC_DEPENDABOT_SOURCE,
+          github_issue_id: Issue::SYNTHETIC_ISSUE_ID_OFFSET + 1,
+          github_number: 100_000_001)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
       end
     end
   end

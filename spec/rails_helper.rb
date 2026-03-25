@@ -73,4 +73,18 @@ RSpec.configure do |config|
   config.after do
     ProviderSupport.reset_supported_provider_keys!
   end
+
+  # When running without a database (ALLOW_DBLESS_SPECS=true), automatically skip
+  # examples that need a database connection. This lets the non-DB specs run and
+  # report results while DB-dependent specs are marked as pending.
+  unless database_available
+    config.before do |example|
+      # Only run specs under spec/lib/ which typically don't need a database.
+      # All other specs are skipped to avoid ActiveRecord::ConnectionNotEstablished errors.
+      spec_file = example.metadata[:file_path].to_s
+      unless spec_file.start_with?("./spec/lib/", "spec/lib/")
+        skip "Database not available (ALLOW_DBLESS_SPECS=true)"
+      end
+    end
+  end
 end

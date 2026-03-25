@@ -46,6 +46,11 @@ RSpec.describe Activities::RunAgentActivity do
       expect(described_class::AGENT_COMMANDS).to have_key("kilocode")
       expect(described_class::AGENT_COMMANDS["kilocode"]).to include("kilo")
     end
+
+    it "includes a command mapping for opencode" do
+      expect(described_class::AGENT_COMMANDS).to have_key("opencode")
+      expect(described_class::AGENT_COMMANDS["opencode"]).to include("opencode")
+    end
   end
 
   describe ".provider_order" do
@@ -97,6 +102,16 @@ RSpec.describe Activities::RunAgentActivity do
       )
 
       expect(result).to eq(%w[claude_code kilocode codex])
+    end
+
+    it "includes opencode in fallback order when listed" do
+      result = described_class.provider_order(
+        agent_type: "claude_code",
+        fallback_enabled: true,
+        fallback_providers: %w[opencode codex]
+      )
+
+      expect(result).to eq(%w[claude_code opencode codex])
     end
   end
 
@@ -419,8 +434,8 @@ RSpec.describe Activities::RunAgentActivity do
       it "uses the shorter issue goal timeout" do
         expect(container_service).to receive(:execute).with(
           anything,
-          timeout: described_class::ISSUE_GOAL_TIMEOUT,
-          idle_timeout: described_class::ISSUE_GOAL_IDLE_TIMEOUT
+          timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT,
+          idle_timeout: described_class::DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
         ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
@@ -445,7 +460,7 @@ RSpec.describe Activities::RunAgentActivity do
 
         expect(container_service).to receive(:execute).with(
           anything,
-          timeout: Rails.application.config.x.agent_timeout,
+          timeout: AGENT_TIMEOUT_DEFAULT,
           idle_timeout: nil
         ).and_return(exec_success)
 

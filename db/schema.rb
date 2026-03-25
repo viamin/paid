@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_25_162327) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -119,10 +119,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
   create_table "agent_runs", force: :cascade do |t|
     t.string "agent_type", limit: 50, null: false
     t.string "auth_provider", limit: 50
+    t.float "avg_cpu_percent"
+    t.decimal "avg_memory_bytes", precision: 20, scale: 4
     t.string "base_commit_sha", limit: 40
     t.string "branch_name", limit: 255
     t.datetime "completed_at"
     t.string "container_id", limit: 128
+    t.integer "container_metrics_count", default: 0, null: false
     t.integer "cost_cents", default: 0
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
@@ -134,6 +137,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.bigint "issue_id"
     t.integer "iterations", default: 0
+    t.float "peak_cpu_percent"
+    t.bigint "peak_memory_bytes"
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
     t.integer "provider_switches", default: 0, null: false
@@ -144,6 +149,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
     t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
     t.datetime "review_posted_at"
+    t.string "review_url", limit: 500
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
@@ -167,6 +173,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
+  end
+
+  create_table "container_metrics", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.string "container_id", limit: 128, null: false
+    t.float "cpu_percent", default: 0.0, null: false
+    t.datetime "created_at", null: false
+    t.bigint "memory_bytes", default: 0, null: false
+    t.bigint "memory_limit_bytes", default: 0, null: false
+    t.float "memory_percent", default: 0.0, null: false
+    t.integer "pids_count"
+    t.datetime "recorded_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "recorded_at"], name: "index_container_metrics_on_run_and_recorded"
+    t.index ["container_id"], name: "index_container_metrics_on_container_id"
+    t.index ["recorded_at"], name: "index_container_metrics_on_recorded_at"
   end
 
   create_table "cost_budgets", force: :cascade do |t|
@@ -323,6 +345,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
     t.bigint "project_id", null: false
+    t.string "source", default: "github", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.index ["github_creator_login"], name: "index_issues_on_github_creator_login"
@@ -333,6 +356,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id"], name: "index_issues_on_project_id"
+    t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
+    t.index ["source"], name: "index_issues_on_source"
   end
 
   create_table "llm_models", force: :cascade do |t|
@@ -402,10 +427,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
     t.jsonb "allowed_github_usernames", default: [], null: false
-    t.boolean "auto_fix_merge_conflicts", default: false, null: false
+    t.boolean "auto_fix_merge_conflicts", default: true, null: false
     t.boolean "auto_merge_enabled", default: false, null: false
     t.boolean "auto_pick_enabled", default: false, null: false
     t.boolean "auto_scan_prs", default: true, null: false
+    t.boolean "auto_scan_security", default: false, null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
@@ -417,6 +443,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_pr_followup_runs", default: 8, null: false
+    t.integer "max_security_fix_runs", default: 3, null: false
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
@@ -425,6 +452,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.string "repo", null: false
+    t.jsonb "security_alert_types", default: ["dependabot"], null: false
+    t.string "security_severity_threshold", default: "high", null: false
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false
@@ -587,11 +616,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
     t.boolean "default_project_active", default: true, null: false
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_providers", default: [], null: false
+    t.integer "git_clone_timeout_seconds", default: 600, null: false
+    t.integer "git_push_timeout_seconds", default: 60, null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
+    t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
+    t.integer "issue_goal_timeout_seconds", default: 600, null: false
+    t.integer "max_comment_length", default: 2000, null: false
     t.integer "max_concurrent_runs", default: 2, null: false
+    t.integer "max_prompt_comments", default: 20, null: false
+    t.integer "max_tokens_per_run", default: 10000000, null: false
     t.float "retry_base_delay", default: 1.0, null: false
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
+    t.integer "review_goal_idle_timeout_seconds", default: 300, null: false
+    t.integer "style_guide_max_raw_bytes", default: 100000, null: false
+    t.integer "style_guide_max_raw_prompt_bytes", default: 8000, null: false
+    t.integer "style_guide_max_total_bytes", default: 32000, null: false
     t.integer "token_validation_stale_minutes", default: 2, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
@@ -663,6 +703,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
+  add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"

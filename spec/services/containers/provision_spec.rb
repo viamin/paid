@@ -80,6 +80,28 @@ RSpec.describe Containers::Provision do
       expect(custom_service.options[:memory_bytes]).to eq(1024 * 1024 * 1024)
       expect(custom_service.options[:cpu_quota]).to eq(200_000)
     end
+
+    it "applies container_memory_bytes from user settings" do
+      create(:user_setting, user: project.created_by, container_memory_bytes: 2 * 1024 * 1024 * 1024)
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect(svc.options[:memory_bytes]).to eq(2 * 1024 * 1024 * 1024)
+    end
+
+    it "prefers caller-supplied memory_bytes over user settings" do
+      create(:user_setting, user: project.created_by, container_memory_bytes: 2 * 1024 * 1024 * 1024)
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path, memory_bytes: 1024 * 1024 * 1024)
+
+      expect(svc.options[:memory_bytes]).to eq(1024 * 1024 * 1024)
+    end
+
+    it "uses default values when no custom settings are configured" do
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect(svc.options[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)
+    end
   end
 
   describe "#provision" do
@@ -163,6 +185,30 @@ RSpec.describe Containers::Provision do
           expect(tmpfs).to have_key("/home/agent/.gemini")
           expect(tmpfs["/home/agent/.gemini"]).to include("mode=0700")
           expect(tmpfs["/home/agent/.gemini"]).to include("size=#{64 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "configures a writable tmpfs for OpenCode CLI config" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.config/opencode")
+          expect(tmpfs["/home/agent/.config/opencode"]).to include("mode=0700")
+          expect(tmpfs["/home/agent/.config/opencode"]).to include("size=#{64 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "configures a writable tmpfs for OpenCode CLI data" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.local/share/opencode")
+          expect(tmpfs["/home/agent/.local/share/opencode"]).to include("mode=0700")
+          expect(tmpfs["/home/agent/.local/share/opencode"]).to include("size=#{64 * 1024 * 1024}")
           mock_container
         end
 

@@ -206,6 +206,17 @@ RSpec.describe DockerOrphanCleanupJob do
         expect(volume).not_to have_received(:remove)
       end
 
+      it "treats NotFoundError during volume removal as a successful removal" do
+        completed_run = create(:agent_run, :completed)
+        volume = instance_double(Docker::Volume, id: "paid-workspace-#{completed_run.id}")
+        allow(volume).to receive(:remove).and_raise(Docker::Error::NotFoundError)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).to have_received(:remove)
+      end
+
       it "continues processing when individual volume removal fails" do
         completed1 = create(:agent_run, :completed)
         completed2 = create(:agent_run, :completed)

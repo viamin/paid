@@ -28,6 +28,8 @@ class Project < ApplicationRecord
   validates :max_pr_followup_runs, numericality: { greater_than_or_equal_to: 0 }
   validates :merge_method, inclusion: { in: MERGE_METHODS }
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
+  validates :max_security_fix_runs, numericality: { greater_than_or_equal_to: 0 }
+  validates :security_severity_threshold, inclusion: { in: Issue::SEVERITY_ORDER }
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
@@ -149,6 +151,31 @@ class Project < ApplicationRecord
 
   def touch_last_polled_at(timestamp = Time.current)
     update_column(:last_polled_at, timestamp)
+  end
+
+  # Shared staleness window used by both the health-check job and the
+  # automation health UI. A poll workflow is considered stale when it has not
+  # completed a poll cycle within 3× the configured interval plus a buffer.
+  STALENESS_BUFFER = 3.minutes
+
+  def poll_staleness_window
+    (3 * poll_interval_seconds).seconds + STALENESS_BUFFER
+  end
+
+  def poll_stale?
+    return false unless last_polled_at
+
+    last_polled_at < poll_staleness_window.ago
+  end
+
+  # Double-checks staleness after a reload to avoid false positives from
+  # a race with a just-completed poll cycle. Used by both the automation
+  # health UI and the PollWorkflowHealthCheckJob.
+  def poll_stale_with_recheck?
+    return false unless poll_stale?
+
+    reload
+    poll_stale?
   end
 
   def broadcast_stats_update

@@ -87,7 +87,7 @@ module Containers
 
     # Default resource limits (per issue #23 requirements)
     DEFAULTS = {
-      memory_bytes: Integer(ENV.fetch("CONTAINER_MEMORY_BYTES", 4 * 1024 * 1024 * 1024)), # 4GB RAM
+      memory_bytes: 4 * 1024 * 1024 * 1024, # 4GB RAM default; overridden by UserSetting#container_memory_bytes
       cpu_quota: 200_000,                        # 2 CPUs (100_000 per CPU)
       pids_limit: 500,                           # 500 process limit
       timeout_seconds: 1800,                     # 30 minutes default timeout
@@ -121,7 +121,7 @@ module Containers
       @agent_run = agent_run
       @worktree_path = worktree_path
       @workspace_volume = nil
-      @options = DEFAULTS.merge(options)
+      @options = DEFAULTS.merge(resolve_user_setting_overrides(agent_run)).merge(options)
       @container = nil
     end
 
@@ -142,6 +142,8 @@ module Containers
       fix_codex_tmpfs_ownership!
       fix_gemini_tmpfs_ownership!
       fix_kilocode_tmpfs_ownership!
+      fix_opencode_config_tmpfs_ownership!
+      fix_opencode_data_tmpfs_ownership!
       seed_claude_credentials!
       apply_network_restrictions!
 
@@ -414,6 +416,19 @@ module Containers
 
     private
 
+    # Resolves user-configurable container settings from the project's UserSetting.
+    # Returns a hash of overrides that sit between DEFAULTS and caller-supplied options.
+    def resolve_user_setting_overrides(agent_run)
+      settings = AgentRuns::UserSettingsResolver.call(
+        project: agent_run.project, strict: false
+      )
+      return {} unless settings
+
+      overrides = {}
+      overrides[:memory_bytes] = settings.container_memory_bytes if settings.container_memory_bytes.present?
+      overrides
+    end
+
     def stop_container(force: false)
       return unless container_running?
 
@@ -488,17 +503,33 @@ module Containers
       fix_tmpfs_ownership!(".kilocode")
     end
 
+    # Fixes ownership of the ~/.config/opencode tmpfs so the non-root agent user
+    # can write to it. Tmpfs mounts are created as root-owned.
+    def fix_opencode_config_tmpfs_ownership!
+      fix_tmpfs_ownership!(".config/opencode")
+    end
+
+    # Fixes ownership of the ~/.local/share/opencode tmpfs so the non-root agent
+    # user can write to it. Tmpfs mounts are created as root-owned.
+    def fix_opencode_data_tmpfs_ownership!
+      fix_tmpfs_ownership!(".local/share/opencode")
+    end
+
     # Fixes ownership of a tmpfs mount under /home/agent so the non-root
     # agent user can write to it. Tmpfs mounts are created as root-owned.
     #
-    # @param subdir [String] The directory name under /home/agent (e.g. ".codex", ".gemini")
-    def fix_tmpfs_ownership!(subdir)
+    # @param subdir [String] The directory path under /home/agent (e.g. ".codex", ".config/opencode")
+    # @param log_key [String, nil] Override for the log event name segment. When nil, derived from
+    #   subdir by stripping the leading dot and replacing "/" with "_"
+    #   (e.g. ".config/opencode" → "config_opencode", ".local/share/opencode" → "local_share_opencode").
+    def fix_tmpfs_ownership!(subdir, log_key: nil)
+      log_key ||= subdir.delete_prefix(".").tr("/", "_")
       container.exec(
         [ "chown", "-R", "agent:agent", "/home/agent/#{subdir}" ],
         user: "root"
       )
     rescue Docker::Error::DockerError => e
-      log_system("container.#{subdir.delete_prefix('.')}_chown_failed", error: e.message)
+      log_system("container.#{log_key}_chown_failed", error: e.message)
     end
 
     # Sets up the workspace for the container.
@@ -563,6 +594,8 @@ module Containers
     #   /home/agent/.codex    - tmpfs (64MB, for Codex CLI config/session data)
     #   /home/agent/.gemini   - tmpfs (64MB, for Gemini CLI config/session data)
     #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI config/session data)
+    #   /home/agent/.config/opencode      - tmpfs (64MB, for OpenCode CLI config)
+    #   /home/agent/.local/share/opencode - tmpfs (64MB, for OpenCode CLI data)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
       {
@@ -624,6 +657,13 @@ module Containers
       # Ownership is fixed by fix_kilocode_tmpfs_ownership! after container start.
       tmpfs["/home/agent/.kilocode"] = "size=#{64 * 1024 * 1024},mode=0700"
 
+      # OpenCode CLI stores config under ~/.config/opencode and data under
+      # ~/.local/share/opencode. Ownership is fixed by
+      # fix_opencode_config_tmpfs_ownership! and fix_opencode_data_tmpfs_ownership!
+      # after container start.
+      tmpfs["/home/agent/.config/opencode"] = "size=#{64 * 1024 * 1024},mode=0700"
+      tmpfs["/home/agent/.local/share/opencode"] = "size=#{64 * 1024 * 1024},mode=0700"
+
       {
         "Memory" => options[:memory_bytes],
         # MemorySwap == Memory disables swap. Containers exceeding the memory
@@ -648,7 +688,7 @@ module Containers
 
     def environment_variables
       project = agent_run.project
-      proxy_port = ENV.fetch("PAID_PROXY_PORT", "3000")
+      proxy_port = Rails.application.config.x.paid_proxy_port
       proxy_host = subscription_auth? ? "web" : "paid-proxy"
       proxy_base = "http://#{proxy_host}:#{proxy_port}"
 

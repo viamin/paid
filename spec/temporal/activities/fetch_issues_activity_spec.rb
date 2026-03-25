@@ -278,7 +278,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
-        stub_const("Activities::FetchIssuesActivity::PER_PAGE", 5)
+        stub_const("Activities::FetchIssuesActivity::DEFAULT_PER_PAGE", 5)
         allow(github_client).to receive(:issues) do |_repo, **opts|
           label = Array(opts[:labels]).first
           page = opts[:page] || 1
@@ -302,8 +302,8 @@ RSpec.describe Activities::FetchIssuesActivity do
       let(:project) { create(:project, label_mappings: { "build" => "paid-build" }) }
 
       before do
-        stub_const("Activities::FetchIssuesActivity::PER_PAGE", 5)
-        stub_const("Activities::FetchIssuesActivity::MAX_PAGES", 3)
+        stub_const("Activities::FetchIssuesActivity::DEFAULT_PER_PAGE", 5)
+        stub_const("Activities::FetchIssuesActivity::DEFAULT_MAX_PAGES", 3)
 
         allow(github_client).to receive(:issues) do |_repo, **opts|
           label = Array(opts[:labels]).first
@@ -331,7 +331,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         end
       end
 
-      it "stops after MAX_PAGES and logs a warning" do
+      it "stops after DEFAULT_MAX_PAGES and logs a warning" do
         allow(Rails.logger).to receive(:warn)
 
         result = activity.execute(project_id: project.id)
@@ -340,6 +340,19 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(Rails.logger).to have_received(:warn).with(
           hash_including(message: "github_sync.fetch_issues_page_limit")
         )
+      end
+
+      it "does not close locally-open issues when the fetch is truncated" do
+        # This issue is locally open but not in the truncated fetch results —
+        # it should NOT be closed because the fetch is not authoritative.
+        stale = create(:issue, project: project, github_issue_id: 99_999, github_number: 999, github_state: "open")
+
+        allow(Rails.logger).to receive(:warn)
+
+        activity.execute(project_id: project.id)
+
+        stale.reload
+        expect(stale.github_state).to eq("open")
       end
     end
 

@@ -8,8 +8,8 @@ module Activities
     # Each entry is an array of command parts; the prompt is appended as the last argument.
     #
     # NOTE: This hash defines command templates for all providers the system
-    # knows how to run. Currently Claude CLI, Codex CLI, Gemini CLI, and
-    # Kilocode CLI are installed in the agent Docker container (docker/agent/Dockerfile). Actual container execution is
+    # knows how to run. Currently Claude CLI, Codex CLI, Gemini CLI, Kilocode CLI,
+    # and OpenCode CLI are installed in the agent Docker container (docker/agent/Dockerfile). Actual container execution is
     # gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS — providers
     # not in that set are filtered out upstream (UserSetting, ProvidersController)
     # before reaching provider_order.
@@ -19,6 +19,7 @@ module Activities
       "codex" => %w[codex --quiet --full-auto --],
       "gemini" => %w[gemini -s],
       "kilocode" => %w[kilo run],
+      "opencode" => %w[opencode --non-interactive --message],
       "cursor" => %w[cursor-agent --message],
       "aider" => %w[aider --yes --no-auto-commits --message]
     }.freeze
@@ -42,12 +43,11 @@ module Activities
       /usage limit/i
     ].freeze
 
-    # Issue creation should complete quickly — use a shorter timeout than full PR runs.
-    ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
-    ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
-
-    # Review goal uses standard agent timeout but a shorter idle timeout.
-    REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
+    # Default timeouts used when per-user settings are unavailable.
+    # Runtime code resolves per-user values via UserSetting.
+    DEFAULT_ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
+    DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
+    DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
 
     def self.provider_order(agent_type:, fallback_enabled:, fallback_providers:)
       return [ agent_type ].select { |p| AGENT_COMMANDS.key?(p) } unless fallback_enabled
@@ -111,7 +111,7 @@ module Activities
 
           begin
             last_attempted_provider = provider
-            provider_result = run_agent_with_provider(agent_run, provider, prompt)
+            provider_result = run_agent_with_provider(agent_run, provider, prompt, user_settings)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
 
             # Success - record and update final provider
@@ -281,7 +281,7 @@ module Activities
     # Raises ProviderRateLimitError, ProviderTimeoutError, or ProviderExecutionError on failure.
     #
     # @return [Hash] The pre-agent SHA and whether output was present
-    def run_agent_with_provider(agent_run, provider, prompt)
+    def run_agent_with_provider(agent_run, provider, prompt, user_settings)
       container_service = reconnect_container(agent_run)
 
       command_prefix = AGENT_COMMANDS[provider]
@@ -303,14 +303,14 @@ module Activities
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
 
       effective_timeout = if agent_run.create_issue_goal?
-        ISSUE_GOAL_TIMEOUT
+        user_settings&.issue_goal_timeout_seconds || DEFAULT_ISSUE_GOAL_TIMEOUT
       else
-        agent_timeout
+        user_settings&.agent_timeout_seconds || agent_timeout
       end
       effective_idle_timeout = if agent_run.create_issue_goal?
-        ISSUE_GOAL_IDLE_TIMEOUT
+        user_settings&.issue_goal_idle_timeout_seconds || DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
       elsif agent_run.review_goal?
-        REVIEW_GOAL_IDLE_TIMEOUT
+        user_settings&.review_goal_idle_timeout_seconds || DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT
       end
 
       result = container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
@@ -595,7 +595,7 @@ module Activities
     end
 
     def agent_timeout
-      Rails.application.config.x.agent_timeout
+      AGENT_TIMEOUT_DEFAULT
     end
   end
 end
