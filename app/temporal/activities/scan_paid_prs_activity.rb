@@ -84,7 +84,7 @@ module Activities
       end
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
-      unresolved_threads = []
+      unresolved_threads = nil
       human_triggers = []
       review_bot_triggers = []
       reviews = nil
@@ -412,19 +412,24 @@ module Activities
       when :no_review
         [ { type: "review_bot_review_pending", details: "No review bot review found" } ]
       when :has_comments
-        bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
-        # Only flag review_bot_comments when there are actual unresolved bot
-        # threads. The review body may say "has comments" from a prior round
-        # whose threads have since been resolved by the agent.
-        if bot_thread_triggers.any?
-          triggers = [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
-          triggers << { type: "review_bot_comments", details: "Latest review bot review generated comments" }
-          triggers.concat(bot_thread_triggers)
-          triggers
+        # When unresolved_threads is nil, threads were never fetched (e.g. the
+        # skip_comment_signals path) so we cannot tell whether bot threads are
+        # truly resolved. Treat the status as pending to avoid prematurely
+        # advancing the PR.
+        if unresolved_threads.nil?
+          [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
         else
-          # All bot threads resolved — treat as effectively clean to avoid
-          # an infinite loop of requesting reviews that produce no new comments.
-          []
+          bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
+          if bot_thread_triggers.any?
+            triggers = [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
+            triggers << { type: "review_bot_comments", details: "Latest review bot review generated comments" }
+            triggers.concat(bot_thread_triggers)
+            triggers
+          else
+            # All bot threads resolved — treat as effectively clean to avoid
+            # an infinite loop of requesting reviews that produce no new comments.
+            []
+          end
         end
       when :unknown
         review_bot_thread_triggers(unresolved_threads)
@@ -432,6 +437,8 @@ module Activities
     end
 
     def review_bot_thread_triggers(unresolved_threads)
+      return [] if unresolved_threads.nil?
+
       review_bot_threads = unresolved_threads.select do |thread|
         thread[:comments].any? { |c| review_bot?(c[:author]) }
       end

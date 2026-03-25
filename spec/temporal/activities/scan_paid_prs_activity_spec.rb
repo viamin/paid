@@ -1103,6 +1103,32 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
 
+      it "returns review_bot_review_pending when bot review is non-clean even without fetching threads" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 200, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: [
+            {
+              id: "thread_bot",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 5,
+                            author: "copilot-pull-request-reviewer[bot]" } ]
+            }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        # Should be pending (not empty) because threads were not fetched in skip mode
+        expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+
       it "returns ready_for_owner when CI is green and the latest bot review is clean" do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success" } ],
