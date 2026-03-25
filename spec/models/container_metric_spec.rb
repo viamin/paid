@@ -6,39 +6,15 @@ RSpec.describe ContainerMetric do
   subject(:metric) { build(:container_metric) }
 
   describe "validations" do
-    it { expect(metric).to belong_to(:agent_run) }
-    it { expect(metric).to validate_presence_of(:container_id) }
-    it { expect(metric).to validate_length_of(:container_id).is_at_most(128) }
-    it { expect(metric).to validate_presence_of(:recorded_at) }
-
-    it {
-      expect(metric).to validate_numericality_of(:cpu_percent)
-        .is_greater_than_or_equal_to(0.0)
-    }
-
-    it {
-      expect(metric).to validate_numericality_of(:memory_bytes)
-        .only_integer
-        .is_greater_than_or_equal_to(0)
-    }
-
-    it {
-      expect(metric).to validate_numericality_of(:memory_limit_bytes)
-        .only_integer
-        .is_greater_than_or_equal_to(0)
-    }
-
-    it {
-      expect(metric).to validate_numericality_of(:memory_percent)
-        .is_greater_than_or_equal_to(0.0)
-    }
-
-    it {
-      expect(metric).to validate_numericality_of(:pids_count)
-        .only_integer
-        .is_greater_than_or_equal_to(0)
-        .allow_nil
-    }
+    it { is_expected.to belong_to(:agent_run) }
+    it { is_expected.to validate_presence_of(:container_id) }
+    it { is_expected.to validate_length_of(:container_id).is_at_most(128) }
+    it { is_expected.to validate_presence_of(:recorded_at) }
+    it { is_expected.to validate_numericality_of(:cpu_percent).is_greater_than_or_equal_to(0.0) }
+    it { is_expected.to validate_numericality_of(:memory_bytes).only_integer.is_greater_than_or_equal_to(0) }
+    it { is_expected.to validate_numericality_of(:memory_limit_bytes).only_integer.is_greater_than_or_equal_to(0) }
+    it { is_expected.to validate_numericality_of(:memory_percent).is_greater_than_or_equal_to(0.0) }
+    it { is_expected.to validate_numericality_of(:pids_count).only_integer.is_greater_than_or_equal_to(0).allow_nil }
   end
 
   describe "#memory_mb" do

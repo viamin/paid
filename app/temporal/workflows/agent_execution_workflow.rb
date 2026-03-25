@@ -46,6 +46,8 @@ module Workflows
         create_input, timeout: 30)
       agent_run_id = agent_run_result[:agent_run_id]
       provider_attempt_count = [ agent_run_result.fetch(:provider_attempt_count, 1), 1 ].max
+      agent_timeout_seconds = agent_run_result.fetch(:agent_timeout_seconds, AGENT_TIMEOUT_DEFAULT)
+      issue_goal_timeout_seconds = agent_run_result.fetch(:issue_goal_timeout_seconds, Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT)
 
       begin
         # Step 1.5: Provision service containers (database, redis, etc.)
@@ -88,9 +90,9 @@ module Workflows
         # Issue goals use a shorter timeout since they only need to create
         # a GitHub issue via curl, not write code.
         per_provider_timeout = if goal == "create_issue"
-          Activities::RunAgentActivity::ISSUE_GOAL_TIMEOUT
+          issue_goal_timeout_seconds
         else
-          Rails.application.config.x.agent_timeout
+          agent_timeout_seconds
         end
         activity_timeout = (per_provider_timeout * provider_attempt_count) + 300
         agent_result = run_activity(Activities::RunAgentActivity,
