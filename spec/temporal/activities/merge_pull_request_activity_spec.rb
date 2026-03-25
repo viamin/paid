@@ -96,6 +96,8 @@ RSpec.describe Activities::MergePullRequestActivity do
         expect(issue.reload.pr_review_phase).to eq("merged")
       end
 
+      # Intentional: already-merged PRs skip labeling because they may have
+      # been merged manually by a human, not by this activity.
       it "does not add the paid-auto-merged label (may have been merged manually)" do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
@@ -119,6 +121,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(result[:merged]).to be true
+        expect(github_client).to have_received(:add_labels_to_issue)
       end
     end
 
