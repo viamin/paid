@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe KnowledgeArtifact do
+  subject(:knowledge_artifact) { build(:knowledge_artifact) }
+
   describe "associations" do
     it { is_expected.to belong_to(:collector_run) }
     it { is_expected.to belong_to(:project) }
@@ -22,7 +24,7 @@ RSpec.describe KnowledgeArtifact do
 
     describe "project_matches_collector_run" do
       it "is invalid when project does not match collector run's project" do
-        artifact = build(:knowledge_artifact)
+        artifact = create(:knowledge_artifact)
         artifact.project = create(:project)
         expect(artifact).not_to be_valid
         expect(artifact.errors[:project]).to include("must match the collector run's project")

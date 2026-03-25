@@ -21,7 +21,7 @@ RSpec.describe KnowledgeChunk do
 
     describe "project_matches_knowledge_artifact_project" do
       it "is invalid when project does not match knowledge artifact's project" do
-        chunk = build(:knowledge_chunk)
+        chunk = create(:knowledge_chunk)
         chunk.project = create(:project)
         expect(chunk).not_to be_valid
         expect(chunk.errors[:project]).to include("must match knowledge artifact's project")

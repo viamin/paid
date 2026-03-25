@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_25_230902) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_25_233029) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -395,8 +395,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_230902) do
     t.string "scope_path", limit: 1000
     t.string "status", limit: 50, default: "active", null: false
     t.datetime "updated_at", null: false
+    t.index ["collector_run_id", "content_hash"], name: "index_knowledge_artifacts_on_collector_run_id_and_content_hash", unique: true
     t.index ["collector_run_id"], name: "index_knowledge_artifacts_on_collector_run_id"
-    t.index ["content_hash"], name: "index_knowledge_artifacts_on_content_hash"
     t.index ["project_id", "artifact_type", "identifier"], name: "idx_on_project_id_artifact_type_identifier_88383c0c31"
     t.index ["project_id"], name: "index_knowledge_artifacts_on_project_id"
     t.index ["status"], name: "index_knowledge_artifacts_on_status"
