@@ -67,7 +67,7 @@ RSpec.describe ApplicationHelper do
 
         expect(result).to include('data-controller="tooltip"')
         expect(result).to include('role="tooltip"')
-        expect(result).to include("@media(hover:hover)")
+        expect(result).to include("@media(hover:hover) and (pointer:fine)")
       end
 
       it "omits the mobile info icon when tooltip is absent" do
@@ -76,7 +76,7 @@ RSpec.describe ApplicationHelper do
         result = helper.agent_run_context_display(run)
 
         expect(result).not_to include('data-controller="tooltip"')
-        expect(result).not_to include("@media(hover:hover)")
+        expect(result).not_to include("@media(hover:hover) and (pointer:fine)")
       end
 
       it "includes aria attributes on tooltip button" do

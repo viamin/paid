@@ -175,10 +175,11 @@ module ApplicationHelper
             tag.svg(
               tag.path(d: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"),
               class: "h-4 w-4", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor",
-              "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round"
+              "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round",
+              aria: { hidden: "true" }, focusable: "false"
             ),
             type: "button",
-            class: "[@media(hover:hover)]:hidden text-gray-400 hover:text-gray-600",
+            class: "[@media(hover:hover)_and_(pointer:fine)]:hidden text-gray-400 hover:text-gray-600",
             data: { action: "click->tooltip#toggle" },
             aria: { label: "Show context title", describedby: tooltip_id, expanded: "false", controls: tooltip_id }
           ),
