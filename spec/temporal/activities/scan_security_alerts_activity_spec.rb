@@ -85,13 +85,14 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           .and_return(alerts)
       end
 
-      it "creates issues for each alert" do
+      it "creates issues for each alert sorted by severity" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:alerts_to_fix].size).to eq(2)
-        expect(result[:alerts_to_fix].first[:alert_number]).to eq(1)
+        # Critical alert (2) sorts before high alert (1)
+        expect(result[:alerts_to_fix].first[:alert_number]).to eq(2)
         expect(result[:alerts_to_fix].first[:alert_type]).to eq("dependabot")
-        expect(result[:alerts_to_fix].second[:alert_number]).to eq(2)
+        expect(result[:alerts_to_fix].second[:alert_number]).to eq(1)
       end
 
       it "creates Issue records with correct attributes" do
