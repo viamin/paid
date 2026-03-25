@@ -22,9 +22,9 @@ module ProviderSupport
 
   # Provider keys whose CLIs are actually installed in the agent Docker container
   # (docker/agent/Dockerfile). Only these providers can execute in container-based
-  # runs. Currently Claude CLI, Codex CLI, Gemini CLI, and Kilocode CLI are
-  # installed in the container image. Update this list when new CLIs are added to the Dockerfile.
-  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[claude codex gemini kilocode]).freeze
+  # runs. Currently Claude CLI, Codex CLI, Gemini CLI, Kilocode CLI, and OpenCode CLI
+  # are installed in the container image. Update this list when new CLIs are added to the Dockerfile.
+  CONTAINER_EXECUTABLE_PROVIDER_KEYS = Set.new(%w[claude codex gemini kilocode opencode]).freeze
 
   module_function
 

@@ -145,6 +145,11 @@ RUN npm install -g @google/gemini-cli@0.5.5
 # Pin version for reproducible builds; update intentionally when upgrading Kilocode.
 RUN npm install -g @kilocode/cli@7.1.3
 
+# Install OpenCode CLI
+# Pin version for reproducible builds; update intentionally when upgrading OpenCode.
+# NOTE: End-to-end execution depends on agent-harness build_command support (agent-harness#32).
+RUN npm install -g opencode-ai@1.3.2
+
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
 COPY scripts/git-credential-paid /usr/local/bin/git-credential-paid
@@ -159,7 +164,7 @@ RUN git config --system init.defaultBranch main \
 
 # Create non-root user for security
 RUN useradd -m -s /bin/bash agent \
-    && mkdir -p /workspace /home/agent/.config \
+    && mkdir -p /workspace /home/agent/.config /home/agent/.local/share \
     && chown -R agent:agent /workspace /home/agent
 
 # Set up working directory
