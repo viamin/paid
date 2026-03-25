@@ -591,6 +591,20 @@ RSpec.describe Activities::FetchIssuesActivity do
         synced_issue = project.issues.find_by(github_issue_id: github_issue.id)
         expect(synced_issue.issue_dependencies).to be_empty
       end
+
+      it "re-raises rate limit errors so Temporal can retry" do
+        create(:issue, project: project, github_number: 50, github_state: "open")
+        github_issue.body = "Depends on #50"
+
+        allow(github_client).to receive(:issue_comments)
+          .and_raise(GithubClient::RateLimitError.new(Time.current + 3600))
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("RateLimit")
+        }
+      end
     end
 
     context "when paid-generated PRs exist on GitHub" do
