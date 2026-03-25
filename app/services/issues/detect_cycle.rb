@@ -23,7 +23,9 @@ module Issues
     end
 
     def call
-      adj = adjacency || IssueDependency.project_adjacency(from_issue.project)
+      # Account-scoped (not global) to avoid loading cross-tenant data while still
+      # detecting cycles across projects within the same account.
+      adj = adjacency || IssueDependency.account_adjacency(from_issue.project.account)
       reachable_iterative?(adj)
     end
 

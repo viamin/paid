@@ -320,12 +320,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_162327) do
 
   create_table "issue_dependencies", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.bigint "depends_on_issue_id", null: false
+    t.bigint "depends_on_issue_id"
+    t.integer "depends_on_number"
+    t.string "depends_on_owner"
+    t.string "depends_on_repo"
     t.bigint "issue_id", null: false
     t.datetime "updated_at", null: false
     t.index ["depends_on_issue_id"], name: "index_issue_dependencies_on_depends_on_issue_id"
     t.index ["issue_id", "depends_on_issue_id"], name: "idx_issue_dependencies_unique", unique: true
+    t.index ["issue_id", "depends_on_owner", "depends_on_repo", "depends_on_number"], name: "idx_issue_deps_external_unique", unique: true, where: "(depends_on_owner IS NOT NULL)"
     t.index ["issue_id"], name: "index_issue_dependencies_on_issue_id"
+    t.check_constraint "depends_on_issue_id IS NOT NULL AND depends_on_owner IS NULL AND depends_on_repo IS NULL AND depends_on_number IS NULL OR depends_on_issue_id IS NULL AND NULLIF(depends_on_owner::text, ''::text) IS NOT NULL AND NULLIF(depends_on_repo::text, ''::text) IS NOT NULL AND depends_on_number > 0", name: "issue_dependencies_depends_on_xor"
   end
 
   create_table "issues", force: :cascade do |t|

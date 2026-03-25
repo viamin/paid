@@ -157,6 +157,15 @@ RSpec.describe Issue do
 
         expect(described_class.ready_for_work(project)).not_to include(issue)
       end
+
+      it "excludes issues with unresolved external dependencies" do
+        issue = create(:issue, project: project)
+        create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                  depends_on_owner: "org", depends_on_repo: "repo",
+                                  depends_on_number: 42)
+
+        expect(described_class.ready_for_work(project)).not_to include(issue)
+      end
     end
   end
 
@@ -318,6 +327,26 @@ RSpec.describe Issue do
       create(:issue_dependency, issue: issue, depends_on_issue: dep)
 
       expect(issue.ready_to_work?).to be true
+    end
+
+    it "returns false when issue has unresolved external dependencies" do
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                depends_on_owner: "org", depends_on_repo: "repo",
+                                depends_on_number: 42)
+
+      expect(issue.ready_to_work?).to be false
+    end
+
+    it "returns false when issue has both closed local and unresolved external dependencies" do
+      dep = create(:issue, project: project, github_state: "closed")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                depends_on_owner: "org", depends_on_repo: "repo",
+                                depends_on_number: 42)
+
+      expect(issue.ready_to_work?).to be false
     end
   end
 

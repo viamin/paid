@@ -167,6 +167,152 @@ RSpec.describe Issues::ParseDependencies do
 
       expect(issue.dependencies).to contain_exactly(dep)
     end
+
+    context "with cross-project references" do
+      let(:account) { project.account }
+      let(:other_project) { create(:project, account: account, owner: "viamin", repo: "agent-harness") }
+
+      it "parses cross-project inline references" do
+        dep = create(:issue, project: other_project, github_number: 9031)
+        issue = create(:issue, project: project, body: "Depends on viamin/agent-harness#9031")
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(dep)
+      end
+
+      it "parses 'Blocked by' with cross-project references" do
+        dep = create(:issue, project: other_project, github_number: 9042)
+        issue = create(:issue, project: project, body: "Blocked by viamin/agent-harness#9042")
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(dep)
+      end
+
+      it "parses mixed local and cross-project references" do
+        local_dep = create(:issue, project: project, github_number: 9010)
+        cross_dep = create(:issue, project: other_project, github_number: 9031)
+        issue = create(:issue, project: project,
+                       body: "Depends on #9010, viamin/agent-harness#9031")
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(local_dep, cross_dep)
+      end
+
+      it "parses cross-project references in dependency sections" do
+        dep = create(:issue, project: other_project, github_number: 9031)
+        body = "## Dependencies\n- viamin/agent-harness#9031\n"
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(dep)
+      end
+
+      it "creates external dependency when project is not synced" do
+        issue = create(:issue, project: project,
+                       body: "Depends on unknown-org/unknown-repo#9042")
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to be_empty
+        ext_dep = issue.issue_dependencies.find_by(depends_on_owner: "unknown-org")
+        expect(ext_dep).to be_present
+        expect(ext_dep.depends_on_repo).to eq("unknown-repo")
+        expect(ext_dep.depends_on_number).to eq(9042)
+      end
+
+      it "creates external dependency when issue is not synced" do
+        create(:project, account: account, owner: "viamin", repo: "other-repo")
+        issue = create(:issue, project: project,
+                       body: "Depends on viamin/other-repo#9999")
+
+        described_class.call(issue: issue)
+
+        ext_dep = issue.issue_dependencies.find_by(depends_on_owner: "viamin")
+        expect(ext_dep).to be_present
+        expect(ext_dep.depends_on_number).to eq(9999)
+      end
+
+      it "removes stale external dependencies when body changes" do
+        issue = create(:issue, project: project,
+                       body: "Depends on unknown-org/unknown-repo#9042")
+
+        described_class.call(issue: issue)
+        expect(issue.issue_dependencies.where.not(depends_on_owner: nil).count).to eq(1)
+
+        issue.update!(body: "No dependencies")
+        described_class.call(issue: issue)
+        expect(issue.issue_dependencies.reload).to be_empty
+      end
+
+      it "is idempotent for external dependencies" do
+        issue = create(:issue, project: project,
+                       body: "Depends on unknown-org/unknown-repo#9042")
+
+        described_class.call(issue: issue)
+        expect { described_class.call(issue: issue) }.not_to change(IssueDependency, :count)
+      end
+
+      it "normalizes external dependency owner/repo to lowercase" do
+        issue = create(:issue, project: project,
+                       body: "Depends on Unknown-Org/Unknown-REPO#9042")
+
+        described_class.call(issue: issue)
+
+        ext_dep = issue.issue_dependencies.find_by(depends_on_owner: "unknown-org")
+        expect(ext_dep).to be_present
+        expect(ext_dep.depends_on_repo).to eq("unknown-repo")
+      end
+
+      it "deduplicates external deps with different casing" do
+        issue = create(:issue, project: project,
+                       body: "Depends on Unknown-Org/Repo#9042")
+
+        described_class.call(issue: issue)
+        expect(issue.issue_dependencies.count).to eq(1)
+
+        issue.update!(body: "Depends on unknown-org/repo#9042")
+        described_class.call(issue: issue)
+        expect(issue.issue_dependencies.count).to eq(1)
+      end
+
+      it "ignores cross-project references with issue number zero" do
+        issue = create(:issue, project: project,
+                       body: "Depends on unknown-org/unknown-repo#0")
+
+        described_class.call(issue: issue)
+
+        expect(issue.issue_dependencies.reload).to be_empty
+      end
+
+      it "deduplicates when same issue is referenced as both local and cross-project" do
+        dep = create(:issue, project: project, github_number: 9050)
+        body = "Depends on #9050, #{project.owner}/#{project.repo}#9050"
+        issue = create(:issue, project: project, body: body)
+
+        described_class.call(issue: issue)
+
+        expect(issue.dependencies).to contain_exactly(dep)
+        expect(issue.issue_dependencies.count).to eq(1)
+      end
+
+      it "skips cross-project dependencies that would create a cycle" do
+        cross_issue = create(:issue, project: other_project, github_number: 9001)
+        local_issue = create(:issue, project: project, github_number: 9002)
+
+        # cross_issue depends on local_issue
+        create(:issue_dependency, issue: cross_issue, depends_on_issue: local_issue)
+
+        # Trying to make local_issue depend on cross_issue would create a cycle
+        local_issue.update!(body: "Depends on viamin/agent-harness#9001")
+        described_class.call(issue: local_issue)
+
+        expect(local_issue.dependencies.reload).to be_empty
+      end
+    end
   end
 
   describe "comment parsing" do

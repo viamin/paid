@@ -584,7 +584,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         github_issue.body = "Depends on #50"
 
         allow(github_client).to receive(:issue_comments)
-          .and_raise(StandardError.new("API error"))
+          .and_raise(GithubClient::Error.new("API error"))
 
         activity.execute(project_id: project.id)
 
