@@ -19,11 +19,12 @@ class WorkflowStatusesController < ApplicationController
       }
     end
 
-    poll_workflow = @project.workflow_states.find_by(
-      temporal_workflow_id: "github-poll-#{@project.id}"
-    )
+    # Query Temporal directly for the authoritative workflow state.
+    # WorkflowState records are not reliably persisted by all activity paths,
+    # so we use ProjectWorkflowManager which calls the Temporal API.
+    temporal_status = ProjectWorkflowManager.workflow_status(@project)
 
-    unless poll_workflow&.running?
+    unless temporal_status[:running]
       return {
         status: :unhealthy,
         label: "Not running",

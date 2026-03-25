@@ -17,7 +17,12 @@ RSpec.describe "WorkflowStatuses" do
     end
 
     context "when authenticated" do
-      before { sign_in user }
+      before do
+        sign_in user
+        # Default stub — tests that need specific states override this
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :not_found, running: false)
+      end
 
       it "renders the automation health page" do
         get project_workflow_status_path(project)
@@ -30,11 +35,8 @@ RSpec.describe "WorkflowStatuses" do
       end
 
       it "shows 'Active' when poll workflow is running and project was recently polled" do
-        create(:workflow_state,
-          project: project,
-          temporal_workflow_id: "github-poll-#{project.id}",
-          workflow_type: "GitHubPoll",
-          status: "running")
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :running, running: true)
         project.update_column(:last_polled_at, 30.seconds.ago)
 
         get project_workflow_status_path(project)
@@ -43,17 +45,17 @@ RSpec.describe "WorkflowStatuses" do
       end
 
       it "shows 'Not running' when no poll workflow exists" do
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :not_found, running: false)
+
         get project_workflow_status_path(project)
         expect(response.body).to include("Not running")
         expect(response.body).to include("automatically restarted shortly if eligible")
       end
 
       it "shows 'Not running' when poll workflow is not running" do
-        create(:workflow_state,
-          project: project,
-          temporal_workflow_id: "github-poll-#{project.id}",
-          workflow_type: "GitHubPoll",
-          status: "completed")
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :completed, running: false)
 
         get project_workflow_status_path(project)
         expect(response.body).to include("Not running")
@@ -68,11 +70,8 @@ RSpec.describe "WorkflowStatuses" do
       end
 
       it "shows 'Delayed' when poll workflow is running but stale" do
-        create(:workflow_state,
-          project: project,
-          temporal_workflow_id: "github-poll-#{project.id}",
-          workflow_type: "GitHubPoll",
-          status: "running")
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :running, running: true)
         # Set last_polled_at to well beyond the staleness threshold
         project.update_column(:last_polled_at, 10.minutes.ago)
 
@@ -82,11 +81,8 @@ RSpec.describe "WorkflowStatuses" do
       end
 
       it "shows last checked time when available" do
-        create(:workflow_state,
-          project: project,
-          temporal_workflow_id: "github-poll-#{project.id}",
-          workflow_type: "GitHubPoll",
-          status: "running")
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :running, running: true)
 
         freeze_time do
           project.update_column(:last_polled_at, 2.minutes.ago)
@@ -98,11 +94,8 @@ RSpec.describe "WorkflowStatuses" do
       end
 
       it "shows poll interval for active projects" do
-        create(:workflow_state,
-          project: project,
-          temporal_workflow_id: "github-poll-#{project.id}",
-          workflow_type: "GitHubPoll",
-          status: "running")
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :running, running: true)
         project.update_column(:last_polled_at, 30.seconds.ago)
 
         get project_workflow_status_path(project)
