@@ -1,10 +1,10 @@
 import { Controller } from "@hotwired/stimulus"
 
-// Manages a tappable tooltip (info icon) for devices that do not support
-// a pure hover/fine-pointer experience.
-// Devices that match `@media (hover:hover) and (pointer:fine) and (not (any-pointer:coarse))`
-// (typically non-touch desktops) skip JS listeners entirely and rely on the native
-// HTML `title` attribute — the info icon is hidden via that media query in the template.
+// Manages a tappable tooltip (info icon) for touch/hybrid devices.
+// The JS guard mirrors the template's CSS media query exactly:
+//   @media (hover:hover) and (pointer:fine) and (not (any-pointer:coarse))
+// When matched (typically non-touch desktops), the icon is CSS-hidden and the
+// native `title` attribute handles tooltips — no JS listeners are attached.
 export default class extends Controller {
   static targets = ["content"]
 
@@ -13,23 +13,18 @@ export default class extends Controller {
     this.boundKeydown = this.handleKeydown.bind(this)
     this.boundFocusOut = this.handleFocusOut.bind(this)
 
-    // On hover-capable devices the info icon is hidden via CSS, so no
-    // listeners are needed — the native title tooltip handles everything.
-    this.hoverDevice = window.matchMedia("(hover: hover)").matches
-
-    // Track whether any coarse (typically touch) pointer is available.
-    // This lets hybrid devices (touch + mouse) still use the JS tooltip
-    // when interacting via touch, instead of relying solely on the
-    // unreliable native `title` behaviour for touch.
-    this.coarsePointer = window.matchMedia("(any-pointer: coarse)").matches
+    // Mirror the exact CSS media query used to hide the info icon in the
+    // template. When this query matches, the icon is CSS-hidden and the
+    // native `title` tooltip handles everything — no JS needed.
+    this.iconHiddenByCSS = window.matchMedia(
+      "(hover: hover) and (pointer: fine) and (not (any-pointer: coarse))"
+    ).matches
   }
 
   toggle() {
-    // On pure hover/precise-pointer devices the info icon is CSS-hidden,
-    // so skip JS and rely on the native title tooltip. On devices that
-    // report any coarse pointer (e.g., touch), allow the JS tooltip even
-    // if hover is also supported.
-    if (this.hoverDevice && !this.coarsePointer) return
+    // Skip JS when the info icon is hidden via CSS (pure hover/fine-pointer
+    // desktops). Hybrid touch/hover devices still get the JS tooltip.
+    if (this.iconHiddenByCSS) return
 
     const isHidden = this.contentTarget.classList.toggle("hidden")
     const expanded = !isHidden
