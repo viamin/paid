@@ -216,11 +216,14 @@ class Project < ApplicationRecord
 
   def broadcast_issues_update
     open_items = issues.where(github_state: "open").order(github_number: :desc)
+    displayed = open_items.issues_only.includes(:sub_issues).limit(25)
+    auto_pickable_ids = auto_pick_enabled? ? Issues::AutoPick.eligible_issue_ids(displayed) : Set.new
     broadcast_replace_to(
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :issues),
       partial: "projects/issues",
-      locals: { project: self, issues: open_items.issues_only.includes(:sub_issues).limit(25) }
+      locals: { project: self, issues: displayed,
+                auto_pickable_issue_ids: auto_pickable_ids }
     )
   end
 
