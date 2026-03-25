@@ -168,4 +168,138 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue.dependencies).to contain_exactly(dep)
     end
   end
+
+  describe "comment parsing" do
+    it "parses dependencies from comments" do
+      dep = create(:issue, project: project, github_number: 9050)
+      issue = create(:issue, project: project, body: nil)
+
+      described_class.call(issue: issue, comments: [ "Depends on #9050" ])
+
+      expect(issue.dependencies).to contain_exactly(dep)
+    end
+
+    it "merges comment dependencies with body dependencies" do
+      dep1 = create(:issue, project: project, github_number: 9010)
+      dep2 = create(:issue, project: project, github_number: 9020)
+      issue = create(:issue, project: project, body: "Depends on #9010")
+
+      described_class.call(issue: issue, comments: [ "Blocked by #9020" ])
+
+      expect(issue.dependencies).to contain_exactly(dep1, dep2)
+    end
+
+    it "parses 'Blocked by' in comments" do
+      dep = create(:issue, project: project, github_number: 9042)
+      issue = create(:issue, project: project, body: nil)
+
+      described_class.call(issue: issue, comments: [ "Blocked by #9042" ])
+
+      expect(issue.dependencies).to contain_exactly(dep)
+    end
+
+    it "handles multiple comments with dependencies" do
+      dep1 = create(:issue, project: project, github_number: 9010)
+      dep2 = create(:issue, project: project, github_number: 9020)
+      issue = create(:issue, project: project, body: nil)
+
+      described_class.call(issue: issue, comments: [
+        "Depends on #9010",
+        "Also blocked by #9020"
+      ])
+
+      expect(issue.dependencies).to contain_exactly(dep1, dep2)
+    end
+
+    it "ignores blank comments" do
+      issue = create(:issue, project: project, body: nil)
+
+      expect { described_class.call(issue: issue, comments: [ nil, "", "  " ]) }
+        .not_to change(IssueDependency, :count)
+    end
+
+    it "removes dependencies via 'no longer depends on'" do
+      dep1 = create(:issue, project: project, github_number: 9010)
+      dep2 = create(:issue, project: project, github_number: 9020)
+      issue = create(:issue, project: project, body: "Depends on #9010, #9020")
+
+      described_class.call(issue: issue)
+      expect(issue.dependencies.reload).to contain_exactly(dep1, dep2)
+
+      described_class.call(issue: issue, comments: [ "No longer depends on #9020" ])
+      expect(issue.dependencies.reload).to contain_exactly(dep1)
+    end
+
+    it "removes dependencies via 'no longer blocked by'" do
+      dep = create(:issue, project: project, github_number: 9010)
+      issue = create(:issue, project: project, body: "Blocked by #9010")
+
+      described_class.call(issue: issue)
+      expect(issue.dependencies.reload).to contain_exactly(dep)
+
+      described_class.call(issue: issue, comments: [ "No longer blocked by #9010" ])
+      expect(issue.dependencies.reload).to be_empty
+    end
+
+    it "removes dependencies via 'unblocked by'" do
+      dep = create(:issue, project: project, github_number: 9010)
+      issue = create(:issue, project: project, body: "Blocked by #9010")
+
+      described_class.call(issue: issue)
+      expect(issue.dependencies.reload).to contain_exactly(dep)
+
+      described_class.call(issue: issue, comments: [ "Unblocked by #9010" ])
+      expect(issue.dependencies.reload).to be_empty
+    end
+
+    it "removes dependencies via 'remove dependency'" do
+      dep = create(:issue, project: project, github_number: 9010)
+      issue = create(:issue, project: project, body: "Depends on #9010")
+
+      described_class.call(issue: issue)
+      expect(issue.dependencies.reload).to contain_exactly(dep)
+
+      described_class.call(issue: issue, comments: [ "Remove dependency #9010" ])
+      expect(issue.dependencies.reload).to be_empty
+    end
+
+    it "removal in comment overrides addition in same comment" do
+      create(:issue, project: project, github_number: 9010)
+      issue = create(:issue, project: project, body: nil)
+
+      described_class.call(issue: issue, comments: [
+        "Depends on #9010",
+        "No longer depends on #9010"
+      ])
+
+      expect(issue.dependencies).to be_empty
+    end
+
+    it "removal in comment overrides body dependency" do
+      create(:issue, project: project, github_number: 9010)
+      issue = create(:issue, project: project, body: "Depends on #9010")
+
+      described_class.call(issue: issue, comments: [ "No longer depends on #9010" ])
+
+      expect(issue.dependencies).to be_empty
+    end
+
+    it "does not affect body-only parsing when comments are empty" do
+      dep = create(:issue, project: project, github_number: 9010)
+      issue = create(:issue, project: project, body: "Depends on #9010")
+
+      described_class.call(issue: issue, comments: [])
+
+      expect(issue.dependencies).to contain_exactly(dep)
+    end
+
+    it "is idempotent with comments" do
+      create(:issue, project: project, github_number: 9010)
+      issue = create(:issue, project: project, body: nil)
+
+      described_class.call(issue: issue, comments: [ "Depends on #9010" ])
+      expect { described_class.call(issue: issue, comments: [ "Depends on #9010" ]) }
+        .not_to change(IssueDependency, :count)
+    end
+  end
 end

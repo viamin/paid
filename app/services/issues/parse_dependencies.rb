@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 module Issues
-  # Parses an issue's body text to extract dependency references to other issues
-  # within the same project, then persists those relationships as IssueDependency
-  # records.
+  # Parses an issue's body text and comments to extract dependency references
+  # to other issues within the same project, then persists those relationships
+  # as IssueDependency records.
   #
   # Handles common formats:
   #   - "## Dependencies\n- #101\n- #102"
@@ -12,8 +12,17 @@ module Issues
   #   - "Blocked by #101"
   #   - Checklist items: "- [ ] #101"
   #
+  # Comments support the same addition patterns plus removal patterns:
+  #   - "No longer depends on #101"
+  #   - "No longer blocked by #101"
+  #   - "Unblocked by #101"
+  #   - "Remove dependency #101"
+  #
+  # Comment-declared dependencies are additive to body-declared ones.
+  # Removal patterns in comments override both body and comment additions.
+  #
   # @example
-  #   Issues::ParseDependencies.call(issue: issue)
+  #   Issues::ParseDependencies.call(issue: issue, comments: ["Depends on #101"])
   class ParseDependencies
     DEPENDENCY_SECTION_PATTERN = /
       ^\#+\s*Dependenc(?:y|ies)\b[^\n]*\n  # Header line (## Dependencies, etc.)
@@ -27,13 +36,24 @@ module Issues
       ((?:\#\d+[\s,]*)+)                    # One or more #N references
     /xi
 
+    INLINE_REMOVAL_PATTERN = /
+      \b(?:
+        no\s+longer\s+(?:depends?\s+on|blocked?\s+by)  # "no longer depends on"
+        |unblocked?\s+by                                # "unblocked by"
+        |remove\s+dependenc(?:y|ies)\s+(?:on\s+)?       # "remove dependency [on]"
+      )\b
+      :?\s*                                             # Optional colon
+      ((?:\#\d+[\s,]*)+)                                # One or more #N references
+    /xi
+
     ISSUE_REF_PATTERN = /\#(\d+)/
 
-    attr_reader :issue, :adjacency
+    attr_reader :issue, :adjacency, :comments
 
-    def initialize(issue:, adjacency: nil)
+    def initialize(issue:, adjacency: nil, comments: [])
       @issue = issue
       @adjacency = adjacency
+      @comments = comments || []
     end
 
     def self.call(...)
@@ -41,7 +61,10 @@ module Issues
     end
 
     def call
-      referenced_numbers = issue.body.present? ? extract_dependency_numbers : []
+      body_numbers = issue.body.present? ? extract_dependency_numbers(issue.body) : []
+      comment_numbers, removal_numbers = extract_comment_dependencies
+
+      referenced_numbers = ((body_numbers + comment_numbers) - removal_numbers).uniq
 
       current_dep_ids = issue.issue_dependencies.pluck(:depends_on_issue_id).to_set
       return if referenced_numbers.empty? && current_dep_ids.empty?
@@ -75,23 +98,43 @@ module Issues
 
     private
 
-    def extract_dependency_numbers
+    def extract_dependency_numbers(text)
       numbers = Set.new
 
-      extract_from_dependency_section(numbers)
-      extract_from_inline_patterns(numbers)
+      extract_from_dependency_section(text, numbers)
+      extract_from_inline_patterns(text, numbers)
 
       numbers.to_a
     end
 
-    def extract_from_dependency_section(numbers)
-      issue.body.scan(DEPENDENCY_SECTION_PATTERN) do |section_body|
+    def extract_from_dependency_section(text, numbers)
+      text.scan(DEPENDENCY_SECTION_PATTERN) do |section_body|
         section_body[0].scan(ISSUE_REF_PATTERN) { |match| numbers << match[0].to_i }
       end
     end
 
-    def extract_from_inline_patterns(numbers)
-      issue.body.scan(INLINE_DEPENDS_PATTERN) do |refs|
+    def extract_from_inline_patterns(text, numbers)
+      text.scan(INLINE_DEPENDS_PATTERN) do |refs|
+        refs[0].scan(ISSUE_REF_PATTERN) { |match| numbers << match[0].to_i }
+      end
+    end
+
+    def extract_comment_dependencies
+      added = Set.new
+      removed = Set.new
+
+      comments.each do |comment_body|
+        next if comment_body.blank?
+
+        extract_removal_numbers(comment_body, removed)
+        extract_dependency_numbers(comment_body).each { |n| added << n }
+      end
+
+      [ added.to_a, removed.to_a ]
+    end
+
+    def extract_removal_numbers(text, numbers)
+      text.scan(INLINE_REMOVAL_PATTERN) do |refs|
         refs[0].scan(ISSUE_REF_PATTERN) { |match| numbers << match[0].to_i }
       end
     end

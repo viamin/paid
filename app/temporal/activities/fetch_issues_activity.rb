@@ -136,9 +136,12 @@ module Activities
         is_pull_request: false
       )
 
+      client = project.github_token.client
+
       issues_relation.find_each do |issue|
         adjacency = IssueDependency.project_adjacency(project)
-        Issues::ParseDependencies.call(issue: issue, adjacency: adjacency)
+        comment_bodies = fetch_trusted_comment_bodies(client, project, issue)
+        Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
       rescue => e
         logger.warn(
           message: "github_sync.parse_dependencies_failed",
@@ -149,6 +152,22 @@ module Activities
           error: e.message
         )
       end
+    end
+
+    def fetch_trusted_comment_bodies(client, project, issue)
+      github_comments = client.issue_comments(project.full_name, issue.github_number)
+      github_comments
+        .select { |c| project.trusted_github_user?(c.user&.login) }
+        .map { |c| c.body.to_s }
+    rescue => e
+      logger.warn(
+        message: "github_sync.fetch_comments_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      []
     end
 
     def close_stale_issues(project, github_issues)

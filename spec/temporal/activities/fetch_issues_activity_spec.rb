@@ -10,6 +10,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive(:issue_comments).and_return([])
   end
 
   # Helper: route github_client.issues calls by label
