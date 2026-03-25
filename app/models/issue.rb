@@ -35,6 +35,7 @@ class Issue < ApplicationRecord
   validates :github_created_at, presence: true
   validates :github_updated_at, presence: true
   validates :paid_state, presence: true, inclusion: { in: PAID_STATES }
+  before_validation { self.source ||= "github" }
   validates :source, presence: true, inclusion: { in: VALID_SOURCES }
   validates :pr_review_phase, inclusion: { in: PR_REVIEW_PHASES }, if: :is_pull_request?
   validate :parent_issue_belongs_to_same_project, if: -> { parent_issue.present? }
