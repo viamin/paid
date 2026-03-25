@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_25_080816) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_25_120845) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -120,7 +120,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_080816) do
     t.string "agent_type", limit: 50, null: false
     t.string "auth_provider", limit: 50
     t.float "avg_cpu_percent"
-    t.bigint "avg_memory_bytes"
+    t.decimal "avg_memory_bytes"
     t.string "base_commit_sha", limit: 40
     t.string "branch_name", limit: 255
     t.datetime "completed_at"

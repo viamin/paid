@@ -75,7 +75,7 @@ RSpec.describe Containers::CollectMetrics do
       expect(agent_run.peak_cpu_percent).to eq(20.0)
       expect(agent_run.peak_memory_bytes).to eq(2_147_483_648)
       expect(agent_run.avg_cpu_percent).to eq(20.0)
-      expect(agent_run.avg_memory_bytes).to eq(2_147_483_648)
+      expect(agent_run.avg_memory_bytes).to eq(BigDecimal("2147483648"))
     end
 
     it "returns nil when agent run has no container_id" do
@@ -86,6 +86,35 @@ RSpec.describe Containers::CollectMetrics do
     it "returns nil when agent run is not running" do
       agent_run.update_columns(status: "completed")
       expect(described_class.call(agent_run: agent_run)).to be_nil
+    end
+
+    context "when online_cpus is absent" do
+      let(:docker_stats) do
+        {
+          "cpu_stats" => {
+            "cpu_usage" => {
+              "total_usage" => 500_000_000,
+              "percpu_usage" => [ 250_000_000, 250_000_000, 0, 0 ]
+            },
+            "system_cpu_usage" => 10_000_000_000
+          },
+          "precpu_stats" => {
+            "cpu_usage" => { "total_usage" => 400_000_000 },
+            "system_cpu_usage" => 9_000_000_000
+          },
+          "memory_stats" => { "usage" => 1_000_000, "limit" => 4_000_000 },
+          "pids_stats" => { "current" => 1 }
+        }
+      end
+
+      it "falls back to percpu_usage length for CPU count" do
+        described_class.call(agent_run: agent_run)
+        metric = ContainerMetric.last
+
+        # cpu_delta = 100_000_000, system_delta = 1_000_000_000, cpus = 4 (from percpu_usage)
+        # (100_000_000 / 1_000_000_000) * 4 * 100 = 40.0
+        expect(metric.cpu_percent).to eq(40.0)
+      end
     end
 
     it "handles Docker errors gracefully" do

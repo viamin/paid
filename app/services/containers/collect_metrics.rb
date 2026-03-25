@@ -82,7 +82,9 @@ module Containers
                   precpu_stats.dig("cpu_usage", "total_usage").to_f
       system_delta = cpu_stats["system_cpu_usage"].to_f -
                      precpu_stats["system_cpu_usage"].to_f
-      online_cpus = cpu_stats["online_cpus"] || 1
+      online_cpus = cpu_stats["online_cpus"] ||
+                    cpu_stats.dig("cpu_usage", "percpu_usage")&.length ||
+                    1
 
       return 0.0 if system_delta <= 0 || cpu_delta < 0
 
@@ -117,8 +119,8 @@ module Containers
             <<~SQL.squish,
               peak_cpu_percent = GREATEST(COALESCE(peak_cpu_percent, 0), ?),
               peak_memory_bytes = GREATEST(COALESCE(peak_memory_bytes, 0), ?),
-              avg_cpu_percent = ROUND((COALESCE(avg_cpu_percent, 0) * (container_metrics_count - 1) + ?)::numeric / container_metrics_count, 2),
-              avg_memory_bytes = ((COALESCE(avg_memory_bytes, 0) * (container_metrics_count - 1) + ?)::numeric / container_metrics_count)::bigint
+              avg_cpu_percent = (COALESCE(avg_cpu_percent, 0) * (container_metrics_count - 1) + ?)::numeric / container_metrics_count,
+              avg_memory_bytes = (COALESCE(avg_memory_bytes, 0) * (container_metrics_count - 1) + ?)::numeric / container_metrics_count
             SQL
             metric.cpu_percent,
             metric.memory_bytes,
