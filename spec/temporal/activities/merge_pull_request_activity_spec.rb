@@ -63,7 +63,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(github_client).to have_received(:add_labels_to_issue)
-          .with(project.full_name, 42, [ "paid-auto-merged" ])
+          .with(project.full_name, 42, [ described_class::PAID_AUTO_MERGED_LABEL ])
       end
 
       it "returns merged: true" do
@@ -84,7 +84,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         allow(github_client).to receive(:add_labels_to_issue)
       end
 
-      it "skips the merge call" do
+      it "skips the merge call and label" do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(github_client).not_to have_received(:merge_pull_request)
@@ -96,11 +96,10 @@ RSpec.describe Activities::MergePullRequestActivity do
         expect(issue.reload.pr_review_phase).to eq("merged")
       end
 
-      it "adds the paid-auto-merged label" do
+      it "does not add the paid-auto-merged label (may have been merged manually)" do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
-        expect(github_client).to have_received(:add_labels_to_issue)
-          .with(project.full_name, 42, [ "paid-auto-merged" ])
+        expect(github_client).not_to have_received(:add_labels_to_issue)
       end
     end
 
