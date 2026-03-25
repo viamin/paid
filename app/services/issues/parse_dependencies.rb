@@ -109,7 +109,7 @@ module Issues
       cross_refs = Set.new
 
       if issue.body.present?
-        extract_refs_from_text(issue.body, local_numbers, cross_refs)
+        extract_body_refs(issue.body, local_numbers, cross_refs)
       end
 
       comments.each do |comment_body|
@@ -117,14 +117,15 @@ module Issues
 
         added_local = Set.new
         added_cross = Set.new
-        extract_refs_from_text(comment_body, added_local, added_cross)
+        extract_inline_refs(comment_body, added_local, added_cross)
 
         removed = Set.new
         extract_removal_numbers(comment_body, removed)
 
-        # Within a single comment, removals win over additions
+        # Within a single comment, removals win over additions.
+        # Removals only apply to local #N refs; cross-project removal
+        # patterns (owner/repo#N) are not supported by INLINE_REMOVAL_PATTERN.
         added_local.subtract(removed)
-        added_cross.subtract(removed)
 
         local_numbers.merge(added_local)
         cross_refs.merge(added_cross)
@@ -140,15 +141,32 @@ module Issues
       end
     end
 
-    def extract_refs_from_text(text, local_numbers, cross_refs)
-      # Extract cross-repo refs first
+    # Extracts refs from body using both dependency sections and inline patterns.
+    # Only dependency-scoped text is parsed — incidental #N mentions (e.g. in a
+    # "Notes" section) are intentionally ignored.
+    def extract_body_refs(body, local_numbers, cross_refs)
+      body.scan(DEPENDENCY_SECTION_PATTERN) do |section_body|
+        extract_all_refs(section_body, local_numbers, cross_refs)
+      end
+
+      extract_inline_refs(body, local_numbers, cross_refs)
+    end
+
+    # Extracts refs from inline "Depends on" / "Blocked by" patterns only.
+    def extract_inline_refs(text, local_numbers, cross_refs)
+      text.scan(INLINE_DEPENDS_PATTERN) do |refs_str|
+        extract_all_refs(refs_str, local_numbers, cross_refs)
+      end
+    end
+
+    # Extracts both cross-repo and local issue refs from a string of refs.
+    def extract_all_refs(text, local_numbers, cross_refs)
       text.scan(CROSS_REPO_REF_PATTERN) do |owner, repo, number|
         cross_refs << [ owner, repo, number.to_i ]
       end
 
-      # Extract same-project refs (strip cross-repo refs first to avoid double-matching)
       stripped = text.gsub(CROSS_REPO_REF_PATTERN, "")
-      stripped.scan(/\#(\d+)/) { |match| local_numbers << match[0].to_i }
+      stripped.scan(ISSUE_REF_PATTERN) { |match| local_numbers << match[0].to_i }
     end
 
     def sync_local_deps(referenced_numbers, current_local_ids)

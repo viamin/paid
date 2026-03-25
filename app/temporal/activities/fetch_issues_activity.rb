@@ -154,13 +154,18 @@ module Activities
 
       client = project.github_token.client
 
+      # Compute adjacency once before the loop for cycle detection. Within this
+      # sync batch, deps created by earlier iterations won't be visible for cycle
+      # detection until the next full sync — an acceptable trade-off vs N×DB reads.
+      adjacency = IssueDependency.account_adjacency(project.account)
+
       issues_relation.find_each do |issue|
         comment_bodies = fetch_trusted_comment_bodies(client, project, issue)
+        # nil means comment fetch failed — skip ALL parsing for this issue to
+        # avoid stale-removal of comment-derived deps. Body-only parsing would
+        # delete previously-persisted comment deps that are still valid.
         next if comment_bodies.nil?
 
-        # Recompute adjacency per issue so cycle detection sees edges created
-        # by earlier iterations (e.g. A->B added first, then B->A detected).
-        adjacency = IssueDependency.account_adjacency(project.account)
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
       rescue => e
         logger.warn(
