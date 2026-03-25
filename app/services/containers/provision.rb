@@ -142,6 +142,8 @@ module Containers
       fix_codex_tmpfs_ownership!
       fix_gemini_tmpfs_ownership!
       fix_kilocode_tmpfs_ownership!
+      fix_opencode_config_tmpfs_ownership!
+      fix_opencode_data_tmpfs_ownership!
       seed_claude_credentials!
       apply_network_restrictions!
 
@@ -488,6 +490,18 @@ module Containers
       fix_tmpfs_ownership!(".kilocode")
     end
 
+    # Fixes ownership of the ~/.config/opencode tmpfs so the non-root agent user
+    # can write to it. Tmpfs mounts are created as root-owned.
+    def fix_opencode_config_tmpfs_ownership!
+      fix_tmpfs_ownership!(".config/opencode")
+    end
+
+    # Fixes ownership of the ~/.local/share/opencode tmpfs so the non-root agent
+    # user can write to it. Tmpfs mounts are created as root-owned.
+    def fix_opencode_data_tmpfs_ownership!
+      fix_tmpfs_ownership!(".local/share/opencode")
+    end
+
     # Fixes ownership of a tmpfs mount under /home/agent so the non-root
     # agent user can write to it. Tmpfs mounts are created as root-owned.
     #
@@ -563,6 +577,8 @@ module Containers
     #   /home/agent/.codex    - tmpfs (64MB, for Codex CLI config/session data)
     #   /home/agent/.gemini   - tmpfs (64MB, for Gemini CLI config/session data)
     #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI config/session data)
+    #   /home/agent/.config/opencode      - tmpfs (64MB, for OpenCode CLI config)
+    #   /home/agent/.local/share/opencode - tmpfs (64MB, for OpenCode CLI data)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
       {
@@ -623,6 +639,13 @@ module Containers
       # Kilocode CLI stores config and session data under ~/.kilocode.
       # Ownership is fixed by fix_kilocode_tmpfs_ownership! after container start.
       tmpfs["/home/agent/.kilocode"] = "size=#{64 * 1024 * 1024},mode=0700"
+
+      # OpenCode CLI stores config under ~/.config/opencode and data under
+      # ~/.local/share/opencode. Ownership is fixed by
+      # fix_opencode_config_tmpfs_ownership! and fix_opencode_data_tmpfs_ownership!
+      # after container start.
+      tmpfs["/home/agent/.config/opencode"] = "size=#{64 * 1024 * 1024},mode=0700"
+      tmpfs["/home/agent/.local/share/opencode"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       {
         "Memory" => options[:memory_bytes],
