@@ -515,12 +515,10 @@ class GithubClient
   #   :package_ecosystem, :patched_version, :summary, :html_url keys
   def dependabot_alerts(repo, state: "open", per_page: 100)
     handle_errors do
-      all_alerts = with_auto_paginate do
-        client.get(
-          "#{Octokit::Repository.path(repo)}/dependabot/alerts",
-          state: state, per_page: per_page
-        )
-      end
+      all_alerts = client.paginate(
+        "#{Octokit::Repository.path(repo)}/dependabot/alerts",
+        state: state, per_page: per_page
+      )
 
       Array(all_alerts).map do |alert|
         vulnerability = alert.security_vulnerability || alert.security_advisory || OpenStruct.new

@@ -248,21 +248,30 @@ module Activities
         .map { |a| generate_synthetic_issue_id(a) }
         .to_set
 
-      stale_scope = project.issues.where(github_state: "open", source: SYNTHETIC_SOURCE)
-      stale_scope = stale_scope.where.not(github_issue_id: open_alert_ids) if open_alert_ids.any?
+      initial_stale_scope = project.issues.where(github_state: "open", source: SYNTHETIC_SOURCE)
+      initial_stale_scope = initial_stale_scope.where.not(github_issue_id: open_alert_ids) if open_alert_ids.any?
+
+      # Exclude issues with active agent runs — closing them mid-run would
+      # leave orphaned runs attached to completed/closed issues.
+      active_runs = AgentRun.where(issue_id: initial_stale_scope.select(:id), status: %w[queued pending running])
+      active_run_count = active_runs.count
+      if active_run_count.positive?
+        logger.warn(
+          message: "github_sync.security_active_runs_for_resolved_alerts",
+          project_id: project.id,
+          active_run_count: active_run_count
+        )
+      end
+
+      stale_scope = initial_stale_scope
+      issue_ids_with_active_runs = active_runs.distinct.pluck(:issue_id)
+      stale_scope = stale_scope.where.not(id: issue_ids_with_active_runs) if issue_ids_with_active_runs.any?
+      # Preserve failed state — it carries diagnostic value and should not be
+      # silently overwritten to completed.
+      stale_scope = stale_scope.where.not(paid_state: "failed")
+
       count = stale_scope.count
-
       if count > 0
-        active_runs = AgentRun.where(issue_id: stale_scope.select(:id), status: %w[queued pending running])
-        active_run_count = active_runs.count
-        if active_run_count.positive?
-          logger.warn(
-            message: "github_sync.security_active_runs_for_resolved_alerts",
-            project_id: project.id,
-            active_run_count: active_run_count
-          )
-        end
-
         now = Time.current
         stale_scope.update_all(
           github_state: "closed",
