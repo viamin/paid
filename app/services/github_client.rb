@@ -499,7 +499,11 @@ class GithubClient
 
   DEPENDABOT_ALERTS_MAX_PAGES = 5
 
-  # Fetches open Dependabot alerts for a repository.
+  # Fetches Dependabot alerts for a repository.
+  #
+  # Note: the GitHub Dependabot alerts API does not support server-side
+  # severity filtering. Callers must filter the returned alerts by
+  # :severity locally if they need a severity threshold.
   #
   # @param repo [String] Repository in "owner/name" format
   # @param state [String] Alert state: "open", "dismissed", "fixed", or "auto_dismissed"
