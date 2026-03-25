@@ -11,6 +11,10 @@ RSpec.describe ProviderSupport do
     it "includes codex" do
       expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("codex")
     end
+
+    it "includes kilocode" do
+      expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("kilocode")
+    end
   end
 
   describe ".container_executable_provider_keys" do
@@ -18,6 +22,11 @@ RSpec.describe ProviderSupport do
       keys = described_class.container_executable_provider_keys
       expect(keys).to include("claude")
       expect(keys).to include("codex")
+    end
+
+    it "includes kilocode when backed by the agent harness registry" do
+      keys = described_class.container_executable_provider_keys
+      expect(keys).to include("kilocode")
     end
   end
 
@@ -28,6 +37,10 @@ RSpec.describe ProviderSupport do
 
     it "returns true for claude" do
       expect(described_class.container_executable_provider_key?("claude")).to be true
+    end
+
+    it "returns true for kilocode" do
+      expect(described_class.container_executable_provider_key?("kilocode")).to be true
     end
 
     it "returns false for non-executable providers" do
