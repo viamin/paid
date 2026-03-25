@@ -9,6 +9,19 @@ permissions:
   contents: read
 
 jobs:
+  agent-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Build paid-agent image
+        run: ./scripts/build-agent-image.sh
+
+      - name: Smoke test paid-agent image
+        run: ./scripts/test-agent-image.sh
+
   lint:
     runs-on: ubuntu-latest
     env:

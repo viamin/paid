@@ -52,21 +52,34 @@ echo "6. Python:"
 python3 --version
 
 echo ""
-echo "7. Claude Code CLI:"
-if npm list -g @anthropic/claude-code >/dev/null 2>&1; then
-    echo "   @anthropic/claude-code is installed globally"
-    if command -v claude >/dev/null 2>&1; then
-        claude --version 2>/dev/null || echo "   (claude command exists, may require API key to show version)"
-    else
-        echo "   WARNING: @anthropic/claude-code installed but claude command not in PATH"
+check_command() {
+    local label="$1"
+    local command_name="$2"
+    local version_args="${3:---version}"
+
+    echo "${label}:"
+    if ! command -v "${command_name}" >/dev/null 2>&1; then
+        echo "   ERROR: ${command_name} is not installed"
+        exit 1
     fi
-else
-    echo "   ERROR: @anthropic/claude-code is not installed"
-    exit 1
-fi
+
+    # Some CLIs may require auth or print version details on stderr.
+    "${command_name}" ${version_args} 2>&1 | head -n 1 || true
+}
+
+echo "7. Agent CLIs:"
+check_command "   Claude Code CLI" claude
+check_command "   OpenAI Codex CLI" codex
+check_command "   Gemini CLI" gemini
+check_command "   Kilocode CLI" kilo
 
 echo ""
-echo "8. User check (should be agent, not root):"
+echo "8. Developer tools:"
+check_command "   ast-grep" ast-grep
+check_command "   scc" scc
+
+echo ""
+echo "9. User check (should be agent, not root):"
 CURRENT_USER=$(whoami)
 CURRENT_UID=$(id -u)
 echo "   Current user: $CURRENT_USER (UID: $CURRENT_UID)"
@@ -84,7 +97,7 @@ fi
 echo "   ✓ Running as non-root user: agent"
 
 echo ""
-echo "9. Workspace directory:"
+echo "10. Workspace directory:"
 ls -la /workspace
 if [ -w /workspace ]; then
     echo "   /workspace is writable"
