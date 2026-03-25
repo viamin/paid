@@ -136,9 +136,8 @@ module Activities
         is_pull_request: false
       )
 
-      adjacency = IssueDependency.account_adjacency(project.account)
-
       issues_relation.find_each do |issue|
+        adjacency = IssueDependency.account_adjacency(project.account)
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency)
       rescue => e
         logger.warn(

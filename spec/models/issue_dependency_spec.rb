@@ -21,13 +21,26 @@ RSpec.describe IssueDependency do
       expect(dep.errors[:depends_on_issue]).to include("cannot be the same as the issue")
     end
 
-    it "allows dependencies across projects" do
+    it "allows dependencies across projects within the same account" do
+      account = create(:account)
+      project_a = create(:project, account: account)
+      project_b = create(:project, account: account)
+      issue = create(:issue, project: project_a)
+      other_issue = create(:issue, project: project_b)
+
+      dep = build(:issue_dependency, issue: issue, depends_on_issue: other_issue)
+
+      expect(dep).to be_valid
+    end
+
+    it "rejects dependencies across different accounts" do
       issue = create(:issue)
       other_issue = create(:issue)
 
       dep = build(:issue_dependency, issue: issue, depends_on_issue: other_issue)
 
-      expect(dep).to be_valid
+      expect(dep).not_to be_valid
+      expect(dep.errors[:depends_on_issue]).to include("must belong to the same account")
     end
 
     it "allows dependencies within the same project" do
@@ -69,10 +82,21 @@ RSpec.describe IssueDependency do
 
     it "rejects records with both local and external references" do
       issue = create(:issue)
-      other_issue = create(:issue)
+      other_issue = create(:issue, project: issue.project)
       dep = build(:issue_dependency, issue: issue, depends_on_issue: other_issue,
                                      depends_on_owner: "viamin", depends_on_repo: "agent-harness",
                                      depends_on_number: 31)
+
+      expect(dep).not_to be_valid
+      expect(dep.errors[:base]).to include("cannot reference both a local issue and an external issue")
+    end
+
+    it "rejects records with local issue and partial external columns" do
+      issue = create(:issue)
+      other_issue = create(:issue, project: issue.project)
+      dep = build(:issue_dependency, issue: issue, depends_on_issue: other_issue,
+                                     depends_on_owner: nil, depends_on_repo: "agent-harness",
+                                     depends_on_number: nil)
 
       expect(dep).not_to be_valid
       expect(dep.errors[:base]).to include("cannot reference both a local issue and an external issue")
@@ -109,8 +133,9 @@ RSpec.describe IssueDependency do
 
   describe ".global_adjacency" do
     it "builds adjacency across all projects" do
-      project_a = create(:project)
-      project_b = create(:project)
+      account = create(:account)
+      project_a = create(:project, account: account)
+      project_b = create(:project, account: account)
       issue_a = create(:issue, project: project_a)
       issue_b = create(:issue, project: project_b)
       create(:issue_dependency, issue: issue_a, depends_on_issue: issue_b)

@@ -8,6 +8,7 @@ class IssueDependency < ApplicationRecord
   validate :not_self_referential
   validate :must_have_local_or_external_ref
   validate :local_and_external_mutually_exclusive
+  validate :local_dep_within_same_account
 
   # Builds an adjacency map { issue_id => [depends_on_issue_id, ...] }
   # for all local dependencies within a project. Used by ParseDependencies and
@@ -72,8 +73,18 @@ class IssueDependency < ApplicationRecord
   end
 
   def local_and_external_mutually_exclusive
-    return unless depends_on_issue_id.present? && depends_on_owner.present?
+    return unless depends_on_issue_id.present? &&
+                  (depends_on_owner.present? || depends_on_repo.present? || depends_on_number.present?)
 
     errors.add(:base, "cannot reference both a local issue and an external issue")
+  end
+
+  def local_dep_within_same_account
+    return unless depends_on_issue_id.present? && depends_on_issue.present?
+    return unless issue&.project && depends_on_issue.project
+
+    return if issue.project.account_id == depends_on_issue.project.account_id
+
+    errors.add(:depends_on_issue, "must belong to the same account")
   end
 end
