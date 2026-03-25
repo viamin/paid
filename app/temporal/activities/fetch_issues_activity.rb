@@ -183,7 +183,7 @@ module Activities
       # issues API. Synthetic issues (e.g. from Dependabot alert scanning)
       # are intentionally excluded from this stale-closure pass and are
       # reconciled by ScanSecurityAlertsActivity instead.
-      github_sourced = project.issues.where(github_state: "open", source: "github")
+      github_sourced = project.issues.where(github_state: "open", source: Issue::GITHUB_SOURCE)
       stale_issues = if fetched_github_ids.empty?
         github_sourced
       else

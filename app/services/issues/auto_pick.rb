@@ -127,7 +127,7 @@ module Issues
       scope = Issue.ready_for_work(@project)
         .where(paid_state: %w[new planning failed])
         .where.not(id: issues_with_active_runs)
-        .where(source: "github")
+        .where(source: Issue::GITHUB_SOURCE)
         .where.not(id: parent_issue_ids)
 
       trusted_usernames = Array(@project.allowed_github_usernames).presence
