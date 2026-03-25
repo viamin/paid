@@ -341,6 +341,19 @@ RSpec.describe Activities::FetchIssuesActivity do
           hash_including(message: "github_sync.fetch_issues_page_limit")
         )
       end
+
+      it "does not close locally-open issues when the fetch is truncated" do
+        # This issue is locally open but not in the truncated fetch results —
+        # it should NOT be closed because the fetch is not authoritative.
+        stale = create(:issue, project: project, github_issue_id: 99_999, github_number: 999, github_state: "open")
+
+        allow(Rails.logger).to receive(:warn)
+
+        activity.execute(project_id: project.id)
+
+        stale.reload
+        expect(stale.github_state).to eq("open")
+      end
     end
 
     context "when project has no label mappings" do
