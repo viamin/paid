@@ -40,16 +40,23 @@ class Issue < ApplicationRecord
   scope :issues_only, -> { where(is_pull_request: false) }
   scope :pull_requests_only, -> { where(is_pull_request: true) }
   scope :ready_for_work, ->(project) {
-    where(project: project, github_state: "open", is_pull_request: false)
-      .where.not(
-        id: IssueDependency
-          .joins(:issue, :depends_on_issue)
-          .where(
-            depends_on_issue: { github_state: "open" },
-            issues: { project_id: project.id }
-          )
-          .select(:issue_id)
+    blocked_by_local = IssueDependency
+      .joins(:issue, :depends_on_issue)
+      .where(
+        depends_on_issue: { github_state: "open" },
+        issues: { project_id: project.id }
       )
+      .select(:issue_id)
+
+    blocked_by_external = IssueDependency
+      .joins(:issue)
+      .where.not(depends_on_owner: nil)
+      .where(issues: { project_id: project.id })
+      .select(:issue_id)
+
+    where(project: project, github_state: "open", is_pull_request: false)
+      .where.not(id: blocked_by_local)
+      .where.not(id: blocked_by_external)
   }
 
   def github_url
@@ -98,11 +105,15 @@ class Issue < ApplicationRecord
   end
 
   def ready_to_work?
-    blocking_issues.none?
+    blocking_issues.none? && blocking_external_dependencies.none?
   end
 
   def blocking_issues
     dependencies.where(github_state: "open")
+  end
+
+  def blocking_external_dependencies
+    issue_dependencies.where.not(depends_on_owner: nil)
   end
 
   def dependent_issues

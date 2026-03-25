@@ -1,15 +1,17 @@
 # frozen_string_literal: true
 
 module Issues
-  # Parses an issue's body text to extract dependency references to other issues
-  # within the same project, then persists those relationships as IssueDependency
-  # records.
+  # Parses an issue's body text to extract dependency references to other issues,
+  # including cross-project references, then persists those relationships as
+  # IssueDependency records.
   #
   # Handles common formats:
   #   - "## Dependencies\n- #101\n- #102"
   #   - "Depends on #101, #102"
   #   - "Depends on: #101"
   #   - "Blocked by #101"
+  #   - "Depends on viamin/agent-harness#31"
+  #   - "Blocked by viamin/other-project#42"
   #   - Checklist items: "- [ ] #101"
   #
   # @example
@@ -24,9 +26,13 @@ module Issues
     INLINE_DEPENDS_PATTERN = /
       \b(?:depends?\s+on|blocked?\s+by)\b   # Keyword
       :?\s*                                 # Optional colon
-      ((?:\#\d+[\s,]*)+)                    # One or more #N references
+      ((?:(?:[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)?\#\d+[\s,]*)+)  # One or more refs
     /xi
 
+    # Matches cross-repo references like owner/repo#123
+    CROSS_REPO_REF_PATTERN = /([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)\#(\d+)/
+
+    # Matches same-project references like #123
     ISSUE_REF_PATTERN = /\#(\d+)/
 
     attr_reader :issue, :adjacency
@@ -41,58 +47,147 @@ module Issues
     end
 
     def call
-      referenced_numbers = issue.body.present? ? extract_dependency_numbers : []
-
-      current_dep_ids = issue.issue_dependencies.pluck(:depends_on_issue_id).to_set
-      return if referenced_numbers.empty? && current_dep_ids.empty?
-
-      new_dep_ids = Set.new
-
-      if referenced_numbers.any?
-        project_issues = issue.project.issues
-          .where(github_number: referenced_numbers, is_pull_request: false)
-          .index_by(&:github_number)
-
-        adj = adjacency || IssueDependency.project_adjacency(issue.project)
-
-        referenced_numbers.each do |number|
-          dep_issue = project_issues[number]
-          next unless dep_issue
-          next if dep_issue.id == issue.id
-
-          new_dep_ids << dep_issue.id
-
-          next if current_dep_ids.include?(dep_issue.id)
-          next if would_create_cycle?(dep_issue, adj)
-
-          issue.issue_dependencies.create!(depends_on_issue: dep_issue)
-        end
+      if issue.body.present?
+        local_numbers, cross_refs = extract_all_refs
+      else
+        local_numbers = []
+        cross_refs = []
       end
 
-      stale_ids = current_dep_ids - new_dep_ids
-      issue.issue_dependencies.where(depends_on_issue_id: stale_ids).delete_all if stale_ids.any?
+      current_deps = issue.issue_dependencies.to_a
+      current_local_ids = current_deps.select(&:local?).map(&:depends_on_issue_id).to_set
+      current_external_keys = current_deps.select(&:external?).map { |d|
+        [ d.depends_on_owner, d.depends_on_repo, d.depends_on_number ]
+      }.to_set
+
+      return if local_numbers.empty? && cross_refs.empty? &&
+               current_local_ids.empty? && current_external_keys.empty?
+
+      new_local_ids = sync_local_deps(local_numbers, current_local_ids)
+      new_cross_refs = sync_cross_project_deps(cross_refs, current_local_ids, current_external_keys)
+
+      remove_stale_local_deps(current_local_ids, new_local_ids | new_cross_refs[:resolved_ids])
+      remove_stale_external_deps(current_external_keys, new_cross_refs[:external_keys])
     end
 
     private
 
-    def extract_dependency_numbers
-      numbers = Set.new
+    def extract_all_refs
+      local_numbers = Set.new
+      cross_refs = Set.new
 
-      extract_from_dependency_section(numbers)
-      extract_from_inline_patterns(numbers)
+      extract_from_dependency_section(local_numbers, cross_refs)
+      extract_from_inline_patterns(local_numbers, cross_refs)
 
-      numbers.to_a
+      [ local_numbers.to_a, cross_refs.to_a ]
     end
 
-    def extract_from_dependency_section(numbers)
+    def extract_from_dependency_section(local_numbers, cross_refs)
       issue.body.scan(DEPENDENCY_SECTION_PATTERN) do |section_body|
-        section_body[0].scan(ISSUE_REF_PATTERN) { |match| numbers << match[0].to_i }
+        extract_refs_from_text(section_body[0], local_numbers, cross_refs)
       end
     end
 
-    def extract_from_inline_patterns(numbers)
+    def extract_from_inline_patterns(local_numbers, cross_refs)
       issue.body.scan(INLINE_DEPENDS_PATTERN) do |refs|
-        refs[0].scan(ISSUE_REF_PATTERN) { |match| numbers << match[0].to_i }
+        extract_refs_from_text(refs[0], local_numbers, cross_refs)
+      end
+    end
+
+    def extract_refs_from_text(text, local_numbers, cross_refs)
+      # Extract cross-repo refs first
+      text.scan(CROSS_REPO_REF_PATTERN) do |owner, repo, number|
+        cross_refs << [ owner, repo, number.to_i ]
+      end
+
+      # Extract same-project refs (strip cross-repo refs first to avoid double-matching)
+      stripped = text.gsub(CROSS_REPO_REF_PATTERN, "")
+      stripped.scan(/\#(\d+)/) { |match| local_numbers << match[0].to_i }
+    end
+
+    def sync_local_deps(referenced_numbers, current_local_ids)
+      new_local_ids = Set.new
+      return new_local_ids if referenced_numbers.empty?
+
+      project_issues = issue.project.issues
+        .where(github_number: referenced_numbers, is_pull_request: false)
+        .index_by(&:github_number)
+
+      adj = adjacency || IssueDependency.global_adjacency
+
+      referenced_numbers.each do |number|
+        dep_issue = project_issues[number]
+        next unless dep_issue
+        next if dep_issue.id == issue.id
+
+        new_local_ids << dep_issue.id
+
+        next if current_local_ids.include?(dep_issue.id)
+        next if would_create_cycle?(dep_issue, adj)
+
+        issue.issue_dependencies.create!(depends_on_issue: dep_issue)
+      end
+
+      new_local_ids
+    end
+
+    def sync_cross_project_deps(cross_refs, current_local_ids, current_external_keys)
+      resolved_ids = Set.new
+      external_keys = Set.new
+      return { resolved_ids: resolved_ids, external_keys: external_keys } if cross_refs.empty?
+
+      account = issue.project.account
+      adj = adjacency || IssueDependency.global_adjacency
+
+      cross_refs.each do |owner, repo, number|
+        # Skip self-project references (handled as local deps)
+        next if owner == issue.project.owner && repo == issue.project.repo
+
+        project = account.projects.find_by(owner: owner, repo: repo)
+
+        if project
+          dep_issue = project.issues.find_by(github_number: number, is_pull_request: false)
+
+          if dep_issue
+            resolved_ids << dep_issue.id
+            next if current_local_ids.include?(dep_issue.id)
+            next if would_create_cycle?(dep_issue, adj)
+
+            issue.issue_dependencies.create!(depends_on_issue: dep_issue)
+            next
+          end
+        end
+
+        # Store as external reference
+        key = [ owner, repo, number ]
+        external_keys << key
+        next if current_external_keys.include?(key)
+
+        issue.issue_dependencies.create!(
+          depends_on_owner: owner,
+          depends_on_repo: repo,
+          depends_on_number: number
+        )
+      end
+
+      { resolved_ids: resolved_ids, external_keys: external_keys }
+    end
+
+    def remove_stale_local_deps(current_local_ids, new_local_ids)
+      stale_ids = current_local_ids - new_local_ids
+      return unless stale_ids.any?
+
+      issue.issue_dependencies.where(depends_on_issue_id: stale_ids).delete_all
+    end
+
+    def remove_stale_external_deps(current_external_keys, new_external_keys)
+      stale_keys = current_external_keys - new_external_keys
+      stale_keys.each do |owner, repo, number|
+        issue.issue_dependencies.where(
+          depends_on_owner: owner,
+          depends_on_repo: repo,
+          depends_on_number: number
+        ).delete_all
       end
     end
 

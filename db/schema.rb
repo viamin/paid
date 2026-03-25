@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_25_034844) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_25_081039) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -160,8 +160,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_034844) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -298,11 +298,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_034844) do
 
   create_table "issue_dependencies", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.bigint "depends_on_issue_id", null: false
+    t.bigint "depends_on_issue_id"
+    t.integer "depends_on_number"
+    t.string "depends_on_owner"
+    t.string "depends_on_repo"
     t.bigint "issue_id", null: false
     t.datetime "updated_at", null: false
     t.index ["depends_on_issue_id"], name: "index_issue_dependencies_on_depends_on_issue_id"
     t.index ["issue_id", "depends_on_issue_id"], name: "idx_issue_dependencies_unique", unique: true
+    t.index ["issue_id", "depends_on_owner", "depends_on_repo", "depends_on_number"], name: "idx_issue_deps_external_unique", unique: true, where: "(depends_on_owner IS NOT NULL)"
     t.index ["issue_id"], name: "index_issue_dependencies_on_issue_id"
   end
 

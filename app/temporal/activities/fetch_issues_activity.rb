@@ -136,8 +136,9 @@ module Activities
         is_pull_request: false
       )
 
+      adjacency = IssueDependency.global_adjacency
+
       issues_relation.find_each do |issue|
-        adjacency = IssueDependency.project_adjacency(project)
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency)
       rescue => e
         logger.warn(
@@ -149,6 +150,34 @@ module Activities
           error: e.message
         )
       end
+
+      resolve_external_dependencies(project)
+    end
+
+    def resolve_external_dependencies(project)
+      IssueDependency
+        .joins(:issue)
+        .where(depends_on_issue_id: nil, depends_on_owner: project.owner, depends_on_repo: project.repo)
+        .find_each do |dep|
+          resolved_issue = project.issues.find_by(
+            github_number: dep.depends_on_number, is_pull_request: false
+          )
+          next unless resolved_issue
+
+          dep.update!(
+            depends_on_issue: resolved_issue,
+            depends_on_owner: nil,
+            depends_on_repo: nil,
+            depends_on_number: nil
+          )
+        end
+    rescue => e
+      logger.warn(
+        message: "github_sync.resolve_external_dependencies_failed",
+        project_id: project.id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     def close_stale_issues(project, github_issues)
