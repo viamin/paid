@@ -1284,5 +1284,39 @@ RSpec.describe GithubClient do
         expect(result).to eq([])
       end
     end
+
+    context "when security_vulnerability is missing" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/dependabot/alerts")
+          .with(query: hash_including("state" => "open"))
+          .to_return(
+            status: 200,
+            body: [
+              {
+                number: 2,
+                state: "open",
+                html_url: "https://github.com/owner/repo/security/dependabot/2",
+                dependency: {
+                  package: { name: "lodash", ecosystem: "npm" }
+                },
+                security_advisory: {
+                  severity: "critical",
+                  summary: "Prototype Pollution in lodash"
+                }
+              }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns severity from advisory and nil patched_version" do
+        result = client.dependabot_alerts(repo)
+
+        alert = result.first
+        expect(alert[:severity]).to eq("critical")
+        expect(alert[:patched_version]).to be_nil
+        expect(alert[:summary]).to eq("Prototype Pollution in lodash")
+      end
+    end
   end
 end

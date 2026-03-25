@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "octokit"
-require "ostruct"
 require "faraday/retry"
 
 # GitHub API client wrapper with error handling and rate limit awareness.
@@ -526,15 +525,17 @@ class GithubClient
       )
 
       Array(all_alerts).map do |alert|
-        vulnerability = alert.security_vulnerability || alert.security_advisory || OpenStruct.new
+        security_vulnerability = alert.security_vulnerability
+        security_advisory = alert.security_advisory
+
         {
           number: alert.number,
           state: alert.state,
-          severity: alert.security_advisory&.severity || vulnerability.severity,
+          severity: security_advisory&.severity || security_vulnerability&.severity,
           package_name: alert.dependency&.package&.name,
           package_ecosystem: alert.dependency&.package&.ecosystem,
-          patched_version: vulnerability.first_patched_version&.identifier,
-          summary: alert.security_advisory&.summary,
+          patched_version: security_vulnerability&.first_patched_version&.identifier,
+          summary: security_advisory&.summary,
           html_url: alert.html_url
         }
       end
