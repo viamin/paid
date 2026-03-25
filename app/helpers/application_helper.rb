@@ -178,9 +178,9 @@ module ApplicationHelper
               "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round"
             ),
             type: "button",
-            class: "sm:hidden text-gray-400 hover:text-gray-600",
+            class: "[@media(hover:hover)]:hidden text-gray-400 hover:text-gray-600",
             data: { action: "click->tooltip#toggle" },
-            aria: { label: context[:tooltip], expanded: "false", controls: tooltip_id }
+            aria: { label: "Show context title", describedby: tooltip_id, expanded: "false", controls: tooltip_id }
           ),
           tag.span(
             context[:tooltip],

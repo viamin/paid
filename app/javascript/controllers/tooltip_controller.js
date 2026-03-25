@@ -19,11 +19,39 @@ export default class extends Controller {
 
   connect() {
     this.boundHide = this.hide.bind(this)
+    this.boundKeydown = this.handleKeydown.bind(this)
+    this.boundFocusOut = this.handleFocusOut.bind(this)
+
     document.addEventListener("click", this.boundHide)
+    document.addEventListener("keydown", this.boundKeydown)
+    this.element.addEventListener("focusout", this.boundFocusOut)
   }
 
   disconnect() {
     document.removeEventListener("click", this.boundHide)
+    document.removeEventListener("keydown", this.boundKeydown)
+    this.element.removeEventListener("focusout", this.boundFocusOut)
+  }
+
+  handleKeydown(event) {
+    if (event.key === "Escape" || event.key === "Esc") {
+      if (!this.contentTarget.classList.contains("hidden")) {
+        this.contentTarget.classList.add("hidden")
+        this.#updateAria(false)
+      }
+    }
+  }
+
+  handleFocusOut(event) {
+    const nextFocusedElement = event.relatedTarget
+
+    // Only hide when focus moves completely outside the tooltip component.
+    if (!nextFocusedElement || !this.element.contains(nextFocusedElement)) {
+      if (!this.contentTarget.classList.contains("hidden")) {
+        this.contentTarget.classList.add("hidden")
+        this.#updateAria(false)
+      }
+    }
   }
 
   #updateAria(expanded) {
