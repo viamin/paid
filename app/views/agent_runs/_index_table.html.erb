@@ -52,17 +52,7 @@
                     </td>
                   <% end %>
                   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                    <% context = agent_run_context(run) %>
-                    <% case context[:type] %>
-                    <% when :link %>
-                      <%= link_to context[:label], context[:url], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
-                    <% when :text %>
-                      <span class="<%= context[:classes] %>"><%= context[:label] %></span>
-                    <% when :pending %>
-                      <span class="italic text-gray-500">Creating issue&hellip;</span>
-                    <% else %>
-                      <span class="text-gray-400">-</span>
-                    <% end %>
+                    <%= agent_run_context_display(run) %>
                   </td>
                   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                     <% if run.duration_seconds.present? %>
