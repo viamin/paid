@@ -41,6 +41,11 @@ RSpec.describe Activities::RunAgentActivity do
       expect(described_class::AGENT_COMMANDS).to have_key("gemini")
       expect(described_class::AGENT_COMMANDS["gemini"]).to include("gemini")
     end
+
+    it "includes a command mapping for kilocode" do
+      expect(described_class::AGENT_COMMANDS).to have_key("kilocode")
+      expect(described_class::AGENT_COMMANDS["kilocode"]).to include("kilo")
+    end
   end
 
   describe ".provider_order" do
@@ -82,6 +87,16 @@ RSpec.describe Activities::RunAgentActivity do
       )
 
       expect(result).to eq(%w[claude_code gemini codex])
+    end
+
+    it "includes kilocode in fallback order when listed" do
+      result = described_class.provider_order(
+        agent_type: "claude_code",
+        fallback_enabled: true,
+        fallback_providers: %w[kilocode codex]
+      )
+
+      expect(result).to eq(%w[claude_code kilocode codex])
     end
   end
 
