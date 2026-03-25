@@ -53,8 +53,13 @@ class StaleRunDetectorJob < ApplicationJob
 
   private
 
+  # Uses the default timeout rather than per-user maximums. Individual run
+  # timeouts are enforced by the Temporal workflow; this job is a safety net
+  # for orphaned runs where the workflow died. Using UserSetting.maximum
+  # would let a single user's large timeout delay stale-run detection for
+  # every other user's runs.
   def agent_timeout_with_grace
-    Rails.application.config.x.agent_timeout.seconds + GRACE_PERIOD
+    AGENT_TIMEOUT_DEFAULT.seconds + GRACE_PERIOD
   end
 
   # Runs stuck in "running" that started before the threshold.

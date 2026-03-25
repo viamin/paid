@@ -19,7 +19,11 @@ class WorktreeService
   class CloneError < Error; end
   class WorktreeError < Error; end
 
-  WORKSPACE_ROOT = ENV.fetch("WORKSPACE_ROOT", "/var/paid/workspaces")
+  DEFAULT_WORKSPACE_ROOT = "/var/paid/workspaces"
+
+  def self.workspace_root
+    Rails.application.config.x.workspace_root || DEFAULT_WORKSPACE_ROOT
+  end
 
   # Per-repository mutexes to synchronize git operations across all
   # WorktreeService instances in this process.
@@ -204,11 +208,11 @@ class WorktreeService
   private
 
   def project_repo_path
-    File.join(WORKSPACE_ROOT, project.account_id.to_s, project.id.to_s, "repo")
+    File.join(self.class.workspace_root, project.account_id.to_s, project.id.to_s, "repo")
   end
 
   def worktrees_path
-    File.join(WORKSPACE_ROOT, project.account_id.to_s, project.id.to_s, "worktrees")
+    File.join(self.class.workspace_root, project.account_id.to_s, project.id.to_s, "worktrees")
   end
 
   def clone_repository

@@ -95,9 +95,26 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     it "uses shorter start_to_close_timeout for create_issue goals" do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 3 }
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 3, agent_timeout_seconds: AGENT_TIMEOUT_DEFAULT, issue_goal_timeout_seconds: Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT }
         when "Activities::RunAgentActivity"
-          expected_timeout = (Activities::RunAgentActivity::ISSUE_GOAL_TIMEOUT * 3) + 300
+          expected_timeout = (Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT * 3) + 300
+          expect(opts[:start_to_close_timeout]).to eq(expected_timeout)
+          { success: true }
+        when "Activities::CompleteIssueGoalActivity"
+          { agent_run_id: 42, success: true, issue_created: true }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+    end
+
+    it "falls back to defaults when CreateAgentRunActivity omits timeout keys (replay compatibility)" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity"
+          expected_timeout = (Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT * 1) + 300
           expect(opts[:start_to_close_timeout]).to eq(expected_timeout)
           { success: true }
         when "Activities::CompleteIssueGoalActivity"

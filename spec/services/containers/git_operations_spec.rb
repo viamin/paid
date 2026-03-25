@@ -29,7 +29,7 @@ RSpec.describe Containers::GitOperations do
     it "clones the repository inside the container" do
       expect(container_service).to receive(:execute)
         .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
-              timeout: described_class::CLONE_TIMEOUT, stream: false)
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
 
       git_ops.clone_and_setup_branch
@@ -48,7 +48,7 @@ RSpec.describe Containers::GitOperations do
 
       expect(container_service).to receive(:execute)
         .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
-              timeout: described_class::CLONE_TIMEOUT, stream: false)
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
         .ordered
 
@@ -151,7 +151,7 @@ RSpec.describe Containers::GitOperations do
 
       expect(container_service).to receive(:execute)
         .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
-              timeout: described_class::CLONE_TIMEOUT, stream: false)
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
 
       expect(container_service).to receive(:execute)
@@ -183,7 +183,7 @@ RSpec.describe Containers::GitOperations do
 
       expect(container_service).not_to receive(:execute)
         .with([ "git", "clone", "--depth", "1", "https://github.com/#{project.full_name}.git", "." ],
-              timeout: described_class::CLONE_TIMEOUT, stream: false)
+              timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
 
       expect(container_service).not_to receive(:execute)
         .with([ "git", "fetch", "--depth", "1", "origin", "refs/heads/fix-bug-branch:refs/remotes/origin/fix-bug-branch" ], timeout: nil, stream: false)
@@ -678,7 +678,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(shallow_true_result)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
+        .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
         .and_return(success_result)
 
       allow(container_service).to receive(:execute)
@@ -704,7 +704,7 @@ RSpec.describe Containers::GitOperations do
           .ordered
 
         expect(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
           .and_return(success_result)
           .ordered
 
@@ -803,7 +803,7 @@ RSpec.describe Containers::GitOperations do
 
       it "skips unshallow and proceeds with rebase" do
         expect(container_service).not_to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
 
         expect(git_ops.rebase_onto("main")).to be true
       end
@@ -812,7 +812,7 @@ RSpec.describe Containers::GitOperations do
     context "when unshallow fails" do
       before do
         allow(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::CLONE_TIMEOUT, stream: false)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false)
           .and_return(failure_result)
       end
 
