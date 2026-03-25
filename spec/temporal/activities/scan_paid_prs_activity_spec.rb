@@ -1145,6 +1145,44 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when owner reviewer is also the PR author" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(author_login: "viamin", reviews: default_clean_copilot_review)
+      end
+
+      it "returns owner_approved without a separate owner approval review" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+    end
+
+    context "when the PR author is not the owner reviewer" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(author_login: "someone-else", reviews: default_clean_copilot_review)
+      end
+
+      it "still requires an owner approval review" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "when ready PR has unresolved review bot threads" do
       before do
         create(:issue, :pull_request,
@@ -1415,12 +1453,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   def stub_github_for_pr(
     mergeable: true,
     draft: false,
+    author_login: "someone-else",
     checks: [ { name: "ci", conclusion: "success" } ],
     review_threads: [],
     issue_comments: [],
     reviews: default_clean_copilot_review
   )
-    pr_data = OpenStruct.new(head: OpenStruct.new(sha: "abc123"), mergeable: mergeable, draft: draft)
+    pr_data = OpenStruct.new(
+      head: OpenStruct.new(sha: "abc123"),
+      mergeable: mergeable,
+      draft: draft,
+      user: OpenStruct.new(login: author_login)
+    )
 
     allow(github_client).to receive(:pull_request)
       .with(project.full_name, 42)
