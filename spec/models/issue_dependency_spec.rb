@@ -80,6 +80,30 @@ RSpec.describe IssueDependency do
       expect(dep).not_to be_valid
     end
 
+    it "rejects duplicate external references for the same issue" do
+      issue = create(:issue)
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                depends_on_number: 31)
+      dup = build(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                     depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                     depends_on_number: 31)
+
+      expect(dup).not_to be_valid
+      expect(dup.errors[:depends_on_owner]).to include("has already been taken")
+    end
+
+    it "normalizes external owner/repo to lowercase before validation" do
+      issue = create(:issue)
+      dep = build(:issue_dependency, issue: issue, depends_on_issue: nil,
+                                     depends_on_owner: "Viamin", depends_on_repo: "Agent-Harness",
+                                     depends_on_number: 31)
+
+      dep.valid?
+      expect(dep.depends_on_owner).to eq("viamin")
+      expect(dep.depends_on_repo).to eq("agent-harness")
+    end
+
     it "rejects records with both local and external references" do
       issue = create(:issue)
       other_issue = create(:issue, project: issue.project)

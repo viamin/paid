@@ -5,10 +5,16 @@ class IssueDependency < ApplicationRecord
   belongs_to :depends_on_issue, class_name: "Issue", optional: true
 
   validates :depends_on_issue_id, uniqueness: { scope: :issue_id }, if: :local?
+  validates :depends_on_owner, uniqueness: {
+    scope: %i[issue_id depends_on_repo depends_on_number],
+    case_sensitive: false
+  }, if: :external?
   validate :not_self_referential
   validate :must_have_local_or_external_ref
   validate :local_and_external_mutually_exclusive
   validate :local_dep_within_same_account
+
+  before_validation :normalize_external_ref
 
   # Builds an adjacency map { issue_id => [depends_on_issue_id, ...] }
   # for all local dependencies within a project. Used by ParseDependencies and
@@ -21,8 +27,9 @@ class IssueDependency < ApplicationRecord
       .transform_values { |pairs| pairs.map(&:last) }
   end
 
-  # Builds a global adjacency map across all local dependencies.
-  # Used by DetectCycle for cross-project cycle detection.
+  # Builds a global adjacency map across all local dependencies (all tenants).
+  # Prefer account_adjacency for production use to avoid loading cross-tenant data.
+  # Retained for testing and debugging purposes.
   def self.global_adjacency
     where.not(depends_on_issue_id: nil)
       .pluck(:issue_id, :depends_on_issue_id)
@@ -86,5 +93,10 @@ class IssueDependency < ApplicationRecord
     return if issue.project.account_id == depends_on_issue.project.account_id
 
     errors.add(:depends_on_issue, "must belong to the same account")
+  end
+
+  def normalize_external_ref
+    self.depends_on_owner = depends_on_owner.downcase if depends_on_owner.present?
+    self.depends_on_repo = depends_on_repo.downcase if depends_on_repo.present?
   end
 end
