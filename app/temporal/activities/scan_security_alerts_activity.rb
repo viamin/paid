@@ -111,13 +111,15 @@ module Activities
 
     def apply_capacity_limit(project, actionable, reopen_candidates)
       max_runs = project.max_security_fix_runs
-      issues_created = actionable.first(max_runs).filter_map do |alert|
+      sorted_new = sort_by_severity(actionable)
+      issues_created = sorted_new.first(max_runs).filter_map do |alert|
         create_issue_for_alert(project, alert)
       end
 
       remaining_slots = max_runs - issues_created.size
       if remaining_slots.positive?
-        reopen_candidates.first(remaining_slots).each do |issue, alert|
+        sorted_reopen = sort_by_severity_pair(reopen_candidates)
+        sorted_reopen.first(remaining_slots).each do |issue, alert|
           reopen_closed_issue(issue)
           issues_created << { issue_id: issue.id, alert_number: alert[:number], alert_type: "dependabot" }
         end
@@ -181,6 +183,14 @@ module Activities
 
     def generate_synthetic_number(alert)
       SYNTHETIC_NUMBER_OFFSET + alert[:number]
+    end
+
+    def sort_by_severity(alerts)
+      alerts.sort_by { |a| SEVERITY_ORDER.index(a[:severity]) || SEVERITY_ORDER.size }
+    end
+
+    def sort_by_severity_pair(pairs)
+      pairs.sort_by { |_issue, alert| SEVERITY_ORDER.index(alert[:severity]) || SEVERITY_ORDER.size }
     end
 
     def severities_at_or_above(threshold)

@@ -132,6 +132,15 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         expect(result[:alerts_to_fix].size).to eq(1)
       end
+
+      it "prioritizes more severe alerts when capacity is limited" do
+        project.update!(max_security_fix_runs: 1)
+
+        result = activity.execute(project_id: project.id)
+
+        # Alert #2 is critical, alert #1 is high — critical should be picked first
+        expect(result[:alerts_to_fix].first[:alert_number]).to eq(2)
+      end
     end
 
     context "when an alert already has an existing issue" do
