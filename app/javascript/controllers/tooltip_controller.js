@@ -3,7 +3,7 @@ import { Controller } from "@hotwired/stimulus"
 // Manages a mobile-only tappable tooltip (info icon).
 // Desktop (hover-capable) devices skip JS listeners entirely and rely on
 // the native HTML `title` attribute — the info icon is hidden via
-// `@media(hover:hover) and (pointer:fine)` in the template.
+// `@media(hover:hover) and (pointer:fine) and (not (any-pointer:coarse))` in the template.
 export default class extends Controller {
   static targets = ["content"]
 
