@@ -42,24 +42,23 @@ module SecurityAlerts
 
       scope = scope.where.not(id: active_runs.select(:issue_id))
 
-      count = scope.count
-      return unless count > 0
-
       now = Time.current
       # Close github_state for all resolved alerts. Preserve paid_state for
       # failed issues (diagnostic value) while marking others as completed.
-      scope.update_all(
+      closed_count = scope.update_all(
         ActiveRecord::Base.sanitize_sql_array([
           "github_state = 'closed', paid_state = CASE WHEN paid_state = 'failed' THEN paid_state ELSE 'completed' END, updated_at = ?, github_updated_at = ?",
           now, now
         ])
       )
+      return if closed_count.zero?
+
       # update_all bypasses callbacks, so manually broadcast UI updates.
       @project.broadcast_issues_update
       Rails.logger.info(
         message: "github_sync.security_reconciled_resolved_alerts",
         project_id: @project.id,
-        closed_count: count
+        closed_count: closed_count
       )
     end
   end
