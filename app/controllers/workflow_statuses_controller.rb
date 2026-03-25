@@ -32,7 +32,7 @@ class WorkflowStatusesController < ApplicationController
       }
     end
 
-    if stale?
+    if @project.poll_stale_with_recheck?
       return {
         status: :stale,
         label: "Delayed",
@@ -46,14 +46,5 @@ class WorkflowStatusesController < ApplicationController
       label: "Active",
       description: "Paid is monitoring this repository for labeled issues."
     }
-  end
-
-  def stale?
-    return false unless @project.poll_stale?
-
-    # Double-check after reload to avoid race-condition-related false positives if the poller
-    # has just updated last_polled_at.
-    @project.reload
-    @project.poll_stale?
   end
 end

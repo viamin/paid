@@ -70,11 +70,7 @@ class PollWorkflowHealthCheckJob < ApplicationJob
   end
 
   def check_stale_running(project)
-    return unless project.poll_stale?
-
-    # Double-check after reload to avoid race with a just-completed poll
-    project.reload
-    return unless project.poll_stale?
+    return unless project.poll_stale_with_recheck?
 
     restart_workflow(
       project,
