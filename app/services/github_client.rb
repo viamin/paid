@@ -497,9 +497,12 @@ class GithubClient
     handle_errors { client.put(path, options) }
   end
 
-  DEPENDABOT_ALERTS_MAX_PAGES = 5
-
   # Fetches Dependabot alerts for a repository.
+  #
+  # Uses Octokit's auto-pagination to fetch all pages so callers get an
+  # authoritative snapshot. This prevents reconciliation from incorrectly
+  # closing synthetic issues for alerts that would have been truncated
+  # by a manual page cap.
   #
   # Note: the GitHub Dependabot alerts API does not support server-side
   # severity filtering. Callers must filter the returned alerts by
@@ -512,32 +515,14 @@ class GithubClient
   #   :package_ecosystem, :patched_version, :summary, :html_url keys
   def dependabot_alerts(repo, state: "open", per_page: 100)
     handle_errors do
-      all_alerts = []
-      page = 1
-
-      loop do
-        response = client.get(
+      all_alerts = with_auto_paginate do
+        client.get(
           "#{Octokit::Repository.path(repo)}/dependabot/alerts",
-          state: state, per_page: per_page, page: page
-        )
-        batch = Array(response)
-        all_alerts.concat(batch)
-        break if batch.size < per_page
-
-        page += 1
-        break if page > DEPENDABOT_ALERTS_MAX_PAGES
-      end
-
-      if page > DEPENDABOT_ALERTS_MAX_PAGES
-        Rails.logger.warn(
-          message: "github_client.dependabot_alerts_pagination_truncated",
-          repo: repo,
-          fetched_count: all_alerts.size,
-          max_pages: DEPENDABOT_ALERTS_MAX_PAGES
+          state: state, per_page: per_page
         )
       end
 
-      all_alerts.map do |alert|
+      Array(all_alerts).map do |alert|
         vulnerability = alert.security_vulnerability || alert.security_advisory || OpenStruct.new
         {
           number: alert.number,
