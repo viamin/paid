@@ -556,6 +556,7 @@ RSpec.describe Issues::AutoPick do
 
       expect(result).to be_a(Set)
       expect(result).to include(eligible.id)
+      expect(result).not_to include(_other.id)
     end
 
     it "excludes issues with excluded labels" do

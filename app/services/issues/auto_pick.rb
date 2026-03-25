@@ -30,18 +30,35 @@ module Issues
     # Returns the Set of issue IDs from +displayed_issues+ that are
     # currently eligible for auto-picking (per-issue criteria only;
     # ignores transient project-level guards like active runs or PRs
-    # needing attention).  Scoping to the displayed issues keeps the
-    # query cost bounded regardless of total project size.
+    # needing attention).  Scoping to the displayed issues helps limit
+    # query cost and focuses results on the currently displayed subset.
     def self.eligible_issue_ids(displayed_issues)
       return Set.new if displayed_issues.empty?
 
       displayed_ids = displayed_issues.map(&:id)
       project = displayed_issues.first.project
-      new(project)
-        .send(:eligible_issue_scope)
+      build_eligible_scope(project)
         .where(id: displayed_ids)
         .pluck(:id)
         .to_set
+    end
+
+    # Builds the base eligible-issue scope for a project. Shared by
+    # +eligible_issue_ids+ (class method) and +find_next_eligible_issue+
+    # (instance method) so both callers go through the same public API.
+    def self.build_eligible_scope(project)
+      scope = Issue.ready_for_work(project)
+        .where(paid_state: %w[new planning failed])
+        .where.not(id: AgentRun.where(project: project, status: %w[queued pending running]).where.not(issue_id: nil).select(:issue_id))
+        .where(source: Issue::GITHUB_SOURCE)
+        .where.not(id: Issue.where(project: project).where.not(parent_issue_id: nil).distinct.select(:parent_issue_id))
+
+      trusted_usernames = Array(project.allowed_github_usernames).presence
+      scope = scope.where(github_creator_login: trusted_usernames) if trusted_usernames
+
+      EXCLUDED_LABELS.reduce(scope) do |s, label|
+        s.where.not("labels @> ?::jsonb", [ label ].to_json)
+      end
     end
 
     def initialize(project, allow_concurrent_runs: false)
@@ -141,16 +158,7 @@ module Issues
     end
 
     def eligible_issue_scope
-      scope = Issue.ready_for_work(@project)
-        .where(paid_state: %w[new planning failed])
-        .where.not(id: issues_with_active_runs)
-        .where(source: Issue::GITHUB_SOURCE)
-        .where.not(id: parent_issue_ids)
-
-      trusted_usernames = Array(@project.allowed_github_usernames).presence
-      scope = scope.where(github_creator_login: trusted_usernames) if trusted_usernames
-
-      exclude_labeled_issues(scope)
+      self.class.build_eligible_scope(@project)
     end
 
     def find_next_eligible_issue
@@ -162,21 +170,6 @@ module Issues
           Arel.sql("issues.github_number ASC")
         )
         .first
-    end
-
-    def issues_with_active_runs
-      AgentRun.where(project: @project, status: %w[queued pending running])
-        .where.not(issue_id: nil)
-        .select(:issue_id)
-    end
-
-    # IDs of issues that are parents (have at least one sub-issue).
-    # These are tracking/rollup issues, not actionable work.
-    def parent_issue_ids
-      Issue.where(project: @project)
-        .where.not(parent_issue_id: nil)
-        .distinct
-        .select(:parent_issue_id)
     end
 
     # Precomputed LEFT JOINs for priority ordering. Uses subqueries
@@ -232,16 +225,6 @@ module Issues
            AND dep_issues.project_id = #{pid}
          GROUP BY issue_dependencies.depends_on_issue_id
       SQL
-    end
-
-    def exclude_labeled_issues(scope)
-      # Exclude issues that have any of the EXCLUDED_LABELS in their
-      # JSONB labels column. Uses @> (contains) per label, which is
-      # compatible with ActiveRecord's bind-parameter syntax (the ?|
-      # operator conflicts with ActiveRecord's ? placeholder).
-      EXCLUDED_LABELS.reduce(scope) do |s, label|
-        s.where.not("labels @> ?::jsonb", [ label ].to_json)
-      end
     end
 
     def create_agent_run(issue)
