@@ -18,6 +18,15 @@ RSpec.describe KnowledgeChunk do
     it { is_expected.to validate_length_of(:content_hash).is_at_most(64) }
     it { is_expected.to validate_presence_of(:status) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
+
+    describe "project_matches_knowledge_artifact_project" do
+      it "is invalid when project does not match knowledge artifact's project" do
+        chunk = build(:knowledge_chunk)
+        chunk.project = create(:project)
+        expect(chunk).not_to be_valid
+        expect(chunk.errors[:project]).to include("must match knowledge artifact's project")
+      end
+    end
   end
 
   describe "scopes" do

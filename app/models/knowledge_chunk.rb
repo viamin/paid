@@ -16,9 +16,19 @@ class KnowledgeChunk < ApplicationRecord
   validates :content, presence: true
   validates :content_hash, presence: true, length: { maximum: 64 }
   validates :status, presence: true, inclusion: { in: STATUSES }
+  validate :project_matches_knowledge_artifact_project
 
   scope :active, -> { where(status: "active") }
   scope :embeddable, -> { active.where.not(embedding_model: nil) }
   scope :by_project, ->(project_id) { where(project_id: project_id) }
   scope :ordered, -> { order(:sequence) }
+
+  private
+
+  def project_matches_knowledge_artifact_project
+    return if knowledge_artifact.nil? || project_id.nil?
+    return if knowledge_artifact.project_id == project_id
+
+    errors.add(:project, "must match knowledge artifact's project")
+  end
 end

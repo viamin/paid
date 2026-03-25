@@ -3,7 +3,7 @@
 FactoryBot.define do
   factory :knowledge_artifact do
     collector_run
-    project
+    project { collector_run&.project_version&.project || association(:project) }
     artifact_type { "route" }
     identifier { "POST /api/users" }
     content { '{"method": "POST", "path": "/api/users"}' }
