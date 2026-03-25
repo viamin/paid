@@ -68,7 +68,7 @@ RSpec.describe Containers::CollectMetrics do
       expect(ContainerMetric.last.pids_count).to be_nil
     end
 
-    it "updates agent run summary fields" do
+    it "updates agent run summary fields and increments counter" do
       described_class.call(agent_run: agent_run)
       agent_run.reload
 
@@ -76,6 +76,7 @@ RSpec.describe Containers::CollectMetrics do
       expect(agent_run.peak_memory_bytes).to eq(2_147_483_648)
       expect(agent_run.avg_cpu_percent).to eq(20.0)
       expect(agent_run.avg_memory_bytes).to eq(BigDecimal("2147483648"))
+      expect(agent_run.container_metrics_count).to eq(1)
     end
 
     it "returns nil when agent run has no container_id" do

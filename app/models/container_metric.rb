@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ContainerMetric < ApplicationRecord
-  belongs_to :agent_run, counter_cache: :container_metrics_count
+  belongs_to :agent_run
 
   validates :container_id, presence: true, length: { maximum: 128 }
   validates :cpu_percent, numericality: { greater_than_or_equal_to: 0.0 }
