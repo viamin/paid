@@ -360,8 +360,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_162327) do
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
-    t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
     t.index ["project_id"], name: "index_issues_on_project_id"
+    t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
     t.index ["source"], name: "index_issues_on_source"
   end
 
