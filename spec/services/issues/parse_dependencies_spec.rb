@@ -268,8 +268,7 @@ RSpec.describe Issues::ParseDependencies do
       issue = create(:issue, project: project, body: nil)
 
       described_class.call(issue: issue, comments: [
-        "Depends on #9010",
-        "No longer depends on #9010"
+        "Depends on #9010. No longer depends on #9010"
       ])
 
       expect(issue.dependencies).to be_empty

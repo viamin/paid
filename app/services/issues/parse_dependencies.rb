@@ -38,10 +38,10 @@ module Issues
 
     INLINE_REMOVAL_PATTERN = /
       \b(?:
-        no\s+longer\s+(?:depends?\s+on|blocked?\s+by)  # "no longer depends on"
-        |unblocked?\s+by                                # "unblocked by"
-        |remove\s+dependenc(?:y|ies)\s+(?:on\s+)?       # "remove dependency [on]"
-      )\b
+        no\s+longer\s+(?:depends?\s+on|blocked?\s+by)\b # "no longer depends on"
+        |unblocked?\s+by\b                              # "unblocked by"
+        |remove\s+dependenc(?:y|ies)\b(?:\s+on\b)?      # "remove dependency [on]"
+      )
       :?\s*                                             # Optional colon
       ((?:\#\d+[\s,]*)+)                                # One or more #N references
     /xi
