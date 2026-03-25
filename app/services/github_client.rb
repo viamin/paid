@@ -504,20 +504,25 @@ class GithubClient
   # closing synthetic issues for alerts that would have been truncated
   # by a manual page cap.
   #
-  # Note: the GitHub Dependabot alerts API does not support server-side
-  # severity filtering. Callers must filter the returned alerts by
-  # :severity locally if they need a severity threshold.
+  # The GitHub Dependabot alerts API supports server-side severity
+  # filtering via the +severity+ query parameter (comma-separated).
+  # Pass a single severity string to filter on the server, or omit it
+  # to fetch all severities and filter locally.
   #
   # @param repo [String] Repository in "owner/name" format
+  # @param severity [String, nil] Filter by severity: "low", "medium", "high", or "critical"
   # @param state [String] Alert state: "open", "dismissed", "fixed", or "auto_dismissed"
   # @param per_page [Integer] Number of results per page
   # @return [Array<Hash>] Alerts with :number, :state, :severity, :package_name,
   #   :package_ecosystem, :patched_version, :summary, :html_url keys
-  def dependabot_alerts(repo, state: "open", per_page: 100)
+  def dependabot_alerts(repo, severity: nil, state: "open", per_page: 100)
     handle_errors do
+      params = { state: state, per_page: per_page }
+      params[:severity] = severity if severity.present?
+
       all_alerts = client.paginate(
         "#{Octokit::Repository.path(repo)}/dependabot/alerts",
-        state: state, per_page: per_page
+        **params
       )
 
       Array(all_alerts).map do |alert|
