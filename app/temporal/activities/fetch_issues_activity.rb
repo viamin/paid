@@ -159,8 +159,9 @@ module Activities
         .joins(issue: :project)
         .where(
           depends_on_issue_id: nil,
-          depends_on_owner: project.owner,
-          depends_on_repo: project.repo,
+        )
+        .where("LOWER(depends_on_owner) = ? AND LOWER(depends_on_repo) = ?", project.owner.downcase, project.repo.downcase)
+        .where(
           projects: { account_id: project.account_id }
         )
         .find_each do |dep|
@@ -169,12 +170,30 @@ module Activities
           )
           next unless resolved_issue
 
-          dep.update!(
-            depends_on_issue: resolved_issue,
-            depends_on_owner: nil,
-            depends_on_repo: nil,
-            depends_on_number: nil
-          )
+          if IssueDependency.exists?(issue_id: dep.issue_id, depends_on_issue_id: resolved_issue.id)
+            dep.destroy!
+            next
+          end
+
+          begin
+            dep.update!(
+              depends_on_issue: resolved_issue,
+              depends_on_owner: nil,
+              depends_on_repo: nil,
+              depends_on_number: nil
+            )
+          rescue ActiveRecord::RecordNotUnique => e
+            logger.warn(
+              message: "github_sync.resolve_external_dependency_duplicate",
+              project_id: project.id,
+              dependency_id: dep.id,
+              issue_id: dep.issue_id,
+              depends_on_issue_id: resolved_issue.id,
+              error_class: e.class.name,
+              error: e.message
+            )
+            dep.destroy
+          end
         end
     rescue => e
       logger.warn(

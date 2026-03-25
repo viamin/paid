@@ -142,10 +142,10 @@ module Issues
       cross_refs.each do |owner, repo, number|
         # Resolve self-project references as local deps instead of dropping them
         project =
-          if owner == issue.project.owner && repo == issue.project.repo
+          if owner.casecmp?(issue.project.owner) && repo.casecmp?(issue.project.repo)
             issue.project
           else
-            account.projects.find_by(owner: owner, repo: repo)
+            account.projects.where("LOWER(owner) = ? AND LOWER(repo) = ?", owner.downcase, repo.downcase).first
           end
 
         if project

@@ -23,7 +23,7 @@ module Issues
     end
 
     def call
-      adj = adjacency || IssueDependency.global_adjacency
+      adj = adjacency || IssueDependency.account_adjacency(from_issue.project.account)
       reachable_iterative?(adj)
     end
 
