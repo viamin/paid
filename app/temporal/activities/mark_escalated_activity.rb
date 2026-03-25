@@ -31,8 +31,10 @@ module Activities
 
     private
 
-    # Idempotent: skips posting if a comment with COMMENT_MARKER already exists.
-    # This guards against duplicates when Temporal retries the activity.
+    # Best-effort dedupe: skips posting if COMMENT_MARKER is found in the most
+    # recent 100 comments. On very long-lived PRs with 100+ comments after the
+    # escalation note, a retry could post a duplicate. Acceptable because
+    # escalation is rare and full pagination would waste API rate limit.
     def post_escalation_comment(client, project, issue, reason)
       return if escalation_comment_exists?(client, project, issue)
 
@@ -47,8 +49,8 @@ module Activities
       )
     end
 
-    # Returns true when a prior escalation comment is found. On fetch failure,
-    # returns false so we fall through to attempt posting.
+    # Checks the most recent 100 comments for an existing escalation note.
+    # On fetch failure, returns false so we fall through to attempt posting.
     def escalation_comment_exists?(client, project, issue)
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
       exists = comments.any? { |c| c.respond_to?(:body) && c.body&.include?(COMMENT_MARKER) }
