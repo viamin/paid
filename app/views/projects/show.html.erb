@@ -106,19 +106,6 @@
     </details>
   </div>
 
-  <div class="mt-6">
-    <div class="bg-white shadow sm:rounded-lg">
-      <div class="px-4 py-5 sm:px-6">
-        <h3 class="text-base font-semibold leading-6 text-gray-900">Automation</h3>
-        <p class="mt-1 text-sm text-gray-500">Configure automated workflows for this project.</p>
-      </div>
-      <div class="divide-y divide-gray-200">
-        <%= render "projects/auto_pick_toggle", project: @project %>
-        <%= render "projects/auto_merge_toggle", project: @project %>
-      </div>
-    </div>
-  </div>
-
   <div data-show-actions="<%= policy(@project).run_agent? %>">
     <%= render "projects/stats", project: @project, budgets: @cost_budgets %>
 
