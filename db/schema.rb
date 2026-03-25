@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_24_023748) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_25_040417) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -190,6 +190,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_24_023748) do
     t.datetime "expires_at"
     t.datetime "last_used_at"
     t.string "name", null: false
+    t.integer "projects_count", default: 0, null: false
     t.datetime "repositories_synced_at"
     t.datetime "revoked_at"
     t.jsonb "scopes", default: [], null: false
