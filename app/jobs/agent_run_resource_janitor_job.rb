@@ -4,8 +4,9 @@
 #
 # Enqueued by EnqueueJanitorActivity at the end of AgentExecutionWorkflow.
 # If the in-workflow cleanup activities succeeded, this job is a fast no-op.
-# If they failed (e.g. transient Docker daemon outage), this job retries
-# container and volume removal after a short delay.
+# If they failed (e.g. transient Docker daemon outage), this job provides a
+# second attempt at container and volume removal, with retries handled by
+# the job's retry policy.
 class AgentRunResourceJanitorJob < ApplicationJob
   queue_as :maintenance
 

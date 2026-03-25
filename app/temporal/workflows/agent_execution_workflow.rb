@@ -245,7 +245,7 @@ module Workflows
 
         # Enqueue a janitor job as a second cleanup pass outside the workflow
         # lifecycle. If the retries above succeeded this is a no-op; if they
-        # failed the janitor gets another shot after a short delay.
+        # failed the janitor provides another attempt at cleanup outside the workflow.
         begin
           if agent_run_id.present?
             run_activity(Activities::EnqueueJanitorActivity,
