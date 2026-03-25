@@ -721,6 +721,32 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when review_threads API fails and bot review has comments" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+                       body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
+                       submitted_at: 1.hour.ago } ]
+        )
+        allow(github_client).to receive(:review_threads)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error, "GitHub review threads API unavailable")
+      end
+
+      it "treats threads as unknown and returns review_bot_review_pending" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_review_pending")
+      end
+    end
+
     context "when no review bot review exists and CI is failing" do
       before do
         create(:issue, :pull_request,
