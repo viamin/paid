@@ -62,7 +62,8 @@ module Activities
       logger.info(
         message: "security_scanner.scan_complete",
         project_id: project_id,
-        alerts_fetched: all_alerts&.size || 0,
+        alerts_fetched: all_alerts&.size,
+        alerts_fetch_skipped: all_alerts.nil?,
         alerts_actionable: actionable.size,
         issues_created: issues_created.size
       )
