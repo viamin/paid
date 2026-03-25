@@ -7,11 +7,12 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INNER_SCRIPT="${SCRIPT_DIR}/test-agent-image-inner.sh"
+
 IMAGE_NAME="${IMAGE_NAME:-paid-agent}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INNER_SCRIPT="${SCRIPT_DIR}/test-agent-image-inner.sh"
 
 echo "Testing agent container image: ${FULL_IMAGE}"
 echo "============================================="
@@ -29,11 +30,12 @@ if [ ! -f "${INNER_SCRIPT}" ]; then
     exit 1
 fi
 
-# Run tests inside the container
+# Run tests inside the container.
+# The inner script is mounted read-only so it can be linted independently by shellcheck
+# and to avoid complex quoting/escaping issues that arise with large bash -c strings.
 docker run --rm \
-    -v "${INNER_SCRIPT}:/tmp/test-agent-image-inner.sh:ro" \
-    "${FULL_IMAGE}" \
-    bash /tmp/test-agent-image-inner.sh
+    -v "${INNER_SCRIPT}:/tmp/test.sh:ro" \
+    "${FULL_IMAGE}" bash /tmp/test.sh
 
 echo ""
 echo "============================================="

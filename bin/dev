@@ -14,4 +14,12 @@ export RUBY_DEBUG_LAZY="true"
 # Default to port 3000 if not specified
 export PORT="${PORT:-3000}"
 
+# Clean up stale containers and volumes from previous runs.
+# Runs inline (takes <2s when no stale resources exist).
+# Skip with SKIP_DEV_CLEANUP=1 if you want a faster start.
+if [ "${SKIP_DEV_CLEANUP:-0}" != "1" ]; then
+  echo "Cleaning up stale Docker resources..."
+  bin/rake dev:cleanup 2>/dev/null || true
+fi
+
 overmind start -f Procfile.dev "$@"
