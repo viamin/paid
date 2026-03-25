@@ -186,7 +186,7 @@
 
   <%= render "agent_runs/quality_scores", quality_metrics: quality_metrics %>
 
-  <% if agent_run.pull_request_url.present? %>
+  <% if safe_github_url?(agent_run.pull_request_url) %>
     <div class="mt-6 rounded-lg border border-green-200 bg-green-50 p-4">
       <h2 class="text-sm font-semibold text-green-800">Pull Request Created</h2>
       <p class="mt-1">
@@ -195,7 +195,7 @@
     </div>
   <% end %>
 
-  <% if agent_run.review_url.present? %>
+  <% if safe_github_url?(agent_run.review_url) %>
     <div class="mt-6 rounded-lg border border-purple-200 bg-purple-50 p-4">
       <h2 class="text-sm font-semibold text-purple-800">Review Posted</h2>
       <p class="mt-1">
@@ -204,7 +204,7 @@
     </div>
   <% end %>
 
-  <% if agent_run.created_issue_url.present? %>
+  <% if safe_github_url?(agent_run.created_issue_url) %>
     <div class="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
       <h2 class="text-sm font-semibold text-blue-800">Issue Created</h2>
       <p class="mt-1">

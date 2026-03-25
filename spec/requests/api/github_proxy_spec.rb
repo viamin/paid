@@ -233,7 +233,7 @@ RSpec.describe "Api::GithubProxy" do
       expect(agent_run.review_url).to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-original")
     end
 
-    it "sets review_posted_at but not review_url when html_url is missing from response" do
+    it "does not track review when html_url is missing from response" do
       no_url_response = { id: 999, body: "Review summary", state: "commented" }.to_json
       stub_request(:post, target_url)
         .to_return(status: 200, body: no_url_response, headers: { "Content-Type" => "application/json" })
@@ -243,8 +243,21 @@ RSpec.describe "Api::GithubProxy" do
         headers: valid_headers
 
       agent_run.reload
-      expect(agent_run.review_posted_at).to be_present
+      expect(agent_run.review_posted_at).to be_nil
       expect(agent_run.review_url).to be_nil
+    end
+
+    it "backfills review_url when review_posted_at is set but review_url is missing" do
+      original_time = 1.hour.ago
+      agent_run.update!(review_posted_at: original_time, review_url: nil)
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Follow-up review", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_posted_at).to be_within(1.second).of(original_time)
+      expect(agent_run.review_url).to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-999")
     end
 
     it "does not track review_posted_at on upstream error" do
