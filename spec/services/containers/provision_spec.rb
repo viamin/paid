@@ -97,7 +97,7 @@ RSpec.describe Containers::Provision do
       expect(svc.options[:memory_bytes]).to eq(1024 * 1024 * 1024)
     end
 
-    it "falls back to defaults when user settings are unavailable" do
+    it "uses default values when no custom settings are configured" do
       svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
 
       expect(svc.options[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)
