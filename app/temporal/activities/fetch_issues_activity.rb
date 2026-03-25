@@ -136,7 +136,7 @@ module Activities
         is_pull_request: false
       )
 
-      adjacency = IssueDependency.global_adjacency
+      adjacency = IssueDependency.account_adjacency(project.account)
 
       issues_relation.find_each do |issue|
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency)
@@ -156,8 +156,13 @@ module Activities
 
     def resolve_external_dependencies(project)
       IssueDependency
-        .joins(:issue)
-        .where(depends_on_issue_id: nil, depends_on_owner: project.owner, depends_on_repo: project.repo)
+        .joins(issue: :project)
+        .where(
+          depends_on_issue_id: nil,
+          depends_on_owner: project.owner,
+          depends_on_repo: project.repo,
+          projects: { account_id: project.account_id }
+        )
         .find_each do |dep|
           resolved_issue = project.issues.find_by(
             github_number: dep.depends_on_number, is_pull_request: false

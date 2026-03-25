@@ -66,6 +66,17 @@ RSpec.describe IssueDependency do
 
       expect(dep).not_to be_valid
     end
+
+    it "rejects records with both local and external references" do
+      issue = create(:issue)
+      other_issue = create(:issue)
+      dep = build(:issue_dependency, issue: issue, depends_on_issue: other_issue,
+                                     depends_on_owner: "viamin", depends_on_repo: "agent-harness",
+                                     depends_on_number: 31)
+
+      expect(dep).not_to be_valid
+      expect(dep.errors[:base]).to include("cannot reference both a local issue and an external issue")
+    end
   end
 
   describe "#external?" do
@@ -106,6 +117,32 @@ RSpec.describe IssueDependency do
 
       adj = described_class.global_adjacency
       expect(adj[issue_a.id]).to include(issue_b.id)
+    end
+  end
+
+  describe ".account_adjacency" do
+    it "includes dependencies within the account" do
+      account = create(:account)
+      project_a = create(:project, account: account)
+      project_b = create(:project, account: account)
+      issue_a = create(:issue, project: project_a)
+      issue_b = create(:issue, project: project_b)
+      create(:issue_dependency, issue: issue_a, depends_on_issue: issue_b)
+
+      adj = described_class.account_adjacency(account)
+      expect(adj[issue_a.id]).to include(issue_b.id)
+    end
+
+    it "excludes dependencies from other accounts" do
+      account = create(:account)
+      other_account = create(:account)
+      other_project = create(:project, account: other_account)
+      other_issue_a = create(:issue, project: other_project)
+      other_issue_b = create(:issue, project: other_project)
+      create(:issue_dependency, issue: other_issue_a, depends_on_issue: other_issue_b)
+
+      adj = described_class.account_adjacency(account)
+      expect(adj).to be_empty
     end
   end
 

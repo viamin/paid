@@ -7,6 +7,7 @@ class IssueDependency < ApplicationRecord
   validates :depends_on_issue_id, uniqueness: { scope: :issue_id }, if: :local?
   validate :not_self_referential
   validate :must_have_local_or_external_ref
+  validate :local_and_external_mutually_exclusive
 
   # Builds an adjacency map { issue_id => [depends_on_issue_id, ...] }
   # for all local dependencies within a project. Used by ParseDependencies and
@@ -28,12 +29,24 @@ class IssueDependency < ApplicationRecord
       .transform_values { |pairs| pairs.map(&:last) }
   end
 
+  # Builds an adjacency map scoped to an account's projects.
+  # Preferred over global_adjacency to avoid loading cross-tenant data.
+  def self.account_adjacency(account)
+    joins(issue: :project)
+      .where(projects: { account_id: account.id })
+      .where.not(depends_on_issue_id: nil)
+      .pluck(:issue_id, :depends_on_issue_id)
+      .group_by(&:first)
+      .transform_values { |pairs| pairs.map(&:last) }
+  end
+
   def local?
-    depends_on_issue_id.present?
+    depends_on_issue_id.present? && depends_on_owner.blank?
   end
 
   def external?
-    depends_on_owner.present?
+    depends_on_issue_id.blank? &&
+      depends_on_owner.present? && depends_on_repo.present? && depends_on_number.present?
   end
 
   def external_ref
@@ -56,5 +69,11 @@ class IssueDependency < ApplicationRecord
     return if depends_on_owner.present? && depends_on_repo.present? && depends_on_number.present?
 
     errors.add(:base, "must reference a local issue or an external issue (owner/repo#number)")
+  end
+
+  def local_and_external_mutually_exclusive
+    return unless depends_on_issue_id.present? && depends_on_owner.present?
+
+    errors.add(:base, "cannot reference both a local issue and an external issue")
   end
 end

@@ -113,7 +113,7 @@ module Issues
         .where(github_number: referenced_numbers, is_pull_request: false)
         .index_by(&:github_number)
 
-      adj = adjacency || IssueDependency.global_adjacency
+      adj = adjacency || IssueDependency.account_adjacency(issue.project.account)
 
       referenced_numbers.each do |number|
         dep_issue = project_issues[number]
@@ -137,13 +137,16 @@ module Issues
       return { resolved_ids: resolved_ids, external_keys: external_keys } if cross_refs.empty?
 
       account = issue.project.account
-      adj = adjacency || IssueDependency.global_adjacency
+      adj = adjacency || IssueDependency.account_adjacency(issue.project.account)
 
       cross_refs.each do |owner, repo, number|
-        # Skip self-project references (handled as local deps)
-        next if owner == issue.project.owner && repo == issue.project.repo
-
-        project = account.projects.find_by(owner: owner, repo: repo)
+        # Resolve self-project references as local deps instead of dropping them
+        project =
+          if owner == issue.project.owner && repo == issue.project.repo
+            issue.project
+          else
+            account.projects.find_by(owner: owner, repo: repo)
+          end
 
         if project
           dep_issue = project.issues.find_by(github_number: number, is_pull_request: false)
