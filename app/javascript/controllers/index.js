@@ -27,3 +27,6 @@ application.register("dropdown", DropdownController)
 
 import TestAgentController from "./test_agent_controller"
 application.register("test-agent", TestAgentController)
+
+import LocalTimeController from "./local_time_controller"
+application.register("local-time", LocalTimeController)

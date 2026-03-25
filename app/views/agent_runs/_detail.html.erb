@@ -210,7 +210,7 @@
       <p class="mt-1 text-sm text-orange-700">
         The provider hit a rate limit.
         <% if agent_run.rate_limited_until.present? %>
-          <br>Expected reset: <strong><%= agent_run.rate_limited_until.utc.strftime("%B %d, %Y %l:%M %p UTC") %></strong>
+          <br>Expected reset: <strong><%= local_time(agent_run.rate_limited_until) %></strong>
           <% if agent_run.rate_limited_until > Time.current %>
             (<%= distance_of_time_in_words(Time.current, agent_run.rate_limited_until) %> remaining)
           <% else %>
