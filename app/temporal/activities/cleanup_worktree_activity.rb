@@ -13,7 +13,10 @@ module Activities
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find_by(id: agent_run_id)
       unless agent_run
-        logger.info(message: "agent_execution.cleanup_worktree_skipped_missing_run", agent_run_id: agent_run_id)
+        logger.info(
+          message: "agent_execution.cleanup_worktree_skipped_missing_run",
+          agent_run_id: agent_run_id
+        )
         return { agent_run_id: agent_run_id }
       end
 

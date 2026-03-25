@@ -67,7 +67,7 @@ class AgentRunResourceJanitorJob < ApplicationJob
     Docker::Volume.get(volume_name).remove
     true
   rescue Docker::Error::NotFoundError
-    false # Volume already removed
+    true # Volume already removed — treat as successfully cleaned
   rescue Docker::Error::DockerError => e
     Rails.logger.warn(
       message: "container_manager.janitor_volume_failed",
