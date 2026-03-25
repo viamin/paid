@@ -4,13 +4,15 @@
 #
 # Enqueued for each running agent run and re-enqueues itself until the run
 # finishes. Collection interval defaults to 15 seconds to balance granularity
-# with overhead.
+# with overhead. Stops re-enqueuing after MAX_CONSECUTIVE_FAILURES to avoid
+# an infinite loop of no-op cycles when Docker is persistently unavailable.
 class ContainerMetricsCollectionJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
   queue_as :default
 
   COLLECTION_INTERVAL = 15.seconds
+  MAX_CONSECUTIVE_FAILURES = 5
 
   good_job_control_concurrency_with(
     total_limit: 1,
@@ -18,12 +20,15 @@ class ContainerMetricsCollectionJob < ApplicationJob
     key: -> { "container_metrics_#{arguments.first}" }
   )
 
-  def perform(agent_run_id)
+  def perform(agent_run_id, consecutive_failures: 0)
     agent_run = AgentRun.find_by(id: agent_run_id)
-    return unless agent_run&.running?
+    return unless agent_run&.running? && agent_run.container_id.present?
 
-    Containers::CollectMetrics.call(agent_run: agent_run)
+    result = Containers::CollectMetrics.call(agent_run: agent_run)
+    next_failures = result ? 0 : consecutive_failures + 1
 
-    self.class.set(wait: COLLECTION_INTERVAL).perform_later(agent_run_id)
+    return if next_failures >= MAX_CONSECUTIVE_FAILURES
+
+    self.class.set(wait: COLLECTION_INTERVAL).perform_later(agent_run_id, consecutive_failures: next_failures)
   end
 end
