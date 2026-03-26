@@ -44,8 +44,12 @@ module Knowledge
         # Use host repo dir for direct file access — the same directory is
         # bind-mounted into the container at workspace_mount.
         container_runner.host_repo_dir
-      else
+      elsif options[:scan_path]
+        options[:scan_path]
+      elsif project.respond_to?(:worktrees)
         project.worktrees.order(created_at: :desc).first&.path || default_repo_path
+      else
+        default_repo_path
       end
     end
 
