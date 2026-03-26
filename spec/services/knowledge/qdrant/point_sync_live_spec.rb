@@ -26,7 +26,10 @@ RSpec.describe Knowledge::Qdrant::PointSync do
   end
 
   after do
-    manager.drop_collection! if qdrant_available?
+    if qdrant_available?
+      WebMock.disable_net_connect!(allow_localhost: true, allow: [ /#{Regexp.escape(Paid.qdrant_url)}/ ])
+      manager.drop_collection!
+    end
   ensure
     WebMock.disable_net_connect!(allow_localhost: true)
   end
@@ -74,11 +77,11 @@ RSpec.describe Knowledge::Qdrant::PointSync do
   end
 
   def qdrant_available?
-    WebMock.disable_net_connect!(allow_localhost: true, allow: [ /#{Regexp.escape(Paid.qdrant_url)}/ ])
-    QdrantClient.new(url: Paid.qdrant_url, api_key: Paid.qdrant_api_key, timeout: 2, open_timeout: 2).healthy?
+    uri = URI.parse(Paid.qdrant_url)
+    socket = TCPSocket.new(uri.host, uri.port)
+    socket.close
+    true
   rescue StandardError
     false
-  ensure
-    WebMock.disable_net_connect!(allow_localhost: true)
   end
 end
