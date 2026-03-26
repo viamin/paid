@@ -295,6 +295,62 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
+    it "triggers dev environment update after successful merge" do
+      allow(Temporalio::Workflow).to receive(:patched).with("add-dev-environment-update-v1").and_return(true)
+
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [ { type: "owner_approved" } ]
+      }
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MergePullRequestActivity, anything, anything)
+        .and_return({ merged: true })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::TriggerDevEnvironmentUpdateActivity, anything, anything)
+        .and_return({})
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::TriggerDevEnvironmentUpdateActivity,
+          { project_id: project_id, pr_number: 42 }, timeout: 60)
+    end
+
+    it "skips dev environment update when patch is disabled" do
+      allow(Temporalio::Workflow).to receive(:patched).with("add-dev-environment-update-v1").and_return(false)
+
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [ { type: "owner_approved" } ]
+      }
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MergePullRequestActivity, anything, anything)
+        .and_return({ merged: true })
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::TriggerDevEnvironmentUpdateActivity, anything, anything)
+    end
+
+    it "skips dev environment update when merge fails" do
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [ { type: "owner_approved" } ]
+      }
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::MergePullRequestActivity, anything, anything)
+        .and_return({ merged: false })
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::TriggerDevEnvironmentUpdateActivity, anything, anything)
+    end
+
     it "skips owner review request when owner_reviewer_login is blank" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MarkPrReadyActivity, anything, anything)

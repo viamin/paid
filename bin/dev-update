@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+#
+# Dev environment auto-updater.
+#
+# Pulls the latest changes from main and optionally performs a full restart
+# of the dev environment (Overmind stop + bin/setup).
+#
+# This script is intentionally standalone (no Ruby/Rails dependency) so it
+# can run even when Rails cannot boot (e.g., pending migrations).
+#
+# Usage:
+#   bin/dev-update --lightweight   # git pull only
+#   bin/dev-update --full          # git pull + overmind stop + bin/setup
+#
+# Safety:
+#   - Must be run from the repository root.
+#   - The full-restart path uses setsid to detach the overmind stop command,
+#     so stopping Overmind does not kill this script even when invoked from
+#     an Overmind-managed process.
+
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$APP_ROOT"
+
+MODE="${1:---lightweight}"
+LOG_PREFIX="[dev-update]"
+
+log() {
+  echo "$LOG_PREFIX $(date '+%Y-%m-%d %H:%M:%S') $*"
+}
+
+ensure_on_main() {
+  local current_branch
+  current_branch="$(git rev-parse --abbrev-ref HEAD)"
+
+  if [ "$current_branch" != "main" ]; then
+    log "Switching to main branch (currently on $current_branch)..."
+    git checkout main
+  fi
+}
+
+pull_latest() {
+  log "Pulling latest changes from main..."
+  git pull --ff-only origin main
+}
+
+stop_overmind() {
+  if command -v overmind &> /dev/null && [ -e ".overmind.sock" ]; then
+    log "Stopping Overmind (detached)..."
+    # Use setsid to run overmind quit in a new session so that stopping
+    # Overmind does not kill this script (which may be a child of Overmind).
+    setsid overmind quit &>/dev/null || true
+    # Give Overmind a moment to shut down gracefully.
+    sleep 3
+  else
+    log "Overmind not running, skipping stop."
+  fi
+}
+
+run_setup() {
+  log "Running bin/setup --skip-server..."
+  bin/setup --skip-server
+}
+
+start_dev() {
+  log "Starting dev environment..."
+  # Start bin/dev detached so this script can exit cleanly.
+  nohup bin/dev &>/dev/null &
+  disown
+  log "Dev environment started (PID $!)."
+}
+
+case "$MODE" in
+  --lightweight)
+    log "Starting lightweight update..."
+    ensure_on_main
+    pull_latest
+    log "Lightweight update complete. Rails will autoload changes."
+    ;;
+  --full)
+    log "Starting full restart update..."
+    ensure_on_main
+    pull_latest
+    stop_overmind
+    run_setup
+    start_dev
+    log "Full restart update complete."
+    ;;
+  *)
+    echo "Usage: bin/dev-update [--lightweight|--full]" >&2
+    exit 1
+    ;;
+esac
