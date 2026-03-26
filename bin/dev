@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-OVERMIND_SOCKET=".overmind.sock"
+export OVERMIND_SOCKET="${OVERMIND_SOCKET:-.overmind.sock}"
 
 if ! command -v overmind &> /dev/null
 then
