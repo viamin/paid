@@ -28,10 +28,9 @@ module QualityMetrics
       scores = {}
       scores["pr_merged"] = pr_merged ? 1.0 : 0.0 unless pr_merged.nil?
 
-      metric = agent_run.quality_metrics.find_or_initialize_by(metric_type: "human")
-
-      metric.with_lock do
-        metric.reload unless metric.new_record?
+      ActiveRecord::Base.transaction do
+        metric = agent_run.quality_metrics.where(metric_type: "human").lock.first
+        metric ||= agent_run.quality_metrics.build(metric_type: "human")
 
         metric.prompt_version = agent_run.prompt_version
         metric.scores = (metric.scores || {}).merge(scores)
@@ -46,9 +45,8 @@ module QualityMetrics
 
         metric.composite_score = metric.calculate_composite_score
         metric.save!
+        metric
       end
-
-      metric
     end
   end
 end

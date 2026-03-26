@@ -99,10 +99,10 @@ module Api
 
       expected = "sha256=#{OpenSSL::HMAC.hexdigest("SHA256", @project.webhook_secret, body)}"
 
-      unless signature.bytesize == expected.bytesize &&
-             ActiveSupport::SecurityUtils.secure_compare(expected, signature)
-        head :unauthorized
-      end
+      return if signature.bytesize == expected.bytesize &&
+                ActiveSupport::SecurityUtils.secure_compare(expected, signature)
+
+      head :unauthorized
     end
   end
 end

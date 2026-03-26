@@ -72,10 +72,9 @@ module QualityMetrics
         "collected_at" => Time.current.iso8601
       }
 
-      metric = agent_run.quality_metrics.find_or_initialize_by(metric_type: "human")
-
-      metric.with_lock do
-        metric.reload unless metric.new_record?
+      ActiveRecord::Base.transaction do
+        metric = agent_run.quality_metrics.where(metric_type: "human").lock.first
+        metric ||= agent_run.quality_metrics.build(metric_type: "human")
 
         metric.prompt_version = agent_run.prompt_version
         metric.scores = (metric.scores || {}).merge("reaction_score" => score)
@@ -89,9 +88,8 @@ module QualityMetrics
         metric.metadata = existing_metadata.merge(metadata)
         metric.composite_score = metric.calculate_composite_score
         metric.save!
+        metric
       end
-
-      metric
     end
 
     def tally_reactions(reactions)
