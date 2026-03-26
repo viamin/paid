@@ -15,6 +15,17 @@ module StyleGuides
     DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 120
 
+    # Proper display names for languages to avoid inconsistencies like
+    # "Typescript" vs "TypeScript" in user-facing guide names.
+    LANGUAGE_DISPLAY_NAMES = {
+      "ruby" => "Ruby",
+      "javascript" => "JavaScript",
+      "typescript" => "TypeScript",
+      "python" => "Python",
+      "go" => "Go",
+      "rust" => "Rust"
+    }.freeze
+
     EXTRACTION_PROMPT = <<~PROMPT
       You are a senior software engineer. Analyze the following code samples from a %{language} codebase and extract the coding style conventions you observe.
 
@@ -102,7 +113,7 @@ module StyleGuides
     end
 
     def create_style_guide(language, content)
-      display_name = language.capitalize
+      display_name = LANGUAGE_DISPLAY_NAMES.fetch(language, language.capitalize)
       guide_name = "#{display_name} Style Guide (auto-extracted)"
 
       existing = project.style_guides.find_by(name: guide_name)

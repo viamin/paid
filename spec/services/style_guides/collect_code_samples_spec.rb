@@ -58,6 +58,20 @@ RSpec.describe StyleGuides::CollectCodeSamples do
       expect(paths).not_to include("vendor/bundle/gem.rb")
     end
 
+    it "excludes multi-segment skip directories like public/assets" do
+      items = tree_items + [
+        OpenStruct.new(type: "blob", path: "public/assets/app.js", size: 200),
+        OpenStruct.new(type: "blob", path: "public/packs/bundle.js", size: 300)
+      ]
+      allow(github_client).to receive(:tree).and_return(OpenStruct.new(tree: items))
+
+      result = described_class.call(project: project)
+
+      paths = result.values.flatten.map { |s| s[:path] }
+      expect(paths).not_to include("public/assets/app.js")
+      expect(paths).not_to include("public/packs/bundle.js")
+    end
+
     it "excludes non-source files" do
       result = described_class.call(project: project)
 

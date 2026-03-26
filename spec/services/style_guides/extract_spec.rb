@@ -57,7 +57,7 @@ RSpec.describe StyleGuides::Extract do
       names = result.style_guides.map(&:name)
       expect(names).to contain_exactly(
         "Ruby Style Guide (auto-extracted)",
-        "Typescript Style Guide (auto-extracted)"
+        "TypeScript Style Guide (auto-extracted)"
       )
     end
 

@@ -84,7 +84,16 @@ module StyleGuides
 
     def skip_path?(path)
       parts = path.split("/")
-      parts.any? { |part| SKIP_DIRS.include?(part) }
+
+      # Match single-segment entries (e.g., "vendor", "tmp")
+      return true if parts.any? { |part| SKIP_DIRS.include?(part) }
+
+      # Match multi-segment entries (e.g., "public/assets", "public/packs")
+      SKIP_DIRS.any? do |dir|
+        next false unless dir.include?("/")
+
+        path == dir || path.start_with?("#{dir}/")
+      end
     end
 
     def group_by_language(candidates)
