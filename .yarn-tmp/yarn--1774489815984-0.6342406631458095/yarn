@@ -1,0 +1,3 @@
+#!/bin/sh
+
+exec "/usr/local/bin/node" "/usr/local/share/corepack/v1/yarn/1.22.22/bin/yarn.js" "$@"
