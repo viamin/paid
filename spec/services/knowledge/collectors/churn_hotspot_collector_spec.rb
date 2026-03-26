@@ -116,7 +116,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
         expect(identifiers).to include("config/routes.rb")
       end
 
-      it "does not describe revision-only files as high-churn when complexity is 0" do
+      it "omits complexity from revision-only file summaries" do
         artifact = collector.collect.find { |a| a[:identifier] == "lib/utils/helper.rb" }
         chunk = artifact[:chunks].first
 

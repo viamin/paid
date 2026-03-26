@@ -123,8 +123,14 @@ module Knowledge
         traits << "#{revisions} revisions" if revisions > 0
         traits << "complexity #{complexity}" if complexity > 0
 
-        if traits.any?
+        if revisions > 0 && complexity > 0
+          "#{file} has high churn and complexity (#{traits.join(', ')}, rank ##{rank}). " \
+            "Changes here need careful review."
+        elsif revisions > 0
           "#{file} is a high-churn file (#{traits.join(', ')}, rank ##{rank}). " \
+            "Changes here need careful review."
+        elsif complexity > 0
+          "#{file} is a complexity hotspot (#{traits.join(', ')}, rank ##{rank}). " \
             "Changes here need careful review."
         else
           "#{file} (rank ##{rank}): no significant churn or complexity detected."
