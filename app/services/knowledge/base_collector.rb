@@ -137,10 +137,14 @@ module Knowledge
       # method-level rescue below, keeping timeout cleanup deterministic.
       pgid = Process.getpgid(pid)
       Process.kill("TERM", -pgid)
-      sleep 1
+      sleep timeout_kill_grace_seconds
       Process.kill("KILL", -pgid)
     rescue Errno::ESRCH, Errno::EPERM
       # Process already exited or cannot be signaled
+    end
+
+    def timeout_kill_grace_seconds
+      options.fetch(:timeout_kill_grace_seconds, 1)
     end
   end
 end
