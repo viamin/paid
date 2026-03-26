@@ -1,0 +1,15 @@
+# ast-grep patterns for Ruby configuration key extraction.
+# These patterns are used by Knowledge::Collectors::ConfigKeyCollector
+# via the `ast-grep run --pattern` CLI interface.
+#
+# ENV bracket access: ENV["$KEY"]
+# ENV fetch access:   ENV.fetch("$KEY")
+#
+# Note: Double-quote patterns also match single-quote usage in Ruby AST.
+#
+# Usage:
+#   ast-grep run --pattern 'ENV["$KEY"]' --lang Ruby --json <path>
+#   ast-grep run --pattern 'ENV.fetch("$KEY")' --lang Ruby --json <path>
+patterns:
+  env_bracket: 'ENV["$KEY"]'
+  env_fetch: 'ENV.fetch("$KEY")'

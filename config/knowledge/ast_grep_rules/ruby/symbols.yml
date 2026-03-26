@@ -1,0 +1,16 @@
+# ast-grep patterns for Ruby symbol extraction.
+# These patterns are used by Knowledge::Collectors::SymbolIndexCollector
+# via the `ast-grep run --pattern` CLI interface.
+#
+# Class definitions:  class $NAME
+# Module definitions: module $NAME
+# Method definitions: def $NAME
+#
+# Usage:
+#   ast-grep run --pattern "class $NAME" --lang Ruby --json <path>
+#   ast-grep run --pattern "module $NAME" --lang Ruby --json <path>
+#   ast-grep run --pattern "def $NAME" --lang Ruby --json <path>
+patterns:
+  class: "class $NAME"
+  module: "module $NAME"
+  method: "def $NAME"
