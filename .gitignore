@@ -92,6 +92,9 @@ config.status
 # Yarn offline mirror cache (created by yarn install with enableGlobalCache: false)
 /.yarn-cache/
 
+# Yarn temporary shims and compile caches (created by Corepack/Yarn)
+/.yarn-tmp/
+
 # PostgreSQL installation directory (created by bin/setup on some hosts)
 /.pg-bld/
 /.pg-install/
@@ -162,3 +165,4 @@ config.status
 # Python virtual environments and caches
 /.venv/
 __pycache__/
+/.yarn-cache/
