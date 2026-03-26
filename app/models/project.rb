@@ -19,6 +19,9 @@ class Project < ApplicationRecord
   has_many :style_guides, dependent: :destroy
   has_many :project_service_containers, dependent: :destroy
   has_many :service_containers, through: :project_service_containers
+  has_many :project_versions, dependent: :destroy
+  has_many :knowledge_artifacts, dependent: :destroy
+  has_many :knowledge_chunks, dependent: :destroy
 
   validates :name, presence: true
   validates :owner, presence: true
