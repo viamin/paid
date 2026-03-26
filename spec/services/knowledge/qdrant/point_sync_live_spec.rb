@@ -77,10 +77,8 @@ RSpec.describe Knowledge::Qdrant::PointSync do
   end
 
   def qdrant_available?
-    uri = URI.parse(Paid.qdrant_url)
-    socket = TCPSocket.new(uri.host, uri.port)
-    socket.close
-    true
+    WebMock.disable_net_connect!(allow_localhost: true, allow: [ /#{Regexp.escape(Paid.qdrant_url)}/ ])
+    client.healthy?
   rescue StandardError
     false
   end
