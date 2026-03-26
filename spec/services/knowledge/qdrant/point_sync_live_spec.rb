@@ -74,7 +74,7 @@ RSpec.describe Knowledge::Qdrant::PointSync do
   end
 
   def qdrant_available?
-    WebMock.allow_net_connect!(allow_localhost: true)
+    WebMock.disable_net_connect!(allow_localhost: true, allow: [ /#{Regexp.escape(Paid.qdrant_url)}/ ])
     QdrantClient.new(url: Paid.qdrant_url, api_key: Paid.qdrant_api_key, timeout: 2, open_timeout: 2).healthy?
   rescue StandardError
     false
