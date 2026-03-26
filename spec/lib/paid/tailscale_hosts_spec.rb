@@ -42,6 +42,10 @@ RSpec.describe Paid::TailscaleHosts do
       expect(permissions.allows?("paid-dev.ts.net")).to be(true)
     end
 
+    it "allows Tailscale MagicDNS hostnames with a development port" do
+      expect(permissions.allows?("paid-dev.ts.net:3000")).to be(true)
+    end
+
     it "allows addresses inside the Tailscale CGNAT range" do
       expect(permissions.allows?("100.100.1.1")).to be(true)
     end

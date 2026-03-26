@@ -9,6 +9,12 @@ RSpec.describe "Home" do
         get root_path
         expect(response).to redirect_to(new_user_session_path)
       end
+
+      it "allows Tailscale hosts with a development port" do
+        get root_path, headers: { "HOST" => "paid-dev.ts.net:3000" }
+
+        expect(response).to redirect_to("http://paid-dev.ts.net:3000/users/sign_in")
+      end
     end
 
     context "when authenticated" do
