@@ -10,7 +10,6 @@
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/node:1": {},
-    "ghcr.io/devcontainers/features/go:1": {},
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
       "moby": false
     },
@@ -35,7 +34,7 @@
     "AIDER_NO_BROWSER": "1",
     "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
     "OVERMIND_SOCKET": "${containerWorkspaceFolder}/.overmind.sock",
-    "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin"
+    "PATH": "${containerEnv:PATH}:/home/vscode/.local/bin"
   },
   "mounts": [
     // Git configuration
@@ -79,7 +78,6 @@
     "setup": "corepack enable && corepack prepare yarn@1.22.22 --activate && bin/setup --skip-server",
     // LLM CLI Tools - Installation
     "claude-code": "curl -fsSL https://claude.ai/install.sh | bash",
-    "multiclaude": "go install github.com/dlorenc/multiclaude/cmd/multiclaude@latest",
     "cursor-agent": "curl -fsSL https://cursor.com/install | bash",
     "codex": "npm install -g @openai/codex",
     "gemini-cli": "npm install -g @google/gemini-cli",
