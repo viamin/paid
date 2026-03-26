@@ -323,7 +323,7 @@ With Qdrant running and the Postgres schema in place, we need a service layer th
 ```ruby
 Knowledge::Qdrant::CollectionManager.ensure_collection!(project)
 Knowledge::Qdrant::CollectionManager.drop_collection!(project)
-Knowledge::Qdrant::CollectionManager.rebuild!(project)
+Knowledge::Qdrant::CollectionManager.rebuild_schema!(project)
 
 Knowledge::Qdrant::PointSync.upsert_chunk!(chunk, vector:)
 Knowledge::Qdrant::PointSync.delete_chunks!(chunk_ids)
@@ -343,7 +343,7 @@ Knowledge::Qdrant::PointSync.delete_by_filter!(project_id:, filters: {})
 - [ ] `CollectionManager.ensure_collection!` is idempotent
 - [ ] `PointSync.upsert_chunk!` creates/updates a Qdrant point with correct payload
 - [ ] `PointSync.delete_chunks!` removes points by UUID
-- [ ] `rebuild!` drops and recreates with all active chunks from Postgres
+- [ ] `rebuild_schema!` drops and recreates collection structure (re-embedding is a separate workflow)
 - [ ] Project deletion triggers collection cleanup
 - [ ] `bin/rspec` passes
 
