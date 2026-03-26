@@ -416,7 +416,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_180754) do
     t.string "target_id", limit: 100
     t.string "target_type", limit: 100
     t.index ["event_type"], name: "index_knowledge_audit_events_on_event_type"
-    t.index ["project_id", "created_at", "id"], name: "index_knowledge_audit_events_on_project_id_and_created_at_and_id", order: { created_at: :desc, id: :desc }
+    t.index ["project_id", "created_at", "id"], name: "idx_knowledge_audit_events_on_project_created_at_id", order: { created_at: :desc, id: :desc }
     t.index ["project_id"], name: "index_knowledge_audit_events_on_project_id"
     t.index ["target_type", "target_id"], name: "index_knowledge_audit_events_on_target_type_and_target_id"
   end
