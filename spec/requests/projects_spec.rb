@@ -529,10 +529,9 @@ RSpec.describe "Projects" do
           "Auto-Fix Merge Conflicts" => "Enabled"
         }
         expected_settings.each do |label, state|
-          expect(response.body).to include(label)
-          # Verify each setting's label is followed by the correct badge state in the same row
+          # Verify each setting's label is paired with the correct badge state in the same dt/dd row
           expect(response.body).to match(
-            /#{Regexp.escape(label)}.*?#{state}/m
+            %r{<dt[^>]*>\s*#{Regexp.escape(label)}\s*</dt>\s*<dd[^>]*>.*?\b#{state}\b.*?</dd>}m
           )
         end
       end
