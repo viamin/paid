@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "open3"
+
 # Shared helper for stubbing Open3.popen3 in collector specs.
 # Simulates Open3.popen3 yielding a completed process with given stdout/stderr/status.
 # Accepts either an argv array (exact match) or a Regexp to match against the full argument list.

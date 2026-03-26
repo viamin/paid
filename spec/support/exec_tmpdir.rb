@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "tmpdir"
+
 # Shared helper for specs that need to create executable scripts in a tmpdir.
 # Some CI environments mount /tmp as noexec, so we probe for a usable directory.
 module ExecTmpdir
