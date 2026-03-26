@@ -17,6 +17,12 @@ class CreateKnowledgeAuditEvents < ActiveRecord::Migration[8.1]
               [ :project_id, :created_at, :id ],
               order: { created_at: :desc, id: :desc },
               name: "idx_knowledge_audit_events_on_project_created_at_id"
+
+    add_index :knowledge_audit_events,
+              :created_at,
+              using: :brin,
+              name: "idx_knowledge_audit_events_on_created_at"
+
     add_index :knowledge_audit_events, :event_type
     add_index :knowledge_audit_events, [ :target_type, :target_id ]
   end

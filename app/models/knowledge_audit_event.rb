@@ -9,6 +9,15 @@ class KnowledgeAuditEvent < ApplicationRecord
     collection_rebuilt
   ].freeze
 
+  # Provenance chain: audit event → target (artifact/chunk) → collector_run → project.
+  # The actor field captures who performed the action (e.g. actor_type: "collector",
+  # actor_id: collector_run.id). Full provenance (collector_run_id, commit_sha,
+  # tool_version) is reachable by joining target → collector_run → project_version.
+  # The `details` JSONB column carries event-specific context:
+  #   artifact_created:    { artifact_type:, identifier: }
+  #   artifact_staled:     { identifier: }
+  #   chunk_embedded:      { model:, dimensions: }
+  #   collection_rebuilt:  { collection_name: }
   belongs_to :project
 
   validates :event_type, presence: true, inclusion: { in: EVENT_TYPES }

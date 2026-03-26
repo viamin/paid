@@ -415,6 +415,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_180754) do
     t.bigint "project_id", null: false
     t.string "target_id", limit: 100
     t.string "target_type", limit: 100
+    t.index ["created_at"], name: "idx_knowledge_audit_events_on_created_at", using: :brin
     t.index ["event_type"], name: "index_knowledge_audit_events_on_event_type"
     t.index ["project_id", "created_at", "id"], name: "idx_knowledge_audit_events_on_project_created_at_id", order: { created_at: :desc, id: :desc }
     t.index ["project_id"], name: "index_knowledge_audit_events_on_project_id"

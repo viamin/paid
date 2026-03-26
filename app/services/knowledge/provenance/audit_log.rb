@@ -60,6 +60,8 @@ module Knowledge
         def record_batch(events)
           return if events.empty?
 
+          validate_event_types!(events)
+
           now = Time.current
           rows = events.map do |e|
             actor_type, actor_id = extract_pair(e[:actor])
@@ -136,6 +138,13 @@ module Knowledge
         end
 
         private
+
+        def validate_event_types!(events)
+          invalid = events.map { |e| e[:event].to_s }.reject { |t| KnowledgeAuditEvent::EVENT_TYPES.include?(t) }
+          return if invalid.empty?
+
+          raise ArgumentError, "Invalid event types: #{invalid.uniq.join(', ')}"
+        end
 
         # Normalize actor/target from { type: "X", id: "Y" } to [type, id_string]
         def extract_pair(hash)

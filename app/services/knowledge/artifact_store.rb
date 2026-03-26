@@ -101,21 +101,25 @@ module Knowledge
         .where(knowledge_artifact_id: prior_artifacts.select(:id), status: "active")
         .update_all(status: "stale", updated_at: Time.current)
 
-      staled_ids = prior_artifacts.pluck(:id)
-      return if staled_ids.empty?
+      return unless prior_artifacts.exists?
 
-      KnowledgeArtifact.where(id: staled_ids).update_all(status: "stale", updated_at: Time.current)
+      # Stale and audit in batches to avoid materializing all IDs at once.
+      # We must collect IDs before update_all since the relation filters on status: "active".
+      prior_artifacts.in_batches(of: 1000) do |batch|
+        ids = batch.pluck(:id)
+        KnowledgeArtifact.where(id: ids).update_all(status: "stale", updated_at: Time.current)
 
-      audit_events = staled_ids.map do |artifact_id|
-        {
-          project: project,
-          event: :artifact_staled,
-          actor: { type: "collector", id: collector_run.id },
-          target: { type: "KnowledgeArtifact", id: artifact_id },
-          details: { identifier: data[:identifier] }
-        }
+        audit_events = ids.map do |artifact_id|
+          {
+            project: project,
+            event: :artifact_staled,
+            actor: { type: "collector", id: collector_run.id },
+            target: { type: "KnowledgeArtifact", id: artifact_id },
+            details: { identifier: data[:identifier] }
+          }
+        end
+        Knowledge::Provenance::AuditLog.record_batch(audit_events)
       end
-      Knowledge::Provenance::AuditLog.record_batch(audit_events)
     end
 
     def create_artifact(data, content_hash)

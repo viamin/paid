@@ -157,6 +157,15 @@ RSpec.describe Knowledge::Provenance::AuditLog do
         .not_to change(KnowledgeAuditEvent, :count)
     end
 
+    it "raises ArgumentError for invalid event types" do
+      events = [
+        { event: :invalid_event, project: project, actor: { type: "system" } }
+      ]
+
+      expect { described_class.record_batch(events) }
+        .to raise_error(ArgumentError, /Invalid event types: invalid_event/)
+    end
+
     it "falls back to per-row inserts when insert_all fails" do
       events = [
         { event: :chunk_embedded, project: project, actor: { type: "embedding_pipeline" },
