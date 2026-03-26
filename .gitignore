@@ -165,3 +165,4 @@ config.status
 # Python virtual environments and caches
 /.venv/
 __pycache__/
+/.yarn-cache/
