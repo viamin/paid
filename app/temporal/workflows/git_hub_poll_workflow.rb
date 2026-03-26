@@ -227,8 +227,8 @@ module Workflows
     end
 
     def maybe_trigger_dev_update(project_id, pr_data, merge_result)
-      return unless Temporalio::Workflow.patched("add-dev-environment-update-v1")
       return unless merge_result[:merged]
+      return unless Temporalio::Workflow.patched("add-dev-environment-update-v1")
 
       run_activity(Activities::TriggerDevEnvironmentUpdateActivity,
         { project_id: project_id, pr_number: pr_data[:pr_number] }, timeout: 60)

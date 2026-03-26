@@ -8,12 +8,13 @@ module Activities
   # the PAID_REPO_FULL_NAME environment variable). No-ops for other repos.
   #
   # Lightweight update (git pull only):
-  #   Files under app/ that Rails autoloads in development (excluding
-  #   Temporal workflows/activities).
+  #   Any changes that do not match FULL_RESTART_PATTERNS. This includes most
+  #   Rails-autoloaded app/ code as well as non-critical files such as docs.
   #
   # Full restart (git pull + Overmind stop + bin/setup):
-  #   Temporal code, config changes, database migrations, Gemfile/yarn
-  #   changes, or bin/ scripts.
+  #   Any changes matching FULL_RESTART_PATTERNS: Temporal code under
+  #   app/temporal/, config changes, database migrations, Gemfile or JS
+  #   dependency changes, bin/ scripts, lib/ code, or the Procfile.
   class TriggerDevEnvironmentUpdateActivity < BaseActivity
     activity_name "TriggerDevEnvironmentUpdate"
 
