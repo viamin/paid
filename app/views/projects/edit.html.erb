@@ -141,7 +141,43 @@
           </div>
 
           <fieldset class="space-y-4">
+            <legend class="text-sm font-semibold leading-6 text-gray-900">Labels</legend>
+
+            <div>
+              <%= form.label :generated_label_name, "Generated Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.text_field :generated_label_name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Label added to PRs and issues created by Paid.</p>
+            </div>
+
+            <div>
+              <%= form.label :automation_label_name, "Automation Label", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.text_field :automation_label_name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Label that triggers automatic agent runs when added to issues or PRs.</p>
+            </div>
+          </fieldset>
+
+          <fieldset class="space-y-4">
             <legend class="text-sm font-semibold leading-6 text-gray-900">Automation</legend>
+
+            <div>
+              <div class="flex items-center">
+                <%= form.check_box :auto_add_labels_enabled, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+                <%= form.label :auto_add_labels_enabled, "Auto-Add Labels", class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
+              </div>
+              <p class="mt-1 ml-7 text-xs text-gray-500">Automatically add the generated label to PRs and issues created by Paid.</p>
+            </div>
+
+            <div>
+              <div class="flex items-center">
+                <%= form.check_box :automation_on_label_enabled, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+                <%= form.label :automation_on_label_enabled, "Automation on Label", class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
+              </div>
+              <p class="mt-1 ml-7 text-xs text-gray-500">Automatically create agent runs when the automation label is detected on issues or PRs.</p>
+            </div>
 
             <div>
               <div class="flex items-center">

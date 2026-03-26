@@ -6,13 +6,18 @@ class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
   def up
     enable_extension "pg_trgm"
 
-    add_column :knowledge_chunks, :content_tsvector, :tsvector
+    unless column_exists?(:knowledge_chunks, :content_tsvector)
+      add_column :knowledge_chunks, :content_tsvector, :tsvector
+    end
 
-    add_index :knowledge_chunks, :content_tsvector,
-              using: :gin,
-              algorithm: :concurrently,
-              name: "index_knowledge_chunks_on_content_tsvector"
+    unless index_exists?(:knowledge_chunks, :content_tsvector, name: "index_knowledge_chunks_on_content_tsvector")
+      add_index :knowledge_chunks, :content_tsvector,
+                using: :gin,
+                algorithm: :concurrently,
+                name: "index_knowledge_chunks_on_content_tsvector"
+    end
 
+    execute "DROP TRIGGER IF EXISTS knowledge_chunks_tsvector_update ON knowledge_chunks;"
     execute <<~SQL
       CREATE TRIGGER knowledge_chunks_tsvector_update
       BEFORE INSERT OR UPDATE OF content ON knowledge_chunks
@@ -46,11 +51,13 @@ class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
       end
     end
 
-    add_index :knowledge_artifacts, :identifier,
-              using: :gin,
-              opclass: :gin_trgm_ops,
-              algorithm: :concurrently,
-              name: "index_knowledge_artifacts_on_identifier_trgm"
+    unless index_exists?(:knowledge_artifacts, :identifier, name: "index_knowledge_artifacts_on_identifier_trgm")
+      add_index :knowledge_artifacts, :identifier,
+                using: :gin,
+                opclass: :gin_trgm_ops,
+                algorithm: :concurrently,
+                name: "index_knowledge_artifacts_on_identifier_trgm"
+    end
   end
 
   def down
@@ -66,8 +73,8 @@ class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
                  algorithm: :concurrently,
                  if_exists: true
 
-    remove_column :knowledge_chunks, :content_tsvector
+    remove_column :knowledge_chunks, :content_tsvector if column_exists?(:knowledge_chunks, :content_tsvector)
 
-    disable_extension "pg_trgm"
+    disable_extension "pg_trgm" if extension_enabled?("pg_trgm")
   end
 end

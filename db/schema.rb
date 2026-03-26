@@ -519,14 +519,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_050122) do
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
     t.jsonb "allowed_github_usernames", default: [], null: false
+    t.boolean "auto_add_labels_enabled", default: true, null: false
     t.boolean "auto_fix_merge_conflicts", default: true, null: false
     t.boolean "auto_merge_enabled", default: false, null: false
     t.boolean "auto_pick_enabled", default: false, null: false
     t.boolean "auto_scan_prs", default: true, null: false
     t.boolean "auto_scan_security", default: false, null: false
+    t.string "automation_label_name", default: "paid-automation", null: false
+    t.boolean "automation_on_label_enabled", default: true, null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
+    t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
     t.jsonb "label_mappings", default: {}, null: false
