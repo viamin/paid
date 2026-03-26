@@ -20,6 +20,7 @@ class KnowledgeChunk < ApplicationRecord
 
   scope :active, -> { where(status: "active") }
   scope :embeddable, -> { active.where.not(embedding_model: nil) }
+  scope :needs_embedding, -> { active.where(embedding_model: nil) }
   scope :by_project, ->(project_id) { where(project_id: project_id) }
   scope :for_project, ->(project) { where(project: project) }
   scope :ordered, -> { order(:sequence) }
