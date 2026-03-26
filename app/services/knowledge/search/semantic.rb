@@ -36,7 +36,7 @@ module Knowledge
             .where(knowledge_artifacts: { artifact_type: artifact_type })
         end
 
-        chunks.includes(knowledge_artifact: { collector_run: :project_version })
+        chunks.includes(:outgoing_links, :incoming_links, knowledge_artifact: { collector_run: :project_version })
           .limit(limit)
           .map { |chunk| format_chunk_result(chunk, score: chunk.relevance_rank&.to_f) }
       end
@@ -85,9 +85,17 @@ module Knowledge
         chunks = KnowledgeChunk
           .where(id: chunk_ids)
           .active
-          .includes(knowledge_artifact: { collector_run: :project_version })
+          .for_project(project)
+          .includes(:outgoing_links, :incoming_links, knowledge_artifact: { collector_run: :project_version })
 
-        chunks.map { |chunk| format_chunk_result(chunk, score: score_map[chunk.id]) }
+        chunks_by_id = chunks.index_by(&:id)
+
+        chunk_ids.filter_map do |id|
+          chunk = chunks_by_id[id]
+          next unless chunk
+
+          format_chunk_result(chunk, score: score_map[id])
+        end
       end
 
       def merge_results(lexical, vector)

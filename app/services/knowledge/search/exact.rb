@@ -31,7 +31,7 @@ module Knowledge
 
         exact_matches
           .limit(limit)
-          .includes(:active_ordered_chunks, collector_run: :project_version)
+          .includes(active_ordered_chunks: [ :outgoing_links, :incoming_links ], collector_run: :project_version)
           .flat_map { |artifact| format_artifact_results(artifact) }
       end
 

@@ -71,7 +71,7 @@ module Knowledge
 
     def strip_internal_fields(results)
       results.map do |result|
-        result.except(:status, :link_count, :created_at, :collector_run_id)
+        result.except(:status, :link_count, :created_at)
       end
     end
 
