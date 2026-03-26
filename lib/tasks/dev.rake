@@ -79,9 +79,11 @@ namespace :dev do
       if orphaned.any?
         puts "  Stopping #{orphaned.size} orphaned container(s)"
         DevCleanup.stop_containers(orphaned)
+        # Mark all running service containers as stopped since we just removed them.
+        # Only do this after a successful Docker stop — if find_orphaned_containers
+        # returned empty (e.g. Docker unavailable), we must not blindly flip DB records.
+        DevCleanup.mark_service_containers_stopped
       end
-      # Mark all running service containers as stopped since we just removed them.
-      DevCleanup.mark_service_containers_stopped
     else
       if stale_container_ids.any?
         stale_container_ids.uniq!

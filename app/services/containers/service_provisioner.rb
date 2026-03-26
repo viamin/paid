@@ -321,8 +321,9 @@ module Containers
 
     # Checks the Docker-native HEALTHCHECK status when available.
     # Returns true when the container reports "healthy", false when a
-    # HEALTHCHECK is configured but not yet healthy/unhealthy, and nil
-    # when no HEALTHCHECK is configured (so the caller falls back to TCP).
+    # HEALTHCHECK is configured but the status is anything other than "healthy"
+    # (including "unhealthy" or transitional states), and nil when no HEALTHCHECK
+    # status is present (so the caller falls back to TCP).
     def docker_healthcheck_status(service_container)
       return nil if service_container.docker_container_id.blank?
 

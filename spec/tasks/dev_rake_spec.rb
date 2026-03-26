@@ -103,10 +103,20 @@ RSpec.describe "dev:cleanup" do
     expect(pending_run.reload.status).to eq("timeout")
   end
 
-  it "marks service containers as stopped when grace is zero" do
+  it "marks service containers as stopped when grace is zero and containers were found" do
+    allow(DevCleanup).to receive(:find_orphaned_containers).and_return([ "abc123" ])
+    allow(DevCleanup).to receive(:stop_containers)
+
     task.invoke
 
+    expect(DevCleanup).to have_received(:stop_containers).with([ "abc123" ])
     expect(DevCleanup).to have_received(:mark_service_containers_stopped)
+  end
+
+  it "does not mark service containers as stopped when no orphaned containers exist" do
+    task.invoke
+
+    expect(DevCleanup).not_to have_received(:mark_service_containers_stopped)
   end
 
   it "stops orphaned agent containers" do
