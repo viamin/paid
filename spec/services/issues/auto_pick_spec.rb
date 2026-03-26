@@ -256,7 +256,7 @@ RSpec.describe Issues::AutoPick do
     end
 
     it "returns existing run when RecordNotUnique is raised and active run exists" do
-      issue = create(:issue, project: project)
+      create(:issue, project: project)
 
       service = described_class.new(project)
       # Simulate a race: another process creates a run between our SELECT
