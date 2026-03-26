@@ -7,6 +7,37 @@ RSpec.describe AbTests::Assign do
   let(:ab_test) { create(:ab_test, prompt: prompt, status: "running", started_at: Time.current) }
   let!(:control) { create(:ab_test_variant, ab_test: ab_test, prompt_version: prompt.current_version, is_control: true) }
   let!(:variant) { create(:ab_test_variant, ab_test: ab_test) }
+  let(:project) { create(:project) }
+
+  def create_assignments_for(test_variant, count)
+    timestamp = Time.current
+    agent_run_rows = count.times.map do
+      {
+        project_id: project.id,
+        agent_type: "claude_code",
+        status: "pending",
+        goal: "create_pr",
+        trigger_type: "automatic",
+        custom_prompt: "A/B test assignment",
+        proxy_token: SecureRandom.hex(32),
+        created_at: timestamp,
+        updated_at: timestamp
+      }
+    end
+
+    inserted_runs = AgentRun.insert_all!(agent_run_rows, returning: %w[id])
+    assignment_rows = inserted_runs.rows.flatten.map do |agent_run_id|
+      {
+        ab_test_id: ab_test.id,
+        ab_test_variant_id: test_variant.id,
+        agent_run_id: agent_run_id,
+        created_at: timestamp,
+        updated_at: timestamp
+      }
+    end
+
+    AbTestAssignment.insert_all!(assignment_rows)
+  end
 
   describe ".call" do
     it "creates an assignment for the agent run" do
@@ -24,9 +55,7 @@ RSpec.describe AbTests::Assign do
       # DB order: [control, variant]. Weights: [1, 11]. Total: 12.
       # control range: 0..1/12 (~0.083), variant range: 1/12..1 (~0.083..1)
       # rand=0.5 falls in the variant range.
-      10.times do
-        create(:ab_test_assignment, ab_test: ab_test, ab_test_variant: control, agent_run: create(:agent_run))
-      end
+      create_assignments_for(control, 10)
 
       assigner = described_class.new(ab_test: ab_test, agent_run: create(:agent_run))
       allow(assigner).to receive(:rand).and_return(0.5)
@@ -40,9 +69,7 @@ RSpec.describe AbTests::Assign do
       # DB order: [control, variant]. Weights: [1, 11]. Total: 12.
       # control range: 0..1/12 (~0.083).
       # rand=0.01 falls in the control range despite control being over-assigned.
-      10.times do
-        create(:ab_test_assignment, ab_test: ab_test, ab_test_variant: control, agent_run: create(:agent_run))
-      end
+      create_assignments_for(control, 10)
 
       assigner = described_class.new(ab_test: ab_test, agent_run: create(:agent_run))
       allow(assigner).to receive(:rand).and_return(0.01)
