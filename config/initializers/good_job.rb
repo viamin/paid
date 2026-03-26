@@ -44,6 +44,11 @@ Rails.application.configure do
       cron: "*/5 * * * *",
       class: "ProcessRunQueueJob",
       description: "Process queued agent runs and auto-pick eligible issues"
+    },
+    service_container_reconciliation: {
+      cron: "*/5 * * * *",
+      class: "ServiceContainerReconciliationJob",
+      description: "Reconcile service container DB records against Docker state"
     }
   }
 end

@@ -13,6 +13,8 @@ RSpec.describe "dev:cleanup" do
 
     # Stub docker commands by default so tests don't hit real docker
     allow(DevCleanup).to receive(:find_orphaned_containers).and_return([])
+    allow(DevCleanup).to receive(:mark_service_containers_stopped)
+    allow(DevCleanup).to receive(:cleanup_stale_service_containers)
   end
 
   it "times out runs stuck in running" do
@@ -101,6 +103,22 @@ RSpec.describe "dev:cleanup" do
     expect(pending_run.reload.status).to eq("timeout")
   end
 
+  it "marks service containers as stopped when grace is zero and containers were found" do
+    allow(DevCleanup).to receive(:find_orphaned_containers).and_return([ "abc123" ])
+    allow(DevCleanup).to receive(:stop_containers)
+
+    task.invoke
+
+    expect(DevCleanup).to have_received(:stop_containers).with([ "abc123" ])
+    expect(DevCleanup).to have_received(:mark_service_containers_stopped)
+  end
+
+  it "does not mark service containers as stopped when no orphaned containers exist" do
+    task.invoke
+
+    expect(DevCleanup).not_to have_received(:mark_service_containers_stopped)
+  end
+
   it "stops orphaned agent containers" do
     allow(DevCleanup).to receive(:find_orphaned_containers).and_return([ "abc123" ])
     allow(DevCleanup).to receive(:stop_containers)
@@ -169,6 +187,14 @@ RSpec.describe "dev:cleanup" do
       task.invoke
 
       expect(DevCleanup).not_to have_received(:find_orphaned_containers)
+    end
+
+    it "cleans up stale service containers via provisioner" do
+      create(:agent_run, :running, updated_at: 60.minutes.ago)
+
+      task.invoke
+
+      expect(DevCleanup).to have_received(:cleanup_stale_service_containers)
     end
 
     it "deduplicates container IDs before stopping" do
