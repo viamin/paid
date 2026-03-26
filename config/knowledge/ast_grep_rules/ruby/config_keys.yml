@@ -1,0 +1,16 @@
+# NOTE: This file is documentation/examples only. It is not loaded at runtime
+# by Knowledge::Collectors::ConfigKeyCollector, which currently defines its
+# own in-code PATTERNS constant. Keep these examples conceptually in sync
+# with that collector to avoid drift.
+#
+# ENV bracket access: ENV["$KEY"]
+# ENV fetch access:   ENV.fetch("$KEY")
+#
+# Note: Double-quote patterns also match single-quote usage in Ruby AST.
+#
+# Example ast-grep usage:
+#   ast-grep run --pattern 'ENV["$KEY"]' --lang Ruby --json <path>
+#   ast-grep run --pattern 'ENV.fetch("$KEY")' --lang Ruby --json <path>
+patterns:
+  env_bracket: 'ENV["$KEY"]'
+  env_fetch: 'ENV.fetch("$KEY")'

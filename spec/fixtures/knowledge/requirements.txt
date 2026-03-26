@@ -1,0 +1,4 @@
+django>=4.2
+requests==2.31.0
+numpy
+celery>=5.3,<6.0
