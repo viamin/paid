@@ -102,5 +102,40 @@ RSpec.describe StyleGuides::CollectCodeSamples do
       ruby_paths = result["ruby"].map { |s| s[:path] }
       expect(ruby_paths).to eq([ "app/services/auth.rb" ])
     end
+
+    it "enforces total byte budget as a hard cap" do
+      stub_const("StyleGuides::CollectCodeSamples::MAX_TOTAL_BYTES", 20)
+      large_content = "x" * 30
+      encoded = OpenStruct.new(content: Base64.strict_encode64(large_content))
+      allow(github_client).to receive(:contents).and_return(encoded)
+
+      result = described_class.call(project: project)
+
+      total = result.values.flatten.sum { |s| s[:content].bytesize }
+      expect(total).to be <= 20
+    end
+
+    it "redacts common secret patterns from code samples" do
+      secret_code = <<~RUBY
+        API_KEY = "sk-abc123secretvalue456"
+        AKIAXYZ1234567890123
+        -----BEGIN RSA PRIVATE KEY-----
+        secret key data here
+        -----END RSA PRIVATE KEY-----
+      RUBY
+      encoded = OpenStruct.new(content: Base64.strict_encode64(secret_code))
+      items = [ OpenStruct.new(type: "blob", path: "config/secrets.rb", size: secret_code.bytesize) ]
+      allow(github_client).to receive_messages(
+        tree: OpenStruct.new(tree: items),
+        contents: encoded
+      )
+
+      result = described_class.call(project: project)
+
+      content = result["ruby"].first[:content]
+      expect(content).to include("[REDACTED]")
+      expect(content).not_to include("sk-abc123secretvalue456")
+      expect(content).not_to include("secret key data here")
+    end
   end
 end

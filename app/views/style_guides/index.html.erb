@@ -8,10 +8,10 @@
     </div>
     <% if policy(StyleGuide.new(account: current_account)).create? %>
       <div class="mt-4 flex gap-3 sm:mt-0">
-        <% projects = policy_scope(Project).order(:name) %>
-        <% if projects.any? %>
+        <% if @projects.any? %>
           <%= form_with url: extract_style_guides_path, method: :post, class: "flex items-center gap-2" do |f| %>
-            <%= f.select :project_id, options_from_collection_for_select(projects, :id, :name), { prompt: "Select project..." }, class: "rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+            <%= f.label :project_id, "Select project", class: "sr-only" %>
+            <%= f.select :project_id, options_from_collection_for_select(@projects, :id, :name), { prompt: "Select project..." }, class: "rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
             <%= f.submit "Extract from Code", class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
           <% end %>
         <% end %>

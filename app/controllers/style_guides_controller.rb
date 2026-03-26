@@ -9,6 +9,7 @@ class StyleGuidesController < ApplicationController
     @q = base_scope.ransack(params[:q])
     @q.sorts = "name asc" if @q.sorts.empty?
     @pagy, @style_guides = pagy(@q.result)
+    @projects = policy_scope(Project).order(:name)
   end
 
   def show

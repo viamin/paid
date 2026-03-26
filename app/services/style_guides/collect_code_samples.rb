@@ -39,6 +39,14 @@ module StyleGuides
       public/assets public/packs __pycache__ .bundle
     ].freeze
 
+    # Patterns for lightweight redaction of secrets before sending to LLM.
+    SECRET_PATTERNS = [
+      /([A-Z_](?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY)\s*[=:]\s*).{10,}/i,
+      /\bAKIA[0-9A-Z]{16}\b/,
+      /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/,
+      /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/
+    ].freeze
+
     attr_reader :project
 
     def initialize(project:)
@@ -123,12 +131,17 @@ module StyleGuides
         samples[language] = []
 
         blobs.each do |blob|
-          break if total_bytes >= MAX_TOTAL_BYTES
+          remaining_bytes = MAX_TOTAL_BYTES - total_bytes
+          break if remaining_bytes <= 0
 
           content = fetch_file_content(client, repo, blob.path)
           next unless content
 
-          truncated = content.byteslice(0, MAX_FILE_BYTES)&.scrub("")
+          max_bytes_for_file = [ MAX_FILE_BYTES, remaining_bytes ].min
+          truncated = content.byteslice(0, max_bytes_for_file)&.scrub("")
+          next if truncated.nil? || truncated.empty?
+
+          truncated = redact_secrets(truncated)
           total_bytes += truncated.bytesize
           samples[language] << { path: blob.path, content: truncated }
         end
@@ -136,6 +149,18 @@ module StyleGuides
 
       # Remove languages with no successfully fetched samples
       samples.reject { |_, v| v.empty? }
+    end
+
+    def redact_secrets(text)
+      SECRET_PATTERNS.reduce(text) do |result, pattern|
+        result.gsub(pattern) do |match|
+          if Regexp.last_match.captures.any?
+            "#{Regexp.last_match[1]}[REDACTED]"
+          else
+            "[REDACTED]"
+          end
+        end
+      end
     end
 
     def fetch_file_content(client, repo, path)
