@@ -23,6 +23,7 @@ AllCops:
     - 'bin/*'
     - 'node_modules/**/*'
     - 'tmp/**/*'
+    - 'config/knowledge/**/*.yml'
 
 # Line length configuration
 Layout/LineLength:
