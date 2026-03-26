@@ -31,7 +31,7 @@ module Popen3Stub
 
   def stub_popen3(command_pattern, stdout:, stderr: "", success: true, exit_code: 0)
     status = instance_double(Process::Status, success?: success, exitstatus: exit_code)
-    wait_thr = instance_double(Thread, pid: 12345, value: status)
+    wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
     stdin_io = FakeIO.new
     stdout_io = FakeIO.new(stdout)
     stderr_io = FakeIO.new(stderr)
@@ -54,4 +54,5 @@ end
 
 RSpec.configure do |config|
   config.include Popen3Stub, type: :service
+  config.include Popen3Stub, :no_db
 end

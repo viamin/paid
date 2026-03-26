@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, type: :service do
+RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
   subject(:collector) do
     described_class.new(
       project: project,
@@ -11,20 +11,19 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, type: :service do
     )
   end
 
-  let(:project) { build(:project) }
-  let(:project_version) { build(:project_version, project: project) }
-  let(:collector_run) { build(:collector_run, project_version: project_version) }
+  let(:project) { Struct.new(:id, :worktrees).new(1, worktrees_stub) }
+  let(:project_version) { Struct.new(:id).new(1) }
+  let(:collector_run) { Struct.new(:id).new(1) }
 
   let(:revisions_csv) { file_fixture("knowledge/maat_revisions.csv").read }
   let(:hotspots_csv) { file_fixture("knowledge/maat_hotspots.csv").read }
   let(:repo_path) { "/tmp/test-repo" }
-  let(:worktree) { instance_double(Worktree, path: repo_path) }
-  let(:worktrees_relation) { instance_double(ActiveRecord::Relation, first: worktree) }
-
-  before do
-    allow(project).to receive(:worktrees).and_return(
-      instance_double(ActiveRecord::Relation, order: worktrees_relation)
-    )
+  let(:worktree_entry) { Struct.new(:path).new(repo_path) }
+  let(:worktrees_stub) do
+    ordered = Struct.new(:first).new(worktree_entry)
+    Struct.new(:ordered).new(ordered).tap do |stub|
+      stub.define_singleton_method(:order) { |*| ordered }
+    end
   end
 
   describe "#collector_type" do
@@ -121,7 +120,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, type: :service do
     end
 
     context "when no repo path is available" do
-      let(:worktrees_relation) { instance_double(ActiveRecord::Relation, first: nil) }
+      let(:worktree_entry) { nil }
 
       before do
         allow(Rails.root).to receive(:join).and_return(Pathname.new("/nonexistent/path"))
