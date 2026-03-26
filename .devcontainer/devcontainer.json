@@ -34,6 +34,7 @@
   "remoteEnv": {
     "AIDER_NO_BROWSER": "1",
     "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
+    "OVERMIND_SOCKET": "${containerWorkspaceFolder}/.overmind.sock",
     "PATH": "${containerEnv:PATH}:/home/vscode/go/bin:/home/vscode/.local/bin"
   },
   "mounts": [
@@ -94,8 +95,6 @@
   },
   // Use 'postStartCommand' to run commands every time the container starts.
   "postStartCommand": {
-    "overmind-cleanup": "rm -f .overmind.sock",
-    "multiclaude-start": "multiclaude start || true",
     "git-https": "git config --local remote.origin.url https://github.com/viamin/paid.git && git config --local credential.helper '!/usr/bin/gh auth git-credential'",
     "ensure-networks-and-qdrant": "bash .devcontainer/ensure-networks-and-qdrant.sh"
   },
