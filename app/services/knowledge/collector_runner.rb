@@ -2,13 +2,14 @@
 
 module Knowledge
   class CollectorRunner
-    attr_reader :project, :commit_sha, :branch, :committed_at
+    attr_reader :project, :commit_sha, :branch, :committed_at, :options
 
-    def initialize(project:, commit_sha:, branch: "main", committed_at: nil)
+    def initialize(project:, commit_sha:, branch: "main", committed_at: nil, options: {})
       @project = project
       @commit_sha = commit_sha
       @branch = branch
       @committed_at = committed_at
+      @options = options
     end
 
     def self.call(...)
@@ -85,7 +86,8 @@ module Knowledge
       collector = collector_class.new(
         project: project,
         project_version: project_version,
-        collector_run: collector_run
+        collector_run: collector_run,
+        options: options
       )
       tool_version = collector.tool_version
       collector_run.update!(tool_version: tool_version) if tool_version

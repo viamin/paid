@@ -79,10 +79,10 @@ RSpec.configure do |config|
   # report results while DB-dependent specs are marked as pending.
   unless database_available
     config.before do |example|
-      # Only run specs under spec/lib/ which typically don't need a database.
-      # All other specs are skipped to avoid ActiveRecord::ConnectionNotEstablished errors.
+      # Only run specs under spec/lib/ or those tagged :no_db which don't need
+      # a database. All other specs are skipped to avoid connection errors.
       spec_file = example.metadata[:file_path].to_s
-      unless spec_file.start_with?("./spec/lib/", "spec/lib/")
+      unless spec_file.start_with?("./spec/lib/", "spec/lib/") || example.metadata[:no_db]
         skip "Database not available (ALLOW_DBLESS_SPECS=true)"
       end
     end

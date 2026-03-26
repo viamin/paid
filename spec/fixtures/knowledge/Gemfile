@@ -1,0 +1,19 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gem "rails", "~> 8.1"
+gem "pg", "~> 1.5"
+gem "puma", ">= 5.0"
+
+group :development, :test do
+  gem "rspec-rails"
+  gem "factory_bot_rails"
+end
+
+group :development do
+  gem "web-console"
+end
+
+gem "bootsnap", require: false
+gem "tzinfo-data", platforms: :ruby
