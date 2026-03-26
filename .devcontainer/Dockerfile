@@ -35,6 +35,10 @@ RUN apt-get update -qq \
 # Install yarn
 RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 
+# Install ast-grep for collector integration specs and local code analysis.
+COPY bin/install-ast-grep /tmp/install-ast-grep
+RUN chmod +x /tmp/install-ast-grep && /tmp/install-ast-grep && rm /tmp/install-ast-grep
+
 # Install overmind process manager (requires tmux, installed above)
 RUN gem install overmind
 
