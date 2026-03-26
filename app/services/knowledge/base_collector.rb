@@ -58,6 +58,7 @@ module Knowledge
           end
         rescue Timeout::Error
           kill_process_group(wait_thr.pid)
+          wait_thr.value # reap the child process to avoid zombies
           stdout.close unless stdout.closed?
           stderr.close unless stderr.closed?
           out_thread.join
