@@ -17,7 +17,7 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
 
   let(:scc_json) { file_fixture("knowledge/scc_output.json").read }
   let(:repo_path) { "/tmp/test-repo" }
-  let(:worktree) { instance_double(Worktree, host_path: repo_path) }
+  let(:worktree) { instance_double(Worktree, path: repo_path) }
   let(:worktrees_relation) { instance_double(ActiveRecord::Relation, first: worktree) }
 
   before do
@@ -35,7 +35,7 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
   describe "#tool_version" do
     it "returns scc version when available" do
       allow(Open3).to receive(:capture3)
-        .with("scc --version", timeout: 30)
+        .with("scc --version")
         .and_return([ "scc version 3.6.0\n", "", instance_double(Process::Status, success?: true) ])
 
       expect(collector.tool_version).to eq("scc version 3.6.0")
@@ -52,7 +52,7 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
     context "when scc produces valid output" do
       before do
         allow(Open3).to receive(:capture3)
-          .with("scc --format json /tmp/test-repo", timeout: 60)
+          .with("scc --format json /tmp/test-repo")
           .and_return([ scc_json, "", instance_double(Process::Status, success?: true) ])
       end
 

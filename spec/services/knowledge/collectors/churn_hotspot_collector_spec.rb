@@ -18,7 +18,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
   let(:revisions_csv) { file_fixture("knowledge/maat_revisions.csv").read }
   let(:hotspots_csv) { file_fixture("knowledge/maat_hotspots.csv").read }
   let(:repo_path) { "/tmp/test-repo" }
-  let(:worktree) { instance_double(Worktree, host_path: repo_path) }
+  let(:worktree) { instance_double(Worktree, path: repo_path) }
   let(:worktrees_relation) { instance_double(ActiveRecord::Relation, first: worktree) }
 
   before do
@@ -36,7 +36,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
   describe "#tool_version" do
     it "returns maat version when available" do
       allow(Open3).to receive(:capture3)
-        .with("maat --version", timeout: 30)
+        .with("maat --version")
         .and_return([ "maat 1.0.4\n", "", instance_double(Process::Status, success?: true) ])
 
       expect(collector.tool_version).to eq("maat 1.0.4")
@@ -53,10 +53,10 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
     context "when maat produces valid output" do
       before do
         allow(Open3).to receive(:capture3)
-          .with("maat -c git2 -l /tmp/test-repo -a revisions", timeout: 120)
+          .with("maat -c git2 -l /tmp/test-repo -a revisions")
           .and_return([ revisions_csv, "", instance_double(Process::Status, success?: true) ])
         allow(Open3).to receive(:capture3)
-          .with("maat -c git2 -l /tmp/test-repo -a hotspots", timeout: 120)
+          .with("maat -c git2 -l /tmp/test-repo -a hotspots")
           .and_return([ hotspots_csv, "", instance_double(Process::Status, success?: true) ])
       end
 

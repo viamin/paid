@@ -2,6 +2,7 @@
 
 require "open3"
 require "shellwords"
+require "timeout"
 
 module Knowledge
   module Collectors
@@ -34,7 +35,7 @@ module Knowledge
       private
 
       def resolve_repo_path
-        project.worktrees.order(created_at: :desc).first&.host_path || default_repo_path
+        project.worktrees.order(created_at: :desc).first&.path || default_repo_path
       end
 
       def default_repo_path
@@ -59,7 +60,7 @@ module Knowledge
       end
 
       def run_command(command, timeout: 30)
-        stdout, stderr, status = Open3.capture3(command, timeout: timeout)
+        stdout, stderr, status = Timeout.timeout(timeout) { Open3.capture3(command) }
         unless status.success?
           raise "Command failed (exit #{status.exitstatus}): #{stderr.first(500)}"
         end
