@@ -13,8 +13,9 @@ module Activities
   #
   # Full restart (git pull + Overmind stop + bin/setup):
   #   Any changes matching FULL_RESTART_PATTERNS: Temporal code under
-  #   app/temporal/, config changes, database migrations, Gemfile or JS
-  #   dependency changes, bin/ scripts, lib/ code, or the Procfile.
+  #   app/temporal/, config changes, database migrations, Gemfile/lockfile
+  #   or JS dependency/lockfile changes, bin/ scripts, lib/ code, or the
+  #   Procfile.
   class TriggerDevEnvironmentUpdateActivity < BaseActivity
     activity_name "TriggerDevEnvironmentUpdate"
 
@@ -24,6 +25,7 @@ module Activities
       %r{\Adb/migrate/},
       %r{\AGemfile},
       %r{\Ayarn\.lock\z},
+      %r{\Apackage-lock\.json\z},
       %r{\Apackage\.json\z},
       %r{\Abin/},
       %r{\Alib/},
@@ -47,7 +49,7 @@ module Activities
       return { triggered: false, reason: "no_changed_files" } if changed_files.empty?
 
       mode = determine_update_mode(changed_files)
-      trigger_update(mode)
+      return { triggered: false, reason: "spawn_failed" } unless trigger_update(mode)
 
       logger.info(
         message: "dev_update.triggered",
@@ -108,6 +110,17 @@ module Activities
         pid: pid,
         mode: mode
       )
+
+      true
+    rescue Errno::ENOENT, Errno::EACCES => e
+      # Best-effort: if setsid or bin/dev-update is missing/not executable,
+      # log and return gracefully rather than failing the activity.
+      logger.warn(
+        message: "dev_update.spawn_failed",
+        mode: mode,
+        error: e.message
+      )
+      nil
     end
   end
 end

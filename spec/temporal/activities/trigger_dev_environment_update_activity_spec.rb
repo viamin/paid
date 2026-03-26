@@ -168,6 +168,35 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
         end
       end
 
+      context "when package-lock.json changed (full restart)" do
+        before do
+          allow(github_client).to receive(:pull_request_files)
+            .with("paid-ai/paid", 42)
+            .and_return(%w[package-lock.json])
+        end
+
+        it "triggers a full update" do
+          result = activity.execute(project_id: project.id, pr_number: 42)
+
+          expect(result).to include(triggered: true, mode: "full")
+        end
+      end
+
+      context "when spawn fails" do
+        before do
+          allow(github_client).to receive(:pull_request_files)
+            .with("paid-ai/paid", 42)
+            .and_return(%w[app/models/user.rb])
+          allow(Process).to receive(:spawn).and_raise(Errno::ENOENT, "setsid")
+        end
+
+        it "returns spawn_failed without raising" do
+          result = activity.execute(project_id: project.id, pr_number: 42)
+
+          expect(result).to eq(triggered: false, reason: "spawn_failed")
+        end
+      end
+
       context "when fetching files fails" do
         before do
           allow(github_client).to receive(:pull_request_files)
