@@ -14,3 +14,6 @@ end
 group :development do
   gem "web-console"
 end
+
+gem "bootsnap", require: false
+gem "tzinfo-data", platforms: :ruby

@@ -84,8 +84,14 @@ module Knowledge
             end
           end
 
-          if (gem_match = stripped.match(/\Agem\s+["']([^"']+)["']((?:,\s*["'][^"']+["'])*)/))
-            versions = gem_match[2].scan(/["']([^"']+)["']/).flatten
+          if (gem_match = stripped.match(/\Agem\s+["']([^"']+)["'](.*)/))
+            # Extract version constraints: quoted strings before the first keyword argument (word:)
+            versions = []
+            gem_match[2].split(",").each do |arg|
+              arg = arg.strip
+              break if arg.match?(/\A\w+\s*:/) # keyword argument like require: false
+              versions << Regexp.last_match(1) if arg.match(/\A["']([^"']+)["']/)
+            end
             version = versions.empty? ? nil : versions.join(", ")
 
             deps << {

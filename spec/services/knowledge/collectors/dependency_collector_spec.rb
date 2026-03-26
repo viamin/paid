@@ -36,7 +36,7 @@ RSpec.describe Knowledge::Collectors::DependencyCollector, :no_db do
       it "extracts gems from the Gemfile" do
         names = gemfile_artifacts.map { |a| a[:metadata][:name] }
 
-        expect(names).to include("rails", "pg", "puma")
+        expect(names).to include("rails", "pg", "puma", "bootsnap", "tzinfo-data")
       end
 
       it "captures version constraints" do
@@ -53,7 +53,14 @@ RSpec.describe Knowledge::Collectors::DependencyCollector, :no_db do
       end
 
       it "produces one artifact per dependency" do
-        expect(gemfile_artifacts.length).to eq(6)
+        expect(gemfile_artifacts.length).to eq(8)
+      end
+
+      it "captures gems with keyword options but no version" do
+        bootsnap = gemfile_artifacts.find { |a| a[:metadata][:name] == "bootsnap" }
+
+        expect(bootsnap[:metadata][:version]).to be_nil
+        expect(bootsnap[:metadata][:group]).to eq("default")
       end
 
       context "with custom Gemfile content" do
@@ -108,6 +115,21 @@ RSpec.describe Knowledge::Collectors::DependencyCollector, :no_db do
           foo_dep = result.find { |a| a[:metadata][:name] == "foo" }
 
           expect(foo_dep[:metadata][:version]).to eq(">= 1.0, < 2.0")
+        end
+
+        it "captures gems with version constraints followed by keyword options" do
+          stub_gemfile(<<~GEMFILE)
+            source "https://rubygems.org"
+            gem "bootsnap", "~> 1.16", require: false
+            gem "sassc-rails", git: "https://github.com/sass/sassc-rails"
+          GEMFILE
+
+          result = collector.collect
+          bootsnap = result.find { |a| a[:metadata][:name] == "bootsnap" }
+          sassc = result.find { |a| a[:metadata][:name] == "sassc-rails" }
+
+          expect(bootsnap[:metadata][:version]).to eq("~> 1.16")
+          expect(sassc[:metadata][:version]).to be_nil
         end
 
         it "handles if/unless blocks inside groups without losing group context" do

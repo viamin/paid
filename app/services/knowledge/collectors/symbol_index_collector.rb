@@ -104,7 +104,7 @@ module Knowledge
       def build_scope_stack(file_results)
         file_results
           .select { |r| r[:symbol_type] == :class || r[:symbol_type] == :module }
-          .sort_by { |r| r[:line] }
+          .sort_by { |r| [ r[:line], r[:column] || 0 ] }
       end
 
       # Compute the fully-qualified name for a symbol by walking enclosing
