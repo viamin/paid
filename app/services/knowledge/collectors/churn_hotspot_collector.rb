@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "csv"
-require "shellwords"
 
 module Knowledge
   module Collectors
@@ -25,7 +24,7 @@ module Knowledge
       end
 
       def tool_version
-        version_output = run_command("maat --version")
+        version_output = run_command("maat", "--version")
         version_output.strip.presence
       rescue StandardError
         nil
@@ -35,7 +34,7 @@ module Knowledge
 
       def run_maat(repo_path, analysis)
         output = run_command(
-          "maat -c git2 -l #{Shellwords.escape(repo_path)} -a #{analysis}",
+          "maat", "-c", "git2", "-l", repo_path, "-a", analysis,
           timeout: MAAT_TIMEOUT
         )
         parse_csv(output)
@@ -106,7 +105,7 @@ module Knowledge
           artifact_type: "churn_hotspot",
           scope_path: file,
           identifier: file,
-          content: "Churn hotspot: #{file} — #{revisions} revisions, complexity score #{complexity}",
+          content: build_content(file, revisions, complexity),
           metadata: { revisions: revisions, complexity: complexity, rank: rank },
           chunks: [
             {
@@ -116,6 +115,13 @@ module Knowledge
             }
           ]
         }
+      end
+
+      def build_content(file, revisions, complexity)
+        traits = []
+        traits << "#{revisions} revisions" if revisions > 0
+        traits << "complexity score #{complexity}" if complexity > 0
+        "Churn hotspot: #{file} — #{traits.join(', ')}"
       end
 
       def build_chunk_text(file, revisions, complexity, rank)

@@ -39,12 +39,12 @@ module Knowledge
       path.exist? ? path.to_s : nil
     end
 
-    def run_command(command, timeout: 30)
+    def run_command(*argv, timeout: 30)
       stdout_str = +""
       stderr_str = +""
       status = nil
 
-      Open3.popen3(command, pgroup: true) do |stdin, stdout, stderr, wait_thr|
+      Open3.popen3(*argv, pgroup: true) do |stdin, stdout, stderr, wait_thr|
         stdin&.close
 
         out_thread = Thread.new { stdout_str << stdout.read.to_s }
@@ -58,9 +58,11 @@ module Knowledge
           end
         rescue Timeout::Error
           kill_process_group(wait_thr.pid)
-          out_thread.join(1)
-          err_thread.join(1)
-          raise Timeout::Error, "Command timed out after #{timeout} seconds: #{command}"
+          stdout.close unless stdout.closed?
+          stderr.close unless stderr.closed?
+          out_thread.join
+          err_thread.join
+          raise Timeout::Error, "Command timed out after #{timeout} seconds: #{argv.join(' ')}"
         ensure
           stdout.close unless stdout.closed?
           stderr.close unless stderr.closed?

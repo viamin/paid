@@ -26,7 +26,8 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
     )
   end
 
-  # Simulates Open3.popen3 yielding a completed process with given stdout/stderr/status
+  # Simulates Open3.popen3 yielding a completed process with given stdout/stderr/status.
+  # Accepts either an argv array or a Regexp to match against the full argument list.
   def stub_popen3(command_pattern, stdout:, stderr: "", success: true, exit_code: 0)
     status = instance_double(Process::Status, success?: success, exitstatus: exit_code)
     wait_thr = instance_double(Thread, pid: 12345, value: status)
@@ -34,9 +35,16 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
     stdout_io = instance_double(IO, "read": stdout, closed?: false, close: nil)
     stderr_io = instance_double(IO, "read": stderr, closed?: false, close: nil)
 
-    matcher = command_pattern.is_a?(Regexp) ? command_pattern : eq(command_pattern)
-    allow(Open3).to receive(:popen3).with(matcher, pgroup: true) do |*, &block|
-      block.call(stdin_io, stdout_io, stderr_io, wait_thr)
+    if command_pattern.is_a?(Regexp)
+      allow(Open3).to receive(:popen3) do |*args, **_kwargs, &block|
+        if args.join(" ").match?(command_pattern)
+          block.call(stdin_io, stdout_io, stderr_io, wait_thr)
+        end
+      end
+    else
+      allow(Open3).to receive(:popen3).with(*command_pattern, pgroup: true) do |*, &block|
+        block.call(stdin_io, stdout_io, stderr_io, wait_thr)
+      end
     end
   end
 
@@ -48,7 +56,7 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
 
   describe "#tool_version" do
     it "returns scc version when available" do
-      stub_popen3("scc --version", stdout: "scc version 3.6.0\n")
+      stub_popen3(%w[scc --version], stdout: "scc version 3.6.0\n")
 
       expect(collector.tool_version).to eq("scc version 3.6.0")
     end
@@ -63,7 +71,7 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
   describe "#collect" do
     context "when scc produces valid output" do
       before do
-        stub_popen3("scc --format json /tmp/test-repo", stdout: scc_json)
+        stub_popen3(%w[scc --format json /tmp/test-repo], stdout: scc_json)
       end
 
       it "returns one artifact per language" do
@@ -78,6 +86,9 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
         expect(artifact[:artifact_type]).to eq("language_stat")
         expect(artifact[:identifier]).to eq("Ruby")
         expect(artifact[:content]).to include("12,456 lines of code")
+        expect(artifact[:content]).to include("1,890 comments")
+        expect(artifact[:content]).to include("888 blanks")
+        expect(artifact[:content]).to include("15,234 total lines")
         expect(artifact[:content]).to include("187 files")
       end
 

@@ -27,7 +27,8 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
     )
   end
 
-  # Simulates Open3.popen3 yielding a completed process with given stdout/stderr/status
+  # Simulates Open3.popen3 yielding a completed process with given stdout/stderr/status.
+  # Accepts either an argv array or a Regexp to match against the full argument list.
   def stub_popen3(command_pattern, stdout:, stderr: "", success: true, exit_code: 0)
     status = instance_double(Process::Status, success?: success, exitstatus: exit_code)
     wait_thr = instance_double(Thread, pid: 12345, value: status)
@@ -35,9 +36,16 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
     stdout_io = instance_double(IO, "read": stdout, closed?: false, close: nil)
     stderr_io = instance_double(IO, "read": stderr, closed?: false, close: nil)
 
-    matcher = command_pattern.is_a?(Regexp) ? command_pattern : eq(command_pattern)
-    allow(Open3).to receive(:popen3).with(matcher, pgroup: true) do |*, &block|
-      block.call(stdin_io, stdout_io, stderr_io, wait_thr)
+    if command_pattern.is_a?(Regexp)
+      allow(Open3).to receive(:popen3) do |*args, **_kwargs, &block|
+        if args.join(" ").match?(command_pattern)
+          block.call(stdin_io, stdout_io, stderr_io, wait_thr)
+        end
+      end
+    else
+      allow(Open3).to receive(:popen3).with(*command_pattern, pgroup: true) do |*, &block|
+        block.call(stdin_io, stdout_io, stderr_io, wait_thr)
+      end
     end
   end
 
@@ -49,7 +57,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
 
   describe "#tool_version" do
     it "returns maat version when available" do
-      stub_popen3("maat --version", stdout: "maat 1.0.4\n")
+      stub_popen3(%w[maat --version], stdout: "maat 1.0.4\n")
 
       expect(collector.tool_version).to eq("maat 1.0.4")
     end
@@ -64,8 +72,8 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
   describe "#collect" do
     context "when maat produces valid output" do
       before do
-        stub_popen3("maat -c git2 -l /tmp/test-repo -a revisions", stdout: revisions_csv)
-        stub_popen3("maat -c git2 -l /tmp/test-repo -a hotspots", stdout: hotspots_csv)
+        stub_popen3(%w[maat -c git2 -l /tmp/test-repo -a revisions], stdout: revisions_csv)
+        stub_popen3(%w[maat -c git2 -l /tmp/test-repo -a hotspots], stdout: hotspots_csv)
       end
 
       it "returns artifacts sorted by score (revisions * complexity)" do
@@ -82,6 +90,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
         expect(artifact[:scope_path]).to eq("app/models/agent_run.rb")
         expect(artifact[:content]).to include("47 revisions")
         expect(artifact[:content]).to include("complexity score 23")
+        expect(artifact[:content]).to start_with("Churn hotspot: app/models/agent_run.rb")
       end
 
       it "populates metadata with revisions, complexity, and rank" do
@@ -167,7 +176,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
 
     context "when maat produces header-only output" do
       before do
-        stub_popen3(/maat/, stdout: "entity,n-revs\n")
+        stub_popen3(/maat/, stdout: "entity,n-revs\n") # header-only CSV
       end
 
       it "returns empty array" do

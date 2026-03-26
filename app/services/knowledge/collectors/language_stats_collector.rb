@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "json"
-require "shellwords"
 
 module Knowledge
   module Collectors
@@ -23,7 +22,7 @@ module Knowledge
       end
 
       def tool_version
-        output = run_command("scc --version")
+        output = run_command("scc", "--version")
         output.strip.presence
       rescue StandardError
         nil
@@ -33,7 +32,7 @@ module Knowledge
 
       def run_scc(repo_path)
         output = run_command(
-          "scc --format json #{Shellwords.escape(repo_path)}",
+          "scc", "--format", "json", repo_path,
           timeout: SCC_TIMEOUT
         )
         parse_scc_json(output)
@@ -72,7 +71,10 @@ module Knowledge
           artifact_type: "language_stat",
           scope_path: nil,
           identifier: lang[:name],
-          content: "#{lang[:name]}: #{number_with_delimiter(lang[:code])} lines of code across #{lang[:files]} files",
+          content: "#{lang[:name]}: #{number_with_delimiter(lang[:code])} lines of code, " \
+                   "#{number_with_delimiter(lang[:comments])} comments, " \
+                   "#{number_with_delimiter(lang[:blanks])} blanks, " \
+                   "#{number_with_delimiter(lang[:lines])} total lines across #{lang[:files]} files",
           metadata: {
             files: lang[:files],
             lines: lang[:lines],
