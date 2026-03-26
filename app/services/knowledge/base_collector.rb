@@ -87,7 +87,7 @@ module Knowledge
       end
 
       unless status&.success?
-        raise "Command failed (exit #{status&.exitstatus}): #{stderr_str.first(500)}"
+        raise "Command failed (exit #{status&.exitstatus}) for `#{argv.join(' ')}`: #{stderr_str.first(500)}"
       end
 
       stdout_str

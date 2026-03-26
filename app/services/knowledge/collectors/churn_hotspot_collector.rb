@@ -53,7 +53,13 @@ module Knowledge
 
         rows = CSV.parse(output, headers: true)
         rows.map(&:to_h)
-      rescue CSV::MalformedCSVError
+      rescue CSV::MalformedCSVError => e
+        Rails.logger.warn(
+          message: "knowledge.churn_hotspot_collector.malformed_csv",
+          project_id: project.id,
+          error: e.message,
+          output_snippet: output.to_s.first(200)
+        )
         []
       end
 
