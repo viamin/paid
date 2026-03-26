@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+AST_GREP_VERSION="${AST_GREP_VERSION:-0.42.0}"
+
+npm install -g "@ast-grep/cli@${AST_GREP_VERSION}"
