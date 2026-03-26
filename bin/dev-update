@@ -25,7 +25,7 @@ cd "$APP_ROOT"
 
 MODE="${1:---lightweight}"
 LOG_PREFIX="[dev-update]"
-OVERMIND_SOCKET=".overmind.sock"
+OVERMIND_SOCKET="${OVERMIND_SOCKET:-.overmind.sock}"
 START_DEV_LOG="log/dev_start.log"
 STOPPED_OVERMIND=0
 OVERMIND_STOP_POLL_COUNT="${DEV_UPDATE_OVERMIND_STOP_POLL_COUNT:-10}"
