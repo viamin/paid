@@ -1,0 +1,51 @@
+<%= turbo_stream_from current_account, :live_dashboard %>
+
+<div class="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8" data-controller="live-dashboard">
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div class="sm:flex-auto">
+      <h1 class="text-2xl font-semibold leading-6 text-gray-900">Live Dashboard</h1>
+      <p class="mt-2 text-sm text-gray-700">
+        Real-time visibility into agent activity for <strong><%= current_account.name %></strong>.
+      </p>
+    </div>
+    <div class="mt-4 flex items-center gap-3 sm:mt-0">
+      <span class="relative flex h-3 w-3 transition-transform duration-300" id="live-indicator">
+        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+        <span class="relative inline-flex h-3 w-3 rounded-full bg-green-500"></span>
+      </span>
+      <span class="text-sm text-gray-500">Live</span>
+    </div>
+  </div>
+
+  <div id="live-stats" class="mt-8">
+    <%= render "dashboard/live_stats", stats: @live_stats %>
+  </div>
+
+  <div id="dashboard-alerts" class="mt-6 space-y-3"></div>
+
+  <div class="mt-8">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h2 class="text-lg font-semibold text-gray-900">Active Runs</h2>
+        <p class="mt-1 text-sm text-gray-500">Running and pending work across all projects, with one-click cancellation.</p>
+      </div>
+      <%= link_to "View all runs", agent_runs_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+    </div>
+    <div id="active-runs" class="mt-4">
+      <%= render "dashboard/active_runs", active_runs: @active_runs %>
+    </div>
+  </div>
+
+  <div class="mt-8">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h2 class="text-lg font-semibold text-gray-900">Recent Activity</h2>
+        <p class="mt-1 text-sm text-gray-500">Latest completed, failed, timed out, cancelled, and rate-limited runs.</p>
+      </div>
+      <%= link_to "Analytics dashboard", dashboard_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+    </div>
+    <div id="activity-stream" class="mt-4">
+      <%= render "dashboard/activity_stream", recent_runs: @recent_runs %>
+    </div>
+  </div>
+</div>

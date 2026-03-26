@@ -16,6 +16,8 @@ Rails.application.routes.draw do
 
   # Dashboard for authenticated users
   get "dashboard", to: "dashboard#show"
+  get "dashboard/live", to: "dashboard#live", as: :live_dashboard
+  post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
 
   # Integrations hub
   resources :integrations, only: [ :index ]
