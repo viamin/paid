@@ -425,7 +425,7 @@ module Containers
       return false unless result.failure?
 
       [ result[:stdout], result[:stderr] ].compact.any? do |output|
-        output.include?("reference already exists") || output.include?("cannot lock ref")
+        output.include?("reference already exists") || output.include?("cannot lock ref 'refs/heads/")
       end
     end
 
