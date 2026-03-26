@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.2](https://github.com/viamin/paid/compare/v0.9.1...v0.9.2) (2026-03-26)
+
+
+### Bug Fixes
+
+* 488: fix(issue-goal): preserve drafted issue content when direct GitHub issue creation fails ([#500](https://github.com/viamin/paid/issues/500)) ([217cb65](https://github.com/viamin/paid/commit/217cb6567a83c2b7846caeba35b5da1208b07651))
+* 489: Auto-update dev environment when PRs are auto-merged ([#496](https://github.com/viamin/paid/issues/496)) ([43d4990](https://github.com/viamin/paid/commit/43d49906cf908ca1d9e446ed5953a868f5599f9b))
+* **agent-runs:** recover from timed out branch pushes ([#501](https://github.com/viamin/paid/issues/501)) ([5c7ecec](https://github.com/viamin/paid/commit/5c7ececff68fb2668b75a9fbca508b65cdf102c0))
+* **agent-runs:** remove trigger column from agent runs table ([#502](https://github.com/viamin/paid/issues/502)) ([#504](https://github.com/viamin/paid/issues/504)) ([7354b77](https://github.com/viamin/paid/commit/7354b7798ab98d3e0e0a1ffc7dbc542a79081e3c))
+
 ## [0.9.1](https://github.com/viamin/paid/compare/v0.9.0...v0.9.1) (2026-03-26)
 
 
