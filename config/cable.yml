@@ -4,7 +4,7 @@ development:
     database:
       writing: cable
   # 1s keeps load reasonable in development while still feeling live.
-  polling_interval: 1.0
+  polling_interval: 1.second
   message_retention: 1.day
 
 test:
@@ -15,5 +15,5 @@ production:
   connects_to:
     database:
       writing: cable
-  polling_interval: 1.0
+  polling_interval: 1.second
   message_retention: 1.day

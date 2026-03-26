@@ -14,12 +14,14 @@ RSpec.describe AgentRuns::Cancel do
 
     it "cancels the Temporal workflow when present" do
       handle = double(cancel: true)
+      temporal_client = double(workflow_handle: handle)
       agent_run.update!(temporal_workflow_id: "workflow-123")
 
-      allow(Paid.temporal_client).to receive(:workflow_handle).with("workflow-123").and_return(handle)
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
 
       described_class.call(agent_run: agent_run)
 
+      expect(temporal_client).to have_received(:workflow_handle).with("workflow-123")
       expect(handle).to have_received(:cancel)
     end
 
@@ -30,7 +32,8 @@ RSpec.describe AgentRuns::Cancel do
 
       handle = double
       allow(handle).to receive(:cancel).and_raise(error)
-      allow(Paid.temporal_client).to receive(:workflow_handle).with("workflow-123").and_return(handle)
+      temporal_client = double(workflow_handle: handle)
+      allow(Paid).to receive(:temporal_client).and_return(temporal_client)
 
       expect { described_class.call(agent_run: agent_run) }.not_to raise_error
     end

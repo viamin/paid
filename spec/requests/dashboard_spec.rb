@@ -125,6 +125,7 @@ RSpec.describe "Dashboard" do
       post dashboard_cancel_run_path(agent_run)
 
       expect(response).to redirect_to(live_dashboard_path)
+      expect(response).to have_http_status(:see_other)
       expect(flash[:notice]).to eq("Agent run is no longer active.")
     end
   end

@@ -23,7 +23,7 @@ class DashboardController < ApplicationController
       @agent_run.reload
 
       unless @agent_run.active?
-        redirect_to live_dashboard_path, notice: "Agent run is no longer active."
+        redirect_to live_dashboard_path, status: :see_other, notice: "Agent run is no longer active."
         return
       end
 

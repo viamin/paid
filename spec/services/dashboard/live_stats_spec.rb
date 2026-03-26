@@ -8,7 +8,7 @@ RSpec.describe Dashboard::LiveStats do
     let(:project) { create(:project, account: account, active: true) }
 
     around do |example|
-      freeze_time { example.run }
+      travel_to(Time.current.beginning_of_day + 12.hours) { example.run }
     end
 
     it "returns live dashboard counts for the account" do
