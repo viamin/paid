@@ -74,6 +74,8 @@ module Knowledge
         path = route[:uri]
         identifier = "#{verb} #{path}"
         controller, action = (route[:controller_action] || "").split("#", 2)
+        controller = controller.presence
+        action = action&.presence
         prefix = route[:prefix]
 
         content = "#{verb} #{path}"

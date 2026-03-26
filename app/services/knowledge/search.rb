@@ -50,7 +50,7 @@ module Knowledge
 
       exact_matches = artifacts.where(identifier: query)
 
-      if exact_matches.empty?
+      unless exact_matches.exists?
         exact_matches = artifacts.identifier_like(query)
       end
 
@@ -124,7 +124,7 @@ module Knowledge
         artifact_type: artifact.artifact_type,
         identifier: artifact.identifier,
         content: chunk.content,
-        score: nil,
+        score: chunk.respond_to?(:relevance_rank) ? chunk.relevance_rank&.to_f : nil,
         source: source,
         project_version: build_version_info(version)
       }

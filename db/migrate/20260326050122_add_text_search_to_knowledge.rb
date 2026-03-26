@@ -22,14 +22,14 @@ class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
     # Uses batched updates via subquery on id (works with UUID primary keys).
     # The GIN index is created AFTER the backfill to avoid costly per-row index updates.
     loop do
-      rows_updated = execute(<<~SQL).cmd_tuples
+      rows_updated = connection.exec_update(<<~SQL, "Backfill knowledge_chunks content_tsvector")
         UPDATE knowledge_chunks
         SET content_tsvector = to_tsvector('pg_catalog.english', coalesce(content, ''))
         WHERE id IN (
           SELECT id FROM knowledge_chunks
           WHERE content_tsvector IS NULL
           LIMIT 10000
-        );
+        )
       SQL
       break if rows_updated == 0
     end
