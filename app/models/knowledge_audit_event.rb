@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 class KnowledgeAuditEvent < ApplicationRecord
+  # Currently instrumented event types. Additional types (e.g. chunk_redacted,
+  # decision_drafted) will be added as their corresponding mutations are
+  # implemented in future issues.
   EVENT_TYPES = %w[
     artifact_created artifact_staled chunk_embedded
     collection_rebuilt

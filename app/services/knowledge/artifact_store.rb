@@ -110,10 +110,8 @@ module Knowledge
         {
           project: project,
           event: :artifact_staled,
-          actor_type: "collector",
-          actor_id: collector_run.id,
-          target_type: "KnowledgeArtifact",
-          target_id: artifact_id,
+          actor: { type: "collector", id: collector_run.id },
+          target: { type: "KnowledgeArtifact", id: artifact_id },
           details: { identifier: data[:identifier] }
         }
       end
@@ -139,10 +137,8 @@ module Knowledge
       Knowledge::Provenance::AuditLog.record(
         event: :artifact_created,
         project: project,
-        actor_type: "collector",
-        actor_id: collector_run.id,
-        target_type: "KnowledgeArtifact",
-        target_id: artifact.id,
+        actor: { type: "collector", id: collector_run.id },
+        target: { type: "KnowledgeArtifact", id: artifact.id },
         details: { artifact_type: data[:artifact_type], identifier: data[:identifier] }
       )
 

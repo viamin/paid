@@ -11,10 +11,8 @@ RSpec.describe Knowledge::Provenance::AuditLog do
         described_class.record(
           event: :artifact_created,
           project: project,
-          actor_type: "collector",
-          actor_id: "collector_run_42",
-          target_type: "KnowledgeArtifact",
-          target_id: "789",
+          actor: { type: "collector", id: "collector_run_42" },
+          target: { type: "KnowledgeArtifact", id: "789" },
           details: { artifact_type: "route", identifier: "POST /api/users" }
         )
       }.to change(KnowledgeAuditEvent, :count).by(1)
@@ -35,9 +33,8 @@ RSpec.describe Knowledge::Provenance::AuditLog do
       described_class.record(
         event: :artifact_staled,
         project: project,
-        actor_type: "system",
-        target_type: "KnowledgeArtifact",
-        target_id: "123"
+        actor: { type: "system" },
+        target: { type: "KnowledgeArtifact", id: "123" }
       )
 
       expect(Rails.logger).to have_received(:info).with(
@@ -58,8 +55,7 @@ RSpec.describe Knowledge::Provenance::AuditLog do
       described_class.record(
         event: :artifact_created,
         project: project,
-        actor_type: "collector",
-        actor_id: 42
+        actor: { type: "collector", id: 42 }
       )
       expect(KnowledgeAuditEvent.last.actor_id).to eq("42")
     end
@@ -131,10 +127,10 @@ RSpec.describe Knowledge::Provenance::AuditLog do
   describe ".record_batch" do
     it "bulk-inserts multiple audit events" do
       events = [
-        { event: :chunk_embedded, project: project, actor_type: "embedding_pipeline",
-          target_type: "KnowledgeChunk", target_id: "1", details: { model: "test" } },
-        { event: :chunk_embedded, project: project, actor_type: "embedding_pipeline",
-          target_type: "KnowledgeChunk", target_id: "2", details: { model: "test" } }
+        { event: :chunk_embedded, project: project, actor: { type: "embedding_pipeline" },
+          target: { type: "KnowledgeChunk", id: "1" }, details: { model: "test" } },
+        { event: :chunk_embedded, project: project, actor: { type: "embedding_pipeline" },
+          target: { type: "KnowledgeChunk", id: "2" }, details: { model: "test" } }
       ]
 
       expect { described_class.record_batch(events) }
@@ -145,8 +141,8 @@ RSpec.describe Knowledge::Provenance::AuditLog do
       allow(Rails.logger).to receive(:info)
 
       events = [
-        { event: :chunk_embedded, project: project, actor_type: "embedding_pipeline",
-          target_type: "KnowledgeChunk", target_id: "1", details: { model: "test" } }
+        { event: :chunk_embedded, project: project, actor: { type: "embedding_pipeline" },
+          target: { type: "KnowledgeChunk", id: "1" }, details: { model: "test" } }
       ]
 
       described_class.record_batch(events)
@@ -163,10 +159,10 @@ RSpec.describe Knowledge::Provenance::AuditLog do
 
     it "falls back to per-row inserts when insert_all fails" do
       events = [
-        { event: :chunk_embedded, project: project, actor_type: "embedding_pipeline",
-          target_type: "KnowledgeChunk", target_id: "1", details: { model: "test" } },
-        { event: :chunk_embedded, project: project, actor_type: "embedding_pipeline",
-          target_type: "KnowledgeChunk", target_id: "2", details: { model: "test" } }
+        { event: :chunk_embedded, project: project, actor: { type: "embedding_pipeline" },
+          target: { type: "KnowledgeChunk", id: "1" }, details: { model: "test" } },
+        { event: :chunk_embedded, project: project, actor: { type: "embedding_pipeline" },
+          target: { type: "KnowledgeChunk", id: "2" }, details: { model: "test" } }
       ]
 
       allow(KnowledgeAuditEvent).to receive(:insert_all).and_raise(ActiveRecord::StatementInvalid.new("timeout"))
@@ -178,6 +174,29 @@ RSpec.describe Knowledge::Provenance::AuditLog do
 
       expect(Rails.logger).to have_received(:error).with(
         hash_including(message: "knowledge.audit.persist_failed", rows_count: 2)
+      )
+    end
+
+    it "logs validation errors in per-row fallback" do
+      events = [
+        { event: :chunk_embedded, project: project, actor: { type: "embedding_pipeline" },
+          target: { type: "KnowledgeChunk", id: "1" }, details: { model: "test" } }
+      ]
+
+      allow(KnowledgeAuditEvent).to receive(:insert_all).and_raise(ActiveRecord::StatementInvalid.new("timeout"))
+      allow(KnowledgeAuditEvent).to receive(:create).and_return(
+        KnowledgeAuditEvent.new.tap { |e| e.errors.add(:event_type, "is not included in the list") }
+      )
+      allow(Rails.logger).to receive(:info)
+      allow(Rails.logger).to receive(:error)
+
+      described_class.record_batch(events)
+
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "knowledge.audit.persist_failed",
+          errors: [ "Event type is not included in the list" ]
+        )
       )
     end
   end

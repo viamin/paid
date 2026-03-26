@@ -58,7 +58,7 @@ module Knowledge
         Knowledge::Provenance::AuditLog.record(
           event: :collection_rebuilt,
           project: project,
-          actor_type: "system",
+          actor: { type: "system" },
           details: { collection: collection_name }
         )
       end

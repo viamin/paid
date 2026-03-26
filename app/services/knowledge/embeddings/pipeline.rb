@@ -77,9 +77,8 @@ module Knowledge
           audit_events << {
             event: :chunk_embedded,
             project: chunk.project,
-            actor_type: "embedding_pipeline",
-            target_type: "KnowledgeChunk",
-            target_id: chunk.id,
+            actor: { type: "embedding_pipeline" },
+            target: { type: "KnowledgeChunk", id: chunk.id },
             details: { model: generator.model }
           }
         end
