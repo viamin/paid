@@ -713,10 +713,16 @@ module Containers
       # Google proxy env vars are always set so Gemini CLI can route through
       # the secrets proxy. Gemini CLI has no native login equivalent to
       # `claude login`, so it always needs the proxy for auth.
+      #
+      # GEMINI_SANDBOX=false disables Gemini CLI's built-in sandbox layer.
+      # The agent already runs inside an isolated Docker container, so an
+      # inner sandbox is unnecessary and fails because neither Docker nor
+      # Podman is available inside the agent image.
       env.concat([
         "GOOGLE_GENAI_BASE_URL=#{proxy_base}/api/proxy/google",
         "GOOGLE_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
-        "GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
+        "GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
+        "GEMINI_SANDBOX=false"
       ])
 
       if subscription_auth?

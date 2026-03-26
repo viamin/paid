@@ -255,6 +255,16 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "disables Gemini CLI sandbox since the container is already isolated" do
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          expect(env).to include("GEMINI_SANDBOX=false")
+          mock_container
+        end
+
+        service.provision
+      end
+
       it "does not include API keys in environment variables" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
