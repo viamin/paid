@@ -5,7 +5,8 @@ class ProjectVersion < ApplicationRecord
 
   has_many :collector_runs, dependent: :destroy
 
-  validates :commit_sha, presence: true, length: { maximum: 40 }
+  validates :commit_sha, presence: true, length: { maximum: 40 },
+    uniqueness: { scope: :project_id }
+  validates :parent_sha, length: { maximum: 40 }, allow_nil: true
   validates :branch, presence: true
-  validates :commit_sha, uniqueness: { scope: :project_id }
 end

@@ -12,6 +12,7 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
 
   before do
     allow(qdrant_client).to receive_messages(collections: collections, points: points)
+    allow(Paid).to receive(:embedding_dimensions).and_return(3072)
   end
 
   describe ".collection_name" do
@@ -39,7 +40,7 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
       before do
         allow(collections).to receive(:get)
           .with(collection_name: collection_name)
-          .and_raise(StandardError.new("Not found"))
+          .and_raise(Qdrant::Error.new("Not found"))
         allow(collections).to receive_messages(create: { "result" => true }, create_index: { "result" => true })
       end
 
@@ -67,12 +68,20 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
 
     context "when called via class method" do
       before do
-        allow(collections).to receive(:get)
-          .and_raise(StandardError.new("Not found"))
+        call_count = 0
+        allow(collections).to receive(:get).with(collection_name: collection_name) do
+          call_count += 1
+          if call_count <= 1
+            raise Qdrant::Error, "Not found"
+          else
+            { "result" => { "status" => "green" } }
+          end
+        end
         allow(collections).to receive_messages(create: { "result" => true }, create_index: { "result" => true })
       end
 
       it "is idempotent" do
+        described_class.ensure_collection!(project, client: qdrant_client)
         described_class.ensure_collection!(project, client: qdrant_client)
 
         expect(collections).to have_received(:create).once
@@ -100,7 +109,7 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
       before do
         allow(collections).to receive(:get)
           .with(collection_name: collection_name)
-          .and_raise(StandardError.new("Not found"))
+          .and_raise(Qdrant::Error.new("Not found"))
       end
 
       it "does nothing" do
@@ -113,19 +122,13 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
 
   describe "#rebuild!" do
     before do
-      project_version = create(:project_version, project: project)
-      collector_run = create(:collector_run, project_version: project_version)
-      artifact = create(:knowledge_artifact, collector_run: collector_run, project: project)
-      create(:knowledge_chunk, knowledge_artifact: artifact, project: project, status: "active")
-      create(:knowledge_chunk, knowledge_artifact: artifact, project: project, status: "stale")
-
       call_count = 0
       allow(collections).to receive(:get).with(collection_name: collection_name) do
         call_count += 1
         if call_count <= 1
           { "result" => { "status" => "green" } }
         else
-          raise StandardError, "Not found"
+          raise Qdrant::Error, "Not found"
         end
       end
 
@@ -134,7 +137,6 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
         create: { "result" => true },
         create_index: { "result" => true }
       )
-      allow(points).to receive(:upsert).and_return({ "result" => { "status" => "completed" } })
     end
 
     it "drops and recreates the collection" do
@@ -144,10 +146,10 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
       expect(collections).to have_received(:create)
     end
 
-    it "upserts only active chunks" do
+    it "does not upsert points (embeddings must be recomputed separately)" do
       manager.rebuild!
 
-      expect(points).to have_received(:upsert).once
+      expect(points).not_to have_received(:upsert)
     end
 
     it "logs a warning" do

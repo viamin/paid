@@ -35,7 +35,7 @@ RSpec.describe Knowledge::Qdrant::PointSync do
               project_id: project.id,
               project_version_id: project_version.id,
               artifact_type: "route",
-              scope_tags: [ "controller", "api" ],
+              scope_tags: [],
               status: "active",
               created_at: chunk.created_at.iso8601
             }

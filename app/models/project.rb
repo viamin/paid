@@ -19,7 +19,7 @@ class Project < ApplicationRecord
   has_many :style_guides, dependent: :destroy
   has_many :project_versions, dependent: :destroy
   has_many :knowledge_artifacts, dependent: :destroy
-  has_many :knowledge_chunks, dependent: :destroy
+  has_many :knowledge_chunks, through: :knowledge_artifacts
   has_many :project_service_containers, dependent: :destroy
   has_many :service_containers, through: :project_service_containers
 
@@ -273,9 +273,7 @@ class Project < ApplicationRecord
   end
 
   def cleanup_qdrant_collection
-    Knowledge::Qdrant::CollectionManager.drop_collection!(self)
-  rescue => e
-    Rails.logger.error(message: "knowledge.qdrant.cleanup_failed", project_id: id, error: e.message)
+    QdrantCollectionCleanupJob.perform_later(id)
   end
 
   def toggle_github_polling

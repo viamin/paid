@@ -37,6 +37,9 @@ module Knowledge
         client.collections.delete(collection_name: collection_name)
       end
 
+      # Drops and recreates the Qdrant collection structure (schema + indexes).
+      # Does NOT re-upsert points — embeddings must be recomputed separately
+      # since zero-filled placeholder vectors would break similarity search.
       def rebuild!
         Rails.logger.warn(
           message: "knowledge.qdrant.rebuild_started",
@@ -46,17 +49,6 @@ module Knowledge
 
         drop_collection!
         ensure_collection!
-
-        chunks = project.knowledge_chunks.active.includes(:knowledge_artifact)
-        chunks.find_each do |chunk|
-          next unless chunk.knowledge_artifact
-
-          PointSync.upsert_chunk!(
-            chunk,
-            vector: Array.new(embedding_dimensions, 0.0),
-            client: client
-          )
-        end
       end
 
       def collection_name
@@ -72,9 +64,12 @@ module Knowledge
       def collection_exists?
         result = client.collections.get(collection_name: collection_name)
         result.dig("result", "status") == "green" || result.key?("result")
-      rescue QdrantClient::ConnectionError
-        raise
-      rescue StandardError
+      rescue Qdrant::Error => e
+        Rails.logger.debug(
+          message: "knowledge.qdrant.collection_not_found",
+          collection: collection_name,
+          error: e.message
+        )
         false
       end
 
