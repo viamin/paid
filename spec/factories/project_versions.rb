@@ -6,5 +6,6 @@ FactoryBot.define do
     sequence(:commit_sha) { |n| Digest::SHA1.hexdigest("commit-#{n}") }
     branch { "main" }
     committed_at { Time.current }
+    metadata { {} }
   end
 end

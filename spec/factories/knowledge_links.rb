@@ -6,5 +6,6 @@ FactoryBot.define do
     target_chunk { association :knowledge_chunk }
     link_type { "relates_to" }
     weight { 1.0 }
+    metadata { {} }
   end
 end

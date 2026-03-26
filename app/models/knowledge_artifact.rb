@@ -9,6 +9,7 @@ class KnowledgeArtifact < ApplicationRecord
   has_many :knowledge_chunks, dependent: :destroy
 
   validates :artifact_type, presence: true, length: { maximum: 100 }
+  validates :collector_type, presence: true, length: { maximum: 100 }
   validates :content_hash, presence: true, length: { maximum: 64 },
     uniqueness: { scope: :collector_run_id }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -19,6 +20,7 @@ class KnowledgeArtifact < ApplicationRecord
   scope :active, -> { where(status: "active") }
   scope :stale, -> { where(status: "stale") }
   scope :by_type, ->(type) { where(artifact_type: type) }
+  scope :for_project, ->(project) { where(project: project) }
 
   private
 
