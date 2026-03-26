@@ -241,6 +241,49 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when automation-on-label is enabled without stage mappings" do
+      let(:project) do
+        create(:project,
+          label_mappings: {},
+          automation_on_label_enabled: true,
+          automation_label_name: "paid-automation")
+      end
+
+      let(:automation_pr) do
+        OpenStruct.new(
+          id: 3001,
+          number: 533,
+          title: "Follow up on PR feedback",
+          body: "Please address review comments",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-automation") ],
+          pull_request: OpenStruct.new(html_url: "https://github.com/viamin/paid/pull/533"),
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 1.day.ago,
+          updated_at: Time.current
+        )
+      end
+
+      before do
+        stub_issues_by_label("paid-automation" => [ automation_pr ])
+      end
+
+      it "fetches automation-labeled pull requests" do
+        result = activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issues).with(
+          project.full_name,
+          hash_including(labels: [ "paid-automation" ])
+        ).at_least(:once)
+        expect(result[:issues].size).to eq(1)
+        expect(project.issues.find_by(github_issue_id: 3001)).to have_attributes(
+          github_number: 533,
+          is_pull_request: true,
+          labels: [ "paid-automation" ]
+        )
+      end
+    end
+
     context "when there are multiple pages of issues" do
       let(:project) { create(:project, label_mappings: { "build" => "paid-build" }) }
 
@@ -357,8 +400,8 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
-    context "when project has no label mappings" do
-      let(:project) { create(:project, label_mappings: {}) }
+    context "when project has no label mappings and automation-on-label is disabled" do
+      let(:project) { create(:project, label_mappings: {}, automation_on_label_enabled: false) }
 
       before do
         allow(github_client).to receive(:issues).and_return([])

@@ -15,9 +15,11 @@ module Activities
 
       client = project.github_token.client
 
-      labels = project.label_mappings.values.compact_blank.uniq
-      labels = (labels + [ project.generated_label_name ]).uniq if labels.any?
-      labels = (labels + [ project.automation_label_name ]).uniq if project.automation_on_label_enabled? && labels.any?
+      mapped_labels = project.label_mappings.values.compact_blank
+      labels = mapped_labels.dup
+      labels << project.generated_label_name if mapped_labels.any?
+      labels << project.automation_label_name if project.automation_on_label_enabled?
+      labels = labels.compact_blank.uniq
       github_issues, truncated = fetch_all_issues(client, project.full_name, labels)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
