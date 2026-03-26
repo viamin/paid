@@ -64,6 +64,25 @@ RSpec.describe KnowledgeArtifact do
       end
     end
 
+    describe ".identifier_like" do
+      it "returns artifacts with similar identifiers ranked by similarity" do
+        matching = create(:knowledge_artifact, collector_run: collector_run, project: project,
+          identifier: "UsersController")
+        create(:knowledge_artifact, collector_run: collector_run, project: project,
+          identifier: "PaymentGateway")
+
+        results = described_class.identifier_like("UserController")
+        expect(results.first).to eq(matching)
+      end
+
+      it "returns empty when no identifiers are similar" do
+        create(:knowledge_artifact, collector_run: collector_run, project: project,
+          identifier: "PaymentGateway")
+
+        expect(described_class.identifier_like("XyzAbcDef")).to be_empty
+      end
+    end
+
     describe ".by_type" do
       it "filters by artifact type" do
         route = create(:knowledge_artifact, collector_run: collector_run, project: project, artifact_type: "route")

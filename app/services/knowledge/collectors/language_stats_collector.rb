@@ -85,6 +85,7 @@ module Knowledge
           chunks: [
             {
               chunk_type: "summary",
+              sequence: 0,
               content: "The project contains #{lang[:name]} code: " \
                        "#{number_with_delimiter(lang[:code])} lines of code, " \
                        "#{number_with_delimiter(lang[:comments])} comments, " \

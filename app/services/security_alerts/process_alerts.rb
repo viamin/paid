@@ -1,10 +1,6 @@
 # frozen_string_literal: true
 
 module SecurityAlerts
-  # Raised when a project lacks required configuration for security alert processing
-  # (e.g. no trusted GitHub usernames configured).
-  class ConfigurationError < StandardError; end
-
   # Filters actionable Dependabot alerts, creates synthetic issues for new
   # ones, reopens closed issues for re-opened alerts, and updates metadata
   # on existing open issues when the upstream alert payload changes.

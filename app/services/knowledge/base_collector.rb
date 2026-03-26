@@ -48,8 +48,18 @@ module Knowledge
       Open3.popen3(*argv, pgroup: true) do |stdin, stdout, stderr, wait_thr|
         stdin&.close
 
-        out_thread = Thread.new { stdout_str << stdout.read.to_s }
-        err_thread = Thread.new { stderr_str << stderr.read.to_s }
+        out_thread = Thread.new do
+          Thread.current.report_on_exception = false
+          stdout_str << stdout.read.to_s
+        rescue IOError
+          # IO closed during timeout cleanup — expected
+        end
+        err_thread = Thread.new do
+          Thread.current.report_on_exception = false
+          stderr_str << stderr.read.to_s
+        rescue IOError
+          # IO closed during timeout cleanup — expected
+        end
 
         begin
           Timeout.timeout(timeout) do

@@ -110,6 +110,7 @@ module Knowledge
           chunks: [
             {
               chunk_type: "summary",
+              sequence: 0,
               content: build_chunk_text(file, revisions, complexity, rank),
               scope_tags: [ "churn", "hotspot" ]
             }
