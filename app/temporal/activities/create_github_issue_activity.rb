@@ -13,7 +13,7 @@ module Activities
         project = agent_run.project
 
         client = project.github_token.client
-        summary = agent_run.agent_summary
+        summary = agent_run.agent_summary_with_stderr_fallback
         title = extract_title(summary, agent_run.custom_prompt)
         body = issue_body(summary)
 

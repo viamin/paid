@@ -1413,6 +1413,25 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "#agent_summary_with_stderr_fallback" do
+    it "returns stdout when available" do
+      agent_run.log!("stdout", "stdout content")
+      agent_run.log!("stderr", "stderr content")
+
+      expect(agent_run.agent_summary_with_stderr_fallback).to eq("stdout content")
+    end
+
+    it "falls back to stderr when stdout is empty" do
+      agent_run.log!("stderr", "stderr content")
+
+      expect(agent_run.agent_summary_with_stderr_fallback).to eq("stderr content")
+    end
+
+    it "returns empty string when no logs exist" do
+      expect(agent_run.agent_summary_with_stderr_fallback).to eq("")
+    end
+  end
+
   describe "#phase_summary" do
     def set_run_timestamps(agent_run, base_time)
       agent_run.update_columns(

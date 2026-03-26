@@ -443,13 +443,19 @@ class AgentRun < ApplicationRecord
   # @param limit [Integer] Max number of log entries to fetch (default 500)
   # @return [String] The agent summary text (may be empty)
   def agent_summary(limit: 500)
-    agent_run_logs
-      .where(log_type: "stdout")
-      .order(:created_at)
-      .limit(limit)
-      .pluck(:content)
-      .join("\n")
-      .strip
+    logs_text(log_type: "stdout", limit: limit)
+  end
+
+  # Returns the agent's output, preferring stdout but falling back to stderr.
+  # Useful for issue-goal runs where agents may write drafted content to stderr.
+  #
+  # @param limit [Integer] Max number of log entries to fetch (default 500)
+  # @return [String] The best available agent output (may be empty)
+  def agent_summary_with_stderr_fallback(limit: 500)
+    summary = logs_text(log_type: "stdout", limit: limit)
+    return summary if summary.present?
+
+    logs_text(log_type: "stderr", limit: limit)
   end
 
   # Returns the prompt for this run: custom_prompt if provided,
@@ -593,6 +599,16 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def logs_text(log_type:, limit:)
+    agent_run_logs
+      .where(log_type: log_type)
+      .order(:created_at)
+      .limit(limit)
+      .pluck(:content)
+      .join("\n")
+      .strip
+  end
 
   def review_goal_requires_pull_request
     if goal == "review" && source_pull_request_number.blank?
