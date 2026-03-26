@@ -110,59 +110,30 @@
         Automation
       </summary>
       <dl class="divide-y divide-gray-200">
-        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-          <dt class="text-sm font-medium text-gray-500">Auto-Add Labels</dt>
-          <dd class="mt-1 text-sm sm:col-span-2 sm:mt-0">
-            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.auto_add_labels_enabled? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
-              <%= @project.auto_add_labels_enabled? ? "Enabled" : "Disabled" %>
-            </span>
-          </dd>
-        </div>
-
-        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-          <dt class="text-sm font-medium text-gray-500">Automation on Label</dt>
-          <dd class="mt-1 text-sm sm:col-span-2 sm:mt-0">
-            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.automation_on_label_enabled? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
-              <%= @project.automation_on_label_enabled? ? "Enabled" : "Disabled" %>
-            </span>
-          </dd>
-        </div>
-
-        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-          <dt class="text-sm font-medium text-gray-500">Auto-Pick Issues</dt>
-          <dd class="mt-1 text-sm sm:col-span-2 sm:mt-0">
-            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.auto_pick_enabled? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
-              <%= @project.auto_pick_enabled? ? "Enabled" : "Disabled" %>
-            </span>
-          </dd>
-        </div>
-
-        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-          <dt class="text-sm font-medium text-gray-500">Auto-Merge</dt>
-          <dd class="mt-1 text-sm sm:col-span-2 sm:mt-0">
-            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.auto_merge_enabled? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
-              <%= @project.auto_merge_enabled? ? "Enabled" : "Disabled" %>
-            </span>
-          </dd>
-        </div>
-
-        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-          <dt class="text-sm font-medium text-gray-500">Auto-Fix Merge Conflicts</dt>
-          <dd class="mt-1 text-sm sm:col-span-2 sm:mt-0">
-            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.auto_fix_merge_conflicts? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
-              <%= @project.auto_fix_merge_conflicts? ? "Enabled" : "Disabled" %>
-            </span>
-          </dd>
-        </div>
-
-        <% if policy(@project).update? %>
-          <div class="px-4 py-3 sm:px-6">
-            <%= link_to edit_project_path(@project, anchor: "automation"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" do %>
-              Edit automation settings &rarr;
-            <% end %>
+        <% [
+          { label: "Auto-Add Labels",          enabled: @project.auto_add_labels_enabled? },
+          { label: "Automation on Label",      enabled: @project.automation_on_label_enabled? },
+          { label: "Auto-Pick Issues",         enabled: @project.auto_pick_enabled? },
+          { label: "Auto-Merge",               enabled: @project.auto_merge_enabled? },
+          { label: "Auto-Fix Merge Conflicts", enabled: @project.auto_fix_merge_conflicts? }
+        ].each do |automation| %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500"><%= automation[:label] %></dt>
+            <dd class="mt-1 text-sm sm:col-span-2 sm:mt-0">
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= automation[:enabled] ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
+                <%= automation[:enabled] ? "Enabled" : "Disabled" %>
+              </span>
+            </dd>
           </div>
         <% end %>
       </dl>
+      <% if policy(@project).update? %>
+        <div class="px-4 py-3 sm:px-6">
+          <%= link_to edit_project_path(@project, anchor: "automation"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" do %>
+            Edit automation settings &rarr;
+          <% end %>
+        </div>
+      <% end %>
     </details>
   </div>
 
