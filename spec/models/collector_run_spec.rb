@@ -57,6 +57,19 @@ RSpec.describe CollectorRun do
       expect(run.status).to eq("running")
       expect(run.started_at).to be_present
     end
+
+    it "clears stale fields from a previous run" do
+      run = create(:collector_run, :failed)
+      expect(run.error_message).to be_present
+      expect(run.completed_at).to be_present
+
+      run.mark_running!
+
+      expect(run.completed_at).to be_nil
+      expect(run.duration_ms).to be_nil
+      expect(run.artifacts_count).to be_nil
+      expect(run.error_message).to be_nil
+    end
   end
 
   describe "#mark_completed!" do
@@ -68,6 +81,13 @@ RSpec.describe CollectorRun do
       expect(run.completed_at).to be_present
       expect(run.duration_ms).to be_present
       expect(run.artifacts_count).to eq(5)
+    end
+
+    it "clears error_message from a previous failed run" do
+      run = create(:collector_run, :running, error_message: "previous failure")
+      run.mark_completed!(count: 3)
+
+      expect(run.error_message).to be_nil
     end
   end
 

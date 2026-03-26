@@ -37,10 +37,24 @@ module Knowledge
         reassign_to_current_run(existing)
       else
         # Atomic stale-then-insert to prevent interleaving with concurrent
-        # collectors that could violate the partial unique index on active artifacts
-        KnowledgeArtifact.transaction do
-          mark_prior_stale(data)
-          create_artifact(data, content_hash)
+        # collectors that could violate the partial unique index on active artifacts.
+        # Under high concurrency, two transactions can both mark prior rows stale
+        # and then race to insert an active row, causing a unique constraint
+        # violation. In that case, we refetch the now-existing artifact and
+        # reassign it to this collector_run.
+        begin
+          KnowledgeArtifact.transaction do
+            mark_prior_stale(data)
+            create_artifact(data, content_hash)
+          end
+        rescue ActiveRecord::RecordNotUnique
+          existing_after_conflict = find_existing_artifact(data, content_hash)
+
+          if existing_after_conflict
+            reassign_to_current_run(existing_after_conflict)
+          else
+            raise
+          end
         end
       end
     end

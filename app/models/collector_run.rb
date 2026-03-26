@@ -16,7 +16,14 @@ class CollectorRun < ApplicationRecord
   scope :running, -> { where(status: "running") }
 
   def mark_running!
-    update!(status: "running", started_at: Time.current)
+    update!(
+      status: "running",
+      started_at: Time.current,
+      completed_at: nil,
+      duration_ms: nil,
+      artifacts_count: nil,
+      error_message: nil
+    )
   end
 
   def mark_completed!(count:)
@@ -25,7 +32,8 @@ class CollectorRun < ApplicationRecord
       status: "completed",
       completed_at: now,
       duration_ms: started_at ? ((now - started_at) * 1000).to_i : nil,
-      artifacts_count: count
+      artifacts_count: count,
+      error_message: nil
     )
   end
 

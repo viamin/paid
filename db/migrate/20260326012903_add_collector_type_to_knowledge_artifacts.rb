@@ -4,7 +4,9 @@ class AddCollectorTypeToKnowledgeArtifacts < ActiveRecord::Migration[8.1]
   def change
     add_column :knowledge_artifacts, :collector_type, :string, limit: 100, null: true
 
-    # Backfill collector_type from associated collector_run
+    # Backfill collector_type from associated collector_run, then enforce NOT NULL
+    # so the DB constraint matches the model-level presence validation and prevents
+    # NULL values from bypassing the partial unique index.
     reversible do |dir|
       dir.up do
         execute <<~SQL
@@ -16,6 +18,8 @@ class AddCollectorTypeToKnowledgeArtifacts < ActiveRecord::Migration[8.1]
         SQL
       end
     end
+
+    change_column_null :knowledge_artifacts, :collector_type, false
 
     # Update the partial unique index to include collector_type so that
     # different collectors can produce artifacts with the same key without

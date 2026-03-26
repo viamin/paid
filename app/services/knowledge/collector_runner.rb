@@ -114,17 +114,19 @@ module Knowledge
         .where("created_at < ?", project_version.created_at)
         .select(:id)
 
-      stale_artifacts = KnowledgeArtifact
-        .joins(:collector_run)
-        .where(project: project, status: "active")
-        .where.not(collector_run_id: current_run_ids)
-        .where(collector_runs: { project_version_id: older_version_ids })
+      ActiveRecord::Base.transaction do
+        stale_artifacts = KnowledgeArtifact
+          .joins(:collector_run)
+          .where(project: project, status: "active")
+          .where.not(collector_run_id: current_run_ids)
+          .where(collector_runs: { project_version_id: older_version_ids })
 
-      KnowledgeChunk
-        .where(knowledge_artifact_id: stale_artifacts.select(:id), status: "active")
-        .update_all(status: "stale")
+        KnowledgeChunk
+          .where(knowledge_artifact_id: stale_artifacts.select(:id), status: "active")
+          .update_all(status: "stale")
 
-      stale_artifacts.update_all(status: "stale")
+        stale_artifacts.update_all(status: "stale")
+      end
     end
 
     def collector_classes
