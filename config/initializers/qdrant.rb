@@ -35,7 +35,18 @@ module Paid
     end
 
     def embedding_dimensions
-      ENV.fetch("EMBEDDING_DIMENSIONS", 3072).to_i
+      raw = ENV["EMBEDDING_DIMENSIONS"]
+      return 3072 if raw.nil? || raw.strip.empty?
+
+      begin
+        value = Integer(raw, 10)
+      rescue ArgumentError
+        raise ArgumentError, "Invalid EMBEDDING_DIMENSIONS '#{raw}': must be a positive integer"
+      end
+
+      raise ArgumentError, "Invalid EMBEDDING_DIMENSIONS '#{raw}': must be a positive integer" if value <= 0
+
+      value
     end
   end
 end

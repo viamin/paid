@@ -20,6 +20,7 @@ module Knowledge
       # Accepts a project AR object (not just an ID) because collection_name
       # and filter construction both use project.id, keeping the interface
       # consistent with upsert_chunk!/delete_chunks! which also take AR objects.
+      # Callers with only a project_id should use Project.find(id) first.
       def self.delete_by_filter!(project:, filters: {}, client: Paid.qdrant_client)
         new(client: client).delete_by_filter!(project: project, filters: filters)
       end
