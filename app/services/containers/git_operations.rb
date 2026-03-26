@@ -355,7 +355,10 @@ module Containers
     end
 
     def push_new_branch
-      execute_git("push", "--no-verify", "origin", agent_run.branch_name, timeout: push_timeout)
+      result = execute_git("push", "--no-verify", "origin", agent_run.branch_name, timeout: push_timeout)
+      return result unless branch_exists_rejection?(result)
+
+      recover_existing_new_branch_push(result)
     end
 
     def push_existing_pr_branch
@@ -416,6 +419,30 @@ module Containers
 
     def stale_info_rejection?(result)
       [ result[:stdout], result[:stderr] ].compact.any? { |output| output.include?("(stale info)") }
+    end
+
+    def branch_exists_rejection?(result)
+      return false unless result.failure?
+
+      [ result[:stdout], result[:stderr] ].compact.any? do |output|
+        output.include?("reference already exists") || output.include?("cannot lock ref")
+      end
+    end
+
+    def recover_existing_new_branch_push(original_result)
+      local_sha = head_sha
+      remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
+      return success_result if remote_sha == local_sha
+
+      raise PushError,
+        "Push failed: remote branch #{agent_run.branch_name} already exists at #{remote_sha}, " \
+        "but local HEAD is #{local_sha}. Original error: #{error_with_stderr(original_result)}"
+    rescue Error => e
+      raise PushError, "Push failed after remote branch existence check: #{e.message}"
+    end
+
+    def success_result
+      Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
     end
 
     # Converts a shallow clone into a full clone by fetching all history.

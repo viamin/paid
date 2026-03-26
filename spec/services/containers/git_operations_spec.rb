@@ -443,6 +443,45 @@ RSpec.describe Containers::GitOperations do
       expect { git_ops.push_branch }.to raise_error(described_class::PushError, /error/)
     end
 
+    it "treats a new-branch retry as success when the remote branch already exists at HEAD" do
+      branch_exists_result = Containers::Provision::Result.failure(
+        error: "Command exited with code 1",
+        stdout: "",
+        stderr: " ! [remote rejected] paid/test-branch -> paid/test-branch (cannot lock ref 'refs/heads/paid/test-branch': reference already exists)",
+        exit_code: 1
+      )
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false)
+        .and_return(branch_exists_result)
+
+      expect_refresh_remote_branch(head_sha, ordered: true)
+
+      expect(git_ops.push_branch).to eq(head_sha)
+      expect(agent_run.reload.result_commit_sha).to eq(head_sha)
+      expect(agent_run.worktree.reload).to be_pushed
+    end
+
+    it "raises PushError when a new-branch retry finds a different remote SHA" do
+      branch_exists_result = Containers::Provision::Result.failure(
+        error: "Command exited with code 1",
+        stdout: "",
+        stderr: " ! [remote rejected] paid/test-branch -> paid/test-branch (cannot lock ref 'refs/heads/paid/test-branch': reference already exists)",
+        exit_code: 1
+      )
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false)
+        .and_return(branch_exists_result)
+
+      expect_refresh_remote_branch(remote_sha, ordered: true)
+
+      expect { git_ops.push_branch }.to raise_error(
+        described_class::PushError,
+        /remote branch paid\/test-branch already exists/
+      )
+    end
+
     def expect_refresh_remote_branch(sha, ordered: false)
       receive_fetch = expect(container_service).to receive(:execute)
         .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
