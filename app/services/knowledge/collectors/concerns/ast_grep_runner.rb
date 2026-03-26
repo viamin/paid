@@ -60,10 +60,14 @@ module Knowledge
           nil
         end
 
-        def relative_path(absolute_path)
-          return absolute_path unless scan_path && absolute_path&.start_with?(scan_path)
+        def relative_path(file_path)
+          return file_path if file_path.nil?
 
-          absolute_path.delete_prefix(scan_path).delete_prefix("/")
+          expanded_file = Pathname.new(File.expand_path(file_path))
+          expanded_scan = Pathname.new(File.expand_path(scan_path))
+          expanded_file.relative_path_from(expanded_scan).to_s
+        rescue ArgumentError
+          file_path
         end
 
         def matching_extension?(file_path, extensions)

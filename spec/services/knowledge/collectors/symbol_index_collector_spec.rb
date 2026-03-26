@@ -44,56 +44,58 @@ RSpec.describe Knowledge::Collectors::SymbolIndexCollector, :no_db do
   end
 
   describe "#collect" do
-    before do
-      skip "ast-grep not installed; skipping #collect specs" unless collector.tool_version
-    end
-
-    let(:artifacts) { collector.collect }
-
-    it "extracts class definitions" do
-      class_artifacts = artifacts.select { |a| a[:metadata][:symbol_type] == "class" }
-      names = class_artifacts.map { |a| a[:metadata][:name] }
-
-      expect(names).to include("SampleClass", "AnotherClass")
-    end
-
-    it "extracts module definitions" do
-      module_artifacts = artifacts.select { |a| a[:metadata][:symbol_type] == "module" }
-      names = module_artifacts.map { |a| a[:metadata][:name] }
-
-      expect(names).to include("SampleModule")
-    end
-
-    it "extracts method definitions" do
-      method_artifacts = artifacts.select { |a| a[:metadata][:symbol_type] == "method" }
-      names = method_artifacts.map { |a| a[:metadata][:name] }
-
-      expect(names).to include("initialize", "greet", "farewell", "perform")
-    end
-
-    it "sets artifact_type to symbol" do
-      expect(artifacts).to all(include(artifact_type: "symbol"))
-    end
-
-    it "includes a definition chunk for each artifact" do
-      artifacts.each do |artifact|
-        expect(artifact[:chunks].length).to eq(1)
-        expect(artifact[:chunks].first[:chunk_type]).to eq("definition")
+    context "with ast-grep installed" do
+      before do
+        skip "ast-grep not installed; skipping integration specs" unless collector.tool_version
       end
-    end
 
-    it "builds identifiers with file path" do
-      method_artifacts = artifacts.select { |a| a[:metadata][:symbol_type] == "method" }
-      identifiers = method_artifacts.map { |a| a[:identifier] }
+      let(:artifacts) { collector.collect }
 
-      expect(identifiers).to include(a_string_matching(/sample\.rb#greet/))
-    end
+      it "extracts class definitions" do
+        class_artifacts = artifacts.select { |a| a[:metadata][:symbol_type] == "class" }
+        names = class_artifacts.map { |a| a[:metadata][:name] }
 
-    it "produces idempotent results" do
-      first_run = collector.collect
-      second_run = collector.collect
+        expect(names).to include("SampleClass", "AnotherClass")
+      end
 
-      expect(first_run).to eq(second_run)
+      it "extracts module definitions" do
+        module_artifacts = artifacts.select { |a| a[:metadata][:symbol_type] == "module" }
+        names = module_artifacts.map { |a| a[:metadata][:name] }
+
+        expect(names).to include("SampleModule")
+      end
+
+      it "extracts method definitions" do
+        method_artifacts = artifacts.select { |a| a[:metadata][:symbol_type] == "method" }
+        names = method_artifacts.map { |a| a[:metadata][:name] }
+
+        expect(names).to include("initialize", "greet", "farewell", "perform")
+      end
+
+      it "sets artifact_type to symbol" do
+        expect(artifacts).to all(include(artifact_type: "symbol"))
+      end
+
+      it "includes a definition chunk for each artifact" do
+        artifacts.each do |artifact|
+          expect(artifact[:chunks].length).to eq(1)
+          expect(artifact[:chunks].first[:chunk_type]).to eq("definition")
+        end
+      end
+
+      it "builds identifiers with file path" do
+        method_artifacts = artifacts.select { |a| a[:metadata][:symbol_type] == "method" }
+        identifiers = method_artifacts.map { |a| a[:identifier] }
+
+        expect(identifiers).to include(a_string_matching(/sample\.rb#greet/))
+      end
+
+      it "produces idempotent results" do
+        first_run = collector.collect
+        second_run = collector.collect
+
+        expect(first_run).to eq(second_run)
+      end
     end
 
     context "when ast-grep returns no results" do
