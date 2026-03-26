@@ -20,12 +20,31 @@ class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
       tsvector_update_trigger(content_tsvector, 'pg_catalog.english', content);
     SQL
 
-    # Backfill tsvector for existing rows so full_text_search works immediately after deploy
-    execute <<~SQL
-      UPDATE knowledge_chunks
-      SET content_tsvector = to_tsvector('pg_catalog.english', coalesce(content, ''))
+    # Backfill tsvector for existing rows so full_text_search works immediately after deploy.
+    # Use batched updates over primary-key ranges to avoid a single long-running UPDATE.
+    range = select_one(<<~SQL)
+      SELECT MIN(id) AS min_id, MAX(id) AS max_id
+      FROM knowledge_chunks
       WHERE content_tsvector IS NULL;
     SQL
+
+    if range && range["min_id"] && range["max_id"]
+      batch_size = 10_000
+      min_id = range["min_id"].to_i
+      max_id = range["max_id"].to_i
+
+      (min_id..max_id).step(batch_size) do |start_id|
+        end_id = start_id + batch_size
+
+        execute <<~SQL
+          UPDATE knowledge_chunks
+          SET content_tsvector = to_tsvector('pg_catalog.english', coalesce(content, ''))
+          WHERE content_tsvector IS NULL
+            AND id >= #{start_id}
+            AND id < #{end_id};
+        SQL
+      end
+    end
 
     add_index :knowledge_artifacts, :identifier,
               using: :gin,
@@ -48,5 +67,7 @@ class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
                  if_exists: true
 
     remove_column :knowledge_chunks, :content_tsvector
+
+    disable_extension "pg_trgm"
   end
 end

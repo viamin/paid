@@ -58,12 +58,12 @@ RSpec.describe KnowledgeChunk do
         artifact = create(:knowledge_artifact)
         matching = create(:knowledge_chunk, knowledge_artifact: artifact, project: artifact.project,
           content: "PostgreSQL database migration with indexes and triggers")
-        create(:knowledge_chunk, knowledge_artifact: artifact, project: artifact.project,
+        non_matching = create(:knowledge_chunk, knowledge_artifact: artifact, project: artifact.project,
           content: "Ruby on Rails controller action for user authentication")
 
         results = described_class.full_text_search("database migration")
         expect(results.first).to eq(matching)
-        expect(results).not_to include(described_class.find_by(content: "Ruby on Rails controller action for user authentication"))
+        expect(results).not_to include(non_matching)
       end
 
       it "returns empty when no chunks match" do
