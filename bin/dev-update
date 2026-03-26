@@ -28,6 +28,9 @@ LOG_PREFIX="[dev-update]"
 OVERMIND_SOCKET=".overmind.sock"
 START_DEV_LOG="log/dev_start.log"
 STOPPED_OVERMIND=0
+OVERMIND_STOP_POLL_COUNT="${DEV_UPDATE_OVERMIND_STOP_POLL_COUNT:-10}"
+OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
+OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
 
 log() {
   echo "$LOG_PREFIX $(date '+%Y-%m-%d %H:%M:%S') $*"
@@ -95,7 +98,7 @@ stop_overmind() {
     STOPPED_OVERMIND=1
 
     # Give Overmind a moment to shut down gracefully and release its socket.
-    for _ in {1..10}; do
+    for ((i = 0; i < OVERMIND_STOP_POLL_COUNT; i += 1)); do
       if [ ! -e "$OVERMIND_SOCKET" ]; then
         log "Overmind socket removed."
         return
@@ -106,7 +109,7 @@ stop_overmind() {
         break
       fi
 
-      sleep 1
+      sleep "$OVERMIND_POLL_INTERVAL"
     done
 
     remove_stale_overmind_socket
@@ -136,13 +139,13 @@ start_dev() {
   disown
   log "Dev environment start command launched (PID $!)."
 
-  for _ in {1..15}; do
+  for ((i = 0; i < OVERMIND_START_POLL_COUNT; i += 1)); do
     if overmind_running; then
       log "Overmind is healthy after restart."
       return 0
     fi
 
-    sleep 1
+    sleep "$OVERMIND_POLL_INTERVAL"
   done
 
   if [ -e "$OVERMIND_SOCKET" ]; then

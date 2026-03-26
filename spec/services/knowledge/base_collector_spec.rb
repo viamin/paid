@@ -7,13 +7,15 @@ RSpec.describe Knowledge::BaseCollector, :no_db do
     described_class.new(
       project: project,
       project_version: project_version,
-      collector_run: collector_run
+      collector_run: collector_run,
+      options: { timeout_kill_grace_seconds: 0.01 }
     )
   end
 
   let(:project) { Struct.new(:id).new(1) }
   let(:project_version) { Struct.new(:id).new(1) }
   let(:collector_run) { Struct.new(:id).new(1) }
+  let(:short_timeout) { 0.01 }
 
   describe "#collect" do
     it "raises NotImplementedError" do
@@ -48,15 +50,15 @@ RSpec.describe Knowledge::BaseCollector, :no_db do
 
     it "raises Timeout::Error when command exceeds timeout" do
       expect do
-        collector.send(:run_command, "sleep", "60", timeout: 1)
-      end.to raise_error(Timeout::Error, /timed out after 1 seconds/i)
+        collector.send(:run_command, "sleep", "60", timeout: short_timeout)
+      end.to raise_error(Timeout::Error, /timed out after 0.01 seconds/i)
     end
 
     it "closes stdout and stderr even on timeout" do
       # Verify that the process is cleaned up by checking that no zombie
       # processes are left. We just need this to not hang.
       expect do
-        collector.send(:run_command, "sleep", "60", timeout: 1)
+        collector.send(:run_command, "sleep", "60", timeout: short_timeout)
       end.to raise_error(Timeout::Error)
     end
 
@@ -68,7 +70,7 @@ RSpec.describe Knowledge::BaseCollector, :no_db do
 
     it "includes command in timeout error message" do
       expect do
-        collector.send(:run_command, "sleep", "60", timeout: 1)
+        collector.send(:run_command, "sleep", "60", timeout: short_timeout)
       end.to raise_error(Timeout::Error, /sleep 60/)
     end
   end
