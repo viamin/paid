@@ -95,20 +95,22 @@ module Activities
     def trigger_update(mode)
       script = File.expand_path("../../../bin/dev-update", __dir__)
       flag = mode == "full" ? "--full" : "--lightweight"
+      log_path = Rails.root.join("log", "dev_update.log").to_s
 
       # Spawn detached so the Temporal worker (which runs under Overmind)
       # is not the parent — setsid creates a new session.
       pid = Process.spawn(
         "setsid", script, flag,
-        out: "/dev/null",
-        err: "/dev/null"
+        out: [ log_path, "a" ],
+        err: [ log_path, "a" ]
       )
       Process.detach(pid)
 
       logger.info(
         message: "dev_update.process_spawned",
         pid: pid,
-        mode: mode
+        mode: mode,
+        log_path: log_path
       )
 
       true
