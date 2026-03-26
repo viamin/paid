@@ -32,6 +32,8 @@ class KnowledgeChunk < ApplicationRecord
   before_save :update_content_tsvector, if: :should_update_content_tsvector?
 
   def self.content_tsvector_trigger_present?
+    return @content_tsvector_trigger_present if defined?(@content_tsvector_trigger_present)
+
     sql = <<~SQL.squish
       SELECT EXISTS (
         SELECT 1
@@ -45,13 +47,17 @@ class KnowledgeChunk < ApplicationRecord
       )
     SQL
 
-    connection.select_value(sql)
+    @content_tsvector_trigger_present = connection.select_value(sql)
+  end
+
+  def self.reset_content_tsvector_trigger_cache!
+    remove_instance_variable(:@content_tsvector_trigger_present) if defined?(@content_tsvector_trigger_present)
   end
 
   private
 
   def should_update_content_tsvector?
-    content_changed? && !self.class.content_tsvector_trigger_present?
+    will_save_change_to_content? && !self.class.content_tsvector_trigger_present?
   end
 
   def update_content_tsvector

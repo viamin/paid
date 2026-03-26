@@ -84,6 +84,28 @@ RSpec.describe KnowledgeChunk do
         expect(described_class.full_text_search("migrations")).to include(chunk)
         expect(described_class.full_text_search("databases")).not_to include(chunk)
       end
+
+      context "when the content_tsvector trigger is not present" do
+        before do
+          allow(described_class).to receive(:content_tsvector_trigger_present?).and_return(false)
+        end
+
+        it "populates content_tsvector via the before_save callback on insert" do
+          chunk = create(:knowledge_chunk, content: "Schema.rb loaded database without triggers")
+          chunk.reload
+
+          expect(chunk.content_tsvector).not_to be_nil
+        end
+
+        it "updates content_tsvector via the before_save callback when content changes" do
+          chunk = create(:knowledge_chunk, content: "Original fallback content")
+
+          expect {
+            chunk.update!(content: "Updated fallback content for migrations")
+            chunk.reload
+          }.to change { chunk.content_tsvector.to_s }
+        end
+      end
     end
 
     describe ".ordered" do
