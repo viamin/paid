@@ -4,8 +4,6 @@ module Activities
   class CreateGithubIssueActivity < BaseActivity
     activity_name "CreateGithubIssue"
 
-    PAID_GENERATED_LABEL = "paid-generated"
-
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
@@ -17,11 +15,13 @@ module Activities
         title = extract_title(summary, agent_run.custom_prompt)
         body = issue_body(summary)
 
+        issue_labels = project.auto_add_labels_enabled? ? [ project.generated_label_name ] : []
+
         gh_issue = client.create_issue(
           project.full_name,
           title: title,
           body: body,
-          labels: [ PAID_GENERATED_LABEL ]
+          labels: issue_labels
         )
 
         sync_issue_record(project, gh_issue)

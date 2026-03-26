@@ -105,6 +105,28 @@ RSpec.describe Activities::CreatePullRequestActivity do
       }.not_to raise_error
     end
 
+    context "when auto_add_labels_enabled is false" do
+      before { project.update!(auto_add_labels_enabled: false) }
+
+      it "does not add labels to the PR" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+    end
+
+    context "when auto_add_labels_enabled is true with a custom generated label" do
+      before { project.update!(auto_add_labels_enabled: true, generated_label_name: "custom-label") }
+
+      it "adds the custom label to the PR" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).to have_received(:add_labels_to_issue).with(
+          project.full_name, 42, [ "custom-label" ]
+        )
+      end
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect {
         activity.execute(agent_run_id: -1)

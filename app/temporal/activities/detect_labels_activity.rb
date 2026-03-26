@@ -26,7 +26,9 @@ module Activities
         action: action
       )
 
-      { action: action, issue_id: issue_id, project_id: project_id }
+      result = { action: action, issue_id: issue_id, project_id: project_id }
+      result[:source_pull_request_number] = issue.github_number if issue.is_pull_request? && action != "none"
+      result
     end
 
     private
@@ -51,6 +53,8 @@ module Activities
         "execute_agent"
       elsif plan_label && issue.has_label?(plan_label)
         "start_planning"
+      elsif project.automation_on_label_enabled? && issue.has_label?(project.automation_label_name)
+        "execute_agent"
       end
 
       return "none" unless action

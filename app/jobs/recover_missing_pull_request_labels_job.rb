@@ -16,7 +16,6 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     key: "recover_missing_pull_request_labels"
   )
 
-  PAID_GENERATED_LABEL = "paid-generated"
   CANDIDATE_WINDOW = 24.hours
 
   def perform
@@ -36,7 +35,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
         next
       end
 
-      if synced_pr.has_label?(PAID_GENERATED_LABEL)
+      if synced_pr.has_label?(agent_run.project.generated_label_name)
         skipped += 1
         next
       end
@@ -113,14 +112,16 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
 
   def recover_label(agent_run, synced_pr)
     project = agent_run.project
+    label = project.generated_label_name
+
     project.github_token.client.add_labels_to_issue(
       project.full_name,
       agent_run.pull_request_number,
-      [ PAID_GENERATED_LABEL ]
+      [ label ]
     )
 
     synced_pr.with_lock do
-      synced_pr.update!(labels: (synced_pr.labels + [ PAID_GENERATED_LABEL ]).uniq)
+      synced_pr.update!(labels: (synced_pr.labels + [ label ]).uniq)
     end
 
     Rails.logger.info(
