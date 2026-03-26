@@ -27,6 +27,20 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
     )
   end
 
+  # Simulates Open3.popen3 yielding a completed process with given stdout/stderr/status
+  def stub_popen3(command_pattern, stdout:, stderr: "", success: true, exit_code: 0)
+    status = instance_double(Process::Status, success?: success, exitstatus: exit_code)
+    wait_thr = instance_double(Thread, pid: 12345, value: status)
+    stdin_io = instance_double(IO, close: nil)
+    stdout_io = instance_double(IO, "read": stdout, closed?: false, close: nil)
+    stderr_io = instance_double(IO, "read": stderr, closed?: false, close: nil)
+
+    matcher = command_pattern.is_a?(Regexp) ? command_pattern : eq(command_pattern)
+    allow(Open3).to receive(:popen3).with(matcher, pgroup: true) do |*, &block|
+      block.call(stdin_io, stdout_io, stderr_io, wait_thr)
+    end
+  end
+
   describe "#collector_type" do
     it "returns 'churn_hotspot'" do
       expect(collector.collector_type).to eq("churn_hotspot")
@@ -35,15 +49,13 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
 
   describe "#tool_version" do
     it "returns maat version when available" do
-      allow(Open3).to receive(:capture3)
-        .with("maat --version")
-        .and_return([ "maat 1.0.4\n", "", instance_double(Process::Status, success?: true) ])
+      stub_popen3("maat --version", stdout: "maat 1.0.4\n")
 
       expect(collector.tool_version).to eq("maat 1.0.4")
     end
 
     it "returns nil when maat is not installed" do
-      allow(Open3).to receive(:capture3).and_raise(Errno::ENOENT)
+      allow(Open3).to receive(:popen3).and_raise(Errno::ENOENT)
 
       expect(collector.tool_version).to be_nil
     end
@@ -52,19 +64,15 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
   describe "#collect" do
     context "when maat produces valid output" do
       before do
-        allow(Open3).to receive(:capture3)
-          .with("maat -c git2 -l /tmp/test-repo -a revisions")
-          .and_return([ revisions_csv, "", instance_double(Process::Status, success?: true) ])
-        allow(Open3).to receive(:capture3)
-          .with("maat -c git2 -l /tmp/test-repo -a hotspots")
-          .and_return([ hotspots_csv, "", instance_double(Process::Status, success?: true) ])
+        stub_popen3("maat -c git2 -l /tmp/test-repo -a revisions", stdout: revisions_csv)
+        stub_popen3("maat -c git2 -l /tmp/test-repo -a hotspots", stdout: hotspots_csv)
       end
 
       it "returns artifacts sorted by score (revisions * complexity)" do
         artifacts = collector.collect
 
         expect(artifacts.size).to eq(5)
-        expect(artifacts.first[:identifier]).to eq("app/controllers/projects_controller.rb")
+        expect(artifacts.first[:identifier]).to eq("app/models/agent_run.rb")
       end
 
       it "produces artifacts with correct structure" do
@@ -107,6 +115,22 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
         expect(identifiers).to include("lib/utils/helper.rb")
         expect(identifiers).to include("config/routes.rb")
       end
+
+      it "does not describe revision-only files as high-churn when complexity is 0" do
+        artifact = collector.collect.find { |a| a[:identifier] == "lib/utils/helper.rb" }
+        chunk = artifact[:chunks].first
+
+        expect(chunk[:content]).to include("5 revisions")
+        expect(chunk[:content]).not_to include("complexity")
+      end
+
+      it "does not mention revisions for hotspot-only files" do
+        artifact = collector.collect.find { |a| a[:identifier] == "config/routes.rb" }
+        chunk = artifact[:chunks].first
+
+        expect(chunk[:content]).to include("complexity 3")
+        expect(chunk[:content]).not_to include("revisions")
+      end
     end
 
     context "when no repo path is available" do
@@ -123,9 +147,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
 
     context "when maat fails" do
       before do
-        allow(Open3).to receive(:capture3).and_return(
-          [ "", "error", instance_double(Process::Status, success?: false, exitstatus: 1) ]
-        )
+        stub_popen3(/maat/, stdout: "", stderr: "error", success: false, exit_code: 1)
       end
 
       it "returns empty array" do
@@ -135,9 +157,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
 
     context "when maat produces empty output" do
       before do
-        allow(Open3).to receive(:capture3).and_return(
-          [ "", "", instance_double(Process::Status, success?: true) ]
-        )
+        stub_popen3(/maat/, stdout: "")
       end
 
       it "returns empty array" do
@@ -147,9 +167,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector do
 
     context "when maat produces header-only output" do
       before do
-        allow(Open3).to receive(:capture3).and_return(
-          [ "entity,n-revs\n", "", instance_double(Process::Status, success?: true) ]
-        )
+        stub_popen3(/maat/, stdout: "entity,n-revs\n")
       end
 
       it "returns empty array" do

@@ -26,6 +26,20 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
     )
   end
 
+  # Simulates Open3.popen3 yielding a completed process with given stdout/stderr/status
+  def stub_popen3(command_pattern, stdout:, stderr: "", success: true, exit_code: 0)
+    status = instance_double(Process::Status, success?: success, exitstatus: exit_code)
+    wait_thr = instance_double(Thread, pid: 12345, value: status)
+    stdin_io = instance_double(IO, close: nil)
+    stdout_io = instance_double(IO, "read": stdout, closed?: false, close: nil)
+    stderr_io = instance_double(IO, "read": stderr, closed?: false, close: nil)
+
+    matcher = command_pattern.is_a?(Regexp) ? command_pattern : eq(command_pattern)
+    allow(Open3).to receive(:popen3).with(matcher, pgroup: true) do |*, &block|
+      block.call(stdin_io, stdout_io, stderr_io, wait_thr)
+    end
+  end
+
   describe "#collector_type" do
     it "returns 'language_stat'" do
       expect(collector.collector_type).to eq("language_stat")
@@ -34,15 +48,13 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
 
   describe "#tool_version" do
     it "returns scc version when available" do
-      allow(Open3).to receive(:capture3)
-        .with("scc --version")
-        .and_return([ "scc version 3.6.0\n", "", instance_double(Process::Status, success?: true) ])
+      stub_popen3("scc --version", stdout: "scc version 3.6.0\n")
 
       expect(collector.tool_version).to eq("scc version 3.6.0")
     end
 
     it "returns nil when scc is not installed" do
-      allow(Open3).to receive(:capture3).and_raise(Errno::ENOENT)
+      allow(Open3).to receive(:popen3).and_raise(Errno::ENOENT)
 
       expect(collector.tool_version).to be_nil
     end
@@ -51,9 +63,7 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
   describe "#collect" do
     context "when scc produces valid output" do
       before do
-        allow(Open3).to receive(:capture3)
-          .with("scc --format json /tmp/test-repo")
-          .and_return([ scc_json, "", instance_double(Process::Status, success?: true) ])
+        stub_popen3("scc --format json /tmp/test-repo", stdout: scc_json)
       end
 
       it "returns one artifact per language" do
@@ -115,9 +125,7 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
 
     context "when scc fails" do
       before do
-        allow(Open3).to receive(:capture3).and_return(
-          [ "", "error", instance_double(Process::Status, success?: false, exitstatus: 1) ]
-        )
+        stub_popen3(/scc/, stdout: "", stderr: "error", success: false, exit_code: 1)
       end
 
       it "returns empty array" do
@@ -127,9 +135,7 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
 
     context "when scc produces empty output" do
       before do
-        allow(Open3).to receive(:capture3).and_return(
-          [ "", "", instance_double(Process::Status, success?: true) ]
-        )
+        stub_popen3(/scc/, stdout: "")
       end
 
       it "returns empty array" do
@@ -139,9 +145,7 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
 
     context "when scc produces empty JSON array" do
       before do
-        allow(Open3).to receive(:capture3).and_return(
-          [ "[]", "", instance_double(Process::Status, success?: true) ]
-        )
+        stub_popen3(/scc/, stdout: "[]")
       end
 
       it "returns empty array" do
@@ -151,9 +155,7 @@ RSpec.describe Knowledge::Collectors::LanguageStatsCollector do
 
     context "when scc produces invalid JSON" do
       before do
-        allow(Open3).to receive(:capture3).and_return(
-          [ "not json", "", instance_double(Process::Status, success?: true) ]
-        )
+        stub_popen3(/scc/, stdout: "not json")
       end
 
       it "returns empty array" do

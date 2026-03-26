@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "open3"
+require "timeout"
+
 module Knowledge
   class BaseCollector
     attr_reader :project, :project_version, :collector_run
@@ -23,6 +26,61 @@ module Knowledge
 
     def tool_version
       nil
+    end
+
+    private
+
+    def resolve_repo_path
+      project.worktrees.order(created_at: :desc).first&.path || default_repo_path
+    end
+
+    def default_repo_path
+      path = Rails.root.join("tmp", "repos", project.id.to_s)
+      path.exist? ? path.to_s : nil
+    end
+
+    def run_command(command, timeout: 30)
+      stdout_str = +""
+      stderr_str = +""
+      status = nil
+
+      Open3.popen3(command, pgroup: true) do |stdin, stdout, stderr, wait_thr|
+        stdin&.close
+
+        out_thread = Thread.new { stdout_str << stdout.read.to_s }
+        err_thread = Thread.new { stderr_str << stderr.read.to_s }
+
+        begin
+          Timeout.timeout(timeout) do
+            status = wait_thr.value
+            out_thread.join
+            err_thread.join
+          end
+        rescue Timeout::Error
+          kill_process_group(wait_thr.pid)
+          out_thread.join(1)
+          err_thread.join(1)
+          raise Timeout::Error, "Command timed out after #{timeout} seconds: #{command}"
+        ensure
+          stdout.close unless stdout.closed?
+          stderr.close unless stderr.closed?
+        end
+      end
+
+      unless status&.success?
+        raise "Command failed (exit #{status&.exitstatus}): #{stderr_str.first(500)}"
+      end
+
+      stdout_str
+    end
+
+    def kill_process_group(pid)
+      pgid = Process.getpgid(pid)
+      Process.kill("TERM", -pgid)
+      sleep 1
+      Process.kill("KILL", -pgid)
+    rescue Errno::ESRCH, Errno::EPERM
+      # Process already exited or cannot be signaled
     end
   end
 end

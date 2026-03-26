@@ -1,8 +1,7 @@
 # frozen_string_literal: true
 
-require "open3"
+require "csv"
 require "shellwords"
-require "timeout"
 
 module Knowledge
   module Collectors
@@ -34,15 +33,6 @@ module Knowledge
 
       private
 
-      def resolve_repo_path
-        project.worktrees.order(created_at: :desc).first&.path || default_repo_path
-      end
-
-      def default_repo_path
-        path = Rails.root.join("tmp", "repos", project.id.to_s)
-        path.exist? ? path.to_s : nil
-      end
-
       def run_maat(repo_path, analysis)
         output = run_command(
           "maat -c git2 -l #{Shellwords.escape(repo_path)} -a #{analysis}",
@@ -59,27 +49,13 @@ module Knowledge
         []
       end
 
-      def run_command(command, timeout: 30)
-        stdout, stderr, status = Timeout.timeout(timeout) { Open3.capture3(command) }
-        unless status.success?
-          raise "Command failed (exit #{status.exitstatus}): #{stderr.first(500)}"
-        end
-        stdout
-      end
-
       def parse_csv(output)
         return [] if output.blank?
 
-        lines = output.strip.split("\n")
-        return [] if lines.size < 2
-
-        headers = lines.first.split(",").map(&:strip)
-        lines.drop(1).filter_map do |line|
-          values = line.split(",").map(&:strip)
-          next if values.size < headers.size
-
-          headers.zip(values).to_h
-        end
+        rows = CSV.parse(output, headers: true)
+        rows.map(&:to_h)
+      rescue CSV::MalformedCSVError
+        []
       end
 
       def build_artifacts(revisions, hotspots)
@@ -135,12 +111,24 @@ module Knowledge
           chunks: [
             {
               chunk_type: "summary",
-              content: "#{file} is a high-churn file (#{revisions} revisions, rank ##{rank}). " \
-                       "Changes here need careful review.",
+              content: build_chunk_text(file, revisions, complexity, rank),
               scope_tags: [ "churn", "hotspot" ]
             }
           ]
         }
+      end
+
+      def build_chunk_text(file, revisions, complexity, rank)
+        traits = []
+        traits << "#{revisions} revisions" if revisions > 0
+        traits << "complexity #{complexity}" if complexity > 0
+
+        if traits.any?
+          "#{file} is a high-churn file (#{traits.join(', ')}, rank ##{rank}). " \
+            "Changes here need careful review."
+        else
+          "#{file} (rank ##{rank}): no significant churn or complexity detected."
+        end
       end
     end
   end

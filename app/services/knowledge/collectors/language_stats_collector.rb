@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
-require "open3"
 require "shellwords"
-require "timeout"
 
 module Knowledge
   module Collectors
@@ -33,15 +31,6 @@ module Knowledge
 
       private
 
-      def resolve_repo_path
-        project.worktrees.order(created_at: :desc).first&.path || default_repo_path
-      end
-
-      def default_repo_path
-        path = Rails.root.join("tmp", "repos", project.id.to_s)
-        path.exist? ? path.to_s : nil
-      end
-
       def run_scc(repo_path)
         output = run_command(
           "scc --format json #{Shellwords.escape(repo_path)}",
@@ -55,14 +44,6 @@ module Knowledge
           error: e.message
         )
         []
-      end
-
-      def run_command(command, timeout: 30)
-        stdout, stderr, status = Timeout.timeout(timeout) { Open3.capture3(command) }
-        unless status.success?
-          raise "Command failed (exit #{status.exitstatus}): #{stderr.first(500)}"
-        end
-        stdout
       end
 
       def parse_scc_json(output)
