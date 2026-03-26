@@ -22,10 +22,11 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
       end
 
       it "returns not_self_repo without fetching files" do
+        expect(github_client).not_to receive(:pull_request_files)
+
         result = activity.execute(project_id: project.id, pr_number: 42)
 
         expect(result).to eq(triggered: false, reason: "not_self_repo")
-        expect(github_client).not_to have_received(:pull_request_files) if github_client.respond_to?(:pull_request_files)
       end
     end
 
@@ -67,8 +68,8 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
           activity.execute(project_id: project.id, pr_number: 42)
 
           expect(Process).to have_received(:spawn).with(
-            /bin\/dev-update --lightweight/,
-            hash_including(out: "/dev/null", err: "/dev/null", pgroup: true)
+            "setsid", /bin\/dev-update/, "--lightweight",
+            hash_including(out: "/dev/null", err: "/dev/null")
           )
           expect(Process).to have_received(:detach).with(12345)
         end
@@ -91,8 +92,8 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
           activity.execute(project_id: project.id, pr_number: 42)
 
           expect(Process).to have_received(:spawn).with(
-            /bin\/dev-update --full/,
-            hash_including(out: "/dev/null", err: "/dev/null", pgroup: true)
+            "setsid", /bin\/dev-update/, "--full",
+            hash_including(out: "/dev/null", err: "/dev/null")
           )
         end
       end

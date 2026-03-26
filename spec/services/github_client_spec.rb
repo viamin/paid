@@ -929,6 +929,38 @@ RSpec.describe GithubClient do
       end
     end
 
+    context "when files span multiple pages" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/42/files")
+          .to_return(
+            status: 200,
+            body: [
+              { sha: "abc", filename: "app/models/user.rb", status: "modified" }
+            ].to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "Link" => "<#{api_base}/repos/#{repo}/pulls/42/files?page=2>; rel=\"next\""
+            }
+          )
+
+        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/42/files?page=2")
+          .to_return(
+            status: 200,
+            body: [
+              { sha: "def", filename: "config/routes.rb", status: "added" },
+              { sha: "ghi", filename: "lib/tasks/cleanup.rake", status: "removed" }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns file paths from all pages" do
+        result = client.pull_request_files(repo, 42)
+
+        expect(result).to eq(%w[app/models/user.rb config/routes.rb lib/tasks/cleanup.rake])
+      end
+    end
+
     context "when pull request does not exist" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/pulls/999/files")

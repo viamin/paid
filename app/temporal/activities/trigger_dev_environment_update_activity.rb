@@ -96,10 +96,9 @@ module Activities
       # Spawn detached so the Temporal worker (which runs under Overmind)
       # is not the parent — setsid creates a new session.
       pid = Process.spawn(
-        "setsid #{script} #{flag}",
+        "setsid", script, flag,
         out: "/dev/null",
-        err: "/dev/null",
-        pgroup: true
+        err: "/dev/null"
       )
       Process.detach(pid)
 
