@@ -55,6 +55,61 @@ RSpec.describe Knowledge::Collectors::DependencyCollector, :no_db do
       it "produces one artifact per dependency" do
         expect(gemfile_artifacts.length).to eq(6)
       end
+
+      context "with custom Gemfile content" do
+        def stub_gemfile(content)
+          allow(File).to receive(:exist?).and_call_original
+          allow(File).to receive(:exist?).with("#{fixture_path}/Gemfile").and_return(true)
+          allow(File).to receive(:read).and_call_original
+          allow(File).to receive(:read).with("#{fixture_path}/Gemfile").and_return(content)
+        end
+
+        it "handles parenthesized group syntax" do
+          stub_gemfile(<<~GEMFILE)
+            source "https://rubygems.org"
+            group(:development, :test) do
+              gem "rspec"
+            end
+          GEMFILE
+
+          result = collector.collect
+          rspec_dep = result.find { |a| a[:metadata][:name] == "rspec" }
+
+          expect(rspec_dep[:metadata][:group]).to eq("development, test")
+        end
+
+        it "handles nested blocks within groups" do
+          stub_gemfile(<<~GEMFILE)
+            source "https://rubygems.org"
+            group :development do
+              platforms :ruby do
+                gem "nested_gem"
+              end
+              gem "outer_gem"
+            end
+            gem "top_level"
+          GEMFILE
+
+          result = collector.collect
+          groups = result.each_with_object({}) { |a, h| h[a[:metadata][:name]] = a[:metadata][:group] }
+
+          expect(groups["nested_gem"]).to eq("development")
+          expect(groups["outer_gem"]).to eq("development")
+          expect(groups["top_level"]).to eq("default")
+        end
+
+        it "captures multiple version constraints" do
+          stub_gemfile(<<~GEMFILE)
+            source "https://rubygems.org"
+            gem "foo", ">= 1.0", "< 2.0"
+          GEMFILE
+
+          result = collector.collect
+          foo_dep = result.find { |a| a[:metadata][:name] == "foo" }
+
+          expect(foo_dep[:metadata][:version]).to eq(">= 1.0, < 2.0")
+        end
+      end
     end
 
     context "with package.json" do

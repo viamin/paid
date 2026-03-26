@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "open3"
+
 module Knowledge
   module Collectors
     class ConfigKeyCollector < BaseCollector
@@ -86,6 +88,9 @@ module Knowledge
         end
 
         stdout
+      rescue Errno::ENOENT
+        Rails.logger.warn(message: "knowledge.config_key.tool_not_found", command: cmd.first)
+        ""
       end
 
       def extract_key(match, variable_name)

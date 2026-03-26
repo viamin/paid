@@ -59,24 +59,35 @@ module Knowledge
       def parse_gemfile(content)
         deps = []
         current_group = "default"
+        group_nesting = 0
 
         content.each_line do |line|
           stripped = line.strip
 
-          if (group_match = stripped.match(/\Agroup\s+(.+?)\s+do\z/))
-            current_group = group_match[1].gsub(/[:\s,]/, " ").split.join(", ")
+          if (group_match = stripped.match(/\Agroup\s*(?:\(\s*(.+?)\s*\)|(\s.+?))\s+do\z/))
+            group_names = group_match[1] || group_match[2]
+            current_group = group_names.gsub(/[:\s,]/, " ").split.join(", ")
+            group_nesting = 1
             next
           end
 
-          if stripped == "end"
-            current_group = "default"
-            next
+          if group_nesting.positive?
+            group_nesting += 1 if stripped.match?(/\bdo\z/)
+
+            if stripped == "end"
+              group_nesting -= 1
+              current_group = "default" if group_nesting.zero?
+              next
+            end
           end
 
-          if (gem_match = stripped.match(/\Agem\s+["']([^"']+)["'](?:,\s*["']([^"']+)["'])?/))
+          if (gem_match = stripped.match(/\Agem\s+["']([^"']+)["']((?:,\s*["'][^"']+["'])*)/))
+            versions = gem_match[2].scan(/["']([^"']+)["']/).flatten
+            version = versions.empty? ? nil : versions.join(", ")
+
             deps << {
               name: gem_match[1],
-              version: gem_match[2],
+              version: version,
               group: current_group,
               source: "Gemfile",
               raw_line: stripped

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "open3"
+
 module Knowledge
   module Collectors
     class SymbolIndexCollector < BaseCollector
@@ -106,6 +108,9 @@ module Knowledge
         end
 
         stdout
+      rescue Errno::ENOENT
+        Rails.logger.warn(message: "knowledge.symbol_index.tool_not_found", command: cmd.first)
+        ""
       end
 
       def extract_name(match)

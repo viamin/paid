@@ -101,5 +101,15 @@ RSpec.describe Knowledge::Collectors::SymbolIndexCollector, :no_db do
         expect(collector.collect).to eq([])
       end
     end
+
+    context "when ast-grep is not installed" do
+      before do
+        allow(Open3).to receive(:capture3).and_raise(Errno::ENOENT)
+      end
+
+      it "returns an empty array" do
+        expect(collector.collect).to eq([])
+      end
+    end
   end
 end
