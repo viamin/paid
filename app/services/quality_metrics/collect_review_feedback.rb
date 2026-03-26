@@ -104,6 +104,8 @@ module QualityMetrics
         metric.save!
         metric
       end
+    rescue ActiveRecord::RecordNotUnique
+      retry
     end
   end
 end

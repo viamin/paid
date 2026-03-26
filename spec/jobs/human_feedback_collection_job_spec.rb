@@ -9,6 +9,7 @@ RSpec.describe HumanFeedbackCollectionJob do
     it "collects reactions and reviews for completed agent run with PR" do
       agent_run = create(:agent_run, :completed)
       allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
       allow(github_client).to receive_messages(
         pull_request_reactions: [
@@ -45,6 +46,7 @@ RSpec.describe HumanFeedbackCollectionJob do
     it "handles GitHub API errors for reviews gracefully" do
       agent_run = create(:agent_run, :completed)
       allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
       allow(github_client).to receive(:pull_request_reactions).and_return([])
       allow(github_client).to receive(:pull_request_reviews)

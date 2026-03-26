@@ -90,6 +90,8 @@ module QualityMetrics
         metric.save!
         metric
       end
+    rescue ActiveRecord::RecordNotUnique
+      retry
     end
 
     def tally_reactions(reactions)
