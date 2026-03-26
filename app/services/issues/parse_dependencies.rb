@@ -21,11 +21,14 @@ module Issues
   #   - "Unblocked by #101"
   #   - "Remove dependency #101"
   #
-  # Comment-declared dependencies are additive to body-declared ones.
+  # Comment-declared dependency additions are applied on top of the
+  # body-declared dependencies, but comment-based removals can remove
+  # dependencies introduced either in the body or in earlier comments.
   # Comments are processed chronologically — the latest directive wins:
   #   - Within a single comment, removals take precedence over additions.
-  #   - Across comments, a later "Depends on #N" re-adds a previously removed
-  #     dep, and a later "No longer depends on #N" removes it again.
+  #   - Across comments (relative to the body baseline), a later
+  #     "Depends on #N" re-adds a previously removed dep, and a later
+  #     "No longer depends on #N" removes it again.
   #
   # The final dependency set is NOT simply (body + comments) - removals;
   # it is the result of replaying all directives in order.

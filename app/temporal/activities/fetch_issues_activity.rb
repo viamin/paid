@@ -167,6 +167,8 @@ module Activities
         next if comment_bodies.nil?
 
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
+      rescue GithubClient::RateLimitError
+        raise
       rescue => e
         logger.warn(
           message: "github_sync.parse_dependencies_failed",
