@@ -3,7 +3,7 @@
 class CreateCollectorRuns < ActiveRecord::Migration[8.1]
   def change
     create_table :collector_runs do |t|
-      t.bigint :project_version_id, null: false
+      t.references :project_version, null: false, foreign_key: true
       t.string :collector_type, limit: 100, null: false
       t.string :status, limit: 50, null: false, default: "pending"
       t.datetime :started_at
@@ -17,9 +17,7 @@ class CreateCollectorRuns < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
-    add_index :collector_runs, [ :project_version_id, :collector_type ], unique: true,
-      name: "index_collector_runs_on_version_and_type"
+    add_index :collector_runs, [ :project_version_id, :collector_type ]
     add_index :collector_runs, :status
-    add_foreign_key :collector_runs, :project_versions, on_delete: :cascade
   end
 end

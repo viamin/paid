@@ -63,9 +63,13 @@ module Knowledge
         collector_type: collector_type
       )
 
-      return skip_result(collector_type) if collector_run.status == "completed"
+      collector_run.with_lock do
+        if collector_run.status == "completed" || collector_run.status == "running"
+          return skip_result(collector_type)
+        end
 
-      collector_run.mark_running!
+        collector_run.mark_running!
+      end
 
       collector = collector_class.new(
         project: project,
@@ -96,10 +100,15 @@ module Knowledge
     end
 
     def mark_stale_artifacts(project_version)
-      KnowledgeArtifact
+      stale_artifacts = KnowledgeArtifact
         .where(project: project, status: "active")
         .where.not(collector_run_id: project_version.collector_runs.select(:id))
+
+      KnowledgeChunk
+        .where(knowledge_artifact_id: stale_artifacts.select(:id), status: "active")
         .update_all(status: "stale")
+
+      stale_artifacts.update_all(status: "stale")
     end
 
     def collector_classes

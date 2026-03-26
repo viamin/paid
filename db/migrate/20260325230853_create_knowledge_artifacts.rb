@@ -3,8 +3,8 @@
 class CreateKnowledgeArtifacts < ActiveRecord::Migration[8.1]
   def change
     create_table :knowledge_artifacts do |t|
-      t.bigint :collector_run_id, null: false
-      t.bigint :project_id, null: false
+      t.references :collector_run, null: false, foreign_key: { on_delete: :cascade }
+      t.references :project, null: false, foreign_key: true
       t.string :artifact_type, limit: 100, null: false
       t.string :scope_path, limit: 1000
       t.string :identifier, limit: 500
@@ -16,12 +16,8 @@ class CreateKnowledgeArtifacts < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
-    add_index :knowledge_artifacts, [ :project_id, :artifact_type, :identifier ],
-      name: "index_knowledge_artifacts_on_project_type_identifier"
-    add_index :knowledge_artifacts, :collector_run_id
+    add_index :knowledge_artifacts, [ :project_id, :artifact_type, :identifier ]
     add_index :knowledge_artifacts, :content_hash
     add_index :knowledge_artifacts, :status
-    add_foreign_key :knowledge_artifacts, :collector_runs, on_delete: :cascade
-    add_foreign_key :knowledge_artifacts, :projects, on_delete: :cascade
   end
 end

@@ -43,13 +43,15 @@ module Knowledge
 
     def find_existing_artifact(data, content_hash)
       KnowledgeArtifact
+        .joins(collector_run: :project_version)
         .where(
           project: project,
           artifact_type: data[:artifact_type],
           scope_path: data[:scope_path],
           identifier: data[:identifier],
           content_hash: content_hash,
-          status: "active"
+          status: "active",
+          collector_runs: { collector_type: collector_run.collector_type }
         )
         .first
     end
@@ -59,7 +61,7 @@ module Knowledge
     end
 
     def mark_prior_stale(data)
-      KnowledgeArtifact
+      prior_artifacts = KnowledgeArtifact
         .where(
           project: project,
           artifact_type: data[:artifact_type],
@@ -67,25 +69,32 @@ module Knowledge
           identifier: data[:identifier],
           status: "active"
         )
+
+      KnowledgeChunk
+        .where(knowledge_artifact_id: prior_artifacts.select(:id), status: "active")
         .update_all(status: "stale")
+
+      prior_artifacts.update_all(status: "stale")
     end
 
     def create_artifact(data, content_hash)
-      artifact = KnowledgeArtifact.create!(
-        collector_run: collector_run,
-        project: project,
-        artifact_type: data[:artifact_type],
-        scope_path: data[:scope_path],
-        identifier: data[:identifier],
-        content: data[:content],
-        content_hash: content_hash,
-        metadata: data[:metadata] || {},
-        status: "active"
-      )
+      KnowledgeArtifact.transaction do
+        artifact = KnowledgeArtifact.create!(
+          collector_run: collector_run,
+          project: project,
+          artifact_type: data[:artifact_type],
+          scope_path: data[:scope_path],
+          identifier: data[:identifier],
+          content: data[:content],
+          content_hash: content_hash,
+          metadata: data[:metadata] || {},
+          status: "active"
+        )
 
-      create_chunks(artifact, data[:chunks] || [])
+        create_chunks(artifact, data[:chunks] || [])
 
-      artifact
+        artifact
+      end
     end
 
     def create_chunks(artifact, chunks_data)

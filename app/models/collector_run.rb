@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class CollectorRun < ApplicationRecord
-  STATUSES = %w[pending running completed failed].freeze
+  STATUSES = %w[pending running completed failed stale].freeze
 
   belongs_to :project_version
 
@@ -11,6 +11,7 @@ class CollectorRun < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :collector_type, uniqueness: { scope: :project_version_id }
 
+  scope :by_status, ->(status) { where(status: status) }
   scope :completed, -> { where(status: "completed") }
   scope :failed, -> { where(status: "failed") }
   scope :running, -> { where(status: "running") }

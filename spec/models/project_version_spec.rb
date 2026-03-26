@@ -12,8 +12,10 @@ RSpec.describe ProjectVersion do
     subject { build(:project_version) }
 
     it { is_expected.to validate_presence_of(:commit_sha) }
-    it { is_expected.to validate_presence_of(:branch) }
+    it { is_expected.to validate_length_of(:commit_sha).is_at_most(40) }
     it { is_expected.to validate_uniqueness_of(:commit_sha).scoped_to(:project_id) }
+    it { is_expected.to validate_length_of(:parent_sha).is_at_most(40) }
+    it { is_expected.to validate_presence_of(:branch) }
   end
 
   describe "scopes" do
