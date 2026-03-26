@@ -25,16 +25,16 @@ RSpec.describe Knowledge::Collectors::ConfigKeyCollector, :no_db do
 
   describe "#tool_version" do
     it "returns the ast-grep version string" do
-      skip "ast-grep not installed" unless collector.tool_version
-
-      expect(collector.tool_version).to match(/ast-grep \d+\.\d+\.\d+/)
+      tool_version = collector.tool_version
+      skip("ast-grep not installed; skipping tool_version spec") if tool_version.nil? || tool_version.empty?
+      expect(tool_version).to match(/ast-grep \d+\.\d+\.\d+/)
     end
   end
 
   describe "#collect" do
     context "with ast-grep installed" do
       before do
-        skip "ast-grep not installed; skipping integration specs" unless collector.tool_version
+        skip "ast-grep not installed; skipping integration specs" if collector.tool_version.nil?
       end
 
       let(:artifacts) { collector.collect }

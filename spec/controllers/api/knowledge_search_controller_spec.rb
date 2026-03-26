@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Api::KnowledgeSearchController, type: :request do
+  include_context "without qdrant vector search"
+
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:github_token) { create(:github_token, account: account) }

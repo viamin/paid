@@ -7,16 +7,37 @@ RSpec.describe AbTests::Analyze do
   let(:ab_test) { create(:ab_test, prompt: prompt, status: "running", started_at: Time.current, min_samples_per_variant: 5) }
   let!(:control) { create(:ab_test_variant, ab_test: ab_test, prompt_version: prompt.current_version, is_control: true) }
   let!(:variant) { create(:ab_test_variant, ab_test: ab_test) }
+  let(:project) { create(:project) }
 
   def add_scores(test_variant, scores)
-    scores.each do |score|
-      run = create(:agent_run)
-      create(:ab_test_assignment,
-        ab_test: ab_test,
-        ab_test_variant: test_variant,
-        agent_run: run,
-        quality_score: score)
+    timestamp = Time.current
+    agent_run_rows = scores.map do
+      {
+        project_id: project.id,
+        agent_type: "claude_code",
+        status: "pending",
+        goal: "create_pr",
+        trigger_type: "automatic",
+        custom_prompt: "A/B test sample",
+        proxy_token: SecureRandom.hex(32),
+        created_at: timestamp,
+        updated_at: timestamp
+      }
     end
+
+    inserted_runs = AgentRun.insert_all!(agent_run_rows, returning: %w[id])
+    assignment_rows = scores.zip(inserted_runs.rows.flatten).map do |score, agent_run_id|
+      {
+        ab_test_id: ab_test.id,
+        ab_test_variant_id: test_variant.id,
+        agent_run_id: agent_run_id,
+        quality_score: score,
+        created_at: timestamp,
+        updated_at: timestamp
+      }
+    end
+
+    AbTestAssignment.insert_all!(assignment_rows)
     test_variant.update!(sample_count: scores.size)
   end
 
