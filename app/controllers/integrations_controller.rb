@@ -2,6 +2,7 @@
 
 class IntegrationsController < ApplicationController
   skip_after_action :verify_authorized
+  skip_after_action :verify_policy_scoped
 
   def index
     @providers_by_category = Integrations::Registry.by_category

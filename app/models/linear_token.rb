@@ -13,6 +13,7 @@ class LinearToken < ApplicationRecord
   validates :token, presence: true
   validates :validation_status, inclusion: { in: VALIDATION_STATUSES }
   validate :token_format_valid, if: -> { token.present? }
+  validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
 
   scope :active, -> { where(revoked_at: nil).where("expires_at IS NULL OR expires_at > ?", Time.current) }
   scope :revoked, -> { where.not(revoked_at: nil) }
@@ -47,5 +48,11 @@ class LinearToken < ApplicationRecord
     return if token.match?(LINEAR_TOKEN_PATTERN)
 
     errors.add(:token, "must be a valid Linear API key format (lin_api_...)")
+  end
+
+  def created_by_belongs_to_same_account
+    return if created_by.account_id == account_id
+
+    errors.add(:created_by, "must belong to the same account")
   end
 end

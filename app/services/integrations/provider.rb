@@ -5,13 +5,14 @@ module Integrations
   # to an external service (e.g., GitHub, Linear, Jira).
   #
   # Subclasses must implement:
-  #   - self.key        → unique identifier (e.g., :github)
-  #   - self.name       → human-readable name (e.g., "GitHub")
-  #   - self.category   → one of CATEGORIES
-  #   - self.icon_svg   → inline SVG string for the provider logo
-  #   - self.model_class → the ActiveRecord model for this provider's tokens
-  #   - self.new_path   → route helper path to the "add" form
-  #   - self.index_path  → route helper path to the list view
+  #   - self.key           → unique identifier (e.g., :github)
+  #   - self.provider_name → human-readable name (e.g., "GitHub")
+  #   - self.category      → one of CATEGORIES
+  #   - self.icon_svg      → inline SVG string for the provider logo
+  #   - self.description   → short description for the integrations hub
+  #   - self.model_class   → the ActiveRecord model for this provider's tokens
+  #   - self.new_path      → route helper path to the "add" form
+  #   - self.index_path    → route helper path to the list view
   class Provider
     CATEGORIES = {
       repository: { label: "Repository", description: "Source code hosting and version control" },
@@ -34,6 +35,10 @@ module Integrations
 
       def icon_svg
         raise NotImplementedError, "#{name} must implement .icon_svg"
+      end
+
+      def description
+        raise NotImplementedError, "#{name} must implement .description"
       end
 
       def model_class

@@ -14,6 +14,10 @@ module Integrations
         providers << provider_class unless providers.include?(provider_class)
       end
 
+      def reset!
+        @providers = []
+      end
+
       def find(key)
         providers.find { |p| p.key == key.to_sym }
       end
