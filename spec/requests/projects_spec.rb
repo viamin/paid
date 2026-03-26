@@ -520,16 +520,14 @@ RSpec.describe "Projects" do
           auto_pick_enabled: true, auto_merge_enabled: false, auto_fix_merge_conflicts: true)
         get project_path(project)
         expect(response.body).to include("Automation")
+        # Verify the Automation section's <details> is collapsed by default (no `open` attribute)
+        expect(response.body).not_to match(%r{<details[^>]*\bopen\b[^>]*>.*?Automation}m)
 
-        expected_settings = {
-          "Auto-Add Labels" => "Enabled",
-          "Automation on Label" => "Disabled",
-          "Auto-Pick Issues" => "Enabled",
-          "Auto-Merge" => "Disabled",
+        {
+          "Auto-Add Labels" => "Enabled", "Automation on Label" => "Disabled",
+          "Auto-Pick Issues" => "Enabled", "Auto-Merge" => "Disabled",
           "Auto-Fix Merge Conflicts" => "Enabled"
-        }
-        expected_settings.each do |label, state|
-          # Verify each setting's label is paired with the correct badge state in the same dt/dd row
+        }.each do |label, state|
           expect(response.body).to match(
             %r{<dt[^>]*>\s*#{Regexp.escape(label)}\s*</dt>\s*<dd[^>]*>.*?\b#{state}\b.*?</dd>}m
           )
