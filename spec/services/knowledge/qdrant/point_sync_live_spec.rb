@@ -19,13 +19,15 @@ RSpec.describe Knowledge::Qdrant::PointSync do
   let(:collection_name) { Knowledge::Qdrant::CollectionManager.collection_name(project) }
 
   before do
+    skip "Qdrant not available at #{Paid.qdrant_url}" unless qdrant_available?
     WebMock.disable_net_connect!(allow_localhost: true, allow: [ /#{Regexp.escape(Paid.qdrant_url)}/ ])
     allow(Paid).to receive(:embedding_dimensions).and_return(vector.size)
     manager.drop_collection!
   end
 
   after do
-    manager.drop_collection!
+    manager.drop_collection! if qdrant_available?
+  ensure
     WebMock.disable_net_connect!(allow_localhost: true)
   end
 
@@ -69,5 +71,9 @@ RSpec.describe Knowledge::Qdrant::PointSync do
     ).fetch("result")
 
     expect(results).to be_empty
+  end
+
+  def qdrant_available?
+    QdrantClient.new(url: Paid.qdrant_url, api_key: Paid.qdrant_api_key, timeout: 2, open_timeout: 2).healthy?
   end
 end
