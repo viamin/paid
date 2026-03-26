@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.9.1](https://github.com/viamin/paid/compare/v0.9.0...v0.9.1) (2026-03-26)
+
+
+### Bug Fixes
+
+* 246: Add service container lifecycle management: orphan cleanup, resource limits, and health monitoring ([#491](https://github.com/viamin/paid/issues/491)) ([cd30d96](https://github.com/viamin/paid/commit/cd30d96c5e9725f811c71f380b44f084c13cf003))
+* 251: PostgreSQL Schema — Knowledge Objects, Versioning, Provenance ([#492](https://github.com/viamin/paid/issues/492)) ([1c3f0d2](https://github.com/viamin/paid/commit/1c3f0d2ed454b85a3043bb339953dde90f672688))
+* 252: Qdrant Collection Management — Create, Upsert, Delete, Rebuild ([#494](https://github.com/viamin/paid/issues/494)) ([ef06e66](https://github.com/viamin/paid/commit/ef06e664e1e318dab31c8934b9c09e099b54877d))
+* 253: Collector Framework — Orchestration, Storage, Idempotency, Staleness ([#493](https://github.com/viamin/paid/issues/493)) ([0271f00](https://github.com/viamin/paid/commit/0271f00add7c02873edf401044635b88cc26ccb1))
+* 348: Add explanatory comment when applying `paid-escalated` label ([#480](https://github.com/viamin/paid/issues/480)) ([76fb684](https://github.com/viamin/paid/commit/76fb684744b566131dd35780ad6c025be02ad1ca))
+* 430: feat(dependencies): parse dependency declarations from issue comments ([#476](https://github.com/viamin/paid/issues/476)) ([02f5759](https://github.com/viamin/paid/commit/02f57597e1a2402e6f7afc93186f0c4721245e1b))
+* 479: Add visual indicator for auto-pickable issues on project page ([#481](https://github.com/viamin/paid/issues/481)) ([63add01](https://github.com/viamin/paid/commit/63add011b2b56155bf46d93d2e8487a50dcec8fb))
+* 482: Remove standalone automation section from project page ([#484](https://github.com/viamin/paid/issues/484)) ([295e4dd](https://github.com/viamin/paid/commit/295e4dd9c197c49cbba648315d89e8b150a98226))
+* 483: Add priority indicator to agent runs table priority column ([#497](https://github.com/viamin/paid/issues/497)) ([02b909a](https://github.com/viamin/paid/commit/02b909a8ecd580c5751239c3d31408b67b846b0a))
+* 487: fix(agent-runs): update Codex CLI invocation for current codex version ([#498](https://github.com/viamin/paid/issues/498)) ([6560588](https://github.com/viamin/paid/commit/6560588de3baef9816c0ea9a89b9f6b029454524))
+* **agent-runs:** disable Gemini CLI sandbox in agent containers ([#495](https://github.com/viamin/paid/issues/495)) ([6c2bb73](https://github.com/viamin/paid/commit/6c2bb7358a6469d2f54d007c1fd1735814455261)), closes [#490](https://github.com/viamin/paid/issues/490)
+
 ## [0.9.0](https://github.com/viamin/paid/compare/v0.8.0...v0.9.0) (2026-03-25)
 
 
