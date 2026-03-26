@@ -461,14 +461,27 @@ module Activities
         ---
         IMPORTANT: Your goal is to CREATE A GITHUB ISSUE, not to write code or create a PR.
 
-        You have access to the GitHub API via a proxy. Use curl to create the issue:
+        You have access to the GitHub API via a proxy. Use curl to create the issue.
+
+        IMPORTANT: Do NOT pass JSON inline with a single-quoted -d '...'. The body will contain
+        markdown with apostrophes (single quotes) and possibly newlines that break shell quoting.
+        Instead, write the JSON payload to a temporary file and use --data-binary @file:
 
         ```bash
+        tmpfile=$(mktemp)
+        cat > "$tmpfile" <<'ISSUE_JSON'
+        {
+          "title": "Issue title",
+          "body": "Issue description with `code` and apostrophes",
+          "labels": []
+        }
+        ISSUE_JSON
         curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/issues" \\
           -H "Content-Type: application/json" \\
           -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
           -H "X-Proxy-Token: $PROXY_TOKEN" \\
-          -d '{"title": "Issue title", "body": "Issue description", "labels": []}'
+          --data-binary @"$tmpfile"
+        rm -f "$tmpfile"
         ```
 
         Available endpoints:
