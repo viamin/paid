@@ -17,12 +17,18 @@ Rails.application.routes.draw do
   # Dashboard for authenticated users
   get "dashboard", to: "dashboard#show"
 
+  # Integrations hub
+  resources :integrations, only: [ :index ]
+
   # GitHub tokens management
   resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ] do
     get :repositories, on: :member
     get :validation_status, on: :member
     post :retry_validation, on: :member
   end
+
+  # Linear tokens management
+  resources :linear_tokens, only: [ :index, :new, :create, :show, :destroy ]
 
   # User settings (singleton resource — one per user)
   resource :user_settings, only: [ :edit, :update ]
