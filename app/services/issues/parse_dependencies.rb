@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 module Issues
-  # Parses an issue's body text to extract dependency references to other issues,
-  # including cross-project references, then persists those relationships as
-  # IssueDependency records.
+  # Parses an issue's body text and comments to extract dependency references
+  # to other issues, including cross-project references, then persists those
+  # relationships as IssueDependency records.
   #
   # Handles common formats:
   #   - "## Dependencies\n- #101\n- #102"
@@ -14,8 +14,32 @@ module Issues
   #   - "Blocked by viamin/other-project#42"
   #   - Checklist items: "- [ ] #101"
   #
+  # Comments support the same addition patterns plus removal patterns.
+  # Removals work for both local (#N) and cross-repo (owner/repo#N) refs:
+  #   - "No longer depends on #101"
+  #   - "No longer blocked by viamin/agent-harness#31"
+  #   - "Unblocked by #101"
+  #   - "Remove dependency #101"
+  #
+  # Comment-declared dependency additions are applied on top of the
+  # body-declared dependencies, but comment-based removals can remove
+  # dependencies introduced either in the body or in earlier comments.
+  # Comments are processed chronologically — the latest directive wins:
+  #   - Within a single comment, removals take precedence over additions.
+  #   - Across comments (relative to the body baseline), a later
+  #     "Depends on #N" re-adds a previously removed dep, and a later
+  #     "No longer depends on #N" removes it again.
+  #
+  # The final dependency set is NOT simply (body + comments) - removals;
+  # it is the result of replaying all directives in order.
+  #
+  # @param issue [Issue] the issue to parse dependencies for
+  # @param adjacency [Hash] optional pre-computed adjacency map for cycle detection
+  # @param comments [Array<String>] comment bodies, pre-sorted oldest-first.
+  #   Order matters because directives are replayed chronologically.
+  #
   # @example
-  #   Issues::ParseDependencies.call(issue: issue)
+  #   Issues::ParseDependencies.call(issue: issue, comments: ["Depends on #101"])
   class ParseDependencies
     DEPENDENCY_SECTION_PATTERN = /
       ^\#+\s*Dependenc(?:y|ies)\b[^\n]*\n  # Header line (## Dependencies, etc.)
@@ -29,6 +53,16 @@ module Issues
       ((?:(?:[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)?\#\d+[\s,]*)+)  # One or more refs
     /xi
 
+    INLINE_REMOVAL_PATTERN = /
+      \b(?:
+        no\s+longer\s+(?:depends?\s+on|blocked?\s+by)\b # "no longer depends on"
+        |unblocked\s+by\b                               # "unblocked by"
+        |remove\s+dependenc(?:y|ies)\b(?:\s+on\b)?      # "remove dependency [on]"
+      )
+      :?\s*                                             # Optional colon
+      ((?:(?:[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)?\#\d+[\s,]*)+) # local or cross-repo refs
+    /xi
+
     # Matches cross-repo references like owner/repo#123
     # Uses [1-9]\d* to reject #0 — GitHub issues start at 1 and the DB
     # CHECK constraint requires depends_on_number > 0.
@@ -37,11 +71,12 @@ module Issues
     # Matches same-project references like #123
     ISSUE_REF_PATTERN = /\#(\d+)/
 
-    attr_reader :issue, :adjacency
+    attr_reader :issue, :adjacency, :comments
 
-    def initialize(issue:, adjacency: nil)
+    def initialize(issue:, adjacency: nil, comments: [])
       @issue = issue
       @adjacency = adjacency
+      @comments = comments || []
     end
 
     def self.call(...)
@@ -49,12 +84,7 @@ module Issues
     end
 
     def call
-      if issue.body.present?
-        local_numbers, cross_refs = extract_all_refs
-      else
-        local_numbers = []
-        cross_refs = []
-      end
+      local_numbers, cross_refs = resolve_dependencies
 
       current_deps = issue.issue_dependencies.to_a
       current_local_ids = current_deps.select(&:local?).map(&:depends_on_issue_id).to_set
@@ -74,37 +104,84 @@ module Issues
 
     private
 
-    def extract_all_refs
+    # Processes body then comments in the order given. Within a single comment,
+    # removals take precedence over additions. Across comments, a later
+    # directive can override an earlier one (e.g., re-add after removal).
+    # Callers must supply comments sorted oldest-first for correct semantics.
+    def resolve_dependencies
       local_numbers = Set.new
       cross_refs = Set.new
 
-      extract_from_dependency_section(local_numbers, cross_refs)
-      extract_from_inline_patterns(local_numbers, cross_refs)
+      if issue.body.present?
+        extract_body_refs(issue.body, local_numbers, cross_refs)
+      end
+
+      comments.each do |comment_body|
+        next if comment_body.blank?
+
+        added_local = Set.new
+        added_cross = Set.new
+        extract_body_refs(comment_body, added_local, added_cross)
+
+        removed_local = Set.new
+        removed_cross = Set.new
+        extract_removal_refs(comment_body, removed_local, removed_cross)
+
+        # Within a single comment, removals win over additions.
+        added_local.subtract(removed_local)
+        added_cross.subtract(removed_cross)
+
+        local_numbers.merge(added_local)
+        cross_refs.merge(added_cross)
+        local_numbers.subtract(removed_local)
+        cross_refs.subtract(removed_cross)
+      end
 
       [ local_numbers.to_a, cross_refs.to_a ]
     end
 
-    def extract_from_dependency_section(local_numbers, cross_refs)
-      issue.body.scan(DEPENDENCY_SECTION_PATTERN) do |section_body|
-        extract_refs_from_text(section_body[0], local_numbers, cross_refs)
+    # Extracts both local (#N) and cross-repo (owner/repo#N) removal refs.
+    # INLINE_REMOVAL_PATTERN has a single capture group, so scan yields
+    # one-element arrays. Parenthesized destructuring |(refs_str)| extracts
+    # the captured String directly — without it, refs_str would be an Array.
+    def extract_removal_refs(text, local_numbers, cross_refs)
+      text.scan(INLINE_REMOVAL_PATTERN) do |(refs_str)|
+        refs_str.scan(CROSS_REPO_REF_PATTERN) do |owner, repo, number|
+          cross_refs << [ owner.downcase, repo.downcase, number.to_i ]
+        end
+        stripped = refs_str.gsub(CROSS_REPO_REF_PATTERN, "")
+        stripped.scan(ISSUE_REF_PATTERN) { |(num)| local_numbers << num.to_i }
       end
     end
 
-    def extract_from_inline_patterns(local_numbers, cross_refs)
-      issue.body.scan(INLINE_DEPENDS_PATTERN) do |refs|
-        extract_refs_from_text(refs[0], local_numbers, cross_refs)
+    # Extracts refs from body using both dependency sections and inline patterns.
+    # Only dependency-scoped text is parsed — incidental #N mentions (e.g. in a
+    # "Notes" section) are intentionally ignored.
+    def extract_body_refs(body, local_numbers, cross_refs)
+      body.scan(DEPENDENCY_SECTION_PATTERN) do |(section_body)|
+        extract_all_refs(section_body, local_numbers, cross_refs)
+      end
+
+      extract_inline_refs(body, local_numbers, cross_refs)
+    end
+
+    # Extracts refs from inline "Depends on" / "Blocked by" patterns only.
+    def extract_inline_refs(text, local_numbers, cross_refs)
+      text.scan(INLINE_DEPENDS_PATTERN) do |(refs_str)|
+        extract_all_refs(refs_str, local_numbers, cross_refs)
       end
     end
 
-    def extract_refs_from_text(text, local_numbers, cross_refs)
-      # Extract cross-repo refs first
+    # Extracts both cross-repo and local issue refs from a string of refs.
+    # Cross-repo tuples are normalized to lowercase for consistent Set comparison
+    # (e.g., removal of "Owner/Repo#1" matches addition of "owner/repo#1").
+    def extract_all_refs(text, local_numbers, cross_refs)
       text.scan(CROSS_REPO_REF_PATTERN) do |owner, repo, number|
-        cross_refs << [ owner, repo, number.to_i ]
+        cross_refs << [ owner.downcase, repo.downcase, number.to_i ]
       end
 
-      # Extract same-project refs (strip cross-repo refs first to avoid double-matching)
       stripped = text.gsub(CROSS_REPO_REF_PATTERN, "")
-      stripped.scan(/\#(\d+)/) { |match| local_numbers << match[0].to_i }
+      stripped.scan(ISSUE_REF_PATTERN) { |(num)| local_numbers << num.to_i }
     end
 
     def sync_local_deps(referenced_numbers, current_local_ids)

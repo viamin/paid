@@ -10,6 +10,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive(:issue_comments).and_return([])
   end
 
   # Helper: route github_client.issues calls by label
@@ -535,6 +536,74 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(project.issues.where(github_state: "open").count).to eq(0)
         expect(project.issues.where(github_state: "closed").count).to eq(2)
+      end
+    end
+
+    context "when fetching comment dependencies" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: %w[viamin trusted-dev]) }
+      let(:github_issue) do
+        OpenStruct.new(
+          id: 7001,
+          number: 70,
+          title: "Issue with comments",
+          body: "Some issue",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago,
+          updated_at: 1.day.ago
+        )
+      end
+
+      before do
+        stub_issues_by_label("paid-build" => [ github_issue ])
+      end
+
+      it "only persists dependencies from trusted user comments" do
+        dep_100 = create(:issue, project: project, github_number: 100, github_state: "open")
+        dep_200 = create(:issue, project: project, github_number: 200, github_state: "open")
+        dep_999 = create(:issue, project: project, github_number: 999, github_state: "open")
+
+        allow(github_client).to receive(:issue_comments).and_return([
+          OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Depends on #100", created_at: 2.hours.ago),
+          OpenStruct.new(user: OpenStruct.new(login: "attacker"), body: "Depends on #999", created_at: 1.hour.ago),
+          OpenStruct.new(user: OpenStruct.new(login: "trusted-dev"), body: "Depends on #200", created_at: 30.minutes.ago)
+        ])
+
+        activity.execute(project_id: project.id)
+
+        synced_issue = project.issues.find_by(github_issue_id: github_issue.id)
+        dep_issue_ids = synced_issue.issue_dependencies.pluck(:depends_on_issue_id)
+        expect(dep_issue_ids).to contain_exactly(dep_100.id, dep_200.id)
+        expect(dep_issue_ids).not_to include(dep_999.id)
+      end
+
+      it "skips dependency parsing when comment fetch fails" do
+        create(:issue, project: project, github_number: 50, github_state: "open")
+        github_issue.body = "Depends on #50"
+
+        allow(github_client).to receive(:issue_comments)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        activity.execute(project_id: project.id)
+
+        synced_issue = project.issues.find_by(github_issue_id: github_issue.id)
+        expect(synced_issue.issue_dependencies).to be_empty
+      end
+
+      it "re-raises rate limit errors so Temporal can retry" do
+        create(:issue, project: project, github_number: 50, github_state: "open")
+        github_issue.body = "Depends on #50"
+
+        allow(github_client).to receive(:issue_comments)
+          .and_raise(GithubClient::RateLimitError.new(Time.current + 3600))
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("RateLimit")
+        }
       end
     end
 
