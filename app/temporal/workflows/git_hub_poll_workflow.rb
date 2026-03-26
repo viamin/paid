@@ -219,9 +219,28 @@ module Workflows
     end
 
     def handle_owner_approved(project_id, pr_data)
-      run_activity(Activities::MergePullRequestActivity,
+      result = run_activity(Activities::MergePullRequestActivity,
         { project_id: project_id, pr_number: pr_data[:pr_number],
           issue_id: pr_data[:issue_id] }, timeout: 60)
+
+      maybe_trigger_dev_update(project_id, pr_data, result)
+    end
+
+    def maybe_trigger_dev_update(project_id, pr_data, merge_result)
+      return unless Temporalio::Workflow.patched("add-dev-environment-update-v1")
+      return unless merge_result[:merged]
+
+      run_activity(Activities::TriggerDevEnvironmentUpdateActivity,
+        { project_id: project_id, pr_number: pr_data[:pr_number] }, timeout: 60)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "dev_update.trigger_failed",
+        project_id: project_id,
+        pr_number: pr_data[:pr_number],
+        error: e.message
+      )
     end
 
     def start_draft_followup_workflow(project_id, pr_data)

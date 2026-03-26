@@ -906,6 +906,41 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#pull_request_files" do
+    let(:repo) { "owner/repo" }
+
+    context "when files exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/42/files")
+          .to_return(
+            status: 200,
+            body: [
+              { sha: "abc", filename: "app/models/user.rb", status: "modified" },
+              { sha: "def", filename: "config/routes.rb", status: "added" }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns an array of file paths" do
+        result = client.pull_request_files(repo, 42)
+
+        expect(result).to eq(%w[app/models/user.rb config/routes.rb])
+      end
+    end
+
+    context "when pull request does not exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/999/files")
+          .to_return(status: 404, body: { message: "Not Found" }.to_json)
+      end
+
+      it "raises NotFoundError" do
+        expect { client.pull_request_files(repo, 999) }.to raise_error(GithubClient::NotFoundError)
+      end
+    end
+  end
+
   describe "#resolve_review_thread" do
     context "when resolution succeeds" do
       before do

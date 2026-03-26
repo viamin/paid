@@ -1,0 +1,113 @@
+# frozen_string_literal: true
+
+module Activities
+  # Determines whether a merged PR requires a lightweight or full dev
+  # environment update, then spawns `bin/dev-update` in a detached process.
+  #
+  # Only triggers for PRs merged on the Paid repository itself (detected via
+  # the PAID_REPO_FULL_NAME environment variable). No-ops for other repos.
+  #
+  # Lightweight update (git pull only):
+  #   Files under app/ that Rails autoloads in development (excluding
+  #   Temporal workflows/activities).
+  #
+  # Full restart (git pull + Overmind stop + bin/setup):
+  #   Temporal code, config changes, database migrations, Gemfile/yarn
+  #   changes, or bin/ scripts.
+  class TriggerDevEnvironmentUpdateActivity < BaseActivity
+    activity_name "TriggerDevEnvironmentUpdate"
+
+    FULL_RESTART_PATTERNS = [
+      %r{\Aapp/temporal/},
+      %r{\Aconfig/},
+      %r{\Adb/migrate/},
+      %r{\AGemfile},
+      %r{\Ayarn\.lock\z},
+      %r{\Apackage\.json\z},
+      %r{\Abin/},
+      %r{\Alib/},
+      %r{\AProcfile}
+    ].freeze
+
+    def execute(input)
+      project = Project.find(input[:project_id])
+      pr_number = input[:pr_number]
+
+      unless self_repo?(project)
+        logger.info(
+          message: "dev_update.skipped_external_repo",
+          project_id: project.id,
+          pr_number: pr_number
+        )
+        return { triggered: false, reason: "not_self_repo" }
+      end
+
+      changed_files = fetch_changed_files(project, pr_number)
+      return { triggered: false, reason: "no_changed_files" } if changed_files.empty?
+
+      mode = determine_update_mode(changed_files)
+      trigger_update(mode)
+
+      logger.info(
+        message: "dev_update.triggered",
+        project_id: project.id,
+        pr_number: pr_number,
+        mode: mode,
+        changed_files_count: changed_files.size
+      )
+
+      { triggered: true, mode: mode, changed_files_count: changed_files.size }
+    end
+
+    private
+
+    def self_repo?(project)
+      paid_repo = ENV["PAID_REPO_FULL_NAME"]
+      return false if paid_repo.blank?
+
+      project.full_name.casecmp?(paid_repo)
+    end
+
+    def fetch_changed_files(project, pr_number)
+      client = project.github_token.client
+      client.pull_request_files(project.full_name, pr_number)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "dev_update.fetch_files_failed",
+        project_id: project.id,
+        pr_number: pr_number,
+        error: e.message
+      )
+      []
+    end
+
+    def determine_update_mode(changed_files)
+      needs_full_restart = changed_files.any? do |file|
+        FULL_RESTART_PATTERNS.any? { |pattern| pattern.match?(file) }
+      end
+
+      needs_full_restart ? "full" : "lightweight"
+    end
+
+    def trigger_update(mode)
+      script = File.expand_path("../../../bin/dev-update", __dir__)
+      flag = mode == "full" ? "--full" : "--lightweight"
+
+      # Spawn detached so the Temporal worker (which runs under Overmind)
+      # is not the parent — setsid creates a new session.
+      pid = Process.spawn(
+        "setsid #{script} #{flag}",
+        out: "/dev/null",
+        err: "/dev/null",
+        pgroup: true
+      )
+      Process.detach(pid)
+
+      logger.info(
+        message: "dev_update.process_spawned",
+        pid: pid,
+        mode: mode
+      )
+    end
+  end
+end
