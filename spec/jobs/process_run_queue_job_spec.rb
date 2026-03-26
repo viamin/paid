@@ -38,8 +38,8 @@ RSpec.describe ProcessRunQueueJob do
     it "starts multiple queued runs up to user capacity" do
       project = create(:project)
       project.created_by.settings.update!(max_concurrent_runs: 2)
-      older = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
-      newer = create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
+      older = create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 2.minutes.ago)
+      newer = create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 1.minute.ago)
 
       expect(temporal_client).to receive(:start_workflow).twice.and_return(workflow_handle)
 
@@ -178,21 +178,21 @@ RSpec.describe ProcessRunQueueJob do
       user = project.created_by
       user.settings.update!(max_concurrent_runs: 1)
       create(:agent_run, :running, project: project)
-      create(:agent_run, :queued, project: project)
-
-      expect(Issues::AutoPick).not_to receive(:new)
+      queued_run = create(:agent_run, :queued, project: project)
 
       described_class.new.perform
+
+      expect(queued_run.reload.status).to eq("queued")
     end
 
-    context "when queue is empty with capacity available" do
-      it "calls auto-pick and starts newly queued runs" do
+    context "when seeding auto-pick work" do
+      it "queues eligible auto-pick runs and starts them" do
         project = create(:project, auto_pick_enabled: true)
         issue = create(:issue, project: project)
 
         auto_pick_service = instance_double(Issues::AutoPick)
         allow(Issues::AutoPick).to receive(:new)
-          .with(having_attributes(id: project.id), allow_concurrent_runs: true)
+          .with(having_attributes(id: project.id))
           .and_return(auto_pick_service)
         call_count = 0
         allow(auto_pick_service).to receive(:call) do
@@ -203,16 +203,16 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         expect(Issues::AutoPick).to have_received(:new)
-          .with(having_attributes(id: project.id), allow_concurrent_runs: true).at_least(:once)
+          .with(having_attributes(id: project.id)).at_least(:once)
         expect(AgentRun.last.status).to eq("pending")
       end
 
-      it "stops auto-picking when no new runs are created" do
+      it "stops seeding when no new runs are created" do
         project = create(:project, auto_pick_enabled: true)
 
         auto_pick_service = instance_double(Issues::AutoPick)
         allow(Issues::AutoPick).to receive(:new)
-          .with(having_attributes(id: project.id), allow_concurrent_runs: true)
+          .with(having_attributes(id: project.id))
           .and_return(auto_pick_service)
         allow(auto_pick_service).to receive(:call).and_return(nil)
 
@@ -236,12 +236,13 @@ RSpec.describe ProcessRunQueueJob do
 
         4.times { create(:issue, project: project) }
 
-        expect(temporal_client).to receive(:start_workflow).exactly(4).times.and_return(workflow_handle)
+        expect(temporal_client).to receive(:start_workflow).exactly(3).times.and_return(workflow_handle)
 
         described_class.new.perform
 
         expect(project.agent_runs.where(trigger_type: "automatic").count).to eq(4)
-        expect(project.agent_runs.pending.count).to eq(4)
+        expect(project.agent_runs.pending.count).to eq(3)
+        expect(project.agent_runs.queued.count).to eq(1)
       end
 
       it "round robins auto-pick runs across projects before giving one project extra capacity" do
@@ -263,10 +264,42 @@ RSpec.describe ProcessRunQueueJob do
 
         described_class.new.perform
 
-        expected_order = [ first_project, second_project, first_project, second_project ].map(&:id)
+        expected_order = [ first_project, second_project, first_project ].map(&:id)
         expect(started_projects).to eq(expected_order)
         expect(first_project.agent_runs.pending.count).to eq(2)
-        expect(second_project.agent_runs.pending.count).to eq(2)
+        expect(second_project.agent_runs.pending.count).to eq(1)
+      end
+
+      it "reserves one active slot from being consumed by auto-pick runs" do
+        project = create(:project, auto_pick_enabled: true)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 4)
+
+        4.times { create(:issue, project: project) }
+
+        described_class.new.perform
+
+        expect(project.agent_runs.pending.count).to eq(3)
+        expect(project.agent_runs.queued.count).to eq(1)
+      end
+
+      it "still starts a manual run with one slot reserved from auto-pick" do
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 4)
+
+        3.times { create(:agent_run, :running, project: project, trigger_type: "automatic") }
+        manual_run = create(:agent_run, :queued, project: project, trigger_type: "manual")
+
+        expect(temporal_client).to receive(:start_workflow).with(
+          Workflows::AgentExecutionWorkflow,
+          hash_including(agent_run_id: manual_run.id),
+          hash_including(task_queue: "paid-tasks")
+        ).and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(manual_run.reload.status).to eq("pending")
       end
     end
 

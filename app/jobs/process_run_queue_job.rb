@@ -22,6 +22,7 @@ class ProcessRunQueueJob < ApplicationJob
   # Prevents unbounded scanning when a large queue has many runs that
   # can't start due to per-user capacity limits.
   MAX_ITERATIONS_PER_PERFORM = 100
+  AUTO_PICK_RESERVED_SLOTS = 1
 
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
@@ -36,6 +37,8 @@ class ProcessRunQueueJob < ApplicationJob
       skipped_ids = Set.new
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
 
+      seed_auto_pick_queue
+
       loop do
         iterations += 1
         break if iterations > MAX_ITERATIONS_PER_PERFORM
@@ -45,17 +48,7 @@ class ProcessRunQueueJob < ApplicationJob
         # associated broadcasts/metrics) for runs that can't start yet.
         next_run = AgentRun.peek_next_queued_run(exclude_ids: skipped_ids.to_a)
 
-        # When the queue is truly empty (not just all skipped), auto-pick
-        # unblocked issues to keep agents productive. Skip auto-pick when
-        # every queued run was skipped due to capacity limits — scanning
-        # projects and creating more runs would be wasteful.
-        unless next_run
-          if skipped_ids.empty? && auto_pick_unblocked_issues
-            next
-          else
-            break
-          end
-        end
+        break unless next_run
 
         # Resolve the project owner for capacity checks. If the owner
         # can't be resolved, fail the run immediately rather than
@@ -69,7 +62,7 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        unless user_has_capacity?(user)
+        unless user_has_capacity?(user, next_run)
           skipped_ids.add(next_run.id)
           next
         end
@@ -104,12 +97,12 @@ class ProcessRunQueueJob < ApplicationJob
   # Checks per-user capacity using an in-memory cache. The active count
   # is fetched from the DB on first access per user, then updated
   # in-memory as runs are started, avoiding repeated COUNT queries.
-  def user_has_capacity?(user)
+  def user_has_capacity?(user, run)
     cap = @user_capacity[user.id] ||= {
       active: AgentRun.active_count_for_user(user),
       max: user.settings.max_concurrent_runs
     }
-    cap[:active] < cap[:max]
+    cap[:active] < start_capacity_limit(cap[:max], run)
   end
 
   # Updates the in-memory capacity tracker after a run is started.
@@ -118,40 +111,26 @@ class ProcessRunQueueJob < ApplicationJob
     cap[:active] += 1 if cap
   end
 
-  # Auto-picks unblocked issues for active projects, creating new queued
-  # agent runs. Picks at most one project per invocation, favoring
-  # projects with fewer active auto-pick runs and then the oldest
-  # prior auto-pick assignment. This preserves round-robin fairness
-  # across job invocations while still allowing a single busy project
-  # to fill otherwise idle slots. Returns true if a run exists or was
-  # enqueued so the main loop can attempt to process it through the
-  # normal claim-and-start flow.
-  def auto_pick_unblocked_issues
-    # If the last auto-pick pass created no runs, skip further attempts to
-    # avoid spinning when no eligible issues exist.
-    if defined?(@auto_pick_last_created_any) && @auto_pick_last_created_any == false
-      return false
+  # Seeds the queue with all currently auto-pickable issues before run
+  # selection. Priorities still determine what starts next, but keeping
+  # low-priority auto-pick work queued makes latent work visible and ready
+  # to consume spare capacity.
+  def seed_auto_pick_queue
+    loop do
+      created_in_pass = false
+
+      ordered_auto_pick_projects.each do |project|
+        next unless project.effective_owner
+
+        run = Issues::AutoPick.new(project).call
+        next unless run
+
+        created_in_pass = true
+        @ordered_auto_pick_projects = nil
+      end
+
+      break unless created_in_pass
     end
-
-    projects = ordered_auto_pick_projects
-    return @auto_pick_last_created_any = false if projects.empty?
-
-    projects.each do |project|
-      user = project.effective_owner
-      next unless user
-      next unless user_has_capacity?(user)
-
-      run = Issues::AutoPick.new(project, allow_concurrent_runs: true).call
-      next unless run
-
-      # Invalidate the memoized project ordering so the next pass
-      # reflects the newly created run in its active counts.
-      @ordered_auto_pick_projects = nil
-      @auto_pick_last_created_any = true
-      return true
-    end
-
-    @auto_pick_last_created_any = false
   end
 
   # Memoized within a single perform so repeated auto-pick passes
@@ -192,6 +171,17 @@ class ProcessRunQueueJob < ApplicationJob
         ]
       end
     end
+  end
+
+  def start_capacity_limit(max_concurrent_runs, run)
+    return max_concurrent_runs unless auto_pick_run?(run)
+
+    reserved = max_concurrent_runs > AUTO_PICK_RESERVED_SLOTS ? AUTO_PICK_RESERVED_SLOTS : 0
+    max_concurrent_runs - reserved
+  end
+
+  def auto_pick_run?(run)
+    run.automatic? && !run.existing_pr?
   end
 
   def start_claimed_run(agent_run)
