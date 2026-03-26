@@ -16,6 +16,10 @@ module SampleModule
   end
 
   class AnotherClass
+    def initialize
+      @started = true
+    end
+
     def perform
       true
     end

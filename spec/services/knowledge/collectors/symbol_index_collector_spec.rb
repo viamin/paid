@@ -70,6 +70,7 @@ RSpec.describe Knowledge::Collectors::SymbolIndexCollector, :no_db do
         names = method_artifacts.map { |a| a[:metadata][:name] }
 
         expect(names).to include("initialize", "greet", "farewell", "perform")
+        expect(names.count("initialize")).to eq(2)
       end
 
       it "sets artifact_type to symbol" do
@@ -83,11 +84,18 @@ RSpec.describe Knowledge::Collectors::SymbolIndexCollector, :no_db do
         end
       end
 
-      it "builds identifiers with file path" do
+      it "builds identifiers with file path and enclosing class" do
         method_artifacts = artifacts.select { |a| a[:metadata][:symbol_type] == "method" }
         identifiers = method_artifacts.map { |a| a[:identifier] }
 
-        expect(identifiers).to include(a_string_matching(/sample\.rb#greet/))
+        expect(identifiers).to include(a_string_matching(/sample\.rb::SampleClass#greet/))
+      end
+
+      it "produces unique identifiers for same-named methods in different classes" do
+        init_artifacts = artifacts.select { |a| a[:metadata][:name] == "initialize" }
+        identifiers = init_artifacts.map { |a| a[:identifier] }
+
+        expect(identifiers.uniq.size).to eq(identifiers.size)
       end
 
       it "produces idempotent results" do
