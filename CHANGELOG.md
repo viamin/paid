@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.5](https://github.com/viamin/paid/compare/v0.9.4...v0.9.5) (2026-03-26)
+
+
+### Bug Fixes
+
+* 523: Rename "Tokens" menu to "Integrations" and modularize token types ([#528](https://github.com/viamin/paid/issues/528)) ([0ed8d73](https://github.com/viamin/paid/commit/0ed8d73fe71bead57d8b337b12ef5e936a6f78d2))
+* **dev-update:** restart overmind processes when healthy ([8b57cbb](https://github.com/viamin/paid/commit/8b57cbbd53978154b6e41e1bd72d64ef3e97cc03))
+* **dev-update:** restart overmind processes when healthy ([c31324e](https://github.com/viamin/paid/commit/c31324ee1faf0fd160ddf3214c0fe8e79b496add))
+* speed up slow specs ([d8530d3](https://github.com/viamin/paid/commit/d8530d3422c8c94bd8c8a31a96611b17f1b4e14c))
+* stabilize search specs and install ast-grep ([315ecb9](https://github.com/viamin/paid/commit/315ecb9164474b4df11dc893765f5ba2f3f76588))
+* stabilize search specs and install ast-grep ([266c2e3](https://github.com/viamin/paid/commit/266c2e343800d21c0eb92073f60260cf10f2cd24))
+* **tests:** skip collector integration specs when ast-grep is not installed ([3b2b889](https://github.com/viamin/paid/commit/3b2b88910c5742e31336849052b65e2db0526f60))
+
 ## [0.9.4](https://github.com/viamin/paid/compare/v0.9.3...v0.9.4) (2026-03-26)
 
 
