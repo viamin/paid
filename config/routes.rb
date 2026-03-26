@@ -83,6 +83,9 @@ Rails.application.routes.draw do
     get "proxy/git-credentials", to: "git_credentials#show"
 
     get "knowledge/search", to: "knowledge_search#search"
+
+    # GitHub webhook receiver for PR review events and reactions
+    post "github_webhooks", to: "github_webhooks#create"
   end
 
   # Defines the root path route ("/")
