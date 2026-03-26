@@ -25,9 +25,25 @@ cd "$APP_ROOT"
 
 MODE="${1:---lightweight}"
 LOG_PREFIX="[dev-update]"
+OVERMIND_SOCKET=".overmind.sock"
 
 log() {
   echo "$LOG_PREFIX $(date '+%Y-%m-%d %H:%M:%S') $*"
+}
+
+overmind_available() {
+  command -v overmind &> /dev/null
+}
+
+overmind_running() {
+  overmind_available && overmind status &>/dev/null
+}
+
+remove_stale_overmind_socket() {
+  if [ -S "$OVERMIND_SOCKET" ] && ! overmind_running; then
+    log "Removing stale Overmind socket..."
+    rm -f "$OVERMIND_SOCKET"
+  fi
 }
 
 ensure_on_main() {
@@ -46,13 +62,26 @@ pull_latest() {
 }
 
 stop_overmind() {
-  if command -v overmind &> /dev/null && [ -e ".overmind.sock" ]; then
+  if overmind_available && [ -e "$OVERMIND_SOCKET" ]; then
+    if ! overmind_running; then
+      log "Detected stale Overmind socket."
+      remove_stale_overmind_socket
+      return
+    fi
+
     log "Stopping Overmind (detached)..."
     # Use setsid to run overmind quit in a new session so that stopping
     # Overmind does not kill this script (which may be a child of Overmind).
     setsid overmind quit &>/dev/null || true
-    # Give Overmind a moment to shut down gracefully.
-    sleep 3
+
+    # Give Overmind a moment to shut down gracefully and release its socket.
+    for _ in {1..10}; do
+      [ ! -e "$OVERMIND_SOCKET" ] && return
+      ! overmind_running && break
+      sleep 1
+    done
+
+    remove_stale_overmind_socket
   else
     log "Overmind not running, skipping stop."
   fi
@@ -64,11 +93,33 @@ run_setup() {
 }
 
 start_dev() {
+  remove_stale_overmind_socket
+
+  if overmind_running; then
+    log "Overmind is already running, skipping start."
+    return
+  fi
+
   log "Starting dev environment..."
   # Start bin/dev detached so this script can exit cleanly.
   nohup bin/dev &>/dev/null &
   disown
   log "Dev environment started (PID $!)."
+
+  for _ in {1..15}; do
+    if overmind_running; then
+      log "Overmind is healthy after restart."
+      return
+    fi
+
+    sleep 1
+  done
+
+  if [ -e "$OVERMIND_SOCKET" ]; then
+    log "Warning: Overmind restart did not become healthy before timeout. Socket still exists at $OVERMIND_SOCKET."
+  else
+    log "Warning: Overmind restart did not become healthy before timeout. No socket present."
+  fi
 }
 
 case "$MODE" in
