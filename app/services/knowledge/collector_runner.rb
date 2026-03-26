@@ -32,7 +32,12 @@ module Knowledge
     def run
       project_version = resolve_project_version
       results = run_collectors(project_version)
-      mark_stale_artifacts(project_version)
+
+      # Only mark stale artifacts when all collectors completed successfully.
+      # If any failed, we'd be staling artifacts without a replacement.
+      # If any are still running, another worker is mid-collection.
+      all_succeeded = results.all? { |r| r[:status] == "completed" || r[:status] == "skipped" }
+      mark_stale_artifacts(project_version) if all_succeeded && collector_classes.any?
 
       {
         project_version: project_version,
@@ -64,8 +69,12 @@ module Knowledge
       )
 
       collector_run.with_lock do
-        if collector_run.status == "completed" || collector_run.status == "running"
-          return skip_result(collector_type)
+        if collector_run.status == "completed"
+          return { collector_type: collector_type, status: "skipped" }
+        end
+
+        if collector_run.status == "running"
+          return { collector_type: collector_type, status: "in_progress" }
         end
 
         collector_run.mark_running!
@@ -95,14 +104,21 @@ module Knowledge
       { collector_type: collector_type, status: "failed", error: e.message }
     end
 
-    def skip_result(collector_type)
-      { collector_type: collector_type, status: "skipped" }
-    end
-
     def mark_stale_artifacts(project_version)
+      current_run_ids = project_version.collector_runs.select(:id)
+
+      # Only stale artifacts from versions older than the current one,
+      # so backfills of older commits don't stale artifacts from newer versions
+      older_version_ids = ProjectVersion
+        .where(project: project)
+        .where("created_at < ?", project_version.created_at)
+        .select(:id)
+
       stale_artifacts = KnowledgeArtifact
+        .joins(:collector_run)
         .where(project: project, status: "active")
-        .where.not(collector_run_id: project_version.collector_runs.select(:id))
+        .where.not(collector_run_id: current_run_ids)
+        .where(collector_runs: { project_version_id: older_version_ids })
 
       KnowledgeChunk
         .where(knowledge_artifact_id: stale_artifacts.select(:id), status: "active")

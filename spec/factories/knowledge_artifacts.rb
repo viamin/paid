@@ -4,6 +4,7 @@ FactoryBot.define do
   factory :knowledge_artifact do
     collector_run
     project { collector_run&.project_version&.project || association(:project) }
+    collector_type { collector_run&.collector_type || "test" }
     artifact_type { "route" }
     scope_path { "app/controllers/users_controller.rb" }
     sequence(:identifier) { |n| "GET /api/users/#{n}" }

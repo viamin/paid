@@ -14,6 +14,8 @@ RSpec.describe KnowledgeArtifact do
   describe "validations" do
     it { is_expected.to validate_presence_of(:artifact_type) }
     it { is_expected.to validate_length_of(:artifact_type).is_at_most(100) }
+    it { is_expected.to validate_presence_of(:collector_type) }
+    it { is_expected.to validate_length_of(:collector_type).is_at_most(100) }
     it { is_expected.to validate_presence_of(:content_hash) }
     it { is_expected.to validate_length_of(:content_hash).is_at_most(64) }
     it { is_expected.to validate_uniqueness_of(:content_hash).scoped_to(:collector_run_id) }

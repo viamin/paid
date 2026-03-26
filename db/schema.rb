@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_25_233029) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_26_012903) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -188,7 +188,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_233029) do
     t.string "status", limit: 50, default: "pending", null: false
     t.string "tool_version", limit: 100
     t.datetime "updated_at", null: false
-    t.index ["project_version_id", "collector_type"], name: "index_collector_runs_on_project_version_id_and_collector_type"
+    t.index ["project_version_id", "collector_type"], name: "index_collector_runs_on_project_version_id_and_collector_type", unique: true
     t.index ["project_version_id"], name: "index_collector_runs_on_project_version_id"
     t.index ["status"], name: "index_collector_runs_on_status"
   end
@@ -386,6 +386,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_233029) do
   create_table "knowledge_artifacts", force: :cascade do |t|
     t.string "artifact_type", limit: 100, null: false
     t.bigint "collector_run_id", null: false
+    t.string "collector_type", limit: 100
     t.text "content"
     t.string "content_hash", limit: 64, null: false
     t.datetime "created_at", null: false
@@ -397,7 +398,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_25_233029) do
     t.datetime "updated_at", null: false
     t.index ["collector_run_id", "content_hash"], name: "index_knowledge_artifacts_on_collector_run_id_and_content_hash", unique: true
     t.index ["collector_run_id"], name: "index_knowledge_artifacts_on_collector_run_id"
-    t.index ["project_id", "artifact_type", "identifier"], name: "idx_on_project_id_artifact_type_identifier_88383c0c31"
+    t.index ["project_id", "artifact_type", "scope_path", "identifier", "collector_type", "status"], name: "idx_knowledge_artifacts_on_project_type_scope_id_ctype_status"
+    t.index ["project_id", "artifact_type", "scope_path", "identifier", "collector_type"], name: "idx_knowledge_artifacts_active_unique", unique: true, where: "((status)::text = 'active'::text)"
     t.index ["project_id"], name: "index_knowledge_artifacts_on_project_id"
     t.index ["status"], name: "index_knowledge_artifacts_on_status"
   end

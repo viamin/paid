@@ -36,22 +36,25 @@ module Knowledge
       if existing
         reassign_to_current_run(existing)
       else
-        mark_prior_stale(data)
-        create_artifact(data, content_hash)
+        # Atomic stale-then-insert to prevent interleaving with concurrent
+        # collectors that could violate the partial unique index on active artifacts
+        KnowledgeArtifact.transaction do
+          mark_prior_stale(data)
+          create_artifact(data, content_hash)
+        end
       end
     end
 
     def find_existing_artifact(data, content_hash)
       KnowledgeArtifact
-        .joins(collector_run: :project_version)
         .where(
           project: project,
+          collector_type: collector_run.collector_type,
           artifact_type: data[:artifact_type],
           scope_path: data[:scope_path],
           identifier: data[:identifier],
           content_hash: content_hash,
-          status: "active",
-          collector_runs: { collector_type: collector_run.collector_type }
+          status: "active"
         )
         .first
     end
@@ -62,14 +65,13 @@ module Knowledge
 
     def mark_prior_stale(data)
       prior_artifacts = KnowledgeArtifact
-        .joins(collector_run: :project_version)
         .where(
           project: project,
+          collector_type: collector_run.collector_type,
           artifact_type: data[:artifact_type],
           scope_path: data[:scope_path],
           identifier: data[:identifier],
-          status: "active",
-          collector_runs: { collector_type: collector_run.collector_type }
+          status: "active"
         )
 
       KnowledgeChunk
@@ -80,23 +82,22 @@ module Knowledge
     end
 
     def create_artifact(data, content_hash)
-      KnowledgeArtifact.transaction do
-        artifact = KnowledgeArtifact.create!(
-          collector_run: collector_run,
-          project: project,
-          artifact_type: data[:artifact_type],
-          scope_path: data[:scope_path],
-          identifier: data[:identifier],
-          content: data[:content],
-          content_hash: content_hash,
-          metadata: data[:metadata] || {},
-          status: "active"
-        )
+      artifact = KnowledgeArtifact.create!(
+        collector_run: collector_run,
+        project: project,
+        collector_type: collector_run.collector_type,
+        artifact_type: data[:artifact_type],
+        scope_path: data[:scope_path],
+        identifier: data[:identifier],
+        content: data[:content],
+        content_hash: content_hash,
+        metadata: data[:metadata] || {},
+        status: "active"
+      )
 
-        create_chunks(artifact, data[:chunks] || [])
+      create_chunks(artifact, data[:chunks] || [])
 
-        artifact
-      end
+      artifact
     end
 
     def create_chunks(artifact, chunks_data)

@@ -108,6 +108,7 @@ RSpec.describe Knowledge::CollectorRunner do
         extra = KnowledgeArtifact.create!(
           collector_run: old_run,
           project: project,
+          collector_type: old_run.collector_type,
           artifact_type: "orphaned_type",
           identifier: "OrphanedThing",
           content: "old content",
@@ -159,6 +160,25 @@ RSpec.describe Knowledge::CollectorRunner do
         failed_run = CollectorRun.find_by(collector_type: "failing_collector")
         expect(failed_run.status).to eq("failed")
         expect(failed_run.error_message).to eq("tool not found")
+      end
+
+      it "does not mark prior artifacts as stale when a collector fails" do
+        old_sha = "c" * 40
+        described_class.call(project: project, commit_sha: old_sha)
+
+        old_run = CollectorRun.find_by(collector_type: "test_collector")
+        extra = create(:knowledge_artifact,
+          collector_run: old_run, project: project,
+          collector_type: old_run.collector_type, artifact_type: "orphaned_type",
+          identifier: "OrphanedThing", content: "old", content_hash: Digest::SHA256.hexdigest("old"))
+
+        # Run on new commit with both collectors (one will fail)
+        described_class.register("failing_collector", failing_collector_class)
+        new_sha = "d" * 40
+        described_class.call(project: project, commit_sha: new_sha)
+
+        # Extra artifact from old version stays active since the run had a failure
+        expect(extra.reload.status).to eq("active")
       end
     end
   end
