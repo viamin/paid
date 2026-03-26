@@ -20,8 +20,8 @@ module Knowledge
         new(project: project, client: client).drop_collection!
       end
 
-      def self.rebuild!(project, client: Paid.qdrant_client)
-        new(project: project, client: client).rebuild!
+      def self.rebuild_schema!(project, client: Paid.qdrant_client)
+        new(project: project, client: client).rebuild_schema!
       end
 
       def ensure_collection!
@@ -40,7 +40,8 @@ module Knowledge
       # Drops and recreates the Qdrant collection structure (schema + indexes).
       # Does NOT re-upsert points — embeddings must be recomputed separately
       # since zero-filled placeholder vectors would break similarity search.
-      def rebuild!
+      # A full rebuild (including re-embedding) requires a separate workflow.
+      def rebuild_schema!
         Rails.logger.warn(
           message: "knowledge.qdrant.rebuild_started",
           project_id: project.id,
@@ -63,8 +64,10 @@ module Knowledge
 
       def collection_exists?
         result = client.collections.get(collection_name: collection_name)
-        result.dig("result", "status") == "green" || result.key?("result")
+        result.dig("result", "status") == "green" || result.dig("result").present?
       rescue Qdrant::Error => e
+        raise unless e.message.match?(/not found/i)
+
         Rails.logger.debug(
           message: "knowledge.qdrant.collection_not_found",
           collection: collection_name,

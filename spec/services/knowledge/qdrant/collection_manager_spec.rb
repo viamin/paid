@@ -66,6 +66,18 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
       end
     end
 
+    context "when the API returns a non-not-found error" do
+      before do
+        allow(collections).to receive(:get)
+          .with(collection_name: collection_name)
+          .and_raise(Qdrant::Error.new("Unauthorized: invalid API key"))
+      end
+
+      it "re-raises the error" do
+        expect { manager.ensure_collection! }.to raise_error(Qdrant::Error, /Unauthorized/)
+      end
+    end
+
     context "when called via class method" do
       before do
         call_count = 0
@@ -120,7 +132,7 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
     end
   end
 
-  describe "#rebuild!" do
+  describe "#rebuild_schema!" do
     before do
       call_count = 0
       allow(collections).to receive(:get).with(collection_name: collection_name) do
@@ -140,14 +152,14 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
     end
 
     it "drops and recreates the collection" do
-      manager.rebuild!
+      manager.rebuild_schema!
 
       expect(collections).to have_received(:delete).with(collection_name: collection_name)
       expect(collections).to have_received(:create)
     end
 
     it "does not upsert points (embeddings must be recomputed separately)" do
-      manager.rebuild!
+      manager.rebuild_schema!
 
       expect(points).not_to have_received(:upsert)
     end
@@ -155,7 +167,7 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
     it "logs a warning" do
       allow(Rails.logger).to receive(:warn)
 
-      manager.rebuild!
+      manager.rebuild_schema!
 
       expect(Rails.logger).to have_received(:warn).with(
         hash_including(message: "knowledge.qdrant.rebuild_started")
