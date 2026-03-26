@@ -9,7 +9,7 @@ module StyleGuides
   #
   # @example
   #   result = StyleGuides::CollectCodeSamples.call(project: project)
-  #   result # => { "ruby" => ["# frozen...\nclass Foo\n...", ...], ... }
+  #   result # => { "ruby" => [ { path: "app/models/user.rb", content: "# frozen...\nclass User\n..." }, ... ], ... }
   class CollectCodeSamples
     # Maximum total bytes of code samples to collect across all languages.
     MAX_TOTAL_BYTES = 80_000
@@ -44,7 +44,7 @@ module StyleGuides
       /(\b[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY)\b\s*[=:]\s*).{10,}/i,
       /\bAKIA[0-9A-Z]{16}\b/,
       /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/,
-      /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/
+      /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/i
     ].freeze
 
     attr_reader :project
@@ -71,7 +71,17 @@ module StyleGuides
     def fetch_tree
       client = project.github_token.client
       ref = project.default_branch || "main"
-      client.tree(project.full_name, ref, recursive: true)
+      tree = client.tree(project.full_name, ref, recursive: true)
+
+      if tree.respond_to?(:truncated) && tree.truncated
+        Rails.logger.warn(
+          message: "style_guides.collect_code_samples.truncated_tree",
+          project_id: project.id,
+          ref: ref
+        )
+      end
+
+      tree
     rescue GithubClient::Error, Octokit::Error => e
       Rails.logger.error(
         message: "style_guides.collect_code_samples.tree_fetch_failed",

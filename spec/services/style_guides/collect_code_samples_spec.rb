@@ -138,6 +138,17 @@ RSpec.describe StyleGuides::CollectCodeSamples do
       expect(content).not_to include("secret key data here")
     end
 
+    it "logs a warning when the tree response is truncated" do
+      truncated_tree = OpenStruct.new(tree: tree_items, truncated: true)
+      allow(github_client).to receive(:tree).and_return(truncated_tree)
+
+      expect(Rails.logger).to receive(:warn).with(hash_including(
+        message: "style_guides.collect_code_samples.truncated_tree"
+      ))
+
+      described_class.call(project: project)
+    end
+
     it "redacts bare secret identifiers without a prefix" do
       secret_code = <<~RUBY
         TOKEN = "some-long-secret-value"
