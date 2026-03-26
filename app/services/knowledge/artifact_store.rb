@@ -97,12 +97,11 @@ module Knowledge
           status: "active"
         )
 
-      staled_count = prior_artifacts.count
       KnowledgeChunk
         .where(knowledge_artifact_id: prior_artifacts.select(:id), status: "active")
         .update_all(status: "stale", updated_at: Time.current)
 
-      prior_artifacts.update_all(status: "stale", updated_at: Time.current)
+      staled_count = prior_artifacts.update_all(status: "stale", updated_at: Time.current)
 
       if staled_count > 0
         Knowledge::Provenance::AuditLog.record(

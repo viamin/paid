@@ -108,4 +108,38 @@ RSpec.describe Knowledge::Provenance::AuditLog do
       )
     end
   end
+
+  describe ".record_batch" do
+    it "bulk-inserts multiple audit events" do
+      events = [
+        { event: :chunk_embedded, project: project, actor_type: "embedding_pipeline",
+          target_type: "KnowledgeChunk", target_id: "1", details: { model: "test" } },
+        { event: :chunk_embedded, project: project, actor_type: "embedding_pipeline",
+          target_type: "KnowledgeChunk", target_id: "2", details: { model: "test" } }
+      ]
+
+      expect { described_class.record_batch(events) }
+        .to change(KnowledgeAuditEvent, :count).by(2)
+    end
+
+    it "logs each event" do
+      allow(Rails.logger).to receive(:info)
+
+      events = [
+        { event: :chunk_embedded, project: project, actor_type: "embedding_pipeline",
+          target_type: "KnowledgeChunk", target_id: "1", details: { model: "test" } }
+      ]
+
+      described_class.record_batch(events)
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(message: "knowledge.audit", event: "chunk_embedded")
+      )
+    end
+
+    it "is a no-op for empty arrays" do
+      expect { described_class.record_batch([]) }
+        .not_to change(KnowledgeAuditEvent, :count)
+    end
+  end
 end

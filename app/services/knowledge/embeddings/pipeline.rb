@@ -67,21 +67,24 @@ module Knowledge
         end
 
         tokens = 0
+        audit_events = []
 
         chunks.zip(results).each do |chunk, result|
           Knowledge::Qdrant::PointSync.upsert_chunk!(chunk, vector: result.vector)
           chunk.update!(embedding_model: generator.model)
           tokens += result.token_count
 
-          Knowledge::Provenance::AuditLog.record(
+          audit_events << {
             event: :chunk_embedded,
             project: chunk.project,
             actor_type: "embedding_pipeline",
             target_type: "KnowledgeChunk",
             target_id: chunk.id,
             details: { model: generator.model }
-          )
+          }
         end
+
+        Knowledge::Provenance::AuditLog.record_batch(audit_events)
 
         { embedded: chunks.size, tokens: tokens }
       end
