@@ -24,8 +24,47 @@ class KnowledgeChunk < ApplicationRecord
   scope :by_project, ->(project_id) { where(project_id: project_id) }
   scope :for_project, ->(project) { where(project: project) }
   scope :ordered, -> { order(:sequence) }
+  scope :full_text_search, ->(query) {
+    where("content_tsvector @@ plainto_tsquery('pg_catalog.english', ?)", query)
+      .order(Arel.sql("ts_rank(content_tsvector, plainto_tsquery('pg_catalog.english', #{connection.quote(query)})) DESC, #{table_name}.id ASC"))
+  }
+
+  before_save :update_content_tsvector, if: :should_update_content_tsvector?
+
+  def self.content_tsvector_trigger_present?
+    return @content_tsvector_trigger_present if defined?(@content_tsvector_trigger_present)
+
+    sql = <<~SQL.squish
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_trigger t
+        JOIN pg_class c ON c.oid = t.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE NOT t.tgisinternal
+          AND n.nspname = ANY (current_schemas(false))
+          AND c.relname = #{connection.quote(table_name)}
+          AND t.tgfoid::regproc::text = 'tsvector_update_trigger'
+      )
+    SQL
+
+    @content_tsvector_trigger_present = connection.select_value(sql)
+  end
+
+  def self.reset_content_tsvector_trigger_cache!
+    remove_instance_variable(:@content_tsvector_trigger_present) if defined?(@content_tsvector_trigger_present)
+  end
 
   private
+
+  def should_update_content_tsvector?
+    will_save_change_to_content? && !self.class.content_tsvector_trigger_present?
+  end
+
+  def update_content_tsvector
+    self.content_tsvector = self.class.connection.select_value(
+      Arel.sql("SELECT to_tsvector('pg_catalog.english', #{self.class.connection.quote(content)})")
+    )
+  end
 
   def project_matches_knowledge_artifact_project
     return if knowledge_artifact.nil? || project_id.nil?

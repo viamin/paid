@@ -53,6 +53,61 @@ RSpec.describe KnowledgeChunk do
       end
     end
 
+    describe ".full_text_search" do
+      it "returns chunks matching the search query ranked by relevance" do
+        artifact = create(:knowledge_artifact)
+        matching = create(:knowledge_chunk, knowledge_artifact: artifact, project: artifact.project,
+          content: "PostgreSQL database migration with indexes and triggers")
+        non_matching = create(:knowledge_chunk, knowledge_artifact: artifact, project: artifact.project,
+          content: "Ruby on Rails controller action for user authentication")
+
+        results = described_class.full_text_search("database migration")
+        expect(results.first).to eq(matching)
+        expect(results).not_to include(non_matching)
+      end
+
+      it "returns empty when no chunks match" do
+        create(:knowledge_chunk, content: "Unrelated content about weather forecasting")
+        expect(described_class.full_text_search("database migration")).to be_empty
+      end
+
+      it "auto-populates tsvector on insert" do
+        chunk = create(:knowledge_chunk, content: "PostgreSQL full text search")
+        chunk.reload
+        expect(chunk.content_tsvector).not_to be_nil
+      end
+
+      it "auto-updates tsvector when content changes" do
+        chunk = create(:knowledge_chunk, content: "Original content about databases")
+        chunk.update!(content: "Updated content about migrations")
+        chunk.reload
+        expect(described_class.full_text_search("migrations")).to include(chunk)
+        expect(described_class.full_text_search("databases")).not_to include(chunk)
+      end
+
+      context "when the content_tsvector trigger is not present" do
+        before do
+          allow(described_class).to receive(:content_tsvector_trigger_present?).and_return(false)
+        end
+
+        it "populates content_tsvector via the before_save callback on insert" do
+          chunk = create(:knowledge_chunk, content: "Schema.rb loaded database without triggers")
+          chunk.reload
+
+          expect(chunk.content_tsvector).not_to be_nil
+        end
+
+        it "updates content_tsvector via the before_save callback when content changes" do
+          chunk = create(:knowledge_chunk, content: "Original fallback content")
+
+          expect {
+            chunk.update!(content: "Updated fallback content for migrations")
+            chunk.reload
+          }.to change { chunk.content_tsvector.to_s }
+        end
+      end
+    end
+
     describe ".ordered" do
       it "returns chunks ordered by sequence" do
         artifact = create(:knowledge_artifact)

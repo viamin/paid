@@ -10,7 +10,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
   let(:script_source) { File.expand_path("../../bin/dev", __dir__) }
 
   it "removes a stale Overmind socket before starting overmind" do
-    Dir.mktmpdir("dev-script-spec") do |dir|
+    Dir.mktmpdir("dev-script-spec", Dir.pwd) do |dir|
       script_path = prepare_script_fixture(dir)
       socket_path = create_stale_socket(dir)
 
