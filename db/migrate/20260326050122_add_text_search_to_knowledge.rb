@@ -10,13 +10,6 @@ class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
       add_column :knowledge_chunks, :content_tsvector, :tsvector
     end
 
-    unless index_exists?(:knowledge_chunks, :content_tsvector, name: "index_knowledge_chunks_on_content_tsvector")
-      add_index :knowledge_chunks, :content_tsvector,
-                using: :gin,
-                algorithm: :concurrently,
-                name: "index_knowledge_chunks_on_content_tsvector"
-    end
-
     execute "DROP TRIGGER IF EXISTS knowledge_chunks_tsvector_update ON knowledge_chunks;"
     execute <<~SQL
       CREATE TRIGGER knowledge_chunks_tsvector_update
@@ -27,6 +20,7 @@ class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
 
     # Backfill tsvector for existing rows so full_text_search works immediately after deploy.
     # Use batched updates over primary-key ranges to avoid a single long-running UPDATE.
+    # The GIN index is created AFTER the backfill to avoid costly per-row index updates.
     range = select_one(<<~SQL)
       SELECT MIN(id) AS min_id, MAX(id) AS max_id
       FROM knowledge_chunks
@@ -49,6 +43,13 @@ class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
             AND id < #{end_id};
         SQL
       end
+    end
+
+    unless index_exists?(:knowledge_chunks, :content_tsvector, name: "index_knowledge_chunks_on_content_tsvector")
+      add_index :knowledge_chunks, :content_tsvector,
+                using: :gin,
+                algorithm: :concurrently,
+                name: "index_knowledge_chunks_on_content_tsvector"
     end
 
     unless index_exists?(:knowledge_artifacts, :identifier, name: "index_knowledge_artifacts_on_identifier_trgm")
