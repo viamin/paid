@@ -110,18 +110,13 @@
         Automation
       </summary>
       <dl class="divide-y divide-gray-200">
-        <% [
-          { label: "Auto-Add Labels",          enabled: @project.auto_add_labels_enabled? },
-          { label: "Automation on Label",      enabled: @project.automation_on_label_enabled? },
-          { label: "Auto-Pick Issues",         enabled: @project.auto_pick_enabled? },
-          { label: "Auto-Merge",               enabled: @project.auto_merge_enabled? },
-          { label: "Auto-Fix Merge Conflicts", enabled: @project.auto_fix_merge_conflicts? }
-        ].each do |automation| %>
+        <% Project::AUTOMATION_SETTINGS.each do |setting| %>
+          <% enabled = @project.public_send(setting[:attribute]) %>
           <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-            <dt class="text-sm font-medium text-gray-500"><%= automation[:label] %></dt>
-            <dd class="mt-1 text-sm sm:col-span-2 sm:mt-0">
-              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= automation[:enabled] ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
-                <%= automation[:enabled] ? "Enabled" : "Disabled" %>
+            <dt class="text-sm font-medium text-gray-500"><%= setting[:label] %></dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
+                <%= enabled ? "Enabled" : "Disabled" %>
               </span>
             </dd>
           </div>

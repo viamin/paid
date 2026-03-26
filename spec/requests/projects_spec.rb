@@ -514,6 +514,35 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Quick Run")
       end
 
+      it "shows automation settings with their current state" do
+        project = create(:project, account: account, github_token: github_token,
+          auto_add_labels_enabled: true, automation_on_label_enabled: false,
+          auto_pick_enabled: true, auto_merge_enabled: false, auto_fix_merge_conflicts: true)
+        get project_path(project)
+        expect(response.body).to include("Automation")
+        Project::AUTOMATION_SETTINGS.each do |setting|
+          expect(response.body).to include(setting[:label])
+        end
+        expect(response.body).to include("Enabled")
+        expect(response.body).to include("Disabled")
+      end
+
+      it "shows edit automation link for users with update permission" do
+        owner = create(:user, :owner, account: account)
+        sign_in owner
+        project = create(:project, account: account, github_token: github_token)
+        get project_path(project)
+        expect(response.body).to include("Edit automation settings")
+      end
+
+      it "hides edit automation link for users without update permission" do
+        viewer = create(:user, :viewer, account: account)
+        sign_in viewer
+        project = create(:project, account: account, github_token: github_token)
+        get project_path(project)
+        expect(response.body).not_to include("Edit automation settings")
+      end
+
       it "does not allow viewing projects from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)
