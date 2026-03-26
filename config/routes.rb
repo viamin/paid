@@ -50,6 +50,7 @@ Rails.application.routes.draw do
   # Style guide management
   resources :style_guides do
     post :compress, on: :member
+    post :extract, on: :collection
   end
 
   # Quality metrics dashboard
