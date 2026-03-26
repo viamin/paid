@@ -137,5 +137,25 @@ RSpec.describe StyleGuides::CollectCodeSamples do
       expect(content).not_to include("sk-abc123secretvalue456")
       expect(content).not_to include("secret key data here")
     end
+
+    it "redacts bare secret identifiers without a prefix" do
+      secret_code = <<~RUBY
+        TOKEN = "some-long-secret-value"
+        SECRET = "another-long-secret-value"
+      RUBY
+      encoded = OpenStruct.new(content: Base64.strict_encode64(secret_code))
+      items = [ OpenStruct.new(type: "blob", path: "config/tokens.rb", size: secret_code.bytesize) ]
+      allow(github_client).to receive_messages(
+        tree: OpenStruct.new(tree: items),
+        contents: encoded
+      )
+
+      result = described_class.call(project: project)
+
+      content = result["ruby"].first[:content]
+      expect(content).not_to include("some-long-secret-value")
+      expect(content).not_to include("another-long-secret-value")
+      expect(content).to include("[REDACTED]")
+    end
   end
 end

@@ -41,7 +41,7 @@ module StyleGuides
 
     # Patterns for lightweight redaction of secrets before sending to LLM.
     SECRET_PATTERNS = [
-      /([A-Z_](?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY)\s*[=:]\s*).{10,}/i,
+      /(\b[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY)\b\s*[=:]\s*).{10,}/i,
       /\bAKIA[0-9A-Z]{16}\b/,
       /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/,
       /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/
