@@ -26,7 +26,9 @@ module Activities
         action: action
       )
 
-      { action: action, issue_id: issue_id, project_id: project_id }
+      result = { action: action, issue_id: issue_id, project_id: project_id }
+      result[:source_pull_request_number] = issue.github_number if issue.is_pull_request? && action != "none"
+      result
     end
 
     private
