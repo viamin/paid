@@ -725,7 +725,7 @@ class AgentRun < ApplicationRecord
       DashboardBroadcastJob.perform_later(project.account_id) if finished?
     end
 
-    if previous_changes.key?("status") || previous_changes.key?("container_id")
+    if previous_changes.key?("status")
       LiveDashboardBroadcastJob.perform_later(project.account_id, id)
     end
 
