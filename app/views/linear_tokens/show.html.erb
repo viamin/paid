@@ -1,0 +1,76 @@
+<% content_for(:title) { "#{@linear_token.name} - Linear - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to linear_tokens_path, class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Linear API Keys
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-semibold text-gray-900"><%= @linear_token.name %></h1>
+          <p class="mt-1 text-sm text-gray-500">
+            Added <%= time_ago_in_words(@linear_token.created_at) %> ago
+            <% if @linear_token.created_by %>
+              by <%= @linear_token.created_by.email %>
+            <% end %>
+          </p>
+        </div>
+        <div>
+          <% if @linear_token.revoked? %>
+            <span class="inline-flex items-center rounded-md bg-gray-100 px-3 py-1 text-sm font-medium text-gray-600">Revoked</span>
+          <% else %>
+            <span class="inline-flex items-center rounded-md bg-green-100 px-3 py-1 text-sm font-medium text-green-700">Active</span>
+          <% end %>
+        </div>
+      </div>
+    </div>
+
+    <div class="border-t border-gray-200">
+      <dl class="divide-y divide-gray-200">
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">API Key</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <code class="rounded bg-gray-100 px-2 py-1 font-mono text-sm">
+              <%= @linear_token.token[0..7] %>****<%= @linear_token.token[-4..] %>
+            </code>
+          </dd>
+        </div>
+
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Created</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <%= local_time(@linear_token.created_at) %>
+          </dd>
+        </div>
+
+        <% if @linear_token.revoked_at.present? %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500">Revoked</dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+              <%= local_time(@linear_token.revoked_at) %>
+            </dd>
+          </div>
+        <% end %>
+      </dl>
+    </div>
+
+    <% if @linear_token.active? && policy(@linear_token).destroy? %>
+      <div class="border-t border-gray-200 bg-gray-50 px-4 py-4 sm:px-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-medium text-gray-900">Deactivate API Key</h3>
+            <p class="text-sm text-gray-500">Once deactivated, this API key can no longer be used.</p>
+          </div>
+          <%= button_to "Deactivate", linear_token_path(@linear_token), method: :delete, class: "rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600", form: { data: { turbo_confirm: "Are you sure you want to deactivate this API key? This cannot be undone." } } %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>
