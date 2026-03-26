@@ -99,7 +99,7 @@ module Knowledge
           revs = revision_map.fetch(file, 0)
           complexity = hotspot_map.fetch(file, 0)
           { file: file, revisions: revs, complexity: complexity, score: revs * complexity }
-        end.sort_by { |e| -e[:score] }
+        end.sort_by { |e| [ -e[:score], -e[:revisions], -e[:complexity], e[:file] ] }
       end
 
       def build_artifact(entry, rank)
