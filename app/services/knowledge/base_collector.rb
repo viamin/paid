@@ -5,12 +5,13 @@ require "timeout"
 
 module Knowledge
   class BaseCollector
-    attr_reader :project, :project_version, :collector_run
+    attr_reader :project, :project_version, :collector_run, :options
 
-    def initialize(project:, project_version:, collector_run:)
+    def initialize(project:, project_version:, collector_run:, options: {})
       @project = project
       @project_version = project_version
       @collector_run = collector_run
+      @options = options
     end
 
     # Must return Array<Hash> with keys:
