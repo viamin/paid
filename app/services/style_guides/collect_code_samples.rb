@@ -72,7 +72,13 @@ module StyleGuides
       client = project.github_token.client
       ref = project.default_branch || "main"
       client.tree(project.full_name, ref, recursive: true)
-    rescue GithubClient::Error, Octokit::Error
+    rescue GithubClient::Error, Octokit::Error => e
+      Rails.logger.error(
+        message: "style_guides.collect_code_samples.tree_fetch_failed",
+        project_id: project.id,
+        error_class: e.class.name,
+        error_message: e.message
+      )
       nil
     end
 

@@ -109,30 +109,40 @@ module StyleGuides
 
       return if success && output.present?
 
-      raise ExtractionError, "LLM extraction failed or returned empty output"
+      details = [ "success=#{success}" ]
+      details << "exit_code=#{response.exit_code.inspect}" if response.respond_to?(:exit_code)
+      details << "error=#{response.error.inspect}" if response.respond_to?(:error) && response.error.present?
+
+      raise ExtractionError, "LLM extraction failed or returned empty output (#{details.join(', ')})"
     end
 
     def create_style_guide(language, content)
       display_name = LANGUAGE_DISPLAY_NAMES.fetch(language, language.capitalize)
       guide_name = "#{display_name} Style Guide (auto-extracted)"
 
+      guide = upsert_guide(guide_name, language, content)
+      StyleGuideCompressionJob.perform_later(guide.id)
+      guide
+    end
+
+    def upsert_guide(guide_name, language, content)
       existing = project.style_guides.find_by(name: guide_name)
       if existing
         existing.update!(raw_content: content, language: language, active: true)
-        StyleGuideCompressionJob.perform_later(existing.id)
         return existing
       end
 
-      guide = project.style_guides.create!(
+      project.style_guides.create!(
         name: guide_name,
         raw_content: content,
         language: language,
         account: project.account,
         active: true
       )
-
-      StyleGuideCompressionJob.perform_later(guide.id)
-      guide
+    rescue ActiveRecord::RecordNotUnique
+      existing = project.style_guides.find_by!(name: guide_name)
+      existing.update!(raw_content: content, language: language, active: true)
+      existing
     end
 
     # Result object returned by Extract.
