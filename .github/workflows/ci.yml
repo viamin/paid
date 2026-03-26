@@ -111,7 +111,8 @@ jobs:
         run: bin/rails db:prepare
 
       - name: Verify Qdrant health
-        run: curl --fail --silent "$QDRANT_URL/healthz"
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 "$QDRANT_URL/healthz"
 
       - name: Run tests
         run: bin/rspec

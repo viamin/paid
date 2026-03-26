@@ -13,7 +13,7 @@ RSpec.describe Knowledge::Qdrant::PointSync do
       artifact_type: "route")
   end
   let(:chunk) { create(:knowledge_chunk, knowledge_artifact: artifact, project: project) }
-  let(:client) { QdrantClient.new(url: Paid.qdrant_url, api_key: Paid.qdrant_api_key.to_s, timeout: 5, open_timeout: 5) }
+  let(:client) { QdrantClient.new(url: Paid.qdrant_url, api_key: Paid.qdrant_api_key, timeout: 5, open_timeout: 5) }
   let(:manager) { Knowledge::Qdrant::CollectionManager.new(project: project, client: client) }
   let(:vector) { [ 0.1, 0.2, 0.3, 0.4 ] }
   let(:collection_name) { Knowledge::Qdrant::CollectionManager.collection_name(project) }
@@ -21,11 +21,11 @@ RSpec.describe Knowledge::Qdrant::PointSync do
   before do
     WebMock.disable_net_connect!(allow_localhost: true, allow: [ /#{Regexp.escape(Paid.qdrant_url)}/ ])
     allow(Paid).to receive(:embedding_dimensions).and_return(vector.size)
-    safely_drop_collection
+    manager.drop_collection!
   end
 
   after do
-    safely_drop_collection
+    manager.drop_collection!
     WebMock.disable_net_connect!(allow_localhost: true)
   end
 
@@ -69,11 +69,5 @@ RSpec.describe Knowledge::Qdrant::PointSync do
     ).fetch("result")
 
     expect(results).to be_empty
-  end
-
-  def safely_drop_collection
-    manager.drop_collection!
-  rescue Qdrant::Error => e
-    raise unless e.message.match?(/not found/i)
   end
 end
