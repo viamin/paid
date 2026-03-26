@@ -58,11 +58,16 @@ module Knowledge
           end
         rescue Timeout::Error
           kill_process_group(wait_thr.pid)
-          wait_thr.value # reap the child process to avoid zombies
+          # Reap with a short timeout to avoid blocking forever if the process
+          # cannot be signaled (e.g. EPERM from kill_process_group).
+          reap_thread = Thread.new { wait_thr.value }
+          unless reap_thread.join(5)
+            reap_thread.kill
+          end
           stdout.close unless stdout.closed?
           stderr.close unless stderr.closed?
-          out_thread.join
-          err_thread.join
+          out_thread.join(5)
+          err_thread.join(5)
           raise Timeout::Error, "Command timed out after #{timeout} seconds: #{argv.join(' ')}"
         ensure
           stdout.close unless stdout.closed?
