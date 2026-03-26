@@ -4,8 +4,6 @@ module Activities
   class CreatePullRequestActivity < BaseActivity
     activity_name "CreatePullRequest"
 
-    PAID_GENERATED_LABEL = "paid-generated"
-
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
@@ -75,7 +73,9 @@ module Activities
     end
 
     def add_pr_labels(client, project, pr_number, agent_run_id)
-      client.add_labels_to_issue(project.full_name, pr_number, [ PAID_GENERATED_LABEL ])
+      return unless project.auto_add_labels_enabled?
+
+      client.add_labels_to_issue(project.full_name, pr_number, [ project.generated_label_name ])
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.add_pr_labels_failed",

@@ -38,6 +38,42 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when project uses a custom generated_label_name" do
+      let(:custom_project) do
+        create(:project,
+          auto_scan_prs: true,
+          max_pr_followup_runs: 3,
+          pr_action_labels: [],
+          auto_fix_merge_conflicts: false,
+          generated_label_name: "my-custom-label")
+      end
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: custom_project,
+          github_number: 55,
+          labels: [ "my-custom-label" ],
+          paid_state: "completed")
+      end
+
+      before do
+        pr_issue
+        allow(github_client).to receive_messages(
+          pull_request: OpenStruct.new(draft: true, head: OpenStruct.new(sha: "abc123"), mergeable: true, user: OpenStruct.new(login: "viamin")),
+          check_runs_for_ref: [ { name: "rspec", conclusion: "failure" } ],
+          review_threads: [],
+          pull_request_reviews: [],
+          issue_comments: []
+        )
+      end
+
+      it "finds PRs with the custom label" do
+        result = activity.execute(project_id: custom_project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:pr_number]).to eq(55)
+      end
+    end
+
     context "when there are no paid-generated PRs" do
       it "returns empty result" do
         result = activity.execute(project_id: project.id)

@@ -24,7 +24,6 @@ module Issues
   # Returns the created AgentRun or nil if no eligible issue is found.
   class AutoPick
     EXCLUDED_LABELS = %w[planning research waiting tracking epic].freeze
-    PAID_GENERATED_LABEL = "paid-generated"
     PAID_READY_LABEL = "paid-ready"
 
     # Returns the Set of issue IDs from +displayed_issues+ that are
@@ -149,7 +148,7 @@ module Issues
       # not in a draft/restarted review phase.
       handed_off = base
         .where(paid_state: "in_progress")
-        .where("labels @> ?::jsonb", [ PAID_GENERATED_LABEL, PAID_READY_LABEL ].to_json)
+        .where("labels @> ?::jsonb", [ @project.generated_label_name, PAID_READY_LABEL ].to_json)
         .where.not(pr_review_phase: %w[draft restarted])
 
       base.where(paid_state: "in_progress")

@@ -100,7 +100,8 @@ module Workflows
     def handle_detection(detection, project_id)
       case detection[:action]
       when "execute_agent"
-        start_agent_workflow(project_id, detection[:issue_id])
+        start_agent_workflow(project_id, detection[:issue_id],
+          source_pull_request_number: detection[:source_pull_request_number])
       when "start_planning"
         start_agent_workflow(project_id, detection[:issue_id], prefix: "plan")
       end
@@ -109,20 +110,24 @@ module Workflows
     # When at capacity, queues an AgentRun record (no child workflow). ProcessRunQueueJob
     # will start the workflow when a slot opens. This asymmetry is intentional: queued
     # runs don't need workflow-level monitoring since the DB record tracks their state.
-    def start_agent_workflow(project_id, issue_id, prefix: "agent")
+    def start_agent_workflow(project_id, issue_id, prefix: "agent", source_pull_request_number: nil)
       capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
 
       unless capacity[:has_capacity]
-        run_activity(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: issue_id }, timeout: 30)
+        queue_input = { project_id: project_id, issue_id: issue_id }
+        queue_input[:source_pull_request_number] = source_pull_request_number if source_pull_request_number
+        run_activity(Activities::QueueAgentRunActivity, queue_input, timeout: 30)
         return
       end
 
       workflow_id = "#{prefix}-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
 
+      child_input = { project_id: project_id, issue_id: issue_id }
+      child_input[:source_pull_request_number] = source_pull_request_number if source_pull_request_number
+
       Temporalio::Workflow.start_child_workflow(
         Workflows::AgentExecutionWorkflow,
-        { project_id: project_id, issue_id: issue_id },
+        child_input,
         id: workflow_id,
         parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
       )
