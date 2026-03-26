@@ -4,7 +4,7 @@ require "ipaddr"
 
 module Paid
   module TailscaleHosts
-    HOSTNAME_PATTERN = /\A[a-z0-9-]+\.ts\.net\z/
+    HOSTNAME_PATTERN = /\A[a-z0-9-]+\.ts\.net(?::\d+)?\z/
     CGNAT_RANGE = IPAddr.new("100.64.0.0/10")
     FALSE_VALUES = %w[0 false off no].freeze
 
