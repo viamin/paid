@@ -64,6 +64,12 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-012](RDR-012-github-integration.md) | GitHub Integration Strategy | Final | High |
 
+### Scaling & Distribution
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-019](RDR-019-remote-container-execution.md) | Remote Container Execution | Draft | Medium |
+
 ### Quality & Automation
 
 | RDR | Title | Status | Priority |
