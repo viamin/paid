@@ -64,7 +64,7 @@ RSpec.describe KnowledgeAuditEvent do
     describe ".since" do
       it "returns events since the given time" do
         travel_to 1.hour.from_now do
-          create(:knowledge_audit_event, project: project, event_type: "decision_drafted")
+          create(:knowledge_audit_event, project: project, event_type: "collection_rebuilt")
         end
 
         expect(described_class.since(30.minutes.from_now).count).to eq(1)

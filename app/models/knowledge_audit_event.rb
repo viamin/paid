@@ -2,8 +2,8 @@
 
 class KnowledgeAuditEvent < ApplicationRecord
   EVENT_TYPES = %w[
-    artifact_created artifact_staled chunk_embedded chunk_redacted
-    decision_drafted collection_rebuilt
+    artifact_created artifact_staled chunk_embedded
+    collection_rebuilt
   ].freeze
 
   belongs_to :project

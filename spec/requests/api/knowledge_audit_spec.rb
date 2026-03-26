@@ -54,7 +54,7 @@ RSpec.describe "Api::KnowledgeAudit" do
       create(:knowledge_audit_event, project: project, event_type: "artifact_created")
 
       travel_to 2.days.from_now do
-        create(:knowledge_audit_event, project: project, event_type: "decision_drafted")
+        create(:knowledge_audit_event, project: project, event_type: "collection_rebuilt")
       end
 
       get "/api/knowledge/audit", params: {
@@ -64,14 +64,14 @@ RSpec.describe "Api::KnowledgeAudit" do
 
       body = JSON.parse(response.body)
       expect(body["events"].size).to eq(1)
-      expect(body["events"].first["event_type"]).to eq("decision_drafted")
+      expect(body["events"].first["event_type"]).to eq("collection_rebuilt")
     end
 
     it "filters by before date" do
       create(:knowledge_audit_event, project: project, event_type: "artifact_created")
 
       travel_to 2.days.from_now do
-        create(:knowledge_audit_event, project: project, event_type: "decision_drafted")
+        create(:knowledge_audit_event, project: project, event_type: "collection_rebuilt")
       end
 
       get "/api/knowledge/audit", params: {

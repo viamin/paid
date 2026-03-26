@@ -2,15 +2,14 @@
 
 module Api
   class KnowledgeAuditController < ApplicationController
-    skip_after_action :verify_authorized, only: :index
-
     rescue_from ActiveRecord::RecordNotFound do
       render json: { error: "Project not found" }, status: :not_found
     end
 
     # GET /api/knowledge/audit?project_id=X&event_type=Y&target_type=Z&target_id=W&since=...&before=...&page=1
     def index
-      @project = policy_scope(Project).find(params[:project_id])
+      @project = Project.find(params[:project_id])
+      authorize @project, :show?
 
       events = KnowledgeAuditEvent.for_project(@project)
       events = events.by_event_type(params[:event_type]) if params[:event_type].present?
