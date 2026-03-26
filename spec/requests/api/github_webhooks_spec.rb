@@ -110,7 +110,32 @@ RSpec.describe "Api::GithubWebhooks" do
             "X-Hub-Signature-256" => signature
           }
 
-        expect(response).to have_http_status(:forbidden)
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context "with non-completed agent run" do
+      it "does not record feedback for running agent runs" do
+        running_run = create(:agent_run, :running, project: project, pull_request_number: 42)
+        payload = {
+          action: "submitted",
+          review: { state: "approved", user: { login: "reviewer" }, body: "LGTM" },
+          pull_request: { number: running_run.pull_request_number },
+          repository: { id: project.github_id, full_name: project.full_name }
+        }
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "pull_request_review",
+              "X-Hub-Signature-256" => signature
+            }
+        }.not_to change { QualityMetric.human.count }
+
+        expect(response).to have_http_status(:ok)
       end
     end
 

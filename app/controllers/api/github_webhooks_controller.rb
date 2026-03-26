@@ -47,8 +47,10 @@ module Api
     def find_agent_run(pr_number)
       return nil unless @project && pr_number
 
+      # Only record feedback for successful (completed) runs to avoid skewing
+      # metrics — mirrors the guard in HumanFeedbackCollectionJob#perform.
       @project.agent_runs
-        .where(pull_request_number: pr_number)
+        .where(pull_request_number: pr_number, status: "completed")
         .order(created_at: :desc)
         .first
     end
@@ -82,27 +84,27 @@ module Api
         return
       end
 
-      # Use github_id for unambiguous project lookup when available,
-      # falling back to owner/repo for backwards compatibility.
+      # github_id is unique per account_id, not globally — the same repo can be
+      # connected under multiple accounts. We try all matching projects and
+      # verify the signature against each one's webhook_secret; the one that
+      # matches is the correct project.
       github_id = repo_data["id"]
-      @project = if github_id
-        Project.find_by(github_id: github_id)
+      candidates = if github_id
+        Project.where(github_id: github_id)
       else
         owner, repo = repo_data["full_name"].to_s.split("/", 2)
-        Project.find_by(owner: owner, repo: repo)
+        Project.where(owner: owner, repo: repo)
       end
 
-      unless @project&.webhook_secret.present?
-        head :forbidden
-        return
+      @project = candidates.find do |project|
+        next unless project.webhook_secret.present?
+
+        expected = "sha256=#{OpenSSL::HMAC.hexdigest("SHA256", project.webhook_secret, body)}"
+        signature.bytesize == expected.bytesize &&
+          ActiveSupport::SecurityUtils.secure_compare(expected, signature)
       end
 
-      expected = "sha256=#{OpenSSL::HMAC.hexdigest("SHA256", @project.webhook_secret, body)}"
-
-      return if signature.bytesize == expected.bytesize &&
-                ActiveSupport::SecurityUtils.secure_compare(expected, signature)
-
-      head :unauthorized
+      head :unauthorized unless @project
     end
   end
 end
