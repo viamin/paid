@@ -26,7 +26,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
       expect(stdout).to include("Overmind is healthy after restart.")
       expect(stdout).to include("Streaming detached bin/dev output to log/dev_start.log")
-      expect(File.read(File.join(dir, "log", "dev_start.log"))).to include("bin/dev booted")
+      expect(wait_for_dev_start_log(dir)).to include("bin/dev booted")
 
       Timeout.timeout(5) do
         sleep 0.1 until File.exist?(File.join(dir, "dev-ran"))
@@ -70,6 +70,22 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
   def write_executable(path, contents)
     File.write(path, contents)
     FileUtils.chmod("+x", path)
+  end
+
+  def wait_for_dev_start_log(dir)
+    dev_start_log = nil
+
+    Timeout.timeout(5) do
+      loop do
+        dev_start_log_path = File.join(dir, "log", "dev_start.log")
+        dev_start_log = File.read(dev_start_log_path) if File.exist?(dev_start_log_path)
+        break if dev_start_log&.include?("bin/dev booted")
+
+        sleep 0.1
+      end
+    end
+
+    dev_start_log
   end
 
   def prepare_script_fixture(dir, setup_exit_status: 0, start_overmind_running: false, dev_starts_overmind: true)
