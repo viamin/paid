@@ -64,10 +64,20 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+      qdrant:
+        image: qdrant/qdrant:v1.13.2
+        ports:
+          - 6333:6333
+        options: >-
+          --health-cmd="wget --no-verbose --tries=1 --spider http://localhost:6333/healthz || exit 1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
     env:
       RAILS_ENV: test
       DB_HOST: localhost
+      QDRANT_URL: http://localhost:6333
 
     steps:
       - name: Checkout code
@@ -99,6 +109,9 @@ jobs:
 
       - name: Set up database
         run: bin/rails db:prepare
+
+      - name: Verify Qdrant health
+        run: curl --fail --silent "$QDRANT_URL/healthz"
 
       - name: Run tests
         run: bin/rspec
