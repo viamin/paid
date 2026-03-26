@@ -28,7 +28,8 @@
     // LLM CLI tools - dangerous/auto-approve mode (container only)
     "CODEX_APPROVAL_POLICY": "never",
     "CODEX_SANDBOX_MODE": "danger-full-access",
-    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
+    "PAID_REPO_FULL_NAME": "viamin/paid"
   },
   "remoteEnv": {
     "AIDER_NO_BROWSER": "1",
