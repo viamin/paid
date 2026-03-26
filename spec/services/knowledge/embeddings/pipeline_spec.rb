@@ -91,6 +91,24 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
       expect(result[:chunks_embedded]).to eq(1)
     end
 
+    it "raises ArgumentError for zero batch size" do
+      expect { described_class.new(batch_size: 0, generator: generator) }
+        .to raise_error(ArgumentError, /batch_size must be a positive integer/)
+    end
+
+    it "raises ArgumentError for negative batch size" do
+      expect { described_class.new(batch_size: -1, generator: generator) }
+        .to raise_error(ArgumentError, /batch_size must be a positive integer/)
+    end
+
+    it "raises EmbeddingError when result count mismatches chunk count" do
+      allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+      allow(generator).to receive(:call).and_return([]) # 0 results for 1 chunk
+
+      expect { described_class.call(generator: generator) }
+        .to raise_error(Knowledge::Embeddings::EmbeddingError, /Embedding count mismatch/)
+    end
+
     it "logs completion with cost info" do
       allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
 

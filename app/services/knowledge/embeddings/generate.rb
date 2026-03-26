@@ -8,6 +8,7 @@ module Knowledge
       COST_PER_MILLION_TOKENS = 0.13
       MAX_RETRIES = 3
       BASE_DELAY = 1.0
+      RETRYABLE_STATUSES = [ 429, 500, 502, 503, 504 ].freeze
 
       attr_reader :model, :dimensions
 
@@ -46,20 +47,46 @@ module Knowledge
         retries = 0
 
         begin
-          connection.post("/v1/embeddings") do |req|
+          response = connection.post("/v1/embeddings") do |req|
             req.body = {
               input: texts,
               model: model,
               dimensions: dimensions
             }.to_json
           end
-        rescue Faraday::Error => e
+
+          if !response.success? && RETRYABLE_STATUSES.include?(response.status)
+            raise RetryableHTTPError, response
+          end
+
+          response
+        rescue Faraday::Error, RetryableHTTPError => e
           retries += 1
           if retries <= MAX_RETRIES
-            sleep(BASE_DELAY * (2**(retries - 1)))
+            delay = retry_delay(e, retries)
+            sleep(delay)
             retry
           end
           raise EmbeddingError, "Embedding API request failed after #{MAX_RETRIES} retries: #{e.message}"
+        end
+      end
+
+      # Respects Retry-After header when present, otherwise uses exponential backoff.
+      def retry_delay(error, attempt)
+        if error.is_a?(RetryableHTTPError) && (retry_after = error.response.headers["retry-after"])
+          retry_after.to_f
+        else
+          BASE_DELAY * (2**(attempt - 1))
+        end
+      end
+
+      # Internal error to trigger retry on retryable HTTP statuses.
+      class RetryableHTTPError < StandardError
+        attr_reader :response
+
+        def initialize(response)
+          @response = response
+          super("HTTP #{response.status}: #{response.body}")
         end
       end
 
@@ -69,8 +96,13 @@ module Knowledge
         end
 
         JSON.parse(response.body)
+      rescue JSON::ParserError => e
+        raise EmbeddingError,
+          "Failed to parse embedding API response as JSON: #{e.message} (status #{response.status}, body: #{response.body})"
       end
 
+      # TODO(#257): Replace with AgentHarness.embed once embedding support is added
+      # to the agent-harness gem. This direct OpenAI call is a temporary bridge.
       def connection
         @connection ||= Faraday.new(url: api_base_url) do |f|
           f.request :retry, max: 0

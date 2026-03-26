@@ -8,7 +8,12 @@ module Knowledge
       attr_reader :batch_size, :generator
 
       def initialize(batch_size: nil, generator: nil)
-        @batch_size = batch_size || ENV.fetch("EMBEDDING_BATCH_SIZE", DEFAULT_BATCH_SIZE).to_i
+        raw = batch_size || ENV.fetch("EMBEDDING_BATCH_SIZE", DEFAULT_BATCH_SIZE)
+        @batch_size = raw.to_i
+        if @batch_size <= 0
+          raise ArgumentError,
+            "batch_size must be a positive integer; got #{raw.inspect}. Check EMBEDDING_BATCH_SIZE env var."
+        end
         @generator = generator || Generate.new
       end
 
@@ -55,6 +60,12 @@ module Knowledge
         redacted = redaction_check(texts)
 
         results = generator.call(texts: redacted)
+
+        if results.size != chunks.size
+          raise EmbeddingError,
+            "Embedding count mismatch: expected #{chunks.size}, got #{results.size}"
+        end
+
         tokens = 0
 
         chunks.zip(results).each do |chunk, result|

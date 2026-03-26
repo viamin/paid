@@ -67,12 +67,36 @@ RSpec.describe Knowledge::Embeddings::Generate do
   end
 
   describe "error handling" do
-    it "raises EmbeddingError on API failure" do
+    it "retries on retryable HTTP statuses and raises after max retries" do
       stub_request(:post, "https://api.openai.com/v1/embeddings")
         .to_return(status: 500, body: "Internal Server Error")
 
+      generator = described_class.new
+      allow(generator).to receive(:sleep)
+
+      expect { generator.call(texts: texts) }
+        .to raise_error(Knowledge::Embeddings::EmbeddingError, /after 3 retries/)
+    end
+
+    it "respects Retry-After header on 429 responses" do
+      stub_request(:post, "https://api.openai.com/v1/embeddings")
+        .to_return(status: 429, body: "Rate limited", headers: { "Retry-After" => "2.5" })
+        .then.to_return(status: 200, body: success_response_body, headers: { "Content-Type" => "application/json" })
+
+      generator = described_class.new
+      allow(generator).to receive(:sleep)
+
+      generator.call(texts: texts)
+
+      expect(generator).to have_received(:sleep).with(2.5)
+    end
+
+    it "raises EmbeddingError on non-retryable HTTP failures" do
+      stub_request(:post, "https://api.openai.com/v1/embeddings")
+        .to_return(status: 400, body: "Bad Request")
+
       expect { described_class.call(texts: texts) }
-        .to raise_error(Knowledge::Embeddings::EmbeddingError, /500/)
+        .to raise_error(Knowledge::Embeddings::EmbeddingError, /400/)
     end
 
     it "retries on Faraday errors and raises after max retries" do
@@ -86,16 +110,27 @@ RSpec.describe Knowledge::Embeddings::Generate do
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /after 3 retries/)
     end
 
+    it "raises EmbeddingError on non-JSON response body" do
+      stub_request(:post, "https://api.openai.com/v1/embeddings")
+        .to_return(status: 200, body: "<html>Error</html>", headers: { "Content-Type" => "text/html" })
+
+      expect { described_class.call(texts: texts) }
+        .to raise_error(Knowledge::Embeddings::EmbeddingError, /Failed to parse embedding API response/)
+    end
+
     it "raises EmbeddingError when OPENAI_API_KEY is not set" do
       allow(ENV).to receive(:fetch).with("OPENAI_API_KEY").and_call_original
-      # Clear ENV for this test
       original = ENV["OPENAI_API_KEY"]
       ENV.delete("OPENAI_API_KEY")
 
       expect { described_class.call(texts: texts) }
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /OPENAI_API_KEY/)
     ensure
-      ENV["OPENAI_API_KEY"] = original if original
+      if original.nil?
+        ENV.delete("OPENAI_API_KEY")
+      else
+        ENV["OPENAI_API_KEY"] = original
+      end
     end
   end
 
