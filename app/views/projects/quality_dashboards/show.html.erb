@@ -192,15 +192,22 @@
               </div>
             </div>
 
-            <% if feedback[:sources].any? %>
+            <% if feedback[:reactions][:count].to_i > 0 || feedback[:reviews][:count].to_i > 0 %>
               <div class="overflow-hidden rounded-lg bg-white shadow">
                 <div class="px-4 py-4 sm:px-6">
-                  <h3 class="text-sm font-medium text-gray-500">Feedback Sources</h3>
-                  <div class="mt-3 flex flex-wrap gap-2">
-                    <% feedback[:sources].each do |source, count| %>
-                      <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
-                        <%= source&.titleize || "Unknown" %>: <%= count %>
-                      </span>
+                  <h3 class="text-sm font-medium text-gray-500">Feedback Breakdown</h3>
+                  <div class="mt-3 space-y-2">
+                    <% if feedback[:reactions][:count].to_i > 0 %>
+                      <div class="flex items-center justify-between text-sm">
+                        <span class="text-gray-600">PRs with Reactions</span>
+                        <span class="font-medium"><%= feedback[:reactions][:count] %> (avg: <%= feedback[:reactions][:average_score] || "—" %>)</span>
+                      </div>
+                    <% end %>
+                    <% if feedback[:reviews][:count].to_i > 0 %>
+                      <div class="flex items-center justify-between text-sm">
+                        <span class="text-gray-600">PRs with Reviews</span>
+                        <span class="font-medium"><%= feedback[:reviews][:count] %> (avg: <%= feedback[:reviews][:average_score] || "—" %>)</span>
+                      </div>
                     <% end %>
                   </div>
                 </div>

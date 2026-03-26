@@ -102,7 +102,36 @@ RSpec.describe QualityMetrics::DashboardStats do
 
         expect(result[:human_feedback][:total]).to eq(2)
         expect(result[:human_feedback][:merge_rate]).to eq(50.0)
-        expect(result[:human_feedback][:sources]).to include("pr_merge" => 1, "pr_review" => 1)
+      end
+
+      it "returns reaction and review counts and scores" do
+        reaction_run = create(:agent_run, project: project)
+        review_run = create(:agent_run, :with_custom_prompt, project: project)
+        create(:quality_metric, :human, agent_run: reaction_run,
+          scores: { "reaction_score" => 0.75 }, composite_score: 0.75)
+        create(:quality_metric, :human, agent_run: review_run,
+          scores: { "review_score" => 1.0 }, composite_score: 1.0,
+          feedback_source: "pr_review")
+
+        result = described_class.call(project: project)
+
+        expect(result[:human_feedback][:reactions][:count]).to eq(1)
+        expect(result[:human_feedback][:reactions][:average_score]).to eq(0.75)
+        expect(result[:human_feedback][:reviews][:count]).to eq(1)
+        expect(result[:human_feedback][:reviews][:average_score]).to eq(1.0)
+      end
+
+      it "returns zero reactions and reviews when none exist" do
+        run = create(:agent_run, project: project)
+        create(:quality_metric, :human, agent_run: run,
+          scores: { "pr_merged" => 1.0 }, composite_score: 1.0)
+
+        result = described_class.call(project: project)
+
+        expect(result[:human_feedback][:reactions][:count]).to eq(0)
+        expect(result[:human_feedback][:reactions][:average_score]).to be_nil
+        expect(result[:human_feedback][:reviews][:count]).to eq(0)
+        expect(result[:human_feedback][:reviews][:average_score]).to be_nil
       end
     end
   end

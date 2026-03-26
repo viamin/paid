@@ -580,6 +580,27 @@ class GithubClient
     end
   end
 
+  # Fetches reactions on a pull request (actually an issue endpoint in GitHub's API).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Array<Hash>] Reactions with :user_login, :content keys
+  #   Content values: "+1", "-1", "laugh", "confused", "heart", "hooray", "rocket", "eyes"
+  def pull_request_reactions(repo, number)
+    handle_errors do
+      reactions = with_auto_paginate do
+        client.issue_reactions(repo, number, accept: "application/vnd.github.squirrel-girl-preview+json")
+      end
+      reactions.map do |r|
+        {
+          user_login: r.user&.login,
+          content: r.content,
+          created_at: parse_timestamp(r.created_at)
+        }
+      end
+    end
+  end
+
   # Gets the remaining rate limit.
   #
   # @return [Integer] Number of requests remaining

@@ -70,6 +70,56 @@
       </div>
     </div>
 
+    <%# Human Feedback Breakdown %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Human Feedback</h2>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Merge Rate</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= @stats[:human_feedback][:merge_rate] ? "#{@stats[:human_feedback][:merge_rate]}%" : "—" %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">PRs with Reactions</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= @stats[:human_feedback][:reactions][:count] %>
+          </dd>
+          <dd class="mt-1 text-sm text-gray-500">
+            Avg score: <%= @stats[:human_feedback][:reactions][:average_score] || "—" %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">PRs with Reviews</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= @stats[:human_feedback][:reviews][:count] %>
+          </dd>
+          <dd class="mt-1 text-sm text-gray-500">
+            Avg score: <%= @stats[:human_feedback][:reviews][:average_score] || "—" %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Feedback Sources</dt>
+          <dd class="mt-1 text-sm text-gray-900">
+            <% feedback_sources = {} %>
+            <% reactions_count = @stats.dig(:human_feedback, :reactions, :count) %>
+            <% reviews_count = @stats.dig(:human_feedback, :reviews, :count) %>
+            <% feedback_sources["PRs with Reactions"] = reactions_count if reactions_count.to_i > 0 %>
+            <% feedback_sources["PRs with Reviews"] = reviews_count if reviews_count.to_i > 0 %>
+            <% feedback_sources.each do |label, count| %>
+              <div class="flex justify-between py-1">
+                <span class="text-gray-600"><%= label %></span>
+                <span class="font-medium"><%= count %></span>
+              </div>
+            <% end %>
+            <% if feedback_sources.empty? %>
+              <span class="text-gray-400">No feedback yet</span>
+            <% end %>
+          </dd>
+        </div>
+      </div>
+    </div>
+
     <%# Prompt Comparison %>
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Prompt Comparison</h2>

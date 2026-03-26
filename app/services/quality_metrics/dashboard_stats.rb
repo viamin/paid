@@ -122,20 +122,39 @@ module QualityMetrics
       row = human.select(
         "COUNT(*) AS total",
         "COUNT(*) FILTER (WHERE scores ? 'pr_merged') AS with_merge_status",
-        "COUNT(*) FILTER (WHERE (scores->>'pr_merged')::float = 1.0) AS merged_count"
+        "COUNT(*) FILTER (WHERE (scores->>'pr_merged')::float = 1.0) AS merged_count",
+        "AVG((scores->>'reaction_score')::float) FILTER (WHERE scores ? 'reaction_score') AS avg_reaction",
+        "COUNT(*) FILTER (WHERE scores ? 'reaction_score') AS reaction_count",
+        "AVG((scores->>'review_score')::float) FILTER (WHERE scores ? 'review_score') AS avg_review",
+        "COUNT(*) FILTER (WHERE scores ? 'review_score') AS review_count"
       ).take
 
       total = row.total.to_i
-      return { total: 0, merge_rate: nil, sources: {} } if total.zero?
+      return empty_human_feedback if total.zero?
 
       with_merge_status = row.with_merge_status.to_i
       merged_count = row.merged_count.to_i
-      sources = human.where.not(feedback_source: nil).group(:feedback_source).count
 
       {
         total: total,
         merge_rate: with_merge_status.zero? ? nil : (merged_count.to_f / with_merge_status * 100).round(1),
-        sources: sources
+        reactions: {
+          count: row.reaction_count.to_i,
+          average_score: row.avg_reaction&.to_f&.round(4)
+        },
+        reviews: {
+          count: row.review_count.to_i,
+          average_score: row.avg_review&.to_f&.round(4)
+        }
+      }
+    end
+
+    def empty_human_feedback
+      {
+        total: 0,
+        merge_rate: nil,
+        reactions: { count: 0, average_score: nil },
+        reviews: { count: 0, average_score: nil }
       }
     end
   end
