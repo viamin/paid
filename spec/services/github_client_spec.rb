@@ -911,7 +911,7 @@ RSpec.describe GithubClient do
 
     context "when files exist" do
       before do
-        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/42/files")
+        stub_request(:get, %r{#{api_base}/repos/#{repo}/pulls/42/files})
           .to_return(
             status: 200,
             body: [
@@ -931,7 +931,8 @@ RSpec.describe GithubClient do
 
     context "when files span multiple pages" do
       before do
-        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/42/files")
+        stub_request(:get, %r{#{api_base}/repos/#{repo}/pulls/42/files})
+          .with(query: hash_excluding("page" => "2"))
           .to_return(
             status: 200,
             body: [
@@ -943,7 +944,8 @@ RSpec.describe GithubClient do
             }
           )
 
-        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/42/files?page=2")
+        stub_request(:get, %r{#{api_base}/repos/#{repo}/pulls/42/files})
+          .with(query: hash_including("page" => "2"))
           .to_return(
             status: 200,
             body: [
@@ -963,7 +965,7 @@ RSpec.describe GithubClient do
 
     context "when pull request does not exist" do
       before do
-        stub_request(:get, "#{api_base}/repos/#{repo}/pulls/999/files")
+        stub_request(:get, %r{#{api_base}/repos/#{repo}/pulls/999/files})
           .to_return(status: 404, body: { message: "Not Found" }.to_json)
       end
 
