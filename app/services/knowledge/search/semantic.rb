@@ -43,6 +43,7 @@ module Knowledge
 
       def vector_search
         return [] unless qdrant_available?
+        return [] unless qdrant_healthy?
 
         embedding = generate_query_embedding
         return [] if embedding.nil?
@@ -72,7 +73,7 @@ module Knowledge
           vector: embedding,
           filter: filter,
           limit: limit,
-          with_payload: true
+          with_payload: false
         )
 
         response.dig("result") || []
@@ -160,6 +161,12 @@ module Knowledge
 
       def qdrant_available?
         Paid.qdrant_url.present?
+      end
+
+      def qdrant_healthy?
+        Paid.qdrant_client.healthy?
+      rescue StandardError
+        false
       end
     end
   end

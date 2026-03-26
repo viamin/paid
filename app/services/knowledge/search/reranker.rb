@@ -53,7 +53,7 @@ module Knowledge
       def age_penalty(result)
         return 0.0 unless result[:created_at]
 
-        age_days = (Time.current - result[:created_at]) / 1.day
+        age_days = [ (Time.current - result[:created_at]) / 1.day, 0.0 ].max
         AGE_PENALTY_PER_DAY * [ age_days, MAX_AGE_PENALTY_DAYS ].min
       end
     end

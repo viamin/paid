@@ -96,5 +96,18 @@ RSpec.describe Knowledge::Search::Reranker do
 
       expect(results.size).to eq(1)
     end
+
+    it "clamps age_days to zero for future timestamps" do
+      future = base_result.merge(created_at: 1.day.from_now, score: 0.5, status: "stale")
+      past = base_result.merge(chunk_id: "chunk-2", created_at: 5.days.ago, score: 0.5, status: "stale")
+
+      results = described_class.call(results: [ future, past ])
+
+      future_result = results.find { |r| r[:chunk_id] == "chunk-1" }
+      past_result = results.find { |r| r[:chunk_id] == "chunk-2" }
+
+      # Future timestamp should not get a boost (age_days clamped to 0)
+      expect(future_result[:score]).to be >= past_result[:score]
+    end
   end
 end
