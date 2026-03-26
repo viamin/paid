@@ -303,10 +303,24 @@ module Containers
 
     def wait_for_health!(service_container)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
+      has_healthcheck = nil # nil = unknown, true/false once determined
 
       loop do
-        healthcheck = docker_healthcheck_status(service_container)
-        if healthcheck == true || (healthcheck.nil? && tcp_port_open?(service_container.name, service_container.port))
+        # Only query Docker HEALTHCHECK when we haven't confirmed its absence.
+        if has_healthcheck != false
+          healthcheck = docker_healthcheck_status(service_container)
+          # First non-nil response confirms a HEALTHCHECK is configured.
+          # A nil response confirms no HEALTHCHECK — skip Docker API on future iterations.
+          has_healthcheck = !healthcheck.nil? if has_healthcheck.nil?
+
+          if healthcheck == true
+            log_info("service_provisioner.healthy", name: service_container.name)
+            return
+          end
+        end
+
+        # Fall back to TCP probe when no Docker HEALTHCHECK is configured.
+        if has_healthcheck == false && tcp_port_open?(service_container.name, service_container.port)
           log_info("service_provisioner.healthy", name: service_container.name)
           return
         end

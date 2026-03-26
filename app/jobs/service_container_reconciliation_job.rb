@@ -20,10 +20,12 @@ class ServiceContainerReconciliationJob < ApplicationJob
   )
 
   def perform
+    checked = 0
     corrected = 0
     errors = 0
 
     ServiceContainer.running.find_each do |sc|
+      checked += 1
       status = docker_container_status(sc.docker_container_id)
 
       case status
@@ -59,7 +61,7 @@ class ServiceContainerReconciliationJob < ApplicationJob
 
     Rails.logger.info(
       message: "container_manager.service_container_reconciliation_complete",
-      checked: ServiceContainer.running.count + corrected,
+      checked: checked,
       corrected: corrected,
       errors: errors
     )
