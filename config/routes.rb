@@ -83,6 +83,7 @@ Rails.application.routes.draw do
     get "proxy/git-credentials", to: "git_credentials#show"
 
     get "knowledge/search", to: "knowledge_search#search"
+    get "knowledge/audit", to: "knowledge_audit#index"
 
     # GitHub webhook receiver for PR review events
     post "github_webhooks", to: "github_webhooks#create"
