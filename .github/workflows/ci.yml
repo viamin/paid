@@ -91,6 +91,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Install ast-grep
+        run: bin/install-ast-grep
+
       - name: Build assets
         run: yarn build && yarn build:css
 
