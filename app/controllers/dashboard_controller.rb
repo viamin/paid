@@ -20,15 +20,16 @@ class DashboardController < ApplicationController
 
   def cancel_run
     @agent_run.with_lock do
-      @agent_run.reload
-
       unless @agent_run.active?
         redirect_to live_dashboard_path, status: :see_other, notice: "Agent run is no longer active."
         return
       end
 
-      AgentRuns::Cancel.call(agent_run: @agent_run)
+      @agent_run.cancel!
     end
+
+    # External cleanup runs outside the row lock as best-effort
+    AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
 
     redirect_to live_dashboard_path, status: :see_other, notice: "Agent run cancelled."
   end

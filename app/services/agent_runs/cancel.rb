@@ -6,19 +6,20 @@ module AgentRuns
       new(...).call
     end
 
-    def initialize(agent_run:)
+    def initialize(agent_run:, skip_status_update: false)
       @agent_run = agent_run
+      @skip_status_update = skip_status_update
     end
 
     def call
       cancel_temporal_workflow
       cleanup_container
-      agent_run.cancel!
+      agent_run.cancel! unless skip_status_update
     end
 
     private
 
-    attr_reader :agent_run
+    attr_reader :agent_run, :skip_status_update
 
     def cancel_temporal_workflow
       return if agent_run.temporal_workflow_id.blank?

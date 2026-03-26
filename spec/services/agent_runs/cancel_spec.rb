@@ -38,6 +38,14 @@ RSpec.describe AgentRuns::Cancel do
       expect { described_class.call(agent_run: agent_run) }.not_to raise_error
     end
 
+    it "skips status update when skip_status_update is true" do
+      agent_run.update!(status: "cancelled", completed_at: Time.current)
+
+      expect {
+        described_class.call(agent_run: agent_run, skip_status_update: true)
+      }.not_to change { agent_run.reload.updated_at }
+    end
+
     it "cleans up the container when present" do
       agent_run.update!(container_id: "container-123")
       allow(agent_run).to receive(:cleanup_container)

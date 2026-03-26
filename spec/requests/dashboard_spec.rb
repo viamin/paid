@@ -108,7 +108,7 @@ RSpec.describe "Dashboard" do
 
       expect(response).to redirect_to(live_dashboard_path)
       expect(response).to have_http_status(:see_other)
-      expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run)
+      expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
     end
 
     it "returns not found for a run in another account" do
