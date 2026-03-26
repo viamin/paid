@@ -145,7 +145,8 @@ class ProjectsController < ApplicationController
     params.require(:project).permit(:github_token_id, :owner, :repo, :name, :active,
       :poll_interval_seconds, :github_id, :default_branch,
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_enabled,
-      :auto_fix_merge_conflicts,
+      :auto_fix_merge_conflicts, :generated_label_name, :automation_label_name,
+      :auto_add_labels_enabled, :automation_on_label_enabled,
       allowed_github_usernames: [])
   end
 

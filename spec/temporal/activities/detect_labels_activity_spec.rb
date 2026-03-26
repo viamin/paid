@@ -177,6 +177,94 @@ RSpec.describe Activities::DetectLabelsActivity do
       end
     end
 
+    context "when automation_on_label_enabled and issue has automation label" do
+      let(:project) do
+        create(:project, label_mappings: {}, automation_on_label_enabled: true, automation_label_name: "my-auto")
+      end
+      let(:issue) { create(:issue, project: project, labels: [ "my-auto" ], paid_state: "new") }
+
+      it "returns execute_agent action" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("execute_agent")
+      end
+
+      it "does not include source_pull_request_number for issues" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result).not_to have_key(:source_pull_request_number)
+      end
+
+      it "updates paid_state to in_progress" do
+        activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+    end
+
+    context "when automation_on_label_enabled and a pull request has automation label" do
+      let(:project) do
+        create(:project, label_mappings: {}, automation_on_label_enabled: true, automation_label_name: "my-auto")
+      end
+      let(:pull_request) do
+        create(:issue, project: project, labels: [ "my-auto" ], paid_state: "new",
+               is_pull_request: true, github_number: 42)
+      end
+
+      it "returns execute_agent action with source_pull_request_number" do
+        result = activity.execute(project_id: project.id, issue_id: pull_request.id)
+
+        expect(result[:action]).to eq("execute_agent")
+        expect(result[:source_pull_request_number]).to eq(42)
+      end
+
+      it "updates paid_state to in_progress" do
+        activity.execute(project_id: project.id, issue_id: pull_request.id)
+
+        expect(pull_request.reload.paid_state).to eq("in_progress")
+      end
+    end
+
+    context "when automation_on_label_enabled is false" do
+      let(:project) do
+        create(:project, label_mappings: {}, automation_on_label_enabled: false, automation_label_name: "my-auto")
+      end
+      let(:issue) { create(:issue, project: project, labels: [ "my-auto" ], paid_state: "new") }
+
+      it "returns none action even with matching automation label" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("none")
+      end
+    end
+
+    context "when automation_on_label_enabled but issue lacks the automation label" do
+      let(:project) do
+        create(:project, label_mappings: {}, automation_on_label_enabled: true, automation_label_name: "my-auto")
+      end
+      let(:issue) { create(:issue, project: project, labels: [ "bug" ], paid_state: "new") }
+
+      it "returns none action" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("none")
+      end
+    end
+
+    context "when a pull request has build label" do
+      let(:pull_request) do
+        create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",
+               is_pull_request: true, github_number: 99)
+      end
+
+      it "returns execute_agent with source_pull_request_number" do
+        result = activity.execute(project_id: project.id, issue_id: pull_request.id)
+
+        expect(result[:action]).to eq("execute_agent")
+        expect(result[:source_pull_request_number]).to eq(99)
+      end
+    end
+
     context "when issue is from an untrusted user" do
       let(:issue) do
         create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",

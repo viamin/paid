@@ -6,7 +6,6 @@ module Activities
   # Returns a list of synced issue summaries for downstream processing.
   # Handles rate limiting by re-raising as a retryable Temporal error.
   class FetchIssuesActivity < BaseActivity
-    PAID_GENERATED_LABEL = "paid-generated"
     DEFAULT_PER_PAGE = 100
 
     def execute(input)
@@ -17,7 +16,8 @@ module Activities
       client = project.github_token.client
 
       labels = project.label_mappings.values.compact_blank.uniq
-      labels = (labels + [ PAID_GENERATED_LABEL ]).uniq if labels.any?
+      labels = (labels + [ project.generated_label_name ]).uniq if labels.any?
+      labels = (labels + [ project.automation_label_name ]).uniq if project.automation_on_label_enabled? && labels.any?
       github_issues, truncated = fetch_all_issues(client, project.full_name, labels)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }

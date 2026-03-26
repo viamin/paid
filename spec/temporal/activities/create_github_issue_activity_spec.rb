@@ -202,6 +202,32 @@ RSpec.describe Activities::CreateGithubIssueActivity do
       expect(synced.github_number).to eq(10)
     end
 
+    context "when auto_add_labels_enabled is false" do
+      before { project.update!(auto_add_labels_enabled: false) }
+
+      it "creates the issue with an empty labels array" do
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: [])
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when auto_add_labels_enabled is true with a custom generated label" do
+      before { project.update!(auto_add_labels_enabled: true, generated_label_name: "my-label") }
+
+      it "creates the issue with the custom label" do
+        expect(github_client).to receive(:create_issue).with(
+          project.full_name,
+          hash_including(labels: [ "my-label" ])
+        ).and_return(issue_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect {
         activity.execute(agent_run_id: -1)

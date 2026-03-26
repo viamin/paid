@@ -18,7 +18,6 @@ module Activities
   class ScanPaidPrsActivity < BaseActivity
     activity_name "ScanPaidPrs"
 
-    PAID_GENERATED_LABEL = "paid-generated"
     MIN_COMMENT_LENGTH = 20
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
@@ -49,7 +48,7 @@ module Activities
     def find_paid_prs(project)
       project.issues
         .where(is_pull_request: true, github_state: "open")
-        .where("labels @> ?", [ PAID_GENERATED_LABEL ].to_json)
+        .where("labels @> ?", [ project.generated_label_name ].to_json)
     end
 
     def scan_pr(project, client, issue)
