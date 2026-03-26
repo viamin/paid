@@ -23,7 +23,7 @@ class KnowledgeArtifact < ApplicationRecord
   scope :for_project, ->(project) { where(project: project) }
   scope :identifier_like, ->(query) {
     where("identifier % ?", query)
-      .order(Arel.sql("similarity(identifier, #{connection.quote(query)}) DESC"))
+      .order(Arel.sql("similarity(identifier, #{connection.quote(query)}) DESC"), :id)
   }
 
   private

@@ -26,14 +26,12 @@ class KnowledgeChunk < ApplicationRecord
   scope :ordered, -> { order(:sequence) }
   scope :full_text_search, ->(query) {
     where("content_tsvector @@ plainto_tsquery('pg_catalog.english', ?)", query)
-      .order(Arel.sql("ts_rank(content_tsvector, plainto_tsquery('pg_catalog.english', #{connection.quote(query)})) DESC"))
+      .order(Arel.sql("ts_rank(content_tsvector, plainto_tsquery('pg_catalog.english', #{connection.quote(query)})) DESC, #{table_name}.id ASC"))
   }
 
   before_save :update_content_tsvector, if: :should_update_content_tsvector?
 
   def self.content_tsvector_trigger_present?
-    return @content_tsvector_trigger_present unless @content_tsvector_trigger_present.nil?
-
     sql = <<~SQL.squish
       SELECT EXISTS (
         SELECT 1
@@ -47,7 +45,7 @@ class KnowledgeChunk < ApplicationRecord
       )
     SQL
 
-    @content_tsvector_trigger_present = connection.select_value(sql)
+    connection.select_value(sql)
   end
 
   private
