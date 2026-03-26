@@ -13,7 +13,13 @@ module Api
 
       events = KnowledgeAuditEvent.for_project(@project)
       events = events.by_event_type(params[:event_type]) if params[:event_type].present?
-      events = events.by_target(params[:target_type], params[:target_id]) if params[:target_type].present? && params[:target_id].present?
+      if params[:target_type].present? || params[:target_id].present?
+        unless params[:target_type].present? && params[:target_id].present?
+          return render json: { error: "Both target_type and target_id are required together" }, status: :bad_request
+        end
+
+        events = events.by_target(params[:target_type], params[:target_id])
+      end
 
       if params[:since].present?
         since_time = parse_timestamp(params[:since])
@@ -27,6 +33,11 @@ module Api
         return render json: { error: "Invalid before timestamp" }, status: :bad_request unless before_time
 
         events = events.before(before_time)
+      end
+
+      limit_param = params[:limit]
+      if limit_param.present? && limit_param.to_s !~ /\A\d+\z/
+        return render json: { error: "limit must be a positive integer" }, status: :bad_request
       end
 
       pagy, records = pagy(events.ordered, limit: params.fetch(:limit, 50).to_i.clamp(1, 200))

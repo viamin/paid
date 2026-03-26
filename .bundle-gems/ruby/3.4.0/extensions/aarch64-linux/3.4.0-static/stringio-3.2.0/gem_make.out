@@ -1,0 +1,19 @@
+current directory: /workspace/.bundle-gems/ruby/3.4.0/gems/stringio-3.2.0/ext/stringio
+/usr/local/bin/ruby extconf.rb
+checking for rb_io_mode_t in ruby/io.h... no
+creating Makefile
+
+current directory: /workspace/.bundle-gems/ruby/3.4.0/gems/stringio-3.2.0/ext/stringio
+make DESTDIR\= sitearchdir\=./.gem.20260326-575-l19lxd sitelibdir\=./.gem.20260326-575-l19lxd clean
+
+current directory: /workspace/.bundle-gems/ruby/3.4.0/gems/stringio-3.2.0/ext/stringio
+make DESTDIR\= sitearchdir\=./.gem.20260326-575-l19lxd sitelibdir\=./.gem.20260326-575-l19lxd
+compiling stringio.c
+linking shared-object stringio.so
+
+current directory: /workspace/.bundle-gems/ruby/3.4.0/gems/stringio-3.2.0/ext/stringio
+make DESTDIR\= sitearchdir\=./.gem.20260326-575-l19lxd sitelibdir\=./.gem.20260326-575-l19lxd install
+/usr/bin/install -c -m 0755 stringio.so ./.gem.20260326-575-l19lxd
+
+current directory: /workspace/.bundle-gems/ruby/3.4.0/gems/stringio-3.2.0/ext/stringio
+make DESTDIR\= sitearchdir\=./.gem.20260326-575-l19lxd sitelibdir\=./.gem.20260326-575-l19lxd clean

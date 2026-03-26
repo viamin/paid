@@ -50,7 +50,7 @@ module Knowledge
       private
 
       def eligible_chunks(project)
-        scope = KnowledgeChunk.needs_embedding
+        scope = KnowledgeChunk.needs_embedding.includes(:project)
         scope = scope.for_project(project) if project
         scope
       end

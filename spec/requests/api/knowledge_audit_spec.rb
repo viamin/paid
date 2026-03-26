@@ -137,6 +137,30 @@ RSpec.describe "Api::KnowledgeAudit" do
       expect(response).to have_http_status(:not_found)
     end
 
+    it "returns 400 when only target_type is provided without target_id" do
+      get "/api/knowledge/audit", params: { project_id: project.id, target_type: "KnowledgeArtifact" }
+
+      expect(response).to have_http_status(:bad_request)
+      body = JSON.parse(response.body)
+      expect(body["error"]).to eq("Both target_type and target_id are required together")
+    end
+
+    it "returns 400 when only target_id is provided without target_type" do
+      get "/api/knowledge/audit", params: { project_id: project.id, target_id: "1" }
+
+      expect(response).to have_http_status(:bad_request)
+      body = JSON.parse(response.body)
+      expect(body["error"]).to eq("Both target_type and target_id are required together")
+    end
+
+    it "returns 400 for non-numeric limit" do
+      get "/api/knowledge/audit", params: { project_id: project.id, limit: "abc" }
+
+      expect(response).to have_http_status(:bad_request)
+      body = JSON.parse(response.body)
+      expect(body["error"]).to eq("limit must be a positive integer")
+    end
+
     it "includes all event fields in response" do
       event = create(:knowledge_audit_event,
         project: project,
