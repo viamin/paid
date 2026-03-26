@@ -142,5 +142,19 @@ RSpec.describe "Dashboard" do
       expect(response).to have_http_status(:see_other)
       expect(flash[:notice]).to eq("Agent run is no longer active.")
     end
+
+    it "shows a different message when the run finishes during external cancellation" do
+      agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
+
+      allow(AgentRuns::Cancel).to receive(:call)
+      # First call (guard check): active. Second call (inside with_lock): not active.
+      allow(agent_run).to receive(:active?).and_return(true, false)
+
+      post dashboard_cancel_run_path(agent_run)
+
+      expect(response).to redirect_to(live_dashboard_path)
+      expect(response).to have_http_status(:see_other)
+      expect(flash[:notice]).to eq("Agent run finished before it could be cancelled.")
+    end
   end
 end

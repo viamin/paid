@@ -38,12 +38,21 @@ class DashboardController < ApplicationController
       return
     end
 
+    cancelled = false
+
     @agent_run.with_lock do
       # The run may have completed while we were performing external cancellation
-      @agent_run.cancel! if @agent_run.active?
+      if @agent_run.active?
+        @agent_run.cancel!
+        cancelled = true
+      end
     end
 
-    redirect_to live_dashboard_path, status: :see_other, notice: "Agent run cancelled."
+    if cancelled
+      redirect_to live_dashboard_path, status: :see_other, notice: "Agent run cancelled."
+    else
+      redirect_to live_dashboard_path, status: :see_other, notice: "Agent run finished before it could be cancelled."
+    end
   end
 
   private
