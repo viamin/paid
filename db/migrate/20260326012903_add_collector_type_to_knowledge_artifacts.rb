@@ -16,10 +16,16 @@ class AddCollectorTypeToKnowledgeArtifacts < ActiveRecord::Migration[8.1]
           WHERE knowledge_artifacts.collector_run_id = collector_runs.id
             AND knowledge_artifacts.collector_type IS NULL
         SQL
+
+        # After backfilling collector_type from collector_runs, enforce NOT NULL
+        change_column_null :knowledge_artifacts, :collector_type, false
+      end
+
+      dir.down do
+        # Relax the NOT NULL constraint on rollback to match the original schema
+        change_column_null :knowledge_artifacts, :collector_type, true
       end
     end
-
-    change_column_null :knowledge_artifacts, :collector_type, false
 
     # Update the partial unique index to include collector_type so that
     # different collectors can produce artifacts with the same key without

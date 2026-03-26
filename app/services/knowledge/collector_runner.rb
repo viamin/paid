@@ -108,10 +108,13 @@ module Knowledge
       current_run_ids = project_version.collector_runs.select(:id)
 
       # Only stale artifacts from versions older than the current one,
-      # so backfills of older commits don't stale artifacts from newer versions
+      # so backfills of older commits don't stale artifacts from newer versions.
+      # Use commit ordering when available, falling back to created_at.
+      reference_timestamp = project_version.committed_at || project_version.created_at
+
       older_version_ids = ProjectVersion
         .where(project: project)
-        .where("created_at < ?", project_version.created_at)
+        .where("COALESCE(committed_at, created_at) < ?", reference_timestamp)
         .select(:id)
 
       ActiveRecord::Base.transaction do

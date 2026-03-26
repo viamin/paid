@@ -386,7 +386,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_012903) do
   create_table "knowledge_artifacts", force: :cascade do |t|
     t.string "artifact_type", limit: 100, null: false
     t.bigint "collector_run_id", null: false
-    t.string "collector_type", limit: 100
+    t.string "collector_type", limit: 100, null: false
     t.text "content"
     t.string "content_hash", limit: 64, null: false
     t.datetime "created_at", null: false
