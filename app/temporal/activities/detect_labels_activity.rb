@@ -51,6 +51,8 @@ module Activities
         "execute_agent"
       elsif plan_label && issue.has_label?(plan_label)
         "start_planning"
+      elsif project.automation_on_label_enabled? && issue.has_label?(project.automation_label_name)
+        "execute_agent"
       end
 
       return "none" unless action
