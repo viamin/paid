@@ -17,6 +17,9 @@ class Project < ApplicationRecord
   has_many :workflow_states, dependent: :destroy
   has_many :prompts, dependent: :destroy
   has_many :style_guides, dependent: :destroy
+  has_many :project_versions, dependent: :destroy
+  has_many :knowledge_artifacts, dependent: :destroy
+  has_many :knowledge_chunks, dependent: :destroy
   has_many :project_service_containers, dependent: :destroy
   has_many :service_containers, through: :project_service_containers
 
@@ -51,6 +54,7 @@ class Project < ApplicationRecord
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
   after_update_commit :trigger_auto_pick, if: :auto_pick_just_enabled?
   after_destroy_commit :stop_github_polling
+  after_destroy_commit :cleanup_qdrant_collection
 
   def full_name
     "#{owner}/#{repo}"
@@ -266,6 +270,12 @@ class Project < ApplicationRecord
     ProjectWorkflowManager.stop_polling(self)
   rescue => e
     Rails.logger.error(message: "github_sync.stop_polling_failed", project_id: id, error: e.message)
+  end
+
+  def cleanup_qdrant_collection
+    Knowledge::Qdrant::CollectionManager.drop_collection!(self)
+  rescue => e
+    Rails.logger.error(message: "knowledge.qdrant.cleanup_failed", project_id: id, error: e.message)
   end
 
   def toggle_github_polling

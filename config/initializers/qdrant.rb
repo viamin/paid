@@ -33,5 +33,9 @@ module Paid
     def qdrant_api_key
       ENV["QDRANT_API_KEY"]
     end
+
+    def embedding_dimensions
+      ENV.fetch("EMBEDDING_DIMENSIONS", 3072).to_i
+    end
   end
 end
