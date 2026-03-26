@@ -18,5 +18,6 @@ class KnowledgeAuditEvent < ApplicationRecord
   scope :by_event_type, ->(type) { where(event_type: type) }
   scope :by_target, ->(type, id) { where(target_type: type, target_id: id) }
   scope :since, ->(time) { where("created_at >= ?", time) }
-  scope :ordered, -> { order(created_at: :desc) }
+  scope :before, ->(time) { where("created_at <= ?", time) }
+  scope :ordered, -> { order(created_at: :desc, id: :desc) }
 end

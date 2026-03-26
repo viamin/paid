@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_26_060000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_26_070000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -404,6 +404,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_060000) do
     t.index ["project_id", "artifact_type", "scope_path", "identifier", "collector_type"], name: "idx_knowledge_artifacts_active_unique", unique: true, where: "((status)::text = 'active'::text)"
     t.index ["project_id"], name: "index_knowledge_artifacts_on_project_id"
     t.index ["status"], name: "index_knowledge_artifacts_on_status"
+  end
+
+  create_table "knowledge_audit_events", force: :cascade do |t|
+    t.string "actor_id", limit: 100
+    t.string "actor_type", limit: 50
+    t.datetime "created_at", null: false
+    t.jsonb "details", default: {}
+    t.string "event_type", limit: 100, null: false
+    t.bigint "project_id", null: false
+    t.string "target_id", limit: 100
+    t.string "target_type", limit: 100
+    t.index ["event_type"], name: "index_knowledge_audit_events_on_event_type"
+    t.index ["project_id", "created_at"], name: "index_knowledge_audit_events_on_project_id_and_created_at"
+    t.index ["project_id"], name: "index_knowledge_audit_events_on_project_id"
+    t.index ["target_type", "target_id"], name: "index_knowledge_audit_events_on_target_type_and_target_id"
   end
 
   create_table "knowledge_chunks", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -811,6 +826,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_060000) do
   add_foreign_key "issues", "projects"
   add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"
+  add_foreign_key "knowledge_audit_events", "projects", on_delete: :cascade
   add_foreign_key "knowledge_chunks", "knowledge_artifacts", on_delete: :cascade
   add_foreign_key "knowledge_chunks", "projects"
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade

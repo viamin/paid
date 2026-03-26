@@ -54,6 +54,13 @@ module Knowledge
 
         drop_collection!
         ensure_collection!
+
+        Knowledge::Provenance::AuditLog.record(
+          event: :collection_rebuilt,
+          project: project,
+          actor_type: "system",
+          details: { collection: collection_name }
+        )
       end
 
       def collection_name

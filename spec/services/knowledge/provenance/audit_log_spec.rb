@@ -82,5 +82,30 @@ RSpec.describe Knowledge::Provenance::AuditLog do
 
       expect(KnowledgeAuditEvent.count).to eq(KnowledgeAuditEvent::EVENT_TYPES.size)
     end
+
+    it "does not raise on persistence failure" do
+      allow(KnowledgeAuditEvent).to receive(:create).and_return(
+        KnowledgeAuditEvent.new.tap { |e| e.errors.add(:base, "db error") }
+      )
+      allow(Rails.logger).to receive(:error)
+
+      expect {
+        described_class.record(event: :artifact_created, project: project)
+      }.not_to raise_error
+
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(message: "knowledge.audit.persist_failed")
+      )
+    end
+
+    it "uses presence for actor and target in log output" do
+      allow(Rails.logger).to receive(:info)
+
+      described_class.record(event: :artifact_created, project: project)
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(actor: nil, target: nil)
+      )
+    end
   end
 end

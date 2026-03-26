@@ -2,19 +2,33 @@
 
 module Api
   class KnowledgeAuditController < ApplicationController
+    skip_after_action :verify_authorized, only: :index
+
     rescue_from ActiveRecord::RecordNotFound do
       render json: { error: "Project not found" }, status: :not_found
     end
 
-    # GET /api/knowledge/audit?project_id=X&event_type=Y&target_type=Z&target_id=W&since=2026-01-01&page=1
+    # GET /api/knowledge/audit?project_id=X&event_type=Y&target_type=Z&target_id=W&since=...&before=...&page=1
     def index
-      @project = Project.find(params[:project_id])
-      authorize @project, :show?
+      @project = policy_scope(Project).find(params[:project_id])
 
       events = KnowledgeAuditEvent.for_project(@project)
       events = events.by_event_type(params[:event_type]) if params[:event_type].present?
       events = events.by_target(params[:target_type], params[:target_id]) if params[:target_type].present? && params[:target_id].present?
-      events = events.since(params[:since]) if params[:since].present?
+
+      if params[:since].present?
+        since_time = parse_timestamp(params[:since])
+        return render json: { error: "Invalid since timestamp" }, status: :bad_request unless since_time
+
+        events = events.since(since_time)
+      end
+
+      if params[:before].present?
+        before_time = parse_timestamp(params[:before])
+        return render json: { error: "Invalid before timestamp" }, status: :bad_request unless before_time
+
+        events = events.before(before_time)
+      end
 
       pagy, records = pagy(events.ordered, limit: params.fetch(:limit, 50).to_i.clamp(1, 200))
 
@@ -30,6 +44,12 @@ module Api
     end
 
     private
+
+    def parse_timestamp(value)
+      Time.zone.parse(value)
+    rescue ArgumentError, TypeError
+      nil
+    end
 
     def serialize_event(event)
       {

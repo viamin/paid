@@ -97,11 +97,23 @@ module Knowledge
           status: "active"
         )
 
+      staled_count = prior_artifacts.count
       KnowledgeChunk
         .where(knowledge_artifact_id: prior_artifacts.select(:id), status: "active")
         .update_all(status: "stale", updated_at: Time.current)
 
       prior_artifacts.update_all(status: "stale", updated_at: Time.current)
+
+      if staled_count > 0
+        Knowledge::Provenance::AuditLog.record(
+          event: :artifact_staled,
+          project: project,
+          actor_type: "collector",
+          actor_id: collector_run.id,
+          target_type: "KnowledgeArtifact",
+          details: { count: staled_count, identifier: data[:identifier] }
+        )
+      end
     end
 
     def create_artifact(data, content_hash)
@@ -119,6 +131,16 @@ module Knowledge
       )
 
       create_chunks(artifact, data[:chunks] || [])
+
+      Knowledge::Provenance::AuditLog.record(
+        event: :artifact_created,
+        project: project,
+        actor_type: "collector",
+        actor_id: collector_run.id,
+        target_type: "KnowledgeArtifact",
+        target_id: artifact.id,
+        details: { artifact_type: data[:artifact_type], identifier: data[:identifier] }
+      )
 
       artifact
     end

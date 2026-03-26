@@ -3,12 +3,12 @@
 require "rails_helper"
 
 RSpec.describe "Api::KnowledgeAudit" do
-  let(:user) { create(:user) }
-  let(:project) { create(:project) }
+  let(:account) { create(:account) }
+  let(:user) { create(:user, account: account) }
+  let(:project) { create(:project, account: account) }
 
   before do
     sign_in user
-    project.add_member(user, :admin)
   end
 
   describe "GET /api/knowledge/audit" do
@@ -65,6 +65,39 @@ RSpec.describe "Api::KnowledgeAudit" do
       body = JSON.parse(response.body)
       expect(body["events"].size).to eq(1)
       expect(body["events"].first["event_type"]).to eq("decision_drafted")
+    end
+
+    it "filters by before date" do
+      create(:knowledge_audit_event, project: project, event_type: "artifact_created")
+
+      travel_to 2.days.from_now do
+        create(:knowledge_audit_event, project: project, event_type: "decision_drafted")
+      end
+
+      get "/api/knowledge/audit", params: {
+        project_id: project.id,
+        before: 1.day.from_now.iso8601
+      }
+
+      body = JSON.parse(response.body)
+      expect(body["events"].size).to eq(1)
+      expect(body["events"].first["event_type"]).to eq("artifact_created")
+    end
+
+    it "returns 400 for invalid since timestamp" do
+      get "/api/knowledge/audit", params: { project_id: project.id, since: "not-a-date" }
+
+      expect(response).to have_http_status(:bad_request)
+      body = JSON.parse(response.body)
+      expect(body["error"]).to eq("Invalid since timestamp")
+    end
+
+    it "returns 400 for invalid before timestamp" do
+      get "/api/knowledge/audit", params: { project_id: project.id, before: "not-a-date" }
+
+      expect(response).to have_http_status(:bad_request)
+      body = JSON.parse(response.body)
+      expect(body["error"]).to eq("Invalid before timestamp")
     end
 
     it "returns events in descending order" do

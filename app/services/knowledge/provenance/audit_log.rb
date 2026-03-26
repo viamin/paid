@@ -16,16 +16,26 @@ module Knowledge
             details: details
           }
 
-          KnowledgeAuditEvent.create!(event_attrs)
+          audit_event = KnowledgeAuditEvent.create(event_attrs)
+          if audit_event.errors.any?
+            Rails.logger.error(
+              message: "knowledge.audit.persist_failed",
+              event: event.to_s,
+              project_id: project.id,
+              errors: audit_event.errors.full_messages
+            )
+          end
 
           Rails.logger.info(
             message: "knowledge.audit",
             event: event.to_s,
             project_id: project.id,
-            actor: [actor_type, actor_id].compact.join(":"),
-            target: [target_type, target_id].compact.join(":"),
+            actor: [ actor_type, actor_id ].compact.join(":").presence,
+            target: [ target_type, target_id ].compact.join(":").presence,
             details: details
           )
+
+          audit_event
         end
       end
     end
