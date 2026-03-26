@@ -17,12 +17,13 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
     )
   end
 
-  let(:mock_volume) { instance_double(Docker::Volume, remove: true) }
-
   before do
     allow(Docker::Container).to receive(:create).and_return(mock_container)
-    allow(Docker::Volume).to receive(:create).and_return(mock_volume)
-    allow(Docker::Volume).to receive(:get).and_raise(Docker::Error::NotFoundError)
+    # Stub host-side git clone
+    allow(Dir).to receive(:mktmpdir).and_return("/tmp/paid-collector-test")
+    allow(Open3).to receive(:capture3).and_return([ "", "", instance_double(Process::Status, success?: true) ])
+    allow(FileUtils).to receive(:chmod)
+    allow(FileUtils).to receive(:rm_rf)
   end
 
   describe ".available?" do
@@ -73,18 +74,26 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       allow(Knowledge::CollectorRunner).to receive(:call).and_return(runner_result)
     end
 
-    it "provisions a container, clones the repo, and runs collectors" do
-      result = described_class.new(
-        project: project,
-        commit_sha: commit_sha
-      ).run
+    it "clones on host before provisioning the container" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Open3).to have_received(:capture3).with("git", "init", "/tmp/paid-collector-test")
+      expect(Open3).to have_received(:capture3).with(
+        "git", "-C", "/tmp/paid-collector-test",
+        "fetch", "--depth", "1", "origin", commit_sha
+      )
+    end
+
+    it "provisions a container with the host repo bind-mounted and runs collectors" do
+      result = described_class.new(project: project, commit_sha: commit_sha).run
 
       expect(Docker::Container).to have_received(:create).with(
         hash_including(
           "Image" => "paid-agent:latest",
           "HostConfig" => hash_including(
             "NetworkMode" => "none",
-            "Memory" => 512 * 1024 * 1024
+            "Memory" => 512 * 1024 * 1024,
+            "Binds" => [ "/tmp/paid-collector-test:/workspace:ro" ]
           )
         )
       )
@@ -103,11 +112,23 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       runner.run
     end
 
-    it "cleans up the container after execution" do
+    it "exposes host_repo_dir for file access by collectors" do
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        expect(args[:options][:container_runner].host_repo_dir).to eq("/tmp/paid-collector-test")
+        runner_result
+      end
+
+      runner.run
+    end
+
+    it "cleans up the container and host repo after execution" do
       described_class.new(project: project, commit_sha: commit_sha).run
 
       expect(mock_container).to have_received(:stop)
       expect(mock_container).to have_received(:delete)
+      expect(FileUtils).to have_received(:rm_rf).with("/tmp/paid-collector-test")
     end
 
     it "cleans up even when CollectorRunner raises" do
@@ -118,6 +139,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       }.to raise_error(RuntimeError, "boom")
 
       expect(mock_container).to have_received(:delete)
+      expect(FileUtils).to have_received(:rm_rf).with("/tmp/paid-collector-test")
     end
 
     it "does not expose API keys or proxy URLs" do
@@ -141,25 +163,69 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
 
       expect(config.dig("HostConfig", "NetworkMode")).to eq("none")
     end
+
+    it "bind-mounts host repo read-only instead of using a volume" do
+      config = nil
+      allow(Docker::Container).to receive(:create) { |cfg| config = cfg; mock_container }
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      binds = config.dig("HostConfig", "Binds")
+      expect(binds).to eq([ "/tmp/paid-collector-test:/workspace:ro" ])
+    end
+  end
+
+  describe "input validation" do
+    it "rejects invalid commit SHA" do
+      expect {
+        described_class.new(
+          project: project,
+          commit_sha: "not-a-sha; rm -rf /"
+        ).run
+      }.to raise_error(Knowledge::ContainerizedRunner::CloneError, /Invalid commit SHA/)
+    end
+
+    it "rejects invalid project name" do
+      bad_project = Struct.new(:id, :full_name).new(42, "owner/repo; echo pwned")
+
+      expect {
+        described_class.new(
+          project: bad_project,
+          commit_sha: commit_sha
+        ).run
+      }.to raise_error(Knowledge::ContainerizedRunner::CloneError, /Invalid project name/)
+    end
+
+    it "accepts valid 40-hex commit SHA" do
+      runner_result = {
+        project_version: Object.new,
+        results: []
+      }
+      allow(Knowledge::CollectorRunner).to receive(:call).and_return(runner_result)
+
+      expect {
+        described_class.new(project: project, commit_sha: "abcdef1234567890abcdef1234567890abcdef12").run
+      }.not_to raise_error
+    end
   end
 
   describe "#execute" do
     it "runs a command inside the container and returns stdout" do
+      runner_result = { project_version: Object.new, results: [] }
       runner = described_class.new(project: project, commit_sha: commit_sha)
 
-      # Test execute via the CollectorRunner callback during #run
       allow(Knowledge::CollectorRunner).to receive(:call) do |args|
         container_runner = args[:options][:container_runner]
         allow(mock_container).to receive(:exec).and_return([ [ "hello world" ], [ "" ], 0 ])
         result = container_runner.execute("echo hello world")
         expect(result).to eq("hello world")
-        { project_version: Object.new, results: [] }
+        runner_result
       end
 
       runner.run
     end
 
     it "raises ContainerError when command fails" do
+      runner_result = { project_version: Object.new, results: [] }
       runner = described_class.new(project: project, commit_sha: commit_sha)
 
       allow(Knowledge::CollectorRunner).to receive(:call) do |args|
@@ -168,7 +234,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
         expect { container_runner.execute("bad command") }.to raise_error(
           Knowledge::ContainerizedRunner::ContainerError, /Command failed/
         )
-        { project_version: Object.new, results: [] }
+        runner_result
       end
 
       runner.run

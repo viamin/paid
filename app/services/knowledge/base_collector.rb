@@ -40,9 +40,26 @@ module Knowledge
     end
 
     def resolve_repo_path
-      return container_runner.options[:workspace_mount] if containerized?
+      if containerized?
+        # Use host repo dir for direct file access — the same directory is
+        # bind-mounted into the container at workspace_mount.
+        container_runner.host_repo_dir
+      else
+        project.worktrees.order(created_at: :desc).first&.path || default_repo_path
+      end
+    end
 
-      project.worktrees.order(created_at: :desc).first&.path || default_repo_path
+    # Reads a file from the repo. In containerized mode, reads from the
+    # host-side clone (bind-mounted into the container).
+    def read_repo_file(relative_path)
+      full_path = File.join(resolve_repo_path.to_s, relative_path)
+      File.read(full_path)
+    end
+
+    # Checks if a file exists in the repo.
+    def repo_file_exists?(relative_path)
+      full_path = File.join(resolve_repo_path.to_s, relative_path)
+      File.exist?(full_path)
     end
 
     def default_repo_path

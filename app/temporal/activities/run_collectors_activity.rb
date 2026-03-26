@@ -18,8 +18,9 @@ module Activities
       committed_at = input[:committed_at]
 
       project = Project.find(project_id)
+      use_container = Knowledge::ContainerizedRunner.available?
 
-      result = if Knowledge::ContainerizedRunner.available?
+      result = if use_container
         run_containerized(project, commit_sha, branch, committed_at)
       else
         run_on_host(project, commit_sha, branch, committed_at)
@@ -29,7 +30,7 @@ module Activities
         project_id: project_id,
         commit_sha: commit_sha,
         success: true,
-        containerized: Knowledge::ContainerizedRunner.available?,
+        containerized: use_container,
         results: result[:results].map { |r| r.slice(:collector_type, :status, :artifacts_count) }
       }
     rescue Knowledge::ContainerizedRunner::Error => e

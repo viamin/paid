@@ -21,15 +21,16 @@ module Knowledge
       private
 
       def read_routes_output
-        file_path = options[:routes_file]
-        if file_path && File.exist?(file_path)
-          return File.read(file_path)
+        # Check for an explicit routes file path (e.g. passed via options).
+        routes_file = options[:routes_file]
+        if routes_file && repo_file_exists?(routes_file)
+          return read_repo_file(routes_file)
         end
 
-        scan_dir = options[:scan_path] || "."
-        expanded_path = File.join(scan_dir, "tmp", "routes_expanded.txt")
-        if File.exist?(expanded_path)
-          return File.read(expanded_path)
+        # Fall back to the pre-generated expanded routes file.
+        expanded_path = File.join("tmp", "routes_expanded.txt")
+        if repo_file_exists?(expanded_path)
+          return read_repo_file(expanded_path)
         end
 
         nil
