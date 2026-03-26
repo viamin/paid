@@ -1,0 +1,26 @@
+2026-03-26 13:03:18.452 UTC [1993] LOG:  starting PostgreSQL 16.4 on aarch64-unknown-linux-gnu, compiled by gcc (Ubuntu/Linaro 7.5.0-3ubuntu1~18.04) 7.5.0, 64-bit
+2026-03-26 13:03:18.452 UTC [1993] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2026-03-26 13:03:18.453 UTC [1993] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+2026-03-26 13:03:18.455 UTC [1996] LOG:  database system was shut down at 2026-03-26 13:03:17 UTC
+2026-03-26 13:03:18.459 UTC [1993] LOG:  database system is ready to accept connections
+2026-03-26 13:03:26.368 UTC [2014] FATAL:  database "agent_test" does not exist
+2026-03-26 13:03:26.376 UTC [2015] ERROR:  new encoding (UTF8) is incompatible with the encoding of the template database (SQL_ASCII)
+2026-03-26 13:03:26.376 UTC [2015] HINT:  Use the same encoding as in the template database, or use template0 as template.
+2026-03-26 13:03:26.376 UTC [2015] STATEMENT:  CREATE DATABASE "agent_test" ENCODING = 'unicode'
+2026-03-26 13:03:33.181 UTC [2023] ERROR:  new encoding (UTF8) is incompatible with the encoding of the template database (SQL_ASCII)
+2026-03-26 13:03:33.181 UTC [2023] HINT:  Use the same encoding as in the template database, or use template0 as template.
+2026-03-26 13:03:33.181 UTC [2023] STATEMENT:  CREATE DATABASE "agent_test" ENCODING = 'unicode'
+2026-03-26 13:03:42.066 UTC [1993] LOG:  received fast shutdown request
+2026-03-26 13:03:42.068 UTC [1993] LOG:  aborting any active transactions
+2026-03-26 13:03:42.069 UTC [1993] LOG:  background worker "logical replication launcher" (PID 1999) exited with exit code 1
+2026-03-26 13:03:42.069 UTC [1994] LOG:  shutting down
+2026-03-26 13:03:42.071 UTC [1994] LOG:  checkpoint starting: shutdown immediate
+2026-03-26 13:03:42.081 UTC [1994] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.003 s, total=0.013 s; sync files=2, longest=0.002 s, average=0.002 s; distance=0 kB, estimate=0 kB; lsn=0/14DDE90, redo lsn=0/14DDE90
+2026-03-26 13:03:42.083 UTC [1993] LOG:  database system is shut down
+2026-03-26 13:03:43.124 UTC [2045] LOG:  starting PostgreSQL 16.4 on aarch64-unknown-linux-gnu, compiled by gcc (Ubuntu/Linaro 7.5.0-3ubuntu1~18.04) 7.5.0, 64-bit
+2026-03-26 13:03:43.125 UTC [2045] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2026-03-26 13:03:43.125 UTC [2045] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+2026-03-26 13:03:43.127 UTC [2048] LOG:  database system was shut down at 2026-03-26 13:03:42 UTC
+2026-03-26 13:03:43.129 UTC [2045] LOG:  database system is ready to accept connections
+2026-03-26 13:03:54.486 UTC [2046] LOG:  checkpoint starting: immediate force wait
+2026-03-26 13:03:54.520 UTC [2046] LOG:  checkpoint complete: wrote 6 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.014 s, total=0.034 s; sync files=5, longest=0.004 s, average=0.003 s; distance=6020 kB, estimate=6020 kB; lsn=0/1ABF138, redo lsn=0/1ABF100
