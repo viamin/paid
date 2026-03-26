@@ -37,6 +37,11 @@ RSpec.describe Activities::RunAgentActivity do
       expect(described_class::AGENT_COMMANDS["codex"]).to include("codex")
     end
 
+    it "uses codex exec subcommand for non-interactive mode" do
+      cmd = described_class::AGENT_COMMANDS["codex"]
+      expect(cmd).to eq(%w[codex exec --full-auto])
+    end
+
     it "includes a command mapping for gemini" do
       expect(described_class::AGENT_COMMANDS).to have_key("gemini")
       expect(described_class::AGENT_COMMANDS["gemini"]).to include("gemini")
