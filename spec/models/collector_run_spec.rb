@@ -15,7 +15,14 @@ RSpec.describe CollectorRun do
     it { is_expected.to validate_length_of(:collector_type).is_at_most(100) }
     it { is_expected.to validate_presence_of(:status) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
-    it { is_expected.to validate_uniqueness_of(:collector_type).scoped_to(:project_version_id) }
+
+    it "enforces uniqueness of collector_type per project_version at the database level" do
+      existing = create(:collector_run)
+      duplicate = build(:collector_run,
+        project_version: existing.project_version,
+        collector_type: existing.collector_type)
+      expect { duplicate.save!(validate: false) }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
   end
 
   describe "scopes" do

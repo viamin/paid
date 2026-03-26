@@ -62,12 +62,14 @@ module Knowledge
 
     def mark_prior_stale(data)
       prior_artifacts = KnowledgeArtifact
+        .joins(collector_run: :project_version)
         .where(
           project: project,
           artifact_type: data[:artifact_type],
           scope_path: data[:scope_path],
           identifier: data[:identifier],
-          status: "active"
+          status: "active",
+          collector_runs: { collector_type: collector_run.collector_type }
         )
 
       KnowledgeChunk

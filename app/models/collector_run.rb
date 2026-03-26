@@ -9,7 +9,6 @@ class CollectorRun < ApplicationRecord
 
   validates :collector_type, presence: true, length: { maximum: 100 }
   validates :status, presence: true, inclusion: { in: STATUSES }
-  validates :collector_type, uniqueness: { scope: :project_version_id }
 
   scope :by_status, ->(status) { where(status: status) }
   scope :completed, -> { where(status: "completed") }
