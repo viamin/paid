@@ -12,9 +12,6 @@
                   <%= sort_link_to "Status", :status, q %>
                 </th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                  Trigger
-                </th>
-                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                   Priority
                 </th>
                 <% if show_project %>
@@ -39,9 +36,6 @@
                 <tr>
                   <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
                     <%= agent_run_status_badge(run.status) %>
-                  </td>
-                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                    <%= agent_run_trigger_badge(run.trigger_type) %>
                   </td>
                   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                     <%= agent_run_priority_badge(run) %>
