@@ -12,6 +12,10 @@ FactoryBot.define do
       revoked_at { 1.hour.ago }
     end
 
+    trait :expired do
+      expires_at { 1.hour.ago }
+    end
+
     trait :pending_validation do
       validation_status { "pending" }
     end

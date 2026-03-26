@@ -26,6 +26,10 @@ class LinearToken < ApplicationRecord
     revoked_at.present?
   end
 
+  def expired?
+    !revoked? && expires_at.present? && expires_at <= Time.current
+  end
+
   def revoke!
     update!(revoked_at: Time.current)
   end

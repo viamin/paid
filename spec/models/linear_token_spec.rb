@@ -124,6 +124,33 @@ RSpec.describe LinearToken do
         token = build(:linear_token, :revoked)
         expect(token.active?).to be false
       end
+
+      it "returns false for expired token" do
+        token = build(:linear_token, :expired)
+        expect(token.active?).to be false
+      end
+    end
+
+    describe "#expired?" do
+      it "returns true when token is expired and not revoked" do
+        token = build(:linear_token, :expired)
+        expect(token.expired?).to be true
+      end
+
+      it "returns false when token is not expired" do
+        token = build(:linear_token)
+        expect(token.expired?).to be false
+      end
+
+      it "returns false when token is revoked even if expired" do
+        token = build(:linear_token, :revoked, :expired)
+        expect(token.expired?).to be false
+      end
+
+      it "returns false when expires_at is in the future" do
+        token = build(:linear_token, expires_at: 1.day.from_now)
+        expect(token.expired?).to be false
+      end
     end
 
     describe "#revoked?" do
