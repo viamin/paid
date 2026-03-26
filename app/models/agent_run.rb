@@ -152,6 +152,7 @@ class AgentRun < ApplicationRecord
     auto_continue: { label: "Auto-continue", indicator: 2 },
     auto_pick: { label: "Auto-pick", indicator: 3 }
   }.freeze
+  UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
 
   def queue_priority_tier
     if manual?
@@ -164,7 +165,7 @@ class AgentRun < ApplicationRecord
   end
 
   def queue_priority_label
-    priority = QUEUE_PRIORITIES.fetch(queue_priority_tier, { label: "Unknown", indicator: nil })
+    priority = QUEUE_PRIORITIES.fetch(queue_priority_tier) { UNKNOWN_PRIORITY }
     indicator = priority[:indicator]
     indicator ? "#{indicator} - #{priority[:label]}" : priority[:label]
   end
