@@ -19,17 +19,29 @@ class DashboardController < ApplicationController
   end
 
   def cancel_run
-    @agent_run.with_lock do
-      unless @agent_run.active?
-        redirect_to live_dashboard_path, status: :see_other, notice: "Agent run is no longer active."
-        return
-      end
-
-      @agent_run.cancel!
+    unless @agent_run.active?
+      redirect_to live_dashboard_path, status: :see_other, notice: "Agent run is no longer active."
+      return
     end
 
-    # External cleanup runs outside the row lock as best-effort
-    AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
+    # External cleanup runs first; we only update status if this succeeds
+    begin
+      AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
+    rescue StandardError => e
+      Rails.logger.error(
+        message: "agent_execution.cancel_failed",
+        agent_run_id: @agent_run.id,
+        error_class: e.class.name,
+        error_message: e.message
+      )
+      redirect_to live_dashboard_path, status: :see_other, alert: "Unable to cancel agent run. Please try again."
+      return
+    end
+
+    @agent_run.with_lock do
+      # The run may have completed while we were performing external cancellation
+      @agent_run.cancel! if @agent_run.active?
+    end
 
     redirect_to live_dashboard_path, status: :see_other, notice: "Agent run cancelled."
   end

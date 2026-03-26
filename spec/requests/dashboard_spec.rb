@@ -109,6 +109,20 @@ RSpec.describe "Dashboard" do
       expect(response).to redirect_to(live_dashboard_path)
       expect(response).to have_http_status(:see_other)
       expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
+      expect(agent_run.reload.status).to eq("cancelled")
+    end
+
+    it "redirects with an alert when external cancellation fails" do
+      agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
+
+      allow(AgentRuns::Cancel).to receive(:call).and_raise(StandardError, "Temporal unavailable")
+
+      post dashboard_cancel_run_path(agent_run)
+
+      expect(response).to redirect_to(live_dashboard_path)
+      expect(response).to have_http_status(:see_other)
+      expect(flash[:alert]).to eq("Unable to cancel agent run. Please try again.")
+      expect(agent_run.reload.status).to eq("running")
     end
 
     it "returns not found for a run in another account" do
