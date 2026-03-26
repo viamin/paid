@@ -42,12 +42,14 @@ module Knowledge
             nil
           end
 
+          persisted = audit_event&.persisted? || false
           Rails.logger.info(
             message: "knowledge.audit",
             event: event.to_s,
             project_id: project.id,
             actor: [ actor_type, actor_id ].compact.join(":").presence,
             target: [ target_type, target_id ].compact.join(":").presence,
+            persisted: persisted,
             details: details
           )
 
@@ -122,19 +124,18 @@ module Knowledge
             end
           end
 
-          events.each do |e|
-            actor_type, actor_id = extract_pair(e[:actor])
-            target_type, target_id = extract_pair(e[:target])
+          event_type_counts = events
+            .group_by { |e| e[:event].to_s }
+            .transform_values(&:size)
 
-            Rails.logger.info(
-              message: "knowledge.audit",
-              event: e[:event].to_s,
-              project_id: e[:project].id,
-              actor: [ actor_type, actor_id ].compact.join(":").presence,
-              target: [ target_type, target_id ].compact.join(":").presence,
-              details: e[:details] || {}
-            )
-          end
+          project_ids = events.map { |e| e[:project].id }.uniq
+
+          Rails.logger.info(
+            message: "knowledge.audit.batch",
+            events_count: events.size,
+            event_type_counts: event_type_counts,
+            project_ids: project_ids
+          )
         end
 
         private

@@ -20,10 +20,15 @@ RSpec.describe KnowledgeAuditRetentionJob do
   it "logs the number of deleted events" do
     allow(Rails.logger).to receive(:info)
 
+    travel_to(91.days.ago) { create(:knowledge_audit_event, project: project) }
+
     described_class.new.perform
 
     expect(Rails.logger).to have_received(:info).with(
-      hash_including(message: "knowledge.audit.retention", deleted_count: 0)
+      hash_including(message: "knowledge.audit.retention.batch", batch_deleted_count: 1)
+    )
+    expect(Rails.logger).to have_received(:info).with(
+      hash_including(message: "knowledge.audit.retention", deleted_count: 1)
     )
   end
 end

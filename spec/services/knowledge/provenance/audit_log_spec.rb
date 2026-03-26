@@ -137,18 +137,25 @@ RSpec.describe Knowledge::Provenance::AuditLog do
         .to change(KnowledgeAuditEvent, :count).by(2)
     end
 
-    it "logs each event" do
+    it "logs a batch summary" do
       allow(Rails.logger).to receive(:info)
 
       events = [
         { event: :chunk_embedded, project: project, actor: { type: "embedding_pipeline" },
-          target: { type: "KnowledgeChunk", id: "1" }, details: { model: "test" } }
+          target: { type: "KnowledgeChunk", id: "1" }, details: { model: "test" } },
+        { event: :chunk_embedded, project: project, actor: { type: "embedding_pipeline" },
+          target: { type: "KnowledgeChunk", id: "2" }, details: { model: "test" } }
       ]
 
       described_class.record_batch(events)
 
       expect(Rails.logger).to have_received(:info).with(
-        hash_including(message: "knowledge.audit", event: "chunk_embedded")
+        hash_including(
+          message: "knowledge.audit.batch",
+          events_count: 2,
+          event_type_counts: { "chunk_embedded" => 2 },
+          project_ids: [ project.id ]
+        )
       )
     end
 

@@ -59,7 +59,7 @@ module Knowledge
           event: :collection_rebuilt,
           project: project,
           actor: { type: "system" },
-          details: { collection: collection_name }
+          details: { collection_name: collection_name }
         )
       end
 
