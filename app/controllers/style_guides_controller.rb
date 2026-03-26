@@ -2,13 +2,14 @@
 
 class StyleGuidesController < ApplicationController
   before_action :set_style_guide, only: [ :show, :edit, :update, :destroy, :compress ]
-  skip_after_action :verify_authorized, only: :index
+  skip_after_action :verify_authorized, only: [ :index ]
 
   def index
     base_scope = policy_scope(StyleGuide).includes(:project, :account)
     @q = base_scope.ransack(params[:q])
     @q.sorts = "name asc" if @q.sorts.empty?
     @pagy, @style_guides = pagy(@q.result)
+    @projects = policy_scope(Project).order(:name) if policy(StyleGuide).create?
   end
 
   def show
@@ -65,6 +66,19 @@ class StyleGuidesController < ApplicationController
 
     StyleGuideCompressionJob.perform_later(@style_guide.id)
     redirect_to @style_guide, notice: "Style guide compression has been queued and will complete shortly."
+  end
+
+  def extract
+    if params[:project_id].blank?
+      redirect_back fallback_location: style_guides_path, alert: "Please select a project before extracting a style guide."
+      return
+    end
+
+    @project = policy_scope(Project).find(params[:project_id])
+    authorize StyleGuide.new(account: @project.account, project: @project), :create?
+
+    StyleGuideExtractionJob.perform_later(@project.id)
+    redirect_to style_guides_path, notice: "Style guide extraction has been queued for #{@project.name}. Guides will appear shortly."
   end
 
   private
