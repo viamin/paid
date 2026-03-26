@@ -90,6 +90,21 @@ RSpec.describe Knowledge::Search do
 
         expect(result[:results].map { |r| r[:artifact_type] }).to all(eq("route"))
       end
+
+      it "returns exact_count and semantic_count in meta" do
+        result = described_class.call(project: project, query: "POST /api/users", mode: "exact")
+
+        expect(result[:meta][:exact_count]).to eq(1)
+        expect(result[:meta][:semantic_count]).to eq(0)
+      end
+
+      it "strips internal scoring fields from results" do
+        result = described_class.call(project: project, query: "POST /api/users", mode: "exact")
+
+        expect(result[:results].first).not_to have_key(:status)
+        expect(result[:results].first).not_to have_key(:link_count)
+        expect(result[:results].first).not_to have_key(:created_at)
+      end
     end
 
     context "with semantic mode" do
@@ -108,6 +123,13 @@ RSpec.describe Knowledge::Search do
         expect(result[:results]).not_to be_empty
         expect(result[:results].first[:artifact_type]).to eq("route")
       end
+
+      it "returns semantic_count in meta" do
+        result = described_class.call(project: project, query: "users route controller", mode: "semantic")
+
+        expect(result[:meta][:semantic_count]).to be >= 1
+        expect(result[:meta][:exact_count]).to eq(0)
+      end
     end
 
     context "with hybrid mode" do
@@ -123,6 +145,26 @@ RSpec.describe Knowledge::Search do
 
         chunk_ids = result[:results].map { |r| r[:chunk_id] }
         expect(chunk_ids.uniq.length).to eq(chunk_ids.length)
+      end
+
+      it "returns exact and semantic counts in meta" do
+        result = described_class.call(project: project, query: "POST /api/users", mode: "hybrid")
+
+        expect(result[:meta]).to have_key(:exact_count)
+        expect(result[:meta]).to have_key(:semantic_count)
+      end
+    end
+
+    context "with version parameter" do
+      it "passes version to hybrid search for re-ranking" do
+        result = described_class.call(
+          project: project,
+          query: "POST /api/users",
+          mode: "hybrid",
+          version: "abc123"
+        )
+
+        expect(result[:results]).not_to be_empty
       end
     end
 
