@@ -2,6 +2,7 @@
 
 class LiveDashboardBroadcastJob < ApplicationJob
   queue_as :default
+  discard_on ActiveRecord::RecordNotFound
 
   def perform(account_id, agent_run_id)
     account = Account.find(account_id)

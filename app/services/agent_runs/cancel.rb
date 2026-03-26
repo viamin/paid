@@ -40,12 +40,6 @@ module AgentRuns
       return if agent_run.container_id.blank?
 
       agent_run.cleanup_container(force: true)
-    rescue Containers::Provision::Error => e
-      Rails.logger.info(
-        message: "agent_execution.cancel_container_cleanup_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
     end
   end
 end
