@@ -31,7 +31,17 @@ module Knowledge
 
     private
 
+    def container_runner
+      options[:container_runner]
+    end
+
+    def containerized?
+      container_runner.present?
+    end
+
     def resolve_repo_path
+      return container_runner.options[:workspace_mount] if containerized?
+
       project.worktrees.order(created_at: :desc).first&.path || default_repo_path
     end
 
@@ -41,6 +51,8 @@ module Knowledge
     end
 
     def run_command(*argv, timeout: 30)
+      return container_runner.execute(argv, timeout: timeout) if containerized?
+
       stdout_str = +""
       stderr_str = +""
       status = nil
