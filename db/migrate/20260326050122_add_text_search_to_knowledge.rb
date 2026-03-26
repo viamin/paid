@@ -19,7 +19,7 @@ class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
     SQL
 
     # Backfill tsvector for existing rows so full_text_search works immediately after deploy.
-    # Uses batched updates with CTID ranges (knowledge_chunks uses UUID primary keys).
+    # Uses batched updates via subquery on id (works with UUID primary keys).
     # The GIN index is created AFTER the backfill to avoid costly per-row index updates.
     loop do
       rows_updated = execute(<<~SQL).cmd_tuples

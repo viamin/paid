@@ -30,10 +30,11 @@ module Knowledge
       when "hybrid" then hybrid_search
       end
 
+      results = results.first(limit)
       elapsed = ((monotonic_now - start_time) * 1000).round
 
       {
-        results: results.first(limit),
+        results: results,
         meta: { mode: mode, total: results.size, took_ms: elapsed }
       }
     end
@@ -55,7 +56,7 @@ module Knowledge
 
       exact_matches
         .limit(limit)
-        .includes(:knowledge_chunks, collector_run: :project_version)
+        .includes(:active_ordered_chunks, collector_run: :project_version)
         .flat_map { |artifact| format_artifact_results(artifact, source: "exact") }
     end
 
@@ -101,7 +102,7 @@ module Knowledge
       version = artifact.collector_run&.project_version
       version_info = build_version_info(version)
 
-      artifact.knowledge_chunks.active.ordered.map do |chunk|
+      artifact.active_ordered_chunks.map do |chunk|
         {
           chunk_id: chunk.id,
           artifact_type: artifact.artifact_type,

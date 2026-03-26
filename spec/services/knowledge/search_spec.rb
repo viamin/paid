@@ -96,7 +96,7 @@ RSpec.describe Knowledge::Search do
       before { get_chunk } # ensure chunk exists in DB for full-text search
 
       it "finds routes via full-text search" do
-        result = described_class.call(project: project, query: "users api route", mode: "semantic")
+        result = described_class.call(project: project, query: "users route controller", mode: "semantic")
 
         expect(result[:results]).not_to be_empty
         expect(result[:results].first[:source]).to eq("semantic")
