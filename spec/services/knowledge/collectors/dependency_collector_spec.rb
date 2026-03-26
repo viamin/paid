@@ -112,6 +112,26 @@ RSpec.describe Knowledge::Collectors::DependencyCollector, :no_db do
       end
     end
 
+    context "with invalid package.json" do
+      before do
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{fixture_path}/package.json").and_return(true)
+        allow(File).to receive(:read).and_call_original
+        allow(File).to receive(:read).with("#{fixture_path}/package.json").and_return("{ invalid json }")
+      end
+
+      it "logs a warning and returns no package.json artifacts" do
+        expect(Rails.logger).to receive(:warn).with(hash_including(
+          message: "knowledge.dependency.package_json_parse_error"
+        ))
+
+        result = collector.collect
+        package_artifacts = result.select { |a| a[:scope_path] == "package.json" }
+
+        expect(package_artifacts).to be_empty
+      end
+    end
+
     context "with package.json" do
       let(:package_artifacts) { artifacts.select { |a| a[:scope_path] == "package.json" } }
 

@@ -84,11 +84,19 @@ RSpec.describe Knowledge::Collectors::SymbolIndexCollector, :no_db do
         end
       end
 
-      it "builds identifiers with file path and enclosing class" do
+      it "builds fully-qualified identifiers with enclosing module and class" do
         method_artifacts = artifacts.select { |a| a[:metadata][:symbol_type] == "method" }
         identifiers = method_artifacts.map { |a| a[:identifier] }
 
-        expect(identifiers).to include(a_string_matching(/sample\.rb::SampleClass#greet/))
+        expect(identifiers).to include(a_string_matching(/sample\.rb::SampleModule::SampleClass#greet/))
+      end
+
+      it "builds fully-qualified identifiers for nested classes" do
+        class_artifacts = artifacts.select { |a| a[:metadata][:symbol_type] == "class" }
+        identifiers = class_artifacts.map { |a| a[:identifier] }
+
+        expect(identifiers).to include(a_string_matching(/sample\.rb::SampleModule::SampleClass/))
+        expect(identifiers).to include(a_string_matching(/sample\.rb::SampleModule::AnotherClass/))
       end
 
       it "produces unique identifiers for same-named methods in different classes" do

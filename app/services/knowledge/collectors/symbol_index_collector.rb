@@ -25,13 +25,11 @@ module Knowledge
           all_results = collect_all_results(patterns, language, extensions)
 
           all_results.group_by { |r| r[:file_path] }.each do |file_path, file_results|
-            scopes = file_results
-              .select { |r| r[:symbol_type] == :class || r[:symbol_type] == :module }
-              .sort_by { |r| r[:line] }
+            scope_stack = build_scope_stack(file_results)
 
             file_results.each do |result|
-              enclosing = result[:symbol_type] == :method ? enclosing_scope_name(scopes, result[:line]) : nil
-              identifier = build_identifier(file_path, result[:symbol_type], result[:name], enclosing)
+              qualified_name = qualified_scope_name(scope_stack, result)
+              identifier = build_identifier(file_path, result[:symbol_type], qualified_name)
               content = result[:content]
 
               artifacts << {
@@ -88,6 +86,7 @@ module Knowledge
               symbol_type: symbol_type,
               name: name,
               line: match.dig("range", "start", "line"),
+              column: match.dig("range", "start", "column") || 0,
               content: match["text"].to_s
             }
           end
@@ -100,24 +99,59 @@ module Knowledge
         match.dig("metaVariables", "single", "NAME", "text")
       end
 
-      # Find the nearest class/module defined before the given line.
-      # This handles the common case of methods inside classes; for
-      # top-level methods (no enclosing scope), returns nil.
-      def enclosing_scope_name(scopes, method_line)
-        enclosing = scopes.select { |s| s[:line] < method_line }.last
-        enclosing&.dig(:name)
+      # Build a sorted list of class/module scopes from file results,
+      # used to compute fully-qualified names for all symbols.
+      def build_scope_stack(file_results)
+        file_results
+          .select { |r| r[:symbol_type] == :class || r[:symbol_type] == :module }
+          .sort_by { |r| r[:line] }
       end
 
-      def build_identifier(file_path, symbol_type, name, enclosing_scope = nil)
+      # Compute the fully-qualified name for a symbol by walking enclosing
+      # class/module scopes. For classes/modules this produces e.g.
+      # "Outer::Inner"; for methods, "Outer::Inner#method_name".
+      def qualified_scope_name(scope_stack, result)
+        enclosing = enclosing_scopes(scope_stack, result[:line], result[:column])
+
+        case result[:symbol_type]
+        when :method
+          prefix = enclosing.empty? ? nil : enclosing.join("::")
+          prefix ? "#{prefix}##{result[:name]}" : result[:name]
+        else
+          (enclosing + [ result[:name] ]).join("::")
+        end
+      end
+
+      # Returns the chain of enclosing class/module names for a given line,
+      # by selecting prior scopes with a strictly smaller column offset.
+      def enclosing_scopes(scope_stack, line, max_column)
+        candidates = scope_stack.select { |s| s[:line] < line }
+        return [] if candidates.empty?
+
+        # Walk backwards, collecting scopes whose column is strictly less
+        # than both the target and each previously collected scope.
+        chain = []
+        threshold = max_column
+        candidates.reverse_each do |scope|
+          if scope[:column] < threshold
+            chain << scope[:name]
+            threshold = scope[:column]
+          end
+        end
+
+        chain.reverse
+      end
+
+      def build_identifier(file_path, symbol_type, qualified_name)
         case symbol_type
         when :method
-          if enclosing_scope
-            "#{file_path}::#{enclosing_scope}##{name}"
+          if qualified_name.include?("#")
+            "#{file_path}::#{qualified_name}"
           else
-            "#{file_path}##{name}"
+            "#{file_path}##{qualified_name}"
           end
         else
-          "#{file_path}::#{name}"
+          "#{file_path}::#{qualified_name}"
         end
       end
 

@@ -116,7 +116,12 @@ module Knowledge
         end
 
         deps
-      rescue JSON::ParserError
+      rescue JSON::ParserError => e
+        Rails.logger.warn(
+          message: "knowledge.dependency.package_json_parse_error",
+          scan_path: scan_path,
+          error: e.message
+        )
         []
       end
 
