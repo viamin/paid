@@ -35,7 +35,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
   end
 
   it "tries to recover the dev environment when setup fails after stopping Overmind" do
-    Dir.mktmpdir("dev-update-spec") do |dir|
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, setup_exit_status: 1, start_overmind_running: true)
       create_stale_socket(dir)
 
@@ -53,7 +53,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
   end
 
   it "fails loudly when restart does not restore a healthy Overmind session" do
-    Dir.mktmpdir("dev-update-spec") do |dir|
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, dev_starts_overmind: false)
 
       env = { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}" }
