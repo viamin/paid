@@ -14,10 +14,9 @@ module Knowledge
         artifacts = []
 
         MANIFEST_PARSERS.each do |filename, parser_method|
-          file_path = File.join(scan_path, filename)
-          next unless File.exist?(file_path)
+          next unless repo_file_exists?(filename)
 
-          content = File.read(file_path)
+          content = read_repo_file(filename)
           deps = send(parser_method, content)
 
           deps.each do |dep|
@@ -128,7 +127,7 @@ module Knowledge
       rescue JSON::ParserError => e
         Rails.logger.warn(
           message: "knowledge.dependency.package_json_parse_error",
-          scan_path: scan_path,
+          repo_path: resolve_repo_path,
           error: e.message
         )
         []
@@ -203,10 +202,6 @@ module Knowledge
         when "peerDependencies" then "peer"
         else section
         end
-      end
-
-      def scan_path
-        @scan_path ||= options[:scan_path] || "."
       end
     end
   end

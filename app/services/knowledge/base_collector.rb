@@ -31,8 +31,39 @@ module Knowledge
 
     private
 
+    def container_runner
+      options[:container_runner]
+    end
+
+    def containerized?
+      container_runner.present?
+    end
+
     def resolve_repo_path
-      project.worktrees.order(created_at: :desc).first&.path || default_repo_path
+      if containerized?
+        # Use host repo dir for direct file access — the same directory is
+        # bind-mounted into the container at workspace_mount.
+        container_runner.host_repo_dir
+      elsif options[:scan_path]
+        options[:scan_path]
+      elsif project.respond_to?(:worktrees)
+        project.worktrees.order(created_at: :desc).first&.path || default_repo_path
+      else
+        default_repo_path
+      end
+    end
+
+    # Reads a file from the repo. In containerized mode, reads from the
+    # host-side clone (bind-mounted into the container).
+    def read_repo_file(relative_path)
+      full_path = File.join(resolve_repo_path.to_s, relative_path)
+      File.read(full_path)
+    end
+
+    # Checks if a file exists in the repo.
+    def repo_file_exists?(relative_path)
+      full_path = File.join(resolve_repo_path.to_s, relative_path)
+      File.exist?(full_path)
     end
 
     def default_repo_path
@@ -41,6 +72,8 @@ module Knowledge
     end
 
     def run_command(*argv, timeout: 30)
+      return container_runner.execute(argv, timeout: timeout) if containerized?
+
       stdout_str = +""
       stderr_str = +""
       status = nil

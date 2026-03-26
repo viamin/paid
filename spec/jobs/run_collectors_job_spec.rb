@@ -7,24 +7,49 @@ RSpec.describe RunCollectorsJob do
   let(:commit_sha) { "a" * 40 }
 
   describe "#perform" do
-    it "delegates to Knowledge::CollectorRunner" do
-      expect(Knowledge::CollectorRunner).to receive(:call).with(
-        project: project,
-        commit_sha: commit_sha,
-        branch: "main"
-      )
+    context "when Docker is unavailable" do
+      before do
+        allow(Knowledge::ContainerizedRunner).to receive(:available?).and_return(false)
+      end
 
-      described_class.new.perform(project.id, commit_sha)
+      it "delegates to Knowledge::CollectorRunner" do
+        expect(Knowledge::CollectorRunner).to receive(:call).with(
+          project: project,
+          commit_sha: commit_sha,
+          branch: "main",
+          committed_at: nil
+        )
+
+        described_class.new.perform(project.id, commit_sha)
+      end
+
+      it "accepts a custom branch" do
+        expect(Knowledge::CollectorRunner).to receive(:call).with(
+          project: project,
+          commit_sha: commit_sha,
+          branch: "develop",
+          committed_at: nil
+        )
+
+        described_class.new.perform(project.id, commit_sha, branch: "develop")
+      end
     end
 
-    it "accepts a custom branch" do
-      expect(Knowledge::CollectorRunner).to receive(:call).with(
-        project: project,
-        commit_sha: commit_sha,
-        branch: "develop"
-      )
+    context "when Docker is available" do
+      before do
+        allow(Knowledge::ContainerizedRunner).to receive(:available?).and_return(true)
+      end
 
-      described_class.new.perform(project.id, commit_sha, branch: "develop")
+      it "delegates to Knowledge::ContainerizedRunner" do
+        expect(Knowledge::ContainerizedRunner).to receive(:call).with(
+          project: project,
+          commit_sha: commit_sha,
+          branch: "main",
+          committed_at: nil
+        )
+
+        described_class.new.perform(project.id, commit_sha)
+      end
     end
   end
 end
