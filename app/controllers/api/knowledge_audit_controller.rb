@@ -8,7 +8,7 @@ module Api
 
     # GET /api/knowledge/audit?project_id=X&event_type=Y&target_type=Z&target_id=W&since=...&before=...&page=1
     def index
-      @project = Project.find(params[:project_id])
+      @project = policy_scope(Project).find(params[:project_id])
       authorize @project, :show?
 
       events = KnowledgeAuditEvent.for_project(@project)
