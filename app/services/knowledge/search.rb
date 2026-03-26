@@ -13,7 +13,7 @@ module Knowledge
       @query = query
       @mode = MODES.include?(mode) ? mode : DEFAULT_MODE
       @artifact_type = artifact_type
-      @limit = [ limit.to_i, 1 ].max
+      @limit = limit.present? ? [ limit.to_i, 1 ].max : DEFAULT_LIMIT
     end
 
     def self.call(...)

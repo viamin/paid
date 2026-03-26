@@ -3,8 +3,10 @@
 require "rails_helper"
 
 RSpec.describe Api::KnowledgeSearchController, type: :request do
-  let(:user) { create(:user) }
-  let(:project) { create(:project) }
+  let(:account) { create(:account) }
+  let(:user) { create(:user, account: account) }
+  let(:github_token) { create(:github_token, account: account) }
+  let(:project) { create(:project, account: account, github_token: github_token) }
   let(:project_version) { create(:project_version, project: project) }
   let(:collector_run) { create(:collector_run, project_version: project_version, collector_type: "routes") }
 
@@ -73,6 +75,16 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
       get "/api/knowledge/search", params: { project_id: project.id, q: "test" }
 
       expect(response).to redirect_to(new_user_session_path)
+    end
+
+    it "does not allow access to other accounts' projects" do
+      other_account = create(:account)
+      other_token = create(:github_token, account: other_account)
+      other_project = create(:project, account: other_account, github_token: other_token)
+
+      get "/api/knowledge/search", params: { project_id: other_project.id, q: "test" }
+
+      expect(response).to redirect_to(root_path)
     end
   end
 end
