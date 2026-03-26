@@ -128,8 +128,10 @@ start_dev() {
   remove_stale_overmind_socket
 
   if overmind_running; then
-    log "Overmind is already running, skipping start."
-    return
+    log "Overmind is already running, restarting processes."
+    overmind restart
+    log "Overmind process restart requested."
+    return 0
   fi
 
   log "Starting dev environment..."
