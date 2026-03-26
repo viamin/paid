@@ -93,34 +93,36 @@ module Knowledge
 
             # Best-effort per-row fallback so one bad row doesn't lose all events
             events.each do |event|
-              actor_type, actor_id = extract_pair(event[:actor])
-              target_type, target_id = extract_pair(event[:target])
+              begin
+                actor_type, actor_id = extract_pair(event[:actor])
+                target_type, target_id = extract_pair(event[:target])
 
-              record = KnowledgeAuditEvent.create(
-                project: event[:project],
-                event_type: event[:event].to_s,
-                actor_type: actor_type,
-                actor_id: actor_id,
-                target_type: target_type,
-                target_id: target_id,
-                details: event[:details] || {}
-              )
-              if record.errors.any?
+                record = KnowledgeAuditEvent.create(
+                  project: event[:project],
+                  event_type: event[:event].to_s,
+                  actor_type: actor_type,
+                  actor_id: actor_id,
+                  target_type: target_type,
+                  target_id: target_id,
+                  details: event[:details] || {}
+                )
+                if record.errors.any?
+                  Rails.logger.error(
+                    message: "knowledge.audit.persist_failed",
+                    event: event[:event].to_s,
+                    project_id: event[:project].id,
+                    errors: record.errors.full_messages
+                  )
+                end
+              rescue StandardError => row_error
                 Rails.logger.error(
                   message: "knowledge.audit.persist_failed",
                   event: event[:event].to_s,
                   project_id: event[:project].id,
-                  errors: record.errors.full_messages
+                  error_class: row_error.class.name,
+                  error_message: row_error.message
                 )
               end
-            rescue StandardError => row_error
-              Rails.logger.error(
-                message: "knowledge.audit.persist_failed",
-                event: event[:event].to_s,
-                project_id: event[:project].id,
-                error_class: row_error.class.name,
-                error_message: row_error.message
-              )
             end
           end
 
