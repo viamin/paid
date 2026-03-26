@@ -453,6 +453,7 @@ RSpec.describe Containers::GitOperations do
 
       expect(container_service).to receive(:execute)
         .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false)
+        .ordered
         .and_return(branch_exists_result)
 
       expect_refresh_remote_branch(head_sha, ordered: true)
@@ -472,6 +473,7 @@ RSpec.describe Containers::GitOperations do
 
       expect(container_service).to receive(:execute)
         .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false)
+        .ordered
         .and_return(branch_exists_result)
 
       expect_refresh_remote_branch(remote_sha, ordered: true)
