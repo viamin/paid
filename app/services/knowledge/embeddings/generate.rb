@@ -95,7 +95,5 @@ module Knowledge
         (token_count.to_f / 1_000_000 * COST_PER_MILLION_TOKENS).round(6)
       end
     end
-
-    class EmbeddingError < StandardError; end
   end
 end
