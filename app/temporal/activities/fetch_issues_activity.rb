@@ -141,6 +141,9 @@ module Activities
       { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted }
     end
 
+    # TODO(#430): Fetching comments per issue is an N+1 API call pattern that
+    # increases sync time and rate-limit pressure. Consider skipping unchanged
+    # issues (via github_updated_at) or batching comment fetches.
     def parse_dependencies(project, synced_issues)
       synced_issue_ids = synced_issues.filter_map { |si| si[:id] }
       issues_relation = project.issues.where(
@@ -149,10 +152,23 @@ module Activities
         is_pull_request: false
       )
 
+      client = project.github_token.client
+
+      # Compute adjacency once before the loop for cycle detection. Within this
+      # sync batch, deps created by earlier iterations won't be visible for cycle
+      # detection until the next full sync — an acceptable trade-off vs N×DB reads.
       adjacency = IssueDependency.account_adjacency(project.account)
 
       issues_relation.find_each do |issue|
-        Issues::ParseDependencies.call(issue: issue, adjacency: adjacency)
+        comment_bodies = fetch_trusted_comment_bodies(client, project, issue)
+        # nil means comment fetch failed — skip ALL parsing for this issue to
+        # avoid stale-removal of comment-derived deps. Body-only parsing would
+        # delete previously-persisted comment deps that are still valid.
+        next if comment_bodies.nil?
+
+        Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
+      rescue GithubClient::RateLimitError
+        raise
       rescue => e
         logger.warn(
           message: "github_sync.parse_dependencies_failed",
@@ -218,6 +234,32 @@ module Activities
         error_class: e.class.name,
         error: e.message
       )
+    end
+
+    # Returns trusted comment bodies, or nil if comments could not be fetched.
+    # Returning nil (vs empty array) lets callers distinguish "no comments" from
+    # "fetch failed", avoiding accidental deletion of comment-derived dependencies.
+    def fetch_trusted_comment_bodies(client, project, issue)
+      github_comments = client.issue_comments(project.full_name, issue.github_number)
+      # Sort by created_at to guarantee chronological processing regardless
+      # of API response ordering. ParseDependencies relies on comment order
+      # to resolve "latest directive wins" semantics.
+      github_comments
+        .sort_by { |c| c.created_at || Time.at(0) }
+        .select { |c| project.trusted_github_user?(c.user&.login) }
+        .map { |c| c.body.to_s }
+    rescue GithubClient::RateLimitError
+      raise
+    rescue => e
+      logger.warn(
+        message: "github_sync.fetch_comments_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        github_number: issue.github_number,
+        error_class: e.class.name,
+        error: e.message
+      )
+      nil
     end
 
     def close_stale_issues(project, github_issues, truncated: false)
