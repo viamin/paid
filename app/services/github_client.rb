@@ -153,6 +153,17 @@ class GithubClient
     handle_errors { client.pull_request(repo, number) }
   end
 
+  # Lists files changed in a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Array<String>] File paths changed in the pull request
+  def pull_request_files(repo, number)
+    handle_errors do
+      with_auto_paginate { client.pull_request_files(repo, number) }
+    end.map(&:filename)
+  end
+
   # Creates an issue on a repository.
   #
   # @param repo [String] Repository in "owner/name" format

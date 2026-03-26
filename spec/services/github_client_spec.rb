@@ -906,6 +906,75 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#pull_request_files" do
+    let(:repo) { "owner/repo" }
+
+    context "when files exist" do
+      before do
+        stub_request(:get, %r{#{api_base}/repos/#{repo}/pulls/42/files})
+          .to_return(
+            status: 200,
+            body: [
+              { sha: "abc", filename: "app/models/user.rb", status: "modified" },
+              { sha: "def", filename: "config/routes.rb", status: "added" }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns an array of file paths" do
+        result = client.pull_request_files(repo, 42)
+
+        expect(result).to eq(%w[app/models/user.rb config/routes.rb])
+      end
+    end
+
+    context "when files span multiple pages" do
+      before do
+        stub_request(:get, %r{#{api_base}/repos/#{repo}/pulls/42/files})
+          .with(query: hash_excluding("page" => "2"))
+          .to_return(
+            status: 200,
+            body: [
+              { sha: "abc", filename: "app/models/user.rb", status: "modified" }
+            ].to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "Link" => "<#{api_base}/repos/#{repo}/pulls/42/files?page=2>; rel=\"next\""
+            }
+          )
+
+        stub_request(:get, %r{#{api_base}/repos/#{repo}/pulls/42/files})
+          .with(query: hash_including("page" => "2"))
+          .to_return(
+            status: 200,
+            body: [
+              { sha: "def", filename: "config/routes.rb", status: "added" },
+              { sha: "ghi", filename: "lib/tasks/cleanup.rake", status: "removed" }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns file paths from all pages" do
+        result = client.pull_request_files(repo, 42)
+
+        expect(result).to eq(%w[app/models/user.rb config/routes.rb lib/tasks/cleanup.rake])
+      end
+    end
+
+    context "when pull request does not exist" do
+      before do
+        stub_request(:get, %r{#{api_base}/repos/#{repo}/pulls/999/files})
+          .to_return(status: 404, body: { message: "Not Found" }.to_json)
+      end
+
+      it "raises NotFoundError" do
+        expect { client.pull_request_files(repo, 999) }.to raise_error(GithubClient::NotFoundError)
+      end
+    end
+  end
+
   describe "#resolve_review_thread" do
     context "when resolution succeeds" do
       before do
