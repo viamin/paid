@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require "open3"
-
 module Knowledge
   module Collectors
     class SymbolIndexCollector < BaseCollector
+      include Concerns::AstGrepRunner
+
       PATTERNS = {
         ruby: {
           class: "class $NAME",
@@ -72,47 +72,6 @@ module Knowledge
 
       private
 
-      def run_ast_grep(pattern, language)
-        cmd = [
-          "ast-grep", "run",
-          "--pattern", pattern,
-          "--lang", language,
-          "--json",
-          scan_path
-        ]
-
-        output = execute_command(cmd)
-        return [] if output.empty?
-
-        JSON.parse(output)
-      rescue JSON::ParserError => e
-        Rails.logger.warn(
-          message: "knowledge.symbol_index.parse_error",
-          error: e.message,
-          pattern: pattern,
-          language: language
-        )
-        []
-      end
-
-      def execute_command(cmd)
-        stdout, stderr, status = Open3.capture3(*cmd)
-
-        unless status.success? || status.exitstatus == 1
-          Rails.logger.warn(
-            message: "knowledge.symbol_index.command_error",
-            stderr: stderr.truncate(500),
-            exit_code: status.exitstatus
-          )
-          return ""
-        end
-
-        stdout
-      rescue Errno::ENOENT
-        Rails.logger.warn(message: "knowledge.symbol_index.tool_not_found", command: cmd.first)
-        ""
-      end
-
       def extract_name(match)
         match.dig("metaVariables", "single", "NAME", "text")
       end
@@ -126,25 +85,8 @@ module Knowledge
         end
       end
 
-      def relative_path(absolute_path)
-        return absolute_path unless scan_path && absolute_path&.start_with?(scan_path)
-
-        absolute_path.delete_prefix(scan_path).delete_prefix("/")
-      end
-
-      def matching_extension?(file_path, extensions)
-        extensions.any? { |ext| file_path.end_with?(ext) }
-      end
-
-      def scan_path
-        @scan_path ||= options[:scan_path] || "."
-      end
-
-      def detect_tool_version
-        stdout, _stderr, status = Open3.capture3("ast-grep", "--version")
-        status.success? ? stdout.strip : nil
-      rescue Errno::ENOENT
-        nil
+      def ast_grep_log_component
+        "knowledge.symbol_index"
       end
     end
   end

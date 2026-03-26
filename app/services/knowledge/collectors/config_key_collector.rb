@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require "open3"
-
 module Knowledge
   module Collectors
     class ConfigKeyCollector < BaseCollector
+      include Concerns::AstGrepRunner
+
       PATTERNS = {
         ruby: [
           { pattern: 'ENV["$KEY"]', extract: "KEY" },
@@ -53,46 +53,6 @@ module Knowledge
 
       private
 
-      def run_ast_grep(pattern, language)
-        cmd = [
-          "ast-grep", "run",
-          "--pattern", pattern,
-          "--lang", language,
-          "--json",
-          scan_path
-        ]
-
-        output = execute_command(cmd)
-        return [] if output.empty?
-
-        JSON.parse(output)
-      rescue JSON::ParserError => e
-        Rails.logger.warn(
-          message: "knowledge.config_key.parse_error",
-          error: e.message,
-          pattern: pattern
-        )
-        []
-      end
-
-      def execute_command(cmd)
-        stdout, stderr, status = Open3.capture3(*cmd)
-
-        unless status.success? || status.exitstatus == 1
-          Rails.logger.warn(
-            message: "knowledge.config_key.command_error",
-            stderr: stderr.truncate(500),
-            exit_code: status.exitstatus
-          )
-          return ""
-        end
-
-        stdout
-      rescue Errno::ENOENT
-        Rails.logger.warn(message: "knowledge.config_key.tool_not_found", command: cmd.first)
-        ""
-      end
-
       def extract_key(match, variable_name)
         match.dig("metaVariables", "single", variable_name, "text")
       end
@@ -124,25 +84,8 @@ module Knowledge
         artifacts.uniq { |a| [ a[:identifier], a[:scope_path] ] }
       end
 
-      def relative_path(absolute_path)
-        return absolute_path unless scan_path && absolute_path&.start_with?(scan_path)
-
-        absolute_path.delete_prefix(scan_path).delete_prefix("/")
-      end
-
-      def matching_extension?(file_path, extensions)
-        extensions.any? { |ext| file_path.end_with?(ext) }
-      end
-
-      def scan_path
-        @scan_path ||= options[:scan_path] || "."
-      end
-
-      def detect_tool_version
-        stdout, _stderr, status = Open3.capture3("ast-grep", "--version")
-        status.success? ? stdout.strip : nil
-      rescue Errno::ENOENT
-        nil
+      def ast_grep_log_component
+        "knowledge.config_key"
       end
     end
   end
