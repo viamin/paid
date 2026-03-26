@@ -1414,6 +1414,8 @@ RSpec.describe AgentRun do
   end
 
   describe "#agent_summary_with_stderr_fallback" do
+    let(:agent_run) { create(:agent_run) }
+
     it "returns stdout when available" do
       agent_run.log!("stdout", "stdout content")
       agent_run.log!("stderr", "stderr content")

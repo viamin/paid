@@ -463,12 +463,13 @@ module Activities
 
         You have access to the GitHub API via a proxy. Use curl to create the issue.
 
-        IMPORTANT: Do NOT pass JSON inline with -d '...'. The body will contain markdown
-        with apostrophes and backticks that break shell quoting. Instead, write the JSON
-        payload to a temporary file and use --data-binary @file:
+        IMPORTANT: Do NOT pass JSON inline with a single-quoted -d '...'. The body will contain
+        markdown with apostrophes (single quotes) and possibly newlines that break shell quoting.
+        Instead, write the JSON payload to a temporary file and use --data-binary @file:
 
         ```bash
-        cat > /tmp/issue.json <<'ISSUE_JSON'
+        tmpfile=$(mktemp)
+        cat > "$tmpfile" <<'ISSUE_JSON'
         {
           "title": "Issue title",
           "body": "Issue description with `code` and apostrophes",
@@ -479,7 +480,8 @@ module Activities
           -H "Content-Type: application/json" \\
           -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
           -H "X-Proxy-Token: $PROXY_TOKEN" \\
-          --data-binary @/tmp/issue.json
+          --data-binary @"$tmpfile"
+        rm -f "$tmpfile"
         ```
 
         Available endpoints:
