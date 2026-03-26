@@ -77,8 +77,14 @@ module Knowledge
           end
           stdout.close unless stdout.closed?
           stderr.close unless stderr.closed?
-          out_thread.join(5)
-          err_thread.join(5)
+          out_thread.join(5) || begin
+            out_thread.kill
+            out_thread.join
+          end
+          err_thread.join(5) || begin
+            err_thread.kill
+            err_thread.join
+          end
           raise Timeout::Error, "Command timed out after #{timeout} seconds: #{argv.join(' ')}"
         ensure
           stdout.close unless stdout.closed?
