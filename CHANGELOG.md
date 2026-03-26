@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.4](https://github.com/viamin/paid/compare/v0.9.3...v0.9.4) (2026-03-26)
+
+
+### Bug Fixes
+
+* **dev-update:** harden full restart logging and recovery ([67ace9c](https://github.com/viamin/paid/commit/67ace9c72dcb61776eee304078613463d8cba930))
+* **dev-update:** harden full restart logging and recovery ([cc3549e](https://github.com/viamin/paid/commit/cc3549e82b7d3140ce83d70cc068fd7a99e91d02))
+* **dev:** allow tailscale hosts with ports ([6f971f3](https://github.com/viamin/paid/commit/6f971f3465cb3883fe8c483d16460ea3dae2ad2d))
+* **spec:** avoid race when asserting dev start log ([66b3348](https://github.com/viamin/paid/commit/66b3348c98d6c61882c330fd3a5287c310068568))
+* **spec:** use exec tmpdir for dev-update script tests ([73f74e2](https://github.com/viamin/paid/commit/73f74e277267af6e898de240ca10e71281ba40e4))
+
 ## [0.9.3](https://github.com/viamin/paid/compare/v0.9.2...v0.9.3) (2026-03-26)
 
 
