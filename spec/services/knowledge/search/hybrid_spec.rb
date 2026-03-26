@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Knowledge::Search::Hybrid do
+  include_context "without qdrant vector search"
+
   let(:project) { create(:project) }
   let(:project_version) { create(:project_version, project: project, commit_sha: "abc123") }
   let(:collector_run) { create(:collector_run, project_version: project_version, collector_type: "routes") }

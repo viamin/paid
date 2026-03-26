@@ -25,8 +25,6 @@ RSpec.describe Knowledge::Collectors::SymbolIndexCollector, :no_db do
 
   describe "#tool_version" do
     it "returns the ast-grep version string" do
-      skip "ast-grep not installed" unless collector.tool_version
-
       expect(collector.tool_version).to match(/ast-grep \d+\.\d+\.\d+/)
     end
 
@@ -45,10 +43,6 @@ RSpec.describe Knowledge::Collectors::SymbolIndexCollector, :no_db do
 
   describe "#collect" do
     context "with ast-grep installed" do
-      before do
-        skip "ast-grep not installed; skipping integration specs" unless collector.tool_version
-      end
-
       let(:artifacts) { collector.collect }
 
       it "extracts class definitions" do

@@ -11,13 +11,20 @@ require_relative "../support/exec_tmpdir"
 RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
   include ExecTmpdir
   let(:script_source) { File.expand_path("../../bin/dev-update", __dir__) }
+  let(:poll_env) do
+    {
+      "DEV_UPDATE_OVERMIND_STOP_POLL_COUNT" => "3",
+      "DEV_UPDATE_OVERMIND_START_POLL_COUNT" => "3",
+      "DEV_UPDATE_OVERMIND_POLL_INTERVAL" => "0.01"
+    }
+  end
 
   it "removes a stale Overmind socket before restarting the dev environment" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
       socket_path = create_stale_socket(dir)
 
-      env = { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}" }
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
@@ -39,7 +46,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       script_path = prepare_script_fixture(dir, setup_exit_status: 1, start_overmind_running: true)
       create_stale_socket(dir)
 
-      env = { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}" }
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
 
       expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
@@ -56,7 +63,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, dev_starts_overmind: false)
 
-      env = { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}" }
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
 
       expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
