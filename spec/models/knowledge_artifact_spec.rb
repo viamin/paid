@@ -72,7 +72,7 @@ RSpec.describe KnowledgeArtifact do
           identifier: "PaymentGateway")
 
         results = described_class.identifier_like("UserController")
-        expect(results).to include(matching)
+        expect(results.first).to eq(matching)
       end
 
       it "returns empty when no identifiers are similar" do

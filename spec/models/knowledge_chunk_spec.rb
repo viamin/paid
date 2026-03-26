@@ -62,7 +62,7 @@ RSpec.describe KnowledgeChunk do
           content: "Ruby on Rails controller action for user authentication")
 
         results = described_class.full_text_search("database migration")
-        expect(results).to include(matching)
+        expect(results.first).to eq(matching)
         expect(results).not_to include(described_class.find_by(content: "Ruby on Rails controller action for user authentication"))
       end
 
