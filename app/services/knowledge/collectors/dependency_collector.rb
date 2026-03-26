@@ -72,7 +72,10 @@ module Knowledge
           end
 
           if group_nesting.positive?
-            group_nesting += 1 if stripped.match?(/\bdo\z/)
+            # Track any Ruby construct that pairs with `end`: do-blocks
+            # (including `do |args|`), and keyword blocks like if/unless/
+            # case/begin that may appear inside a group.
+            group_nesting += 1 if stripped.match?(/\bdo\b/) || stripped.match?(/\A(?:if|unless|case|begin)\b/)
 
             if stripped == "end"
               group_nesting -= 1

@@ -109,6 +109,28 @@ RSpec.describe Knowledge::Collectors::DependencyCollector, :no_db do
 
           expect(foo_dep[:metadata][:version]).to eq(">= 1.0, < 2.0")
         end
+
+        it "handles if/unless blocks inside groups without losing group context" do
+          stub_gemfile(<<~GEMFILE)
+            source "https://rubygems.org"
+            group :development do
+              gem "before_if"
+              if RUBY_PLATFORM =~ /linux/
+                gem "inside_if"
+              end
+              gem "after_if"
+            end
+            gem "outside"
+          GEMFILE
+
+          result = collector.collect
+          groups = result.each_with_object({}) { |a, h| h[a[:metadata][:name]] = a[:metadata][:group] }
+
+          expect(groups["before_if"]).to eq("development")
+          expect(groups["inside_if"]).to eq("development")
+          expect(groups["after_if"]).to eq("development")
+          expect(groups["outside"]).to eq("default")
+        end
       end
     end
 

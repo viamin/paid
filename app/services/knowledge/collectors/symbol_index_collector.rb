@@ -122,10 +122,13 @@ module Knowledge
         end
       end
 
-      # Returns the chain of enclosing class/module names for a given line,
-      # by selecting prior scopes with a strictly smaller column offset.
+      # Returns the chain of enclosing class/module names for a given
+      # position, by selecting prior scopes on earlier lines or on the
+      # same line with a strictly smaller column offset.
       def enclosing_scopes(scope_stack, line, max_column)
-        candidates = scope_stack.select { |s| s[:line] < line }
+        candidates = scope_stack.select do |s|
+          s[:line] < line || (s[:line] == line && s[:column] < max_column)
+        end
         return [] if candidates.empty?
 
         # Walk backwards, collecting scopes whose column is strictly less
