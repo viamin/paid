@@ -438,6 +438,8 @@ module Containers
         "Push failed: remote branch #{agent_run.branch_name} already exists at #{remote_sha}, " \
         "but local HEAD is #{local_sha}. Original error: #{error_with_stderr(original_result)}"
     rescue Error => e
+      raise if e.is_a?(PushError)
+
       raise PushError, "Push failed after remote branch existence check: #{e.message}"
     end
 
