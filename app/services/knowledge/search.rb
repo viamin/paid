@@ -5,6 +5,7 @@ module Knowledge
     MODES = %w[exact semantic hybrid].freeze
     DEFAULT_MODE = "hybrid"
     DEFAULT_LIMIT = 20
+    MAX_LIMIT = 100
 
     attr_reader :project, :query, :mode, :artifact_type, :limit
 
@@ -13,7 +14,7 @@ module Knowledge
       @query = query
       @mode = MODES.include?(mode) ? mode : DEFAULT_MODE
       @artifact_type = artifact_type
-      @limit = limit.present? ? [ limit.to_i, 1 ].max : DEFAULT_LIMIT
+      @limit = limit.present? ? [ limit.to_i, 1 ].max.clamp(1, MAX_LIMIT) : DEFAULT_LIMIT
     end
 
     def self.call(...)
@@ -52,7 +53,9 @@ module Knowledge
         exact_matches = artifacts.identifier_like(query)
       end
 
-      exact_matches.includes(:knowledge_chunks, collector_run: :project_version)
+      exact_matches
+        .limit(limit)
+        .includes(:knowledge_chunks, collector_run: :project_version)
         .flat_map { |artifact| format_artifact_results(artifact, source: "exact") }
     end
 

@@ -76,10 +76,9 @@ module Knowledge
         controller, action = (route[:controller_action] || "").split("#", 2)
         prefix = route[:prefix]
 
-        content_parts = [ "#{verb} #{path}" ]
-        content_parts << "#{controller}##{action}" if controller.present?
-        content_parts << "(prefix: #{prefix})" if prefix.present?
-        content = content_parts.join(" → ")
+        content = "#{verb} #{path}"
+        content = "#{content} → #{controller}##{action}" if controller.present?
+        content = "#{content} (prefix: #{prefix})" if prefix.present?
 
         chunk_lines = [ "Route: #{verb} #{path}" ]
         chunk_lines << "Controller: #{controller}##{action}" if controller.present?
