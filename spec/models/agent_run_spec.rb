@@ -1212,22 +1212,22 @@ RSpec.describe AgentRun do
   end
 
   describe "#queue_priority_label" do
-    it "returns '1 – Manual' for manual runs" do
+    it "returns '1 - Manual' for manual runs" do
       run = create(:agent_run, trigger_type: "manual")
 
-      expect(run.queue_priority_label).to eq("1 – Manual")
+      expect(run.queue_priority_label).to eq("1 - Manual")
     end
 
-    it "returns '2 – Auto-continue' for automatic runs with a source PR" do
+    it "returns '2 - Auto-continue' for automatic runs with a source PR" do
       run = create(:agent_run, trigger_type: "automatic", source_pull_request_number: 42)
 
-      expect(run.queue_priority_label).to eq("2 – Auto-continue")
+      expect(run.queue_priority_label).to eq("2 - Auto-continue")
     end
 
-    it "returns '3 – Auto-pick' for automatic runs without a source PR" do
+    it "returns '3 - Auto-pick' for automatic runs without a source PR" do
       run = create(:agent_run, trigger_type: "automatic")
 
-      expect(run.queue_priority_label).to eq("3 – Auto-pick")
+      expect(run.queue_priority_label).to eq("3 - Auto-pick")
     end
   end
 
