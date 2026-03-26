@@ -19,30 +19,19 @@ class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
     SQL
 
     # Backfill tsvector for existing rows so full_text_search works immediately after deploy.
-    # Use batched updates over primary-key ranges to avoid a single long-running UPDATE.
+    # Uses batched updates via subquery on id (works with UUID primary keys).
     # The GIN index is created AFTER the backfill to avoid costly per-row index updates.
-    range = select_one(<<~SQL)
-      SELECT MIN(id) AS min_id, MAX(id) AS max_id
-      FROM knowledge_chunks
-      WHERE content_tsvector IS NULL;
-    SQL
-
-    if range && range["min_id"] && range["max_id"]
-      batch_size = 10_000
-      min_id = range["min_id"].to_i
-      max_id = range["max_id"].to_i
-
-      (min_id..max_id).step(batch_size) do |start_id|
-        end_id = start_id + batch_size
-
-        execute <<~SQL
-          UPDATE knowledge_chunks
-          SET content_tsvector = to_tsvector('pg_catalog.english', coalesce(content, ''))
+    loop do
+      rows_updated = connection.exec_update(<<~SQL, "Backfill knowledge_chunks content_tsvector")
+        UPDATE knowledge_chunks
+        SET content_tsvector = to_tsvector('pg_catalog.english', coalesce(content, ''))
+        WHERE id IN (
+          SELECT id FROM knowledge_chunks
           WHERE content_tsvector IS NULL
-            AND id >= #{start_id}
-            AND id < #{end_id};
-        SQL
-      end
+          LIMIT 10000
+        )
+      SQL
+      break if rows_updated == 0
     end
 
     unless index_exists?(:knowledge_chunks, :content_tsvector, name: "index_knowledge_chunks_on_content_tsvector")

@@ -7,6 +7,8 @@ class KnowledgeArtifact < ApplicationRecord
   belongs_to :project
 
   has_many :knowledge_chunks, dependent: :destroy
+  has_many :active_ordered_chunks, -> { where(status: "active").order(:sequence) },
+    class_name: "KnowledgeChunk", inverse_of: :knowledge_artifact
 
   validates :artifact_type, presence: true, length: { maximum: 100 }
   validates :collector_type, presence: true, length: { maximum: 100 }

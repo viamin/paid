@@ -25,8 +25,10 @@ class KnowledgeChunk < ApplicationRecord
   scope :for_project, ->(project) { where(project: project) }
   scope :ordered, -> { order(:sequence) }
   scope :full_text_search, ->(query) {
+    rank_expr = "ts_rank(content_tsvector, plainto_tsquery('pg_catalog.english', #{connection.quote(query)}))"
     where("content_tsvector @@ plainto_tsquery('pg_catalog.english', ?)", query)
-      .order(Arel.sql("ts_rank(content_tsvector, plainto_tsquery('pg_catalog.english', #{connection.quote(query)})) DESC, #{table_name}.id ASC"))
+      .select("#{table_name}.*, #{rank_expr} AS relevance_rank")
+      .order(Arel.sql("#{rank_expr} DESC, #{table_name}.id ASC"))
   }
 
   before_save :update_content_tsvector, if: :should_update_content_tsvector?

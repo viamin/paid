@@ -80,6 +80,8 @@ Rails.application.routes.draw do
     match "proxy/google/*path", to: "secrets_proxy#google", via: :post, format: false
     match "proxy/github/*path", to: "github_proxy#proxy", via: [ :get, :post, :patch ], format: false
     get "proxy/git-credentials", to: "git_credentials#show"
+
+    get "knowledge/search", to: "knowledge_search#search"
   end
 
   # Defines the root path route ("/")
