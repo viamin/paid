@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.9.3](https://github.com/viamin/paid/compare/v0.9.2...v0.9.3) (2026-03-26)
+
+
+### Bug Fixes
+
+* 254: Thin Vertical Slice — Routes Collector → Postgres → Qdrant → Query API ([#513](https://github.com/viamin/paid/issues/513)) ([5b5dcce](https://github.com/viamin/paid/commit/5b5dccee7a1c366bf6a73dcb2d7d6b2225e0cba9))
+* 255: Static Collectors — ast-grep Symbols, Dependencies, Config Keys ([#508](https://github.com/viamin/paid/issues/508)) ([e95afc3](https://github.com/viamin/paid/commit/e95afc35a173f23ef4a431364d8fb2df9931a40d))
+* 256: Analytical Collectors — ruby-maat Churn/Hotspots + scc Language Stats ([#507](https://github.com/viamin/paid/issues/507)) ([177cbfd](https://github.com/viamin/paid/commit/177cbfd81f779d479b7dcc4fd96dac55e0108665))
+* 257: Embedding Pipeline — Chunking, Generation via Agent-Harness, Qdrant Upsert ([#506](https://github.com/viamin/paid/issues/506)) ([37c0200](https://github.com/viamin/paid/commit/37c0200539db6166c594c9d5a67ea6ff5356a05f))
+* 258: Containerized Collector Execution via Agent-Harness ([#516](https://github.com/viamin/paid/issues/516)) ([9ba39a4](https://github.com/viamin/paid/commit/9ba39a40ee3a70b1571c3660242528814ac08782))
+* 259: Retrieval API — Hybrid Search with Exact + Semantic + Re-ranking ([#518](https://github.com/viamin/paid/issues/518)) ([3854356](https://github.com/viamin/paid/commit/385435688588148509d84dfb7cd57899c2b04916))
+* 266: Postgres Full-Text and Trigram Search Setup for Knowledge Base ([#509](https://github.com/viamin/paid/issues/509)) ([65b356d](https://github.com/viamin/paid/commit/65b356dc96d4591c8db8ead1a8c48224e6997133))
+* 295: Add configurable "paid-automation" label for automatic issue/PR handling ([#505](https://github.com/viamin/paid/issues/505)) ([fdaaf22](https://github.com/viamin/paid/commit/fdaaf22f471e747c9c6707c2266684430c5ebf51))
+* 410: Implement automatic style guide extraction from codebase ([#517](https://github.com/viamin/paid/issues/517)) ([d11ef70](https://github.com/viamin/paid/commit/d11ef707d3dcd0eefda39f78b98b414513cd9591))
+* 411: Add tree-sitter integration for structural code analysis ([#514](https://github.com/viamin/paid/issues/514)) ([9a0f13d](https://github.com/viamin/paid/commit/9a0f13dd24a8387adabdce7048bf2a83d528b99d))
+* 412: Add human feedback collection via GitHub reactions and webhooks ([#515](https://github.com/viamin/paid/issues/515)) ([bbc8a05](https://github.com/viamin/paid/commit/bbc8a05c6a171aedfccace304052a540f23c71ba))
+* **dev-update:** recover from stale overmind sockets ([e81d09b](https://github.com/viamin/paid/commit/e81d09baf809c56d15d26285989f7db1bae4e74a))
+* **dev-update:** recover from stale overmind sockets ([1bd6ad4](https://github.com/viamin/paid/commit/1bd6ad4a845bc98dbd963c49c72818f03ef880b9))
+* **devcontainer:** set PAID_REPO_FULL_NAME so auto-update triggers ([25ff2b6](https://github.com/viamin/paid/commit/25ff2b6ae7b28b3efd379ee3f53db71935798344))
+* **devcontainer:** set PAID_REPO_FULL_NAME so auto-update triggers ([d5eff8f](https://github.com/viamin/paid/commit/d5eff8fda7c8767866852a3d7ce87df82aa9c639))
+* **dev:** recover from stale overmind sockets ([78ca403](https://github.com/viamin/paid/commit/78ca403a10d431fa52ed50d11ac54268aa2224c0))
+
 ## [0.9.2](https://github.com/viamin/paid/compare/v0.9.1...v0.9.2) (2026-03-26)
 
 
