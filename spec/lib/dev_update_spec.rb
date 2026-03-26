@@ -6,12 +6,14 @@ require "open3"
 require "socket"
 require "tmpdir"
 require "timeout"
+require_relative "../support/exec_tmpdir"
 
 RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
+  include ExecTmpdir
   let(:script_source) { File.expand_path("../../bin/dev-update", __dir__) }
 
   it "removes a stale Overmind socket before restarting the dev environment" do
-    Dir.mktmpdir("dev-update-spec", Dir.pwd) do |dir|
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
       socket_path = create_stale_socket(dir)
 
