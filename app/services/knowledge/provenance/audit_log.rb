@@ -16,14 +16,26 @@ module Knowledge
             details: details
           }
 
-          audit_event = KnowledgeAuditEvent.create(event_attrs)
-          if audit_event.errors.any?
+          audit_event = begin
+            record = KnowledgeAuditEvent.create(event_attrs)
+            if record.errors.any?
+              Rails.logger.error(
+                message: "knowledge.audit.persist_failed",
+                event: event.to_s,
+                project_id: project.id,
+                errors: record.errors.full_messages
+              )
+            end
+            record
+          rescue StandardError => e
             Rails.logger.error(
               message: "knowledge.audit.persist_failed",
               event: event.to_s,
               project_id: project.id,
-              errors: audit_event.errors.full_messages
+              error_class: e.class.name,
+              error_message: e.message
             )
+            nil
           end
 
           Rails.logger.info(
@@ -57,7 +69,37 @@ module Knowledge
             }
           end
 
-          KnowledgeAuditEvent.insert_all(rows)
+          begin
+            KnowledgeAuditEvent.insert_all(rows)
+          rescue StandardError => e
+            Rails.logger.error(
+              message: "knowledge.audit.persist_failed",
+              error_class: e.class.name,
+              error_message: e.message,
+              rows_count: rows.size
+            )
+
+            # Best-effort per-row fallback so one bad row doesn't lose all events
+            events.each do |event|
+              KnowledgeAuditEvent.create(
+                project: event[:project],
+                event_type: event[:event].to_s,
+                actor_type: event[:actor_type],
+                actor_id: event[:actor_id]&.to_s,
+                target_type: event[:target_type],
+                target_id: event[:target_id]&.to_s,
+                details: event[:details] || {}
+              )
+            rescue StandardError => row_error
+              Rails.logger.error(
+                message: "knowledge.audit.persist_failed",
+                event: event[:event].to_s,
+                project_id: event[:project].id,
+                error_class: row_error.class.name,
+                error_message: row_error.message
+              )
+            end
+          end
 
           events.each do |e|
             Rails.logger.info(

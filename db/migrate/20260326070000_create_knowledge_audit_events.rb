@@ -13,7 +13,9 @@ class CreateKnowledgeAuditEvents < ActiveRecord::Migration[8.1]
       t.datetime :created_at, null: false
     end
 
-    add_index :knowledge_audit_events, [ :project_id, :created_at ]
+    add_index :knowledge_audit_events,
+              [ :project_id, :created_at, :id ],
+              order: { created_at: :desc, id: :desc }
     add_index :knowledge_audit_events, :event_type
     add_index :knowledge_audit_events, [ :target_type, :target_id ]
   end

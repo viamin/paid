@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_26_070000) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_26_180754) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -416,7 +416,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_070000) do
     t.string "target_id", limit: 100
     t.string "target_type", limit: 100
     t.index ["event_type"], name: "index_knowledge_audit_events_on_event_type"
-    t.index ["project_id", "created_at"], name: "index_knowledge_audit_events_on_project_id_and_created_at"
+    t.index ["project_id", "created_at", "id"], name: "index_knowledge_audit_events_on_project_id_and_created_at_and_id", order: { created_at: :desc, id: :desc }
     t.index ["project_id"], name: "index_knowledge_audit_events_on_project_id"
     t.index ["target_type", "target_id"], name: "index_knowledge_audit_events_on_target_type_and_target_id"
   end
@@ -451,6 +451,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_070000) do
     t.index ["link_type"], name: "index_knowledge_links_on_link_type"
     t.index ["source_chunk_id", "target_chunk_id", "link_type"], name: "idx_knowledge_links_uniqueness", unique: true
     t.index ["target_chunk_id"], name: "index_knowledge_links_on_target_chunk_id"
+  end
+
+  create_table "linear_tokens", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.datetime "expires_at"
+    t.datetime "last_used_at"
+    t.string "name", null: false
+    t.datetime "revoked_at"
+    t.text "token", null: false
+    t.datetime "updated_at", null: false
+    t.string "validation_error"
+    t.string "validation_status", default: "pending", null: false
+    t.index ["account_id", "name"], name: "index_linear_tokens_on_account_id_and_name", unique: true
+    t.index ["account_id"], name: "index_linear_tokens_on_account_id"
+    t.index ["created_by_id"], name: "index_linear_tokens_on_created_by_id"
+    t.index ["revoked_at"], name: "index_linear_tokens_on_revoked_at"
   end
 
   create_table "llm_models", force: :cascade do |t|
@@ -831,6 +849,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_070000) do
   add_foreign_key "knowledge_chunks", "projects"
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "target_chunk_id", on_delete: :cascade
+  add_foreign_key "linear_tokens", "accounts"
+  add_foreign_key "linear_tokens", "users", column: "created_by_id"
   add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "project_memberships", "projects"

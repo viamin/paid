@@ -98,6 +98,25 @@ RSpec.describe Knowledge::Provenance::AuditLog do
       )
     end
 
+    it "does not raise when create raises an exception" do
+      allow(KnowledgeAuditEvent).to receive(:create).and_raise(ActiveRecord::ConnectionNotEstablished)
+      allow(Rails.logger).to receive(:info)
+      allow(Rails.logger).to receive(:error)
+
+      result = nil
+      expect {
+        result = described_class.record(event: :artifact_created, project: project)
+      }.not_to raise_error
+
+      expect(result).to be_nil
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "knowledge.audit.persist_failed",
+          error_class: "ActiveRecord::ConnectionNotEstablished"
+        )
+      )
+    end
+
     it "uses presence for actor and target in log output" do
       allow(Rails.logger).to receive(:info)
 
@@ -140,6 +159,26 @@ RSpec.describe Knowledge::Provenance::AuditLog do
     it "is a no-op for empty arrays" do
       expect { described_class.record_batch([]) }
         .not_to change(KnowledgeAuditEvent, :count)
+    end
+
+    it "falls back to per-row inserts when insert_all fails" do
+      events = [
+        { event: :chunk_embedded, project: project, actor_type: "embedding_pipeline",
+          target_type: "KnowledgeChunk", target_id: "1", details: { model: "test" } },
+        { event: :chunk_embedded, project: project, actor_type: "embedding_pipeline",
+          target_type: "KnowledgeChunk", target_id: "2", details: { model: "test" } }
+      ]
+
+      allow(KnowledgeAuditEvent).to receive(:insert_all).and_raise(ActiveRecord::StatementInvalid.new("timeout"))
+      allow(Rails.logger).to receive(:info)
+      allow(Rails.logger).to receive(:error)
+
+      expect { described_class.record_batch(events) }
+        .to change(KnowledgeAuditEvent, :count).by(2)
+
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(message: "knowledge.audit.persist_failed", rows_count: 2)
+      )
     end
   end
 end

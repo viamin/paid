@@ -101,18 +101,23 @@ module Knowledge
         .where(knowledge_artifact_id: prior_artifacts.select(:id), status: "active")
         .update_all(status: "stale", updated_at: Time.current)
 
-      staled_count = prior_artifacts.update_all(status: "stale", updated_at: Time.current)
+      staled_ids = prior_artifacts.pluck(:id)
+      return if staled_ids.empty?
 
-      if staled_count > 0
-        Knowledge::Provenance::AuditLog.record(
-          event: :artifact_staled,
+      KnowledgeArtifact.where(id: staled_ids).update_all(status: "stale", updated_at: Time.current)
+
+      audit_events = staled_ids.map do |artifact_id|
+        {
           project: project,
+          event: :artifact_staled,
           actor_type: "collector",
           actor_id: collector_run.id,
           target_type: "KnowledgeArtifact",
-          details: { count: staled_count, identifier: data[:identifier] }
-        )
+          target_id: artifact_id,
+          details: { identifier: data[:identifier] }
+        }
       end
+      Knowledge::Provenance::AuditLog.record_batch(audit_events)
     end
 
     def create_artifact(data, content_hash)
