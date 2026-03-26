@@ -28,6 +28,9 @@ gem "devise"
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
 
+# CSV parsing (bundled gem since Ruby 3.4)
+gem "csv"
+
 # GitHub API client [https://github.com/octokit/octokit.rb]
 gem "octokit"
 
