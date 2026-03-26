@@ -1,0 +1,55 @@
+--[ Route 1 ]------------------------------------------------------------------
+Prefix     | new_user_session
+Verb       | GET
+URI        | /users/sign_in(.:format)
+Controller | devise/sessions#new
+--[ Route 2 ]------------------------------------------------------------------
+Prefix     | user_session
+Verb       | POST
+URI        | /users/sign_in(.:format)
+Controller | devise/sessions#create
+--[ Route 3 ]------------------------------------------------------------------
+Prefix     | rails_health_check
+Verb       | GET
+URI        | /up(.:format)
+Controller | rails/health#show
+--[ Route 4 ]------------------------------------------------------------------
+Prefix     | dashboard
+Verb       | GET
+URI        | /dashboard(.:format)
+Controller | dashboard#show
+--[ Route 5 ]------------------------------------------------------------------
+Prefix     | api_users
+Verb       | POST
+URI        | /api/users(.:format)
+Controller | api/users#create
+--[ Route 6 ]------------------------------------------------------------------
+Prefix     | api_users
+Verb       | GET
+URI        | /api/users(.:format)
+Controller | api/users#index
+--[ Route 7 ]------------------------------------------------------------------
+Prefix     | api_user
+Verb       | GET
+URI        | /api/users/:id(.:format)
+Controller | api/users#show
+--[ Route 8 ]------------------------------------------------------------------
+Prefix     | api_user
+Verb       | PATCH
+URI        | /api/users/:id(.:format)
+Controller | api/users#update
+--[ Route 9 ]------------------------------------------------------------------
+Prefix     | api_user
+Verb       | DELETE
+URI        | /api/users/:id(.:format)
+Controller | api/users#destroy
+--[ Route 10 ]-----------------------------------------------------------------
+Prefix     | projects
+Verb       | GET
+URI        | /projects(.:format)
+Controller | projects#index
+--[ Route 11 ]-----------------------------------------------------------------
+Prefix     | project
+Verb       | GET
+URI        | /projects/:id(.:format)
+Controller | projects#show
