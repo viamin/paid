@@ -7,9 +7,9 @@ class KnowledgeChunk < ApplicationRecord
   belongs_to :knowledge_artifact
   belongs_to :project
 
-  has_many :source_links, class_name: "KnowledgeLink", foreign_key: :source_chunk_id,
+  has_many :outgoing_links, class_name: "KnowledgeLink", foreign_key: :source_chunk_id,
     dependent: :destroy, inverse_of: :source_chunk
-  has_many :target_links, class_name: "KnowledgeLink", foreign_key: :target_chunk_id,
+  has_many :incoming_links, class_name: "KnowledgeLink", foreign_key: :target_chunk_id,
     dependent: :destroy, inverse_of: :target_chunk
 
   validates :chunk_type, presence: true, inclusion: { in: CHUNK_TYPES }
@@ -21,6 +21,7 @@ class KnowledgeChunk < ApplicationRecord
   scope :active, -> { where(status: "active") }
   scope :embeddable, -> { active.where.not(embedding_model: nil) }
   scope :by_project, ->(project_id) { where(project_id: project_id) }
+  scope :for_project, ->(project) { where(project: project) }
   scope :ordered, -> { order(:sequence) }
 
   private

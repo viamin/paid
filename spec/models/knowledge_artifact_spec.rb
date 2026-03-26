@@ -14,6 +14,8 @@ RSpec.describe KnowledgeArtifact do
   describe "validations" do
     it { is_expected.to validate_presence_of(:artifact_type) }
     it { is_expected.to validate_length_of(:artifact_type).is_at_most(100) }
+    it { is_expected.to validate_presence_of(:collector_type) }
+    it { is_expected.to validate_length_of(:collector_type).is_at_most(100) }
     it { is_expected.to validate_presence_of(:content_hash) }
     it { is_expected.to validate_length_of(:content_hash).is_at_most(64) }
     it { is_expected.to validate_uniqueness_of(:content_hash).scoped_to(:collector_run_id) }
@@ -40,24 +42,34 @@ RSpec.describe KnowledgeArtifact do
   end
 
   describe "scopes" do
-    let!(:active_artifact) { create(:knowledge_artifact, status: "active") }
-    let!(:stale_artifact) { create(:knowledge_artifact, status: "stale") }
+    let(:project) { create(:project) }
+    let(:project_version) { create(:project_version, project: project) }
+    let(:collector_run) { create(:collector_run, project_version: project_version) }
 
     describe ".active" do
-      it "returns active artifacts" do
-        expect(described_class.active).to contain_exactly(active_artifact)
+      it "returns only active artifacts" do
+        active = create(:knowledge_artifact, collector_run: collector_run, project: project)
+        create(:knowledge_artifact, :stale, collector_run: collector_run, project: project)
+
+        expect(described_class.active).to eq([ active ])
       end
     end
 
     describe ".stale" do
-      it "returns stale artifacts" do
-        expect(described_class.stale).to contain_exactly(stale_artifact)
+      it "returns only stale artifacts" do
+        create(:knowledge_artifact, collector_run: collector_run, project: project)
+        stale = create(:knowledge_artifact, :stale, collector_run: collector_run, project: project)
+
+        expect(described_class.stale).to eq([ stale ])
       end
     end
 
     describe ".by_type" do
-      it "returns artifacts of the given type" do
-        expect(described_class.by_type("route")).to contain_exactly(active_artifact, stale_artifact)
+      it "filters by artifact type" do
+        route = create(:knowledge_artifact, collector_run: collector_run, project: project, artifact_type: "route")
+        create(:knowledge_artifact, collector_run: collector_run, project: project, artifact_type: "symbol")
+
+        expect(described_class.by_type("route")).to eq([ route ])
       end
     end
   end

@@ -6,8 +6,8 @@ RSpec.describe KnowledgeChunk do
   describe "associations" do
     it { is_expected.to belong_to(:knowledge_artifact) }
     it { is_expected.to belong_to(:project) }
-    it { is_expected.to have_many(:source_links).dependent(:destroy) }
-    it { is_expected.to have_many(:target_links).dependent(:destroy) }
+    it { is_expected.to have_many(:outgoing_links).dependent(:destroy) }
+    it { is_expected.to have_many(:incoming_links).dependent(:destroy) }
   end
 
   describe "validations" do

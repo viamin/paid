@@ -5,8 +5,9 @@ FactoryBot.define do
     knowledge_artifact
     project { knowledge_artifact&.project }
     chunk_type { "definition" }
-    content { "POST /api/users - Creates a new user account" }
+    sequence(:content) { |n| "Chunk content #{n}" }
     sequence(:content_hash) { |n| Digest::SHA256.hexdigest("chunk-#{n}") }
+    scope_tags { [] }
     status { "active" }
     add_attribute(:sequence) { 0 }
   end

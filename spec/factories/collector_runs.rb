@@ -3,8 +3,9 @@
 FactoryBot.define do
   factory :collector_run do
     project_version
-    collector_type { "ast_grep_routes" }
+    sequence(:collector_type) { |n| "test_collector_#{n}" }
     status { "pending" }
+    metadata { {} }
 
     trait :running do
       status { "running" }
@@ -13,16 +14,17 @@ FactoryBot.define do
 
     trait :completed do
       status { "completed" }
-      started_at { 10.seconds.ago }
+      started_at { 5.seconds.ago }
       completed_at { Time.current }
-      duration_ms { 10_000 }
+      duration_ms { 5000 }
+      artifacts_count { 3 }
     end
 
     trait :failed do
       status { "failed" }
-      started_at { 10.seconds.ago }
+      started_at { 5.seconds.ago }
       completed_at { Time.current }
-      error_message { "Collector failed" }
+      error_message { "Something went wrong" }
     end
   end
 end

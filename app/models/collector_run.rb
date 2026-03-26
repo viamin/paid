@@ -13,26 +13,37 @@ class CollectorRun < ApplicationRecord
   scope :by_status, ->(status) { where(status: status) }
   scope :completed, -> { where(status: "completed") }
   scope :failed, -> { where(status: "failed") }
+  scope :running, -> { where(status: "running") }
 
-  def complete!(artifacts_count: 0)
+  def mark_running!
+    update!(
+      status: "running",
+      started_at: Time.current,
+      completed_at: nil,
+      duration_ms: nil,
+      artifacts_count: nil,
+      error_message: nil
+    )
+  end
+
+  def mark_completed!(count:)
+    now = Time.current
     update!(
       status: "completed",
-      completed_at: Time.current,
-      duration_ms: started_at ? ((Time.current - started_at) * 1000).to_i : nil,
-      artifacts_count: artifacts_count
+      completed_at: now,
+      duration_ms: started_at ? ((now - started_at) * 1000).to_i : nil,
+      artifacts_count: count,
+      error_message: nil
     )
   end
 
-  def fail!(error_message:)
+  def mark_failed!(error:)
+    now = Time.current
     update!(
       status: "failed",
-      completed_at: Time.current,
-      duration_ms: started_at ? ((Time.current - started_at) * 1000).to_i : nil,
-      error_message: error_message
+      completed_at: now,
+      duration_ms: started_at ? ((now - started_at) * 1000).to_i : nil,
+      error_message: error
     )
-  end
-
-  def start!
-    update!(status: "running", started_at: Time.current)
   end
 end
