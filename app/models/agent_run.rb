@@ -143,11 +143,16 @@ class AgentRun < ApplicationRecord
   # downstream PR work.
   # Within each goal type, runs are processed FIFO by created_at, with
   # id as a stable tiebreaker for runs created in the same timestamp.
+  #
+  # NOTE: The SQL sort tiers above (0/1/2) are internal ordering values.
+  # The `indicator` values below (1/2/3) are user-facing display labels
+  # shown in the priority badge (e.g. "1 - Manual").
   QUEUE_PRIORITIES = {
-    manual: { label: "Manual" },
-    auto_continue: { label: "Auto-continue" },
-    auto_pick: { label: "Auto-pick" }
+    manual: { label: "Manual", indicator: 1 },
+    auto_continue: { label: "Auto-continue", indicator: 2 },
+    auto_pick: { label: "Auto-pick", indicator: 3 }
   }.freeze
+  UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
 
   def queue_priority_tier
     if manual?
@@ -160,7 +165,9 @@ class AgentRun < ApplicationRecord
   end
 
   def queue_priority_label
-    QUEUE_PRIORITIES.fetch(queue_priority_tier, { label: "Unknown" })[:label]
+    priority = QUEUE_PRIORITIES.fetch(queue_priority_tier) { UNKNOWN_PRIORITY }
+    indicator = priority[:indicator]
+    indicator ? "#{indicator} - #{priority[:label]}" : priority[:label]
   end
 
   QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
