@@ -25,13 +25,36 @@ class KnowledgeChunk < ApplicationRecord
   scope :for_project, ->(project) { where(project: project) }
   scope :ordered, -> { order(:sequence) }
   scope :full_text_search, ->(query) {
-    where("content_tsvector @@ plainto_tsquery('english', ?)", query)
-      .order(Arel.sql("ts_rank(content_tsvector, plainto_tsquery('english', #{connection.quote(query)})) DESC"))
+    where("content_tsvector @@ plainto_tsquery('pg_catalog.english', ?)", query)
+      .order(Arel.sql("ts_rank(content_tsvector, plainto_tsquery('pg_catalog.english', #{connection.quote(query)})) DESC"))
   }
 
-  before_save :update_content_tsvector, if: :content_changed?
+  before_save :update_content_tsvector, if: :should_update_content_tsvector?
+
+  def self.content_tsvector_trigger_present?
+    return @content_tsvector_trigger_present unless @content_tsvector_trigger_present.nil?
+
+    sql = <<~SQL.squish
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_trigger t
+        JOIN pg_class c ON c.oid = t.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE NOT t.tgisinternal
+          AND n.nspname = ANY (current_schemas(false))
+          AND c.relname = #{connection.quote(table_name)}
+          AND t.tgfoid::regproc::text = 'tsvector_update_trigger'
+      )
+    SQL
+
+    @content_tsvector_trigger_present = connection.select_value(sql)
+  end
 
   private
+
+  def should_update_content_tsvector?
+    content_changed? && !self.class.content_tsvector_trigger_present?
+  end
 
   def update_content_tsvector
     self.content_tsvector = self.class.connection.select_value(

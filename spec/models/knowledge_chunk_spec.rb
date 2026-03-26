@@ -71,7 +71,7 @@ RSpec.describe KnowledgeChunk do
         expect(described_class.full_text_search("database migration")).to be_empty
       end
 
-      it "auto-populates tsvector on insert via trigger" do
+      it "auto-populates tsvector on insert" do
         chunk = create(:knowledge_chunk, content: "PostgreSQL full text search")
         chunk.reload
         expect(chunk.content_tsvector).not_to be_nil
