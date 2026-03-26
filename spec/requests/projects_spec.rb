@@ -520,11 +520,21 @@ RSpec.describe "Projects" do
           auto_pick_enabled: true, auto_merge_enabled: false, auto_fix_merge_conflicts: true)
         get project_path(project)
         expect(response.body).to include("Automation")
-        Project::AUTOMATION_SETTINGS.each do |setting|
-          expect(response.body).to include(setting[:label])
+
+        expected_settings = {
+          "Auto-Add Labels" => "Enabled",
+          "Automation on Label" => "Disabled",
+          "Auto-Pick Issues" => "Enabled",
+          "Auto-Merge" => "Disabled",
+          "Auto-Fix Merge Conflicts" => "Enabled"
+        }
+        expected_settings.each do |label, state|
+          expect(response.body).to include(label)
+          # Verify each setting's label is followed by the correct badge state in the same row
+          expect(response.body).to match(
+            /#{Regexp.escape(label)}.*?#{state}/m
+          )
         end
-        expect(response.body).to include("Enabled")
-        expect(response.body).to include("Disabled")
       end
 
       it "shows edit automation link for users with update permission" do
