@@ -121,7 +121,12 @@ module Knowledge
         traits = []
         traits << "#{revisions} revisions" if revisions > 0
         traits << "complexity score #{complexity}" if complexity > 0
-        "Churn hotspot: #{file} — #{traits.join(', ')}"
+
+        if traits.empty?
+          "Churn hotspot: #{file} — no significant churn or complexity detected."
+        else
+          "Churn hotspot: #{file} — #{traits.join(', ')}"
+        end
       end
 
       def build_chunk_text(file, revisions, complexity, rank)

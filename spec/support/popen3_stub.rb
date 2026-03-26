@@ -15,6 +15,8 @@ module Popen3Stub
       allow(Open3).to receive(:popen3) do |*args, **_kwargs, &block|
         if args.join(" ").match?(command_pattern)
           block.call(stdin_io, stdout_io, stderr_io, wait_thr)
+        else
+          raise "Unexpected Open3.popen3 invocation: #{args.inspect} did not match #{command_pattern.inspect}"
         end
       end
     else

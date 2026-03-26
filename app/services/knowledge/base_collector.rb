@@ -78,6 +78,8 @@ module Knowledge
     end
 
     def kill_process_group(pid)
+      # Errno::ESRCH from getpgid (process already exited) is caught by the
+      # method-level rescue below, keeping timeout cleanup deterministic.
       pgid = Process.getpgid(pid)
       Process.kill("TERM", -pgid)
       sleep 1

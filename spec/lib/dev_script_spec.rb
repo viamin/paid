@@ -5,8 +5,10 @@ require "fileutils"
 require "open3"
 require "socket"
 require "tmpdir"
+require_relative "../support/exec_tmpdir"
 
 RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
+  include ExecTmpdir
   let(:script_source) { File.expand_path("../../bin/dev", __dir__) }
 
   it "removes a stale Overmind socket before starting overmind" do
@@ -64,18 +66,5 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     UNIXServer.open(socket_path) { |server| server.close }
     expect(File.socket?(socket_path)).to be(true)
     socket_path
-  end
-
-  def exec_tmpdir
-    %w[/tmp /workspace/tmp].find { |d| File.directory?(d) && exec_allowed?(d) }
-  end
-
-  def exec_allowed?(dir)
-    Dir.mktmpdir(nil, dir) do |d|
-      f = File.join(d, "t.sh")
-      File.write(f, "#!/bin/sh\nexit 0\n")
-      File.chmod(0o755, f)
-      system(f, out: File::NULL, err: File::NULL)
-    end
   end
 end
