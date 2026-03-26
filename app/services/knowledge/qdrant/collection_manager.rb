@@ -3,7 +3,11 @@
 module Knowledge
   module Qdrant
     class CollectionManager
-      PAYLOAD_INDEXES = %w[project_version_id artifact_type status].freeze
+      PAYLOAD_INDEX_SCHEMAS = {
+        "project_version_id" => "integer",
+        "artifact_type" => "keyword",
+        "status" => "keyword"
+      }.freeze
 
       attr_reader :project, :client
 
@@ -65,7 +69,7 @@ module Knowledge
       def collection_exists?
         result = client.collections.get(collection_name: collection_name)
         result.dig("result", "status") == "green" || result.dig("result").present?
-      rescue Qdrant::Error => e
+      rescue ::Qdrant::Error => e
         raise unless e.message.match?(/not found/i)
 
         Rails.logger.debug(
@@ -87,11 +91,11 @@ module Knowledge
       end
 
       def create_payload_indexes!
-        PAYLOAD_INDEXES.each do |field|
+        PAYLOAD_INDEX_SCHEMAS.each do |field, schema|
           client.collections.create_index(
             collection_name: collection_name,
             field_name: field,
-            field_schema: "keyword"
+            field_schema: schema
           )
         end
       end

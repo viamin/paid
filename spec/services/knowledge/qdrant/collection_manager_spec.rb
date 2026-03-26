@@ -53,16 +53,24 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
         )
       end
 
-      it "creates payload indexes" do
+      it "creates payload indexes with correct field schemas" do
         manager.ensure_collection!
 
-        %w[project_version_id artifact_type status].each do |field|
-          expect(collections).to have_received(:create_index).with(
-            collection_name: collection_name,
-            field_name: field,
-            field_schema: "keyword"
-          )
-        end
+        expect(collections).to have_received(:create_index).with(
+          collection_name: collection_name,
+          field_name: "project_version_id",
+          field_schema: "integer"
+        )
+        expect(collections).to have_received(:create_index).with(
+          collection_name: collection_name,
+          field_name: "artifact_type",
+          field_schema: "keyword"
+        )
+        expect(collections).to have_received(:create_index).with(
+          collection_name: collection_name,
+          field_name: "status",
+          field_schema: "keyword"
+        )
       end
     end
 
@@ -159,9 +167,9 @@ RSpec.describe Knowledge::Qdrant::CollectionManager do
     end
 
     it "does not upsert points (embeddings must be recomputed separately)" do
-      manager.rebuild_schema!
+      expect(points).not_to receive(:upsert)
 
-      expect(points).not_to have_received(:upsert)
+      manager.rebuild_schema!
     end
 
     it "logs a warning" do
