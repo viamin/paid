@@ -10,9 +10,10 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_26_012903) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_26_050122) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+  enable_extension "pg_trgm"
 
   create_table "ab_test_assignments", force: :cascade do |t|
     t.bigint "ab_test_id", null: false
@@ -398,6 +399,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_012903) do
     t.datetime "updated_at", null: false
     t.index ["collector_run_id", "content_hash"], name: "index_knowledge_artifacts_on_collector_run_id_and_content_hash", unique: true
     t.index ["collector_run_id"], name: "index_knowledge_artifacts_on_collector_run_id"
+    t.index ["identifier"], name: "index_knowledge_artifacts_on_identifier_trgm", opclass: :gin_trgm_ops, using: :gin
     t.index ["project_id", "artifact_type", "scope_path", "identifier", "collector_type", "status"], name: "idx_knowledge_artifacts_on_project_type_scope_id_ctype_status"
     t.index ["project_id", "artifact_type", "scope_path", "identifier", "collector_type"], name: "idx_knowledge_artifacts_active_unique", unique: true, where: "((status)::text = 'active'::text)"
     t.index ["project_id"], name: "index_knowledge_artifacts_on_project_id"
@@ -408,6 +410,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_012903) do
     t.string "chunk_type", limit: 50, null: false
     t.text "content", null: false
     t.string "content_hash", limit: 64, null: false
+    t.tsvector "content_tsvector"
     t.datetime "created_at", null: false
     t.string "embedding_model", limit: 100
     t.bigint "knowledge_artifact_id", null: false
@@ -417,6 +420,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_012903) do
     t.string "status", limit: 50, default: "active", null: false
     t.datetime "updated_at", null: false
     t.index ["content_hash"], name: "index_knowledge_chunks_on_content_hash"
+    t.index ["content_tsvector"], name: "index_knowledge_chunks_on_content_tsvector", using: :gin
     t.index ["knowledge_artifact_id"], name: "index_knowledge_chunks_on_knowledge_artifact_id"
     t.index ["project_id", "status"], name: "index_knowledge_chunks_on_project_id_and_status"
     t.index ["project_id"], name: "index_knowledge_chunks_on_project_id"

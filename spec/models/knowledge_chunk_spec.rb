@@ -53,6 +53,39 @@ RSpec.describe KnowledgeChunk do
       end
     end
 
+    describe ".full_text_search" do
+      it "returns chunks matching the search query ranked by relevance" do
+        artifact = create(:knowledge_artifact)
+        matching = create(:knowledge_chunk, knowledge_artifact: artifact, project: artifact.project,
+          content: "PostgreSQL database migration with indexes and triggers")
+        create(:knowledge_chunk, knowledge_artifact: artifact, project: artifact.project,
+          content: "Ruby on Rails controller action for user authentication")
+
+        results = described_class.full_text_search("database migration")
+        expect(results).to include(matching)
+        expect(results).not_to include(described_class.find_by(content: "Ruby on Rails controller action for user authentication"))
+      end
+
+      it "returns empty when no chunks match" do
+        create(:knowledge_chunk, content: "Unrelated content about weather forecasting")
+        expect(described_class.full_text_search("database migration")).to be_empty
+      end
+
+      it "auto-populates tsvector on insert via trigger" do
+        chunk = create(:knowledge_chunk, content: "PostgreSQL full text search")
+        chunk.reload
+        expect(chunk.content_tsvector).not_to be_nil
+      end
+
+      it "auto-updates tsvector when content changes" do
+        chunk = create(:knowledge_chunk, content: "Original content about databases")
+        chunk.update!(content: "Updated content about migrations")
+        chunk.reload
+        expect(described_class.full_text_search("migrations")).to include(chunk)
+        expect(described_class.full_text_search("databases")).not_to include(chunk)
+      end
+    end
+
     describe ".ordered" do
       it "returns chunks ordered by sequence" do
         artifact = create(:knowledge_artifact)

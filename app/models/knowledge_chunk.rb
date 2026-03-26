@@ -24,8 +24,20 @@ class KnowledgeChunk < ApplicationRecord
   scope :by_project, ->(project_id) { where(project_id: project_id) }
   scope :for_project, ->(project) { where(project: project) }
   scope :ordered, -> { order(:sequence) }
+  scope :full_text_search, ->(query) {
+    where("content_tsvector @@ plainto_tsquery('english', ?)", query)
+      .order(Arel.sql("ts_rank(content_tsvector, plainto_tsquery('english', #{connection.quote(query)})) DESC"))
+  }
+
+  before_save :update_content_tsvector, if: :content_changed?
 
   private
+
+  def update_content_tsvector
+    self.content_tsvector = self.class.connection.select_value(
+      Arel.sql("SELECT to_tsvector('pg_catalog.english', #{self.class.connection.quote(content)})")
+    )
+  end
 
   def project_matches_knowledge_artifact_project
     return if knowledge_artifact.nil? || project_id.nil?
