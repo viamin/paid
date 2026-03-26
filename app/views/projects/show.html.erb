@@ -104,6 +104,32 @@
         </div>
       </dl>
     </details>
+
+    <details class="border-t border-gray-200">
+      <summary class="cursor-pointer px-4 py-4 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:px-6">
+        Automation
+      </summary>
+      <dl class="divide-y divide-gray-200">
+        <% Project::AUTOMATION_SETTINGS.each do |setting| %>
+          <% enabled = @project.public_send(setting[:attribute]) %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500"><%= setting[:label] %></dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
+                <%= enabled ? "Enabled" : "Disabled" %>
+              </span>
+            </dd>
+          </div>
+        <% end %>
+      </dl>
+      <% if policy(@project).update? %>
+        <div class="px-4 py-3 sm:px-6">
+          <%= link_to edit_project_path(@project, anchor: "automation"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" do %>
+            Edit automation settings &rarr;
+          <% end %>
+        </div>
+      <% end %>
+    </details>
   </div>
 
   <div data-show-actions="<%= policy(@project).run_agent? %>">
