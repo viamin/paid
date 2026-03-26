@@ -46,7 +46,7 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
         allow(docker_container).to receive(:start)
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
 
         result = provisioner.provision(agent_run)
 
@@ -77,7 +77,7 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(new_container)
         allow(new_container).to receive(:start)
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
 
         result = provisioner.provision(agent_run)
 
@@ -160,7 +160,7 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(stale).to receive(:stop)
         allow(stale).to receive(:delete)
         allow(new_container).to receive(:start)
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
 
         result = provisioner.provision(agent_run)
 
@@ -177,7 +177,7 @@ RSpec.describe Containers::ServiceProvisioner do
           .and_raise(Docker::Error::ConflictError, "Conflict. The container name is already in use")
         allow(Docker::Container).to receive(:get).with("conflict-postgres").and_return(existing)
         allow(existing).to receive_messages(json: running_json, stop: nil, delete: nil)
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
 
         result = provisioner.provision(agent_run)
 
@@ -219,12 +219,9 @@ RSpec.describe Containers::ServiceProvisioner do
       before do
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(
-          instance_double(Docker::Container, id: "test123")
-        )
-        allow(Docker::Container).to receive(:create).and_return(
           instance_double(Docker::Container, id: "test123").tap { |c| allow(c).to receive(:start) }
         )
-        allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+        allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
       end
 
       it "generates DATABASE_URL for postgres images" do
@@ -262,6 +259,123 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(result["SERVICE_MY_SVC_HOST"]).to eq("my-svc")
         expect(result["SERVICE_MY_SVC_PORT"]).to eq("8080")
       end
+    end
+  end
+
+  describe "resource limits" do
+    it "applies postgres resource limits to postgres images" do
+      limits = provisioner.send(:resource_limits_for, "postgres:16")
+      expect(limits[:memory]).to eq(2 * 1024 * 1024 * 1024)
+      expect(limits[:cpu_quota]).to eq(100_000)
+      expect(limits[:pids_limit]).to eq(200)
+    end
+
+    it "applies redis resource limits to redis images" do
+      limits = provisioner.send(:resource_limits_for, "redis:7")
+      expect(limits[:memory]).to eq(1 * 1024 * 1024 * 1024)
+      expect(limits[:cpu_quota]).to eq(100_000)
+      expect(limits[:pids_limit]).to eq(100)
+    end
+
+    it "applies selenium resource limits to selenium images" do
+      limits = provisioner.send(:resource_limits_for, "selenium/standalone-chrome:latest")
+      expect(limits[:memory]).to eq(2 * 1024 * 1024 * 1024)
+      expect(limits[:cpu_quota]).to eq(200_000)
+      expect(limits[:pids_limit]).to eq(300)
+    end
+
+    it "applies default resource limits to unknown images" do
+      limits = provisioner.send(:resource_limits_for, "custom:1.0")
+      expect(limits[:memory]).to eq(1 * 1024 * 1024 * 1024)
+      expect(limits[:cpu_quota]).to eq(100_000)
+      expect(limits[:pids_limit]).to eq(200)
+    end
+  end
+
+  describe "Docker container creation with resource limits" do
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, project: project) }
+    let(:agent_run) { create(:agent_run, project: project, issue: issue) }
+    let(:service_container) do
+      create(:service_container,
+        image: "postgres:16",
+        name: "limits-postgres",
+        port: 5432,
+        env: { "POSTGRES_USER" => "agent", "POSTGRES_PASSWORD" => "agent", "POSTGRES_DB" => "agent_test" })
+    end
+
+    before do
+      create(:project_service_container, project: project, service_container: service_container)
+      allow(NetworkPolicy).to receive(:ensure_network!)
+    end
+
+    it "passes resource limits to Docker::Container.create" do
+      docker_container = instance_double(Docker::Container, id: "abc123")
+      allow(Docker::Image).to receive(:create)
+      allow(Docker::Container).to receive(:create).and_return(docker_container)
+      allow(docker_container).to receive(:start)
+      allow(Docker::Container).to receive(:get).with("abc123")
+        .and_raise(Docker::Error::DockerError)
+      allow(provisioner).to receive(:tcp_port_open?).and_return(true)
+
+      provisioner.provision(agent_run)
+
+      expect(Docker::Container).to have_received(:create).with(
+        hash_including(
+          "HostConfig" => hash_including(
+            "Memory" => 2 * 1024 * 1024 * 1024,
+            "MemorySwap" => 2 * 1024 * 1024 * 1024,
+            "CpuPeriod" => 100_000,
+            "CpuQuota" => 100_000,
+            "PidsLimit" => 200
+          )
+        )
+      )
+    end
+  end
+
+  describe "Docker HEALTHCHECK-aware health monitoring" do
+    it "returns true when Docker HEALTHCHECK reports healthy" do
+      sc = create(:service_container, status: "running", docker_container_id: "healthy123")
+      container = instance_double(Docker::Container)
+      allow(Docker::Container).to receive(:get).with("healthy123").and_return(container)
+      allow(container).to receive(:json).and_return({
+        "State" => { "Running" => true, "Health" => { "Status" => "healthy" } }
+      })
+
+      result = provisioner.send(:docker_healthcheck_status, sc)
+      expect(result).to be true
+    end
+
+    it "returns false when Docker HEALTHCHECK reports unhealthy" do
+      sc = create(:service_container, status: "running", docker_container_id: "unhealthy123")
+      container = instance_double(Docker::Container)
+      allow(Docker::Container).to receive(:get).with("unhealthy123").and_return(container)
+      allow(container).to receive(:json).and_return({
+        "State" => { "Running" => true, "Health" => { "Status" => "unhealthy" } }
+      })
+
+      result = provisioner.send(:docker_healthcheck_status, sc)
+      expect(result).to be false
+    end
+
+    it "returns nil when no HEALTHCHECK is configured" do
+      sc = create(:service_container, status: "running", docker_container_id: "nohc123")
+      container = instance_double(Docker::Container)
+      allow(Docker::Container).to receive(:get).with("nohc123").and_return(container)
+      allow(container).to receive(:json).and_return({
+        "State" => { "Running" => true }
+      })
+
+      result = provisioner.send(:docker_healthcheck_status, sc)
+      expect(result).to be_nil
+    end
+
+    it "returns nil when docker_container_id is blank" do
+      sc = create(:service_container, status: "stopped", docker_container_id: nil)
+
+      result = provisioner.send(:docker_healthcheck_status, sc)
+      expect(result).to be_nil
     end
   end
 
