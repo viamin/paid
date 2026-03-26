@@ -28,13 +28,27 @@ module QualityMetrics
       scores = {}
       scores["pr_merged"] = pr_merged ? 1.0 : 0.0 unless pr_merged.nil?
 
-      metric = agent_run.quality_metrics.find_or_initialize_by(metric_type: "human")
-      metric.prompt_version = agent_run.prompt_version
-      metric.scores = metric.scores.merge(scores)
-      metric.feedback_source = feedback_source
-      metric.composite_score = metric.calculate_composite_score
-      metric.save!
-      metric
+      ActiveRecord::Base.transaction do
+        metric = agent_run.quality_metrics.where(metric_type: "human").lock.first
+        metric ||= agent_run.quality_metrics.build(metric_type: "human")
+
+        metric.prompt_version = agent_run.prompt_version
+        metric.scores = (metric.scores || {}).merge(scores)
+
+        # Track feedback sources non-destructively via metadata array
+        metric.feedback_source ||= feedback_source
+        existing_metadata = metric.metadata || {}
+        existing_sources = Array(existing_metadata["feedback_sources"])
+        metric.metadata = existing_metadata.merge(
+          "feedback_sources" => (existing_sources + [ feedback_source ]).uniq
+        )
+
+        metric.composite_score = metric.calculate_composite_score
+        metric.save!
+        metric
+      end
+    rescue ActiveRecord::RecordNotUnique
+      retry
     end
   end
 end
