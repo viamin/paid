@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Collects human feedback (reactions and reviews) for a completed agent run's PR.
-# Called after an agent run finishes and has a pull request to collect feedback on.
+# Only runs for successful (completed) agent runs to avoid skewing metrics.
 #
 # Fetches both PR reactions and review outcomes from GitHub and records them
 # as human quality metrics.
@@ -10,7 +10,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
 
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
-    return unless agent_run.finished?
+    return unless agent_run.successful?
     return unless agent_run.pull_request_number
 
     QualityMetrics::CollectReactionFeedback.call(agent_run: agent_run)
