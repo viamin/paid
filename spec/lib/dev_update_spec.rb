@@ -74,6 +74,22 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "restarts processes when Overmind is already healthy after setup" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "overmind-restart-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(false)
+      expect(stdout).to include("Overmind is already running, restarting processes.")
+      expect(stdout).to include("Overmind process restart requested.")
+    end
+  end
+
   def write_executable(path, contents)
     File.write(path, contents)
     FileUtils.chmod("+x", path)
@@ -158,6 +174,10 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
           quit)
             touch "#{dir}/overmind-quit-ran"
             rm -f "#{dir}/overmind-running"
+            exit 0
+            ;;
+          restart)
+            touch "#{dir}/overmind-restart-ran"
             exit 0
             ;;
           *)
