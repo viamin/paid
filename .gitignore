@@ -153,6 +153,7 @@ config.status
 /.pg_build/
 /.pg_data/
 /.pg_src/
+/.pg_bin/
 /.rubies/
 /.ruby_env.sh
 /.tmp_pg.tar.bz2
