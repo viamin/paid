@@ -22,15 +22,12 @@ module Dashboard
         active_runs: base.where(status: AgentRun::ACTIVE_STATUSES).count,
         queued_runs: base.where(status: "queued").count,
         completed_today: base.where(status: "completed").where(completed_at: today..).count,
-        failed_today: base.where(status: FAILURE_STATUSES).where(completed_at: today..).count,
+        failed_today: base.where(status: AgentRun::FAILURE_STATUSES).where(completed_at: today..).count,
         active_containers: base.where(status: "running").where.not(container_id: nil).distinct.count(:container_id),
         total_projects: account.projects.count,
         active_projects: account.projects.active.count
       }
     end
-
-    FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
-    private_constant :FAILURE_STATUSES
 
     private
 

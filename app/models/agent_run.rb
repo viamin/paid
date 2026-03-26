@@ -7,6 +7,7 @@ class AgentRun < ApplicationRecord
   TRIGGER_TYPES = %w[manual automatic].freeze
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed failed cancelled timeout retried auth_expired rate_limited].freeze
+  FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
 
   belongs_to :project
   belongs_to :issue, optional: true

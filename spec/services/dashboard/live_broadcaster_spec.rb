@@ -28,7 +28,6 @@ RSpec.describe Dashboard::LiveBroadcaster do
 
     it "broadcasts activity stream when a run finishes" do
       agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 30)
-      allow(described_class).to receive(:call).and_call_original
 
       described_class.call(account: account, agent_run: agent_run)
 
