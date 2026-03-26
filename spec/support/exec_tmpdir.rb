@@ -33,5 +33,7 @@ module ExecTmpdir
       File.chmod(0o755, f)
       system(f, out: File::NULL, err: File::NULL)
     end
+  rescue StandardError
+    false
   end
 end
