@@ -84,7 +84,7 @@ Rails.application.routes.draw do
 
     get "knowledge/search", to: "knowledge_search#search"
 
-    # GitHub webhook receiver for PR review events and reactions
+    # GitHub webhook receiver for PR review events
     post "github_webhooks", to: "github_webhooks#create"
   end
 

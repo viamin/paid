@@ -101,13 +101,18 @@
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Feedback Sources</dt>
           <dd class="mt-1 text-sm text-gray-900">
-            <% @stats[:human_feedback][:sources].each do |source, count| %>
+            <% feedback_sources = {} %>
+            <% reactions_count = @stats.dig(:human_feedback, :reactions, :count) %>
+            <% reviews_count = @stats.dig(:human_feedback, :reviews, :count) %>
+            <% feedback_sources["PR Reactions"] = reactions_count if reactions_count.to_i > 0 %>
+            <% feedback_sources["PR Reviews"] = reviews_count if reviews_count.to_i > 0 %>
+            <% feedback_sources.each do |label, count| %>
               <div class="flex justify-between py-1">
-                <span class="text-gray-600"><%= source.humanize %></span>
+                <span class="text-gray-600"><%= label %></span>
                 <span class="font-medium"><%= count %></span>
               </div>
             <% end %>
-            <% if @stats[:human_feedback][:sources].empty? %>
+            <% if feedback_sources.empty? %>
               <span class="text-gray-400">No feedback yet</span>
             <% end %>
           </dd>

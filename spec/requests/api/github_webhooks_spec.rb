@@ -27,6 +27,7 @@ RSpec.describe "Api::GithubWebhooks" do
             number: agent_run.pull_request_number
           },
           repository: {
+            id: project.github_id,
             full_name: project.full_name
           }
         }
@@ -67,7 +68,7 @@ RSpec.describe "Api::GithubWebhooks" do
     context "with signature verification" do
       let(:payload) do
         {
-          repository: { full_name: project.full_name },
+          repository: { id: project.github_id, full_name: project.full_name },
           pull_request: { number: 1 }
         }
       end
@@ -115,7 +116,7 @@ RSpec.describe "Api::GithubWebhooks" do
 
     context "with unsupported event" do
       it "returns ok for push events" do
-        payload = { repository: { full_name: project.full_name } }
+        payload = { repository: { id: project.github_id, full_name: project.full_name } }
         body, signature = sign_payload(payload, project.webhook_secret)
 
         post webhook_url,

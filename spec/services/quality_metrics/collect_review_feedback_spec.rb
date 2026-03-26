@@ -17,9 +17,9 @@ RSpec.describe QualityMetrics::CollectReviewFeedback do
 
         expect(metric).to be_persisted
         expect(metric.metric_type).to eq("human")
-        expect(metric.feedback_source).to eq("pr_review")
         expect(metric.scores["review_score"]).to eq(1.0)
         expect(metric.metadata["reviews"]).to be_an(Array)
+        expect(metric.metadata["feedback_sources"]).to include("pr_review")
       end
 
       it "records changes_requested review as 0.0" do

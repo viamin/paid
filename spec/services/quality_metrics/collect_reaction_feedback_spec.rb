@@ -22,9 +22,9 @@ RSpec.describe QualityMetrics::CollectReactionFeedback do
 
       expect(metric).to be_persisted
       expect(metric.metric_type).to eq("human")
-      expect(metric.feedback_source).to eq("pr_reaction")
       expect(metric.scores["reaction_score"]).to eq(1.0)
       expect(metric.metadata["reaction_counts"]).to include("+1" => 1, "heart" => 1)
+      expect(metric.metadata["feedback_sources"]).to include("pr_reaction")
     end
 
     it "calculates mixed reaction score" do

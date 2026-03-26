@@ -1,13 +1,12 @@
 # frozen_string_literal: true
 
 module Api
-  # Receives GitHub webhook events for PR reviews and reactions.
+  # Receives GitHub webhook events for PR reviews.
   # Verifies the webhook signature using the project's webhook_secret,
   # then dispatches to the appropriate feedback collection service.
   #
   # Supported events:
   #   - pull_request_review: Maps approved/changes_requested/commented to quality scores
-  #   - pull_request_review_comment: Tracks review comment activity
   class GithubWebhooksController < ActionController::API
     before_action :verify_signature
 
@@ -26,11 +25,10 @@ module Api
     private
 
     def handle_pull_request_review
-      review = payload.dig("review") || {}
-      pr = payload.dig("pull_request") || {}
-      repo_full_name = payload.dig("repository", "full_name")
+      review = payload["review"] || {}
+      pr = payload["pull_request"] || {}
 
-      agent_run = find_agent_run(repo_full_name, pr["number"])
+      agent_run = find_agent_run(pr["number"])
       unless agent_run
         head :ok
         return
@@ -46,13 +44,10 @@ module Api
       head :ok
     end
 
-    def find_agent_run(repo_full_name, pr_number)
-      return nil unless repo_full_name && pr_number
+    def find_agent_run(pr_number)
+      return nil unless @project && pr_number
 
-      project = Project.find_by(owner: repo_full_name.split("/").first, repo: repo_full_name.split("/").last)
-      return nil unless project
-
-      project.agent_runs
+      @project.agent_runs
         .where(pull_request_number: pr_number)
         .order(created_at: :desc)
         .first
@@ -75,28 +70,37 @@ module Api
       body = request.body.read
       request.body.rewind
 
-      repo_full_name = begin
-        JSON.parse(body).dig("repository", "full_name")
+      parsed = begin
+        JSON.parse(body)
       rescue JSON::ParserError
         nil
       end
 
-      unless repo_full_name
+      repo_data = parsed&.dig("repository")
+      unless repo_data
         head :bad_request
         return
       end
 
-      owner, repo = repo_full_name.split("/", 2)
-      project = Project.find_by(owner: owner, repo: repo)
+      # Use github_id for unambiguous project lookup when available,
+      # falling back to owner/repo for backwards compatibility.
+      github_id = repo_data["id"]
+      @project = if github_id
+        Project.find_by(github_id: github_id)
+      else
+        owner, repo = repo_data["full_name"].to_s.split("/", 2)
+        Project.find_by(owner: owner, repo: repo)
+      end
 
-      unless project&.webhook_secret.present?
+      unless @project&.webhook_secret.present?
         head :forbidden
         return
       end
 
-      expected = "sha256=#{OpenSSL::HMAC.hexdigest("SHA256", project.webhook_secret, body)}"
+      expected = "sha256=#{OpenSSL::HMAC.hexdigest("SHA256", @project.webhook_secret, body)}"
 
-      unless ActiveSupport::SecurityUtils.secure_compare(expected, signature)
+      unless signature.bytesize == expected.bytesize &&
+             ActiveSupport::SecurityUtils.secure_compare(expected, signature)
         head :unauthorized
       end
     end

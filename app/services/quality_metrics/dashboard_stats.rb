@@ -134,12 +134,10 @@ module QualityMetrics
 
       with_merge_status = row.with_merge_status.to_i
       merged_count = row.merged_count.to_i
-      sources = human.where.not(feedback_source: nil).group(:feedback_source).count
 
       {
         total: total,
         merge_rate: with_merge_status.zero? ? nil : (merged_count.to_f / with_merge_status * 100).round(1),
-        sources: sources,
         reactions: {
           count: row.reaction_count.to_i,
           average_score: row.avg_reaction&.to_f&.round(4)
@@ -155,7 +153,6 @@ module QualityMetrics
       {
         total: 0,
         merge_rate: nil,
-        sources: {},
         reactions: { count: 0, average_score: nil },
         reviews: { count: 0, average_score: nil }
       }

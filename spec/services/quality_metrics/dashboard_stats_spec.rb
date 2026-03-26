@@ -102,7 +102,6 @@ RSpec.describe QualityMetrics::DashboardStats do
 
         expect(result[:human_feedback][:total]).to eq(2)
         expect(result[:human_feedback][:merge_rate]).to eq(50.0)
-        expect(result[:human_feedback][:sources]).to include("pr_merge" => 1, "pr_review" => 1)
       end
     end
   end

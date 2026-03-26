@@ -23,6 +23,8 @@ class Project < ApplicationRecord
   has_many :project_service_containers, dependent: :destroy
   has_many :service_containers, through: :project_service_containers
 
+  encrypts :webhook_secret
+
   validates :name, presence: true
   validates :owner, presence: true
   validates :repo, presence: true

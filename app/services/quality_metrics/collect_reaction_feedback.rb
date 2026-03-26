@@ -73,12 +73,24 @@ module QualityMetrics
       }
 
       metric = agent_run.quality_metrics.find_or_initialize_by(metric_type: "human")
-      metric.prompt_version = agent_run.prompt_version
-      metric.scores = metric.scores.merge("reaction_score" => score)
-      metric.feedback_source = "pr_reaction"
-      metric.metadata = (metric.metadata || {}).merge(metadata)
-      metric.composite_score = metric.calculate_composite_score
-      metric.save!
+
+      metric.with_lock do
+        metric.reload unless metric.new_record?
+
+        metric.prompt_version = agent_run.prompt_version
+        metric.scores = (metric.scores || {}).merge("reaction_score" => score)
+
+        # Track feedback sources non-destructively via metadata array
+        metric.feedback_source ||= "pr_reaction"
+        existing_metadata = metric.metadata || {}
+        existing_sources = Array(existing_metadata["feedback_sources"])
+        metadata["feedback_sources"] = (existing_sources + [ "pr_reaction" ]).uniq
+
+        metric.metadata = existing_metadata.merge(metadata)
+        metric.composite_score = metric.calculate_composite_score
+        metric.save!
+      end
+
       metric
     end
 
