@@ -112,6 +112,17 @@ class GithubClient
     handle_errors { client.contents(repo, path: path) }
   end
 
+  # Fetches the full file tree for a repository at a given ref.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Git ref (branch, tag, or SHA)
+  # @param recursive [Boolean] Whether to fetch the tree recursively
+  # @return [Sawyer::Resource] Tree data with .tree array of items
+  # @raise [NotFoundError] if the ref does not exist
+  def tree(repo, ref, recursive: false)
+    handle_errors { client.tree(repo, ref, recursive: recursive) }
+  end
+
   # Lists repositories the token has push access to.
   # Filters by permissions.push to exclude repos where the token only
   # has metadata access (relevant for fine-grained PATs with selected repos).
