@@ -97,10 +97,12 @@ RSpec.describe Knowledge::CollectorRunner do
 
     context "when advancing to a new commit" do
       let(:new_commit_sha) { "b" * 40 }
+      let(:old_committed_at) { 2.hours.ago }
+      let(:new_committed_at) { 1.hour.ago }
 
       it "marks artifacts not collected by the new version as stale" do
         # Run on old commit — creates an artifact via test_collector
-        described_class.call(project: project, commit_sha: commit_sha)
+        described_class.call(project: project, commit_sha: commit_sha, committed_at: old_committed_at)
 
         # Manually create an extra artifact on the old version's run
         # that the new version's collector won't produce
@@ -120,11 +122,32 @@ RSpec.describe Knowledge::CollectorRunner do
 
         # Run on new commit — the test_collector artifact gets reassigned,
         # but the extra artifact is not produced so it becomes stale
-        described_class.call(project: project, commit_sha: new_commit_sha)
+        described_class.call(project: project, commit_sha: new_commit_sha, committed_at: new_committed_at)
 
         extra.reload
         expect(extra.status).to eq("stale")
         expect(KnowledgeArtifact.active.count).to eq(1)
+      end
+
+      it "skips staling when committed_at is nil" do
+        described_class.call(project: project, commit_sha: commit_sha, committed_at: old_committed_at)
+
+        old_run = CollectorRun.first
+        extra = KnowledgeArtifact.create!(
+          collector_run: old_run,
+          project: project,
+          collector_type: old_run.collector_type,
+          artifact_type: "orphaned_type",
+          identifier: "OrphanedThing",
+          content: "old content",
+          content_hash: Digest::SHA256.hexdigest("old content"),
+          status: "active"
+        )
+
+        # Run on new commit without committed_at — should NOT stale prior artifacts
+        described_class.call(project: project, commit_sha: new_commit_sha)
+
+        expect(extra.reload.status).to eq("active")
       end
     end
 
@@ -164,7 +187,7 @@ RSpec.describe Knowledge::CollectorRunner do
 
       it "does not mark prior artifacts as stale when a collector fails" do
         old_sha = "c" * 40
-        described_class.call(project: project, commit_sha: old_sha)
+        described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)
 
         old_run = CollectorRun.find_by(collector_type: "test_collector")
         extra = create(:knowledge_artifact,
@@ -175,7 +198,7 @@ RSpec.describe Knowledge::CollectorRunner do
         # Run on new commit with both collectors (one will fail)
         described_class.register("failing_collector", failing_collector_class)
         new_sha = "d" * 40
-        described_class.call(project: project, commit_sha: new_sha)
+        described_class.call(project: project, commit_sha: new_sha, committed_at: 1.hour.ago)
 
         # Extra artifact from old version stays active since the run had a failure
         expect(extra.reload.status).to eq("active")

@@ -2,12 +2,13 @@
 
 module Knowledge
   class CollectorRunner
-    attr_reader :project, :commit_sha, :branch
+    attr_reader :project, :commit_sha, :branch, :committed_at
 
-    def initialize(project:, commit_sha:, branch: "main")
+    def initialize(project:, commit_sha:, branch: "main", committed_at: nil)
       @project = project
       @commit_sha = commit_sha
       @branch = branch
+      @committed_at = committed_at
     end
 
     def self.call(...)
@@ -53,6 +54,7 @@ module Knowledge
         commit_sha: commit_sha
       ) do |pv|
         pv.branch = branch
+        pv.committed_at = committed_at
       end
     end
 
@@ -85,7 +87,8 @@ module Knowledge
         project_version: project_version,
         collector_run: collector_run
       )
-      collector_run.update!(tool_version: collector.tool_version) if collector.tool_version
+      tool_version = collector.tool_version
+      collector_run.update!(tool_version: tool_version) if tool_version
 
       artifact_data = collector.collect
       store = ArtifactStore.new(project: project, collector_run: collector_run)
@@ -107,14 +110,16 @@ module Knowledge
     def mark_stale_artifacts(project_version)
       current_run_ids = project_version.collector_runs.select(:id)
 
-      # Only stale artifacts from versions older than the current one,
-      # so backfills of older commits don't stale artifacts from newer versions.
-      # Use commit ordering when available, falling back to created_at.
-      reference_timestamp = project_version.committed_at || project_version.created_at
+      # We can only safely determine "older" versions when we know the commit time.
+      # If committed_at is nil, skip staling to avoid incorrectly staling newer artifacts
+      # when backfilling older commits.
+      return unless project_version.committed_at.present?
+
+      reference_timestamp = project_version.committed_at
 
       older_version_ids = ProjectVersion
         .where(project: project)
-        .where("COALESCE(committed_at, created_at) < ?", reference_timestamp)
+        .where("committed_at < ?", reference_timestamp)
         .select(:id)
 
       ActiveRecord::Base.transaction do
@@ -126,9 +131,9 @@ module Knowledge
 
         KnowledgeChunk
           .where(knowledge_artifact_id: stale_artifacts.select(:id), status: "active")
-          .update_all(status: "stale")
+          .update_all(status: "stale", updated_at: Time.current)
 
-        stale_artifacts.update_all(status: "stale")
+        stale_artifacts.update_all(status: "stale", updated_at: Time.current)
       end
     end
 

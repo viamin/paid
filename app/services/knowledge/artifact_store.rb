@@ -75,6 +75,15 @@ module Knowledge
 
     def reassign_to_current_run(artifact)
       artifact.update!(collector_run: collector_run)
+    rescue ActiveRecord::RecordNotUnique
+      # Another artifact in this collector_run already has the same content_hash.
+      # Refetch the existing artifact instead.
+      KnowledgeArtifact.find_by(
+        project: project,
+        collector_run: collector_run,
+        content_hash: artifact.content_hash,
+        status: "active"
+      ) || raise
     end
 
     def mark_prior_stale(data)
@@ -90,9 +99,9 @@ module Knowledge
 
       KnowledgeChunk
         .where(knowledge_artifact_id: prior_artifacts.select(:id), status: "active")
-        .update_all(status: "stale")
+        .update_all(status: "stale", updated_at: Time.current)
 
-      prior_artifacts.update_all(status: "stale")
+      prior_artifacts.update_all(status: "stale", updated_at: Time.current)
     end
 
     def create_artifact(data, content_hash)
