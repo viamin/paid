@@ -102,14 +102,6 @@
             <% end %>
           </dd>
         </div>
-      </dl>
-    </details>
-
-    <details class="border-t border-gray-200">
-      <summary class="cursor-pointer px-4 py-4 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:px-6">
-        Automation
-      </summary>
-      <dl class="divide-y divide-gray-200">
         <% Project::AUTOMATION_SETTINGS.each do |setting| %>
           <% enabled = @project.public_send(setting[:attribute]) %>
           <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
