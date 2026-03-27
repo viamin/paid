@@ -2,13 +2,11 @@
 
 module Issues
   # Selects the next unblocked, eligible issue for a project and creates
-  # a queued agent run for it. Used when the run queue is empty and the
-  # system has capacity, keeping agents productive without manual intervention.
+  # a queued agent run for it. Used by queue seeding to surface latent
+  # auto-pick work ahead of time so spare capacity can be consumed
+  # without waiting for another project scan.
   #
   # Guards (checked before issue selection):
-  # - Project must not have any active/queued agent runs (default; the
-  #   scheduler can override this via +allow_concurrent_runs: true+ to
-  #   fill idle owner capacity across projects)
   # - Project must not have open PRs needing attention (finish before start)
   #
   # Selection criteria:
@@ -60,14 +58,12 @@ module Issues
       end
     end
 
-    def initialize(project, allow_concurrent_runs: false)
+    def initialize(project)
       @project = project
-      @allow_concurrent_runs = allow_concurrent_runs
     end
 
     def call
       return nil unless @project.auto_pick_enabled?
-      return nil if project_has_active_runs? && !@allow_concurrent_runs
       return nil if project_has_prs_needing_attention?
 
       issue = find_next_eligible_issue
@@ -115,15 +111,6 @@ module Issues
     end
 
     private
-
-    # Returns true if the project already has any active or queued agent
-    # runs. By default limits auto-pick to one concurrent run per project
-    # so agents focus on finishing work before starting new issues. The
-    # scheduler bypasses this guard via +allow_concurrent_runs+ when
-    # distributing idle capacity across projects.
-    def project_has_active_runs?
-      AgentRun.where(project: @project, status: %w[queued pending running]).exists?
-    end
 
     # Returns true if the project has open pull requests that still need
     # Paid's attention. Performs up to two lightweight EXISTS-style queries
@@ -232,7 +219,8 @@ module Issues
         issue: issue,
         agent_type: resolve_agent_type,
         status: "queued",
-        trigger_type: "automatic"
+        trigger_type: "automatic",
+        auto_pick: true
       )
     end
 
