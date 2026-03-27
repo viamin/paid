@@ -67,7 +67,7 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
         it "spawns the dev-update script with --lightweight" do
           activity.execute(project_id: project.id, pr_number: 42)
 
-          log_path = Rails.root.join("log", "dev_update.log").to_s
+          log_path = Rails.root.join("log", "dev-update", "dev-update.log").to_s
           expect(Process).to have_received(:spawn).with(
             "setsid", /bin\/dev-update/, "--lightweight",
             hash_including(out: [ log_path, "a" ], err: [ log_path, "a" ])
@@ -92,7 +92,7 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
         it "spawns the dev-update script with --full" do
           activity.execute(project_id: project.id, pr_number: 42)
 
-          log_path = Rails.root.join("log", "dev_update.log").to_s
+          log_path = Rails.root.join("log", "dev-update", "dev-update.log").to_s
           expect(Process).to have_received(:spawn).with(
             "setsid", /bin\/dev-update/, "--full",
             hash_including(out: [ log_path, "a" ], err: [ log_path, "a" ])
