@@ -103,6 +103,8 @@ class ProvidersController < ApplicationController
     @user_setting = current_user.settings
     authorize @user_setting, :update?
 
+    update_fallback_provider_flags!
+
     if @user_setting.update(provider_settings_params)
       redirect_to providers_path, notice: "Provider settings saved successfully."
     else
@@ -231,6 +233,17 @@ class ProvidersController < ApplicationController
     @enabled_agent_providers = UserSetting.enabled_agent_providers(current_user)
     @fallback_candidate_providers = UserSetting.fallback_candidate_providers(current_user)
     @addable_provider_options = Provider.addable_provider_keys - current_user.providers.pluck(:provider_key)
+  end
+
+  def update_fallback_provider_flags!
+    raw = params.dig(:user_setting, :enabled_fallback_provider_keys)
+    return unless raw
+
+    enabled_keys = UserSetting.normalize_fallback_providers_param(raw)
+    current_user.providers.find_each do |provider|
+      new_value = enabled_keys.include?(provider.provider_key)
+      provider.update!(enabled_for_fallback: new_value) if provider.enabled_for_fallback? != new_value
+    end
   end
 
   def provider_settings_params

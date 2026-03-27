@@ -53,16 +53,25 @@
           <div class="space-y-2" data-sortable-target="list">
             <% provider_states_by_name = @provider_states %>
             <% fallback_candidates = @fallback_candidate_providers %>
+            <% all_providers = @enabled_agent_providers %>
             <% saved_order = Array(@user_setting.fallback_providers) %>
-            <% providers_in_order = (saved_order.select { |provider| fallback_candidates.include?(provider) } + (fallback_candidates - saved_order)).uniq %>
+            <% providers_in_order = (saved_order.select { |provider| all_providers.include?(provider) } + (all_providers - saved_order)).uniq %>
             <% providers_in_order.each do |provider| %>
               <% provider_state = provider_states_by_name[provider] %>
-              <div class="provider-item flex cursor-move items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm" data-provider="<%= provider %>" data-sortable-target="item">
+              <% fallback_enabled = fallback_candidates.include?(provider) %>
+              <div class="provider-item flex cursor-move items-center justify-between rounded-md border border-gray-200 px-3 py-2 shadow-sm <%= fallback_enabled ? 'bg-white' : 'bg-gray-50 opacity-60' %>" data-provider="<%= provider %>" data-fallback-enabled="<%= fallback_enabled %>" data-sortable-target="item">
                 <div class="flex items-center">
                   <svg class="mr-2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
                   </svg>
-                  <span class="text-sm font-medium text-gray-900"><%= provider.titleize %></span>
+                  <input type="checkbox"
+                         class="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                         data-action="sortable#toggleFallback"
+                         data-sortable-target="checkbox"
+                         data-provider="<%= provider %>"
+                         <%= "checked" if fallback_enabled %>
+                         aria-label="Enable <%= provider.titleize %> as fallback">
+                  <span class="text-sm font-medium <%= fallback_enabled ? 'text-gray-900' : 'text-gray-400' %>"><%= provider.titleize %></span>
                 </div>
                 <div>
                   <% if provider == @user_setting.default_agent_provider %>
@@ -84,9 +93,12 @@
           <%= form.hidden_field :fallback_providers,
               value: (@user_setting.fallback_providers || []).to_json,
               data: { sortable_target: "input", primary_provider: @user_setting.default_agent_provider } %>
+          <input type="hidden" name="user_setting[enabled_fallback_provider_keys]"
+                 value="<%= fallback_candidates.to_json %>"
+                 data-sortable-target="enabledInput">
         </div>
 
-        <p class="text-xs text-gray-500">The primary provider is excluded automatically. Any additional configured fallback providers are appended if they have not been ordered yet.</p>
+        <p class="text-xs text-gray-500">The primary provider is excluded automatically. Use the checkboxes to enable or disable individual providers as fallbacks.</p>
 
         <div class="flex justify-end">
           <%= form.submit "Save Provider Settings", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
