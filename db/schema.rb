@@ -406,6 +406,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_180754) do
     t.index ["status"], name: "index_knowledge_artifacts_on_status"
   end
 
+  create_table "knowledge_audit_events", force: :cascade do |t|
+    t.string "actor_id", limit: 100
+    t.string "actor_type", limit: 50
+    t.datetime "created_at", null: false
+    t.jsonb "details", default: {}
+    t.string "event_type", limit: 100, null: false
+    t.bigint "project_id", null: false
+    t.string "target_id", limit: 100
+    t.string "target_type", limit: 100
+    t.index ["created_at"], name: "idx_knowledge_audit_events_on_created_at", using: :brin
+    t.index ["event_type"], name: "index_knowledge_audit_events_on_event_type"
+    t.index ["project_id", "created_at", "id"], name: "idx_knowledge_audit_events_on_project_created_at_id", order: { created_at: :desc, id: :desc }
+    t.index ["project_id"], name: "index_knowledge_audit_events_on_project_id"
+    t.index ["target_type", "target_id"], name: "index_knowledge_audit_events_on_target_type_and_target_id"
+  end
+
   create_table "knowledge_chunks", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.string "chunk_type", limit: 50, null: false
     t.text "content", null: false
@@ -829,6 +845,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_26_180754) do
   add_foreign_key "issues", "projects"
   add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"
+  add_foreign_key "knowledge_audit_events", "projects", on_delete: :cascade
   add_foreign_key "knowledge_chunks", "knowledge_artifacts", on_delete: :cascade
   add_foreign_key "knowledge_chunks", "projects"
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "source_chunk_id", on_delete: :cascade

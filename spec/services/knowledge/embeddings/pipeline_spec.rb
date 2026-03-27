@@ -111,13 +111,14 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
 
     it "logs completion with cost info" do
       allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+      allow(Rails.logger).to receive(:info)
 
-      expect(Rails.logger).to receive(:info).with(hash_including(
+      described_class.call(generator: generator)
+
+      expect(Rails.logger).to have_received(:info).with(hash_including(
         message: "knowledge.embeddings.pipeline_completed",
         chunks_embedded: 1
       ))
-
-      described_class.call(generator: generator)
     end
   end
 end

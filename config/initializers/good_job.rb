@@ -49,6 +49,11 @@ Rails.application.configure do
       cron: "*/5 * * * *",
       class: "ServiceContainerReconciliationJob",
       description: "Reconcile service container DB records against Docker state"
+    },
+    knowledge_audit_retention: {
+      cron: "0 3 * * *",
+      class: "KnowledgeAuditRetentionJob",
+      description: "Delete knowledge audit events older than 90 days"
     }
   }
 end
