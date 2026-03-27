@@ -39,15 +39,17 @@ RSpec.describe "Integrations" do
 
         document = Nokogiri::HTML(response.body)
 
-        github_card = document.css("h3").detect { |h| h.text.strip == "GitHub" }&.ancestors("div").first
+        cards = document.css('[data-testid="integration-card"]')
+
+        github_card = cards.detect { |c| c.css("h3").any? { |h| h.text.strip == "GitHub" } }
         expect(github_card).to be_present
         expect(github_card.text).to include("1 connection configured")
 
-        linear_card = document.css("h3").detect { |h| h.text.strip == "Linear" }&.ancestors("div").first
+        linear_card = cards.detect { |c| c.css("h3").any? { |h| h.text.strip == "Linear" } }
         expect(linear_card).to be_present
         expect(linear_card.text).to include("1 connection configured")
 
-        provider_card = document.css("h3").detect { |h| h.text.strip == "Provider Credentials" }&.ancestors("div").first
+        provider_card = cards.detect { |c| c.css("h3").any? { |h| h.text.strip == "Provider Credentials" } }
         expect(provider_card).to be_present
         expect(provider_card.text).to include("1 connection configured")
       end

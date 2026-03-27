@@ -9,13 +9,14 @@
   </div>
 
   <% @integration_sections.each do |section| %>
+    <% next if section[:cards].blank? %>
     <div class="mt-10">
       <h2 class="text-lg font-semibold text-gray-900"><%= section[:label] %></h2>
       <p class="mt-1 text-sm text-gray-500"><%= section[:description] %></p>
 
       <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <% section[:cards].each do |card| %>
-          <div class="relative rounded-lg border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
+          <div class="relative rounded-lg border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow" data-testid="integration-card">
             <div class="flex items-center">
               <div class="flex-shrink-0 text-gray-700">
                 <%= raw card[:icon_svg] %>
