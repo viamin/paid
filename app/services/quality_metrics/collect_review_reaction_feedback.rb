@@ -15,6 +15,10 @@ module QualityMetrics
     POSITIVE_REACTIONS = CollectReactionFeedback::POSITIVE_REACTIONS
     NEGATIVE_REACTIONS = CollectReactionFeedback::NEGATIVE_REACTIONS
 
+    # Maximum number of review comments to fetch reactions for, to avoid
+    # excessive N+1 API calls on PRs with many comments.
+    MAX_REVIEW_COMMENTS = 50
+
     attr_reader :agent_run
 
     def initialize(agent_run:)
@@ -45,19 +49,28 @@ module QualityMetrics
       agent_run.project.github_token&.client
     end
 
-    # Fetches reactions associated with the PR that was reviewed.
-    # Includes reactions on individual review comments and on the PR itself.
+    # Fetches reactions on individual review comments only (not PR-level
+    # reactions, which reflect sentiment about the PR rather than the review).
     def fetch_review_reactions
       repo = agent_run.project.full_name
       pr_number = agent_run.source_pull_request_number
 
-      reactions = fetch_review_comment_reactions(repo, pr_number)
-      reactions.concat(fetch_pr_reactions(repo, pr_number))
-      reactions
+      fetch_review_comment_reactions(repo, pr_number)
     end
 
     def fetch_review_comment_reactions(repo, pr_number)
       comments = github_client.pull_request_review_comments(repo, pr_number)
+
+      if comments.size > MAX_REVIEW_COMMENTS
+        Rails.logger.info(
+          message: "quality_metrics.review_comments_capped",
+          agent_run_id: agent_run.id,
+          total_comments: comments.size,
+          cap: MAX_REVIEW_COMMENTS
+        )
+        comments = comments.last(MAX_REVIEW_COMMENTS)
+      end
+
       comments.flat_map do |comment|
         github_client.pull_request_review_comment_reactions(repo, comment[:id])
       rescue GithubClient::Error => e
@@ -72,17 +85,6 @@ module QualityMetrics
     rescue GithubClient::Error => e
       Rails.logger.warn(
         message: "quality_metrics.review_comments_fetch_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
-      []
-    end
-
-    def fetch_pr_reactions(repo, pr_number)
-      github_client.issue_reactions(repo, pr_number)
-    rescue GithubClient::Error => e
-      Rails.logger.warn(
-        message: "quality_metrics.review_pr_reaction_fetch_failed",
         agent_run_id: agent_run.id,
         error: e.message
       )
