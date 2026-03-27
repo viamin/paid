@@ -72,27 +72,8 @@ module Containers
       )
     end
 
-    # Updates peak/average summaries and increments container_metrics_count
-    # in a single UPDATE, avoiding the extra write that counter_cache would
-    # cause (reviewer feedback: consolidate to one row update per sample).
     def update_agent_run_summaries(metric)
-      AgentRun.where(id: agent_run.id).update_all(
-        AgentRun.sanitize_sql_array(
-          [
-            <<~SQL.squish,
-              peak_cpu_percent = GREATEST(COALESCE(peak_cpu_percent, 0), ?),
-              peak_memory_bytes = GREATEST(COALESCE(peak_memory_bytes, 0), ?),
-              avg_cpu_percent = (COALESCE(avg_cpu_percent, 0) * COALESCE(container_metrics_count, 0) + ?)::numeric / (COALESCE(container_metrics_count, 0) + 1),
-              avg_memory_bytes = (COALESCE(avg_memory_bytes, 0) * COALESCE(container_metrics_count, 0) + ?)::numeric / (COALESCE(container_metrics_count, 0) + 1),
-              container_metrics_count = COALESCE(container_metrics_count, 0) + 1
-            SQL
-            metric.cpu_percent,
-            metric.memory_bytes,
-            metric.cpu_percent,
-            metric.memory_bytes
-          ]
-        )
-      )
+      DockerStatsParser.update_summaries(model_class: AgentRun, id: agent_run.id, metric: metric)
     end
 
     def log_failure(error)

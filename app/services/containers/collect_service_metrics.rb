@@ -67,23 +67,7 @@ module Containers
     end
 
     def update_service_container_summaries(metric)
-      ServiceContainer.where(id: service_container.id).update_all(
-        ServiceContainer.sanitize_sql_array(
-          [
-            <<~SQL.squish,
-              peak_cpu_percent = GREATEST(COALESCE(peak_cpu_percent, 0), ?),
-              peak_memory_bytes = GREATEST(COALESCE(peak_memory_bytes, 0), ?),
-              avg_cpu_percent = (COALESCE(avg_cpu_percent, 0) * COALESCE(container_metrics_count, 0) + ?)::numeric / (COALESCE(container_metrics_count, 0) + 1),
-              avg_memory_bytes = (COALESCE(avg_memory_bytes, 0) * COALESCE(container_metrics_count, 0) + ?)::numeric / (COALESCE(container_metrics_count, 0) + 1),
-              container_metrics_count = COALESCE(container_metrics_count, 0) + 1
-            SQL
-            metric.cpu_percent,
-            metric.memory_bytes,
-            metric.cpu_percent,
-            metric.memory_bytes
-          ]
-        )
-      )
+      DockerStatsParser.update_summaries(model_class: ServiceContainer, id: service_container.id, metric: metric)
     end
 
     def log_failure(error)
