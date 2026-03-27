@@ -26,13 +26,14 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
 
       env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
       expect(File.exist?(socket_path)).to be(false)
       expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
       expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
-      expect(stdout).to include("Overmind is healthy after restart.")
-      expect(stdout).to include("Streaming detached bin/dev output to log/dev_start.log")
+      expect(updater_log).to include("Overmind is healthy after restart.")
+      expect(updater_log).to include("Streaming detached bin/dev output to log/dev-update/dev-start.log")
       expect(wait_for_dev_start_log(dir)).to include("bin/dev booted")
 
       Timeout.timeout(5) do
@@ -48,14 +49,15 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
 
       env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
 
       expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
       expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(true)
       expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
-      expect(stdout).to include("Setup failed after Overmind stop.")
-      expect(stdout).to include("Attempting recovery start because Overmind was stopped during this update.")
-      expect(stdout).to include("Recovery start succeeded.")
-      expect(stdout).to include("ERROR: Full restart aborted because bin/setup --skip-server failed.")
+      expect(updater_log).to include("Setup failed after Overmind stop.")
+      expect(updater_log).to include("Attempting recovery start because Overmind was stopped during this update.")
+      expect(updater_log).to include("Recovery start succeeded.")
+      expect(updater_log).to include("ERROR: Full restart aborted because bin/setup --skip-server failed.")
     end
   end
 
@@ -65,12 +67,13 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
 
       env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
 
       expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
       expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
       expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
-      expect(stdout).to include("Inspect log/dev_start.log for detached bin/dev output.")
-      expect(stdout).to include("ERROR: Full restart completed setup but failed to restore a healthy Overmind session.")
+      expect(updater_log).to include("Inspect log/dev-update/dev-start.log for detached bin/dev output.")
+      expect(updater_log).to include("ERROR: Full restart completed setup but failed to restore a healthy Overmind session.")
     end
   end
 
@@ -80,13 +83,33 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
 
       env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
       expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
       expect(File.exist?(File.join(dir, "overmind-restart-ran"))).to be(true)
       expect(File.exist?(File.join(dir, "dev-ran"))).to be(false)
-      expect(stdout).to include("Overmind is already running, restarting processes.")
-      expect(stdout).to include("Overmind process restart requested.")
+      expect(updater_log).to include("overmind restart: overmind restarted processes")
+      expect(updater_log).to include("Overmind is already running, restarting processes.")
+      expect(updater_log).to include("Overmind process restart requested.")
+    end
+  end
+
+  it "keeps a persistent updater log outside the files bin/setup deletes" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      updater_log_path = File.join(dir, "log", "dev-update", "dev-update.log")
+      dev_start_log_path = File.join(dir, "log", "dev-update", "dev-start.log")
+      expect(File.exist?(updater_log_path)).to be(true)
+      expect(File.exist?(dev_start_log_path)).to be(true)
+      expect(File.read(updater_log_path)).to include("Starting full restart update...")
+      expect(File.read(updater_log_path)).to include("Full restart update complete.")
+      expect(File.read(dev_start_log_path)).to include("bin/dev booted")
     end
   end
 
@@ -95,12 +118,16 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.chmod("+x", path)
   end
 
+  def read_updater_log(dir)
+    File.read(File.join(dir, "log", "dev-update", "dev-update.log"))
+  end
+
   def wait_for_dev_start_log(dir)
     dev_start_log = nil
 
     Timeout.timeout(5) do
       loop do
-        dev_start_log_path = File.join(dir, "log", "dev_start.log")
+        dev_start_log_path = File.join(dir, "log", "dev-update", "dev-start.log")
         dev_start_log = File.read(dev_start_log_path) if File.exist?(dev_start_log_path)
         break if dev_start_log&.include?("bin/dev booted")
 
@@ -178,6 +205,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             ;;
           restart)
             touch "#{dir}/overmind-restart-ran"
+            echo "overmind restarted processes"
             exit 0
             ;;
           *)
