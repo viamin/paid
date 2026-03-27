@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class CreateServiceContainerMetrics < ActiveRecord::Migration[8.1]
   def change
     create_table :service_container_metrics do |t|
