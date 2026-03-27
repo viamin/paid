@@ -121,6 +121,8 @@ RSpec.describe Containers::Provision do
           metadata: hash_including(image: "paid-agent:latest")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.network.ready",
           metadata: hash_including(network: NetworkPolicy::NETWORK_NAME)).ordered
+        expect(agent_run).to receive(:log!).with("system", "container.codex_config_seeded",
+          metadata: {}).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
           metadata: hash_including(container_id: "abc123container")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.provision.success",
@@ -179,6 +181,19 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "seeds Codex with a proxy-backed config file" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [
+            "sh",
+            "-lc",
+            include("/home/agent/.codex/config.toml").and(include('model_provider = "paid"'))
+          ],
+          user: "agent"
+        )
+      end
+
       it "configures a writable tmpfs for Gemini CLI config" do
         expect(Docker::Container).to receive(:create) do |config|
           tmpfs = config["HostConfig"]["Tmpfs"]
@@ -228,15 +243,18 @@ RSpec.describe Containers::Provision do
       it "configures environment variables for proxy access" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
-          expect(env).to include("PAID_PROXY_URL=http://paid-proxy:3000")
-          expect(env).to include("PROJECT_ID=#{project.id}")
-          expect(env).to include("AGENT_RUN_ID=#{agent_run.id}")
-          expect(env).to include("ANTHROPIC_BASE_URL=http://paid-proxy:3000/api/proxy/anthropic")
-          expect(env).to include("OPENAI_BASE_URL=http://paid-proxy:3000/api/proxy/openai")
-          expect(env).to include("ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
-          expect(env).to include("OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
-          expect(env).to include("ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}")
-          expect(env).to include("OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}")
+          expect(env).to include(
+            "PAID_PROXY_URL=http://paid-proxy:3000",
+            "PROJECT_ID=#{project.id}",
+            "AGENT_RUN_ID=#{agent_run.id}",
+            "ANTHROPIC_BASE_URL=http://paid-proxy:3000/api/proxy/anthropic",
+            "OPENAI_BASE_URL=http://paid-proxy:3000/api/proxy/openai",
+            "ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+            "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+            "ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
+            "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
+            "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+          )
           mock_container
         end
 
@@ -246,9 +264,12 @@ RSpec.describe Containers::Provision do
       it "configures Google proxy environment variables" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
+          expect(env).to include("GOOGLE_GEMINI_BASE_URL=http://paid-proxy:3000/api/proxy/google")
           expect(env).to include("GOOGLE_GENAI_BASE_URL=http://paid-proxy:3000/api/proxy/google")
           expect(env).to include("GOOGLE_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
           expect(env).to include("GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}")
+          expect(env).to include("GEMINI_CLI_CUSTOM_HEADERS=X-Agent-Run-Id: #{agent_run.id}, X-Proxy-Token: #{agent_run.proxy_token}")
+          expect(env).to include("GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}")
           mock_container
         end
 
@@ -265,10 +286,13 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "does not include API keys in environment variables" do
+      it "does not include real upstream API keys in environment variables" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
-          expect(env.none? { |e| e.include?("API_KEY") }).to be true
+          expect(env).to include("GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}")
+          expect(env).to include("OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}")
+          expect(env.none? { |e| e.start_with?("GOOGLE_API_KEY=") }).to be true
+          expect(env.none? { |e| e.start_with?("ANTHROPIC_API_KEY=") }).to be true
           mock_container
         end
 
@@ -469,12 +493,18 @@ RSpec.describe Containers::Provision do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
           expect(env.none? { |e| e.start_with?("ANTHROPIC_BASE_URL=") }).to be true
-          expect(env).to include("OPENAI_BASE_URL=http://web:3000/api/proxy/openai")
-          expect(env).to include("OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
-          expect(env).to include("OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}")
-          expect(env).to include("GOOGLE_GENAI_BASE_URL=http://web:3000/api/proxy/google")
-          expect(env).to include("GOOGLE_HEADER_X_AGENT_RUN_ID=#{agent_run.id}")
-          expect(env).to include("GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}")
+          expect(env).to include(
+            "OPENAI_BASE_URL=http://web:3000/api/proxy/openai",
+            "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+            "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
+            "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
+            "GOOGLE_GEMINI_BASE_URL=http://web:3000/api/proxy/google",
+            "GOOGLE_GENAI_BASE_URL=http://web:3000/api/proxy/google",
+            "GOOGLE_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
+            "GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
+            "GEMINI_CLI_CUSTOM_HEADERS=X-Agent-Run-Id: #{agent_run.id}, X-Proxy-Token: #{agent_run.proxy_token}",
+            "GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+          )
           mock_container
         end
 
@@ -531,6 +561,25 @@ RSpec.describe Containers::Provision do
 
         result = service.provision
         expect(result).to be_success
+      end
+    end
+
+    context "with kilocode agent runs" do
+      let(:agent_run) { create(:agent_run, project: project, agent_type: "kilocode") }
+
+      it "uses the infrastructure network for direct outbound access" do
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "skips firewall rules" do
+        expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
+
+        service.provision
       end
     end
   end

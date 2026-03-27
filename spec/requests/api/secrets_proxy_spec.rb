@@ -313,6 +313,42 @@ RSpec.describe "Api::SecretsProxy" do
       end
     end
 
+    context "with embedded proxy credentials in Authorization" do
+      before do
+        stub_request(:post, "https://api.openai.com/v1/chat/completions")
+          .to_return(status: 200, body: openai_response_body, headers: { "Content-Type" => "application/json" })
+      end
+
+      it "authenticates the request" do
+        post "/api/proxy/openai/v1/chat/completions",
+          params: {}.to_json,
+          headers: {
+            "Content-Type" => "application/json",
+            "Authorization" => "Bearer paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+          }
+
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
+    context "with embedded proxy credentials in x-goog-api-key" do
+      before do
+        stub_request(:post, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent")
+          .to_return(status: 200, body: google_response_body, headers: { "Content-Type" => "application/json" })
+      end
+
+      it "authenticates the request" do
+        post "/api/proxy/google/v1beta/models/gemini-2.0-flash:generateContent",
+          params: {}.to_json,
+          headers: {
+            "Content-Type" => "application/json",
+            "x-goog-api-key" => "paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+          }
+
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
     context "with invalid agent run ID" do
       it "returns forbidden" do
         post "/api/proxy/anthropic/v1/messages",
