@@ -33,6 +33,30 @@ RSpec.describe HumanFeedbackCollectionJob do
         expect(metric.scores).to include("reaction_score", "review_score")
       end
 
+      it "updates scores and composite_score when storing review comment count" do
+        agent_run = create(:agent_run, :completed)
+        metric = create(:quality_metric, :automated, agent_run: agent_run,
+          scores: { "pr_created" => 1.0, "iterations" => 0.8 })
+        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+
+        allow(github_client).to receive_messages(
+          pull_request_reactions: [],
+          pull_request_reviews: [],
+          pull_request_review_comments: [
+            { id: 1, user_login: "bob", body: "nit", created_at: 1.hour.ago },
+            { id: 2, user_login: "bob", body: "fix this", created_at: 1.hour.ago }
+          ]
+        )
+
+        described_class.new.perform(agent_run.id)
+
+        metric.reload
+        expect(metric.scores["review_comment_count"]).to eq(0.8)
+        expect(metric.metadata["review_comment_count"]).to eq(2)
+        expect(metric.composite_score).to be_present
+      end
+
       it "skips PR runs without pull request number" do
         agent_run = create(:agent_run, :failed)
 
@@ -68,9 +92,12 @@ RSpec.describe HumanFeedbackCollectionJob do
         allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
-        allow(github_client).to receive(:issue_reactions).and_return([
-          { user_login: "alice", content: "rocket", created_at: 1.hour.ago }
-        ])
+        allow(github_client).to receive_messages(
+          pull_request_review_comments: [],
+          issue_reactions: [
+            { user_login: "alice", content: "rocket", created_at: 1.hour.ago }
+          ]
+        )
 
         described_class.new.perform(agent_run.id)
 

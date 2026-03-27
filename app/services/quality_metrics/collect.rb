@@ -55,8 +55,11 @@ module QualityMetrics
       scores["iterations"] = iteration_score if agent_run.iterations&.positive?
       lint = lint_clean_score
       scores["lint_clean"] = lint unless lint.nil?
-      scores["review_comment_count"] = review_comment_count_score
-      scores["agent_rerun_count"] = agent_rerun_count_score
+      if agent_run.pull_request_number.present?
+        comment_score = review_comment_count_score
+        scores["review_comment_count"] = comment_score unless comment_score.nil?
+        scores["agent_rerun_count"] = agent_rerun_count_score
+      end
       scores
     end
 
@@ -90,12 +93,14 @@ module QualityMetrics
     # Score degrades by 0.1 per comment, minimum 0.0.
     # Uses review_comment_count stored in the quality metric metadata
     # by HumanFeedbackCollectionJob.
+    # Returns nil when review_comment_count has not yet been collected by
+    # HumanFeedbackCollectionJob, so the score is omitted until data is available.
     def review_comment_count_score
-      return 1.0 unless agent_run.pull_request_number
-
       existing_metric = agent_run.quality_metrics.find_by(metric_type: "automated")
-      comment_count = existing_metric&.metadata&.dig("review_comment_count").to_i
-      [ 1.0 - (comment_count * 0.1), 0.0 ].max
+      comment_count = existing_metric&.metadata&.dig("review_comment_count")
+      return nil if comment_count.nil?
+
+      [ 1.0 - (comment_count.to_i * 0.1), 0.0 ].max
     end
 
     # Scores based on how many agent runs targeted the same PR.

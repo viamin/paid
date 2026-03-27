@@ -66,7 +66,14 @@ class HumanFeedbackCollectionJob < ApplicationJob
     return unless metric
 
     existing_metadata = metric.metadata || {}
-    metric.update!(metadata: existing_metadata.merge("review_comment_count" => comment_count))
+    existing_scores = metric.scores || {}
+
+    metric.assign_attributes(
+      metadata: existing_metadata.merge("review_comment_count" => comment_count),
+      scores: existing_scores.merge("review_comment_count" => [ 1.0 - (comment_count * 0.1), 0.0 ].max)
+    )
+    metric.composite_score = metric.calculate_composite_score
+    metric.save!
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "human_feedback.review_comment_count_failed",

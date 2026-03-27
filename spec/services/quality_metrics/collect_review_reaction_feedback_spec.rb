@@ -13,10 +13,13 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
     end
 
     it "creates human quality metric from reactions on review" do
-      allow(github_client).to receive(:issue_reactions).and_return([
-        { user_login: "alice", content: "+1", created_at: 1.hour.ago },
-        { user_login: "bob", content: "rocket", created_at: 30.minutes.ago }
-      ])
+      allow(github_client).to receive_messages(
+        pull_request_review_comments: [],
+        issue_reactions: [
+          { user_login: "alice", content: "+1", created_at: 1.hour.ago },
+          { user_login: "bob", content: "rocket", created_at: 30.minutes.ago }
+        ]
+      )
 
       metric = described_class.call(agent_run: agent_run)
 
@@ -27,18 +30,45 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
     end
 
     it "calculates mixed reaction score" do
-      allow(github_client).to receive(:issue_reactions).and_return([
-        { user_login: "alice", content: "+1", created_at: 1.hour.ago },
-        { user_login: "bob", content: "confused", created_at: 30.minutes.ago }
-      ])
+      allow(github_client).to receive_messages(
+        pull_request_review_comments: [],
+        issue_reactions: [
+          { user_login: "alice", content: "+1", created_at: 1.hour.ago },
+          { user_login: "bob", content: "confused", created_at: 30.minutes.ago }
+        ]
+      )
 
       metric = described_class.call(agent_run: agent_run)
 
       expect(metric.scores["reaction_score"]).to eq(0.5)
     end
 
+    it "includes reactions from review comments" do
+      allow(github_client).to receive_messages(
+        pull_request_review_comments: [
+          { id: 101, user_login: "carol", body: "nit", created_at: 1.hour.ago }
+        ],
+        issue_reactions: [
+          { user_login: "alice", content: "confused", created_at: 1.hour.ago }
+        ]
+      )
+      allow(github_client).to receive(:pull_request_review_comment_reactions)
+        .with(agent_run.project.full_name, 101)
+        .and_return([
+          { user_login: "dave", content: "+1", created_at: 30.minutes.ago }
+        ])
+
+      metric = described_class.call(agent_run: agent_run)
+
+      # 1 positive (+1 on comment) + 1 negative (confused on PR) = 0.5
+      expect(metric.scores["reaction_score"]).to eq(0.5)
+    end
+
     it "returns nil when no reactions" do
-      allow(github_client).to receive(:issue_reactions).and_return([])
+      allow(github_client).to receive_messages(
+        pull_request_review_comments: [],
+        issue_reactions: []
+      )
 
       result = described_class.call(agent_run: agent_run)
 
@@ -54,6 +84,8 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
     end
 
     it "handles GitHub API errors gracefully" do
+      allow(github_client).to receive(:pull_request_review_comments)
+        .and_raise(GithubClient::ApiError.new("API error"))
       allow(github_client).to receive(:issue_reactions)
         .and_raise(GithubClient::ApiError.new("API error"))
 

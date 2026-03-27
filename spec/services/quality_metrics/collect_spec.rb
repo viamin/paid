@@ -29,22 +29,36 @@ RSpec.describe QualityMetrics::Collect do
     end
 
     context "with create_pr goal" do
-      it "includes review_comment_count and agent_rerun_count scores" do
+      it "includes agent_rerun_count but omits review_comment_count until collected" do
         metric = described_class.call(agent_run: agent_run)
 
-        expect(metric.scores).to include("review_comment_count", "agent_rerun_count")
+        expect(metric.scores).to include("agent_rerun_count")
+        expect(metric.scores).not_to include("review_comment_count")
       end
 
-      it "sets review_comment_count to 1.0 when no comments" do
+      it "includes review_comment_count when metadata is populated" do
+        # First create metric, then populate metadata as HumanFeedbackCollectionJob would
+        metric = described_class.call(agent_run: agent_run)
+        metric.update!(metadata: { "review_comment_count" => 2 })
+
+        # Re-collect to pick up the metadata
         metric = described_class.call(agent_run: agent_run)
 
-        expect(metric.scores["review_comment_count"]).to eq(1.0)
+        expect(metric.scores["review_comment_count"]).to eq(0.8)
       end
 
       it "sets agent_rerun_count to 1.0 for first run" do
         metric = described_class.call(agent_run: agent_run)
 
         expect(metric.scores["agent_rerun_count"]).to eq(1.0)
+      end
+
+      it "omits review_comment_count and agent_rerun_count when no PR exists" do
+        failed_run = create(:agent_run, :completed, pull_request_number: nil)
+
+        metric = described_class.call(agent_run: failed_run)
+
+        expect(metric.scores).not_to include("review_comment_count", "agent_rerun_count")
       end
 
       it "degrades agent_rerun_count for multiple runs on same issue" do

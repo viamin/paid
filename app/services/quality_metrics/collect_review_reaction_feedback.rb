@@ -45,14 +45,44 @@ module QualityMetrics
       agent_run.project.github_token&.client
     end
 
-    # Fetches reactions on the PR that was reviewed.
-    # GitHub tracks reactions on the PR issue itself, which includes review reactions.
+    # Fetches reactions associated with the PR that was reviewed.
+    # Includes reactions on individual review comments and on the PR itself.
     def fetch_review_reactions
       repo = agent_run.project.full_name
-      github_client.issue_reactions(repo, agent_run.source_pull_request_number)
+      pr_number = agent_run.source_pull_request_number
+
+      reactions = fetch_review_comment_reactions(repo, pr_number)
+      reactions.concat(fetch_pr_reactions(repo, pr_number))
+      reactions
+    end
+
+    def fetch_review_comment_reactions(repo, pr_number)
+      comments = github_client.pull_request_review_comments(repo, pr_number)
+      comments.flat_map do |comment|
+        github_client.pull_request_review_comment_reactions(repo, comment[:id])
+      rescue GithubClient::Error => e
+        Rails.logger.warn(
+          message: "quality_metrics.review_comment_reaction_fetch_failed",
+          agent_run_id: agent_run.id,
+          comment_id: comment[:id],
+          error: e.message
+        )
+        []
+      end
     rescue GithubClient::Error => e
       Rails.logger.warn(
-        message: "quality_metrics.review_reaction_fetch_failed",
+        message: "quality_metrics.review_comments_fetch_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+      []
+    end
+
+    def fetch_pr_reactions(repo, pr_number)
+      github_client.issue_reactions(repo, pr_number)
+    rescue GithubClient::Error => e
+      Rails.logger.warn(
+        message: "quality_metrics.review_pr_reaction_fetch_failed",
         agent_run_id: agent_run.id,
         error: e.message
       )

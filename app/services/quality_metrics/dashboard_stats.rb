@@ -239,10 +239,12 @@ module QualityMetrics
       with_merge_status = row.with_merge_status.to_i
       merged_count = row.merged_count.to_i
 
-      # Count feedback by goal type using the feedback_source field
-      goal_counts = human
-        .group(:feedback_source)
-        .count
+      # Count feedback by source using metadata feedback_sources array,
+      # which tracks all sources that contributed to each merged human metric.
+      source_counts = human.select(:metadata).map do |m|
+        Array(m.metadata&.dig("feedback_sources"))
+      end
+      source_tally = source_counts.flatten.tally
 
       {
         total: total,
@@ -256,10 +258,10 @@ module QualityMetrics
           average_score: row.avg_review&.to_f&.round(4)
         },
         by_source: {
-          pr_reaction: goal_counts["pr_reaction"].to_i,
-          pr_review: goal_counts["pr_review"].to_i,
-          issue_reaction: goal_counts["issue_reaction"].to_i,
-          review_reaction: goal_counts["review_reaction"].to_i
+          pr_reaction: source_tally["pr_reaction"].to_i,
+          pr_review: source_tally["pr_review"].to_i,
+          issue_reaction: source_tally["issue_reaction"].to_i,
+          review_reaction: source_tally["review_reaction"].to_i
         }
       }
     end

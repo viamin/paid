@@ -656,6 +656,29 @@ class GithubClient
     end
   end
 
+  # Fetches reactions on a specific pull request review comment.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param comment_id [Integer] The review comment ID
+  # @return [Array<Hash>] Reactions with :user_login, :content keys
+  def pull_request_review_comment_reactions(repo, comment_id)
+    handle_errors do
+      reactions = with_auto_paginate do
+        client.pull_request_review_comment_reactions(
+          repo, comment_id,
+          accept: "application/vnd.github.squirrel-girl-preview+json"
+        )
+      end
+      reactions.map do |r|
+        {
+          user_login: r.user&.login,
+          content: r.content,
+          created_at: parse_timestamp(r.created_at)
+        }
+      end
+    end
+  end
+
   # Gets the remaining rate limit.
   #
   # @return [Integer] Number of requests remaining
