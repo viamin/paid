@@ -58,8 +58,15 @@ class IntegrationCredentialsController < ApplicationController
   end
 
   def load_form_options
-    category = @integration_credential.category.presence || @category_filter
     service_key = @integration_credential.service_key.presence || @service_key_filter
+    service_definition = Integrations::CredentialCatalog.fetch(service_key) if service_key.present?
+
+    category = if service_definition && service_definition[:category].present?
+      service_definition[:category]
+    else
+      @category_filter.presence || @integration_credential.category
+    end
+
     @service_options = Integrations::CredentialCatalog.service_options_for(category: category)
     @auth_kind_options = Integrations::CredentialCatalog.auth_kind_options_for(service_key, category: category)
   end

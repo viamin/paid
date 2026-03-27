@@ -34,7 +34,8 @@
     <dl class="divide-y divide-gray-200">
       <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
         <dt class="text-sm font-medium text-gray-500">Category</dt>
-        <dd class="text-sm text-gray-900 sm:col-span-2"><%= Integrations::CredentialCatalog.categories.dig(@integration_credential.category.to_sym, :label) %></dd>
+        <% category_key = Integrations::CredentialCatalog.categories.keys.find { |key| key.to_s == @integration_credential.category } %>
+        <dd class="text-sm text-gray-900 sm:col-span-2"><%= Integrations::CredentialCatalog.categories.dig(category_key, :label) || @integration_credential.category&.humanize %></dd>
       </div>
       <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
         <dt class="text-sm font-medium text-gray-500">Service</dt>

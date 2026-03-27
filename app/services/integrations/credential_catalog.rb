@@ -21,15 +21,18 @@ module Integrations
       }
     }.freeze
 
-    PROVIDER_SERVICES = ProviderSupport::APP_TO_HARNESS_PROVIDER_KEYS.keys.index_with do |provider_key|
-      {
-        key: provider_key,
-        label: ::Provider.display_name(provider_key),
-        description: "Stored #{::Provider.display_name(provider_key)} credentials for API-key or OAuth-based access. Runtime use will be wired in a follow-up.",
-        category: :llm_provider,
-        auth_kinds: %w[api_key oauth_token]
-      }
-    end.freeze
+    PROVIDER_SERVICES = ProviderSupport::APP_TO_HARNESS_PROVIDER_KEYS.keys
+      .index_with do |provider_key|
+        {
+          key: provider_key.to_s,
+          label: ::Provider.display_name(provider_key),
+          description: "Stored #{::Provider.display_name(provider_key)} credentials for API-key or OAuth-based access. Runtime use will be wired in a follow-up.",
+          category: :llm_provider,
+          auth_kinds: %w[api_key oauth_token]
+        }
+      end
+      .transform_keys(&:to_s)
+      .freeze
 
     SERVICES = PROVIDER_SERVICES.merge(
       "gitlab" => {
