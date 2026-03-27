@@ -59,9 +59,9 @@
             <% providers_in_order.each do |provider| %>
               <% provider_state = provider_states_by_name[provider] %>
               <% fallback_enabled = fallback_candidates.include?(provider) %>
-              <div class="provider-item flex cursor-move items-center justify-between rounded-md border border-gray-200 px-3 py-2 shadow-sm <%= fallback_enabled ? 'bg-white' : 'bg-gray-50 opacity-60' %>" data-provider="<%= provider %>" data-fallback-enabled="<%= fallback_enabled %>" data-sortable-target="item">
+              <div class="provider-item flex items-center justify-between rounded-md border border-gray-200 px-3 py-2 shadow-sm <%= fallback_enabled ? 'bg-white' : 'bg-gray-50 opacity-60' %>" data-provider="<%= provider %>" data-fallback-enabled="<%= fallback_enabled %>" data-sortable-target="item">
                 <div class="flex items-center">
-                  <svg class="mr-2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg class="drag-handle mr-2 h-4 w-4 cursor-move text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
                   </svg>
                   <input type="checkbox"

@@ -13,7 +13,9 @@ export default class extends Controller {
     this.sortable = Sortable.create(this.listTarget, {
       animation: 150,
       ghostClass: "opacity-50",
-      handle: ".provider-item",
+      handle: ".drag-handle",
+      filter: "input",
+      preventOnFilter: false,
       onEnd: () => this.updateInput()
     })
 

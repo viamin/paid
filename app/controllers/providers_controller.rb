@@ -243,16 +243,7 @@ class ProvidersController < ApplicationController
     # Treat empty result as "no change" to avoid disabling all providers on parse errors
     return if enabled_keys.blank?
 
-    current_user.providers.transaction do
-      current_user.providers.find_each do |provider|
-        new_value = enabled_keys.include?(provider.provider_key)
-        next if provider.enabled_for_fallback? == new_value
-
-        unless provider.update(enabled_for_fallback: new_value)
-          raise ActiveRecord::Rollback
-        end
-      end
-    end
+    Provider.update_fallback_flags(current_user, enabled_keys)
   end
 
   def provider_settings_params
