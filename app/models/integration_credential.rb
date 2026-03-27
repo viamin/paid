@@ -8,7 +8,7 @@ class IntegrationCredential < ApplicationRecord
 
   encrypts :secret
 
-  validates :name, presence: true, uniqueness: { scope: :account_id }
+  validates :name, presence: true, uniqueness: { scope: %i[account_id service_key] }
   validates :service_key, presence: true
   validates :category, presence: true
   validates :auth_kind, presence: true, inclusion: { in: AUTH_KINDS }
@@ -41,24 +41,24 @@ class IntegrationCredential < ApplicationRecord
   end
 
   def service_definition
-    Integrations::CredentialCatalog.fetch(service_key)
+    Integrations::CredentialCatalog.lookup(service_key)
   end
 
   private
 
   def assign_category_from_service
-    definition = Integrations::CredentialCatalog.fetch(service_key)
+    definition = Integrations::CredentialCatalog.lookup(service_key)
     self.category = definition[:category].to_s if definition
   end
 
   def service_key_supported
-    return if Integrations::CredentialCatalog.fetch(service_key)
+    return if Integrations::CredentialCatalog.lookup(service_key)
 
     errors.add(:service_key, "is not supported")
   end
 
   def auth_kind_supported_for_service
-    definition = Integrations::CredentialCatalog.fetch(service_key)
+    definition = Integrations::CredentialCatalog.lookup(service_key)
     return unless definition
     return if definition[:auth_kinds].include?(auth_kind)
 

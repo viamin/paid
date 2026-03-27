@@ -43,7 +43,7 @@ class IntegrationCredentialsController < ApplicationController
   def set_filter_context
     @category_filter = params[:category].presence
     @service_key_filter = params[:service_key].presence
-    @service_definition = Integrations::CredentialCatalog.fetch(@service_key_filter)
+    @service_definition = Integrations::CredentialCatalog.lookup(@service_key_filter)
   end
 
   def set_integration_credential
@@ -59,7 +59,7 @@ class IntegrationCredentialsController < ApplicationController
 
   def load_form_options
     service_key = @integration_credential.service_key.presence || @service_key_filter
-    service_definition = Integrations::CredentialCatalog.fetch(service_key) if service_key.present?
+    service_definition = Integrations::CredentialCatalog.lookup(service_key) if service_key.present?
 
     category = if service_definition && service_definition[:category].present?
       service_definition[:category]

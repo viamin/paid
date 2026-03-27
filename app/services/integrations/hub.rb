@@ -21,7 +21,7 @@ module Integrations
         sections[:repository][:cards] << stored_credential_card(
           key: :gitlab,
           name: "GitLab",
-          description: Integrations::CredentialCatalog.fetch("gitlab")[:description],
+          description: Integrations::CredentialCatalog.lookup("gitlab")[:description],
           credential_counts: credential_counts,
           category: :repository,
           service_key: "gitlab",
@@ -30,7 +30,7 @@ module Integrations
         sections[:issue_tracking][:cards] << stored_credential_card(
           key: :jira,
           name: "Jira",
-          description: Integrations::CredentialCatalog.fetch("jira")[:description],
+          description: Integrations::CredentialCatalog.lookup("jira")[:description],
           credential_counts: credential_counts,
           category: :issue_tracking,
           service_key: "jira",
@@ -47,7 +47,7 @@ module Integrations
         sections[:signing][:cards] << stored_credential_card(
           key: :github_signing,
           name: "GitHub Signing",
-          description: Integrations::CredentialCatalog.fetch("github_signing")[:description],
+          description: Integrations::CredentialCatalog.lookup("github_signing")[:description],
           credential_counts: credential_counts,
           category: :signing,
           service_key: "github_signing",

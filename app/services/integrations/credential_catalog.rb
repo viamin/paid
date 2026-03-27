@@ -60,7 +60,7 @@ module Integrations
 
     module_function
 
-    def fetch(service_key)
+    def lookup(service_key)
       SERVICES[service_key.to_s]
     end
 
