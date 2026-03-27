@@ -335,6 +335,9 @@ module Providers
       escaped_prompt = Shellwords.escape(PROMPT)
       command = "gemini -y -p #{escaped_prompt}"
       <<~SH.squish
+        tmp_output="$(mktemp)" &&
+        tmp_error="$(mktemp)" &&
+        before_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1)" &&
         if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
           env
           -u GEMINI_API_KEY
@@ -343,10 +346,26 @@ module Providers
           -u GOOGLE_HEADER_X_AGENT_RUN_ID
           -u GOOGLE_HEADER_X_PROXY_TOKEN
           -u GEMINI_CLI_CUSTOM_HEADERS
-          #{command};
+          #{command} >"$tmp_output" 2>"$tmp_error";
         else
-          #{command};
-        fi
+          #{command} >"$tmp_output" 2>"$tmp_error";
+        fi;
+        status=$?;
+        after_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1)";
+        if [ "$status" -eq 0 ] && grep -q "Error when talking to Gemini API" "$tmp_error"; then
+          if [ -n "$after_report" ] && [ "$after_report" != "$before_report" ]; then
+            ruby -rjson -e 'path = ARGV[0]; data = JSON.parse(File.read(path)); puts(data.dig("error", "message") || File.read(path))' "$after_report" || cat "$tmp_error" 2>/dev/null;
+          else
+            cat "$tmp_error" 2>/dev/null;
+          fi;
+          exit 1;
+        fi;
+        if [ "$status" -eq 0 ]; then
+          cat "$tmp_output" 2>/dev/null;
+        else
+          cat "$tmp_error" 2>/dev/null;
+        fi;
+        exit $status
       SH
     end
 

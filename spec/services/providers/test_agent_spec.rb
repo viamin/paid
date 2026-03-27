@@ -108,7 +108,9 @@ RSpec.describe Providers::TestAgent do
           a_string_including('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
             .and(include("-u GEMINI_API_KEY"))
             .and(include("-u GOOGLE_GEMINI_BASE_URL"))
-            .and(include("gemini -y -p")),
+            .and(include("gemini -y -p"))
+            .and(include('grep -q "Error when talking to Gemini API"'))
+            .and(include('ruby -rjson -e')),
           timeout: 30,
           stream: false
         )
