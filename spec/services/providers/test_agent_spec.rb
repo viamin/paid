@@ -97,7 +97,33 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          a_string_including("codex exec --full-auto --skip-git-repo-check --output-last-message"),
+          a_string_including('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
+            .and(include("-u OPENAI_API_KEY"))
+            .and(include("codex exec --full-auto --skip-git-repo-check --output-last-message")),
+          timeout: 30,
+          stream: false
+        )
+      end
+    end
+
+    context "when gemini is tested with optional subscription auth" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+        allow(AgentRun).to receive(:create!).and_return(test_run)
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "unsets Gemini proxy env vars when subscription auth is available" do
+        described_class.call(provider: provider)
+
+        expect(test_run).to have_received(:execute_in_container).with(
+          a_string_including('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
+            .and(include("-u GEMINI_API_KEY"))
+            .and(include("-u GOOGLE_GEMINI_BASE_URL"))
+            .and(include("gemini -s")),
           timeout: 30,
           stream: false
         )

@@ -218,6 +218,7 @@ module Providers
       raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}" unless command
 
       return codex_test_command if provider.provider_key == "codex"
+      return gemini_test_command if provider.provider_key == "gemini"
       return kilocode_test_command if provider.provider_key == "kilocode"
 
       command + [ PROMPT ]
@@ -275,7 +276,16 @@ module Providers
       <<~SH.squish
         tmp_output="$(mktemp)" &&
         tmp_error="$(mktemp)" &&
-        codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+        if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then
+          env
+          -u OPENAI_API_KEY
+          -u OPENAI_BASE_URL
+          -u OPENAI_HEADER_X_AGENT_RUN_ID
+          -u OPENAI_HEADER_X_PROXY_TOKEN
+          codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+        else
+          codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+        fi;
         status=$?;
         if [ "$status" -eq 0 ]; then
           cat "$tmp_output" 2>/dev/null;
@@ -283,6 +293,24 @@ module Providers
           cat "$tmp_error" 2>/dev/null;
         fi;
         exit $status
+      SH
+    end
+
+    def gemini_test_command
+      escaped_prompt = Shellwords.escape(PROMPT)
+      <<~SH.squish
+        if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
+          env
+          -u GEMINI_API_KEY
+          -u GOOGLE_GEMINI_BASE_URL
+          -u GOOGLE_GENAI_BASE_URL
+          -u GOOGLE_HEADER_X_AGENT_RUN_ID
+          -u GOOGLE_HEADER_X_PROXY_TOKEN
+          -u GEMINI_CLI_CUSTOM_HEADERS
+          gemini -s #{escaped_prompt};
+        else
+          gemini -s #{escaped_prompt};
+        fi
       SH
     end
 

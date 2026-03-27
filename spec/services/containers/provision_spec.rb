@@ -194,6 +194,18 @@ RSpec.describe Containers::Provision do
         )
       end
 
+      it "does not mount host subscription auth directories by default" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds.none? { |bind| bind.include?("/home/agent/.claude-host:ro") }).to be true
+          expect(binds.none? { |bind| bind.include?("/home/agent/.codex-host:ro") }).to be true
+          expect(binds.none? { |bind| bind.include?("/home/agent/.gemini-host:ro") }).to be true
+          mock_container
+        end
+
+        service.provision
+      end
+
       it "configures a writable tmpfs for Gemini CLI config" do
         expect(Docker::Container).to receive(:create) do |config|
           tmpfs = config["HostConfig"]["Tmpfs"]
@@ -253,7 +265,10 @@ RSpec.describe Containers::Provision do
             "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
             "ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
             "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
-            "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+            "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
+            "PAID_CLAUDE_SUBSCRIPTION_AUTH=0",
+            "PAID_CODEX_SUBSCRIPTION_AUTH=0",
+            "PAID_GEMINI_SUBSCRIPTION_AUTH=0"
           )
           mock_container
         end
@@ -463,6 +478,9 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return("/host/home/user/.claude")
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
       end
 
       it "mounts Claude config at staging path and creates writable tmpfs" do
@@ -489,21 +507,33 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "does not set ANTHROPIC_BASE_URL but still sets OpenAI and Google proxy vars" do
+      it "does not set ANTHROPIC_BASE_URL" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
           expect(env.none? { |e| e.start_with?("ANTHROPIC_BASE_URL=") }).to be true
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "still sets OpenAI and Google proxy vars for fallback providers" do
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
           expect(env).to include(
             "OPENAI_BASE_URL=http://web:3000/api/proxy/openai",
             "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
             "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
             "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
+            "PAID_CLAUDE_SUBSCRIPTION_AUTH=1",
+            "PAID_CODEX_SUBSCRIPTION_AUTH=0",
             "GOOGLE_GEMINI_BASE_URL=http://web:3000/api/proxy/google",
             "GOOGLE_GENAI_BASE_URL=http://web:3000/api/proxy/google",
             "GOOGLE_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
             "GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
             "GEMINI_CLI_CUSTOM_HEADERS=X-Agent-Run-Id: #{agent_run.id}, X-Proxy-Token: #{agent_run.proxy_token}",
-            "GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+            "GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
+            "PAID_GEMINI_SUBSCRIPTION_AUTH=0"
           )
           mock_container
         end
@@ -531,6 +561,76 @@ RSpec.describe Containers::Provision do
         expect(NetworkPolicy).not_to receive(:apply_firewall_rules)
 
         service.provision
+      end
+    end
+
+    context "with Gemini subscription auth (GEMINI_CONFIG_DIR)" do
+      before do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return("/host/home/user/.gemini")
+      end
+
+      it "mounts Gemini config at a staging path and sets the subscription marker" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds).to include("/host/home/user/.gemini:/home/agent/.gemini-host:ro")
+          env = config["Env"]
+          expect(env).to include("PAID_GEMINI_SUBSCRIPTION_AUTH=1")
+          expect(env).to include("ANTHROPIC_BASE_URL=http://web:3000/api/proxy/anthropic")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "uses the infrastructure network and seeds cached Gemini credentials" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-c", include("/home/agent/.gemini-host/oauth_creds.json").and(include("/home/agent/.gemini/oauth_creds.json")) ],
+          user: "agent"
+        )
+      end
+    end
+
+    context "with Codex subscription auth (CODEX_HOME)" do
+      before do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return("/host/home/user/.codex")
+      end
+
+      it "mounts Codex config at a staging path and sets the subscription marker" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds).to include("/host/home/user/.codex:/home/agent/.codex-host:ro")
+          env = config["Env"]
+          expect(env).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
+          expect(env).to include("ANTHROPIC_BASE_URL=http://web:3000/api/proxy/anthropic")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "seeds cached Codex auth instead of the proxy config file" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-c", include("/home/agent/.codex-host/auth.json").and(include("/home/agent/.codex/auth.json")) ],
+          user: "agent"
+        )
+        expect(mock_container).not_to have_received(:exec).with(
+          [ "sh", "-lc", include("/home/agent/.codex/config.toml").and(include('model_provider = "paid"')) ],
+          user: "agent"
+        )
       end
     end
 

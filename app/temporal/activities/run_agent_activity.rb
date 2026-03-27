@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "shellwords"
+
 module Activities
   class RunAgentActivity < BaseActivity
     activity_name "RunAgent"
@@ -290,7 +292,7 @@ module Activities
       end
 
       prompt = augment_prompt_for_goal(agent_run, prompt)
-      command = command_prefix + [ prompt ]
+      command = build_command(provider, command_prefix, prompt)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
@@ -379,6 +381,53 @@ module Activities
       end
     rescue StandardError
       1.hour.from_now
+    end
+
+    def build_command(provider, command_prefix, prompt)
+      case provider
+      when "codex"
+        codex_command(prompt)
+      when "gemini"
+        gemini_command(prompt)
+      else
+        command_prefix + [ prompt ]
+      end
+    end
+
+    def codex_command(prompt)
+      escaped_prompt = Shellwords.escape(prompt)
+      command = "codex exec --full-auto -- #{escaped_prompt}"
+      <<~SH.squish
+        if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then
+          env
+          -u OPENAI_API_KEY
+          -u OPENAI_BASE_URL
+          -u OPENAI_HEADER_X_AGENT_RUN_ID
+          -u OPENAI_HEADER_X_PROXY_TOKEN
+          #{command};
+        else
+          #{command};
+        fi
+      SH
+    end
+
+    def gemini_command(prompt)
+      escaped_prompt = Shellwords.escape(prompt)
+      command = "gemini -s #{escaped_prompt}"
+      <<~SH.squish
+        if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
+          env
+          -u GEMINI_API_KEY
+          -u GOOGLE_GEMINI_BASE_URL
+          -u GOOGLE_GENAI_BASE_URL
+          -u GOOGLE_HEADER_X_AGENT_RUN_ID
+          -u GOOGLE_HEADER_X_PROXY_TOKEN
+          -u GEMINI_CLI_CUSTOM_HEADERS
+          #{command};
+        else
+          #{command};
+        fi
+      SH
     end
 
     def capture_head_sha(container_service, agent_run)

@@ -133,6 +133,33 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "#build_command" do
+    it "builds a shell wrapper for Codex subscription auth" do
+      command = activity.send(:build_command, "codex", described_class::AGENT_COMMANDS["codex"], "say 'hi'")
+
+      expect(command).to include('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
+      expect(command).to include("-u OPENAI_API_KEY")
+      expect(command).to include("codex exec --full-auto --")
+      expect(command).to include("say\\ \\'hi\\'")
+    end
+
+    it "builds a shell wrapper for Gemini subscription auth" do
+      command = activity.send(:build_command, "gemini", described_class::AGENT_COMMANDS["gemini"], "say 'hi'")
+
+      expect(command).to include('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
+      expect(command).to include("-u GEMINI_API_KEY")
+      expect(command).to include("-u GOOGLE_GEMINI_BASE_URL")
+      expect(command).to include("gemini -s")
+      expect(command).to include("say\\ \\'hi\\'")
+    end
+
+    it "keeps non-subscription providers in array form" do
+      command = activity.send(:build_command, "claude", described_class::AGENT_COMMANDS["claude"], "ping")
+
+      expect(command).to eq(described_class::AGENT_COMMANDS["claude"] + [ "ping" ])
+    end
+  end
+
   describe "#execute" do
     context "when agent succeeds in container" do
       before do
