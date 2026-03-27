@@ -366,6 +366,31 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#issue_events" do
+    let(:repo) { "owner/repo" }
+
+    before do
+      stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/events")
+        .with(query: { per_page: 100, page: 1 })
+        .to_return(
+          status: 200,
+          body: [
+            { event: "labeled", actor: { login: "viamin" }, label: { name: "paid-build" } }
+          ].to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    it "returns issue events" do
+      result = client.issue_events(repo, 42)
+
+      expect(result.size).to eq(1)
+      expect(result.first.event).to eq("labeled")
+      expect(result.first.actor.login).to eq("viamin")
+      expect(result.first.label.name).to eq("paid-build")
+    end
+  end
+
   describe "#pull_request" do
     let(:repo) { "owner/repo" }
 
