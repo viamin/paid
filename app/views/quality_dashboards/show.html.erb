@@ -103,6 +103,7 @@
           <dd class="mt-1 text-sm text-gray-900">
             <% by_source = @stats.dig(:human_feedback, :by_source) || {} %>
             <% source_labels = {
+              pr_merge: "PR Merges",
               pr_reaction: "PR Reactions",
               pr_review: "PR Reviews",
               issue_reaction: "Issue Reactions",

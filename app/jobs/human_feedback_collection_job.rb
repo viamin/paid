@@ -59,11 +59,19 @@ class HumanFeedbackCollectionJob < ApplicationJob
     return unless github_client
 
     repo = agent_run.project.full_name
-    comments = github_client.pull_request_review_comments(repo, agent_run.pull_request_number)
-    comment_count = comments.size
+    pr = github_client.pull_request(repo, agent_run.pull_request_number)
+    comment_count = pr[:review_comments] || pr["review_comments"] || 0
 
     metric = agent_run.quality_metrics.find_by(metric_type: "automated")
-    return unless metric
+    unless metric
+      Rails.logger.info(
+        message: "human_feedback.automated_metric_missing",
+        agent_run_id: agent_run.id,
+        pull_request_number: agent_run.pull_request_number
+      )
+      self.class.set(wait: 1.minute).perform_later(agent_run.id)
+      return
+    end
 
     existing_metadata = metric.metadata || {}
     existing_scores = metric.scores || {}

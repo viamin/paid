@@ -2,7 +2,7 @@
 
 module QualityMetrics
   # Collects human feedback from GitHub reactions on code review comments.
-  # For review goals, fetches emoji reactions on the review itself to gauge quality.
+  # For review goals, fetches emoji reactions on review comments to gauge quality.
   #
   # Reaction scoring (same as CollectReactionFeedback):
   #   - +1 (thumbs up), heart, hooray, rocket -> positive (1.0)

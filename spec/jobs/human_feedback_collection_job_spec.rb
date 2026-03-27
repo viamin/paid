@@ -21,9 +21,7 @@ RSpec.describe HumanFeedbackCollectionJob do
           pull_request_reviews: [
             { state: "APPROVED", user_login: "bob", body: "LGTM" }
           ],
-          pull_request_review_comments: [
-            { id: 1, user_login: "bob", body: "nit", created_at: 1.hour.ago }
-          ]
+          pull_request: { review_comments: 1 }
         )
 
         described_class.new.perform(agent_run.id)
@@ -43,10 +41,7 @@ RSpec.describe HumanFeedbackCollectionJob do
         allow(github_client).to receive_messages(
           pull_request_reactions: [],
           pull_request_reviews: [],
-          pull_request_review_comments: [
-            { id: 1, user_login: "bob", body: "nit", created_at: 1.hour.ago },
-            { id: 2, user_login: "bob", body: "fix this", created_at: 1.hour.ago }
-          ]
+          pull_request: { review_comments: 2 }
         )
 
         described_class.new.perform(agent_run.id)
@@ -55,6 +50,23 @@ RSpec.describe HumanFeedbackCollectionJob do
         expect(metric.scores["review_comment_count"]).to eq(0.8)
         expect(metric.metadata["review_comment_count"]).to eq(2)
         expect(metric.composite_score).to be_present
+      end
+
+      it "re-enqueues when automated metric is missing for comment count" do
+        agent_run = create(:agent_run, :completed)
+        # No automated metric created
+        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+
+        allow(github_client).to receive_messages(
+          pull_request_reactions: [],
+          pull_request_reviews: [],
+          pull_request: { review_comments: 3 }
+        )
+
+        expect {
+          described_class.new.perform(agent_run.id)
+        }.to have_enqueued_job(described_class).with(agent_run.id)
       end
 
       it "skips PR runs without pull request number" do
@@ -126,7 +138,7 @@ RSpec.describe HumanFeedbackCollectionJob do
       allow(github_client).to receive(:pull_request_reactions).and_return([])
       allow(github_client).to receive(:pull_request_reviews)
         .and_raise(GithubClient::ApiError.new("rate limited"))
-      allow(github_client).to receive(:pull_request_review_comments)
+      allow(github_client).to receive(:pull_request)
         .and_raise(GithubClient::ApiError.new("rate limited"))
 
       expect {

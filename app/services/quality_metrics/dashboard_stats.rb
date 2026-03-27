@@ -34,47 +34,46 @@ module QualityMetrics
     end
 
     # Display metadata for each metric key: human-readable name, description,
-    # and signal type. Weights and goal_types are derived from QualityMetric::GOAL_WEIGHTS.
+    # signal type, and which goal types collect this metric. The collected_for
+    # field is decoupled from GOAL_WEIGHTS because some metrics (e.g. review_score,
+    # reaction_score for create_pr) are collected via human feedback but do not
+    # carry a scoring weight.
     METRIC_DISPLAY = {
-      "pr_created" => { name: "PR Created", description: "Whether the agent successfully created a pull request.", signal_type: "automated" },
-      "pr_merged" => { name: "PR Merged", description: "Whether the pull request was merged.", signal_type: "automated" },
-      "ci_passed" => { name: "CI Passed", description: "Whether CI checks passed on the pull request.", signal_type: "automated" },
-      "iterations" => { name: "Iterations", description: "Fewer iterations to complete = higher quality. Degrades by 0.1 per extra iteration.", signal_type: "automated" },
-      "lint_clean" => { name: "Lint Clean", description: "Whether the agent produced code with no lint offenses.", signal_type: "automated" },
-      "tests_pass" => { name: "Tests Pass", description: "Whether tests pass on the agent's output.", signal_type: "automated" },
-      "review_comment_count" => { name: "Review Comment Count", description: "Fewer review comments = higher quality output. Degrades by 0.1 per comment.", signal_type: "human" },
-      "agent_rerun_count" => { name: "Agent Rerun Count", description: "Fewer reruns per PR = higher quality agent run. Degrades by 0.15 per extra rerun.", signal_type: "human" },
-      "issue_created" => { name: "Issue Created", description: "Whether the agent successfully created an issue.", signal_type: "automated" },
-      "reaction_score" => { name: "Reaction Score", description: "Ratio of positive to total emoji reactions. Positive: +1, heart, hooray, rocket. Negative: -1, confused.", signal_type: "human" },
-      "review_posted" => { name: "Review Posted", description: "Whether the agent successfully posted a code review.", signal_type: "automated" },
-      "review_score" => { name: "Review Score", description: "Average score from PR review outcomes. Approved=1.0, commented=0.5, changes_requested=0.0.", signal_type: "human" }
+      "pr_created" => { name: "PR Created", description: "Whether the agent successfully created a pull request.", signal_type: "automated", collected_for: %w[create_pr] },
+      "pr_merged" => { name: "PR Merged", description: "Whether the pull request was merged.", signal_type: "automated", collected_for: %w[create_pr] },
+      "ci_passed" => { name: "CI Passed", description: "Whether CI checks passed on the pull request.", signal_type: "automated", collected_for: %w[create_pr] },
+      "iterations" => { name: "Iterations", description: "Fewer iterations to complete = higher quality. Degrades by 0.1 per extra iteration.", signal_type: "automated", collected_for: %w[create_pr] },
+      "lint_clean" => { name: "Lint Clean", description: "Whether the agent produced code with no lint offenses.", signal_type: "automated", collected_for: %w[create_pr] },
+      "tests_pass" => { name: "Tests Pass", description: "Whether tests pass on the agent's output.", signal_type: "automated", collected_for: %w[create_pr] },
+      "review_comment_count" => { name: "Review Comment Count", description: "Fewer review comments = higher quality output. Degrades by 0.1 per comment.", signal_type: "human", collected_for: %w[create_pr] },
+      "agent_rerun_count" => { name: "Agent Rerun Count", description: "Fewer reruns per PR = higher quality agent run. Degrades by 0.15 per extra rerun.", signal_type: "human", collected_for: %w[create_pr] },
+      "issue_created" => { name: "Issue Created", description: "Whether the agent successfully created an issue.", signal_type: "automated", collected_for: %w[create_issue] },
+      "reaction_score" => { name: "Reaction Score", description: "Ratio of positive to total emoji reactions. Positive: +1, heart, hooray, rocket. Negative: -1, confused.", signal_type: "human", collected_for: %w[create_pr create_issue review] },
+      "review_posted" => { name: "Review Posted", description: "Whether the agent successfully posted a code review.", signal_type: "automated", collected_for: %w[review] },
+      "review_score" => { name: "Review Score", description: "Average score from PR review outcomes. Approved=1.0, commented=0.5, changes_requested=0.0.", signal_type: "human", collected_for: %w[create_pr] }
     }.freeze
 
     # Returns a structured reference of all quality metrics with their
     # weights, descriptions, and applicable goal types.
-    # Weights are derived from QualityMetric::GOAL_WEIGHTS to avoid duplication.
+    # Weights are derived from QualityMetric::GOAL_WEIGHTS; goal applicability
+    # comes from METRIC_DISPLAY#collected_for (which includes metrics collected
+    # via human feedback that may not carry a scoring weight).
     def self.metrics_reference
-      # Build a mapping of metric_key -> { weights_by_goal, goal_types }
-      weights_index = Hash.new { |h, k| h[k] = { weights: {}, goal_types: [] } }
-      QualityMetric::GOAL_WEIGHTS.each do |goal, weights|
+      # Build a mapping of metric_key -> first weight found in GOAL_WEIGHTS
+      weights_index = {}
+      QualityMetric::GOAL_WEIGHTS.each_value do |weights|
         weights.each do |key, weight|
-          weights_index[key][:weights][goal] = weight
-          weights_index[key][:goal_types] << goal
+          weights_index[key] ||= weight
         end
       end
 
       METRIC_DISPLAY.map do |key, display|
-        entry = weights_index[key]
-        # Use the first goal's weight as the representative weight (all goals
-        # with this metric currently use the same weight per metric key).
-        weight = entry[:weights].values.first
-
         {
           key: key,
           name: display[:name],
           description: display[:description],
-          weight: weight,
-          goal_types: entry[:goal_types],
+          weight: weights_index[key],
+          goal_types: display[:collected_for],
           signal_type: display[:signal_type]
         }
       end
@@ -204,6 +203,7 @@ module QualityMetrics
           average_score: row.avg_review&.to_f&.round(4)
         },
         by_source: {
+          pr_merge: source_tally["pr_merge"].to_i,
           pr_reaction: source_tally["pr_reaction"].to_i,
           pr_review: source_tally["pr_review"].to_i,
           issue_reaction: source_tally["issue_reaction"].to_i,
@@ -218,7 +218,7 @@ module QualityMetrics
         merge_rate: nil,
         reactions: { count: 0, average_score: nil },
         reviews: { count: 0, average_score: nil },
-        by_source: { pr_reaction: 0, pr_review: 0, issue_reaction: 0, review_reaction: 0 }
+        by_source: { pr_merge: 0, pr_reaction: 0, pr_review: 0, issue_reaction: 0, review_reaction: 0 }
       }
     end
   end
