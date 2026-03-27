@@ -7,6 +7,8 @@ module Knowledge
         # actor: { type: "collector", id: "run_42" }
         # target: { type: "KnowledgeArtifact", id: "789" }
         def record(event:, project:, actor: nil, target: nil, details: {})
+          validate_event_types!([ { event: event } ])
+
           actor_type, actor_id = extract_pair(actor)
           target_type, target_id = extract_pair(target)
 

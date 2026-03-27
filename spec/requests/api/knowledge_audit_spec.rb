@@ -161,6 +161,14 @@ RSpec.describe "Api::KnowledgeAudit" do
       expect(body["error"]).to eq("limit must be a positive integer")
     end
 
+    it "returns 400 for limit of 0" do
+      get "/api/knowledge/audit", params: { project_id: project.id, limit: 0 }
+
+      expect(response).to have_http_status(:bad_request)
+      body = JSON.parse(response.body)
+      expect(body["error"]).to eq("limit must be a positive integer")
+    end
+
     it "includes all event fields in response" do
       event = create(:knowledge_audit_event,
         project: project,

@@ -104,10 +104,10 @@ module Knowledge
       return unless prior_artifacts.exists?
 
       # Stale and audit in batches to avoid materializing all IDs at once.
-      # We must collect IDs before update_all since the relation filters on status: "active".
+      # Collect IDs before update_all for audit event target_id values.
       prior_artifacts.in_batches(of: 1000) do |batch|
         ids = batch.pluck(:id)
-        KnowledgeArtifact.where(id: ids).update_all(status: "stale", updated_at: Time.current)
+        batch.update_all(status: "stale", updated_at: Time.current)
 
         audit_events = ids.map do |artifact_id|
           {

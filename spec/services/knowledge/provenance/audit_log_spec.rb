@@ -113,6 +113,12 @@ RSpec.describe Knowledge::Provenance::AuditLog do
       )
     end
 
+    it "raises ArgumentError for invalid event types" do
+      expect {
+        described_class.record(event: :invalid_event, project: project)
+      }.to raise_error(ArgumentError, /Invalid event types: invalid_event/)
+    end
+
     it "uses presence for actor and target in log output" do
       allow(Rails.logger).to receive(:info)
 

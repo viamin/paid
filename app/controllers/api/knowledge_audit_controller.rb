@@ -36,7 +36,7 @@ module Api
       end
 
       limit_param = params[:limit]
-      if limit_param.present? && limit_param.to_s !~ /\A\d+\z/
+      if limit_param.present? && limit_param.to_s !~ /\A[1-9]\d*\z/
         return render json: { error: "limit must be a positive integer" }, status: :bad_request
       end
 
