@@ -322,6 +322,17 @@ class GithubClient
     end
   end
 
+  # Fetches issue timeline events such as label additions/removals.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue or PR number
+  # @return [Array<Sawyer::Resource>] Events (each may include .event, .actor.login, .label.name)
+  def issue_events(repo, number)
+    handle_errors do
+      with_auto_paginate { client.issue_events(repo, number, per_page: 100, page: 1) }
+    end
+  end
+
   # Fetches the most recent page of conversation comments (newest first).
   # Use this for idempotency checks where auto-paginating all comments is
   # unnecessary and wastes API rate limit on long-lived PRs.
