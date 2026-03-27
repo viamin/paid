@@ -6,9 +6,8 @@
 <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
   <div>
     <% back_link_params = { category: params[:category].presence || @integration_credential.category } %>
-    <% if params.key?(:service_key) %>
-      <% back_link_params[:service_key] = params[:service_key].presence || @integration_credential.service_key %>
-    <% end %>
+    <% service_key_val = params[:service_key].presence || @integration_credential.service_key %>
+    <% back_link_params[:service_key] = service_key_val if service_key_val.present? %>
     <%= link_to integration_credentials_path(back_link_params), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
       <span aria-hidden="true" class="mr-1">&larr;</span>
       Back to credentials
@@ -57,7 +56,7 @@
 
     <% if policy(@integration_credential).destroy? %>
       <div class="border-t border-gray-200 px-6 py-4">
-        <%= button_to "Deactivate Credential", integration_credential_path(@integration_credential), method: :delete, class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
+        <%= button_to "Deactivate Credential", integration_credential_path(@integration_credential, back_link_params), method: :delete, class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
       </div>
     <% end %>
   </div>
