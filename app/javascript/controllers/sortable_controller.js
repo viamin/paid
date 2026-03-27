@@ -2,9 +2,10 @@ import { Controller } from "@hotwired/stimulus"
 import Sortable from "sortablejs"
 
 // Manages drag-and-drop reordering of provider priority list.
-// Updates a hidden input field with the JSON array of provider names.
+// Updates hidden input fields with the JSON array of provider names
+// and the list of providers enabled for fallback.
 export default class extends Controller {
-  static targets = ["list", "item", "input"]
+  static targets = ["list", "item", "input", "enabledInput", "checkbox"]
 
   connect() {
     if (!this.hasListTarget) return
@@ -12,7 +13,9 @@ export default class extends Controller {
     this.sortable = Sortable.create(this.listTarget, {
       animation: 150,
       ghostClass: "opacity-50",
-      handle: ".provider-item",
+      handle: ".drag-handle",
+      filter: "input",
+      preventOnFilter: false,
       onEnd: () => this.updateInput()
     })
 
@@ -36,6 +39,34 @@ export default class extends Controller {
     }
   }
 
+  toggleFallback(event) {
+    const checkbox = event.target
+    const item = checkbox.closest("[data-sortable-target='item']")
+    const enabled = checkbox.checked
+
+    item.dataset.fallbackEnabled = enabled
+
+    if (enabled) {
+      item.classList.remove("bg-gray-50", "opacity-60")
+      item.classList.add("bg-white")
+      const nameSpan = item.querySelector("span.text-sm")
+      if (nameSpan) {
+        nameSpan.classList.remove("text-gray-400")
+        nameSpan.classList.add("text-gray-900")
+      }
+    } else {
+      item.classList.remove("bg-white")
+      item.classList.add("bg-gray-50", "opacity-60")
+      const nameSpan = item.querySelector("span.text-sm")
+      if (nameSpan) {
+        nameSpan.classList.remove("text-gray-900")
+        nameSpan.classList.add("text-gray-400")
+      }
+    }
+
+    this.updateInput()
+  }
+
   updateInput() {
     if (!this.hasInputTarget) return
 
@@ -49,5 +80,14 @@ export default class extends Controller {
       : providers.slice(1)
 
     this.inputTarget.value = JSON.stringify(fallbacks)
+
+    // Update the enabled fallback providers hidden field
+    if (this.hasEnabledInputTarget) {
+      const enabledProviders = this.itemTargets
+        .filter(el => el.dataset.fallbackEnabled === "true")
+        .map(el => el.dataset.provider)
+
+      this.enabledInputTarget.value = JSON.stringify(enabledProviders)
+    }
   }
 }

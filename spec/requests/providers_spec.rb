@@ -68,6 +68,73 @@ RSpec.describe "Providers" do
       expect(settings.fallback_enabled).to be(true)
       expect(settings.fallback_providers).to eq(%w[claude aider])
     end
+
+    it "disables fallback for providers not in enabled_fallback_provider_keys" do
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      user.providers.create!(provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true)
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          default_agent_provider: "claude",
+          fallback_enabled: true,
+          fallback_providers: %w[cursor].to_json,
+          enabled_fallback_provider_keys: %w[claude cursor].to_json
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.providers.find_by(provider_key: "claude").enabled_for_fallback).to be(true)
+      expect(user.providers.find_by(provider_key: "cursor").enabled_for_fallback).to be(true)
+      expect(user.providers.find_by(provider_key: "aider").enabled_for_fallback).to be(false)
+    end
+
+    it "enables fallback for providers in enabled_fallback_provider_keys" do
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: false)
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          default_agent_provider: "claude",
+          fallback_enabled: true,
+          fallback_providers: %w[claude cursor].to_json,
+          enabled_fallback_provider_keys: %w[claude cursor].to_json
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.providers.find_by(provider_key: "cursor").enabled_for_fallback).to be(true)
+    end
+
+    it "preserves fallback flags when enabled_fallback_provider_keys is not sent" do
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: false)
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          default_agent_provider: "claude",
+          fallback_enabled: true,
+          fallback_providers: %w[claude].to_json
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.providers.find_by(provider_key: "cursor").enabled_for_fallback).to be(false)
+    end
+
+    it "preserves fallback flags when enabled_fallback_provider_keys is malformed JSON" do
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+
+      patch settings_providers_path, params: {
+        user_setting: {
+          default_agent_provider: "claude",
+          fallback_enabled: true,
+          fallback_providers: %w[claude cursor].to_json,
+          enabled_fallback_provider_keys: "not-valid-json{"
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.providers.find_by(provider_key: "claude").enabled_for_fallback).to be(true)
+      expect(user.providers.find_by(provider_key: "cursor").enabled_for_fallback).to be(true)
+    end
   end
 
   describe "POST /providers" do
