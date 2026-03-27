@@ -385,44 +385,30 @@ module Activities
 
     def build_command(provider, command_prefix, prompt)
       case provider
-      when "codex"
-        codex_command(prompt)
-      when "gemini"
-        gemini_command(prompt)
+      when "codex", "gemini"
+        subscription_auth_command(provider, command_prefix, prompt)
       else
         command_prefix + [ prompt ]
       end
     end
 
-    def codex_command(prompt)
-      base = AGENT_COMMANDS.fetch("codex").shelljoin
+    # Wraps a provider command so that, when subscription auth is active,
+    # proxy-related env vars are unset and the CLI talks directly to the
+    # provider. The unset-var list is shared with Providers::TestAgent via
+    # ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS.
+    def subscription_auth_command(provider, command_prefix, prompt)
+      base = command_prefix.shelljoin
       command = "#{base} #{Shellwords.escape(prompt)}"
-      <<~SH.squish
-        if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then
-          env
-          -u OPENAI_API_KEY
-          -u OPENAI_BASE_URL
-          -u OPENAI_HEADER_X_AGENT_RUN_ID
-          -u OPENAI_HEADER_X_PROXY_TOKEN
-          #{command};
-        else
-          #{command};
-        fi
-      SH
-    end
+      env_flag = "PAID_#{provider.upcase}_SUBSCRIPTION_AUTH"
+      unset_flags = ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS
+        .fetch(provider)
+        .map { |var| "-u #{var}" }
+        .join("\n")
 
-    def gemini_command(prompt)
-      base = AGENT_COMMANDS.fetch("gemini").shelljoin
-      command = "#{base} #{Shellwords.escape(prompt)}"
       <<~SH.squish
-        if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
+        if [ "$#{env_flag}" = "1" ]; then
           env
-          -u GEMINI_API_KEY
-          -u GOOGLE_GEMINI_BASE_URL
-          -u GOOGLE_GENAI_BASE_URL
-          -u GOOGLE_HEADER_X_AGENT_RUN_ID
-          -u GOOGLE_HEADER_X_PROXY_TOKEN
-          -u GEMINI_CLI_CUSTOM_HEADERS
+          #{unset_flags}
           #{command};
         else
           #{command};

@@ -328,15 +328,13 @@ module Providers
 
     def codex_test_command
       escaped_prompt = Shellwords.escape(PROMPT)
+      unset_flags = subscription_auth_unset_flags("codex")
       <<~SH.squish
         tmp_output="$(mktemp)" &&
         tmp_error="$(mktemp)" &&
         if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then
           env
-          -u OPENAI_API_KEY
-          -u OPENAI_BASE_URL
-          -u OPENAI_HEADER_X_AGENT_RUN_ID
-          -u OPENAI_HEADER_X_PROXY_TOKEN
+          #{unset_flags}
           codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
         else
           codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
@@ -354,24 +352,20 @@ module Providers
     def gemini_test_command
       escaped_prompt = Shellwords.escape(PROMPT)
       command = "gemini -y -p #{escaped_prompt}"
+      unset_flags = subscription_auth_unset_flags("gemini")
       <<~SH.squish
         tmp_output="$(mktemp)" &&
         tmp_error="$(mktemp)" &&
         before_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)" &&
         if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
           env
-          -u GEMINI_API_KEY
-          -u GOOGLE_GEMINI_BASE_URL
-          -u GOOGLE_GENAI_BASE_URL
-          -u GOOGLE_HEADER_X_AGENT_RUN_ID
-          -u GOOGLE_HEADER_X_PROXY_TOKEN
-          -u GEMINI_CLI_CUSTOM_HEADERS
+          #{unset_flags}
           #{command} >"$tmp_output" 2>"$tmp_error";
         else
           #{command} >"$tmp_output" 2>"$tmp_error";
         fi;
         status=$?;
-        after_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1)";
+        after_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)";
         if [ "$status" -eq 0 ] && grep -q "Error when talking to Gemini API" "$tmp_error"; then
           if [ -n "$after_report" ] && [ "$after_report" != "$before_report" ]; then
             ruby -rjson -e 'path = ARGV[0]; data = JSON.parse(File.read(path)); puts(data.dig("error", "message") || File.read(path))' "$after_report" || cat "$tmp_error" 2>/dev/null;
@@ -391,20 +385,24 @@ module Providers
 
     def kilocode_test_command
       escaped_prompt = Shellwords.escape(PROMPT)
+      all_unset_flags = ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS
+        .values
+        .flatten
+        .uniq
+        .map { |var| "-u #{var}" }
+        .join("\n")
       <<~SH.squish
         env
-        -u OPENAI_API_KEY
-        -u OPENAI_BASE_URL
-        -u OPENAI_HEADER_X_AGENT_RUN_ID
-        -u OPENAI_HEADER_X_PROXY_TOKEN
-        -u GEMINI_API_KEY
-        -u GOOGLE_GEMINI_BASE_URL
-        -u GOOGLE_GENAI_BASE_URL
-        -u GOOGLE_HEADER_X_AGENT_RUN_ID
-        -u GOOGLE_HEADER_X_PROXY_TOKEN
-        -u GEMINI_CLI_CUSTOM_HEADERS
+        #{all_unset_flags}
         timeout 20s kilo run --auto --print-logs #{escaped_prompt}
       SH
+    end
+
+    def subscription_auth_unset_flags(provider)
+      ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS
+        .fetch(provider)
+        .map { |var| "-u #{var}" }
+        .join("\n")
     end
 
     class Result
