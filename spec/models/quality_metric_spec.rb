@@ -85,8 +85,9 @@ RSpec.describe QualityMetric do
   end
 
   describe "#calculate_composite_score" do
-    it "calculates weighted average from RDR-009 weights" do
-      metric = build(:quality_metric, scores: {
+    it "calculates weighted average using goal-specific weights for create_pr" do
+      agent_run = build(:agent_run, goal: "create_pr")
+      metric = build(:quality_metric, agent_run: agent_run, scores: {
         "pr_created" => 1.0,
         "ci_passed" => 1.0,
         "iterations" => 0.8,
@@ -96,9 +97,37 @@ RSpec.describe QualityMetric do
 
       score = metric.calculate_composite_score
 
-      # Weights: pr_created=0.30, ci_passed=0.20, iterations=0.15, lint_clean=0.10, tests_pass=0.05
-      # (0.30*1.0 + 0.20*1.0 + 0.15*0.8 + 0.10*1.0 + 0.05*1.0) / 0.80 = 0.77/0.80 = 0.9625
-      expect(score).to eq(0.9625)
+      # create_pr weights: pr_created=0.25, ci_passed=0.15, iterations=0.10, lint_clean=0.05, tests_pass=0.05
+      # (0.25*1.0 + 0.15*1.0 + 0.10*0.8 + 0.05*1.0 + 0.05*1.0) / 0.60 = 0.58/0.60
+      expect(score).to eq(0.9667)
+    end
+
+    it "uses issue weights for create_issue goal" do
+      agent_run = build(:agent_run, :create_issue_goal)
+      metric = build(:quality_metric, agent_run: agent_run, scores: {
+        "issue_created" => 1.0,
+        "reaction_score" => 0.5
+      })
+
+      score = metric.calculate_composite_score
+
+      # create_issue weights: issue_created=0.40, reaction_score=0.60
+      # (0.40*1.0 + 0.60*0.5) / 1.0 = 0.7
+      expect(score).to eq(0.7)
+    end
+
+    it "uses review weights for review goal" do
+      agent_run = build(:agent_run, :review_goal)
+      metric = build(:quality_metric, agent_run: agent_run, scores: {
+        "review_posted" => 1.0,
+        "reaction_score" => 0.8
+      })
+
+      score = metric.calculate_composite_score
+
+      # review weights: review_posted=0.40, reaction_score=0.60
+      # (0.40*1.0 + 0.60*0.8) / 1.0 = 0.88
+      expect(score).to eq(0.88)
     end
 
     it "handles partial scores" do
@@ -129,11 +158,12 @@ RSpec.describe QualityMetric do
       expect(metric.calculate_composite_score).to be_nil
     end
 
-    it "handles human feedback scores" do
+    it "handles human feedback scores for PR goal" do
       metric = build(:quality_metric, :human, scores: { "pr_merged" => 1.0 })
 
       score = metric.calculate_composite_score
 
+      # pr_merged has weight 0.25 in create_pr weights (default goal)
       expect(score).to eq(1.0)
     end
   end
@@ -144,7 +174,8 @@ RSpec.describe QualityMetric do
 
       metric.calculate_composite_score!
 
-      expect(metric.reload.composite_score).to eq(0.6)
+      # pr_created=0.25, ci_passed=0.15 -> (0.25*1.0 + 0.15*0.0) / 0.40 = 0.625
+      expect(metric.reload.composite_score).to eq(0.625)
     end
   end
 end
