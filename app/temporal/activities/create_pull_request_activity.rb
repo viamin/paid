@@ -75,7 +75,10 @@ module Activities
     def add_pr_labels(client, project, pr_number, agent_run_id)
       return unless project.auto_add_labels_enabled?
 
-      client.add_labels_to_issue(project.full_name, pr_number, [ project.generated_label_name ])
+      client.add_labels_to_issue(project.full_name, pr_number, [
+        project.generated_label_name,
+        project.automation_label_name
+      ])
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.add_pr_labels_failed",

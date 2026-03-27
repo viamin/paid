@@ -104,6 +104,9 @@ config.status
 /.pg.jar
 /.pg-run/
 
+# PostgreSQL runtime logs
+.pg.log
+
 # PostgreSQL helper scripts (local tooling, not application source)
 .pg-start.sh
 .pg-stop.sh

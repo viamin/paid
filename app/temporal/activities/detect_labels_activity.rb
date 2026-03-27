@@ -29,6 +29,11 @@ module Activities
       result = { action: action, issue_id: issue_id, project_id: project_id }
       result[:source_pull_request_number] = issue.github_number if issue.is_pull_request? && action != "none"
       result
+    rescue GithubClient::RateLimitError => e
+      raise Temporalio::Error::ApplicationError.new(
+        e.message,
+        type: "RateLimit"
+      )
     end
 
     private
@@ -36,28 +41,9 @@ module Activities
     def determine_action(project, issue)
       return "none" unless issue.paid_state == "new"
 
-      unless issue.trusted?
-        logger.warn(
-          message: "github_sync.untrusted_issue_blocked",
-          project_id: project.id,
-          issue_id: issue.id,
-          creator: issue.github_creator_login
-        )
-        return "none"
-      end
-
-      build_label = project.label_for_stage(:build)
-      plan_label = project.label_for_stage(:plan)
-
-      action = if build_label && issue.has_label?(build_label)
-        "execute_agent"
-      elsif plan_label && issue.has_label?(plan_label)
-        "start_planning"
-      elsif project.automation_on_label_enabled? && issue.has_label?(project.automation_label_name)
-        "execute_agent"
-      end
-
-      return "none" unless action
+      trigger = triggering_label(project, issue)
+      return "none" unless trigger
+      return "none" unless authorized_for_trigger?(project, issue, trigger[:label])
 
       # Check dependencies after labels to avoid unnecessary DB queries for unlabeled issues.
       # Pluck first (capped) to combine the existence check with data retrieval in one query.
@@ -81,7 +67,63 @@ module Activities
         return "none"
       end
 
-      action
+      trigger[:action]
+    end
+
+    def triggering_label(project, issue)
+      build_label = project.label_for_stage(:build)
+      return { action: "execute_agent", label: build_label } if build_label && issue.has_label?(build_label)
+
+      plan_label = project.label_for_stage(:plan)
+      return { action: "start_planning", label: plan_label } if plan_label && issue.has_label?(plan_label)
+
+      if project.automation_on_label_enabled? && issue.has_label?(project.automation_label_name)
+        return { action: "execute_agent", label: project.automation_label_name }
+      end
+
+      nil
+    end
+
+    def authorized_for_trigger?(project, issue, label)
+      return true if issue.trusted?
+      return true if trusted_user_added_label?(project, issue, label)
+
+      logger.warn(
+        message: "github_sync.untrusted_issue_blocked",
+        project_id: project.id,
+        issue_id: issue.id,
+        creator: issue.github_creator_login,
+        label: label
+      )
+      false
+    end
+
+    def trusted_user_added_label?(project, issue, label)
+      client = project.github_token.client
+      client.issue_events(project.full_name, issue.github_number).any? do |event|
+        event.event == "labeled" &&
+          event_label_name(event) == label &&
+          project.trusted_github_user?(event.actor&.login)
+      end
+    rescue GithubClient::RateLimitError
+      raise
+    rescue => e
+      logger.warn(
+        message: "github_sync.issue_events_fetch_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        github_number: issue.github_number,
+        error_class: e.class.name,
+        error: e.message
+      )
+      false
+    end
+
+    def event_label_name(event)
+      label = event.label
+      return label.name if label.respond_to?(:name)
+
+      label&.[]("name") || label&.[](:name)
     end
   end
 end

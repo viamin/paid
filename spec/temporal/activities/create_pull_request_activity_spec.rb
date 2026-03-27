@@ -42,9 +42,9 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(agent_run.pull_request_number).to eq(42)
     end
 
-    it "adds the paid-generated label to the PR" do
+    it "adds the generated and automation labels to the PR" do
       expect(github_client).to receive(:add_labels_to_issue).with(
-        project.full_name, 42, [ "paid-generated" ]
+        project.full_name, 42, [ "paid-generated", "paid-automation" ]
       )
 
       activity.execute(agent_run_id: agent_run.id)
@@ -115,14 +115,20 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
     end
 
-    context "when auto_add_labels_enabled is true with a custom generated label" do
-      before { project.update!(auto_add_labels_enabled: true, generated_label_name: "custom-label") }
+    context "when auto_add_labels_enabled is true with custom labels" do
+      before do
+        project.update!(
+          auto_add_labels_enabled: true,
+          generated_label_name: "custom-generated",
+          automation_label_name: "custom-automation"
+        )
+      end
 
-      it "adds the custom label to the PR" do
+      it "adds both custom labels to the PR" do
         activity.execute(agent_run_id: agent_run.id)
 
         expect(github_client).to have_received(:add_labels_to_issue).with(
-          project.full_name, 42, [ "custom-label" ]
+          project.full_name, 42, [ "custom-generated", "custom-automation" ]
         )
       end
     end

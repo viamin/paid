@@ -366,6 +366,51 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#issue_events" do
+    let(:repo) { "owner/repo" }
+
+    before do
+      stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/events")
+        .with(query: { per_page: 100, page: 1 })
+        .to_return(
+          status: 200,
+          body: [
+            { event: "labeled", actor: { login: "viamin" }, label: { name: "paid-build" } }
+          ].to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    it "returns issue events" do
+      result = client.issue_events(repo, 42)
+
+      expect(result.size).to eq(1)
+      expect(result.first.event).to eq("labeled")
+      expect(result.first.actor.login).to eq("viamin")
+      expect(result.first.label.name).to eq("paid-build")
+    end
+
+    it "stops after max_pages to avoid unbounded API usage" do
+      full_page = Array.new(100) { { event: "labeled", actor: { login: "bot" }, label: { name: "x" } } }
+
+      stub_request(:get, "#{api_base}/repos/#{repo}/issues/99/events")
+        .with(query: { per_page: 100, page: 1 })
+        .to_return(status: 200, body: full_page.to_json, headers: { "Content-Type" => "application/json" })
+
+      stub_request(:get, "#{api_base}/repos/#{repo}/issues/99/events")
+        .with(query: { per_page: 100, page: 2 })
+        .to_return(status: 200, body: full_page.to_json, headers: { "Content-Type" => "application/json" })
+
+      page3_stub = stub_request(:get, "#{api_base}/repos/#{repo}/issues/99/events")
+        .with(query: { per_page: 100, page: 3 })
+
+      result = client.issue_events(repo, 99, max_pages: 2)
+
+      expect(result.size).to eq(200)
+      expect(page3_stub).not_to have_been_requested
+    end
+  end
+
   describe "#pull_request" do
     let(:repo) { "owner/repo" }
 
