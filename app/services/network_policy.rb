@@ -170,7 +170,9 @@ class NetworkPolicy
     # Returns the Claude config directory path, checking the explicit
     # environment variable first, then auto-detecting standard locations.
     def claude_config_dir
-      return ENV["CLAUDE_CONFIG_DIR"] if ENV["CLAUDE_CONFIG_DIR"].present?
+      if ENV["CLAUDE_CONFIG_DIR"].present?
+        return ENV["CLAUDE_CONFIG_DIR"] if credential_present?(ENV["CLAUDE_CONFIG_DIR"], ".credentials.json")
+      end
 
       home = home_dir
       if home.present?
@@ -186,8 +188,9 @@ class NetworkPolicy
 
     # Returns the Codex config directory path.
     def codex_config_dir
-      return ENV["CODEX_CONFIG_DIR"] if ENV["CODEX_CONFIG_DIR"].present?
-      return ENV["CODEX_HOME"] if ENV["CODEX_HOME"].present?
+      [ ENV["CODEX_CONFIG_DIR"], ENV["CODEX_HOME"] ].each do |env_path|
+        return env_path if env_path.present? && credential_present?(env_path, "auth.json")
+      end
 
       home = home_dir
       if home.present?
@@ -200,7 +203,9 @@ class NetworkPolicy
 
     # Returns the Gemini config directory path.
     def gemini_config_dir
-      return ENV["GEMINI_CONFIG_DIR"] if ENV["GEMINI_CONFIG_DIR"].present?
+      if ENV["GEMINI_CONFIG_DIR"].present?
+        return ENV["GEMINI_CONFIG_DIR"] if credential_present?(ENV["GEMINI_CONFIG_DIR"], "oauth_creds.json")
+      end
 
       home = home_dir
       if home.present?
@@ -209,6 +214,11 @@ class NetworkPolicy
       end
 
       "/.gemini" if Dir.exist?("/.gemini")
+    end
+
+    # Returns true when the directory exists and contains the given credential file.
+    def credential_present?(dir, filename)
+      Dir.exist?(dir) && File.file?(File.join(dir, filename))
     end
 
     def home_dir
