@@ -33,3 +33,9 @@ application.register("local-time", LocalTimeController)
 
 import TooltipController from "./tooltip_controller"
 application.register("tooltip", TooltipController)
+
+import LiveDashboardController from "./live_dashboard_controller"
+application.register("live-dashboard", LiveDashboardController)
+
+import ElapsedTimeController from "./elapsed_time_controller"
+application.register("elapsed-time", ElapsedTimeController)
