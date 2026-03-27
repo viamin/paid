@@ -47,12 +47,14 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Docker::Container).to receive(:create).and_return(docker_container)
         allow(docker_container).to receive(:start)
         allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
+        allow(ServiceContainerMetricsCollectionJob).to receive(:perform_later)
 
         result = provisioner.provision(agent_run)
 
         expect(result).to include("DATABASE_URL")
         expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@test-postgres:5432/agent_test")
         expect(agent_run.reload.service_container_ids).to eq([ service_container.id ])
+        expect(ServiceContainerMetricsCollectionJob).to have_received(:perform_later).with(service_container.id)
       end
 
       it "reuses running containers when Docker container is alive" do
@@ -231,6 +233,26 @@ RSpec.describe Containers::ServiceProvisioner do
 
         result = provisioner.provision(agent_run)
         expect(result["DATABASE_URL"]).to eq("postgres://u:p@pg:5432/d")
+      end
+
+      it "injects default postgres env and healthcheck when env is empty" do
+        sc = create(:service_container, image: "postgres:16", name: "pg-defaults", port: 5432, env: {})
+        create(:project_service_container, project: project, service_container: sc)
+
+        provisioner.provision(agent_run)
+
+        expect(Docker::Container).to have_received(:create).with(
+          hash_including(
+            "Env" => include(
+              "POSTGRES_USER=agent",
+              "POSTGRES_PASSWORD=agent",
+              "POSTGRES_DB=agent_test"
+            ),
+            "Healthcheck" => hash_including(
+              "Test" => [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U agent -d agent_test" ]
+            )
+          )
+        )
       end
 
       it "generates REDIS_URL for redis images" do

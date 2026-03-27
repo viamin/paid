@@ -21,6 +21,12 @@ module Containers
   class ServiceProvisioner
     class Error < StandardError; end
 
+    POSTGRES_DEFAULT_ENV = {
+      "POSTGRES_USER" => "agent",
+      "POSTGRES_PASSWORD" => "agent",
+      "POSTGRES_DB" => "agent_test"
+    }.freeze
+
     ENV_MAPPINGS = {
       "postgres" => ->(sc) {
         user = sc.env["POSTGRES_USER"] || "agent"
@@ -129,6 +135,7 @@ module Containers
     def ensure_running!(service_container)
       if service_container.running?
         if docker_container_alive?(service_container.docker_container_id)
+          schedule_metrics_collection(service_container)
           return
         else
           log_info("service_provisioner.container_dead", name: service_container.name)
@@ -156,6 +163,7 @@ module Containers
       end
 
       wait_for_health!(service_container)
+      schedule_metrics_collection(service_container)
 
       log_info(adopted ? "service_provisioner.adopted" : "service_provisioner.started",
         name: service_container.name,
@@ -259,11 +267,12 @@ module Containers
 
     def create_docker_container(service_container)
       limits = resource_limits_for(service_container.image)
+      env = container_env_for(service_container)
 
       Docker::Container.create(
         "Image" => service_container.image,
         "name" => service_container.name,
-        "Env" => service_container.env.map { |k, v| "#{k}=#{v}" },
+        "Env" => env.map { |k, v| "#{k}=#{v}" },
         "HostConfig" => {
           "NetworkMode" => @network,
           "Memory" => limits[:memory],
@@ -272,6 +281,7 @@ module Containers
           "CpuQuota" => limits[:cpu_quota],
           "PidsLimit" => limits[:pids_limit]
         },
+        "Healthcheck" => healthcheck_for(service_container, env),
         "NetworkingConfig" => {
           "EndpointsConfig" => {
             @network => {
@@ -284,6 +294,27 @@ module Containers
           "paid.service_container_id" => service_container.id.to_s
         }
       )
+    end
+
+    def container_env_for(service_container)
+      return service_container.env unless service_container.image.include?("postgres")
+
+      POSTGRES_DEFAULT_ENV.merge(service_container.env)
+    end
+
+    def healthcheck_for(service_container, env)
+      return nil unless service_container.image.include?("postgres")
+
+      user = env.fetch("POSTGRES_USER", "agent")
+      db = env.fetch("POSTGRES_DB", "agent_test")
+
+      {
+        "Test" => [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -p #{service_container.port} -U #{user} -d #{db}" ],
+        "Interval" => 5_000_000_000,
+        "Timeout" => 3_000_000_000,
+        "Retries" => 10,
+        "StartPeriod" => 5_000_000_000
+      }
     end
 
     def resource_limits_for(image)
@@ -380,6 +411,10 @@ module Containers
         "SERVICE_#{key}_HOST" => service_container.name,
         "SERVICE_#{key}_PORT" => service_container.port.to_s
       }
+    end
+
+    def schedule_metrics_collection(service_container)
+      ServiceContainerMetricsCollectionJob.perform_later(service_container.id)
     end
 
     def log_info(message, **metadata)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_27_000516) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_27_215948) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -684,12 +684,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_27_000516) do
     t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
   end
 
+  create_table "service_container_metrics", force: :cascade do |t|
+    t.string "container_id", limit: 128, null: false
+    t.float "cpu_percent", default: 0.0, null: false
+    t.datetime "created_at", null: false
+    t.bigint "memory_bytes", default: 0, null: false
+    t.bigint "memory_limit_bytes", default: 0, null: false
+    t.float "memory_percent", default: 0.0, null: false
+    t.integer "pids_count"
+    t.datetime "recorded_at", null: false
+    t.bigint "service_container_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["container_id"], name: "index_service_container_metrics_on_container_id"
+    t.index ["recorded_at"], name: "index_service_container_metrics_on_recorded_at"
+    t.index ["service_container_id", "recorded_at"], name: "index_service_container_metrics_on_container_and_recorded"
+    t.index ["service_container_id"], name: "index_service_container_metrics_on_service_container_id"
+  end
+
   create_table "service_containers", force: :cascade do |t|
+    t.float "avg_cpu_percent"
+    t.decimal "avg_memory_bytes", precision: 20, scale: 4
+    t.integer "container_metrics_count", default: 0, null: false
     t.datetime "created_at", null: false
     t.string "docker_container_id"
     t.jsonb "env", default: {}
     t.string "image", null: false
     t.string "name", null: false
+    t.float "peak_cpu_percent"
+    t.bigint "peak_memory_bytes"
     t.integer "port", null: false
     t.string "status", default: "stopped", null: false
     t.datetime "updated_at", null: false
@@ -873,6 +895,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_27_000516) do
   add_foreign_key "providers", "users", on_delete: :cascade
   add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
+  add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
