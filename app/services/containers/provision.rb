@@ -762,8 +762,8 @@ module Containers
       # Credentials are copied into the writable /home/agent/.claude tmpfs
       # by seed_claude_credentials! after container start.
       binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro" if claude_config_host_path.present?
-      binds << "#{codex_config_host_path}:/home/agent/.codex-host:ro" if codex_config_host_path.present?
-      binds << "#{gemini_config_host_path}:/home/agent/.gemini-host:ro" if gemini_config_host_path.present?
+      binds << "#{codex_config_host_path}:/home/agent/.codex-host:ro" if codex_config_host_path.present? && codex_subscription_auth?
+      binds << "#{gemini_config_host_path}:/home/agent/.gemini-host:ro" if gemini_config_host_path.present? && gemini_subscription_auth?
 
       tmpfs = {
         "/tmp" => "size=#{options[:tmpfs_tmp_size]},mode=1777",
