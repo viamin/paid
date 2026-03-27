@@ -9,19 +9,25 @@ RSpec.describe Providers::TestAgent do
   let!(:project) { create(:project, account: account, github_token: github_token, created_by: user) }
   let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude") }
   let(:provider) { provider_record }
+  let(:execution_result) do
+    Containers::Provision::Result.success(stdout: "PING OK", stderr: "", exit_code: 0)
+  end
   let(:test_run) do
     instance_double(
       AgentRun,
-      with_container: container_result,
+      id: 1,
+      with_container: execution_result,
       persisted?: true,
       destroy!: true,
       execute_in_container: execution_result
     )
   end
-  let(:execution_result) do
-    Containers::Provision::Result.success(stdout: "PING OK", stderr: "", exit_code: 0)
+  let(:insert_result) { double(first: { "id" => 1 }) }
+
+  def stub_insert_all
+    allow(AgentRun).to receive(:insert_all!).and_return(insert_result)
+    allow(AgentRun).to receive(:find).with(1).and_return(test_run)
   end
-  let(:container_result) { execution_result }
 
   describe ".call" do
     context "when agent-harness health check succeeds" do
@@ -30,7 +36,6 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentRun).to receive(:create!)
         allow(AgentHarness).to receive(:check_provider).and_return(health_result)
       end
 
@@ -46,7 +51,6 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(AgentHarness).to have_received(:check_provider).with(:claude, timeout: 30)
-        expect(AgentRun).not_to have_received(:create!)
       end
     end
 
@@ -74,7 +78,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "codex")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -106,7 +110,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "codex")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -129,7 +133,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -155,7 +159,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -184,7 +188,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -211,7 +215,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -260,7 +264,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -287,7 +291,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -314,7 +318,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "codex")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -341,7 +345,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -360,12 +364,12 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container)
           .and_raise(Containers::Provision::ProvisionError, "Invalid API key")
       end
 
-      it "returns an authentication error" do
+      it "returns a connection error because provision failures are infrastructure errors" do
         result = described_class.call(provider: provider)
 
         expect(result).not_to be_success
@@ -380,7 +384,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container)
           .and_raise(Containers::Provision::TimeoutError, "Timed out after 30s")
       end
@@ -400,7 +404,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container)
           .and_raise(Containers::Provision::ProvisionError, "Connection refused")
       end
@@ -467,7 +471,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!)
+        allow(AgentRun).to receive(:insert_all!)
           .and_raise(RuntimeError, "Something went wrong")
       end
 

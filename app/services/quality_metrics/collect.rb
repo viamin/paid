@@ -11,33 +11,43 @@ module QualityMetrics
     end
 
     def call
-      metric = QualityMetric.find_or_initialize_by(
+      @automated_metric = QualityMetric.find_or_initialize_by(
         agent_run: agent_run,
         metric_type: "automated"
       )
       scores = build_scores
-      metric.assign_attributes(
+      weights = QualityMetric::GOAL_WEIGHTS.fetch(agent_run.goal, QualityMetric::SCORE_WEIGHTS)
+      automated_metric.assign_attributes(
         prompt_version: agent_run.prompt_version,
         feedback_source: "system",
         scores: scores,
-        composite_score: QualityMetric.weighted_average(scores)
+        composite_score: QualityMetric.weighted_average(scores, weights: weights)
       )
-      metric.save!
+      automated_metric.save!
 
-      update_ab_test_variant_stats(metric)
+      update_ab_test_variant_stats(automated_metric)
       update_prompt_version_stats if agent_run.prompt_version.present?
-      metric
+      automated_metric
     end
 
     private
 
-    attr_reader :agent_run
+    attr_reader :agent_run, :automated_metric
 
-    # Builds scores for metrics that can be reliably determined from available data.
+    # Builds scores for metrics relevant to the agent run's goal type.
     # `ci_passed` and `tests_pass` are intentionally omitted because the agent run
     # does not track CI/test results separately — the weighted_average method
     # renormalizes over present keys so the composite score remains valid.
     def build_scores
+      case agent_run.goal
+      when "create_pr" then build_pr_scores
+      when "create_issue" then build_issue_scores
+      when "review" then build_review_scores
+      else build_pr_scores
+      end
+    end
+
+    def build_pr_scores
       scores = {}
       scores["pr_created"] = agent_run.pull_request_number.present? ? 1.0 : 0.0
       merged = pr_merged_score
@@ -45,6 +55,23 @@ module QualityMetrics
       scores["iterations"] = iteration_score if agent_run.iterations&.positive?
       lint = lint_clean_score
       scores["lint_clean"] = lint unless lint.nil?
+      if agent_run.pull_request_number.present?
+        comment_score = review_comment_count_score
+        scores["review_comment_count"] = comment_score unless comment_score.nil?
+        scores["agent_rerun_count"] = agent_rerun_count_score
+      end
+      scores
+    end
+
+    def build_issue_scores
+      scores = {}
+      scores["issue_created"] = agent_run.created_issue_number.present? ? 1.0 : 0.0
+      scores
+    end
+
+    def build_review_scores
+      scores = {}
+      scores["review_posted"] = agent_run.review_posted_at.present? ? 1.0 : 0.0
       scores
     end
 
@@ -59,6 +86,34 @@ module QualityMetrics
 
     def iteration_score
       [ 1.0 - ((agent_run.iterations - 1) * 0.1), 0.0 ].max
+    end
+
+    # Scores based on the number of review comments on the PR.
+    # More review comments suggest lower quality agent output.
+    # Score degrades by 0.1 per comment, minimum 0.0.
+    # Uses review_comment_count stored in the quality metric metadata
+    # by HumanFeedbackCollectionJob.
+    # Returns nil when review_comment_count has not yet been collected by
+    # HumanFeedbackCollectionJob, so the score is omitted until data is available.
+    def review_comment_count_score
+      comment_count = automated_metric&.metadata&.dig("review_comment_count")
+      return nil if comment_count.nil?
+
+      QualityMetric.review_comment_count_score(comment_count)
+    end
+
+    # Scores based on how many agent runs targeted the same issue.
+    # More reruns suggest lower quality of this specific agent run.
+    # Score degrades by 0.15 per additional rerun, minimum 0.0.
+    def agent_rerun_count_score
+      return 1.0 unless agent_run.pull_request_number && agent_run.issue_id
+
+      rerun_count = AgentRun.where(
+        issue_id: agent_run.issue_id,
+        goal: "create_pr"
+      ).where.not(pull_request_number: nil).count
+
+      [ 1.0 - ((rerun_count - 1) * 0.15), 0.0 ].max
     end
 
     def lint_clean_score

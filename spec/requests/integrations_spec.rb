@@ -30,14 +30,23 @@ RSpec.describe "Integrations" do
         expect(response.body).to include("Jira")
       end
 
-      it "shows configured counts from both legacy and generic credentials" do
+      it "shows configured counts per card from both legacy and generic credentials" do
         create(:github_token, account: user.account)
         create(:linear_token, account: user.account)
         create(:integration_credential, account: user.account, created_by: user)
 
         get integrations_path
 
-        expect(response.body).to include("1 connection configured")
+        document = Nokogiri::HTML(response.body)
+
+        github_card = document.css("h3").detect { |h| h.text.strip == "GitHub" }&.ancestors("div").first
+        expect(github_card.text).to include("1 connection configured")
+
+        linear_card = document.css("h3").detect { |h| h.text.strip == "Linear" }&.ancestors("div").first
+        expect(linear_card.text).to include("1 connection configured")
+
+        provider_card = document.css("h3").detect { |h| h.text.strip == "Provider Credentials" }&.ancestors("div").first
+        expect(provider_card.text).to include("1 connection configured")
       end
     end
   end

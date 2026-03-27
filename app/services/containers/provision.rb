@@ -903,15 +903,18 @@ module Containers
     end
 
     def claude_subscription_auth?
-      claude_config_host_path.present? || claude_local_config_path.present?
+      paths = [ claude_config_host_path, claude_local_config_path ].compact
+      paths.any? { |base| File.file?(File.join(base, ".credentials.json")) }
     end
 
     def gemini_subscription_auth?
-      gemini_config_host_path.present? || gemini_local_config_path.present?
+      paths = [ gemini_config_host_path, gemini_local_config_path ].compact
+      paths.any? { |base| File.file?(File.join(base, "oauth_creds.json")) }
     end
 
     def codex_subscription_auth?
-      codex_config_host_path.present? || codex_local_config_path.present?
+      paths = [ codex_config_host_path, codex_local_config_path ].compact
+      paths.any? { |base| File.file?(File.join(base, "auth.json")) }
     end
 
     def detect_host_config_path(suffix)

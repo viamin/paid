@@ -101,7 +101,25 @@ module Knowledge
         .where(knowledge_artifact_id: prior_artifacts.select(:id), status: "active")
         .update_all(status: "stale", updated_at: Time.current)
 
-      prior_artifacts.update_all(status: "stale", updated_at: Time.current)
+      return unless prior_artifacts.exists?
+
+      # Stale and audit in batches to avoid materializing all IDs at once.
+      # Collect IDs before update_all for audit event target_id values.
+      prior_artifacts.in_batches(of: 1000) do |batch|
+        ids = batch.pluck(:id)
+        batch.update_all(status: "stale", updated_at: Time.current)
+
+        audit_events = ids.map do |artifact_id|
+          {
+            project: project,
+            event: :artifact_staled,
+            actor: { type: "collector", id: collector_run.id },
+            target: { type: "KnowledgeArtifact", id: artifact_id },
+            details: { identifier: data[:identifier] }
+          }
+        end
+        Knowledge::Provenance::AuditLog.record_batch(audit_events)
+      end
     end
 
     def create_artifact(data, content_hash)
@@ -119,6 +137,14 @@ module Knowledge
       )
 
       create_chunks(artifact, data[:chunks] || [])
+
+      Knowledge::Provenance::AuditLog.record(
+        event: :artifact_created,
+        project: project,
+        actor: { type: "collector", id: collector_run.id },
+        target: { type: "KnowledgeArtifact", id: artifact.id },
+        details: { artifact_type: data[:artifact_type], identifier: data[:identifier] }
+      )
 
       artifact
     end

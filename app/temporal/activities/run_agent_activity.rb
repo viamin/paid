@@ -395,8 +395,8 @@ module Activities
     end
 
     def codex_command(prompt)
-      escaped_prompt = Shellwords.escape(prompt)
-      command = "codex exec --full-auto -- #{escaped_prompt}"
+      base = AGENT_COMMANDS.fetch("codex").shelljoin
+      command = "#{base} #{Shellwords.escape(prompt)}"
       <<~SH.squish
         if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then
           env
@@ -412,8 +412,8 @@ module Activities
     end
 
     def gemini_command(prompt)
-      escaped_prompt = Shellwords.escape(prompt)
-      command = "gemini -y -p #{escaped_prompt}"
+      base = AGENT_COMMANDS.fetch("gemini").shelljoin
+      command = "#{base} #{Shellwords.escape(prompt)}"
       <<~SH.squish
         if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
           env

@@ -484,6 +484,8 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
         allow(service).to receive_messages(codex_local_config_path: nil, gemini_local_config_path: nil)
+        allow(File).to receive(:file?).and_call_original
+        allow(File).to receive(:file?).with("/host/home/user/.claude/.credentials.json").and_return(true)
       end
 
       it "mounts Claude config at staging path and creates writable tmpfs" do
@@ -576,6 +578,8 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return("/host/home/user/.gemini")
         allow(service).to receive_messages(claude_local_config_path: nil, codex_local_config_path: nil)
+        allow(File).to receive(:file?).and_call_original
+        allow(File).to receive(:file?).with("/host/home/user/.gemini/oauth_creds.json").and_return(true)
       end
 
       it "mounts Gemini config at a staging path and sets the subscription marker" do
@@ -665,6 +669,8 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return("/host/home/user/.codex")
         allow(service).to receive_messages(claude_local_config_path: nil, gemini_local_config_path: nil)
+        allow(File).to receive(:file?).and_call_original
+        allow(File).to receive(:file?).with("/host/home/user/.codex/auth.json").and_return(true)
       end
 
       it "mounts Codex config at a staging path and sets the subscription marker" do

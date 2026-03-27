@@ -50,7 +50,7 @@ module Knowledge
       private
 
       def eligible_chunks(project)
-        scope = KnowledgeChunk.needs_embedding
+        scope = KnowledgeChunk.needs_embedding.includes(:project)
         scope = scope.for_project(project) if project
         scope
       end
@@ -67,12 +67,23 @@ module Knowledge
         end
 
         tokens = 0
+        audit_events = []
 
         chunks.zip(results).each do |chunk, result|
           Knowledge::Qdrant::PointSync.upsert_chunk!(chunk, vector: result.vector)
           chunk.update!(embedding_model: generator.model)
           tokens += result.token_count
+
+          audit_events << {
+            event: :chunk_embedded,
+            project: chunk.project,
+            actor: { type: "embedding_pipeline" },
+            target: { type: "KnowledgeChunk", id: chunk.id },
+            details: { model: generator.model }
+          }
         end
+
+        Knowledge::Provenance::AuditLog.record_batch(audit_events)
 
         { embedded: chunks.size, tokens: tokens }
       end
