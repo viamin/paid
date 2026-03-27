@@ -50,6 +50,18 @@ class QualityMetric < ApplicationRecord
   scope :with_composite_score, -> { where.not(composite_score: nil) }
   scope :recent, -> { order(created_at: :desc) }
 
+  # Score degradation rate per review comment (0.1 = 10% penalty per comment).
+  REVIEW_COMMENT_DEGRADATION = 0.1
+
+  # Computes a review comment count score. More comments = lower quality.
+  # Score degrades by REVIEW_COMMENT_DEGRADATION per comment, minimum 0.0.
+  #
+  # @param comment_count [Integer] number of review comments
+  # @return [Float] score between 0.0 and 1.0
+  def self.review_comment_count_score(comment_count)
+    [ 1.0 - (comment_count.to_i * REVIEW_COMMENT_DEGRADATION), 0.0 ].max
+  end
+
   # Computes a weighted average from a hash of scores using the given weights.
   # Scores without a defined weight are ignored.
   #

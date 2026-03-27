@@ -94,7 +94,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
 
     metric.assign_attributes(
       metadata: existing_metadata.merge("review_comment_count" => comment_count),
-      scores: existing_scores.merge("review_comment_count" => [ 1.0 - (comment_count * 0.1), 0.0 ].max)
+      scores: existing_scores.merge("review_comment_count" => QualityMetric.review_comment_count_score(comment_count))
     )
     metric.composite_score = metric.calculate_composite_score
     metric.save!

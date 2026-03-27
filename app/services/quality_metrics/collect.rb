@@ -99,7 +99,7 @@ module QualityMetrics
       comment_count = automated_metric&.metadata&.dig("review_comment_count")
       return nil if comment_count.nil?
 
-      [ 1.0 - (comment_count.to_i * 0.1), 0.0 ].max
+      QualityMetric.review_comment_count_score(comment_count)
     end
 
     # Scores based on how many agent runs targeted the same issue.
