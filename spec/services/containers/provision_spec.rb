@@ -602,7 +602,13 @@ RSpec.describe Containers::Provision do
     end
 
     context "with Gemini subscription auth from the devcontainer filesystem" do
+      let(:gemini_local_dir) { Dir.mktmpdir("gemini-local") }
+
       before do
+        # Create fixture files that seed_local_credentials! will read
+        File.write(File.join(gemini_local_dir, "oauth_creds.json"), '{"access_token":"test-token"}')
+        File.write(File.join(gemini_local_dir, "settings.json"), "{\n  \"selectedType\": \"oauth-personal\"\n}")
+
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
@@ -612,8 +618,12 @@ RSpec.describe Containers::Provision do
         allow(service).to receive_messages(
           claude_local_config_path: nil,
           codex_local_config_path: nil,
-          gemini_local_config_path: "/home/vscode/.gemini"
+          gemini_local_config_path: gemini_local_dir
         )
+      end
+
+      after do
+        FileUtils.rm_rf(gemini_local_dir)
       end
 
       it "sets the subscription marker without requiring a host bind mount" do
