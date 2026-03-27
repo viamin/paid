@@ -26,7 +26,7 @@ class IntegrationCredentialsController < ApplicationController
     load_form_options
 
     if @integration_credential.save
-      redirect_to integration_credential_path(@integration_credential), notice: "Credential saved."
+      redirect_to integration_credential_path(@integration_credential, return_filter_params), notice: "Credential saved."
     else
       render :new, status: :unprocessable_content
     end
