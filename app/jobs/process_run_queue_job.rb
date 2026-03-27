@@ -38,6 +38,8 @@ class ProcessRunQueueJob < ApplicationJob
       skipped_ids = Set.new
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
 
+      seed_auto_pick_queue
+
       loop do
         iterations += 1
         break if iterations > MAX_ITERATIONS_PER_PERFORM
@@ -87,7 +89,6 @@ class ProcessRunQueueJob < ApplicationJob
         end
       end
 
-      seed_auto_pick_queue
     ensure
       ActiveRecord::Base.connection.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})") if acquired
     end
@@ -188,8 +189,13 @@ class ProcessRunQueueJob < ApplicationJob
     max_concurrent_runs - reserved
   end
 
+  # Treat a run as auto-pick if it is explicitly marked via the auto_pick
+  # column, or if it matches the legacy inference used elsewhere in the
+  # scheduler (automatic trigger with no source pull request).  The legacy
+  # check keeps reserved-slot behavior consistent until all historical
+  # rows are backfilled.
   def auto_pick_run?(run)
-    run.auto_pick?
+    run.auto_pick? || (run.trigger_type == "automatic" && run.source_pull_request_number.nil?)
   end
 
   def start_claimed_run(agent_run)
