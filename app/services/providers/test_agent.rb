@@ -270,8 +270,8 @@ module Providers
       command = CONTAINER_COMMANDS[provider.provider_key]
       raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}" unless command
 
-      # TODO(agent-harness#41): Switch Gemini and Codex to AgentHarness.check_provider
-      # once provider-specific auth_status / health_status hooks exist upstream.
+      # TODO(#544): Switch Gemini and Codex to AgentHarness.check_provider
+      # once provider-specific auth_status / health_status hooks exist upstream (agent-harness#41).
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
       return kilocode_test_command if provider.provider_key == "kilocode"
@@ -357,7 +357,7 @@ module Providers
       <<~SH.squish
         tmp_output="$(mktemp)" &&
         tmp_error="$(mktemp)" &&
-        before_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1)" &&
+        before_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)" &&
         if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
           env
           -u GEMINI_API_KEY

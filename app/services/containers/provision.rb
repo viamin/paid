@@ -490,6 +490,11 @@ module Containers
     def seed_codex_credentials!
       source_files = %w[auth.json config.toml]
 
+      unless codex_subscription_auth?
+        seed_codex_config!
+        return
+      end
+
       if codex_config_host_path.present?
         seed_host_credentials!(
           staging_path: "/home/agent/.codex-host",
@@ -506,8 +511,6 @@ module Containers
           success_log_key: "container.codex_credentials_seeded",
           failure_log_key: "container.codex_credentials_seed_failed"
         )
-      else
-        seed_codex_config!
       end
     end
 
