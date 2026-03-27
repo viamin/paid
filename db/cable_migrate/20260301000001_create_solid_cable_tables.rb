@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class CreateSolidCableTables < ActiveRecord::Migration[7.1]
+class CreateSolidCableTables < ActiveRecord::Migration[8.1]
   def change
     create_table :solid_cable_messages do |t|
       t.binary :channel, limit: 1024, null: false

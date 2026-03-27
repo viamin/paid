@@ -146,9 +146,12 @@ RSpec.describe "Dashboard" do
     it "shows a different message when the run finishes during external cancellation" do
       agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
 
-      allow(AgentRuns::Cancel).to receive(:call)
-      # First call (guard check): active. Second call (inside with_lock): not active.
-      allow(agent_run).to receive(:active?).and_return(true, false)
+      # Simulate the run finishing during external cleanup by updating the
+      # database record when Cancel is called.  The controller reloads
+      # @agent_run inside with_lock, so stubbing the instance wouldn't work.
+      allow(AgentRuns::Cancel).to receive(:call) do
+        agent_run.update_column(:status, "completed")
+      end
 
       post dashboard_cancel_run_path(agent_run)
 
