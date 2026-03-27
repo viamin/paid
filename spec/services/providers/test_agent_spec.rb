@@ -91,6 +91,38 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when a stale codex provider state exists and the test succeeds" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let!(:provider_state) do
+        create(
+          :provider_state,
+          :rate_limited,
+          :circuit_half_open,
+          user: user,
+          provider_name: "codex"
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "codex")
+        allow(AgentRun).to receive(:create!).and_return(test_run)
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "clears the stale provider state" do
+        result = described_class.call(provider: provider)
+
+        expect(result).to be_success
+
+        provider_state.reload
+        expect(provider_state.failure_count).to eq(0)
+        expect(provider_state.circuit_state).to eq("closed")
+        expect(provider_state.circuit_opened_at).to be_nil
+        expect(provider_state.rate_limited_until).to be_nil
+      end
+    end
+
     context "when gemini is tested with optional subscription auth" do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 

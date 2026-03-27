@@ -122,10 +122,15 @@ module Providers
 
     def call
       validate!
-      return process_harness_result(execute_harness_health_check) if harness_health_check_supported?
+      result = if harness_health_check_supported?
+        process_harness_result(execute_harness_health_check)
+      else
+        response = execute_container_test
+        process_container_response(response)
+      end
 
-      response = execute_container_test
-      process_container_response(response)
+      clear_provider_state_if_healthy! if result.success?
+      result
     rescue NotContainerExecutableError
       Result.new(success: false, error_type: :installation,
         message: "Provider #{provider.provider_key} CLI is not installed in the agent container")
@@ -244,6 +249,10 @@ module Providers
 
     def harness_provider_name
       Provider.harness_provider_key_for(provider.provider_key).to_sym
+    end
+
+    def clear_provider_state_if_healthy!
+      provider.user.provider_states.find_by(provider_name: provider.provider_key)&.record_success!
     end
 
     def test_command
