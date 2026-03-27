@@ -77,8 +77,7 @@ module Dashboard
     end
 
     def alert_worthy?
-      agent_run.previous_changes.key?("status") &&
-        AgentRun::FAILURE_STATUSES.include?(agent_run.status)
+      AgentRun::FAILURE_STATUSES.include?(agent_run.status)
     end
 
     def alert_content
