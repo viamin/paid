@@ -520,6 +520,13 @@ RSpec.describe "Projects" do
           auto_pick_enabled: true, auto_merge_enabled: false, auto_fix_merge_conflicts: true)
         get project_path(project)
         expect(response.body).to include("Configuration")
+        # Ensure the old separate "Automation" section/header is not present
+        expect(response.body).not_to include("Automation")
+        # Ensure the Configuration details element is collapsed by default (no `open` attribute)
+        expect(response.body).to match(
+          %r{<details[^>]*>\s*<summary[^>]*>\s*Configuration\s*</summary>}m
+        )
+        expect(response.body).not_to match(%r{<details[^>]*\bopen\b}m)
 
         {
           "Auto-Add Labels" => "Enabled", "Automation on Label" => "Disabled",
