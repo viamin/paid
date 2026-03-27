@@ -447,7 +447,10 @@ module Containers
       source_files = %w[.credentials.json settings.json]
       return unless claude_subscription_auth?
 
-      if claude_config_host_path.present?
+      # Prefer the source that actually contains the required credential file
+      # so we don't set PAID_CLAUDE_SUBSCRIPTION_AUTH=1 without seeding creds.
+      host = claude_config_host_path
+      if host.present? && File.file?(File.join(host, ".credentials.json"))
         seed_host_credentials!(
           staging_path: "/home/agent/.claude-host",
           target_path: "/home/agent/.claude",
@@ -495,7 +498,10 @@ module Containers
         return
       end
 
-      if codex_config_host_path.present?
+      # Prefer the source that actually contains auth.json so we don't set
+      # PAID_CODEX_SUBSCRIPTION_AUTH=1 without seeding creds.
+      host = codex_config_host_path
+      if host.present? && File.file?(File.join(host, "auth.json"))
         seed_host_credentials!(
           staging_path: "/home/agent/.codex-host",
           target_path: "/home/agent/.codex",
@@ -526,7 +532,10 @@ module Containers
       ]
       return unless gemini_subscription_auth?
 
-      if gemini_config_host_path.present?
+      # Prefer the source that actually contains oauth_creds.json so we don't
+      # set PAID_GEMINI_SUBSCRIPTION_AUTH=1 without seeding creds.
+      host = gemini_config_host_path
+      if host.present? && File.file?(File.join(host, "oauth_creds.json"))
         seed_host_credentials!(
           staging_path: "/home/agent/.gemini-host",
           target_path: "/home/agent/.gemini",
@@ -560,14 +569,16 @@ module Containers
     def seed_local_credentials!(source_path:, target_path:, files:, success_log_key:, failure_log_key:)
       container.exec([ "chown", "-R", "agent:agent", target_path ], user: "root")
 
+      copied = 0
       files.each do |filename|
         source_file = File.join(source_path, filename)
         next unless File.file?(source_file)
 
         write_container_file(File.join(target_path, filename), File.binread(source_file))
+        copied += 1
       end
 
-      log_system(success_log_key)
+      log_system(success_log_key, files_copied: copied) if copied > 0
     rescue Docker::Error::DockerError, SystemCallError => e
       log_system(failure_log_key, error: e.message)
     end
