@@ -22,6 +22,7 @@ class ProcessRunQueueJob < ApplicationJob
   # Prevents unbounded scanning when a large queue has many runs that
   # can't start due to per-user capacity limits.
   MAX_ITERATIONS_PER_PERFORM = 100
+  MAX_SEEDS_PER_PERFORM = 20
   AUTO_PICK_RESERVED_SLOTS = 1
 
   def perform
@@ -36,8 +37,6 @@ class ProcessRunQueueJob < ApplicationJob
       iterations = 0
       skipped_ids = Set.new
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
-
-      seed_auto_pick_queue
 
       loop do
         iterations += 1
@@ -87,6 +86,8 @@ class ProcessRunQueueJob < ApplicationJob
           break if consecutive_failures >= MAX_CONSECUTIVE_FAILURES
         end
       end
+
+      seed_auto_pick_queue
     ensure
       ActiveRecord::Base.connection.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})") if acquired
     end
@@ -116,15 +117,22 @@ class ProcessRunQueueJob < ApplicationJob
   # low-priority auto-pick work queued makes latent work visible and ready
   # to consume spare capacity.
   def seed_auto_pick_queue
+    seeds_count = 0
+
     loop do
+      break if seeds_count >= MAX_SEEDS_PER_PERFORM
+
       created_in_pass = false
 
       ordered_auto_pick_projects.each do |project|
+        break if seeds_count >= MAX_SEEDS_PER_PERFORM
+
         next unless project.effective_owner
 
         run = Issues::AutoPick.new(project).call
         next unless run
 
+        seeds_count += 1
         created_in_pass = true
         @ordered_auto_pick_projects = nil
       end
@@ -137,7 +145,7 @@ class ProcessRunQueueJob < ApplicationJob
   # don't re-query the project list and aggregate stats each time.
   def ordered_auto_pick_projects
     @ordered_auto_pick_projects ||= begin
-      projects = Project.active.where(auto_pick_enabled: true).order(:id).to_a
+      projects = Project.active.where(auto_pick_enabled: true).includes(:created_by, :account).order(:id).to_a
       return projects if projects.empty?
 
       project_ids = projects.map(&:id)
@@ -181,7 +189,7 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   def auto_pick_run?(run)
-    run.automatic? && !run.existing_pr?
+    run.auto_pick?
   end
 
   def start_claimed_run(agent_run)

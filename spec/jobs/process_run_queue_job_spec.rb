@@ -173,7 +173,7 @@ RSpec.describe ProcessRunQueueJob do
       expect(eligible_run.reload.status).to eq("pending")
     end
 
-    it "skips auto-pick when all queued runs are at capacity" do
+    it "does not start queued runs when user is at capacity" do
       project = create(:project, auto_pick_enabled: true)
       user = project.created_by
       user.settings.update!(max_concurrent_runs: 1)

@@ -219,7 +219,8 @@ module Issues
         issue: issue,
         agent_type: resolve_agent_type,
         status: "queued",
-        trigger_type: "automatic"
+        trigger_type: "automatic",
+        auto_pick: true
       )
     end
 
