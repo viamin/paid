@@ -702,7 +702,7 @@ class AgentRun < ApplicationRecord
 
   def enqueue_quality_metrics_collection
     QualityMetricsCollectionJob.perform_later(id)
-    HumanFeedbackCollectionJob.set(wait: 5.minutes).perform_later(id) if successful? && pull_request_number.present?
+    HumanFeedbackCollectionJob.set(wait: 5.minutes).perform_later(id) if successful?
   end
 
   def just_started_running?

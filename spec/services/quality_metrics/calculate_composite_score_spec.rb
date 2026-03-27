@@ -19,10 +19,11 @@ RSpec.describe QualityMetrics::CalculateCompositeScore do
 
       score = described_class.call(agent_run: agent_run)
 
-      # All weights: 0.30+0.20+0.15+0.10+0.05+0.30 = 1.10 (all applicable)
-      # Weighted: 0.30*1+0.20*1+0.15*0.8+0.10*1+0.05*1+0.30*1 = 0.30+0.20+0.12+0.10+0.05+0.30 = 1.07
-      # 1.07 / 1.10 = 0.9727
-      expect(score).to eq(0.9727)
+      # create_pr weights: pr_created=0.25, ci_passed=0.15, iterations=0.10, lint_clean=0.05, tests_pass=0.05, pr_merged=0.25
+      # Total weight: 0.25+0.15+0.10+0.05+0.05+0.25 = 0.85
+      # Weighted: 0.25*1+0.15*1+0.10*0.8+0.05*1+0.05*1+0.25*1 = 0.25+0.15+0.08+0.05+0.05+0.25 = 0.83
+      # 0.83 / 0.85 = 0.9765
+      expect(score).to eq(0.9765)
     end
 
     it "returns nil when no quality metrics exist" do
@@ -42,10 +43,10 @@ RSpec.describe QualityMetrics::CalculateCompositeScore do
 
       score = described_class.call(agent_run: agent_run)
 
-      # Weights: pr_created=0.30, ci_passed=0.20, total=0.50
-      # Weighted: 0.30*1.0 + 0.20*0.0 = 0.30
-      # 0.30/0.50 = 0.6
-      expect(score).to eq(0.6)
+      # create_pr weights: pr_created=0.25, ci_passed=0.15, total=0.40
+      # Weighted: 0.25*1.0 + 0.15*0.0 = 0.25
+      # 0.25/0.40 = 0.625
+      expect(score).to eq(0.625)
     end
   end
 end

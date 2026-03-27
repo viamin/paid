@@ -28,8 +28,53 @@ module QualityMetrics
         trends: trends,
         breakdown: score_breakdown,
         prompt_comparison: prompt_comparison,
-        human_feedback: human_feedback
+        human_feedback: human_feedback,
+        metrics_reference: self.class.metrics_reference
       }
+    end
+
+    # Display metadata for each metric key: human-readable name, description,
+    # signal type, and which goal types collect this metric. The collected_for
+    # field is decoupled from GOAL_WEIGHTS because some metrics (e.g. review_score,
+    # reaction_score for create_pr) are collected via human feedback but do not
+    # carry a scoring weight.
+    METRIC_DISPLAY = {
+      "pr_created" => { name: "PR Created", description: "Whether the agent successfully created a pull request.", signal_type: "automated", collected_for: %w[create_pr] },
+      "pr_merged" => { name: "PR Merged", description: "Whether the pull request was merged.", signal_type: "automated", collected_for: %w[create_pr] },
+      "ci_passed" => { name: "CI Passed", description: "Whether CI checks passed on the pull request.", signal_type: "automated", collected_for: %w[create_pr] },
+      "iterations" => { name: "Iterations", description: "Fewer iterations to complete = higher quality. Degrades by 0.1 per extra iteration.", signal_type: "automated", collected_for: %w[create_pr] },
+      "lint_clean" => { name: "Lint Clean", description: "Whether the agent produced code with no lint offenses.", signal_type: "automated", collected_for: %w[create_pr] },
+      "tests_pass" => { name: "Tests Pass", description: "Whether tests pass on the agent's output.", signal_type: "automated", collected_for: %w[create_pr] },
+      "review_comment_count" => { name: "Review Comment Count", description: "Fewer review comments = higher quality output. Degrades by 0.1 per comment.", signal_type: "human", collected_for: %w[create_pr] },
+      "agent_rerun_count" => { name: "Agent Rerun Count", description: "Fewer reruns per issue = higher quality agent run. Degrades by 0.15 per extra rerun.", signal_type: "automated", collected_for: %w[create_pr] },
+      "issue_created" => { name: "Issue Created", description: "Whether the agent successfully created an issue.", signal_type: "automated", collected_for: %w[create_issue] },
+      "reaction_score" => { name: "Reaction Score", description: "Ratio of positive to total emoji reactions. Positive: +1, heart, hooray, rocket. Negative: -1, confused.", signal_type: "human", collected_for: %w[create_pr create_issue review] },
+      "review_posted" => { name: "Review Posted", description: "Whether the agent successfully posted a code review.", signal_type: "automated", collected_for: %w[review] },
+      "review_score" => { name: "Review Score", description: "Average score from PR review outcomes. Approved=1.0, commented=0.5, changes_requested=0.0.", signal_type: "human", collected_for: %w[create_pr] }
+    }.freeze
+
+    # Returns a structured reference of all quality metrics with their
+    # per-goal weights, descriptions, and applicable goal types.
+    # Weights are returned per goal type to avoid misleading display when a
+    # metric is collected for a goal but not weighted for it (e.g.
+    # reaction_score is collected for create_pr but only weighted for
+    # create_issue and review).
+    def self.metrics_reference
+      METRIC_DISPLAY.map do |key, display|
+        weights_by_goal = {}
+        QualityMetric::GOAL_WEIGHTS.each do |goal, weights|
+          weights_by_goal[goal] = weights[key] if weights.key?(key)
+        end
+
+        {
+          key: key,
+          name: display[:name],
+          description: display[:description],
+          weights_by_goal: weights_by_goal,
+          goal_types: display[:collected_for],
+          signal_type: display[:signal_type]
+        }
+      end
     end
 
     def overview
@@ -76,7 +121,7 @@ module QualityMetrics
     end
 
     def score_breakdown
-      valid_keys = QualityMetric::SCORE_WEIGHTS.keys
+      valid_keys = QualityMetric::GOAL_WEIGHTS.values.flat_map(&:keys).uniq
       rows = QualityMetric.by_project(project.id).automated.with_composite_score
         .where("scores <> '{}'::jsonb")
         .joins("CROSS JOIN LATERAL jsonb_each_text(scores) AS kv(key, val)")
@@ -135,6 +180,15 @@ module QualityMetrics
       with_merge_status = row.with_merge_status.to_i
       merged_count = row.merged_count.to_i
 
+      # Tally feedback sources in SQL via jsonb_array_elements_text to avoid
+      # loading all rows into Ruby (O(N) memory on large projects).
+      source_tally = human
+        .where("metadata ? 'feedback_sources'")
+        .joins("CROSS JOIN LATERAL jsonb_array_elements_text(metadata->'feedback_sources') AS src(val)")
+        .group("src.val")
+        .pluck(Arel.sql("src.val, COUNT(*)"))
+        .to_h
+
       {
         total: total,
         merge_rate: with_merge_status.zero? ? nil : (merged_count.to_f / with_merge_status * 100).round(1),
@@ -145,6 +199,13 @@ module QualityMetrics
         reviews: {
           count: row.review_count.to_i,
           average_score: row.avg_review&.to_f&.round(4)
+        },
+        by_source: {
+          pr_merge: source_tally["pr_merge"].to_i,
+          pr_reaction: source_tally["pr_reaction"].to_i,
+          pr_review: source_tally["pr_review"].to_i,
+          issue_reaction: source_tally["issue_reaction"].to_i,
+          review_reaction: source_tally["review_reaction"].to_i
         }
       }
     end
@@ -154,7 +215,8 @@ module QualityMetrics
         total: 0,
         merge_rate: nil,
         reactions: { count: 0, average_score: nil },
-        reviews: { count: 0, average_score: nil }
+        reviews: { count: 0, average_score: nil },
+        by_source: { pr_merge: 0, pr_reaction: 0, pr_review: 0, issue_reaction: 0, review_reaction: 0 }
       }
     end
   end

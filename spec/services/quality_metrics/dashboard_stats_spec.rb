@@ -88,6 +88,29 @@ RSpec.describe QualityMetrics::DashboardStats do
       end
     end
 
+    it "includes metrics reference in response" do
+      result = described_class.call(project: project)
+
+      expect(result[:metrics_reference]).to be_an(Array)
+      expect(result[:metrics_reference].size).to be > 0
+
+      pr_created = result[:metrics_reference].find { |m| m[:key] == "pr_created" }
+      expect(pr_created[:name]).to eq("PR Created")
+      expect(pr_created[:weights_by_goal]).to eq("create_pr" => 0.25)
+      expect(pr_created[:goal_types]).to include("create_pr")
+
+      issue_created = result[:metrics_reference].find { |m| m[:key] == "issue_created" }
+      expect(issue_created[:goal_types]).to include("create_issue")
+
+      review_posted = result[:metrics_reference].find { |m| m[:key] == "review_posted" }
+      expect(review_posted[:goal_types]).to include("review")
+
+      # reaction_score is collected for all goals but only weighted for create_issue and review
+      reaction = result[:metrics_reference].find { |m| m[:key] == "reaction_score" }
+      expect(reaction[:weights_by_goal]).to eq("create_issue" => 0.60, "review" => 0.60)
+      expect(reaction[:goal_types]).to contain_exactly("create_pr", "create_issue", "review")
+    end
+
     context "with human feedback" do
       it "calculates merge rate" do
         merged_run = create(:agent_run, project: project)

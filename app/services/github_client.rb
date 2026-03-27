@@ -626,6 +626,65 @@ class GithubClient
     end
   end
 
+  # Fetches reactions on an issue (same API as PR reactions).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Issue number
+  # @return [Array<Hash>] Reactions with :user_login, :content keys
+  def issue_reactions(repo, number)
+    pull_request_reactions(repo, number)
+  end
+
+  # Fetches review comments (line-level comments) on a pull request.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @param per_page [Integer, nil] When set, fetches a single page of this size
+  #   (no auto-pagination). When nil, auto-paginates all comments.
+  # @return [Array<Hash>] Comments with :id, :user_login, :body, :created_at keys
+  def pull_request_review_comments(repo, number, per_page: nil)
+    handle_errors do
+      comments = if per_page
+        client.pull_request_comments(repo, number, per_page: per_page)
+      else
+        with_auto_paginate do
+          client.pull_request_comments(repo, number, per_page: 100)
+        end
+      end
+      comments.map do |c|
+        {
+          id: c.id,
+          user_login: c.user&.login,
+          body: c.body.to_s,
+          created_at: parse_timestamp(c.created_at)
+        }
+      end
+    end
+  end
+
+  # Fetches reactions on a specific pull request review comment.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param comment_id [Integer] The review comment ID
+  # @return [Array<Hash>] Reactions with :user_login, :content keys
+  def pull_request_review_comment_reactions(repo, comment_id)
+    handle_errors do
+      reactions = with_auto_paginate do
+        client.pull_request_review_comment_reactions(
+          repo, comment_id,
+          accept: "application/vnd.github.squirrel-girl-preview+json"
+        )
+      end
+      reactions.map do |r|
+        {
+          user_login: r.user&.login,
+          content: r.content,
+          created_at: parse_timestamp(r.created_at)
+        }
+      end
+    end
+  end
+
   # Gets the remaining rate limit.
   #
   # @return [Integer] Number of requests remaining

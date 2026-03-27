@@ -28,6 +28,84 @@ RSpec.describe QualityMetrics::Collect do
       expect { described_class.call(agent_run: agent_run) }.not_to change(QualityMetric, :count)
     end
 
+    context "with create_pr goal" do
+      it "includes agent_rerun_count but omits review_comment_count until collected" do
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores).to include("agent_rerun_count")
+        expect(metric.scores).not_to include("review_comment_count")
+      end
+
+      it "includes review_comment_count when metadata is populated" do
+        # First create metric, then populate metadata as HumanFeedbackCollectionJob would
+        metric = described_class.call(agent_run: agent_run)
+        metric.update!(metadata: { "review_comment_count" => 2 })
+
+        # Re-collect to pick up the metadata
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores["review_comment_count"]).to eq(0.8)
+      end
+
+      it "sets agent_rerun_count to 1.0 for first run" do
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores["agent_rerun_count"]).to eq(1.0)
+      end
+
+      it "omits review_comment_count and agent_rerun_count when no PR exists" do
+        failed_run = create(:agent_run, :completed, pull_request_number: nil)
+
+        metric = described_class.call(agent_run: failed_run)
+
+        expect(metric.scores).not_to include("review_comment_count", "agent_rerun_count")
+      end
+
+      it "degrades agent_rerun_count for multiple runs on same issue" do
+        issue = agent_run.issue
+        create(:agent_run, :completed, issue: issue, project: agent_run.project)
+
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores["agent_rerun_count"]).to eq(0.85)
+      end
+    end
+
+    context "with create_issue goal" do
+      let(:agent_run) do
+        create(:agent_run, :with_created_issue, status: "completed",
+          started_at: 10.minutes.ago, completed_at: Time.current, duration_seconds: 600)
+      end
+
+      it "includes issue_created score" do
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores["issue_created"]).to eq(1.0)
+      end
+
+      it "does not include PR-specific scores" do
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores).not_to include("pr_created", "pr_merged", "iterations")
+      end
+    end
+
+    context "with review goal" do
+      let(:agent_run) { create(:agent_run, :with_review) }
+
+      it "includes review_posted score" do
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores["review_posted"]).to eq(1.0)
+      end
+
+      it "does not include PR-specific scores" do
+        metric = described_class.call(agent_run: agent_run)
+
+        expect(metric.scores).not_to include("pr_created", "pr_merged", "iterations")
+      end
+    end
+
     context "with A/B test assignment" do
       let(:prompt) { create(:prompt, :with_version) }
       let(:ab_test) { create(:ab_test, prompt: prompt, status: "running", started_at: Time.current) }
