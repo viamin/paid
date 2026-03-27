@@ -103,7 +103,7 @@ module QualityMetrics
       [ 1.0 - (comment_count.to_i * 0.1), 0.0 ].max
     end
 
-    # Scores based on how many agent runs targeted the same PR.
+    # Scores based on how many agent runs targeted the same issue.
     # More reruns suggest lower quality of this specific agent run.
     # Score degrades by 0.15 per additional rerun, minimum 0.0.
     def agent_rerun_count_score

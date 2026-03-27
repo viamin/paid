@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_27_000516) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_26_180754) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -120,7 +120,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_27_000516) do
   create_table "agent_runs", force: :cascade do |t|
     t.string "agent_type", limit: 50, null: false
     t.string "auth_provider", limit: 50
-    t.boolean "auto_pick", default: false, null: false
     t.float "avg_cpu_percent"
     t.decimal "avg_memory_bytes", precision: 20, scale: 4
     t.string "base_commit_sha", limit: 40

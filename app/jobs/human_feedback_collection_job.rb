@@ -98,6 +98,11 @@ class HumanFeedbackCollectionJob < ApplicationJob
     )
     metric.composite_score = metric.calculate_composite_score
     metric.save!
+
+    # Re-run quality metrics collection to ensure downstream aggregates
+    # (e.g., experiment stats and prompt version stats) reflect the updated
+    # composite score that now includes review_comment_count.
+    QualityMetrics::Collect.call(agent_run: agent_run)
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "human_feedback.review_comment_count_failed",
