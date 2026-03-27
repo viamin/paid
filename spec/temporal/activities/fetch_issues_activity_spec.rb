@@ -13,12 +13,11 @@ RSpec.describe Activities::FetchIssuesActivity do
     allow(github_client).to receive(:issue_comments).and_return([])
   end
 
-  # Helper: route github_client.issues calls by label
+  # Helper: route github_client.issues calls by label (or nil for unlabeled fetches)
   def stub_issues_by_label(mapping)
     allow(github_client).to receive(:issues) do |_repo, **opts|
       label = Array(opts[:labels]).first
-      result = mapping[label] || []
-      result
+      mapping.fetch(label, [])
     end
   end
 
@@ -55,10 +54,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
-        stub_issues_by_label(
-          "paid-build" => [ build_issue ],
-          "paid-plan" => [ plan_issue ]
-        )
+        stub_issues_by_label(nil => [ build_issue, plan_issue ])
       end
 
       it "syncs issues to the database" do
@@ -94,54 +90,13 @@ RSpec.describe Activities::FetchIssuesActivity do
         end
       end
 
-      it "makes separate API calls for each label" do
+      it "fetches all open issues without a label filter" do
         activity.execute(project_id: project.id)
 
         expect(github_client).to have_received(:issues).with(
           project.full_name,
-          hash_including(labels: [ "paid-build" ])
-        ).at_least(:once)
-
-        expect(github_client).to have_received(:issues).with(
-          project.full_name,
-          hash_including(labels: [ "paid-plan" ])
-        ).at_least(:once)
-
-        expect(github_client).to have_received(:issues).with(
-          project.full_name,
-          hash_including(labels: [ "paid-generated" ])
-        ).at_least(:once)
-      end
-    end
-
-    context "when the same issue matches multiple labels" do
-      let(:shared_issue) do
-        OpenStruct.new(
-          id: 1001,
-          number: 1,
-          title: "Multi-label issue",
-          body: "Has both labels",
-          state: "open",
-          labels: [ OpenStruct.new(name: "paid-build"), OpenStruct.new(name: "paid-plan") ],
-          pull_request: nil,
-          user: OpenStruct.new(login: "viamin"),
-          created_at: 2.days.ago,
-          updated_at: 1.day.ago
+          hash_including(labels: nil, state: "open")
         )
-      end
-
-      before do
-        stub_issues_by_label(
-          "paid-build" => [ shared_issue ],
-          "paid-plan" => [ shared_issue ]
-        )
-      end
-
-      it "deduplicates issues by GitHub ID" do
-        result = activity.execute(project_id: project.id)
-
-        expect(result[:issues].size).to eq(1)
-        expect(project.issues.count).to eq(1)
       end
     end
 
@@ -176,7 +131,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
-        stub_issues_by_label("paid-build" => github_items)
+        stub_issues_by_label(nil => github_items)
       end
 
       it "correctly identifies pull requests" do
@@ -226,18 +181,13 @@ RSpec.describe Activities::FetchIssuesActivity do
         allow(github_client).to receive(:issues).and_return([])
       end
 
-      it "filters out blank and nil values and makes per-label calls" do
+      it "still fetches all open issues without a label filter" do
         activity.execute(project_id: project.id)
 
         expect(github_client).to have_received(:issues).with(
           project.full_name,
-          hash_including(labels: [ "paid-build" ])
-        ).at_least(:once)
-
-        expect(github_client).to have_received(:issues).with(
-          project.full_name,
-          hash_including(labels: [ "paid-generated" ])
-        ).at_least(:once)
+          hash_including(labels: nil, state: "open")
+        )
       end
     end
 
@@ -265,16 +215,16 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
-        stub_issues_by_label("paid-automation" => [ automation_pr ])
+        stub_issues_by_label(nil => [ automation_pr ])
       end
 
-      it "fetches automation-labeled pull requests" do
+      it "syncs automation-labeled pull requests from the full open set" do
         result = activity.execute(project_id: project.id)
 
         expect(github_client).to have_received(:issues).with(
           project.full_name,
-          hash_including(labels: [ "paid-automation" ])
-        ).at_least(:once)
+          hash_including(labels: nil, state: "open")
+        )
         expect(result[:issues].size).to eq(1)
         expect(project.issues.find_by(github_issue_id: 3001)).to have_attributes(
           github_number: 533,
@@ -324,14 +274,8 @@ RSpec.describe Activities::FetchIssuesActivity do
       before do
         stub_const("Activities::FetchIssuesActivity::DEFAULT_PER_PAGE", 5)
         allow(github_client).to receive(:issues) do |_repo, **opts|
-          label = Array(opts[:labels]).first
           page = opts[:page] || 1
-          case label
-          when "paid-build"
-            page == 1 ? page1_issues : page2_issues
-          else
-            []
-          end
+          page == 1 ? page1_issues : page2_issues
         end
       end
 
@@ -350,27 +294,22 @@ RSpec.describe Activities::FetchIssuesActivity do
         stub_const("Activities::FetchIssuesActivity::DEFAULT_MAX_PAGES", 3)
 
         allow(github_client).to receive(:issues) do |_repo, **opts|
-          label = Array(opts[:labels]).first
           page = opts[:page] || 1
-          if label == "paid-build"
-            # Return unique IDs per page to avoid deduplication
-            offset = (page - 1) * 5
-            Array.new(5) do |i|
-              OpenStruct.new(
-                id: 4000 + offset + i,
-                number: offset + i + 1,
-                title: "Issue #{offset + i + 1}",
-                body: "Body",
-                state: "open",
-                labels: [ OpenStruct.new(name: "paid-build") ],
-                pull_request: nil,
-                user: OpenStruct.new(login: "viamin"),
-                created_at: 2.days.ago,
-                updated_at: 1.day.ago
-              )
-            end
-          else
-            []
+          # Return unique IDs per page to mimic a long unlabeled result set.
+          offset = (page - 1) * 5
+          Array.new(5) do |i|
+            OpenStruct.new(
+              id: 4000 + offset + i,
+              number: offset + i + 1,
+              title: "Issue #{offset + i + 1}",
+              body: "Body",
+              state: "open",
+              labels: [ OpenStruct.new(name: "paid-build") ],
+              pull_request: nil,
+              user: OpenStruct.new(login: "viamin"),
+              created_at: 2.days.ago,
+              updated_at: 1.day.ago
+            )
           end
         end
       end
@@ -435,7 +374,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
-        stub_issues_by_label("paid-build" => [ untrusted_issue ])
+        stub_issues_by_label(nil => [ untrusted_issue ])
       end
 
       it "stores the issue without the body" do
@@ -486,7 +425,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
-        stub_issues_by_label("paid-build" => [ trusted_issue ])
+        stub_issues_by_label(nil => [ trusted_issue ])
       end
 
       it "stores the issue with the body" do
@@ -521,7 +460,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
-        stub_issues_by_label("paid-build" => [ still_open_issue ])
+        stub_issues_by_label(nil => [ still_open_issue ])
       end
 
       it "marks stale issues as closed" do
@@ -600,7 +539,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
-        stub_issues_by_label("paid-build" => [ github_issue ])
+        stub_issues_by_label(nil => [ github_issue ])
       end
 
       it "only persists dependencies from trusted user comments" do
@@ -668,7 +607,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       before do
-        stub_issues_by_label("paid-generated" => [ paid_pr ])
+        stub_issues_by_label(nil => [ paid_pr ])
       end
 
       it "syncs paid-generated PRs to the database" do

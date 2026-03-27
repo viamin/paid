@@ -1,7 +1,11 @@
 # frozen_string_literal: true
 
-# Re-applies the `paid-generated` label to pull requests created by Paid when
-# the original post-creation label API call failed transiently.
+# Re-applies missing labels to pull requests created by Paid when the
+# original post-creation label API call failed transiently.
+#
+# If a PR still has the generated label but is missing the automation label,
+# assume a human intentionally removed automation to take over manually and do
+# not re-add it.
 #
 # Scheduled via GoodJob cron every hour. Only inspects runs from the last 24
 # hours so query cost stays bounded as the table grows.
@@ -35,12 +39,14 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
         next
       end
 
-      if synced_pr.has_label?(agent_run.project.generated_label_name)
+      labels_to_recover = missing_labels(agent_run.project, synced_pr)
+
+      if labels_to_recover.empty?
         skipped += 1
         next
       end
 
-      if recover_label(agent_run, synced_pr)
+      if recover_label(agent_run, synced_pr, labels_to_recover)
         recovered += 1
       else
         failed += 1
@@ -110,25 +116,36 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     result
   end
 
-  def recover_label(agent_run, synced_pr)
+  def missing_labels(project, synced_pr)
+    generated = project.generated_label_name
+    automation = project.automation_label_name
+
+    return [] if synced_pr.has_label?(generated)
+
+    labels = [ generated ]
+    labels << automation unless synced_pr.has_label?(automation)
+    labels
+  end
+
+  def recover_label(agent_run, synced_pr, labels)
     project = agent_run.project
-    label = project.generated_label_name
 
     project.github_token.client.add_labels_to_issue(
       project.full_name,
       agent_run.pull_request_number,
-      [ label ]
+      labels
     )
 
     synced_pr.with_lock do
-      synced_pr.update!(labels: (synced_pr.labels + [ label ]).uniq)
+      synced_pr.update!(labels: (synced_pr.labels + labels).uniq)
     end
 
     Rails.logger.info(
       message: "agent_execution.pr_label_recovered",
       agent_run_id: agent_run.id,
       project_id: project.id,
-      pr_number: agent_run.pull_request_number
+      pr_number: agent_run.pull_request_number,
+      labels: labels
     )
 
     true

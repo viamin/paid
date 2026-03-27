@@ -38,20 +38,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when project uses a custom generated_label_name" do
+    context "when project uses a custom automation_label_name" do
       let(:custom_project) do
         create(:project,
           auto_scan_prs: true,
           max_pr_followup_runs: 3,
           pr_action_labels: [],
           auto_fix_merge_conflicts: false,
-          generated_label_name: "my-custom-label")
+          generated_label_name: "my-generated-label",
+          automation_label_name: "my-custom-automation")
       end
       let(:pr_issue) do
         create(:issue, :pull_request,
           project: custom_project,
           github_number: 55,
-          labels: [ "my-custom-label" ],
+          labels: [ "my-generated-label", "my-custom-automation" ],
           paid_state: "completed")
       end
 
@@ -66,7 +67,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "finds PRs with the custom label" do
+      it "finds PRs with the custom automation label" do
         result = activity.execute(project_id: custom_project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
@@ -74,7 +75,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when there are no paid-generated PRs" do
+    context "when a PR only has the generated label" do
+      before do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated" ],
+          paid_state: "completed")
+      end
+
+      it "does not treat it as auto-continue eligible" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when there are no automation-labeled PRs" do
       it "returns empty result" do
         result = activity.execute(project_id: project.id)
 
@@ -87,7 +104,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         create(:issue, :pull_request,
           project: project,
           github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           paid_state: "completed")
       end
 
@@ -128,7 +145,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr(
           checks: [
             { name: "rspec", conclusion: nil },
@@ -148,7 +165,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr(
           checks: [
             { name: "rspec", conclusion: "failure" },
@@ -172,7 +189,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr(
           checks: [
             { name: "rspec", conclusion: nil },
@@ -192,7 +209,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr(
           review_threads: [
             {
@@ -225,7 +242,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         create(:agent_run, :completed,
           project: project, source_pull_request_number: 42,
           completed_at: 1.hour.ago)
@@ -253,7 +270,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         create(:agent_run, :completed,
           project: project, source_pull_request_number: 42,
           completed_at: 1.hour.ago)
@@ -279,7 +296,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr(issue_comments: [ short_comment ])
       end
 
@@ -294,7 +311,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr(
           reviews: default_clean_copilot_review + [
             { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: Time.current }
@@ -315,7 +332,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr(
           reviews: default_clean_copilot_review + [
             { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: 2.hours.ago },
@@ -335,7 +352,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         create(:agent_run, :completed,
           project: project, source_pull_request_number: 42,
           completed_at: 1.hour.ago)
@@ -358,7 +375,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(pr_action_labels: [ "paid-rework" ])
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-rework" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation", "paid-rework" ], paid_state: "completed")
         stub_github_for_pr
       end
 
@@ -377,7 +394,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(auto_fix_merge_conflicts: true)
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr(mergeable: false)
       end
 
@@ -394,7 +411,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr(mergeable: false)
       end
 
@@ -410,7 +427,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(auto_fix_merge_conflicts: true)
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-ready" ],
+          labels: [ "paid-generated", "paid-automation", "paid-ready" ],
           pr_review_phase: "ready",
           paid_state: "completed")
         stub_github_for_pr(mergeable: false)
@@ -430,7 +447,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "in_progress")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "in_progress")
         create(:agent_run, :running,
           project: project, source_pull_request_number: 42)
       end
@@ -446,7 +463,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed",
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed",
           pr_followup_count: 3)
         stub_github_for_pr
       end
@@ -462,7 +479,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr(
           review_threads: [
             {
@@ -486,7 +503,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(allowed_github_usernames: [ "viamin", "github-actions[bot]" ])
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr(
           review_threads: [
             {
@@ -517,7 +534,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         # Initial run used issue_id (not source_pull_request_number) but
         # recorded pull_request_number on completion.
         create(:agent_run, :completed,
@@ -554,7 +571,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed",
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed",
           pr_followup_count: 1)
         stub_github_for_pr(
           checks: [
@@ -578,7 +595,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -608,7 +625,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -630,7 +647,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -660,7 +677,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -690,7 +707,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -720,7 +737,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(reviews: [])
@@ -741,7 +758,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr
@@ -761,7 +778,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -787,7 +804,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -811,7 +828,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -844,7 +861,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -868,7 +885,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -895,7 +912,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -919,7 +936,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(max_draft_review_rounds: 3, owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 3)
       end
@@ -938,7 +955,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -974,7 +991,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         create(:agent_run, :completed,
@@ -1005,7 +1022,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         create(:agent_run, :completed,
@@ -1028,7 +1045,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         create(:agent_run, :completed,
@@ -1055,7 +1072,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -1086,7 +1103,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
         stub_github_for_pr(
@@ -1110,7 +1127,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(max_draft_review_rounds: 0, owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 0)
       end
@@ -1223,7 +1240,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "ready",
           paid_state: "completed")
         stub_github_for_pr(
@@ -1255,7 +1272,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "ready",
           paid_state: "completed")
         stub_github_for_pr(author_login: "viamin", reviews: default_clean_copilot_review)
@@ -1275,7 +1292,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "ready",
           paid_state: "completed")
         stub_github_for_pr(author_login: "someone-else", reviews: default_clean_copilot_review)
@@ -1292,7 +1309,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "ready",
           paid_state: "completed")
         stub_github_for_pr(
@@ -1326,7 +1343,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "escalated",
           paid_state: "completed")
         stub_github_for_pr(
@@ -1350,7 +1367,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "merged",
           github_state: "open")
       end
@@ -1368,7 +1385,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       let!(:pr_issue) do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "escalated",
           draft_review_count: 10,
           pr_followup_count: 3)
@@ -1419,7 +1436,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       let!(:pr_issue) do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "ready",
           draft_review_count: 5,
           pr_followup_count: 3)
@@ -1449,7 +1466,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       let!(:pr_issue) do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
           draft_review_count: 3)
       end
@@ -1470,7 +1487,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       let!(:pr_issue) do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "escalated",
           draft_review_count: 10,
           pr_followup_count: 3)
@@ -1500,7 +1517,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ],
+          labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "restarted",
           draft_review_count: 2)
         stub_github_for_pr(
@@ -1531,7 +1548,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       before do
         create(:issue, :pull_request,
           project: project, github_number: 42,
-          labels: [ "paid-generated" ], paid_state: "completed")
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
         stub_github_for_pr
         allow(Rails.logger).to receive(:info)
       end

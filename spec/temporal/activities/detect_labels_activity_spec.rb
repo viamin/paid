@@ -1,10 +1,16 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe Activities::DetectLabelsActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project, label_mappings: { "build" => "paid-build", "plan" => "paid-plan" }) }
+  let(:github_client) { instance_double(GithubClient, issue_events: []) }
+
+  before do
+    allow(GithubClient).to receive(:new).and_return(github_client)
+  end
 
   describe "#execute" do
     context "when issue has build label and is new" do
@@ -291,9 +297,62 @@ RSpec.describe Activities::DetectLabelsActivity do
         expect(Rails.logger).to have_received(:warn).with(
           hash_including(
             message: "github_sync.untrusted_issue_blocked",
-            creator: "attacker"
+            creator: "attacker",
+            label: "paid-build"
           )
         )
+      end
+    end
+
+    context "when issue is from an untrusted user but a trusted user added the build label" do
+      let(:issue) do
+        create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",
+               github_creator_login: "attacker")
+      end
+
+      before do
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          OpenStruct.new(
+            event: "labeled",
+            actor: OpenStruct.new(login: "viamin"),
+            label: OpenStruct.new(name: "paid-build")
+          )
+        ])
+      end
+
+      it "returns execute_agent action" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("execute_agent")
+      end
+
+      it "updates paid_state to in_progress" do
+        activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+    end
+
+    context "when issue is from an untrusted user and an untrusted user added the label" do
+      let(:issue) do
+        create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",
+               github_creator_login: "attacker")
+      end
+
+      before do
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          OpenStruct.new(
+            event: "labeled",
+            actor: OpenStruct.new(login: "another-attacker"),
+            label: OpenStruct.new(name: "paid-build")
+          )
+        ])
+      end
+
+      it "returns none action" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("none")
       end
     end
   end

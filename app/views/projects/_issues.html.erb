@@ -1,5 +1,6 @@
 <div id="<%= dom_id(project, :issues) %>" class="mt-8">
   <h2 class="text-lg font-medium text-gray-900">Synced Issues</h2>
+  <p class="mt-1 text-sm text-gray-500">Shows all open GitHub issues cached locally. Automation eligibility is evaluated separately from trust and labels.</p>
 
   <% if issues.any? %>
     <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
