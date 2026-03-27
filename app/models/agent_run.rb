@@ -5,6 +5,9 @@ class AgentRun < ApplicationRecord
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   GOALS = %w[create_pr create_issue review].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
+  ACTIVE_STATUSES = %w[pending running].freeze
+  FINISHED_STATUSES = %w[completed failed cancelled timeout retried auth_expired rate_limited].freeze
+  FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
 
   belongs_to :project
   belongs_to :issue, optional: true
@@ -64,8 +67,8 @@ class AgentRun < ApplicationRecord
   scope :retried, -> { where(status: "retried") }
   scope :auth_expired, -> { where(status: "auth_expired") }
   scope :rate_limited, -> { where(status: "rate_limited") }
-  scope :active, -> { where(status: %w[pending running]) }
-  scope :finished, -> { where(status: %w[completed failed cancelled timeout retried auth_expired rate_limited]) }
+  scope :active, -> { where(status: ACTIVE_STATUSES) }
+  scope :finished, -> { where(status: FINISHED_STATUSES) }
   scope :recent, -> { order(created_at: :desc) }
   scope :search_by_goal, lambda { |query|
     normalized_query = query.to_s.strip
@@ -246,7 +249,7 @@ class AgentRun < ApplicationRecord
   end
 
   def active?
-    %w[pending running].include?(status)
+    ACTIVE_STATUSES.include?(status)
   end
 
   def running?
@@ -254,7 +257,7 @@ class AgentRun < ApplicationRecord
   end
 
   def finished?
-    %w[completed failed cancelled timeout retried auth_expired rate_limited].include?(status)
+    FINISHED_STATUSES.include?(status)
   end
 
   def successful?
@@ -721,6 +724,10 @@ class AgentRun < ApplicationRecord
       # (queued→pending→running→completed). The Turbo Stream partials for
       # project-level stats already cover the real-time detail view.
       DashboardBroadcastJob.perform_later(project.account_id) if finished?
+    end
+
+    if previous_changes.key?("status")
+      LiveDashboardBroadcastJob.perform_later(project.account_id, id)
     end
 
     project.broadcast_agent_run_detail_update(self)

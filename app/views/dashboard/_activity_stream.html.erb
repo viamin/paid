@@ -1,0 +1,33 @@
+<% if recent_runs.any? %>
+  <div class="overflow-hidden rounded-lg bg-white shadow">
+    <ul class="divide-y divide-gray-200">
+      <% recent_runs.each do |run| %>
+        <li id="<%= dom_id(run, :activity) %>" class="px-4 py-3">
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <%= agent_run_status_badge(run.status) %>
+              <span class="text-sm font-medium text-gray-900"><%= run.project.full_name %></span>
+              <% if run.issue.present? %>
+                <span class="text-sm text-gray-500">#<%= run.issue.github_number %></span>
+              <% end %>
+            </div>
+            <div class="flex items-center gap-4 text-sm text-gray-500">
+              <span><%= run.agent_type.titleize %></span>
+              <% if run.duration_seconds.present? %>
+                <span><%= format_duration(run.duration_seconds) %></span>
+              <% end %>
+              <span><%= time_ago_in_words(run.completed_at || run.created_at) %> ago</span>
+            </div>
+          </div>
+          <% if run.error_message.present? %>
+            <p class="mt-1 truncate text-sm text-red-600"><%= run.error_message %></p>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  </div>
+<% else %>
+  <div class="overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-5 text-sm text-gray-500">No recent activity.</div>
+  </div>
+<% end %>
