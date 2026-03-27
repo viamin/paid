@@ -47,7 +47,7 @@ RSpec.describe "IntegrationCredentials" do
       }
 
       credential = IntegrationCredential.last
-      expect(response).to redirect_to(integration_credential_path(credential, category: credential.category, service_key: credential.service_key))
+      expect(response).to redirect_to(integration_credential_path(credential, category: credential.category))
       expect(credential.service_key).to eq("gemini")
       expect(credential.created_by).to eq(user)
     end
@@ -100,7 +100,7 @@ RSpec.describe "IntegrationCredentials" do
         delete integration_credential_path(credential)
 
         expect(credential.reload).to be_revoked
-        expect(response).to redirect_to(integration_credentials_path(category: credential.category, service_key: credential.service_key))
+        expect(response).to redirect_to(integration_credentials_path(category: credential.category))
         follow_redirect!
         expect(response.body).to include("deactivated")
       end
@@ -108,7 +108,7 @@ RSpec.describe "IntegrationCredentials" do
       it "preserves return filter params when provided" do
         credential = create(:integration_credential, account: user.account, created_by: user, service_key: "claude", category: "llm_provider")
 
-        delete integration_credential_path(credential, category: "llm_provider")
+        delete integration_credential_path(credential, category: "llm_provider", service_key: "claude")
 
         expect(response).to redirect_to(integration_credentials_path(category: "llm_provider", service_key: "claude"))
       end

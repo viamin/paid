@@ -18,7 +18,7 @@ class CreateIntegrationCredentials < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
-    add_index :integration_credentials, [ :account_id, :name ], unique: true
+    add_index :integration_credentials, [ :account_id, :service_key, :name ], unique: true
     add_index :integration_credentials, [ :account_id, :category ]
     add_index :integration_credentials, [ :account_id, :service_key ]
     add_index :integration_credentials, [ :account_id, :revoked_at ]

@@ -53,7 +53,9 @@ module Integrations
           {
             key: provider_key.to_s,
             label: ::Provider.display_name(provider_key),
-            description: "Stored #{::Provider.display_name(provider_key)} credentials for API-key or OAuth-based access. Runtime use will be wired in a follow-up.",
+            description: "Stored #{::Provider.display_name(provider_key)} " \
+              "credentials for API-key or OAuth-based access. " \
+              "Runtime use will be wired in a follow-up.",
             category: :llm_provider,
             auth_kinds: %w[api_key oauth_token]
           }
