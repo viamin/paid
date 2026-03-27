@@ -26,7 +26,8 @@ cd "$APP_ROOT"
 MODE="${1:---lightweight}"
 LOG_PREFIX="[dev-update]"
 OVERMIND_SOCKET="${OVERMIND_SOCKET:-.overmind.sock}"
-START_DEV_LOG="log/dev_start.log"
+SCRIPT_LOG="log/dev-update/dev-update.log"
+START_DEV_LOG="log/dev-update/dev-start.log"
 STOPPED_OVERMIND=0
 OVERMIND_STOP_POLL_COUNT="${DEV_UPDATE_OVERMIND_STOP_POLL_COUNT:-10}"
 OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
@@ -34,6 +35,26 @@ OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
 
 log() {
   echo "$LOG_PREFIX $(date '+%Y-%m-%d %H:%M:%S') $*"
+}
+
+configure_logging() {
+  mkdir -p "$(dirname "$SCRIPT_LOG")"
+
+  if [ -t 1 ]; then
+    exec > >(tee -a "$SCRIPT_LOG") 2>&1
+  else
+    exec >>"$SCRIPT_LOG" 2>&1
+  fi
+}
+
+log_command_output() {
+  local label="$1"
+  local output="$2"
+  [ -z "$output" ] && return
+
+  while IFS= read -r line; do
+    log "${label}: ${line}"
+  done <<< "$output"
 }
 
 fail() {
@@ -92,9 +113,11 @@ stop_overmind() {
     log "Stopping Overmind (detached)..."
     # Use setsid to run overmind quit in a new session so that stopping
     # Overmind does not kill this script (which may be a child of Overmind).
-    if ! setsid overmind quit &>/dev/null; then
+    local quit_output
+    if ! quit_output="$(setsid overmind quit 2>&1)"; then
       log "Warning: overmind quit returned a non-zero exit status."
     fi
+    log_command_output "overmind quit" "$quit_output"
     STOPPED_OVERMIND=1
 
     # Give Overmind a moment to shut down gracefully and release its socket.
@@ -129,7 +152,9 @@ start_dev() {
 
   if overmind_running; then
     log "Overmind is already running, restarting processes."
-    overmind restart
+    local restart_output
+    restart_output="$(overmind restart 2>&1)"
+    log_command_output "overmind restart" "$restart_output"
     log "Overmind process restart requested."
     return 0
   fi
@@ -172,6 +197,7 @@ recover_dev_if_needed() {
 }
 
 run_full_restart() {
+  configure_logging
   log "Starting full restart update..."
   ensure_on_main
   pull_latest
@@ -192,6 +218,7 @@ run_full_restart() {
 
 case "$MODE" in
   --lightweight)
+    configure_logging
     log "Starting lightweight update..."
     ensure_on_main
     pull_latest
