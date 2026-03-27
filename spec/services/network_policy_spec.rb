@@ -323,6 +323,7 @@ RSpec.describe NetworkPolicy do
     context "when only Claude credentials exist" do
       before do
         allow(Dir).to receive(:exist?).and_return(false)
+        allow(Dir).to receive(:exist?).with("/tmp/claude-test").and_return(true)
         ENV["CLAUDE_CONFIG_DIR"] = "/tmp/claude-test"
         allow(File).to receive(:file?).and_return(false)
         allow(File).to receive(:file?)
@@ -341,6 +342,7 @@ RSpec.describe NetworkPolicy do
     context "when only Codex credentials exist" do
       before do
         allow(Dir).to receive(:exist?).and_return(false)
+        allow(Dir).to receive(:exist?).with("/tmp/codex-test").and_return(true)
         ENV["CODEX_CONFIG_DIR"] = "/tmp/codex-test"
         allow(File).to receive(:file?).and_return(false)
         allow(File).to receive(:file?)
@@ -359,6 +361,7 @@ RSpec.describe NetworkPolicy do
     context "when only Gemini credentials exist" do
       before do
         allow(Dir).to receive(:exist?).and_return(false)
+        allow(Dir).to receive(:exist?).with("/tmp/gemini-test").and_return(true)
         ENV["GEMINI_CONFIG_DIR"] = "/tmp/gemini-test"
         allow(File).to receive(:file?).and_return(false)
         allow(File).to receive(:file?)
