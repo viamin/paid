@@ -19,7 +19,7 @@ module Activities
       "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "codex" => %w[codex exec --full-auto --],
-      "gemini" => %w[gemini -s],
+      "gemini" => %w[gemini -y -p],
       "kilocode" => %w[kilo run --auto],
       "opencode" => %w[opencode --non-interactive --message],
       "cursor" => %w[cursor-agent --message],
@@ -413,7 +413,7 @@ module Activities
 
     def gemini_command(prompt)
       escaped_prompt = Shellwords.escape(prompt)
-      command = "gemini -s #{escaped_prompt}"
+      command = "gemini -y -p #{escaped_prompt}"
       <<~SH.squish
         if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
           env

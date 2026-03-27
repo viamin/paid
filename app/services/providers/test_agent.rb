@@ -17,6 +17,7 @@ module Providers
     PROMPT = "Respond with exactly: PING OK"
     EXPECTED_OUTPUT = "PING OK"
     TIMEOUT = 30
+    HARNESS_HEALTH_CHECK_PROVIDER_KEYS = %w[claude].freeze
     CONTAINER_COMMANDS = Activities::RunAgentActivity::AGENT_COMMANDS.slice(
       "claude",
       "codex",
@@ -34,6 +35,7 @@ module Providers
       /token/i,
       /unauthori[sz]ed/i,
       /invalid credentials/i,
+      /session.*expired/i,
       /ValidationRequiredError/i,
       /Verify your account to continue\./i,
       /Please set an Auth method/i,
@@ -120,8 +122,10 @@ module Providers
 
     def call
       validate!
-      response = execute_test
-      process_response(response)
+      return process_harness_result(execute_harness_health_check) if harness_health_check_supported?
+
+      response = execute_container_test
+      process_container_response(response)
     rescue NotContainerExecutableError
       Result.new(success: false, error_type: :installation,
         message: "Provider #{provider.provider_key} CLI is not installed in the agent container")
@@ -156,10 +160,16 @@ module Providers
           "Provider #{provider.provider_key} is not installed in the agent container"
       end
 
+      return if harness_health_check_supported?
+
       raise MissingProjectContextError, "Add a project before testing providers in the agent container" unless test_project
     end
 
-    def execute_test
+    def execute_harness_health_check
+      AgentHarness.check_provider(harness_provider_name, timeout: TIMEOUT)
+    end
+
+    def execute_container_test
       test_run = build_test_run
 
       begin
@@ -171,7 +181,22 @@ module Providers
       end
     end
 
-    def process_response(response)
+    def process_harness_result(result)
+      status = result[:status].to_s
+      message = result[:message].presence || "Provider health check returned no message"
+
+      if status == "ok"
+        Result.new(success: true, error_type: nil, message: "Agent is healthy")
+      else
+        Result.new(
+          success: false,
+          error_type: classify_failed_response(message),
+          message: message
+        )
+      end
+    end
+
+    def process_container_response(response)
       unless response.success?
         raw_message = response[:stderr].presence || response[:stdout].presence || response.error
         message = extract_user_facing_error(raw_message)
@@ -213,10 +238,20 @@ module Providers
         provider.user.member_projects.active.order(:id).first
     end
 
+    def harness_health_check_supported?
+      HARNESS_HEALTH_CHECK_PROVIDER_KEYS.include?(provider.provider_key)
+    end
+
+    def harness_provider_name
+      Provider.harness_provider_key_for(provider.provider_key).to_sym
+    end
+
     def test_command
       command = CONTAINER_COMMANDS[provider.provider_key]
       raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}" unless command
 
+      # TODO(agent-harness#41): Switch Gemini and Codex to AgentHarness.check_provider
+      # once provider-specific auth_status / health_status hooks exist upstream.
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
       return kilocode_test_command if provider.provider_key == "kilocode"
@@ -298,6 +333,7 @@ module Providers
 
     def gemini_test_command
       escaped_prompt = Shellwords.escape(PROMPT)
+      command = "gemini -y -p #{escaped_prompt}"
       <<~SH.squish
         if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
           env
@@ -307,9 +343,9 @@ module Providers
           -u GOOGLE_HEADER_X_AGENT_RUN_ID
           -u GOOGLE_HEADER_X_PROXY_TOKEN
           -u GEMINI_CLI_CUSTOM_HEADERS
-          gemini -s #{escaped_prompt};
+          #{command};
         else
-          gemini -s #{escaped_prompt};
+          #{command};
         fi
       SH
     end

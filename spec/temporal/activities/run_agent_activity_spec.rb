@@ -149,7 +149,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command).to include('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
       expect(command).to include("-u GEMINI_API_KEY")
       expect(command).to include("-u GOOGLE_GEMINI_BASE_URL")
-      expect(command).to include("gemini -s")
+      expect(command).to include("gemini -y -p")
       expect(command).to include("say\\ \\'hi\\'")
     end
 

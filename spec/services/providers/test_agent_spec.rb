@@ -24,12 +24,14 @@ RSpec.describe Providers::TestAgent do
   let(:container_result) { execution_result }
 
   describe ".call" do
-    context "when agent responds successfully" do
+    context "when agent-harness health check succeeds" do
+      let(:health_result) { { name: :claude, status: "ok", message: "All checks passed", latency_ms: 12 } }
+
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        allow(AgentRun).to receive(:create!)
+        allow(AgentHarness).to receive(:check_provider).and_return(health_result)
       end
 
       it "returns a successful result" do
@@ -40,46 +42,29 @@ RSpec.describe Providers::TestAgent do
         expect(result.error_type).to be_nil
       end
 
-      it "sends a test prompt with the correct provider" do
+      it "uses agent-harness for the health check" do
         described_class.call(provider: provider)
 
-        expect(AgentRun).to have_received(:create!).with(
-          hash_including(
-            project: project,
-            agent_type: "claude_code",
-            custom_prompt: "Respond with exactly: PING OK"
-          )
-        )
-        expect(test_run).to have_received(:execute_in_container).with(
-          [ "claude", "--print", "--output-format=text", "--dangerously-skip-permissions", "-p", "Respond with exactly: PING OK" ],
-          timeout: 30,
-          stream: false
-        )
+        expect(AgentHarness).to have_received(:check_provider).with(:claude, timeout: 30)
+        expect(AgentRun).not_to have_received(:create!)
       end
     end
 
-    context "when agent responds successfully but output does not match expected ping" do
-      let(:execution_result) do
-        Containers::Provision::Result.success(
-          stdout: "Hello! How can I help you?",
-          stderr: "",
-          exit_code: 0
-        )
-      end
+    context "when agent-harness health check reports an auth error" do
+      let(:health_result) { { name: :claude, status: "error", message: "Session expired", latency_ms: 12 } }
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
-        allow(test_run).to receive(:with_container).and_yield(test_run)
+        allow(AgentHarness).to receive(:check_provider).and_return(health_result)
       end
 
-      it "returns an unexpected error" do
+      it "maps the health check failure to an authentication error" do
         result = described_class.call(provider: provider)
 
         expect(result).not_to be_success
-        expect(result.error_type).to eq(:unexpected)
-        expect(result.message).to include("did not match expected ping")
+        expect(result.error_type).to eq(:authentication)
+        expect(result.message).to eq("Session expired")
       end
     end
 
@@ -123,7 +108,7 @@ RSpec.describe Providers::TestAgent do
           a_string_including('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
             .and(include("-u GEMINI_API_KEY"))
             .and(include("-u GOOGLE_GEMINI_BASE_URL"))
-            .and(include("gemini -s")),
+            .and(include("gemini -y -p")),
           timeout: 30,
           stream: false
         )
@@ -152,6 +137,7 @@ RSpec.describe Providers::TestAgent do
     end
 
     context "when agent returns a failure response" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
       let(:execution_result) do
         Containers::Provision::Result.failure(
           error: "Process exited abnormally",
@@ -163,7 +149,7 @@ RSpec.describe Providers::TestAgent do
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
         allow(AgentRun).to receive(:create!).and_return(test_run)
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
@@ -308,6 +294,7 @@ RSpec.describe Providers::TestAgent do
     end
 
     context "when the provider reports a rate limit message on stdout" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
       let(:execution_result) do
         Containers::Provision::Result.failure(
           error: "Command exited with code 1",
@@ -319,7 +306,7 @@ RSpec.describe Providers::TestAgent do
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
         allow(AgentRun).to receive(:create!).and_return(test_run)
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
@@ -334,9 +321,11 @@ RSpec.describe Providers::TestAgent do
     end
 
     context "when container provisioning surfaces an authentication-style message" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
         allow(AgentRun).to receive(:create!).and_return(test_run)
         allow(test_run).to receive(:with_container)
           .and_raise(Containers::Provision::ProvisionError, "Invalid API key")
@@ -352,9 +341,11 @@ RSpec.describe Providers::TestAgent do
     end
 
     context "when the agent times out" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
         allow(AgentRun).to receive(:create!).and_return(test_run)
         allow(test_run).to receive(:with_container)
           .and_raise(Containers::Provision::TimeoutError, "Timed out after 30s")
@@ -370,9 +361,11 @@ RSpec.describe Providers::TestAgent do
     end
 
     context "when a generic container error occurs" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
         allow(AgentRun).to receive(:create!).and_return(test_run)
         allow(test_run).to receive(:with_container)
           .and_raise(Containers::Provision::ProvisionError, "Connection refused")
@@ -417,12 +410,12 @@ RSpec.describe Providers::TestAgent do
     end
 
     context "when the user has no project context for a containerized test" do
-      let(:provider_record) { user.providers.find_by!(provider_key: "claude") }
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 
       before do
         project.destroy!
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
       end
 
       it "returns a helpful error" do
@@ -435,9 +428,11 @@ RSpec.describe Providers::TestAgent do
     end
 
     context "when an unexpected error occurs" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
-          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
         allow(AgentRun).to receive(:create!)
           .and_raise(RuntimeError, "Something went wrong")
       end
