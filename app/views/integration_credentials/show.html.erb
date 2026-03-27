@@ -1,6 +1,7 @@
 <% content_for(:title) { "#{@integration_credential.name} - Paid" } %>
 
 <% definition = @integration_credential.service_definition %>
+<% service_label = definition&.fetch(:label, nil) || @integration_credential.service_key || "Unknown service" %>
 
 <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
   <div>
@@ -15,7 +16,7 @@
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-xl font-semibold text-gray-900"><%= @integration_credential.name %></h1>
-          <p class="mt-1 text-sm text-gray-500"><%= definition[:label] %> • <%= Integrations::CredentialCatalog.auth_kind_label(@integration_credential.auth_kind) %></p>
+          <p class="mt-1 text-sm text-gray-500"><%= service_label %> • <%= Integrations::CredentialCatalog.auth_kind_label(@integration_credential.auth_kind) %></p>
         </div>
         <% if @integration_credential.revoked? %>
           <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Revoked</span>
@@ -34,7 +35,7 @@
       </div>
       <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
         <dt class="text-sm font-medium text-gray-500">Service</dt>
-        <dd class="text-sm text-gray-900 sm:col-span-2"><%= definition[:label] %></dd>
+        <dd class="text-sm text-gray-900 sm:col-span-2"><%= service_label %></dd>
       </div>
       <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
         <dt class="text-sm font-medium text-gray-500">Secret</dt>
