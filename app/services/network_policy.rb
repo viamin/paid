@@ -177,13 +177,13 @@ class NetworkPolicy
       home = home_dir
       if home.present?
         dot_claude = File.join(home, ".claude")
-        return dot_claude if Dir.exist?(dot_claude)
+        return dot_claude if credential_present?(dot_claude, ".credentials.json")
 
         config_claude = File.join(home, ".config", "claude")
-        return config_claude if Dir.exist?(config_claude)
+        return config_claude if credential_present?(config_claude, ".credentials.json")
       end
 
-      "/.claude" if Dir.exist?("/.claude")
+      "/.claude" if credential_present?("/.claude", ".credentials.json")
     end
 
     # Returns the Codex config directory path.
@@ -195,10 +195,10 @@ class NetworkPolicy
       home = home_dir
       if home.present?
         dot_codex = File.join(home, ".codex")
-        return dot_codex if Dir.exist?(dot_codex)
+        return dot_codex if credential_present?(dot_codex, "auth.json")
       end
 
-      "/.codex" if Dir.exist?("/.codex")
+      "/.codex" if credential_present?("/.codex", "auth.json")
     end
 
     # Returns the Gemini config directory path.
@@ -210,10 +210,10 @@ class NetworkPolicy
       home = home_dir
       if home.present?
         dot_gemini = File.join(home, ".gemini")
-        return dot_gemini if Dir.exist?(dot_gemini)
+        return dot_gemini if credential_present?(dot_gemini, "oauth_creds.json")
       end
 
-      "/.gemini" if Dir.exist?("/.gemini")
+      "/.gemini" if credential_present?("/.gemini", "oauth_creds.json")
     end
 
     # Returns true when the directory exists and contains the given credential file.

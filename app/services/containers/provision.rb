@@ -913,7 +913,8 @@ module Containers
     end
 
     def claude_local_config_path
-      @claude_local_config_path ||= local_config_path(".claude")
+      @claude_local_config_path ||=
+        local_config_path(".claude") || local_config_path(".config/claude")
     end
 
     def gemini_config_host_path
