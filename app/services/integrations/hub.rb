@@ -19,39 +19,21 @@ module Integrations
         sections[:repository][:cards] << provider_card(Integrations::GithubProvider, account)
         sections[:issue_tracking][:cards] << provider_card(Integrations::LinearProvider, account)
         sections[:repository][:cards] << stored_credential_card(
-          key: :gitlab,
-          name: "GitLab",
-          description: Integrations::CredentialCatalog.lookup("gitlab")[:description],
-          credential_counts: credential_counts,
-          category: :repository,
-          service_key: "gitlab",
-          icon: :gitlab
+          { key: "gitlab", label: "GitLab", icon: :gitlab },
+          credential_counts
         )
         sections[:issue_tracking][:cards] << stored_credential_card(
-          key: :jira,
-          name: "Jira",
-          description: Integrations::CredentialCatalog.lookup("jira")[:description],
-          credential_counts: credential_counts,
-          category: :issue_tracking,
-          service_key: "jira",
-          icon: :jira
+          { key: "jira", label: "Jira", icon: :jira },
+          credential_counts
         )
         sections[:llm_provider][:cards] << stored_credential_card(
-          key: :provider_credentials,
-          name: "Provider Credentials",
-          description: provider_credentials_description,
-          credential_counts: credential_counts,
-          category: :llm_provider,
-          icon: :provider
+          { key: "provider_credentials", label: "Provider Credentials",
+            description: provider_credentials_description, category: :llm_provider, icon: :provider },
+          credential_counts
         )
         sections[:signing][:cards] << stored_credential_card(
-          key: :github_signing,
-          name: "GitHub Signing",
-          description: Integrations::CredentialCatalog.lookup("github_signing")[:description],
-          credential_counts: credential_counts,
-          category: :signing,
-          service_key: "github_signing",
-          icon: :signing
+          { key: "github_signing", label: "GitHub Signing", icon: :signing },
+          credential_counts
         )
 
         categories = Integrations::CredentialCatalog.categories
@@ -92,28 +74,28 @@ module Integrations
         }
       end
 
-      def stored_credential_card(key:, name:, description:, credential_counts:, category:, icon:, service_key: nil)
+      def stored_credential_card(card_def, credential_counts)
+        catalog = Integrations::CredentialCatalog.lookup(card_def[:key])
+        category = card_def[:category] || catalog&.dig(:category)
+        service_key = catalog ? card_def[:key] : nil
+
         count = if service_key.present?
           credential_counts[[ category.to_s, service_key.to_s ]] || 0
         else
           credential_counts.sum { |(cat, _), cnt| cat == category.to_s ? cnt : 0 }
         end
 
-        index_params = { category: category.to_s }
-        new_params = { category: category.to_s }
-        if service_key.present?
-          index_params[:service_key] = service_key
-          new_params[:service_key] = service_key
-        end
+        filter_params = { category: category.to_s }
+        filter_params[:service_key] = service_key if service_key.present?
 
         {
-          key: key,
-          name: name,
-          description: description,
+          key: card_def[:key].to_sym,
+          name: card_def[:label],
+          description: card_def[:description] || catalog&.dig(:description),
           count: count,
-          index_path: Rails.application.routes.url_helpers.integration_credentials_path(index_params),
-          new_path: Rails.application.routes.url_helpers.new_integration_credential_path(new_params),
-          icon_svg: ICONS.fetch(icon)
+          index_path: Rails.application.routes.url_helpers.integration_credentials_path(filter_params),
+          new_path: Rails.application.routes.url_helpers.new_integration_credential_path(filter_params),
+          icon_svg: ICONS.fetch(card_def[:icon])
         }
       end
     end
