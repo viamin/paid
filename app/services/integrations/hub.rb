@@ -39,7 +39,7 @@ module Integrations
         sections[:llm_provider][:cards] << stored_credential_card(
           key: :provider_credentials,
           name: "Provider Credentials",
-          description: "Store API keys or OAuth tokens for Claude, Codex, Gemini, Kilo Code, OpenCode, and future agent providers. Runtime use is not wired yet.",
+          description: provider_credentials_description,
           credential_counts: credential_counts,
           category: :llm_provider,
           icon: :provider
@@ -66,6 +66,11 @@ module Integrations
       end
 
       private
+
+      def provider_credentials_description
+        names = Integrations::CredentialCatalog.services_for_category(:llm_provider).map { |s| s[:label] }
+        "Store API keys or OAuth tokens for #{names.join(", ")} and future agent providers. Runtime use is not wired yet."
+      end
 
       def base_sections
         Integrations::CredentialCatalog.categories.keys.index_with { { cards: [] } }

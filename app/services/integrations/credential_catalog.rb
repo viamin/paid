@@ -82,7 +82,7 @@ module Integrations
     end
 
     def auth_kind_options_for(service_key, category: nil)
-      definition = fetch(service_key)
+      definition = lookup(service_key)
       auth_kinds = if definition
         definition[:auth_kinds]
       elsif category.to_s == "signing"
