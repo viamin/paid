@@ -37,7 +37,7 @@ class IntegrationCredential < ApplicationRecord
   end
 
   def revoke!
-    update!(revoked_at: Time.current)
+    update_column(:revoked_at, Time.current)
   end
 
   def service_definition
