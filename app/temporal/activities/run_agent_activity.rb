@@ -394,26 +394,20 @@ module Activities
 
     # Wraps a provider command so that, when subscription auth is active,
     # proxy-related env vars are unset and the CLI talks directly to the
-    # provider. The unset-var list is shared with Providers::TestAgent via
+    # provider. The prompt is passed as a positional parameter ($1) to
+    # preserve multi-line content from augment_prompt_for_goal. The
+    # unset-var list is shared with Providers::TestAgent via
     # ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS.
     def subscription_auth_command(provider, command_prefix, prompt)
       base = command_prefix.shelljoin
-      command = "#{base} #{Shellwords.escape(prompt)}"
       env_flag = "PAID_#{provider.upcase}_SUBSCRIPTION_AUTH"
       unset_flags = ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS
         .fetch(provider)
         .map { |var| "-u #{var}" }
-        .join("\n")
+        .join(" ")
 
-      <<~SH.squish
-        if [ "$#{env_flag}" = "1" ]; then
-          env
-          #{unset_flags}
-          #{command};
-        else
-          #{command};
-        fi
-      SH
+      script = "if [ \"$#{env_flag}\" = \"1\" ]; then env #{unset_flags} #{base} \"$1\"; else #{base} \"$1\"; fi"
+      [ "sh", "-c", script, "--", prompt ]
     end
 
     def capture_head_sha(container_service, agent_run)
