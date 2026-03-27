@@ -21,7 +21,7 @@ module Integrations
       }
     }.freeze
 
-    PROVIDER_SERVICES = ProviderSupport::APP_TO_HARNESS_PROVIDER_KEYS.keys
+    PROVIDER_SERVICES = ProviderSupport.supported_provider_keys
       .index_with do |provider_key|
         {
           key: provider_key.to_s,
