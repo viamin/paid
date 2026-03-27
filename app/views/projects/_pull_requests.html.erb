@@ -1,5 +1,6 @@
 <div id="<%= dom_id(project, :pull_requests) %>" class="mt-8">
   <h2 class="text-lg font-medium text-gray-900">Synced Pull Requests</h2>
+  <p class="mt-1 text-sm text-gray-500">Shows all open GitHub pull requests cached locally. The <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">paid-automation</code> label controls whether Paid keeps auto-continuing a PR.</p>
 
   <% if pull_requests.any? %>
     <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">

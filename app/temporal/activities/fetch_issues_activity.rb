@@ -15,12 +15,7 @@ module Activities
 
       client = project.github_token.client
 
-      mapped_labels = project.label_mappings.values.compact_blank
-      labels = mapped_labels.dup
-      labels << project.generated_label_name if mapped_labels.any?
-      labels << project.automation_label_name if project.automation_on_label_enabled?
-      labels = labels.compact_blank.uniq
-      github_issues, truncated = fetch_all_issues(client, project.full_name, labels)
+      github_issues, truncated = fetch_all_issues(client, project.full_name)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
       parse_dependencies(project, synced_issues) if synced_issues.any?
@@ -45,34 +40,12 @@ module Activities
 
     DEFAULT_MAX_PAGES = 10
 
-    # Fetches open issues for each label separately, then deduplicates.
-    # GitHub's API treats multiple labels as AND (all required), so we
-    # must query per-label to get OR behavior (any label matches).
-    # Returns [issues, truncated] where truncated is true if any label
-    # fetch hit the DEFAULT_MAX_PAGES cap (meaning the result is not authoritative).
-    def fetch_all_issues(client, repo_full_name, labels)
-      if labels.empty?
-        issues, truncated = fetch_issues_for_label(client, repo_full_name, nil)
-        return [ issues, truncated ]
-      end
-
-      seen_ids = Set.new
-      all_issues = []
-      any_truncated = false
-
-      labels.each do |label|
-        issues, truncated = fetch_issues_for_label(client, repo_full_name, label)
-        any_truncated = true if truncated
-
-        issues.each do |issue|
-          next if seen_ids.include?(issue.id)
-
-          seen_ids.add(issue.id)
-          all_issues << issue
-        end
-      end
-
-      [ all_issues, any_truncated ]
+    # Fetches all open GitHub issues and pull requests for visibility.
+    # Trigger eligibility is decided later by DetectLabelsActivity.
+    # Returns [issues, truncated] where truncated is true if the
+    # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
+    def fetch_all_issues(client, repo_full_name)
+      fetch_issues_for_label(client, repo_full_name, nil)
     end
 
     # Returns [issues, truncated] where truncated is true when the

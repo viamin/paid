@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Activities
-  # Scans open pull requests with the `paid-generated` label for signals
+  # Scans open pull requests with the automation label for signals
   # that require follow-up agent work. Runs after FetchIssuesActivity in
   # the GitHubPollWorkflow poll cycle.
   #
@@ -48,7 +48,7 @@ module Activities
     def find_paid_prs(project)
       project.issues
         .where(is_pull_request: true, github_state: "open")
-        .where("labels @> ?", [ project.generated_label_name ].to_json)
+        .where("labels @> ?", [ project.automation_label_name ].to_json)
     end
 
     def scan_pr(project, client, issue)
