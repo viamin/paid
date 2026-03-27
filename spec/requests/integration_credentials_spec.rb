@@ -46,9 +46,10 @@ RSpec.describe "IntegrationCredentials" do
         }
       }
 
-      expect(response).to redirect_to(integration_credential_path(IntegrationCredential.last))
-      expect(IntegrationCredential.last.service_key).to eq("gemini")
-      expect(IntegrationCredential.last.created_by).to eq(user)
+      credential = IntegrationCredential.last
+      expect(response).to redirect_to(integration_credential_path(credential, category: credential.category, service_key: credential.service_key))
+      expect(credential.service_key).to eq("gemini")
+      expect(credential.created_by).to eq(user)
     end
 
     it "rejects invalid signing auth types" do
