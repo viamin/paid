@@ -240,9 +240,18 @@ class ProvidersController < ApplicationController
     return unless raw
 
     enabled_keys = UserSetting.normalize_fallback_providers_param(raw)
-    current_user.providers.find_each do |provider|
-      new_value = enabled_keys.include?(provider.provider_key)
-      provider.update!(enabled_for_fallback: new_value) if provider.enabled_for_fallback? != new_value
+    # Treat empty result as "no change" to avoid disabling all providers on parse errors
+    return if enabled_keys.blank?
+
+    current_user.providers.transaction do
+      current_user.providers.find_each do |provider|
+        new_value = enabled_keys.include?(provider.provider_key)
+        next if provider.enabled_for_fallback? == new_value
+
+        unless provider.update(enabled_for_fallback: new_value)
+          raise ActiveRecord::Rollback
+        end
+      end
     end
   end
 

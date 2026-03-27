@@ -53,7 +53,7 @@
           <div class="space-y-2" data-sortable-target="list">
             <% provider_states_by_name = @provider_states %>
             <% fallback_candidates = @fallback_candidate_providers %>
-            <% all_providers = @enabled_agent_providers %>
+            <% all_providers = (@enabled_agent_providers + @fallback_candidate_providers).uniq %>
             <% saved_order = Array(@user_setting.fallback_providers) %>
             <% providers_in_order = (saved_order.select { |provider| all_providers.include?(provider) } + (all_providers - saved_order)).uniq %>
             <% providers_in_order.each do |provider| %>
