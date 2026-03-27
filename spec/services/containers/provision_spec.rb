@@ -483,6 +483,7 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(codex_local_config_path: nil, gemini_local_config_path: nil)
       end
 
       it "mounts Claude config at staging path and creates writable tmpfs" do
@@ -574,6 +575,7 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return("/host/home/user/.gemini")
+        allow(service).to receive_messages(claude_local_config_path: nil, codex_local_config_path: nil)
       end
 
       it "mounts Gemini config at a staging path and sets the subscription marker" do
@@ -607,7 +609,11 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
-        allow(service).to receive(:gemini_local_config_path).and_return("/home/vscode/.gemini")
+        allow(service).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          gemini_local_config_path: "/home/vscode/.gemini"
+        )
       end
 
       it "sets the subscription marker without requiring a host bind mount" do
@@ -629,6 +635,15 @@ RSpec.describe Containers::Provision do
           user: "agent"
         )
       end
+
+      it "preserves valid JSON when local files do not end with a newline" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", include("/home/agent/.gemini/settings.json").and(include("\"selectedType\": \"oauth-personal\"\n")).and(include("}\nEOF\n")) ],
+          user: "agent"
+        )
+      end
     end
 
     context "with Codex subscription auth (CODEX_HOME)" do
@@ -639,6 +654,7 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return("/host/home/user/.codex")
+        allow(service).to receive_messages(claude_local_config_path: nil, gemini_local_config_path: nil)
       end
 
       it "mounts Codex config at a staging path and sets the subscription marker" do

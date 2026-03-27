@@ -659,7 +659,8 @@ module Containers
     end
 
     def write_container_file(path, content)
-      heredoc = "cat > #{Shellwords.escape(path)} <<'EOF'\n#{content}EOF\n"
+      normalized_content = content.end_with?("\n") ? content : "#{content}\n"
+      heredoc = "cat > #{Shellwords.escape(path)} <<'EOF'\n#{normalized_content}EOF\n"
       container.exec([ "sh", "-lc", heredoc ], user: "agent")
     end
 
