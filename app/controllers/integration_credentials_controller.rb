@@ -41,8 +41,8 @@ class IntegrationCredentialsController < ApplicationController
   private
 
   def set_filter_context
-    @category_filter = params[:category].presence
-    @service_key_filter = params[:service_key].presence
+    @category_filter = params[:category].presence || params.dig(:integration_credential, :category).presence
+    @service_key_filter = params[:service_key].presence || params.dig(:integration_credential, :service_key).presence
     @service_definition = Integrations::CredentialCatalog.lookup(@service_key_filter)
   end
 
