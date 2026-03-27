@@ -48,7 +48,8 @@ module Activities
       changed_files = fetch_changed_files(project, pr_number)
       return { triggered: false, reason: "no_changed_files" } if changed_files.empty?
 
-      mode = determine_update_mode(changed_files)
+      restart_trigger_files = full_restart_trigger_files(changed_files)
+      mode = determine_update_mode(restart_trigger_files)
       return { triggered: false, reason: "spawn_failed" } unless trigger_update(mode)
 
       logger.info(
@@ -56,7 +57,9 @@ module Activities
         project_id: project.id,
         pr_number: pr_number,
         mode: mode,
-        changed_files_count: changed_files.size
+        changed_files_count: changed_files.size,
+        changed_files: changed_files,
+        restart_trigger_files: restart_trigger_files
       )
 
       { triggered: true, mode: mode, changed_files_count: changed_files.size }
@@ -84,25 +87,28 @@ module Activities
       []
     end
 
-    def determine_update_mode(changed_files)
-      needs_full_restart = changed_files.any? do |file|
+    def determine_update_mode(restart_trigger_files)
+      restart_trigger_files.any? ? "full" : "lightweight"
+    end
+
+    def full_restart_trigger_files(changed_files)
+      changed_files.select do |file|
         FULL_RESTART_PATTERNS.any? { |pattern| pattern.match?(file) }
       end
-
-      needs_full_restart ? "full" : "lightweight"
     end
 
     def trigger_update(mode)
       script = File.expand_path("../../../bin/dev-update", __dir__)
       flag = mode == "full" ? "--full" : "--lightweight"
-      log_path = Rails.root.join("log", "dev_update.log").to_s
+      log_path = Rails.root.join("log", "dev-update", "dev-update.log")
+      log_path.dirname.mkpath
 
       # Spawn detached so the Temporal worker (which runs under Overmind)
       # is not the parent — setsid creates a new session.
       pid = Process.spawn(
         "setsid", script, flag,
-        out: [ log_path, "a" ],
-        err: [ log_path, "a" ]
+        out: [ log_path.to_s, "a" ],
+        err: [ log_path.to_s, "a" ]
       )
       Process.detach(pid)
 
@@ -110,7 +116,7 @@ module Activities
         message: "dev_update.process_spawned",
         pid: pid,
         mode: mode,
-        log_path: log_path
+        log_path: log_path.to_s
       )
 
       true
