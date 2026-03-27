@@ -78,8 +78,8 @@ class IntegrationCredentialsController < ApplicationController
 
   def return_filter_params
     {
-      category: @integration_credential.category,
-      service_key: @integration_credential.service_key
+      category: params[:category] || @integration_credential.category,
+      service_key: params[:service_key] || @integration_credential.service_key
     }
   end
 end

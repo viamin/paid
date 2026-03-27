@@ -12,7 +12,7 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       allow(github_client).to receive(:add_labels_to_issue)
     end
 
-    it "reapplies the paid-generated label to a Paid-created PR missing it locally" do
+    it "reapplies the generated and automation labels when both are missing" do
       create(:agent_run, :completed,
         project: project,
         issue: nil,
@@ -28,11 +28,51 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       described_class.perform_now
 
       expect(github_client).to have_received(:add_labels_to_issue)
-        .with("viamin/paid", 416, [ "paid-generated" ])
-      expect(pull_request.reload.labels).to include("paid-generated")
+        .with("viamin/paid", 416, [ "paid-generated", "paid-automation" ])
+      expect(pull_request.reload.labels).to include("paid-generated", "paid-automation")
     end
 
-    it "skips PRs that already have the label locally" do
+    context "when the generated label is already present" do
+      it "skips recovery" do
+        create(:agent_run, :completed,
+          project: project,
+          issue: nil,
+          custom_prompt: "Create PR",
+          goal: "create_pr",
+          pull_request_number: 416,
+          pull_request_url: "https://github.com/viamin/paid/pull/416")
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 416,
+          labels: [ "paid-generated" ])
+
+        described_class.perform_now
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+    end
+
+    context "when only the automation label is missing" do
+      it "preserves manual opt-out" do
+        create(:agent_run, :completed,
+          project: project,
+          issue: nil,
+          custom_prompt: "Create PR",
+          goal: "create_pr",
+          pull_request_number: 416,
+          pull_request_url: "https://github.com/viamin/paid/pull/416")
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 416,
+          labels: [ "paid-generated" ])
+
+        described_class.perform_now
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+    end
+
+    it "reapplies only the generated label when automation is still present" do
       create(:agent_run, :completed,
         project: project,
         issue: nil,
@@ -40,14 +80,16 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
         goal: "create_pr",
         pull_request_number: 416,
         pull_request_url: "https://github.com/viamin/paid/pull/416")
-      create(:issue, :pull_request,
+      pull_request = create(:issue, :pull_request,
         project: project,
         github_number: 416,
-        labels: [ "paid-generated" ])
+        labels: [ "paid-automation" ])
 
       described_class.perform_now
 
-      expect(github_client).not_to have_received(:add_labels_to_issue)
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with("viamin/paid", 416, [ "paid-generated" ])
+      expect(pull_request.reload.labels).to include("paid-generated", "paid-automation")
     end
 
     it "continues when GitHub relabeling fails" do

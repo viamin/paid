@@ -12,6 +12,7 @@ RSpec.describe Providers::TestAgent do
   let(:test_run) do
     instance_double(
       AgentRun,
+      id: 1,
       with_container: container_result,
       persisted?: true,
       destroy!: true,
@@ -22,13 +23,19 @@ RSpec.describe Providers::TestAgent do
     Containers::Provision::Result.success(stdout: "PING OK", stderr: "", exit_code: 0)
   end
   let(:container_result) { execution_result }
+  let(:insert_result) { double(first: { "id" => 1 }) }
+
+  def stub_insert_all
+    allow(AgentRun).to receive(:insert_all!).and_return(insert_result)
+    allow(AgentRun).to receive(:find).with(1).and_return(test_run)
+  end
 
   describe ".call" do
     context "when agent responds successfully" do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -43,12 +50,13 @@ RSpec.describe Providers::TestAgent do
       it "sends a test prompt with the correct provider" do
         described_class.call(provider: provider)
 
-        expect(AgentRun).to have_received(:create!).with(
-          hash_including(
-            project: project,
+        expect(AgentRun).to have_received(:insert_all!).with(
+          [ hash_including(
+            project_id: project.id,
             agent_type: "claude_code",
             custom_prompt: "Respond with exactly: PING OK"
-          )
+          ) ],
+          returning: [ :id ]
         )
         expect(test_run).to have_received(:execute_in_container).with(
           [ "claude", "--print", "--output-format=text", "--dangerously-skip-permissions", "-p", "Respond with exactly: PING OK" ],
@@ -70,7 +78,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -89,7 +97,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "codex")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -110,7 +118,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "kilocode")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -138,7 +146,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -165,7 +173,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -214,7 +222,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -241,7 +249,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -268,7 +276,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "codex")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -294,7 +302,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
@@ -311,12 +319,12 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container)
           .and_raise(Containers::Provision::ProvisionError, "Invalid API key")
       end
 
-      it "returns an authentication error" do
+      it "returns a connection error because provision failures are infrastructure errors" do
         result = described_class.call(provider: provider)
 
         expect(result).not_to be_success
@@ -329,7 +337,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container)
           .and_raise(Containers::Provision::TimeoutError, "Timed out after 30s")
       end
@@ -347,7 +355,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentRun).to receive(:create!).and_return(test_run)
+        stub_insert_all
         allow(test_run).to receive(:with_container)
           .and_raise(Containers::Provision::ProvisionError, "Connection refused")
       end
@@ -412,7 +420,7 @@ RSpec.describe Providers::TestAgent do
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentRun).to receive(:create!)
+        allow(AgentRun).to receive(:insert_all!)
           .and_raise(RuntimeError, "Something went wrong")
       end
 

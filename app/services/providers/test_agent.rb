@@ -198,14 +198,25 @@ module Providers
     end
 
     def build_test_run
-      AgentRun.create!(
-        project: test_project,
-        agent_type: Provider.agent_type_for(provider.provider_key),
-        status: "pending",
-        goal: "create_pr",
-        trigger_type: "manual",
-        custom_prompt: PROMPT
+      # Use insert_all! to bypass after_commit callbacks (broadcasts, project
+      # timestamp updates, capacity accounting) for this ephemeral test record.
+      # The row is destroyed as soon as the container test completes.
+      now = Time.current
+      result = AgentRun.insert_all!(
+        [ {
+          project_id: test_project.id,
+          agent_type: Provider.agent_type_for(provider.provider_key),
+          status: "pending",
+          goal: "create_pr",
+          trigger_type: "manual",
+          custom_prompt: PROMPT,
+          proxy_token: SecureRandom.hex(32),
+          created_at: now,
+          updated_at: now
+        } ],
+        returning: [ :id ]
       )
+      AgentRun.find(result.first["id"])
     end
 
     def test_project
