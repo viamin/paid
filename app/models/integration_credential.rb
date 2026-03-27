@@ -52,6 +52,7 @@ class IntegrationCredential < ApplicationRecord
   end
 
   def service_key_supported
+    return if service_key.blank?
     return if Integrations::CredentialCatalog.lookup(service_key)
 
     errors.add(:service_key, "is not supported")

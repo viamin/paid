@@ -21,20 +21,7 @@ module Integrations
       }
     }.freeze
 
-    PROVIDER_SERVICES = ProviderSupport.supported_provider_keys
-      .index_with do |provider_key|
-        {
-          key: provider_key.to_s,
-          label: ::Provider.display_name(provider_key),
-          description: "Stored #{::Provider.display_name(provider_key)} credentials for API-key or OAuth-based access. Runtime use will be wired in a follow-up.",
-          category: :llm_provider,
-          auth_kinds: %w[api_key oauth_token]
-        }
-      end
-      .transform_keys(&:to_s)
-      .freeze
-
-    SERVICES = PROVIDER_SERVICES.merge(
+    STATIC_SERVICES = {
       "gitlab" => {
         key: "gitlab",
         label: "GitLab",
@@ -56,16 +43,34 @@ module Integrations
         category: :signing,
         auth_kinds: %w[signing_token]
       }
-    ).freeze
+    }.freeze
 
     module_function
 
+    def provider_services
+      ProviderSupport.supported_provider_keys
+        .index_with do |provider_key|
+          {
+            key: provider_key.to_s,
+            label: ::Provider.display_name(provider_key),
+            description: "Stored #{::Provider.display_name(provider_key)} credentials for API-key or OAuth-based access. Runtime use will be wired in a follow-up.",
+            category: :llm_provider,
+            auth_kinds: %w[api_key oauth_token]
+          }
+        end
+        .transform_keys(&:to_s)
+    end
+
+    def services
+      provider_services.merge(STATIC_SERVICES)
+    end
+
     def lookup(service_key)
-      SERVICES[service_key.to_s]
+      services[service_key.to_s]
     end
 
     def all
-      SERVICES.values
+      services.values
     end
 
     def categories
@@ -73,7 +78,7 @@ module Integrations
     end
 
     def services_for_category(category)
-      SERVICES.values.select { |definition| definition[:category] == category.to_sym }
+      services.values.select { |definition| definition[:category] == category.to_sym }
     end
 
     def service_options_for(category: nil)
