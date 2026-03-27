@@ -54,40 +54,7 @@ module Containers
     end
 
     def parse_stats(raw)
-      cpu_stats = raw["cpu_stats"] || {}
-      precpu_stats = raw["precpu_stats"] || {}
-      mem_stats = raw["memory_stats"] || {}
-      pids = raw.dig("pids_stats", "current")
-
-      cpu_delta = cpu_stats.dig("cpu_usage", "total_usage").to_f -
-        precpu_stats.dig("cpu_usage", "total_usage").to_f
-      system_delta = cpu_stats["system_cpu_usage"].to_f -
-        precpu_stats["system_cpu_usage"].to_f
-      online_cpus = cpu_stats["online_cpus"] ||
-        cpu_stats.dig("cpu_usage", "percpu_usage")&.length ||
-        1
-
-      cpu_percent = if system_delta <= 0 || cpu_delta < 0
-        0.0
-      else
-        ((cpu_delta / system_delta) * online_cpus * 100.0).round(2)
-      end
-
-      memory_bytes = mem_stats["usage"].to_i
-      memory_limit_bytes = mem_stats["limit"].to_i
-      memory_percent = if memory_limit_bytes.positive?
-        ((memory_bytes.to_f / memory_limit_bytes) * 100.0).round(2)
-      else
-        0.0
-      end
-
-      {
-        cpu_percent: cpu_percent,
-        memory_bytes: memory_bytes,
-        memory_limit_bytes: memory_limit_bytes,
-        memory_percent: memory_percent,
-        pids_count: pids.nil? ? nil : pids.to_i
-      }
+      DockerStatsParser.parse_stats(raw)
     end
 
     def record_metric(stats)

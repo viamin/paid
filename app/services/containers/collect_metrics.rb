@@ -60,44 +60,7 @@ module Containers
     end
 
     def parse_stats(raw)
-      cpu = parse_cpu(raw)
-      memory = parse_memory(raw)
-      pids = raw.dig("pids_stats", "current")
-      pids_count = pids.nil? ? nil : pids.to_i
-
-      {
-        cpu_percent: cpu,
-        memory_bytes: memory[:usage],
-        memory_limit_bytes: memory[:limit],
-        memory_percent: memory[:percent],
-        pids_count: pids_count
-      }
-    end
-
-    def parse_cpu(raw)
-      cpu_stats = raw["cpu_stats"] || {}
-      precpu_stats = raw["precpu_stats"] || {}
-
-      cpu_delta = cpu_stats.dig("cpu_usage", "total_usage").to_f -
-                  precpu_stats.dig("cpu_usage", "total_usage").to_f
-      system_delta = cpu_stats["system_cpu_usage"].to_f -
-                     precpu_stats["system_cpu_usage"].to_f
-      online_cpus = cpu_stats["online_cpus"] ||
-                    cpu_stats.dig("cpu_usage", "percpu_usage")&.length ||
-                    1
-
-      return 0.0 if system_delta <= 0 || cpu_delta < 0
-
-      ((cpu_delta / system_delta) * online_cpus * 100.0).round(2)
-    end
-
-    def parse_memory(raw)
-      mem_stats = raw["memory_stats"] || {}
-      usage = mem_stats["usage"].to_i
-      limit = mem_stats["limit"].to_i
-      percent = limit.positive? ? ((usage.to_f / limit) * 100.0).round(2) : 0.0
-
-      { usage: usage, limit: limit, percent: percent }
+      DockerStatsParser.parse_stats(raw)
     end
 
     def record_metric(stats)
