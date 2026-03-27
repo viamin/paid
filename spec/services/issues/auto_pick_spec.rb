@@ -125,14 +125,25 @@ RSpec.describe Issues::AutoPick do
       expect(result).to be_nil
     end
 
-    it "returns nil when an issue already has an active agent run (per-project concurrency)" do
+    it "picks another eligible issue when the project already has an active run" do
       issue_with_run = create(:issue, project: project)
       create(:agent_run, :queued, project: project, issue: issue_with_run)
-      create(:issue, project: project)
+      eligible = create(:issue, project: project)
 
       result = described_class.new(project).call
 
-      expect(result).to be_nil
+      expect(result.issue).to eq(eligible)
+    end
+
+    it "queues another auto-pick run when a different issue is already queued" do
+      first = create(:issue, project: project, github_number: 1)
+      second = create(:issue, project: project, github_number: 2)
+      create(:agent_run, :queued, project: project, issue: first, trigger_type: "automatic")
+
+      result = described_class.new(project).call
+
+      expect(result.issue).to eq(second)
+      expect(project.agent_runs.queued.where(trigger_type: "automatic").count).to eq(2)
     end
 
     it "picks the issue with the lowest github_number first (no dependencies)" do
@@ -245,7 +256,7 @@ RSpec.describe Issues::AutoPick do
     end
 
     it "returns existing run when RecordNotUnique is raised and active run exists" do
-      issue = create(:issue, project: project)
+      create(:issue, project: project)
 
       service = described_class.new(project)
       # Simulate a race: another process creates a run between our SELECT
@@ -324,32 +335,32 @@ RSpec.describe Issues::AutoPick do
       )
     end
 
-    context "with per-project concurrency limit" do
-      it "returns nil when project has a queued agent run" do
+    context "with concurrent auto-pick runs" do
+      it "queues another run when project already has a queued agent run" do
         create(:agent_run, :queued, project: project)
-        create(:issue, project: project)
+        issue = create(:issue, project: project)
 
         result = described_class.new(project).call
 
-        expect(result).to be_nil
+        expect(result.issue).to eq(issue)
       end
 
-      it "returns nil when project has a running agent run" do
+      it "queues another run when project already has a running agent run" do
         create(:agent_run, :running, project: project)
-        create(:issue, project: project)
+        issue = create(:issue, project: project)
 
         result = described_class.new(project).call
 
-        expect(result).to be_nil
+        expect(result.issue).to eq(issue)
       end
 
-      it "returns nil when project has a pending agent run" do
+      it "queues another run when project already has a pending agent run" do
         create(:agent_run, project: project, status: "pending")
-        create(:issue, project: project)
+        issue = create(:issue, project: project)
 
         result = described_class.new(project).call
 
-        expect(result).to be_nil
+        expect(result.issue).to eq(issue)
       end
 
       it "picks an issue when all project runs are finished" do
@@ -370,16 +381,6 @@ RSpec.describe Issues::AutoPick do
         issue = create(:issue, project: project)
 
         result = described_class.new(project).call
-
-        expect(result).to be_a(AgentRun)
-        expect(result.issue).to eq(issue)
-      end
-
-      it "can allow concurrent runs when explicitly enabled by the scheduler" do
-        create(:agent_run, :running, project: project)
-        issue = create(:issue, project: project)
-
-        result = described_class.new(project, allow_concurrent_runs: true).call
 
         expect(result).to be_a(AgentRun)
         expect(result.issue).to eq(issue)
@@ -466,13 +467,11 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
-      it "returns nil when open PRs already have active agent runs (per-project concurrency limit)" do
+      it "returns nil when open PRs already need attention even if a run is already active" do
         pr = create(:issue, :pull_request, :in_progress, project: project)
         create(:agent_run, :running, project: project, issue: pr)
         create(:issue, project: project)
 
-        # Project has an active run, so it should return nil due to
-        # per-project concurrency limit (not PR check)
         result = described_class.new(project).call
 
         expect(result).to be_nil
@@ -515,8 +514,7 @@ RSpec.describe Issues::AutoPick do
         create(:agent_run, :queued, project: project, issue: issue_with_run)
         eligible = create(:issue, project: project)
 
-        # Use allow_concurrent_runs so project-level guard doesn't block
-        result = described_class.new(project, allow_concurrent_runs: true).call
+        result = described_class.new(project).call
 
         expect(result.issue).to eq(eligible)
       end
