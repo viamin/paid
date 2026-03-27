@@ -79,6 +79,26 @@ class Provider < ApplicationRecord
     ProviderSupport.agent_type_for(provider_key)
   end
 
+  # Updates the enabled_for_fallback flag on each of the user's providers
+  # based on the given set of enabled provider keys. Wraps all updates in
+  # a transaction and skips providers whose flag already matches.
+  #
+  # @param user [User] the user whose providers to update
+  # @param enabled_keys [Array<String>] provider keys that should be enabled
+  # @return [void]
+  def self.update_fallback_flags(user, enabled_keys)
+    user.providers.transaction do
+      user.providers.find_each do |provider|
+        new_value = enabled_keys.include?(provider.provider_key)
+        next if provider.enabled_for_fallback? == new_value
+
+        unless provider.update(enabled_for_fallback: new_value)
+          raise ActiveRecord::Rollback
+        end
+      end
+    end
+  end
+
   private
 
   def must_keep_at_least_one_agent_run_provider
