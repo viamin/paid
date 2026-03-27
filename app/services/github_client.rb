@@ -323,13 +323,27 @@ class GithubClient
   end
 
   # Fetches issue timeline events such as label additions/removals.
+  # Caps pagination at +max_pages+ (default 10 = 1 000 events) to avoid
+  # unbounded API usage on long-lived issues.
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Issue or PR number
+  # @param max_pages [Integer] Maximum number of pages to fetch (default: 10)
   # @return [Array<Sawyer::Resource>] Events (each may include .event, .actor.login, .label.name)
-  def issue_events(repo, number)
+  def issue_events(repo, number, max_pages: 10)
     handle_errors do
-      with_auto_paginate { client.issue_events(repo, number, per_page: 100, page: 1) }
+      all_events = []
+      page = 1
+
+      loop do
+        batch = client.issue_events(repo, number, per_page: 100, page: page)
+        all_events.concat(Array(batch))
+        break if batch.size < 100 || page >= max_pages
+
+        page += 1
+      end
+
+      all_events
     end
   end
 
