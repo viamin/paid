@@ -1,0 +1,59 @@
+<% content_for(:title) { "#{@integration_credential.name} - Paid" } %>
+
+<% definition = @integration_credential.service_definition %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div>
+    <%= link_to integration_credentials_path(category: @integration_credential.category, service_key: @integration_credential.service_key), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <span aria-hidden="true" class="mr-1">&larr;</span>
+      Back to credentials
+    <% end %>
+  </div>
+
+  <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+    <div class="border-b border-gray-200 px-6 py-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-semibold text-gray-900"><%= @integration_credential.name %></h1>
+          <p class="mt-1 text-sm text-gray-500"><%= definition[:label] %> • <%= Integrations::CredentialCatalog.auth_kind_label(@integration_credential.auth_kind) %></p>
+        </div>
+        <% if @integration_credential.revoked? %>
+          <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Revoked</span>
+        <% elsif @integration_credential.expired? %>
+          <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">Expired</span>
+        <% else %>
+          <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Active</span>
+        <% end %>
+      </div>
+    </div>
+
+    <dl class="divide-y divide-gray-200">
+      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+        <dt class="text-sm font-medium text-gray-500">Category</dt>
+        <dd class="text-sm text-gray-900 sm:col-span-2"><%= Integrations::CredentialCatalog.categories.dig(@integration_credential.category.to_sym, :label) %></dd>
+      </div>
+      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+        <dt class="text-sm font-medium text-gray-500">Service</dt>
+        <dd class="text-sm text-gray-900 sm:col-span-2"><%= definition[:label] %></dd>
+      </div>
+      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+        <dt class="text-sm font-medium text-gray-500">Secret</dt>
+        <dd class="text-sm text-gray-900 sm:col-span-2">Stored securely and hidden after save.</dd>
+      </div>
+      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+        <dt class="text-sm font-medium text-gray-500">Expires at</dt>
+        <dd class="text-sm text-gray-900 sm:col-span-2"><%= @integration_credential.expires_at ? l(@integration_credential.expires_at, format: :long) : "No expiry set" %></dd>
+      </div>
+      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+        <dt class="text-sm font-medium text-gray-500">Last used</dt>
+        <dd class="text-sm text-gray-900 sm:col-span-2"><%= @integration_credential.last_used_at ? l(@integration_credential.last_used_at, format: :long) : "Not used yet" %></dd>
+      </div>
+    </dl>
+
+    <% if policy(@integration_credential).destroy? %>
+      <div class="border-t border-gray-200 px-6 py-4">
+        <%= button_to "Deactivate Credential", integration_credential_path(@integration_credential), method: :delete, class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
+      </div>
+    <% end %>
+  </div>
+</div>

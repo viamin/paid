@@ -1,0 +1,69 @@
+<% content_for(:title) { "Integration Credentials - Paid" } %>
+
+<% title = @service_definition&.fetch(:label, nil) || Integrations::CredentialCatalog.categories.dig(@category_filter&.to_sym, :label) || "Integration Credentials" %>
+<% description = @service_definition&.fetch(:description, nil) || Integrations::CredentialCatalog.categories.dig(@category_filter&.to_sym, :description) || "Stored credentials for provider and integration workflows." %>
+<% provider_credentials_view = @category_filter == "llm_provider" || @service_definition&.dig(:category) == :llm_provider %>
+
+<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900"><%= title %></h1>
+      <p class="mt-1 text-sm text-gray-500"><%= description %></p>
+    </div>
+    <div class="mt-4 flex gap-3 sm:mt-0">
+      <%= link_to "Back to Integrations", integrations_path, class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <%= link_to "Add Credential", new_integration_credential_path(category: @category_filter, service_key: @service_key_filter), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    </div>
+  </div>
+
+  <% if provider_credentials_view %>
+    <div class="mt-6 rounded-md border border-amber-200 bg-amber-50 p-4">
+      <p class="text-sm text-amber-800">
+        Provider credentials saved here are account-managed records only for now. Agent runtime and provider test flows do not consume them yet.
+      </p>
+    </div>
+  <% end %>
+
+  <% if @integration_credentials.any? %>
+    <div class="mt-8 overflow-hidden rounded-lg bg-white shadow">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Credential</th>
+            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Service</th>
+            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Auth Method</th>
+            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 bg-white">
+          <% @integration_credentials.each do |credential| %>
+            <% definition = credential.service_definition %>
+            <tr>
+              <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= credential.name %></td>
+              <td class="px-4 py-3 text-sm text-gray-700"><%= definition[:label] %></td>
+              <td class="px-4 py-3 text-sm text-gray-700"><%= Integrations::CredentialCatalog.auth_kind_label(credential.auth_kind) %></td>
+              <td class="px-4 py-3 text-sm">
+                <% if credential.revoked? %>
+                  <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Revoked</span>
+                <% elsif credential.expired? %>
+                  <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">Expired</span>
+                <% else %>
+                  <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Active</span>
+                <% end %>
+              </td>
+              <td class="px-4 py-3 text-right text-sm">
+                <%= link_to "View", integration_credential_path(credential), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <div class="mt-8 rounded-lg border border-dashed border-gray-300 bg-white p-10 text-center">
+      <h2 class="text-lg font-semibold text-gray-900">No credentials yet</h2>
+      <p class="mt-2 text-sm text-gray-500">Save the first credential here so Paid can manage it for future provider and integration workflows.</p>
+    </div>
+  <% end %>
+</div>
