@@ -101,22 +101,77 @@
         <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
           <dt class="truncate text-sm font-medium text-gray-500">Feedback Sources</dt>
           <dd class="mt-1 text-sm text-gray-900">
-            <% feedback_sources = {} %>
-            <% reactions_count = @stats.dig(:human_feedback, :reactions, :count) %>
-            <% reviews_count = @stats.dig(:human_feedback, :reviews, :count) %>
-            <% feedback_sources["PRs with Reactions"] = reactions_count if reactions_count.to_i > 0 %>
-            <% feedback_sources["PRs with Reviews"] = reviews_count if reviews_count.to_i > 0 %>
-            <% feedback_sources.each do |label, count| %>
-              <div class="flex justify-between py-1">
-                <span class="text-gray-600"><%= label %></span>
-                <span class="font-medium"><%= count %></span>
-              </div>
+            <% by_source = @stats.dig(:human_feedback, :by_source) || {} %>
+            <% source_labels = {
+              pr_reaction: "PR Reactions",
+              pr_review: "PR Reviews",
+              issue_reaction: "Issue Reactions",
+              review_reaction: "Review Reactions"
+            } %>
+            <% has_feedback = false %>
+            <% source_labels.each do |key, label| %>
+              <% count = by_source[key].to_i %>
+              <% if count > 0 %>
+                <% has_feedback = true %>
+                <div class="flex justify-between py-1">
+                  <span class="text-gray-600"><%= label %></span>
+                  <span class="font-medium"><%= count %></span>
+                </div>
+              <% end %>
             <% end %>
-            <% if feedback_sources.empty? %>
+            <% unless has_feedback %>
               <span class="text-gray-400">No feedback yet</span>
             <% end %>
           </dd>
         </div>
+      </div>
+    </div>
+
+    <%# Quality Metrics Reference %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Quality Metrics Reference</h2>
+      <p class="mt-1 text-sm text-gray-500">All quality metrics with their weights, descriptions, and applicable goal types.</p>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Metric</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Description</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Weight</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Goal Types</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Signal</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% @stats[:metrics_reference].each do |metric| %>
+              <tr>
+                <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= metric[:name] %></td>
+                <td class="px-4 py-3 text-sm text-gray-500"><%= metric[:description] %></td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
+                  <%= metric[:weight] ? format("%.0f%%", metric[:weight] * 100) : "—" %>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
+                  <% metric[:goal_types].each do |goal| %>
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                      <%= case goal
+                          when 'create_pr' then 'bg-blue-100 text-blue-800'
+                          when 'create_issue' then 'bg-green-100 text-green-800'
+                          when 'review' then 'bg-purple-100 text-purple-800'
+                          end %>">
+                      <%= goal.titleize %>
+                    </span>
+                  <% end %>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
+                  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                    <%= metric[:signal_type] == 'automated' ? 'bg-gray-100 text-gray-800' : 'bg-yellow-100 text-yellow-800' %>">
+                    <%= metric[:signal_type].capitalize %>
+                  </span>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
       </div>
     </div>
 

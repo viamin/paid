@@ -1,25 +1,40 @@
 # frozen_string_literal: true
 
-# Collects human feedback (reactions and reviews) for a completed agent run's PR.
+# Collects human feedback for a completed agent run based on its goal type.
 # Only runs for successful (completed) agent runs to avoid skewing metrics.
 #
-# Fetches both PR reactions and review outcomes from GitHub and records them
-# as human quality metrics.
+# Goal-specific collection:
+#   - create_pr: PR reactions, review outcomes, and review comment count
+#   - create_issue: Emoji reactions on the created issue
+#   - review: Emoji reactions on the code review comments
 class HumanFeedbackCollectionJob < ApplicationJob
   queue_as :default
 
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
     return unless agent_run.successful?
-    return unless agent_run.pull_request_number
 
-    QualityMetrics::CollectReactionFeedback.call(agent_run: agent_run)
-    collect_review_feedback(agent_run)
+    case agent_run.goal
+    when "create_pr"
+      collect_pr_feedback(agent_run)
+    when "create_issue"
+      collect_issue_feedback(agent_run)
+    when "review"
+      collect_review_reaction_feedback(agent_run)
+    end
   end
 
   private
 
-  def collect_review_feedback(agent_run)
+  def collect_pr_feedback(agent_run)
+    return unless agent_run.pull_request_number
+
+    QualityMetrics::CollectReactionFeedback.call(agent_run: agent_run)
+    collect_pr_review_feedback(agent_run)
+    collect_review_comment_count(agent_run)
+  end
+
+  def collect_pr_review_feedback(agent_run)
     github_client = agent_run.project.github_token&.client
     return unless github_client
 
@@ -37,5 +52,34 @@ class HumanFeedbackCollectionJob < ApplicationJob
       agent_run_id: agent_run.id,
       error: e.message
     )
+  end
+
+  def collect_review_comment_count(agent_run)
+    github_client = agent_run.project.github_token&.client
+    return unless github_client
+
+    repo = agent_run.project.full_name
+    comments = github_client.pull_request_review_comments(repo, agent_run.pull_request_number)
+    comment_count = comments.size
+
+    metric = agent_run.quality_metrics.find_by(metric_type: "automated")
+    return unless metric
+
+    existing_metadata = metric.metadata || {}
+    metric.update!(metadata: existing_metadata.merge("review_comment_count" => comment_count))
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "human_feedback.review_comment_count_failed",
+      agent_run_id: agent_run.id,
+      error: e.message
+    )
+  end
+
+  def collect_issue_feedback(agent_run)
+    QualityMetrics::CollectIssueFeedback.call(agent_run: agent_run)
+  end
+
+  def collect_review_reaction_feedback(agent_run)
+    QualityMetrics::CollectReviewReactionFeedback.call(agent_run: agent_run)
   end
 end
