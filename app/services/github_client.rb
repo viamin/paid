@@ -639,11 +639,17 @@ class GithubClient
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Pull request number
+  # @param per_page [Integer, nil] When set, fetches a single page of this size
+  #   (no auto-pagination). When nil, auto-paginates all comments.
   # @return [Array<Hash>] Comments with :id, :user_login, :body, :created_at keys
-  def pull_request_review_comments(repo, number)
+  def pull_request_review_comments(repo, number, per_page: nil)
     handle_errors do
-      comments = with_auto_paginate do
-        client.pull_request_comments(repo, number, per_page: 100)
+      comments = if per_page
+        client.pull_request_comments(repo, number, per_page: per_page)
+      else
+        with_auto_paginate do
+          client.pull_request_comments(repo, number, per_page: 100)
+        end
       end
       comments.map do |c|
         {

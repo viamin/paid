@@ -59,16 +59,18 @@ module QualityMetrics
     end
 
     def fetch_review_comment_reactions(repo, pr_number)
-      comments = github_client.pull_request_review_comments(repo, pr_number)
+      # Fetch a single page of comments (no auto-pagination) to bound API usage.
+      comments = github_client.pull_request_review_comments(
+        repo, pr_number, per_page: MAX_REVIEW_COMMENTS
+      )
 
-      if comments.size > MAX_REVIEW_COMMENTS
+      if comments.size == MAX_REVIEW_COMMENTS
         Rails.logger.info(
           message: "quality_metrics.review_comments_capped",
           agent_run_id: agent_run.id,
           total_comments: comments.size,
           cap: MAX_REVIEW_COMMENTS
         )
-        comments = comments.last(MAX_REVIEW_COMMENTS)
       end
 
       comments.flat_map do |comment|

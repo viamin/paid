@@ -4,7 +4,9 @@ class QualityMetric < ApplicationRecord
   METRIC_TYPES = %w[automated human].freeze
   FEEDBACK_SOURCES = %w[system pr_merge pr_reaction pr_review issue_reaction review_reaction webhook].freeze
 
-  # Weights from RDR-009 for composite quality score (PR creation goal)
+  # Weights for composite quality score (PR creation goal).
+  # Based on RDR-009 with adjustments: added pr_created, review_comment_count,
+  # and agent_rerun_count signals; rebalanced weights accordingly.
   SCORE_WEIGHTS = {
     "pr_created" => 0.25,
     "ci_passed" => 0.15,

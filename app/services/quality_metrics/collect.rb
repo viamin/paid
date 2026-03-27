@@ -11,28 +11,28 @@ module QualityMetrics
     end
 
     def call
-      metric = QualityMetric.find_or_initialize_by(
+      @automated_metric = QualityMetric.find_or_initialize_by(
         agent_run: agent_run,
         metric_type: "automated"
       )
       scores = build_scores
       weights = QualityMetric::GOAL_WEIGHTS.fetch(agent_run.goal, QualityMetric::SCORE_WEIGHTS)
-      metric.assign_attributes(
+      automated_metric.assign_attributes(
         prompt_version: agent_run.prompt_version,
         feedback_source: "system",
         scores: scores,
         composite_score: QualityMetric.weighted_average(scores, weights: weights)
       )
-      metric.save!
+      automated_metric.save!
 
-      update_ab_test_variant_stats(metric)
+      update_ab_test_variant_stats(automated_metric)
       update_prompt_version_stats if agent_run.prompt_version.present?
-      metric
+      automated_metric
     end
 
     private
 
-    attr_reader :agent_run
+    attr_reader :agent_run, :automated_metric
 
     # Builds scores for metrics relevant to the agent run's goal type.
     # `ci_passed` and `tests_pass` are intentionally omitted because the agent run
@@ -96,8 +96,7 @@ module QualityMetrics
     # Returns nil when review_comment_count has not yet been collected by
     # HumanFeedbackCollectionJob, so the score is omitted until data is available.
     def review_comment_count_score
-      existing_metric = agent_run.quality_metrics.find_by(metric_type: "automated")
-      comment_count = existing_metric&.metadata&.dig("review_comment_count")
+      comment_count = automated_metric&.metadata&.dig("review_comment_count")
       return nil if comment_count.nil?
 
       [ 1.0 - (comment_count.to_i * 0.1), 0.0 ].max

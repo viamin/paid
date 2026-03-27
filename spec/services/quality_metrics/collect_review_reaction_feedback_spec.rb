@@ -94,8 +94,8 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
       expect(result).to be_nil
     end
 
-    it "caps review comments to avoid excessive API calls" do
-      comments = (1..55).map do |i|
+    it "passes per_page to bound the number of review comments fetched" do
+      comments = (1..50).map do |i|
         { id: i, user_login: "user#{i}", body: "comment", created_at: i.hours.ago }
       end
       allow(github_client).to receive_messages(
@@ -105,7 +105,8 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
 
       described_class.call(agent_run: agent_run)
 
-      # Should only fetch reactions for the last 50 comments
+      expect(github_client).to have_received(:pull_request_review_comments)
+        .with(agent_run.project.full_name, agent_run.source_pull_request_number, per_page: 50)
       expect(github_client).to have_received(:pull_request_review_comment_reactions).exactly(50).times
     end
   end
