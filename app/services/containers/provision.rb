@@ -141,8 +141,9 @@ module Containers
       fix_workspace_ownership!
       fix_cache_tmpfs_ownership!
       fix_codex_tmpfs_ownership!
-      seed_codex_config!
+      seed_codex_credentials!
       fix_gemini_tmpfs_ownership!
+      seed_gemini_credentials!
       fix_kilocode_tmpfs_ownership!
       fix_opencode_config_tmpfs_ownership!
       fix_opencode_data_tmpfs_ownership!
@@ -443,23 +444,29 @@ module Containers
     # writable ~/.claude tmpfs. Only the files Claude CLI needs for auth and
     # configuration are copied; session/project data is created fresh each run.
     def seed_claude_credentials!
-      return unless claude_config_host_path.present?
+      source_files = %w[.credentials.json settings.json]
+      return unless claude_subscription_auth?
 
-      # Fix tmpfs ownership (created as root) then copy credential files.
-      container.exec(
-        [ "chown", "-R", "agent:agent", "/home/agent/.claude" ],
-        user: "root"
-      )
-      container.exec(
-        [ "sh", "-c",
-          "cp /home/agent/.claude-host/.credentials.json /home/agent/.claude/.credentials.json 2>/dev/null; " \
-          "cp /home/agent/.claude-host/settings.json /home/agent/.claude/settings.json 2>/dev/null; " \
-          "true" ],
-        user: "agent"
-      )
-      log_system("container.claude_credentials_seeded")
-    rescue Docker::Error::DockerError => e
-      log_system("container.claude_credentials_seed_failed", error: e.message)
+      # Prefer the source that actually contains the required credential file
+      # so we don't set PAID_CLAUDE_SUBSCRIPTION_AUTH=1 without seeding creds.
+      host = claude_config_host_path
+      if host.present? && File.file?(File.join(host, ".credentials.json"))
+        seed_host_credentials!(
+          staging_path: "/home/agent/.claude-host",
+          target_path: "/home/agent/.claude",
+          files: source_files,
+          success_log_key: "container.claude_credentials_seeded",
+          failure_log_key: "container.claude_credentials_seed_failed"
+        )
+      else
+        seed_local_credentials!(
+          source_path: claude_local_config_path,
+          target_path: "/home/agent/.claude",
+          files: source_files,
+          success_log_key: "container.claude_credentials_seeded",
+          failure_log_key: "container.claude_credentials_seed_failed"
+        )
+      end
     end
 
     # Writes a minimal Codex config into the writable ~/.codex tmpfs so the
@@ -481,6 +488,99 @@ module Containers
       log_system("container.codex_config_seeded")
     rescue Docker::Error::DockerError => e
       log_system("container.codex_config_seed_failed", error: e.message)
+    end
+
+    def seed_codex_credentials!
+      source_files = %w[auth.json config.toml]
+
+      unless codex_subscription_auth?
+        seed_codex_config!
+        return
+      end
+
+      # Prefer the source that actually contains auth.json so we don't set
+      # PAID_CODEX_SUBSCRIPTION_AUTH=1 without seeding creds.
+      host = codex_config_host_path
+      if host.present? && File.file?(File.join(host, "auth.json"))
+        seed_host_credentials!(
+          staging_path: "/home/agent/.codex-host",
+          target_path: "/home/agent/.codex",
+          files: source_files,
+          success_log_key: "container.codex_credentials_seeded",
+          failure_log_key: "container.codex_credentials_seed_failed"
+        )
+      elsif codex_local_config_path.present?
+        seed_local_credentials!(
+          source_path: codex_local_config_path,
+          target_path: "/home/agent/.codex",
+          files: source_files,
+          success_log_key: "container.codex_credentials_seeded",
+          failure_log_key: "container.codex_credentials_seed_failed"
+        )
+      end
+    end
+
+    def seed_gemini_credentials!
+      source_files = %w[
+        oauth_creds.json
+        google_accounts.json
+        settings.json
+        installation_id
+        state.json
+        trustedFolders.json
+        projects.json
+      ]
+      return unless gemini_subscription_auth?
+
+      # Prefer the source that actually contains oauth_creds.json so we don't
+      # set PAID_GEMINI_SUBSCRIPTION_AUTH=1 without seeding creds.
+      host = gemini_config_host_path
+      if host.present? && File.file?(File.join(host, "oauth_creds.json"))
+        seed_host_credentials!(
+          staging_path: "/home/agent/.gemini-host",
+          target_path: "/home/agent/.gemini",
+          files: source_files,
+          success_log_key: "container.gemini_credentials_seeded",
+          failure_log_key: "container.gemini_credentials_seed_failed"
+        )
+      else
+        seed_local_credentials!(
+          source_path: gemini_local_config_path,
+          target_path: "/home/agent/.gemini",
+          files: source_files,
+          success_log_key: "container.gemini_credentials_seeded",
+          failure_log_key: "container.gemini_credentials_seed_failed"
+        )
+      end
+    end
+
+    def seed_host_credentials!(staging_path:, target_path:, files:, success_log_key:, failure_log_key:)
+      copy_commands = files.map do |filename|
+        "cp #{Shellwords.escape("#{staging_path}/#{filename}")} #{Shellwords.escape("#{target_path}/#{filename}")} 2>/dev/null"
+      end
+
+      container.exec([ "chown", "-R", "agent:agent", target_path ], user: "root")
+      container.exec([ "sh", "-c", "#{copy_commands.join('; ')}; true" ], user: "agent")
+      log_system(success_log_key)
+    rescue Docker::Error::DockerError => e
+      log_system(failure_log_key, error: e.message)
+    end
+
+    def seed_local_credentials!(source_path:, target_path:, files:, success_log_key:, failure_log_key:)
+      container.exec([ "chown", "-R", "agent:agent", target_path ], user: "root")
+
+      copied = 0
+      files.each do |filename|
+        source_file = File.join(source_path, filename)
+        next unless File.file?(source_file)
+
+        write_container_file(File.join(target_path, filename), File.binread(source_file))
+        copied += 1
+      end
+
+      log_system(success_log_key, files_copied: copied) if copied > 0
+    rescue Docker::Error::DockerError, SystemCallError => e
+      log_system(failure_log_key, error: e.message)
     end
 
     # Ensures the bind-mounted /workspace is writable by the non-root agent user.
@@ -573,7 +673,8 @@ module Containers
     end
 
     def write_container_file(path, content)
-      heredoc = "cat > #{Shellwords.escape(path)} <<'EOF'\n#{content}EOF\n"
+      normalized_content = content.end_with?("\n") ? content : "#{content}\n"
+      heredoc = "cat > #{Shellwords.escape(path)} <<'EOF'\n#{normalized_content}EOF\n"
       container.exec([ "sh", "-lc", heredoc ], user: "agent")
     end
 
@@ -660,7 +761,25 @@ module Containers
       # Mount the host's Claude config as read-only at a staging path.
       # Credentials are copied into the writable /home/agent/.claude tmpfs
       # by seed_claude_credentials! after container start.
-      binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro" if claude_config_host_path.present?
+      if claude_config_host_path.present? &&
+         File.directory?(claude_config_host_path) &&
+         File.file?(File.join(claude_config_host_path, ".credentials.json"))
+        binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro"
+      end
+
+      if codex_config_host_path.present? &&
+         File.directory?(codex_config_host_path) &&
+         File.file?(File.join(codex_config_host_path, "auth.json")) &&
+         codex_subscription_auth?
+        binds << "#{codex_config_host_path}:/home/agent/.codex-host:ro"
+      end
+
+      if gemini_config_host_path.present? &&
+         File.directory?(gemini_config_host_path) &&
+         File.file?(File.join(gemini_config_host_path, "oauth_creds.json")) &&
+         gemini_subscription_auth?
+        binds << "#{gemini_config_host_path}:/home/agent/.gemini-host:ro"
+      end
 
       tmpfs = {
         "/tmp" => "size=#{options[:tmpfs_tmp_size]},mode=1777",
@@ -731,31 +850,14 @@ module Containers
         "HOME=/home/agent"
       ]
 
-      # OpenAI proxy env vars are always set so Codex CLI can route through
-      # the secrets proxy regardless of auth mode. Codex has no native login
-      # equivalent to `claude login`, so it always needs the proxy for auth.
       env.concat([
         "OPENAI_BASE_URL=#{proxy_base}/api/proxy/openai",
         "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
         "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
-        "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
+        "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
+        "PAID_CODEX_SUBSCRIPTION_AUTH=#{codex_subscription_auth? ? 1 : 0}"
       ])
 
-      # Google proxy env vars are always set so Gemini CLI can route through
-      # the secrets proxy from inside the agent container.
-      #
-      # Gemini CLI selects API-key auth mode purely from GEMINI_API_KEY
-      # presence. We provide a non-secret sentinel value so the CLI chooses
-      # that code path while the secrets proxy injects the real upstream key.
-      #
-      # GOOGLE_GEMINI_BASE_URL is the variable the Gemini CLI actually reads
-      # for a custom Gemini API endpoint. Keep GOOGLE_GENAI_BASE_URL aligned
-      # for compatibility with adjacent Google GenAI tooling.
-      #
-      # GEMINI_SANDBOX=false disables Gemini CLI's built-in sandbox layer.
-      # The agent already runs inside an isolated Docker container, so an
-      # inner sandbox is unnecessary and fails because neither Docker nor
-      # Podman is available inside the agent image.
       env.concat([
         "GOOGLE_GEMINI_BASE_URL=#{proxy_base}/api/proxy/google",
         "GOOGLE_GENAI_BASE_URL=#{proxy_base}/api/proxy/google",
@@ -763,15 +865,19 @@ module Containers
         "GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
         "GEMINI_CLI_CUSTOM_HEADERS=X-Agent-Run-Id: #{agent_run.id}, X-Proxy-Token: #{agent_run.proxy_token}",
         "GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
-        "GEMINI_SANDBOX=false"
+        "GEMINI_SANDBOX=false",
+        "PAID_GEMINI_SUBSCRIPTION_AUTH=#{gemini_subscription_auth? ? 1 : 0}"
       ])
 
-      if subscription_auth?
-        # Subscription mode: Claude Code uses its native auth from ~/.claude/.
-        # Don't override ANTHROPIC_BASE_URL — let it talk to Anthropic directly.
+      env << "PAID_CLAUDE_SUBSCRIPTION_AUTH=#{claude_subscription_auth? ? 1 : 0}"
+
+      if claude_subscription_auth?
+        # Claude subscription mode: let Claude Code use its native auth from
+        # ~/.claude while other providers can still use proxy credentials.
         log_system("container.auth_mode", mode: "subscription")
       else
-        # API key mode: route Anthropic calls through the secrets proxy too.
+        # Route Anthropic calls through the secrets proxy when Claude host auth
+        # is not available, even if other providers have subscription auth.
         env.concat([
           "ANTHROPIC_BASE_URL=#{proxy_base}/api/proxy/anthropic",
           "ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
@@ -787,10 +893,10 @@ module Containers
       env
     end
 
-    # Returns true when Claude CLI config is available for
-    # subscription-based authentication (e.g. from `claude login`).
+    # Returns true when any provider CLI config is available for
+    # subscription-based authentication via copied host login state.
     def subscription_auth?
-      claude_config_host_path.present?
+      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth?
     end
 
     def proxy_base_url
@@ -803,17 +909,58 @@ module Containers
     # Checks CLAUDE_CONFIG_DIR first, then auto-detects from container mounts
     # (for DooD setups where the devcontainer mounts ~/.claude from the host).
     def claude_config_host_path
-      @claude_config_host_path ||= ENV["CLAUDE_CONFIG_DIR"].presence || detect_claude_config_host_path
+      @claude_config_host_path ||= ENV["CLAUDE_CONFIG_DIR"].presence || detect_host_config_path("/.claude")
     end
 
-    def detect_claude_config_host_path
+    def claude_local_config_path
+      @claude_local_config_path ||=
+        local_config_path(".claude") || local_config_path(".config/claude")
+    end
+
+    def gemini_config_host_path
+      @gemini_config_host_path ||= ENV["GEMINI_CONFIG_DIR"].presence || detect_host_config_path("/.gemini")
+    end
+
+    def gemini_local_config_path
+      @gemini_local_config_path ||= local_config_path(".gemini")
+    end
+
+    def codex_config_host_path
+      @codex_config_host_path ||= ENV["CODEX_CONFIG_DIR"].presence || ENV["CODEX_HOME"].presence || detect_host_config_path("/.codex")
+    end
+
+    def codex_local_config_path
+      @codex_local_config_path ||= local_config_path(".codex")
+    end
+
+    def claude_subscription_auth?
+      paths = [ claude_config_host_path, claude_local_config_path ].compact
+      paths.any? { |base| File.file?(File.join(base, ".credentials.json")) }
+    end
+
+    def gemini_subscription_auth?
+      paths = [ gemini_config_host_path, gemini_local_config_path ].compact
+      paths.any? { |base| File.file?(File.join(base, "oauth_creds.json")) }
+    end
+
+    def codex_subscription_auth?
+      paths = [ codex_config_host_path, codex_local_config_path ].compact
+      paths.any? { |base| File.file?(File.join(base, "auth.json")) }
+    end
+
+    def detect_host_config_path(suffix)
       hostname = Socket.gethostname
       container = Docker::Container.get(hostname)
       mounts = container.info["Mounts"] || []
-      claude_mount = mounts.find { |m| m["Destination"]&.end_with?("/.claude") }
-      claude_mount&.dig("Source")
+      config_mount = mounts.find { |mount| mount["Destination"]&.end_with?(suffix) }
+      config_mount&.dig("Source")
     rescue Docker::Error::DockerError
       nil
+    end
+
+    def local_config_path(dirname)
+      path = File.join(ENV.fetch("HOME", "/home/vscode"), dirname)
+      File.directory?(path) ? path : nil
     end
 
     # Resolves running service container IPs for firewall rules.
