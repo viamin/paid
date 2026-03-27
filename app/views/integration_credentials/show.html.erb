@@ -1,4 +1,4 @@
-<% content_for(:title) { "#{@integration_credential.name} - Paid" } %>
+<% content_for(:title) { "#{strip_tags(@integration_credential.name.to_s)} - Paid" } %>
 
 <% definition = @integration_credential.service_definition %>
 <% service_label = definition&.fetch(:label, nil) || @integration_credential.service_key || "Unknown service" %>

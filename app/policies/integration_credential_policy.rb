@@ -6,6 +6,6 @@ class IntegrationCredentialPolicy < ApplicationPolicy
   end
 
   def destroy?
-    revoke?
+    super
   end
 end
