@@ -290,6 +290,91 @@ RSpec.describe NetworkPolicy do
     end
   end
 
+  describe ".subscription_auth?" do
+    around do |example|
+      # Isolate env vars used by config dir detection
+      original_env = ENV.to_h.slice(
+        "CLAUDE_CONFIG_DIR", "CODEX_CONFIG_DIR", "CODEX_HOME", "GEMINI_CONFIG_DIR"
+      )
+      ENV.delete("CLAUDE_CONFIG_DIR")
+      ENV.delete("CODEX_CONFIG_DIR")
+      ENV.delete("CODEX_HOME")
+      ENV.delete("GEMINI_CONFIG_DIR")
+      example.run
+    ensure
+      original_env.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
+    end
+
+    context "when no provider credentials exist" do
+      before do
+        allow(Dir).to receive(:exist?).and_return(false)
+        allow(File).to receive(:file?).and_return(false)
+      end
+
+      it "returns false" do
+        expect(described_class.subscription_auth?).to be false
+      end
+
+      it "selects the restricted agent network" do
+        expect(described_class.agent_network).to eq(described_class::NETWORK_NAME)
+      end
+    end
+
+    context "when only Claude credentials exist" do
+      before do
+        allow(Dir).to receive(:exist?).and_return(false)
+        ENV["CLAUDE_CONFIG_DIR"] = "/tmp/claude-test"
+        allow(File).to receive(:file?).and_return(false)
+        allow(File).to receive(:file?)
+          .with("/tmp/claude-test/.credentials.json").and_return(true)
+      end
+
+      it "returns true" do
+        expect(described_class.subscription_auth?).to be true
+      end
+
+      it "selects the infrastructure network" do
+        expect(described_class.agent_network).to eq(described_class::INFRA_NETWORK_NAME)
+      end
+    end
+
+    context "when only Codex credentials exist" do
+      before do
+        allow(Dir).to receive(:exist?).and_return(false)
+        ENV["CODEX_CONFIG_DIR"] = "/tmp/codex-test"
+        allow(File).to receive(:file?).and_return(false)
+        allow(File).to receive(:file?)
+          .with("/tmp/codex-test/auth.json").and_return(true)
+      end
+
+      it "returns true" do
+        expect(described_class.subscription_auth?).to be true
+      end
+
+      it "selects the infrastructure network" do
+        expect(described_class.agent_network).to eq(described_class::INFRA_NETWORK_NAME)
+      end
+    end
+
+    context "when only Gemini credentials exist" do
+      before do
+        allow(Dir).to receive(:exist?).and_return(false)
+        ENV["GEMINI_CONFIG_DIR"] = "/tmp/gemini-test"
+        allow(File).to receive(:file?).and_return(false)
+        allow(File).to receive(:file?)
+          .with("/tmp/gemini-test/oauth_creds.json").and_return(true)
+      end
+
+      it "returns true" do
+        expect(described_class.subscription_auth?).to be true
+      end
+
+      it "selects the infrastructure network" do
+        expect(described_class.agent_network).to eq(described_class::INFRA_NETWORK_NAME)
+      end
+    end
+  end
+
   describe "constants" do
     it "defines the network name" do
       expect(described_class::NETWORK_NAME).to eq("paid_agent")
