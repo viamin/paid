@@ -1,0 +1,25 @@
+<% if active_runs.any? %>
+  <div class="overflow-hidden rounded-lg bg-white shadow">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Project</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Context</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Agent</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Duration</th>
+          <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200 bg-white">
+        <% active_runs.each do |run| %>
+          <%= render "dashboard/active_run_row", run: run %>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+<% else %>
+  <div class="overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-4 py-5 text-sm text-gray-500">No active runs at the moment.</div>
+  </div>
+<% end %>

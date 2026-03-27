@@ -1,0 +1,33 @@
+<dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+    <dt class="truncate text-sm font-medium text-gray-500">Active Runs</dt>
+    <dd class="mt-1 text-3xl font-semibold tracking-tight text-indigo-600"><%= stats[:active_runs] %></dd>
+  </div>
+  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+    <dt class="truncate text-sm font-medium text-gray-500">Queued</dt>
+    <dd class="mt-1 text-3xl font-semibold tracking-tight text-amber-600"><%= stats[:queued_runs] %></dd>
+  </div>
+  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+    <dt class="truncate text-sm font-medium text-gray-500">Completed Today</dt>
+    <dd class="mt-1 text-3xl font-semibold tracking-tight text-emerald-600"><%= stats[:completed_today] %></dd>
+  </div>
+  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+    <dt class="truncate text-sm font-medium text-gray-500">Failed Today</dt>
+    <dd class="mt-1 text-3xl font-semibold tracking-tight <%= stats[:failed_today].positive? ? 'text-red-600' : 'text-gray-900' %>"><%= stats[:failed_today] %></dd>
+  </div>
+</dl>
+
+<dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+    <dt class="truncate text-sm font-medium text-gray-500">Active Containers</dt>
+    <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= stats[:active_containers] %></dd>
+  </div>
+  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+    <dt class="truncate text-sm font-medium text-gray-500">Total Projects</dt>
+    <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= stats[:total_projects] %></dd>
+  </div>
+  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+    <dt class="truncate text-sm font-medium text-gray-500">Active Projects</dt>
+    <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= stats[:active_projects] %></dd>
+  </div>
+</dl>
