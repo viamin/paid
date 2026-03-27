@@ -263,6 +263,17 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(result["REDIS_URL"]).to eq("redis://redis-test:6379")
       end
 
+      it "omits Healthcheck key for non-postgres containers" do
+        sc = create(:service_container, :redis, name: "redis-nohc", port: 6379)
+        create(:project_service_container, project: project, service_container: sc)
+
+        provisioner.provision(agent_run)
+
+        expect(Docker::Container).to have_received(:create).with(
+          hash_not_including("Healthcheck")
+        )
+      end
+
       it "generates SELENIUM_URL for selenium images" do
         sc = create(:service_container, :selenium, name: "selenium-test", port: 4444)
         create(:project_service_container, project: project, service_container: sc)
@@ -398,6 +409,36 @@ RSpec.describe Containers::ServiceProvisioner do
 
       result = provisioner.send(:docker_healthcheck_status, sc)
       expect(result).to be_nil
+    end
+  end
+
+  describe "metrics collection scheduling" do
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, project: project) }
+    let(:agent_run) { create(:agent_run, project: project, issue: issue) }
+    let(:service_container) do
+      create(:service_container,
+        image: "postgres:16",
+        name: "metrics-postgres",
+        port: 5432,
+        env: { "POSTGRES_USER" => "agent", "POSTGRES_PASSWORD" => "agent", "POSTGRES_DB" => "agent_test" })
+    end
+
+    before do
+      create(:project_service_container, project: project, service_container: service_container)
+      allow(NetworkPolicy).to receive(:ensure_network!)
+      allow(Docker::Image).to receive(:create)
+      allow(Docker::Container).to receive(:create).and_return(
+        instance_double(Docker::Container, id: "m123").tap { |c| allow(c).to receive(:start) }
+      )
+      allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
+    end
+
+    it "silently handles concurrency errors from duplicate metrics job enqueues" do
+      allow(ServiceContainerMetricsCollectionJob).to receive(:perform_later)
+        .and_raise(GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError)
+
+      expect { provisioner.provision(agent_run) }.not_to raise_error
     end
   end
 

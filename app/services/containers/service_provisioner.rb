@@ -269,7 +269,7 @@ module Containers
       limits = resource_limits_for(service_container.image)
       env = container_env_for(service_container)
 
-      Docker::Container.create(
+      options = {
         "Image" => service_container.image,
         "name" => service_container.name,
         "Env" => env.map { |k, v| "#{k}=#{v}" },
@@ -281,7 +281,6 @@ module Containers
           "CpuQuota" => limits[:cpu_quota],
           "PidsLimit" => limits[:pids_limit]
         },
-        "Healthcheck" => healthcheck_for(service_container, env),
         "NetworkingConfig" => {
           "EndpointsConfig" => {
             @network => {
@@ -293,7 +292,12 @@ module Containers
           "paid.service_container" => "true",
           "paid.service_container_id" => service_container.id.to_s
         }
-      )
+      }
+
+      healthcheck = healthcheck_for(service_container, env)
+      options["Healthcheck"] = healthcheck if healthcheck
+
+      Docker::Container.create(options)
     end
 
     def container_env_for(service_container)
@@ -415,6 +419,9 @@ module Containers
 
     def schedule_metrics_collection(service_container)
       ServiceContainerMetricsCollectionJob.perform_later(service_container.id)
+    rescue GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError
+      log_info("service_provisioner.metrics_job_already_enqueued",
+        service_container_id: service_container.id)
     end
 
     def log_info(message, **metadata)
