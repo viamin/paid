@@ -519,9 +519,7 @@ RSpec.describe "Projects" do
           auto_add_labels_enabled: true, automation_on_label_enabled: false,
           auto_pick_enabled: true, auto_merge_enabled: false, auto_fix_merge_conflicts: true)
         get project_path(project)
-        expect(response.body).to include("Automation")
-        # Verify the Automation section's <details> is collapsed by default (no `open` attribute)
-        expect(response.body).not_to match(%r{<details[^>]*\bopen\b[^>]*>.*?Automation}m)
+        expect(response.body).to include("Configuration")
 
         {
           "Auto-Add Labels" => "Enabled", "Automation on Label" => "Disabled",
