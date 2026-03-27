@@ -54,25 +54,23 @@ module QualityMetrics
     }.freeze
 
     # Returns a structured reference of all quality metrics with their
-    # weights, descriptions, and applicable goal types.
-    # Weights are derived from QualityMetric::GOAL_WEIGHTS; goal applicability
-    # comes from METRIC_DISPLAY#collected_for (which includes metrics collected
-    # via human feedback that may not carry a scoring weight).
+    # per-goal weights, descriptions, and applicable goal types.
+    # Weights are returned per goal type to avoid misleading display when a
+    # metric is collected for a goal but not weighted for it (e.g.
+    # reaction_score is collected for create_pr but only weighted for
+    # create_issue and review).
     def self.metrics_reference
-      # Build a mapping of metric_key -> first weight found in GOAL_WEIGHTS
-      weights_index = {}
-      QualityMetric::GOAL_WEIGHTS.each_value do |weights|
-        weights.each do |key, weight|
-          weights_index[key] ||= weight
-        end
-      end
-
       METRIC_DISPLAY.map do |key, display|
+        weights_by_goal = {}
+        QualityMetric::GOAL_WEIGHTS.each do |goal, weights|
+          weights_by_goal[goal] = weights[key] if weights.key?(key)
+        end
+
         {
           key: key,
           name: display[:name],
           description: display[:description],
-          weight: weights_index[key],
+          weights_by_goal: weights_by_goal,
           goal_types: display[:collected_for],
           signal_type: display[:signal_type]
         }

@@ -52,7 +52,7 @@ RSpec.describe HumanFeedbackCollectionJob do
         expect(metric.composite_score).to be_present
       end
 
-      it "re-enqueues when automated metric is missing for comment count" do
+      it "re-enqueues with incremented attempt when automated metric is missing" do
         agent_run = create(:agent_run, :completed)
         # No automated metric created
         allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
@@ -66,7 +66,23 @@ RSpec.describe HumanFeedbackCollectionJob do
 
         expect {
           described_class.new.perform(agent_run.id)
-        }.to have_enqueued_job(described_class).with(agent_run.id)
+        }.to have_enqueued_job(described_class).with(agent_run.id, comment_count_attempt: 1)
+      end
+
+      it "stops re-enqueuing after max attempts" do
+        agent_run = create(:agent_run, :completed)
+        allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+        allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+
+        allow(github_client).to receive_messages(
+          pull_request_reactions: [],
+          pull_request_reviews: [],
+          pull_request: { review_comments: 3 }
+        )
+
+        expect {
+          described_class.new.perform(agent_run.id, comment_count_attempt: described_class::MAX_COMMENT_COUNT_ATTEMPTS)
+        }.not_to have_enqueued_job(described_class)
       end
 
       it "skips PR runs without pull request number" do

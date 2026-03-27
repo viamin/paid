@@ -138,7 +138,7 @@
             <tr>
               <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Metric</th>
               <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Description</th>
-              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Weight</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Weights</th>
               <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Goal Types</th>
               <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Signal</th>
             </tr>
@@ -148,8 +148,14 @@
               <tr>
                 <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= metric[:name] %></td>
                 <td class="px-4 py-3 text-sm text-gray-500"><%= metric[:description] %></td>
-                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
-                  <%= metric[:weight] ? format("%.0f%%", metric[:weight] * 100) : "—" %>
+                <td class="px-4 py-3 text-sm text-gray-500 text-right">
+                  <% if metric[:weights_by_goal].any? %>
+                    <% metric[:weights_by_goal].each do |goal, weight| %>
+                      <div class="whitespace-nowrap"><%= goal.titleize %>: <%= format("%.0f%%", weight * 100) %></div>
+                    <% end %>
+                  <% else %>
+                    —
+                  <% end %>
                 </td>
                 <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
                   <% metric[:goal_types].each do |goal| %>

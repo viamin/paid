@@ -96,7 +96,7 @@ RSpec.describe QualityMetrics::DashboardStats do
 
       pr_created = result[:metrics_reference].find { |m| m[:key] == "pr_created" }
       expect(pr_created[:name]).to eq("PR Created")
-      expect(pr_created[:weight]).to eq(0.25)
+      expect(pr_created[:weights_by_goal]).to eq("create_pr" => 0.25)
       expect(pr_created[:goal_types]).to include("create_pr")
 
       issue_created = result[:metrics_reference].find { |m| m[:key] == "issue_created" }
@@ -104,6 +104,11 @@ RSpec.describe QualityMetrics::DashboardStats do
 
       review_posted = result[:metrics_reference].find { |m| m[:key] == "review_posted" }
       expect(review_posted[:goal_types]).to include("review")
+
+      # reaction_score is collected for all goals but only weighted for create_issue and review
+      reaction = result[:metrics_reference].find { |m| m[:key] == "reaction_score" }
+      expect(reaction[:weights_by_goal]).to eq("create_issue" => 0.60, "review" => 0.60)
+      expect(reaction[:goal_types]).to contain_exactly("create_pr", "create_issue", "review")
     end
 
     context "with human feedback" do

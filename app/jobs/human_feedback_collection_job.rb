@@ -10,13 +10,18 @@
 class HumanFeedbackCollectionJob < ApplicationJob
   queue_as :default
 
-  def perform(agent_run_id)
+  # Maximum number of times the job will re-enqueue itself when the automated
+  # metric is not yet available. Prevents infinite retry loops if the upstream
+  # metric job never creates the record.
+  MAX_COMMENT_COUNT_ATTEMPTS = 5
+
+  def perform(agent_run_id, comment_count_attempt: 0)
     agent_run = AgentRun.find(agent_run_id)
     return unless agent_run.successful?
 
     case agent_run.goal
     when "create_pr"
-      collect_pr_feedback(agent_run)
+      collect_pr_feedback(agent_run, comment_count_attempt: comment_count_attempt)
     when "create_issue"
       collect_issue_feedback(agent_run)
     when "review"
@@ -26,12 +31,12 @@ class HumanFeedbackCollectionJob < ApplicationJob
 
   private
 
-  def collect_pr_feedback(agent_run)
+  def collect_pr_feedback(agent_run, comment_count_attempt: 0)
     return unless agent_run.pull_request_number
 
     QualityMetrics::CollectReactionFeedback.call(agent_run: agent_run)
     collect_pr_review_feedback(agent_run)
-    collect_review_comment_count(agent_run)
+    collect_review_comment_count(agent_run, attempt: comment_count_attempt)
   end
 
   def collect_pr_review_feedback(agent_run)
@@ -54,7 +59,7 @@ class HumanFeedbackCollectionJob < ApplicationJob
     )
   end
 
-  def collect_review_comment_count(agent_run)
+  def collect_review_comment_count(agent_run, attempt: 0)
     github_client = agent_run.project.github_token&.client
     return unless github_client
 
@@ -64,12 +69,23 @@ class HumanFeedbackCollectionJob < ApplicationJob
 
     metric = agent_run.quality_metrics.find_by(metric_type: "automated")
     unless metric
-      Rails.logger.info(
-        message: "human_feedback.automated_metric_missing",
-        agent_run_id: agent_run.id,
-        pull_request_number: agent_run.pull_request_number
-      )
-      self.class.set(wait: 1.minute).perform_later(agent_run.id)
+      if attempt < MAX_COMMENT_COUNT_ATTEMPTS
+        Rails.logger.info(
+          message: "human_feedback.automated_metric_missing",
+          agent_run_id: agent_run.id,
+          pull_request_number: agent_run.pull_request_number,
+          attempt: attempt + 1,
+          max_attempts: MAX_COMMENT_COUNT_ATTEMPTS
+        )
+        self.class.set(wait: 1.minute).perform_later(agent_run.id, comment_count_attempt: attempt + 1)
+      else
+        Rails.logger.warn(
+          message: "human_feedback.automated_metric_missing_gave_up",
+          agent_run_id: agent_run.id,
+          pull_request_number: agent_run.pull_request_number,
+          attempts: attempt
+        )
+      end
       return
     end
 
