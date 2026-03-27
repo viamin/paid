@@ -476,22 +476,28 @@ RSpec.describe Containers::Provision do
     end
 
     context "with subscription auth (CLAUDE_CONFIG_DIR)" do
+      let(:claude_config_dir) { Dir.mktmpdir("claude-config") }
+
       before do
+        File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
+
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return("/host/home/user/.claude")
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(claude_config_dir)
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
         allow(service).to receive_messages(codex_local_config_path: nil, gemini_local_config_path: nil)
-        allow(File).to receive(:file?).and_call_original
-        allow(File).to receive(:file?).with("/host/home/user/.claude/.credentials.json").and_return(true)
+      end
+
+      after do
+        FileUtils.rm_rf(claude_config_dir)
       end
 
       it "mounts Claude config at staging path and creates writable tmpfs" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds).to include("/host/home/user/.claude:/home/agent/.claude-host:ro")
+          expect(binds).to include("#{claude_config_dir}:/home/agent/.claude-host:ro")
 
           tmpfs = config["HostConfig"]["Tmpfs"]
           expect(tmpfs).to have_key("/home/agent/.claude")
@@ -570,22 +576,28 @@ RSpec.describe Containers::Provision do
     end
 
     context "with Gemini subscription auth (GEMINI_CONFIG_DIR)" do
+      let(:gemini_config_dir) { Dir.mktmpdir("gemini-config") }
+
       before do
+        File.write(File.join(gemini_config_dir, "oauth_creds.json"), "{}")
+
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
-        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return("/host/home/user/.gemini")
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(gemini_config_dir)
         allow(service).to receive_messages(claude_local_config_path: nil, codex_local_config_path: nil)
-        allow(File).to receive(:file?).and_call_original
-        allow(File).to receive(:file?).with("/host/home/user/.gemini/oauth_creds.json").and_return(true)
+      end
+
+      after do
+        FileUtils.rm_rf(gemini_config_dir)
       end
 
       it "mounts Gemini config at a staging path and sets the subscription marker" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds).to include("/host/home/user/.gemini:/home/agent/.gemini-host:ro")
+          expect(binds).to include("#{gemini_config_dir}:/home/agent/.gemini-host:ro")
           env = config["Env"]
           expect(env).to include("PAID_GEMINI_SUBSCRIPTION_AUTH=1")
           expect(env).to include("ANTHROPIC_BASE_URL=http://web:3000/api/proxy/anthropic")
@@ -661,22 +673,28 @@ RSpec.describe Containers::Provision do
     end
 
     context "with Codex subscription auth (CODEX_HOME)" do
+      let(:codex_config_dir) { Dir.mktmpdir("codex-config") }
+
       before do
+        File.write(File.join(codex_config_dir, "auth.json"), "{}")
+
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
-        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return("/host/home/user/.codex")
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(codex_config_dir)
         allow(service).to receive_messages(claude_local_config_path: nil, gemini_local_config_path: nil)
-        allow(File).to receive(:file?).and_call_original
-        allow(File).to receive(:file?).with("/host/home/user/.codex/auth.json").and_return(true)
+      end
+
+      after do
+        FileUtils.rm_rf(codex_config_dir)
       end
 
       it "mounts Codex config at a staging path and sets the subscription marker" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds).to include("/host/home/user/.codex:/home/agent/.codex-host:ro")
+          expect(binds).to include("#{codex_config_dir}:/home/agent/.codex-host:ro")
           env = config["Env"]
           expect(env).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
           expect(env).to include("ANTHROPIC_BASE_URL=http://web:3000/api/proxy/anthropic")

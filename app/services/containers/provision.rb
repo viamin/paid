@@ -763,20 +763,20 @@ module Containers
       # by seed_claude_credentials! after container start.
       if claude_config_host_path.present? &&
          File.directory?(claude_config_host_path) &&
-         File.exist?(File.join(claude_config_host_path, ".credentials.json"))
+         File.file?(File.join(claude_config_host_path, ".credentials.json"))
         binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro"
       end
 
       if codex_config_host_path.present? &&
          File.directory?(codex_config_host_path) &&
-         File.exist?(File.join(codex_config_host_path, "auth.json")) &&
+         File.file?(File.join(codex_config_host_path, "auth.json")) &&
          codex_subscription_auth?
         binds << "#{codex_config_host_path}:/home/agent/.codex-host:ro"
       end
 
       if gemini_config_host_path.present? &&
          File.directory?(gemini_config_host_path) &&
-         File.exist?(File.join(gemini_config_host_path, "oauth_creds.json")) &&
+         File.file?(File.join(gemini_config_host_path, "oauth_creds.json")) &&
          gemini_subscription_auth?
         binds << "#{gemini_config_host_path}:/home/agent/.gemini-host:ro"
       end
