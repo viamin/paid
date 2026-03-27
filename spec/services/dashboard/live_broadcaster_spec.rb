@@ -29,7 +29,9 @@ RSpec.describe Dashboard::LiveBroadcaster do
     it "broadcasts activity stream when a run finishes" do
       agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 30)
 
-      described_class.call(account: account, agent_run: agent_run)
+      # Reload to simulate production: LiveDashboardBroadcastJob reloads the
+      # record from the database, so previous_changes will be empty.
+      described_class.call(account: account, agent_run: agent_run.reload)
 
       expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to).with(
         [ account, :live_dashboard ],
@@ -40,7 +42,9 @@ RSpec.describe Dashboard::LiveBroadcaster do
     it "broadcasts an alert for failures" do
       agent_run.update!(status: "failed", completed_at: Time.current, error_message: "Boom")
 
-      described_class.call(account: account, agent_run: agent_run)
+      # Reload to simulate production: LiveDashboardBroadcastJob reloads the
+      # record from the database, so previous_changes will be empty.
+      described_class.call(account: account, agent_run: agent_run.reload)
 
       expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to).with(
         [ account, :live_dashboard ],
