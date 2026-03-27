@@ -32,6 +32,8 @@ RSpec.describe Containers::Provision do
     allow(Docker::Volume).to receive(:create).and_return(mock_volume)
     allow(Docker::Volume).to receive(:get).and_raise(Docker::Error::NotFoundError)
     allow(NetworkPolicy).to receive_messages(ensure_network!: mock_network, apply_firewall_rules: nil)
+    allow(ENV).to receive(:fetch).and_call_original
+    allow(ENV).to receive(:fetch).with("HOME", "/home/vscode").and_return("/tmp/paid-spec-no-local-auth")
   end
 
   after do
@@ -592,6 +594,38 @@ RSpec.describe Containers::Provision do
 
         expect(mock_container).to have_received(:exec).with(
           [ "sh", "-c", include("/home/agent/.gemini-host/oauth_creds.json").and(include("/home/agent/.gemini/oauth_creds.json")) ],
+          user: "agent"
+        )
+      end
+    end
+
+    context "with Gemini subscription auth from the devcontainer filesystem" do
+      before do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(service).to receive(:gemini_local_config_path).and_return("/home/vscode/.gemini")
+      end
+
+      it "sets the subscription marker without requiring a host bind mount" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds.none? { |bind| bind.include?("/home/agent/.gemini-host:ro") }).to be true
+          expect(config["Env"]).to include("PAID_GEMINI_SUBSCRIPTION_AUTH=1")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "writes Gemini credentials into the agent tmpfs from the local filesystem" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", include("/home/agent/.gemini/oauth_creds.json").and(include("access_token")) ],
           user: "agent"
         )
       end
