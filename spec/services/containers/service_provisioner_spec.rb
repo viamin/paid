@@ -255,6 +255,25 @@ RSpec.describe Containers::ServiceProvisioner do
         )
       end
 
+      it "treats blank postgres env values as missing and applies defaults" do
+        sc = create(:service_container, image: "postgres:16", name: "pg-blank", port: 5432,
+          env: { "POSTGRES_USER" => "", "POSTGRES_PASSWORD" => "  ", "POSTGRES_DB" => nil })
+        create(:project_service_container, project: project, service_container: sc)
+
+        result = provisioner.provision(agent_run)
+
+        expect(Docker::Container).to have_received(:create).with(
+          hash_including(
+            "Env" => include(
+              "POSTGRES_USER=agent",
+              "POSTGRES_PASSWORD=agent",
+              "POSTGRES_DB=agent_test"
+            )
+          )
+        )
+        expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@pg-blank:5432/agent_test")
+      end
+
       it "generates REDIS_URL for redis images" do
         sc = create(:service_container, :redis, name: "redis-test", port: 6379)
         create(:project_service_container, project: project, service_container: sc)

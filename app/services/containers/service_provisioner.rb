@@ -29,9 +29,9 @@ module Containers
 
     ENV_MAPPINGS = {
       "postgres" => ->(sc) {
-        user = sc.env["POSTGRES_USER"] || "agent"
-        pass = sc.env["POSTGRES_PASSWORD"] || "agent"
-        db = sc.env["POSTGRES_DB"] || "agent_test"
+        user = sc.env["POSTGRES_USER"].to_s.strip.presence || "agent"
+        pass = sc.env["POSTGRES_PASSWORD"].to_s.strip.presence || "agent"
+        db = sc.env["POSTGRES_DB"].to_s.strip.presence || "agent_test"
         { "DATABASE_URL" => "postgres://#{user}:#{pass}@#{sc.name}:#{sc.port}/#{db}" }
       },
       "redis" => ->(sc) {
@@ -301,9 +301,22 @@ module Containers
     end
 
     def container_env_for(service_container)
-      return service_container.env unless service_container.image.include?("postgres")
+      env = service_container.env
 
-      POSTGRES_DEFAULT_ENV.merge(service_container.env)
+      return env unless service_container.image.include?("postgres")
+
+      # Normalize Postgres env: treat nil/blank values as missing so they do
+      # not override the safe defaults in POSTGRES_DEFAULT_ENV.
+      normalized = env.each_with_object({}) do |(key, value), memo|
+        next if value.nil?
+
+        stripped = value.to_s.strip
+        next if stripped.empty?
+
+        memo[key] = stripped
+      end
+
+      POSTGRES_DEFAULT_ENV.merge(normalized)
     end
 
     def healthcheck_for(service_container, env)
