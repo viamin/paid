@@ -209,13 +209,13 @@ RSpec.describe "Providers" do
 
       it "returns success when agent is healthy" do
         provider = user.providers.find_by!(provider_key: "claude")
-        harness_response = AgentHarness::Response.new(
-          output: "PING OK",
-          exit_code: 0,
-          duration: 1.0,
-          provider: :claude
+        result = instance_double(
+          Providers::TestAgent::Result,
+          success?: true,
+          message: "Agent is healthy",
+          error_type: nil
         )
-        allow(AgentHarness).to receive(:send_message).and_return(harness_response)
+        allow(Providers::TestAgent).to receive(:call).and_return(result)
 
         post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
 
@@ -227,8 +227,13 @@ RSpec.describe "Providers" do
 
       it "returns error details when agent test fails" do
         provider = user.providers.find_by!(provider_key: "claude")
-        allow(AgentHarness).to receive(:send_message)
-          .and_raise(AgentHarness::AuthenticationError, "Invalid API key")
+        result = instance_double(
+          Providers::TestAgent::Result,
+          success?: false,
+          message: "Invalid API key",
+          error_type: :authentication
+        )
+        allow(Providers::TestAgent).to receive(:call).and_return(result)
 
         post test_agent_provider_path(provider), headers: { "Accept" => "application/json" }
 
@@ -241,13 +246,13 @@ RSpec.describe "Providers" do
 
       it "rate-limits repeated test requests for the same provider" do
         provider = user.providers.find_by!(provider_key: "claude")
-        harness_response = AgentHarness::Response.new(
-          output: "PING OK",
-          exit_code: 0,
-          duration: 1.0,
-          provider: :claude
+        result = instance_double(
+          Providers::TestAgent::Result,
+          success?: true,
+          message: "Agent is healthy",
+          error_type: nil
         )
-        allow(AgentHarness).to receive(:send_message).and_return(harness_response)
+        allow(Providers::TestAgent).to receive(:call).and_return(result)
 
         # The test environment uses :null_store, so use a real store
         # to exercise the atomic rate-limit logic without mutating global state.

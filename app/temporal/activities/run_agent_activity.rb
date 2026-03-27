@@ -18,7 +18,7 @@ module Activities
       "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "codex" => %w[codex exec --full-auto --],
       "gemini" => %w[gemini -s],
-      "kilocode" => %w[kilo run],
+      "kilocode" => %w[kilo run --auto],
       "opencode" => %w[opencode --non-interactive --message],
       "cursor" => %w[cursor-agent --message],
       "aider" => %w[aider --yes --no-auto-commits --message]

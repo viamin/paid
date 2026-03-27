@@ -12,6 +12,7 @@ module Api
   #   end
   module ContainerAuthentication
     extend ActiveSupport::Concern
+    PROXY_CREDENTIAL_PREFIX = "paid-run".freeze
 
     included do
       before_action :validate_container_request
@@ -22,7 +23,8 @@ module Api
     private
 
     def validate_container_request
-      @agent_run_id = request.headers["X-Agent-Run-Id"]
+      @agent_run_id, @embedded_proxy_token = extract_embedded_proxy_credentials
+      @agent_run_id ||= request.headers["X-Agent-Run-Id"]
 
       render json: { error: "Missing agent run ID" }, status: :unauthorized unless @agent_run_id.present?
     end
@@ -38,7 +40,7 @@ module Api
     def verify_proxy_token
       return if performed?
 
-      provided_token = request.headers["X-Proxy-Token"]
+      provided_token = request.headers["X-Proxy-Token"] || @embedded_proxy_token
 
       unless provided_token.present?
         render(json: { error: "Invalid proxy token" }, status: :forbidden) and return
@@ -49,6 +51,18 @@ module Api
       unless ActiveSupport::SecurityUtils.secure_compare(provided_token, stored_token)
         render json: { error: "Invalid proxy token" }, status: :forbidden
       end
+    end
+
+    def extract_embedded_proxy_credentials
+      parse_proxy_credential(request.headers["Authorization"]&.delete_prefix("Bearer ")) ||
+        parse_proxy_credential(request.headers["X-Goog-Api-Key"])
+    end
+
+    def parse_proxy_credential(value)
+      match = value.to_s.match(/\A#{PROXY_CREDENTIAL_PREFIX}:(\d+):([0-9a-f]+)\z/i)
+      return unless match
+
+      [ match[1], match[2] ]
     end
   end
 end

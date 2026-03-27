@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "docker-api"
+require "shellwords"
 
 module Containers
   # Service for provisioning, managing, and cleaning up Docker containers for agent execution.
@@ -140,6 +141,7 @@ module Containers
       fix_workspace_ownership!
       fix_cache_tmpfs_ownership!
       fix_codex_tmpfs_ownership!
+      seed_codex_config!
       fix_gemini_tmpfs_ownership!
       fix_kilocode_tmpfs_ownership!
       fix_opencode_config_tmpfs_ownership!
@@ -460,6 +462,27 @@ module Containers
       log_system("container.claude_credentials_seed_failed", error: e.message)
     end
 
+    # Writes a minimal Codex config into the writable ~/.codex tmpfs so the
+    # CLI uses API-key auth against Paid's OpenAI proxy instead of cached
+    # ChatGPT credentials. This keeps containerized runs aligned with Paid's
+    # provider configuration.
+    def seed_codex_config!
+      content = <<~TOML
+        model_provider = "paid"
+
+        [model_providers.paid]
+        name = "Paid"
+        base_url = "#{proxy_base_url}/api/proxy/openai"
+        env_key = "OPENAI_API_KEY"
+        wire_api = "responses"
+      TOML
+
+      write_container_file("/home/agent/.codex/config.toml", content)
+      log_system("container.codex_config_seeded")
+    rescue Docker::Error::DockerError => e
+      log_system("container.codex_config_seed_failed", error: e.message)
+    end
+
     # Ensures the bind-mounted /workspace is writable by the non-root agent user.
     # Docker bind mounts inherit host ownership which may not match the container
     # user. Running chown as root inside the container fixes this portably.
@@ -547,6 +570,11 @@ module Containers
           Docker::Volume.create(@workspace_volume, volume_options)
         end
       end
+    end
+
+    def write_container_file(path, content)
+      heredoc = "cat > #{Shellwords.escape(path)} <<'EOF'\n#{content}EOF\n"
+      container.exec([ "sh", "-lc", heredoc ], user: "agent")
     end
 
     def cleanup_workspace_volume
@@ -683,14 +711,16 @@ module Containers
     # mode uses the infrastructure network which has outbound routing.
     # API key mode continues to use the restricted paid_agent network.
     def container_network
-      subscription_auth? ? NetworkPolicy::INFRA_NETWORK_NAME : NetworkPolicy::NETWORK_NAME
+      direct_outbound_provider? || subscription_auth? ? NetworkPolicy::INFRA_NETWORK_NAME : NetworkPolicy::NETWORK_NAME
+    end
+
+    def direct_outbound_provider?
+      agent_run.agent_type.to_s == "kilocode"
     end
 
     def environment_variables
       project = agent_run.project
-      proxy_port = Rails.application.config.x.paid_proxy_port
-      proxy_host = subscription_auth? ? "web" : "paid-proxy"
-      proxy_base = "http://#{proxy_host}:#{proxy_port}"
+      proxy_base = proxy_base_url
 
       env = [
         "PAID_PROXY_URL=#{proxy_base}",
@@ -707,21 +737,32 @@ module Containers
       env.concat([
         "OPENAI_BASE_URL=#{proxy_base}/api/proxy/openai",
         "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
-        "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}"
+        "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
+        "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
       ])
 
       # Google proxy env vars are always set so Gemini CLI can route through
-      # the secrets proxy. Gemini CLI has no native login equivalent to
-      # `claude login`, so it always needs the proxy for auth.
+      # the secrets proxy from inside the agent container.
+      #
+      # Gemini CLI selects API-key auth mode purely from GEMINI_API_KEY
+      # presence. We provide a non-secret sentinel value so the CLI chooses
+      # that code path while the secrets proxy injects the real upstream key.
+      #
+      # GOOGLE_GEMINI_BASE_URL is the variable the Gemini CLI actually reads
+      # for a custom Gemini API endpoint. Keep GOOGLE_GENAI_BASE_URL aligned
+      # for compatibility with adjacent Google GenAI tooling.
       #
       # GEMINI_SANDBOX=false disables Gemini CLI's built-in sandbox layer.
       # The agent already runs inside an isolated Docker container, so an
       # inner sandbox is unnecessary and fails because neither Docker nor
       # Podman is available inside the agent image.
       env.concat([
+        "GOOGLE_GEMINI_BASE_URL=#{proxy_base}/api/proxy/google",
         "GOOGLE_GENAI_BASE_URL=#{proxy_base}/api/proxy/google",
         "GOOGLE_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
         "GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
+        "GEMINI_CLI_CUSTOM_HEADERS=X-Agent-Run-Id: #{agent_run.id}, X-Proxy-Token: #{agent_run.proxy_token}",
+        "GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
         "GEMINI_SANDBOX=false"
       ])
 
@@ -750,6 +791,12 @@ module Containers
     # subscription-based authentication (e.g. from `claude login`).
     def subscription_auth?
       claude_config_host_path.present?
+    end
+
+    def proxy_base_url
+      proxy_port = Rails.application.config.x.paid_proxy_port
+      proxy_host = subscription_auth? || direct_outbound_provider? ? "web" : "paid-proxy"
+      "http://#{proxy_host}:#{proxy_port}"
     end
 
     # Returns the Docker-host path to the Claude config directory.
@@ -800,7 +847,7 @@ module Containers
     def ensure_network!
       # Subscription auth uses the infrastructure network (already managed by compose).
       # Only the restricted agent network needs explicit creation.
-      return if subscription_auth?
+      return if subscription_auth? || direct_outbound_provider?
 
       NetworkPolicy.ensure_network!
       log_system("container.network.ready", network: NetworkPolicy::NETWORK_NAME)
@@ -811,7 +858,7 @@ module Containers
     def apply_network_restrictions!
       # Subscription auth containers are on the infrastructure network and need
       # outbound access to Anthropic. Firewall rules would block this.
-      return if subscription_auth?
+      return if subscription_auth? || direct_outbound_provider?
 
       NetworkPolicy.apply_firewall_rules(
         container,
