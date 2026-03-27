@@ -83,9 +83,9 @@ RSpec.describe "IntegrationCredentials" do
       other_account = create(:account)
       other_credential = create(:integration_credential, account: other_account)
 
-      expect {
-        get integration_credential_path(other_credential)
-      }.to raise_error(ActiveRecord::RecordNotFound)
+      get integration_credential_path(other_credential)
+
+      expect(response).to have_http_status(:not_found)
     end
   end
 
@@ -135,9 +135,9 @@ RSpec.describe "IntegrationCredentials" do
         other_account = create(:account)
         other_credential = create(:integration_credential, account: other_account)
 
-        expect {
-          delete integration_credential_path(other_credential)
-        }.to raise_error(ActiveRecord::RecordNotFound)
+        delete integration_credential_path(other_credential)
+
+        expect(response).to have_http_status(:not_found)
       end
     end
   end

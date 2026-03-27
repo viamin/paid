@@ -77,9 +77,16 @@ class IntegrationCredentialsController < ApplicationController
   end
 
   def return_filter_params
-    {
-      category: params[:category] || @integration_credential.category,
-      service_key: params[:service_key] || @integration_credential.service_key
-    }
+    filter_params = {}
+
+    category_value = params[:category].presence || @integration_credential.category
+    filter_params[:category] = category_value if category_value.present?
+
+    if params.key?(:service_key)
+      service_key_value = params[:service_key].presence
+      filter_params[:service_key] = service_key_value if service_key_value.present?
+    end
+
+    filter_params
   end
 end

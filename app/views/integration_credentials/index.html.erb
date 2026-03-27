@@ -39,9 +39,10 @@
         <tbody class="divide-y divide-gray-200 bg-white">
           <% @integration_credentials.each do |credential| %>
             <% definition = credential.service_definition %>
+            <% service_label = definition&.fetch(:label, nil) || credential.service_key || "Unknown service" %>
             <tr>
               <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= credential.name %></td>
-              <td class="px-4 py-3 text-sm text-gray-700"><%= definition[:label] %></td>
+              <td class="px-4 py-3 text-sm text-gray-700"><%= service_label %></td>
               <td class="px-4 py-3 text-sm text-gray-700"><%= Integrations::CredentialCatalog.auth_kind_label(credential.auth_kind) %></td>
               <td class="px-4 py-3 text-sm">
                 <% if credential.revoked? %>
@@ -53,7 +54,7 @@
                 <% end %>
               </td>
               <td class="px-4 py-3 text-right text-sm">
-                <%= link_to "View", integration_credential_path(credential), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                <%= link_to "View", integration_credential_path(credential, category: @category_filter, service_key: @service_key_filter), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
               </td>
             </tr>
           <% end %>

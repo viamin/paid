@@ -14,6 +14,7 @@ module Integrations
     class << self
       def sections_for(account)
         sections = base_sections
+        credential_counts = precompute_credential_counts(account)
 
         sections[:repository][:cards] << provider_card(Integrations::GithubProvider, account)
         sections[:issue_tracking][:cards] << provider_card(Integrations::LinearProvider, account)
@@ -21,7 +22,7 @@ module Integrations
           key: :gitlab,
           name: "GitLab",
           description: Integrations::CredentialCatalog.fetch("gitlab")[:description],
-          account: account,
+          credential_counts: credential_counts,
           category: :repository,
           service_key: "gitlab",
           icon: :gitlab
@@ -30,7 +31,7 @@ module Integrations
           key: :jira,
           name: "Jira",
           description: Integrations::CredentialCatalog.fetch("jira")[:description],
-          account: account,
+          credential_counts: credential_counts,
           category: :issue_tracking,
           service_key: "jira",
           icon: :jira
@@ -39,7 +40,7 @@ module Integrations
           key: :provider_credentials,
           name: "Provider Credentials",
           description: "Store API keys or OAuth tokens for Claude, Codex, Gemini, Kilo Code, OpenCode, and future agent providers. Runtime use is not wired yet.",
-          account: account,
+          credential_counts: credential_counts,
           category: :llm_provider,
           icon: :provider
         )
@@ -47,7 +48,7 @@ module Integrations
           key: :github_signing,
           name: "GitHub Signing",
           description: Integrations::CredentialCatalog.fetch("github_signing")[:description],
-          account: account,
+          credential_counts: credential_counts,
           category: :signing,
           service_key: "github_signing",
           icon: :signing
@@ -70,6 +71,10 @@ module Integrations
         Integrations::CredentialCatalog.categories.keys.index_with { { cards: [] } }
       end
 
+      def precompute_credential_counts(account)
+        account.integration_credentials.active.group(:category, :service_key).count
+      end
+
       def provider_card(provider_class, account)
         {
           key: provider_class.key,
@@ -82,9 +87,12 @@ module Integrations
         }
       end
 
-      def stored_credential_card(key:, name:, description:, account:, category:, icon:, service_key: nil)
-        scope = account.integration_credentials.active.for_category(category)
-        scope = scope.for_service(service_key) if service_key.present?
+      def stored_credential_card(key:, name:, description:, credential_counts:, category:, icon:, service_key: nil)
+        count = if service_key.present?
+          credential_counts[[ category.to_s, service_key.to_s ]] || 0
+        else
+          credential_counts.sum { |(cat, _), cnt| cat == category.to_s ? cnt : 0 }
+        end
 
         index_params = { category: category.to_s }
         new_params = { category: category.to_s }
@@ -97,7 +105,7 @@ module Integrations
           key: key,
           name: name,
           description: description,
-          count: scope.count,
+          count: count,
           index_path: Rails.application.routes.url_helpers.integration_credentials_path(index_params),
           new_path: Rails.application.routes.url_helpers.new_integration_credential_path(new_params),
           icon_svg: ICONS.fetch(icon)
