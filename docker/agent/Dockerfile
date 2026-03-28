@@ -167,22 +167,19 @@ RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
     && chmod +x /usr/local/bin/cursor-agent \
     && rm /tmp/cursor-install.sh
 
-# Install Aider CLI (AI pair programming tool)
-# Pin version for reproducible builds; update intentionally when upgrading Aider.
-# Uses --break-system-packages because the container is single-purpose and does
-# not use a virtualenv.
-# The top-level wheel hash is verified for supply-chain security (consistent with
-# other tool installs in this Dockerfile). Transitive dependency hashes are not
-# pinned because aider-chat has 100+ deps, making --require-hashes impractical.
-# To update: pip3 download --no-deps aider-chat==<version> -d /tmp/aider-dl && sha256sum /tmp/aider-dl/aider_chat-*.whl
-ARG AIDER_CHAT_WHEEL_SHA256=ab43331d62df05a11c320fc89820a32929fb9b230d386ea60568c4ea6d3a8982
-RUN pip3 install --no-cache-dir --break-system-packages pip==25.1.1 \
-    && pip3 download --no-cache-dir --no-deps aider-chat==0.82.3 -d /tmp/aider-dl \
-    && set -- /tmp/aider-dl/aider_chat-*.whl \
-    && if [ "$#" -ne 1 ] || [ "$1" = '/tmp/aider-dl/aider_chat-*.whl' ]; then echo "Expected exactly one aider_chat wheel, found $#: $*"; exit 1; fi \
-    && echo "${AIDER_CHAT_WHEEL_SHA256}  $1" | sha256sum -c - \
-    && rm -rf /tmp/aider-dl \
-    && pip3 install --no-cache-dir --break-system-packages aider-chat==0.82.3
+# Install Aider CLI.
+# Follow the official Aider "Install with uv" flow so the tool lives in its own
+# isolated environment instead of the system Python:
+# https://aider.chat/docs/install.html#install-with-uv
+# Pin both uv and aider-chat for reproducible builds.
+ARG UV_VERSION=0.8.17
+ARG AIDER_CHAT_VERSION=0.86.2
+ENV UV_TOOL_BIN_DIR=/usr/local/bin
+ENV UV_TOOL_DIR=/opt/uv/tools
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
+RUN mkdir -p "${UV_TOOL_DIR}" "${UV_PYTHON_INSTALL_DIR}" \
+    && python3 -m pip install --no-cache-dir --break-system-packages "uv==${UV_VERSION}" \
+    && uv tool install --force --python python3.12 --with pip "aider-chat==${AIDER_CHAT_VERSION}"
 
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
