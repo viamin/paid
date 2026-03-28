@@ -11,6 +11,15 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
 
+      # Guard against nil/blank agent_run_id to avoid matching unrelated records
+      # with NULL agent_run_id in the idempotency check below.
+      unless agent_run_id.present?
+        logger.warn(
+          message: "knowledge.decisions.draft_missing_agent_run_id"
+        )
+        return { agent_run_id: agent_run_id, decision_record_id: nil, success: false, error: "agent_run_id is required" }
+      end
+
       # Ensure idempotency: if a DecisionRecord already exists for this agent_run,
       # reuse it instead of drafting a new one (Temporal activities may be retried).
       if (existing_record = DecisionRecord.find_by(agent_run_id: agent_run_id))

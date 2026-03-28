@@ -45,7 +45,7 @@ module Knowledge
       end
 
       def call
-        changes_summary = agent_run.agent_summary(limit: 200)
+        changes_summary = agent_run.agent_summary_with_stderr_fallback(limit: 200)
         return nil if changes_summary.blank?
 
         prompt = build_prompt(changes_summary)
@@ -103,23 +103,29 @@ module Knowledge
       def create_decision_record(parsed)
         record = nil
 
-        DecisionRecord.transaction do
-          record = DecisionRecord.create!(
-            project: agent_run.project,
-            agent_run: agent_run,
-            issue: agent_run.issue,
-            title: parsed[:title].to_s.truncate(500),
-            summary: parsed[:summary].to_s,
-            context: parsed[:context].to_s.presence,
-            decision: parsed[:decision].to_s,
-            consequences: parsed[:consequences].to_s.presence,
-            status: "active",
-            commit_sha_start: agent_run.base_commit_sha,
-            commit_sha_end: agent_run.result_commit_sha,
-            tags: Array(parsed[:tags]).map(&:to_s)
-          )
+        begin
+          DecisionRecord.transaction do
+            record = DecisionRecord.create!(
+              project: agent_run.project,
+              agent_run: agent_run,
+              issue: agent_run.issue,
+              title: parsed[:title].to_s.truncate(500),
+              summary: parsed[:summary].to_s,
+              context: parsed[:context].to_s.presence,
+              decision: parsed[:decision].to_s,
+              consequences: parsed[:consequences].to_s.presence,
+              status: "active",
+              commit_sha_start: agent_run.base_commit_sha,
+              commit_sha_end: agent_run.result_commit_sha,
+              tags: Array(parsed[:tags]).map(&:to_s)
+            )
 
-          create_links(record)
+            create_links(record)
+          end
+        rescue ActiveRecord::RecordNotUnique
+          # Another concurrent execution created the record for this agent_run.
+          # Return the existing record to make this operation idempotent.
+          record = DecisionRecord.find_by(agent_run: agent_run)
         end
 
         record

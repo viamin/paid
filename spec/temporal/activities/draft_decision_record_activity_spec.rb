@@ -40,6 +40,13 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
       expect(result[:decision_record_id]).to eq(record.id)
     end
 
+    it "returns failure when agent_run_id is nil" do
+      result = activity.execute(agent_run_id: nil)
+
+      expect(result[:success]).to be false
+      expect(result[:error]).to eq("agent_run_id is required")
+    end
+
     it "returns failure without raising when draft errors" do
       allow(Knowledge::Decisions::Draft).to receive(:call).and_raise(StandardError, "LLM timeout")
 
