@@ -711,7 +711,7 @@ class AgentRun < ApplicationRecord
   def snapshot_mcp_servers
     return if mcp_server_snapshot.present? && mcp_server_snapshot.any?
 
-    definitions = project.mcp_server_definitions.enabled
+    definitions = project.mcp_server_definitions.enabled.order(:id)
     self.mcp_server_snapshot = definitions.map(&:to_snapshot)
   end
 
