@@ -15,7 +15,7 @@ module ScopeAnalysis
   #   result.sub_components     # => ["authentication", "background jobs", ...]
   class Analyze
     DEFAULT_THRESHOLD = 0.5
-    TOKEN_LENGTH_THRESHOLD = 200
+    WORD_COUNT_THRESHOLD = 200
 
     # Weights for each signal category (must sum to 1.0)
     SIGNAL_WEIGHTS = {
@@ -58,8 +58,8 @@ module ScopeAnalysis
       "authentication" => /\bauthenticat(?:e|ion|ed|ing)\b|\bauth\b|\blogin\b|\bsign.?in\b/i,
       "authorization" => /\bauthoriz(?:e|ation|ed|ing)\b|\bpermission(?:s)?\b|\brole(?:s)?\b|\baccess.?control\b/i,
       "background jobs" => /\bbackground\s+job(?:s)?\b|\basync(?:hronous)?\b|\bworker(?:s)?\b|\bqueue(?:s|d|ing)?\b/i,
-      "API endpoints" => /\bapi\s+endpoint(?:s)?\b|\brest(?:ful)?\s+api\b|\bendpoint(?:s)?\b/i,
-      "UI" => /\bui\b|\buser\s+interface\b|\bfrontend\b|\bfront.?end\b|\bdashboard\b/i,
+      "api endpoints" => /\bapi\s+endpoint(?:s)?\b|\brest(?:ful)?\s+api\b|\bendpoint(?:s)?\b/i,
+      "ui" => /\bui\b|\buser\s+interface\b|\bfrontend\b|\bfront.?end\b|\bdashboard\b/i,
       "database" => /\bdatabase\b|\bschema\b|\btable(?:s)?\b|\bcolumn(?:s)?\b|\bindex(?:es)?\b/i,
       "notifications" => /\bnotificat(?:ion|ions)\b|\bemail(?:s)?\b|\bwebhook(?:s)?\b|\balert(?:s)?\b/i,
       "caching" => /\bcach(?:e|ing|ed)\b|\bmemoiz(?:e|ation)\b/i
@@ -98,12 +98,11 @@ module ScopeAnalysis
         length: score_length
       }
 
-      confidence = scores.sum { |signal, score| SIGNAL_WEIGHTS[signal] * score }
-      confidence = confidence.round(2)
+      raw_confidence = scores.sum { |signal, score| SIGNAL_WEIGHTS[signal] * score }
 
       Result.new(
-        should_decompose: confidence >= threshold,
-        confidence: confidence,
+        should_decompose: raw_confidence >= threshold,
+        confidence: raw_confidence.round(2),
         sub_components: extract_sub_components
       )
     end
@@ -116,8 +115,9 @@ module ScopeAnalysis
     end
 
     def score_phases
-      numbered_list_items = text.scan(/^\s*\d+\.\s+/m).size
-      phase_keyword_matches = PHASE_PATTERNS.count { |pattern| text.match?(pattern) }
+      numbered_list_pattern = /^\s*\d+\.\s+/m
+      numbered_list_items = text.scan(numbered_list_pattern).size
+      phase_keyword_matches = PHASE_PATTERNS.count { |pattern| pattern != numbered_list_pattern && text.match?(pattern) }
       signal = phase_keyword_matches + [ numbered_list_items, 3 ].min
       normalize(signal, max: 5)
     end
@@ -134,7 +134,7 @@ module ScopeAnalysis
 
     def score_length
       word_count = text.split(/\s+/).size
-      normalize(word_count, max: TOKEN_LENGTH_THRESHOLD)
+      normalize(word_count, max: WORD_COUNT_THRESHOLD)
     end
 
     def normalize(value, max:)

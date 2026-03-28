@@ -79,7 +79,7 @@ RSpec.describe ScopeAnalysis::Analyze, :no_db do
         expect(result.sub_components).to include("authentication")
         expect(result.sub_components).to include("authorization")
         expect(result.sub_components).to include("background jobs")
-        expect(result.sub_components).to include("API endpoints")
+        expect(result.sub_components).to include("api endpoints")
         expect(result.sub_components).to include("database")
       end
     end
@@ -106,7 +106,7 @@ RSpec.describe ScopeAnalysis::Analyze, :no_db do
       it "identifies cross-cutting concerns" do
         expect(result.sub_components).to include("authentication")
         expect(result.sub_components).to include("authorization")
-        expect(result.sub_components).to include("API endpoints")
+        expect(result.sub_components).to include("api endpoints")
         expect(result.sub_components).to include("caching")
       end
     end
