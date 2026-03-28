@@ -60,9 +60,11 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
       expect(File.exist?(File.join(dir, "overmind-start-ran"))).to be(true)
-      expect(overmind_invocation_log(dir)).to include("CMD=start")
-      expect(overmind_invocation_log(dir)).not_to include("CMD=start\nBUNDLE_GEMFILE=")
-      expect(overmind_invocation_log(dir)).not_to include("CMD=start\nRUBYOPT=")
+      log = overmind_invocation_log(dir)
+      expect(log).to include("CMD=start")
+      start_block = log.split("\n--\n").find { |block| block.lines.first&.start_with?("CMD=start") }
+      expect(start_block).not_to include("BUNDLE_GEMFILE=")
+      expect(start_block).not_to include("RUBYOPT=")
     end
   end
 
@@ -108,7 +110,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
         {
           printf 'CMD=%s\n' "$1"
           env | sort | grep -E '^(BUNDLE_GEMFILE|BUNDLE_BIN_PATH|BUNDLER_SETUP|BUNDLER_VERSION|RUBYLIB|RUBYOPT|RUBYGEMS_GEMDEPS)=' || true
-          printf "--\n"
+          printf '%s\n' '--'
         } >> "#{dir}/stubbin/overmind-env.log"
         case "$1" in
           status)

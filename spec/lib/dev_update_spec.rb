@@ -171,9 +171,11 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
-      expect(overmind_invocation_log(dir)).to include("CMD=restart")
-      expect(overmind_invocation_log(dir)).not_to include("CMD=restart\nBUNDLE_GEMFILE=")
-      expect(overmind_invocation_log(dir)).not_to include("CMD=restart\nRUBYOPT=")
+      log = overmind_invocation_log(dir)
+      expect(log).to include("CMD=restart")
+      restart_block = log.split("\n--\n").find { |block| block.lines.first&.start_with?("CMD=restart") }
+      expect(restart_block).not_to include("BUNDLE_GEMFILE=")
+      expect(restart_block).not_to include("RUBYOPT=")
       expect(File.exist?(File.join(dir, "overmind-restart-ran"))).to be(true)
     end
   end
@@ -288,7 +290,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         {
           printf 'CMD=%s\n' "$1"
           env | sort | grep -E '^(BUNDLE_GEMFILE|BUNDLE_BIN_PATH|BUNDLER_SETUP|BUNDLER_VERSION|RUBYLIB|RUBYOPT|RUBYGEMS_GEMDEPS)=' || true
-          printf "--\n"
+          printf '%s\n' '--'
         } >> "#{dir}/stubbin/overmind-env.log"
         case "$1" in
           status)
