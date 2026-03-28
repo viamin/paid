@@ -21,6 +21,7 @@ Rails.application.routes.draw do
 
   # Integrations hub
   resources :integrations, only: [ :index ]
+  resources :integration_credentials, only: [ :index, :new, :create, :show, :destroy ]
 
   # GitHub tokens management
   resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ] do
@@ -77,6 +78,7 @@ Rails.application.routes.draw do
       post :refresh_auth, on: :member
       post :quick_create, on: :collection
       post :bump_priority, on: :collection
+      post :toggle_auto_continue_pause, on: :collection
     end
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
     post :detect_services, on: :member

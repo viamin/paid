@@ -333,6 +333,48 @@ RSpec.describe Activities::DetectLabelsActivity do
       end
     end
 
+    context "when a trusted user added the label, then it was removed, and an untrusted user re-added it" do
+      let(:issue) do
+        create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",
+               github_creator_login: "attacker")
+      end
+
+      before do
+        allow(github_client).to receive(:issue_events).with(project.full_name, issue.github_number).and_return([
+          OpenStruct.new(
+            event: "labeled",
+            created_at: Time.utc(2025, 1, 1, 10, 0),
+            actor: OpenStruct.new(login: "viamin"),
+            label: OpenStruct.new(name: "paid-build")
+          ),
+          OpenStruct.new(
+            event: "unlabeled",
+            created_at: Time.utc(2025, 1, 1, 11, 0),
+            actor: OpenStruct.new(login: "viamin"),
+            label: OpenStruct.new(name: "paid-build")
+          ),
+          OpenStruct.new(
+            event: "labeled",
+            created_at: Time.utc(2025, 1, 1, 12, 0),
+            actor: OpenStruct.new(login: "attacker"),
+            label: OpenStruct.new(name: "paid-build")
+          )
+        ])
+      end
+
+      it "returns none action because the last labeler is untrusted" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("none")
+      end
+
+      it "does not change paid_state" do
+        activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(issue.reload.paid_state).to eq("new")
+      end
+    end
+
     context "when issue is from an untrusted user and an untrusted user added the label" do
       let(:issue) do
         create(:issue, project: project, labels: [ "paid-build" ], paid_state: "new",
