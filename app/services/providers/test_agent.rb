@@ -17,7 +17,6 @@ module Providers
     PROMPT = "Respond with exactly: PING OK"
     EXPECTED_OUTPUT = "PING OK"
     TIMEOUT = 30
-    HARNESS_HEALTH_CHECK_PROVIDER_KEYS = %w[claude].freeze
     CONTAINER_COMMANDS = Activities::RunAgentActivity::AGENT_COMMANDS.slice(
       "claude",
       "codex",
@@ -80,6 +79,7 @@ module Providers
       /Timed out.*?(?=\n|$)/i,
       /Connection refused.*?(?=\n|$)/i
     ].freeze
+    ANSI_ESCAPE_PATTERN = /\e\[[0-9;?]*[ -\/]*[@-~]/
     NOISY_ERROR_LINES = [
       /^INFO\s+\d{4}-\d{2}-\d{2}T/i,
       /^OpenAI Codex v/i,
@@ -257,11 +257,20 @@ module Providers
     end
 
     def harness_health_check_supported?
-      HARNESS_HEALTH_CHECK_PROVIDER_KEYS.include?(provider.provider_key)
+      case provider.provider_key
+      when "codex"  then proxy_api_key_configured?(:openai)
+      when "gemini" then proxy_api_key_configured?(:google)
+      else false
+      end
     end
 
     def harness_provider_name
       ProviderSupport.harness_provider_key_for(provider.provider_key).to_sym
+    end
+
+    def proxy_api_key_configured?(provider_name)
+      Rails.application.credentials.dig(:llm, :"#{provider_name}_api_key").present? ||
+        ENV["#{provider_name.to_s.upcase}_API_KEY"].present?
     end
 
     def clear_provider_state_if_healthy!
@@ -272,8 +281,6 @@ module Providers
       command = CONTAINER_COMMANDS[provider.provider_key]
       raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}" unless command
 
-      # TODO(#544): Switch Gemini and Codex to AgentHarness.check_provider
-      # once provider-specific auth_status / health_status hooks exist upstream (agent-harness#41).
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
       return kilocode_test_command if provider.provider_key == "kilocode"
@@ -294,7 +301,7 @@ module Providers
     end
 
     def extract_user_facing_error(error_message)
-      message = error_message.to_s.strip
+      message = sanitize_error_message(error_message)
       return message if message.empty?
 
       translated = translate_known_provider_errors(message)
@@ -306,12 +313,14 @@ module Providers
       cleaned_lines = message.lines
         .map(&:strip)
         .reject(&:empty?)
+        .reject { |line| line.match?(/\A[^\p{Alnum}]+\z/) }
         .reject { |line| noisy_error_line?(line) }
 
       cleaned_lines.first || message.lines.first.to_s.strip
     end
 
     def matches_any_pattern?(message, patterns)
+      message = sanitize_error_message(message)
       patterns.any? { |pattern| pattern.match?(message) }
     end
 
@@ -319,9 +328,21 @@ module Providers
       matches_any_pattern?(line, NOISY_ERROR_LINES)
     end
 
+    def sanitize_error_message(error_message)
+      error_message.to_s
+        .dup
+        .force_encoding(Encoding::UTF_8)
+        .scrub
+        .gsub(ANSI_ESCAPE_PATTERN, "")
+        .delete("\u0000")
+        .strip
+    end
+
     def translate_known_provider_errors(message)
       return "Paid is not configured with a Google API key for containerized Gemini runs." if message.match?(/API key not configured for google/i)
-      return "Paid is not configured with an OpenAI API key for containerized Codex runs." if message.match?(/API key not configured for openai/i)
+      if message.match?(/API key not configured for openai/i)
+        return "Paid is not configured with an OpenAI API key for containerized OpenAI-backed runs (Codex or OpenCode)."
+      end
 
       if message.match?(/Missing agent run ID/i) && message.match?(%r{/api/proxy/openai/}i)
         "Codex did not forward the Paid container credentials to the OpenAI proxy."
@@ -335,9 +356,7 @@ module Providers
         tmp_output="$(mktemp)" &&
         tmp_error="$(mktemp)" &&
         if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then
-          env
-          #{unset_flags}
-          codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+          env #{unset_flags} codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
         else
           codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
         fi;
@@ -360,9 +379,7 @@ module Providers
         tmp_error="$(mktemp)" &&
         before_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)" &&
         if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
-          env
-          #{unset_flags}
-          #{command} >"$tmp_output" 2>"$tmp_error";
+          env #{unset_flags} #{command} >"$tmp_output" 2>"$tmp_error";
         else
           #{command} >"$tmp_output" 2>"$tmp_error";
         fi;
@@ -387,24 +404,30 @@ module Providers
 
     def kilocode_test_command
       escaped_prompt = Shellwords.escape(PROMPT)
-      all_unset_flags = ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS
+      all_unset_flags = all_subscription_auth_unset_vars
         .values
         .flatten
         .uniq
         .map { |var| "-u #{var}" }
-        .join("\n")
+        .join(" ")
       <<~SH.squish
-        env
-        #{all_unset_flags}
+        env #{all_unset_flags}
         timeout 20s kilo run --auto --print-logs #{escaped_prompt}
       SH
     end
 
     def subscription_auth_unset_flags(provider)
-      ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS
-        .fetch(provider)
+      subscription_auth_unset_vars_for(provider)
         .map { |var| "-u #{var}" }
-        .join("\n")
+        .join(" ")
+    end
+
+    def subscription_auth_unset_vars_for(provider)
+      ProviderSupport.subscription_auth_unset_vars_for(provider)
+    end
+
+    def all_subscription_auth_unset_vars
+      ProviderSupport.subscription_auth_unset_vars
     end
 
     class Result
