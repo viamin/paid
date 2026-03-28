@@ -9,6 +9,10 @@ module Knowledge
     # Uses the existing bare repo (via WorktreeService) for git operations —
     # no clone needed, keeping detection fast (~100ms).
     class Detector
+      # Minimum number of commits ahead of the last collected SHA to trigger
+      # staleness. With the default of 1, any single commit advance is enough.
+      # Set KNOWLEDGE_STALENESS_THRESHOLD=N to require N commits before
+      # re-collection (e.g., 5 means "at least 5 commits ahead").
       STALENESS_THRESHOLD = ENV.fetch("KNOWLEDGE_STALENESS_THRESHOLD", "1").to_i
       FETCH_THROTTLE = 2.minutes
 
@@ -133,12 +137,21 @@ module Knowledge
         runs = CollectorRun.where(project_version_id: version.id)
         return false unless runs.exists?
 
-        # If any collector is in-flight, wait for it to finish
+        # If any collector is in-flight, wait for it to finish and avoid enqueueing
         return true if runs.exists?(status: %w[pending running])
 
         # If any collector failed with none in-flight, allow re-collection
         # so RunCollectorsJob can retry. It's idempotent and skips completed collectors.
-        !runs.exists?(status: "failed")
+        return false if runs.exists?(status: "failed")
+
+        # Treat the version as "collected" only when all expected collector types
+        # are present and completed successfully. If a prior job crashed partway
+        # through, some collector types may be missing — allow enqueue so
+        # RunCollectorsJob can create the missing collectors.
+        expected_types = Knowledge::CollectorRunner.registry.keys.map(&:to_s)
+        actual_types = runs.distinct.pluck(:collector_type).map(&:to_s)
+
+        (expected_types - actual_types).empty?
       end
 
       def worktree_service

@@ -15,6 +15,9 @@ RSpec.describe Knowledge::Staleness::Detector do
     allow(WorktreeService).to receive(:new).with(project).and_return(worktree_service)
     allow(worktree_service).to receive(:ensure_cloned)
     allow(worktree_service).to receive_messages(current_commit_sha: new_sha, run_repo_command: "")
+    # Default: empty registry so existing specs aren't affected by the
+    # "all expected collector types present" check. Override in specific specs.
+    allow(Knowledge::CollectorRunner).to receive(:registry).and_return({})
   end
 
   describe ".call" do
@@ -92,10 +95,12 @@ RSpec.describe Knowledge::Staleness::Detector do
         end
       end
 
-      context "when a ProjectVersion exists with a CollectorRun for the SHA" do
+      context "when a ProjectVersion exists with all expected CollectorRuns for the SHA" do
         before do
+          allow(Knowledge::CollectorRunner).to receive(:registry)
+            .and_return("test_collector" => double)
           version = create(:project_version, project: project, commit_sha: new_sha)
-          create(:collector_run, project_version: version)
+          create(:collector_run, project_version: version, collector_type: "test_collector")
         end
 
         it "does not enqueue duplicate collection" do
@@ -103,6 +108,24 @@ RSpec.describe Knowledge::Staleness::Detector do
 
           result = detector.call
           expect(result[:collection_enqueued]).to be false
+        end
+      end
+
+      context "when a ProjectVersion exists but some collector types are missing" do
+        before do
+          allow(Knowledge::CollectorRunner).to receive(:registry)
+            .and_return("collector_a" => double, "collector_b" => double)
+          version = create(:project_version, project: project, commit_sha: new_sha)
+          # Only collector_a ran; collector_b is missing (e.g., job crashed partway)
+          create(:collector_run, :completed, project_version: version, collector_type: "collector_a")
+        end
+
+        it "enqueues collection so missing collectors can run" do
+          expect(RunCollectorsJob).to receive(:perform_later)
+            .with(project.id, new_sha, branch: project.default_branch)
+
+          result = detector.call
+          expect(result[:collection_enqueued]).to be true
         end
       end
     end
