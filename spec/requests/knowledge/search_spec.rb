@@ -50,16 +50,21 @@ RSpec.describe "Knowledge::Search" do
     context "with valid params" do
       let(:version) { create(:project_version, project: project) }
       let(:run) { create(:collector_run, :completed, project_version: version) }
-
-      before do
+      let(:artifact) do
         create(:knowledge_artifact, collector_run: run, project: project,
           artifact_type: "route", identifier: "GET /api/test")
       end
 
-      it "returns search results" do
+      before do
+        create(:knowledge_chunk, knowledge_artifact: artifact, project: project,
+          chunk_type: "definition", content: "Test endpoint definition")
+      end
+
+      it "returns search results including the matching artifact" do
         get knowledge_search_results_path, params: { project_id: project.id, q: "test", mode: "exact" }
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("results")
+        expect(response.body).to include("GET /api/test")
+        expect(response.body).to include("route")
       end
     end
   end
