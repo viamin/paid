@@ -60,44 +60,7 @@ module Containers
     end
 
     def parse_stats(raw)
-      cpu = parse_cpu(raw)
-      memory = parse_memory(raw)
-      pids = raw.dig("pids_stats", "current")
-      pids_count = pids.nil? ? nil : pids.to_i
-
-      {
-        cpu_percent: cpu,
-        memory_bytes: memory[:usage],
-        memory_limit_bytes: memory[:limit],
-        memory_percent: memory[:percent],
-        pids_count: pids_count
-      }
-    end
-
-    def parse_cpu(raw)
-      cpu_stats = raw["cpu_stats"] || {}
-      precpu_stats = raw["precpu_stats"] || {}
-
-      cpu_delta = cpu_stats.dig("cpu_usage", "total_usage").to_f -
-                  precpu_stats.dig("cpu_usage", "total_usage").to_f
-      system_delta = cpu_stats["system_cpu_usage"].to_f -
-                     precpu_stats["system_cpu_usage"].to_f
-      online_cpus = cpu_stats["online_cpus"] ||
-                    cpu_stats.dig("cpu_usage", "percpu_usage")&.length ||
-                    1
-
-      return 0.0 if system_delta <= 0 || cpu_delta < 0
-
-      ((cpu_delta / system_delta) * online_cpus * 100.0).round(2)
-    end
-
-    def parse_memory(raw)
-      mem_stats = raw["memory_stats"] || {}
-      usage = mem_stats["usage"].to_i
-      limit = mem_stats["limit"].to_i
-      percent = limit.positive? ? ((usage.to_f / limit) * 100.0).round(2) : 0.0
-
-      { usage: usage, limit: limit, percent: percent }
+      DockerStatsParser.parse_stats(raw)
     end
 
     def record_metric(stats)
@@ -109,27 +72,8 @@ module Containers
       )
     end
 
-    # Updates peak/average summaries and increments container_metrics_count
-    # in a single UPDATE, avoiding the extra write that counter_cache would
-    # cause (reviewer feedback: consolidate to one row update per sample).
     def update_agent_run_summaries(metric)
-      AgentRun.where(id: agent_run.id).update_all(
-        AgentRun.sanitize_sql_array(
-          [
-            <<~SQL.squish,
-              peak_cpu_percent = GREATEST(COALESCE(peak_cpu_percent, 0), ?),
-              peak_memory_bytes = GREATEST(COALESCE(peak_memory_bytes, 0), ?),
-              avg_cpu_percent = (COALESCE(avg_cpu_percent, 0) * COALESCE(container_metrics_count, 0) + ?)::numeric / (COALESCE(container_metrics_count, 0) + 1),
-              avg_memory_bytes = (COALESCE(avg_memory_bytes, 0) * COALESCE(container_metrics_count, 0) + ?)::numeric / (COALESCE(container_metrics_count, 0) + 1),
-              container_metrics_count = COALESCE(container_metrics_count, 0) + 1
-            SQL
-            metric.cpu_percent,
-            metric.memory_bytes,
-            metric.cpu_percent,
-            metric.memory_bytes
-          ]
-        )
-      )
+      DockerStatsParser.update_summaries(model_class: AgentRun, id: agent_run.id, metric: metric)
     end
 
     def log_failure(error)
