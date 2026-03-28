@@ -32,6 +32,7 @@ class Provider < ApplicationRecord
   validate :api_key_auth_requires_provider_api_key
   validate :subscription_auth_must_not_have_api_key
   validate :api_key_must_be_compatible
+  validate :api_key_must_belong_to_same_user
 
   before_destroy :prevent_destroying_last_agent_run_provider
   before_destroy :prevent_destroying_default_provider
@@ -204,5 +205,15 @@ class Provider < ApplicationRecord
     return if provider_api_key.compatible_with?(provider_key)
 
     errors.add(:provider_api_key, "is not compatible with #{provider_key}")
+  end
+
+  def api_key_must_belong_to_same_user
+    return unless api_key?
+    return if provider_api_key_id.blank?
+    return unless provider_api_key
+
+    return if provider_api_key.user_id == user_id
+
+    errors.add(:provider_api_key, "must belong to the same user")
   end
 end

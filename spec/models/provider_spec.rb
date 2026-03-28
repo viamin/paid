@@ -67,6 +67,17 @@ RSpec.describe Provider do
       expect(duplicate.errors[:provider_key]).to include("already has an entry with this API key")
     end
 
+    it "rejects provider_api_key belonging to a different user" do
+      other_user = create(:user)
+      api_key = create(:provider_api_key, user: other_user, compatible_providers: %w[cursor])
+      provider.auth_type = "api_key"
+      provider.provider_api_key = api_key
+      provider.provider_key = "cursor"
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:provider_api_key]).to include("must belong to the same user")
+    end
+
     it "validates API key compatibility with provider_key" do
       api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[gemini])
       provider.auth_type = "api_key"
