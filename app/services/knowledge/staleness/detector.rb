@@ -12,7 +12,6 @@ module Knowledge
     # no clone needed, keeping detection fast (~100ms).
     class Detector
       STALENESS_THRESHOLD = ENV.fetch("KNOWLEDGE_STALENESS_THRESHOLD", "1").to_i
-      RECOLLECTION_COOLDOWN = 5.minutes
 
       attr_reader :project
 
