@@ -54,10 +54,12 @@ class WorktreeService
   def ensure_cloned(max_fetch_age: nil)
     repo_path = project_repo_path
 
-    if File.exist?(File.join(repo_path, "HEAD"))
-      fetch_latest unless max_fetch_age && recently_fetched?(repo_path, max_fetch_age)
-    else
-      clone_repository
+    @mutex.synchronize do
+      if File.exist?(File.join(repo_path, "HEAD"))
+        fetch_latest unless max_fetch_age && recently_fetched?(repo_path, max_fetch_age)
+      else
+        clone_repository
+      end
     end
 
     repo_path

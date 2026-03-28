@@ -33,7 +33,11 @@ module Knowledge
         return fresh_project_result(current_sha) unless last_version
 
         last_sha = last_version.commit_sha
-        return not_stale_result(current_sha, last_sha:) if current_sha == last_sha
+        if current_sha == last_sha
+          # HEAD hasn't moved, but failed collectors should still be retried.
+          enqueued = enqueue_recollection(current_sha)
+          return not_stale_result(current_sha, last_sha:, collection_enqueued: enqueued)
+        end
 
         commit_distance = commits_between(last_sha, current_sha)
         # commit_distance == 0 with different SHAs indicates a force-push/rewind
@@ -145,14 +149,14 @@ module Knowledge
         worktree_service.run_repo_command(*args)
       end
 
-      def not_stale_result(current_sha, last_sha: nil)
+      def not_stale_result(current_sha, last_sha: nil, collection_enqueued: false)
         {
           stale: false,
           current_sha: current_sha,
           last_collected_sha: last_sha,
           changed_files: [],
           stale_artifacts_count: 0,
-          collection_enqueued: false
+          collection_enqueued: collection_enqueued
         }
       end
 

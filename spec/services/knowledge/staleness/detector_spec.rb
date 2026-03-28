@@ -118,6 +118,24 @@ RSpec.describe Knowledge::Staleness::Detector do
         expect(result[:stale]).to be false
         expect(result[:current_sha]).to eq(new_sha)
         expect(result[:last_collected_sha]).to eq(new_sha)
+        expect(result[:collection_enqueued]).to be false
+      end
+    end
+
+    context "when HEAD matches last collected version but a collector failed" do
+      before do
+        version = create(:project_version, project: project, commit_sha: new_sha)
+        create(:collector_run, :completed, project_version: version)
+        create(:collector_run, :failed, project_version: version)
+      end
+
+      it "enqueues re-collection for the failed collector" do
+        expect(RunCollectorsJob).to receive(:perform_later)
+          .with(project.id, new_sha, branch: project.default_branch)
+
+        result = detector.call
+        expect(result[:stale]).to be false
+        expect(result[:collection_enqueued]).to be true
       end
     end
 
