@@ -145,6 +145,7 @@ module Containers
       seed_codex_credentials!
       fix_gemini_tmpfs_ownership!
       seed_gemini_credentials!
+      fix_cursor_tmpfs_ownership!
       fix_kilocode_tmpfs_ownership!
       fix_opencode_config_tmpfs_ownership!
       fix_opencode_data_tmpfs_ownership!
@@ -647,6 +648,12 @@ module Containers
       fix_tmpfs_ownership!(".gemini")
     end
 
+    # Fixes ownership of the ~/.cursor-agent tmpfs so the non-root agent user
+    # can write to it. Tmpfs mounts are created as root-owned.
+    def fix_cursor_tmpfs_ownership!
+      fix_tmpfs_ownership!(".cursor-agent", log_key: "cursor_agent")
+    end
+
     # Fixes ownership of the ~/.kilocode tmpfs so the non-root agent user can
     # write to it. Tmpfs mounts are created as root-owned.
     def fix_kilocode_tmpfs_ownership!
@@ -755,6 +762,7 @@ module Containers
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
     #   /home/agent/.codex    - tmpfs (64MB, for Codex CLI config/session data)
     #   /home/agent/.gemini   - tmpfs (64MB, for Gemini CLI config/session data)
+    #   /home/agent/.cursor-agent - tmpfs (64MB, for Cursor agent CLI config/session data)
     #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI config/session data)
     #   /home/agent/.config/opencode         - tmpfs (64MB, for OpenCode CLI config)
     #   /home/agent/.local/share/opencode    - tmpfs (64MB, for OpenCode CLI data)
@@ -840,6 +848,10 @@ module Containers
       # Gemini CLI stores config and session data under ~/.gemini.
       # Ownership is fixed by fix_gemini_tmpfs_ownership! after container start.
       tmpfs["/home/agent/.gemini"] = "size=#{64 * 1024 * 1024},mode=0700"
+
+      # Cursor agent CLI stores config and session data under ~/.cursor-agent.
+      # Ownership is fixed by fix_cursor_tmpfs_ownership! after container start.
+      tmpfs["/home/agent/.cursor-agent"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       # Kilocode CLI stores config and session data under ~/.kilocode.
       # Ownership is fixed by fix_kilocode_tmpfs_ownership! after container start.

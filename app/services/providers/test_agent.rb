@@ -21,6 +21,7 @@ module Providers
     CONTAINER_COMMANDS = Activities::RunAgentActivity::AGENT_COMMANDS.slice(
       "claude",
       "codex",
+      "cursor",
       "gemini",
       "kilocode",
       "opencode",
