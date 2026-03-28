@@ -167,6 +167,21 @@ RSpec.describe Activities::CreatePullRequestActivity do
         )
       end
 
+      it "falls back to raw summary when LLM raises an unexpected error" do
+        agent_run.log!("stdout", "Raw agent output here")
+        allow(Llm::GeneratePrDescription).to receive(:call)
+          .and_raise(RuntimeError.new("unexpected failure"))
+
+        expect(github_client).to receive(:create_pull_request).with(
+          anything,
+          hash_including(
+            body: a_string_including("Raw agent output here")
+          )
+        ).and_return(pr_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
       it "falls back to raw summary when LLM returns nil" do
         agent_run.log!("stdout", "Raw agent output here")
         allow(Llm::GeneratePrDescription).to receive(:call).and_return(nil)

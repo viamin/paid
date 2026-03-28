@@ -84,6 +84,13 @@ module Activities
         issue_title: issue&.title,
         issue_body: issue&.body
       )
+    rescue StandardError => e
+      logger.warn(
+        message: "agent_execution.generate_pr_description_failed",
+        error_class: e.class.name,
+        error: e.message
+      )
+      nil
     end
 
     def add_pr_labels(client, project, pr_number, agent_run_id)
