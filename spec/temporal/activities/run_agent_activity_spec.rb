@@ -57,6 +57,11 @@ RSpec.describe Activities::RunAgentActivity do
       expect(described_class::AGENT_COMMANDS).to have_key("opencode")
       expect(described_class::AGENT_COMMANDS["opencode"]).to include("opencode")
     end
+
+    it "includes a command mapping for copilot" do
+      expect(described_class::AGENT_COMMANDS).to have_key("copilot")
+      expect(described_class::AGENT_COMMANDS["copilot"]).to include("github-copilot-cli")
+    end
   end
 
   describe ".provider_order" do
@@ -118,6 +123,16 @@ RSpec.describe Activities::RunAgentActivity do
       )
 
       expect(result).to eq(%w[claude_code opencode codex])
+    end
+
+    it "includes copilot in fallback order when listed" do
+      result = described_class.provider_order(
+        agent_type: "claude_code",
+        fallback_enabled: true,
+        fallback_providers: %w[copilot codex]
+      )
+
+      expect(result).to eq(%w[claude_code copilot codex])
     end
   end
 

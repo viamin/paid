@@ -150,6 +150,10 @@ RUN npm install -g @kilocode/cli@7.1.3
 # NOTE: End-to-end execution depends on agent-harness build_command support (agent-harness#32).
 RUN npm install -g opencode-ai@1.3.2
 
+# Install GitHub Copilot CLI
+# Pin version for reproducible builds; update intentionally when upgrading Copilot.
+RUN npm install -g @githubnext/github-copilot-cli@0.1.0
+
 # Install Cursor agent CLI
 # Pin the install script checksum for reproducible builds and supply-chain security.
 # The installer places the binary under /root/.local/ which is inaccessible to the
