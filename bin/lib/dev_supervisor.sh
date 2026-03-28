@@ -33,6 +33,18 @@ dev_supervisor_prepare_logging() {
   touch "$(dev_supervisor_tmux_log)" "$(dev_supervisor_overmind_log)"
 }
 
+dev_supervisor_run_overmind() {
+  env \
+    -u BUNDLE_BIN_PATH \
+    -u BUNDLE_GEMFILE \
+    -u BUNDLER_SETUP \
+    -u BUNDLER_VERSION \
+    -u RUBYLIB \
+    -u RUBYOPT \
+    -u RUBYGEMS_GEMDEPS \
+    "$@"
+}
+
 dev_supervisor_log_line() {
   local file="$1"
   shift
@@ -70,7 +82,7 @@ dev_supervisor_snapshot_state() {
     printf 'tmux_config=%s\n\n' "$(dev_supervisor_tmux_config)"
   } >> "$file"
 
-  dev_supervisor_append_command "$file" "overmind status" overmind status
+  dev_supervisor_append_command "$file" "overmind status" dev_supervisor_run_overmind overmind status
   dev_supervisor_append_command "$file" "tmux sockets" sh -c "ls -la '$(dev_supervisor_tmux_socket_dir)' 2>/dev/null"
   dev_supervisor_append_command "$file" "overmind socket" sh -c "ls -la '${OVERMIND_SOCKET:-.overmind.sock}' 2>/dev/null"
   dev_supervisor_append_command "$file" "tmux sessions" sh -c "for socket in '$(dev_supervisor_tmux_socket_dir)'/overmind-$(dev_supervisor_app_name)-*; do [ -S \"\$socket\" ] || continue; echo \"-- \$socket --\"; tmux -S \"\$socket\" ls 2>&1 || true; done"

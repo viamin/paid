@@ -20,7 +20,7 @@ then
   gem install overmind
 fi
 
-if [ -S "$OVERMIND_SOCKET" ] && ! overmind status &>/dev/null; then
+if [ -S "$OVERMIND_SOCKET" ] && ! dev_supervisor_run_overmind overmind status &>/dev/null; then
   echo "Removing stale Overmind socket..."
   rm -f "$OVERMIND_SOCKET"
 fi
@@ -46,7 +46,7 @@ fi
 
 dev_supervisor_snapshot_state "bin-dev-before-start"
 
-if overmind start -f Procfile.dev -F "$(dev_supervisor_tmux_config)" "$@" \
+if dev_supervisor_run_overmind overmind start -f Procfile.dev -F "$(dev_supervisor_tmux_config)" "$@" \
   2> >(tee -a "$(dev_supervisor_overmind_log)" >&2); then
   :
 else
