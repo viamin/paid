@@ -71,6 +71,7 @@ RSpec.describe UserSetting do
     end
 
     it "excludes non-container-executable providers even when enabled for agent runs" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude])
       user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
 
       expect(described_class.enabled_agent_providers(user)).to eq([ "claude" ])

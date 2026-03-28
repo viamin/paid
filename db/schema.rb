@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_28_002528) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_28_002231) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -664,17 +664,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_002528) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_prompts_scope_consistency"
   end
 
-  create_table "provider_api_keys", force: :cascade do |t|
-    t.text "api_key_ciphertext", null: false
-    t.jsonb "compatible_providers", default: [], null: false
-    t.datetime "created_at", null: false
-    t.string "name", limit: 100, null: false
-    t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
-    t.index ["user_id", "name"], name: "index_provider_api_keys_on_user_id_and_name", unique: true
-    t.index ["user_id"], name: "index_provider_api_keys_on_user_id"
-  end
-
   create_table "provider_states", force: :cascade do |t|
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
@@ -688,21 +677,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_002528) do
   end
 
   create_table "providers", force: :cascade do |t|
-    t.string "auth_type", limit: 20, default: "subscription", null: false
     t.jsonb "config", default: {}, null: false
     t.datetime "created_at", null: false
     t.boolean "enabled_for_agent_runs", default: true, null: false
     t.boolean "enabled_for_fallback", default: true, null: false
-    t.string "fallback_role", limit: 30, default: "standard", null: false
-    t.string "name", limit: 100
-    t.bigint "provider_api_key_id"
     t.string "provider_key", limit: 50, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
-    t.index ["auth_type"], name: "index_providers_on_auth_type"
-    t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
-    t.index ["user_id", "provider_key", "provider_api_key_id"], name: "idx_providers_unique_api_key", unique: true, where: "((auth_type)::text = 'api_key'::text)"
-    t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "((auth_type)::text = 'subscription'::text)"
+    t.index ["user_id", "provider_key"], name: "index_providers_on_user_id_and_provider_key", unique: true
     t.index ["user_id"], name: "index_providers_on_user_id"
   end
 
@@ -934,9 +916,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_002528) do
   add_foreign_key "prompts", "accounts", on_delete: :cascade
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
-  add_foreign_key "provider_api_keys", "users", on_delete: :cascade
   add_foreign_key "provider_states", "users", on_delete: :cascade
-  add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
   add_foreign_key "providers", "users", on_delete: :cascade
   add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
