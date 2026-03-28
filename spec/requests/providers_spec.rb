@@ -167,7 +167,7 @@ RSpec.describe "Providers" do
     end
 
     it "rejects providers that are known to agent harness but not installed in paid-agent" do
-      post providers_path, params: { provider: { provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: false } }
+      post providers_path, params: { provider: { provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: false } }
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("is not available in paid-agent yet")
@@ -185,6 +185,13 @@ RSpec.describe "Providers" do
 
       expect(response).to redirect_to(providers_path)
       expect(user.providers.find_by(provider_key: "opencode")).to be_present
+    end
+
+    it "creates an aider provider successfully" do
+      post providers_path, params: { provider: { provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.providers.find_by(provider_key: "aider")).to be_present
     end
   end
 

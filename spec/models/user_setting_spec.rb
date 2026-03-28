@@ -71,7 +71,7 @@ RSpec.describe UserSetting do
     end
 
     it "excludes non-container-executable providers even when enabled for agent runs" do
-      user.providers.create!(provider_key: "aider", enabled_for_agent_runs: true)
+      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
 
       expect(described_class.enabled_agent_providers(user)).to eq([ "claude" ])
     end

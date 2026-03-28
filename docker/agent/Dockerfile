@@ -171,7 +171,7 @@ RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
 # Pin version for reproducible builds; update intentionally when upgrading Aider.
 # Uses --break-system-packages because the container is single-purpose and does
 # not use a virtualenv.
-RUN pip3 install --break-system-packages aider-chat==0.82.3
+RUN pip3 install --no-cache-dir --break-system-packages aider-chat==0.82.3
 
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
