@@ -7,6 +7,7 @@ class User < ApplicationRecord
   has_many :project_memberships, dependent: :destroy
   has_many :member_projects, through: :project_memberships, source: :project
   has_many :created_github_tokens, class_name: "GithubToken", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
+  has_many :created_integration_credentials, class_name: "IntegrationCredential", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_many :created_projects, class_name: "Project", foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_one :user_setting, dependent: :destroy
   has_many :provider_states, dependent: :destroy

@@ -42,27 +42,31 @@ module Activities
 
     # Fetches all open GitHub issues and pull requests for visibility.
     # Trigger eligibility is decided later by DetectLabelsActivity.
+    # Sorts by recently-updated so that newly-labeled issues appear first
+    # even when the page cap is reached in busy repos.
     # Returns [issues, truncated] where truncated is true if the
     # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
     def fetch_all_issues(client, repo_full_name)
-      fetch_issues_for_label(client, repo_full_name, nil)
+      fetch_issues_for_label(client, repo_full_name, nil, sort: :updated)
     end
 
     # Returns [issues, truncated] where truncated is true when the
     # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
-    def fetch_issues_for_label(client, repo_full_name, label)
+    def fetch_issues_for_label(client, repo_full_name, label, sort: nil)
       issues = []
       page = 1
       truncated = false
 
       loop do
-        page_issues = client.issues(
-          repo_full_name,
+        opts = {
           labels: label ? [ label ] : nil,
           state: "open",
           per_page: DEFAULT_PER_PAGE,
           page: page
-        )
+        }
+        opts[:sort] = sort if sort
+
+        page_issues = client.issues(repo_full_name, **opts)
 
         break if page_issues.empty?
 

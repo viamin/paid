@@ -88,4 +88,25 @@ module ProviderSupport
 
     provider_key.to_s
   end
+
+  # Environment variables to unset when running a provider with its own
+  # subscription auth (so the agent talks directly to the provider instead of
+  # through the Paid proxy). Shared between RunAgentActivity and TestAgent to
+  # keep runtime and test paths in sync.
+  SUBSCRIPTION_AUTH_UNSET_VARS = {
+    "codex" => %w[
+      OPENAI_API_KEY
+      OPENAI_BASE_URL
+      OPENAI_HEADER_X_AGENT_RUN_ID
+      OPENAI_HEADER_X_PROXY_TOKEN
+    ].freeze,
+    "gemini" => %w[
+      GEMINI_API_KEY
+      GOOGLE_GEMINI_BASE_URL
+      GOOGLE_GENAI_BASE_URL
+      GOOGLE_HEADER_X_AGENT_RUN_ID
+      GOOGLE_HEADER_X_PROXY_TOKEN
+      GEMINI_CLI_CUSTOM_HEADERS
+    ].freeze
+  }.freeze
 end
