@@ -1,22 +1,54 @@
 # frozen_string_literal: true
 
 class Provider < ApplicationRecord
+  AUTH_TYPES = %w[subscription api_key].freeze
+  FALLBACK_ROLES = %w[standard rate_limit_fallback].freeze
+
   belongs_to :user
+  belongs_to :provider_api_key, optional: true
 
   scope :for_agent_runs, -> { where(enabled_for_agent_runs: true) }
   scope :for_fallback, -> { where(enabled_for_fallback: true) }
-  scope :ordered, -> { order(:provider_key) }
+  scope :ordered, -> { order(:provider_key, :auth_type) }
+  scope :subscription, -> { where(auth_type: "subscription") }
+  scope :api_key, -> { where(auth_type: "api_key") }
+  scope :rate_limit_fallback, -> { where(fallback_role: "rate_limit_fallback") }
 
   validates :provider_key, presence: true, length: { maximum: 50 }
-  validates :provider_key, uniqueness: { scope: :user_id }
   validates :provider_key, inclusion: { in: ->(_) { supported_provider_keys }, message: "is not supported" },
     allow_blank: true, if: -> { new_record? || will_save_change_to_provider_key? }
+  validates :auth_type, presence: true, inclusion: { in: AUTH_TYPES }
+  validates :fallback_role, presence: true, inclusion: { in: FALLBACK_ROLES }
+  validates :name, length: { maximum: 100 }
 
   validate :must_keep_at_least_one_agent_run_provider
   validate :default_provider_must_remain_enabled_for_agent_runs
+  validate :api_key_auth_requires_provider_api_key
+  validate :subscription_auth_must_not_have_api_key
+  validate :api_key_must_be_compatible
 
   before_destroy :prevent_destroying_last_agent_run_provider
   before_destroy :prevent_destroying_default_provider
+
+  def subscription?
+    auth_type == "subscription"
+  end
+
+  def api_key?
+    auth_type == "api_key"
+  end
+
+  def rate_limit_fallback?
+    fallback_role == "rate_limit_fallback"
+  end
+
+  def display_name
+    return name if name.present?
+
+    label = provider_key.titleize
+    label += " (API Key)" if api_key?
+    label
+  end
 
   # Returns the provider key that must always exist and remain enabled for
   # agent runs. Prefers "claude" when container-executable, otherwise falls
@@ -32,12 +64,12 @@ class Provider < ApplicationRecord
     key = default_provider_key
     return unless key
 
-    user.providers.find_or_create_by!(provider_key: key)
+    user.providers.find_or_create_by!(provider_key: key, auth_type: "subscription")
   rescue ActiveRecord::RecordNotUnique
-    user.providers.find_by!(provider_key: key)
+    user.providers.find_by!(provider_key: key, auth_type: "subscription")
   end
 
-  def self.display_name(provider_key)
+  def self.display_name_for(provider_key)
     return "Unknown" if provider_key.blank?
 
     provider = AgentHarness.provider(ProviderSupport.harness_provider_key_for(provider_key).to_sym)
@@ -49,6 +81,11 @@ class Provider < ApplicationRecord
     end
   rescue AgentHarness::ConfigurationError
     provider_key.to_s.titleize
+  end
+
+  # Keep backward compatibility - class-level display_name delegates to display_name_for
+  def self.display_name(provider_key)
+    display_name_for(provider_key)
   end
 
   def self.supported_provider_keys
@@ -122,7 +159,7 @@ class Provider < ApplicationRecord
   def default_provider_must_remain_enabled_for_agent_runs
     default_key = self.class.default_provider_key
     return unless default_key
-    return unless provider_key == default_key
+    return unless provider_key == default_key && subscription?
     return unless will_save_change_to_enabled_for_agent_runs?(to: false)
 
     errors.add(:enabled_for_agent_runs,
@@ -133,9 +170,33 @@ class Provider < ApplicationRecord
     default_key = self.class.default_provider_key
     return if destroyed_by_association.present?
     return unless default_key
-    return unless provider_key == default_key
+    return unless provider_key == default_key && subscription?
 
     errors.add(:base, "Cannot delete the #{Provider.display_name(default_key)} provider")
     throw(:abort)
+  end
+
+  def api_key_auth_requires_provider_api_key
+    return unless api_key?
+    return if provider_api_key_id.present?
+
+    errors.add(:provider_api_key, "is required for API key authentication")
+  end
+
+  def subscription_auth_must_not_have_api_key
+    return unless subscription?
+    return if provider_api_key_id.blank?
+
+    errors.add(:provider_api_key, "must not be set for subscription authentication")
+  end
+
+  def api_key_must_be_compatible
+    return unless api_key?
+    return if provider_api_key_id.blank?
+    return unless provider_api_key
+
+    return if provider_api_key.compatible_with?(provider_key)
+
+    errors.add(:provider_api_key, "is not compatible with #{provider_key}")
   end
 end

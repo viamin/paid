@@ -10,7 +10,7 @@ class ProvidersController < ApplicationController
   end
 
   def new
-    @provider = current_user.providers.new
+    @provider = current_user.providers.new(auth_type: params[:auth_type] || "subscription")
     authorize @provider
   end
 
@@ -120,19 +120,32 @@ class ProvidersController < ApplicationController
   end
 
   def provider_params
-    permitted = [ :enabled_for_agent_runs, :enabled_for_fallback ]
-    permitted << :provider_key if action_name == "create"
+    permitted = [ :enabled_for_agent_runs, :enabled_for_fallback, :name, :fallback_role ]
+    if action_name == "create"
+      permitted.push(:provider_key, :auth_type, :provider_api_key_id)
+    end
     params.require(:provider).permit(*permitted)
   end
 
   def load_provider_options
     addable_keys = Provider.addable_provider_keys
-    existing_keys = current_user.providers.pluck(:provider_key)
-    @provider_options = if @provider&.persisted?
-      (addable_keys - (existing_keys - [ @provider.provider_key ]))
+    existing_subscription_keys = current_user.providers.subscription.pluck(:provider_key)
+
+    # Subscription providers: only show keys not yet added
+    @subscription_provider_options = if @provider&.persisted?
+      addable_keys - (existing_subscription_keys - [ @provider.provider_key ])
     else
-      addable_keys - existing_keys
+      addable_keys - existing_subscription_keys
     end
+
+    # API key providers: show all addable keys that have a compatible API key
+    @available_api_keys = current_user.provider_api_keys.ordered
+    @api_key_provider_options = addable_keys.select do |key|
+      @available_api_keys.any? { |ak| ak.compatible_with?(key) }
+    end
+
+    # Combined for backward compat
+    @provider_options = @subscription_provider_options
   end
 
   def validate_provider_key_enabled!
@@ -212,7 +225,7 @@ class ProvidersController < ApplicationController
     default_key = Provider.default_provider_key
     return [] unless default_key
 
-    default = current_user.providers.find_or_initialize_by(provider_key: default_key)
+    default = current_user.providers.find_or_initialize_by(provider_key: default_key, auth_type: "subscription")
     default.enabled_for_agent_runs = true
     default.enabled_for_fallback = true if default.new_record?
 
@@ -232,7 +245,12 @@ class ProvidersController < ApplicationController
     @user_setting = current_user.settings
     @enabled_agent_providers = UserSetting.enabled_agent_providers(current_user)
     @fallback_candidate_providers = UserSetting.fallback_candidate_providers(current_user)
-    @addable_provider_options = Provider.addable_provider_keys - current_user.providers.pluck(:provider_key)
+    @available_api_keys = current_user.provider_api_keys.ordered
+    has_api_keys = @available_api_keys.any?
+    existing_subscription_keys = current_user.providers.subscription.pluck(:provider_key)
+    addable_keys = Provider.addable_provider_keys
+    @addable_provider_options = (addable_keys - existing_subscription_keys).presence ||
+      (has_api_keys ? addable_keys : [])
   end
 
   def update_fallback_provider_flags!
