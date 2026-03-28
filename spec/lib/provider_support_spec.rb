@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "set"
 
 RSpec.describe ProviderSupport do
   describe "CONTAINER_EXECUTABLE_PROVIDER_KEYS" do
