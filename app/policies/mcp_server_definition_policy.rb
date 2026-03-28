@@ -24,7 +24,11 @@ class McpServerDefinitionPolicy < ApplicationPolicy
   private
 
   def account_for_record
-    user&.account
+    if record.respond_to?(:account) && !record.is_a?(Class)
+      record.account
+    else
+      user&.account
+    end
   end
 
   class Scope < ApplicationPolicy::Scope
