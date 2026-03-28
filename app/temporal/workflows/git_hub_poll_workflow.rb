@@ -40,6 +40,7 @@ module Workflows
 
         maybe_scan_paid_prs(project_id)
         maybe_scan_security_alerts(project_id)
+        maybe_check_knowledge_staleness(project_id)
 
         poll_config = run_activity(Activities::GetPollIntervalActivity,
           { project_id: project_id }, timeout: 10)
@@ -95,6 +96,23 @@ module Workflows
       scan_result[:alerts_to_fix].each do |alert_data|
         start_agent_workflow(project_id, alert_data[:issue_id])
       end
+    end
+
+    # Check if the project's knowledge base needs refreshing after HEAD advances.
+    # TODO(#220): Remove patch guard after all pre-v220 workflows have continued-as-new
+    def maybe_check_knowledge_staleness(project_id)
+      return unless Temporalio::Workflow.patched("add-check-knowledge-staleness-v1")
+
+      run_activity(Activities::CheckKnowledgeStalenessActivity,
+        { project_id: project_id }, timeout: 30)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "knowledge.staleness_check_skipped",
+        project_id: project_id,
+        error: e.message
+      )
     end
 
     def handle_detection(detection, project_id)
