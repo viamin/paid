@@ -76,6 +76,7 @@ module Activities
       issue = agent_run.issue
       issue.update!(paid_state: "recommend_close")
       remove_trigger_labels(client, project, issue, agent_run.id)
+      remove_needs_input_label(client, project, issue, agent_run.id)
       post_recommend_close_comment(client, project, issue, agent_summary)
     end
 
@@ -86,9 +87,32 @@ module Activities
       { agent_run_id: agent_run.id, outcome: "no_changes" }
     end
 
+    def triggering_label_for(project)
+      if project.automation_on_label_enabled? && project.automation_label_name.present?
+        project.automation_label_name
+      else
+        project.label_for_stage("build") || "paid-build"
+      end
+    end
+
     def add_needs_input_label(client, project, issue)
       label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
       add_phase_label(client, project, issue.github_number, label)
+    end
+
+    def remove_needs_input_label(client, project, issue, agent_run_id)
+      label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
+      return unless issue.has_label?(label)
+
+      client.remove_label_from_issue(project.full_name, issue.github_number, label)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "agent_execution.remove_needs_input_label_failed",
+        agent_run_id: agent_run_id,
+        issue_number: issue.github_number,
+        label: label,
+        error: e.message
+      )
     end
 
     def remove_trigger_labels(client, project, issue, agent_run_id)
@@ -113,7 +137,7 @@ module Activities
     def post_needs_input_comment(client, project, issue, agent_summary)
       return if comment_exists?(client, project, issue, NEEDS_INPUT_COMMENT_MARKER)
 
-      automation_label = project.label_for_stage("build") || "paid-build"
+      automation_label = triggering_label_for(project)
       needs_input_label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
 
       lines = [

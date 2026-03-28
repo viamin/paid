@@ -63,6 +63,22 @@ RSpec.describe Activities::DetectLabelsActivity do
       end
     end
 
+    context "when issue has build label and is in needs_input state" do
+      let(:issue) { create(:issue, :needs_input, project: project, labels: [ "paid-build" ]) }
+
+      it "returns execute_agent action" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:action]).to eq("execute_agent")
+      end
+
+      it "updates paid_state to in_progress" do
+        activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+    end
+
     context "when issue has no matching labels" do
       let(:issue) { create(:issue, project: project, labels: [ "bug", "enhancement" ], paid_state: "new") }
 

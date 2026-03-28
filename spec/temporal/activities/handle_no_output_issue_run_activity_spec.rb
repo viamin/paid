@@ -4,7 +4,11 @@ require "rails_helper"
 
 RSpec.describe Activities::HandleNoOutputIssueRunActivity do
   let(:activity) { described_class.new }
-  let(:project) { create(:project, label_mappings: { "build" => "paid-build", "needs_input" => "paid-needs-input" }) }
+  let(:project) do
+    create(:project,
+      label_mappings: { "build" => "paid-build", "needs_input" => "paid-needs-input" },
+      automation_on_label_enabled: false)
+  end
   let(:client) { instance_double(GithubClient) }
 
   before do
@@ -130,6 +134,45 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         result = activity.execute(agent_run_id: agent_run.id, output_present: true)
 
         expect(result[:outcome]).to eq("recommend_close")
+      end
+
+      it "removes the needs-input label if present" do
+        issue = create(:issue, :in_progress, project: project, labels: [ "paid-needs-input" ])
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:remove_label_from_issue)
+          .with(project.full_name, issue.github_number, "paid-needs-input")
+      end
+
+      it "does not attempt to remove needs-input label when not present" do
+        issue = create(:issue, :in_progress, project: project, labels: [])
+        agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).not_to have_received(:remove_label_from_issue)
+          .with(project.full_name, issue.github_number, "paid-needs-input")
+      end
+    end
+
+    context "when project uses automation label" do
+      let(:auto_project) do
+        create(:project,
+          label_mappings: { "needs_input" => "paid-needs-input" },
+          automation_on_label_enabled: true,
+          automation_label_name: "my-auto")
+      end
+
+      it "references the automation label in the needs-input comment" do
+        issue = create(:issue, :in_progress, project: auto_project)
+        agent_run = create(:agent_run, :running, project: auto_project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(client).to have_received(:add_comment)
+          .with(auto_project.full_name, issue.github_number, a_string_including("my-auto"))
       end
     end
 
