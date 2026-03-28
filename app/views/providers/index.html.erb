@@ -46,7 +46,7 @@
             <td class="px-4 py-3 text-sm text-gray-700"><%= provider.enabled_for_agent_runs? ? "Enabled" : "Disabled" %></td>
             <td class="px-4 py-3 text-sm text-gray-700">
               <% if provider.rate_limit_fallback? %>
-                Rate-limit only
+                <%= provider.enabled_for_fallback? ? "Enabled (rate-limit only)" : "Disabled (rate-limit only)" %>
               <% else %>
                 <%= provider.enabled_for_fallback? ? "Enabled" : "Disabled" %>
               <% end %>
