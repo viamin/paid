@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class RunCollectorsJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
   queue_as :default
 
   # Prevent duplicate enqueues for the same project+SHA when staleness detection
