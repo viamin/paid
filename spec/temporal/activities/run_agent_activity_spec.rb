@@ -133,6 +133,47 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "#build_command" do
+    it "builds a sh -c wrapper for Codex subscription auth" do
+      command = activity.send(:build_command, "codex", described_class::AGENT_COMMANDS["codex"], "say 'hi'")
+      script = command[2]
+
+      expect(command[0..1]).to eq(%w[sh -c])
+      expect(script).to include('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
+      expect(script).to include("-u OPENAI_API_KEY")
+      expect(script).to include("codex exec --full-auto --")
+      expect(command[3]).to eq("--")
+      expect(command[4]).to eq("say 'hi'")
+    end
+
+    it "builds a sh -c wrapper for Gemini subscription auth" do
+      command = activity.send(:build_command, "gemini", described_class::AGENT_COMMANDS["gemini"], "say 'hi'")
+      script = command[2]
+
+      expect(command[0..1]).to eq(%w[sh -c])
+      expect(script).to include('if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]')
+      expect(script).to include("-u GEMINI_API_KEY")
+      expect(script).to include("-u GOOGLE_GEMINI_BASE_URL")
+      expect(script).to include("gemini -y -p")
+      expect(command[3]).to eq("--")
+      expect(command[4]).to eq("say 'hi'")
+    end
+
+    it "preserves multi-line prompts as a positional parameter" do
+      multiline_prompt = "First line\nSecond line\n  indented third"
+      command = activity.send(:build_command, "codex", described_class::AGENT_COMMANDS["codex"], multiline_prompt)
+
+      expect(command[4]).to eq(multiline_prompt)
+      expect(command[2]).not_to include("\n")
+    end
+
+    it "keeps non-subscription providers in array form" do
+      command = activity.send(:build_command, "claude", described_class::AGENT_COMMANDS["claude"], "ping")
+
+      expect(command).to eq(described_class::AGENT_COMMANDS["claude"] + [ "ping" ])
+    end
+  end
+
   describe "#execute" do
     context "when agent succeeds in container" do
       before do
