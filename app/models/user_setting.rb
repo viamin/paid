@@ -105,7 +105,7 @@ class UserSetting < ApplicationRecord
     return [ "claude" ] & executable_keys unless user
     return executable_keys if user.new_record?
 
-    user.providers.for_agent_runs.ordered.pluck(:provider_key) & executable_keys
+    user.providers.for_agent_runs.ordered.pluck(:provider_key).uniq & executable_keys
   end
 
   # Returns providers that can be used as fallback for a user.
@@ -116,7 +116,19 @@ class UserSetting < ApplicationRecord
     return [ "claude" ] & executable_keys unless user
     return executable_keys if user.new_record?
 
-    user.providers.for_fallback.ordered.pluck(:provider_key) & executable_keys
+    user.providers.for_fallback.ordered.pluck(:provider_key).uniq & executable_keys
+  end
+
+  # Returns provider keys that have API-key-based entries configured as
+  # rate-limit fallbacks. These are only used when the subscription entry
+  # for the same provider_key is rate-limited.
+  def self.rate_limit_fallback_providers(user)
+    return [] unless user
+    return [] if user.new_record?
+
+    executable_keys = ProviderSupport.container_executable_provider_keys
+    user.providers.api_key.rate_limit_fallback.for_agent_runs.for_fallback
+      .pluck(:provider_key).uniq & executable_keys
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string
