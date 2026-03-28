@@ -79,16 +79,14 @@ commit_sha = `git -C #{worktree.path} rev-parse HEAD`.strip
 project_version = ProjectVersion.find_by(project: project, commit_sha: commit_sha)
 
 if project_version
+  # destroy_all cascades: CollectorRun → KnowledgeArtifact → KnowledgeChunk → KnowledgeLink
   CollectorRun.where(project_version: project_version).destroy_all
-  KnowledgeArtifact.where(project_version: project_version).destroy_all
-  KnowledgeChunk.where(project_version: project_version).destroy_all
-  KnowledgeLink.where(project_version: project_version).destroy_all
 end
 
 Knowledge::CollectorRunner.new(project: project, commit_sha: commit_sha).run
 
 # Step 3: Reset embedding_model so active chunks are picked up by the pipeline
-KnowledgeChunk.where(project: project, active: true).update_all(embedding_model: nil)
+KnowledgeChunk.active.where(project: project).update_all(embedding_model: nil)
 
 # Step 4: Re-embed all active chunks
 Knowledge::Embeddings::Pipeline.call(project: project)
@@ -108,7 +106,7 @@ manager = Knowledge::Qdrant::CollectionManager.new(project: project)
 manager.rebuild_schema!
 
 # Reset embedding_model so active chunks are picked up by the pipeline
-KnowledgeChunk.where(project: project, active: true).update_all(embedding_model: nil)
+KnowledgeChunk.active.where(project: project).update_all(embedding_model: nil)
 
 # Re-embed all active chunks for this project and push them to Qdrant
 # (this will recompute vectors; there is no "Qdrant-only" sync without re-embedding)

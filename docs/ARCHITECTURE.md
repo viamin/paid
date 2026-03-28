@@ -330,7 +330,7 @@ Two modes of agent execution:
 - Model registry provides capabilities/costs
 - Used by meta-agent for model selection
 
-### 5. Model Selection System
+### 6. Model Selection System
 
 The meta-agent chooses models based on:
 
