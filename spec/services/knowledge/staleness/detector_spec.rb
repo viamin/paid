@@ -14,8 +14,7 @@ RSpec.describe Knowledge::Staleness::Detector do
   before do
     allow(WorktreeService).to receive(:new).with(project).and_return(worktree_service)
     allow(worktree_service).to receive(:ensure_cloned)
-    allow(worktree_service).to receive(:current_commit_sha).and_return(new_sha)
-    allow(detector).to receive(:run_git).and_call_original
+    allow(worktree_service).to receive_messages(current_commit_sha: new_sha, run_repo_command: "")
   end
 
   describe ".call" do
@@ -131,10 +130,10 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
 
       before do
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("rev-list", "--count", "#{old_sha}..#{new_sha}")
           .and_return("3\n")
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
           .and_return("app/models/user.rb\napp/controllers/users_controller.rb\n")
       end
@@ -222,10 +221,10 @@ RSpec.describe Knowledge::Staleness::Detector do
         old_version = create(:project_version, project: project, commit_sha: old_sha)
         create(:collector_run, :completed, project_version: old_version)
 
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("rev-list", "--count", "#{old_sha}..#{new_sha}")
           .and_return("0\n")
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
           .and_return("app/models/user.rb\n")
       end
@@ -246,7 +245,7 @@ RSpec.describe Knowledge::Staleness::Detector do
         create(:collector_run, :completed, project_version: old_version)
 
         stub_const("Knowledge::Staleness::Detector::STALENESS_THRESHOLD", 5)
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("rev-list", "--count", "#{old_sha}..#{new_sha}")
           .and_return("3\n")
       end
@@ -264,10 +263,10 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
 
       it "handles rev-list failure gracefully" do
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("rev-list", "--count", "#{old_sha}..#{new_sha}")
           .and_raise(WorktreeService::Error, "git failed")
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
           .and_return("")
 
@@ -278,10 +277,10 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
 
       it "handles diff failure gracefully" do
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("rev-list", "--count", "#{old_sha}..#{new_sha}")
           .and_return("3\n")
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
           .and_raise(WorktreeService::Error, "git failed")
 
@@ -303,10 +302,10 @@ RSpec.describe Knowledge::Staleness::Detector do
         new_version = create(:project_version, project: project, commit_sha: new_sha)
         create(:collector_run, project_version: new_version)
 
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("rev-list", "--count", "#{old_sha}..#{new_sha}")
           .and_return("3\n")
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
           .and_return("app/models/user.rb\n")
       end
@@ -328,10 +327,10 @@ RSpec.describe Knowledge::Staleness::Detector do
         new_version = create(:project_version, project: project, commit_sha: new_sha)
         create(:collector_run, :failed, project_version: new_version)
 
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("rev-list", "--count", "#{old_sha}..#{new_sha}")
           .and_return("3\n")
-        allow(detector).to receive(:run_git)
+        allow(worktree_service).to receive(:run_repo_command)
           .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
           .and_return("app/models/user.rb\n")
       end

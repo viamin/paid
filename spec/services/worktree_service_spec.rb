@@ -261,6 +261,27 @@ RSpec.describe WorktreeService do
     end
   end
 
+  describe "#run_repo_command" do
+    before do
+      FileUtils.mkdir_p(repo_path)
+    end
+
+    it "delegates to run_git with the project repo path" do
+      allow(service).to receive(:run_git)
+        .with("rev-list", "--count", "abc..def", chdir: repo_path)
+        .and_return("5\n")
+
+      expect(service.run_repo_command("rev-list", "--count", "abc..def")).to eq("5\n")
+    end
+
+    it "converts Errno::ENOENT to WorktreeService::Error" do
+      allow(service).to receive(:run_git).and_raise(Errno::ENOENT, "No such file")
+
+      expect { service.run_repo_command("status") }
+        .to raise_error(WorktreeService::Error, /Repo directory missing/)
+    end
+  end
+
   describe "#push_branch" do
     let(:worktree_dir) { File.join(worktrees_path, "paid-agent-test") }
     let(:result_sha) { "def456789012345678901234567890abcdef1234" }

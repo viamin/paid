@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "open3"
-
 module Knowledge
   module Staleness
     # Detects when a project's knowledge base is stale by comparing the current
@@ -142,22 +140,7 @@ module Knowledge
       end
 
       def run_git(*args)
-        repo_path = File.join(
-          WorktreeService.workspace_root,
-          project.account_id.to_s,
-          project.id.to_s,
-          "repo"
-        )
-
-        stdout, stderr, status = Open3.capture3("git", *args, chdir: repo_path)
-
-        unless status.success?
-          raise WorktreeService::Error, "Git command failed: git #{args.join(" ")}\n#{stderr}"
-        end
-
-        stdout
-      rescue Errno::ENOENT => e
-        raise WorktreeService::Error, "Repo directory missing: #{e.message}"
+        worktree_service.run_repo_command(*args)
       end
 
       def not_stale_result(current_sha, last_sha: nil)

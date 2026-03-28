@@ -109,8 +109,9 @@ module Workflows
       raise
     rescue => e
       Temporalio::Workflow.logger.warn(
-        message: "knowledge.staleness_check_skipped",
+        message: "knowledge.staleness_check_failed",
         project_id: project_id,
+        error_class: e.class.name,
         error: e.message
       )
     end

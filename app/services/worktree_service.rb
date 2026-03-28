@@ -147,6 +147,20 @@ class WorktreeService
     worktree&.mark_cleanup_failed!
   end
 
+  # Run a read-only git command against the bare repository.
+  #
+  # Centralizes git execution (credential redaction, error handling) so
+  # callers like Knowledge::Staleness::Detector don't need to duplicate it.
+  #
+  # @param args [Array<String>] Git arguments (e.g. "rev-list", "--count", "sha..sha")
+  # @return [String] stdout from the command
+  # @raise [Error] when the git command fails
+  def run_repo_command(*args)
+    run_git(*args, chdir: project_repo_path)
+  rescue Errno::ENOENT => e
+    raise Error, "Repo directory missing: #{e.message}"
+  end
+
   # Get the current commit SHA of the default branch.
   #
   # @return [String] The 40-character SHA
