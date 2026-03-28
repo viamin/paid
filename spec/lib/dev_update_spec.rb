@@ -95,6 +95,53 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "truncates oversized dev-update logs during configure_logging" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      log_dir = seed_oversized_logs(dir, 600_000)
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_UPDATE_MAX_LOG_BYTES" => "524288",
+        "DEV_UPDATE_KEEP_LOG_BYTES" => "102400"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), lambda {
+        "bin/dev-update failed\nstdout:\n#{stdout}\nstderr:\n#{stderr}"
+      }
+
+      # Both logs were truncated to ~100 KB then appended to by the script/bin/dev
+      expect(File.size(File.join(log_dir, "dev-update.log"))).to be < 200_000
+      expect(File.size(File.join(log_dir, "dev-start.log"))).to be < 200_000
+    end
+  end
+
+  it "preserves small dev-update logs without truncation" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      # Create a small log file
+      log_dir = File.join(dir, "log", "dev-update")
+      FileUtils.mkdir_p(log_dir)
+      small_content = "previous run output\n" * 100
+      File.write(File.join(log_dir, "dev-update.log"), small_content)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+
+      expect(status.success?).to be(true), lambda {
+        "bin/dev-update failed\nstdout:\n#{stdout}\nstderr:\n#{stderr}"
+      }
+
+      updater_log = File.read(File.join(log_dir, "dev-update.log"))
+      # The small content should still be present (not truncated)
+      expect(updater_log).to include("previous run output")
+      # And new content was appended
+      expect(updater_log).to include("Lightweight update complete.")
+    end
+  end
+
   it "keeps a persistent updater log outside the files bin/setup deletes" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
@@ -136,6 +183,13 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
 
     dev_start_log
+  end
+
+  def seed_oversized_logs(dir, size)
+    log_dir = File.join(dir, "log", "dev-update")
+    FileUtils.mkdir_p(log_dir)
+    %w[dev-update.log dev-start.log].each { |f| File.write(File.join(log_dir, f), "x" * size) }
+    log_dir
   end
 
   def prepare_script_fixture(dir, setup_exit_status: 0, start_overmind_running: false, dev_starts_overmind: true)

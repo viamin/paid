@@ -48,6 +48,10 @@ FileUtils.chdir APP_ROOT do
   FileUtils.rm_f(Dir["log/*.log"])
   FileUtils.rm_rf(%w[tmp/cache tmp/pids tmp/sockets tmp/screenshots tmp/storage])
 
+  puts "\n== Truncating dev-update logs =="
+  require_relative "../lib/paid/log_truncator"
+  Paid::LogTruncator.truncate_logs("log/dev-update")
+
   puts "\n== Cleaning up stale state from previous run =="
   system "bin/rails dev:cleanup"
 
