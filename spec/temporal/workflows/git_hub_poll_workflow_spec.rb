@@ -105,7 +105,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     before do
       allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, anything)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
         .and_return({ has_capacity: true })
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
@@ -149,7 +149,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
       allow(workflow).to receive(:run_activity)
-        .with(Activities::MarkPrReadyActivity, anything, anything)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
         .and_return({ marked_ready: true })
 
       pr_data = {
@@ -160,14 +160,14 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::MarkPrReadyActivity, hash_including(pr_number: 42), anything)
+        .with(Activities::MarkPrReadyActivity, hash_including(pr_number: 42), timeout: anything)
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), anything)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), timeout: anything)
     end
 
     it "skips owner review when MarkPrReadyActivity returns marked_ready: false" do
       allow(workflow).to receive(:run_activity)
-        .with(Activities::MarkPrReadyActivity, anything, anything)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
         .and_return({ marked_ready: false })
 
       pr_data = {
@@ -178,7 +178,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::RequestReviewActivity, anything, anything)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
     end
 
     it "routes escalate_to_owner to MarkEscalatedActivity and RequestReviewActivity" do
@@ -190,9 +190,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::MarkEscalatedActivity, hash_including(issue_id: 10), anything)
+        .with(Activities::MarkEscalatedActivity, hash_including(issue_id: 10), timeout: anything)
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), anything)
+        .with(Activities::RequestReviewActivity, hash_including(reviewers: [ "viamin" ]), timeout: anything)
     end
 
     it "lets MarkEscalatedActivity compute the default reason" do
@@ -205,7 +205,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::MarkEscalatedActivity,
-          { issue_id: 10 }, anything)
+          { issue_id: 10 }, timeout: anything)
     end
 
     it "routes owner_approved to MergePullRequestActivity" do
@@ -217,14 +217,14 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::MergePullRequestActivity, hash_including(pr_number: 42), anything)
+        .with(Activities::MergePullRequestActivity, hash_including(pr_number: 42), timeout: anything)
     end
 
     it "routes draft phase triggers to draft followup workflow" do
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, anything)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
         .and_return({ has_capacity: true })
 
       pr_data = {
@@ -236,7 +236,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, anything)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
       expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
         Workflows::AgentExecutionWorkflow,
         hash_including(project_id: project_id, issue_id: 10, source_pull_request_number: 42),
@@ -248,7 +248,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, anything)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
         .and_return({ has_capacity: true })
 
       pr_data = {
@@ -260,7 +260,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, anything)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
       expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
         Workflows::AgentExecutionWorkflow,
         hash_including(project_id: project_id, issue_id: 10, source_pull_request_number: 42),
@@ -279,14 +279,14 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
-          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), anything)
+          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: anything)
     end
 
     it "defers review request and dispatches followup when other triggers present" do
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, anything)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
         .and_return({ has_capacity: true })
 
       pr_data = {
@@ -303,7 +303,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       # Review request is deferred to the AgentExecutionWorkflow (after push)
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
-          hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), anything)
+          hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
       expect(Temporalio::Workflow).to have_received(:start_child_workflow)
     end
 
@@ -330,10 +330,10 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       }
 
       allow(workflow).to receive(:run_activity)
-        .with(Activities::MergePullRequestActivity, anything, anything)
+        .with(Activities::MergePullRequestActivity, anything, timeout: anything)
         .and_return({ merged: true })
       allow(workflow).to receive(:run_activity)
-        .with(Activities::TriggerDevEnvironmentUpdateActivity, anything, anything)
+        .with(Activities::TriggerDevEnvironmentUpdateActivity, anything, timeout: anything)
         .and_return({})
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
@@ -352,13 +352,13 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       }
 
       allow(workflow).to receive(:run_activity)
-        .with(Activities::MergePullRequestActivity, anything, anything)
+        .with(Activities::MergePullRequestActivity, anything, timeout: anything)
         .and_return({ merged: true })
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::TriggerDevEnvironmentUpdateActivity, anything, anything)
+        .with(Activities::TriggerDevEnvironmentUpdateActivity, anything, timeout: anything)
     end
 
     it "skips dev environment update when merge fails" do
@@ -368,18 +368,18 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       }
 
       allow(workflow).to receive(:run_activity)
-        .with(Activities::MergePullRequestActivity, anything, anything)
+        .with(Activities::MergePullRequestActivity, anything, timeout: anything)
         .and_return({ merged: false })
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::TriggerDevEnvironmentUpdateActivity, anything, anything)
+        .with(Activities::TriggerDevEnvironmentUpdateActivity, anything, timeout: anything)
     end
 
     it "skips owner review request when owner_reviewer_login is blank" do
       allow(workflow).to receive(:run_activity)
-        .with(Activities::MarkPrReadyActivity, anything, anything)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
         .and_return({ marked_ready: true })
 
       pr_data = {
@@ -390,9 +390,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::MarkPrReadyActivity, anything, anything)
+        .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::RequestReviewActivity, anything, anything)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
     end
   end
 end
