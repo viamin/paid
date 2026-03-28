@@ -45,9 +45,19 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:cost_and_tokens][:total_tokens]).to eq(0)
       end
 
-      it "returns empty agent type and project breakdowns" do
+      it "returns empty agent type, provider, and project breakdowns" do
         expect(stats[:runs_by_agent_type]).to be_empty
+        expect(stats[:runs_by_provider]).to be_empty
         expect(stats[:runs_by_project]).to be_empty
+      end
+
+      it "returns zero provider fallback stats" do
+        fs = stats[:provider_fallback_stats]
+        expect(fs[:total_runs]).to eq(0)
+        expect(fs[:fallback_count]).to eq(0)
+        expect(fs[:fallback_rate]).to eq(0.0)
+        expect(fs[:by_requested_provider]).to be_empty
+        expect(fs[:by_effective_provider]).to be_empty
       end
 
       it "returns zero issue completion stats" do
@@ -211,6 +221,54 @@ RSpec.describe Dashboard::Stats do
         types = stats[:runs_by_agent_type]
         expect(types.first).to eq([ "cursor", 2 ])
         expect(types.last).to eq([ "claude_code", 1 ])
+      end
+    end
+
+    context "with provider fallbacks" do
+      before do
+        # Run requested claude_code, completed by claude_code (no fallback)
+        create(:agent_run, :completed, project: project, agent_type: "claude_code")
+        # Run requested claude_code, fell back to codex
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_provider: "codex", provider_switches: 1)
+        # Run requested claude_code, fell back to cursor
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_provider: "cursor", provider_switches: 1)
+        # Run requested cursor, completed by cursor (no fallback)
+        create(:agent_run, :completed, :cursor, project: project)
+      end
+
+      it "groups runs_by_provider by effective provider" do
+        providers = stats[:runs_by_provider]
+        provider_hash = providers.to_h
+        # claude_code: 1 (no fallback), codex: 1 (fallback), cursor: 2 (1 direct + 1 fallback)
+        expect(provider_hash["claude_code"]).to eq(1)
+        expect(provider_hash["codex"]).to eq(1)
+        expect(provider_hash["cursor"]).to eq(2)
+      end
+
+      it "still groups runs_by_agent_type by requested provider" do
+        types = stats[:runs_by_agent_type].to_h
+        expect(types["claude_code"]).to eq(3)
+        expect(types["cursor"]).to eq(1)
+      end
+
+      it "calculates fallback rate" do
+        fs = stats[:provider_fallback_stats]
+        expect(fs[:total_runs]).to eq(4)
+        expect(fs[:fallback_count]).to eq(2)
+        expect(fs[:fallback_rate]).to eq(50.0)
+      end
+
+      it "breaks down fallbacks by requested provider" do
+        by_requested = stats[:provider_fallback_stats][:by_requested_provider].to_h
+        expect(by_requested["claude_code"]).to eq(2)
+      end
+
+      it "breaks down fallbacks by effective provider" do
+        by_effective = stats[:provider_fallback_stats][:by_effective_provider].to_h
+        expect(by_effective["codex"]).to eq(1)
+        expect(by_effective["cursor"]).to eq(1)
       end
     end
 

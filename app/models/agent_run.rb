@@ -478,6 +478,15 @@ class AgentRun < ApplicationRecord
     "Review pull request ##{source_pull_request_number} in #{project.full_name}."
   end
 
+  # Returns the provider that actually produced the output for this run.
+  # Uses final_provider (set during fallback execution) when available,
+  # otherwise falls back to agent_type (the originally requested provider).
+  #
+  # @return [String] The effective provider name
+  def effective_provider
+    final_provider.presence || agent_type
+  end
+
   # Records a provider attempt in the providers_attempted array.
   #
   # @param provider [String] The provider name

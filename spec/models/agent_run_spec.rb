@@ -1413,6 +1413,23 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "#effective_provider" do
+    it "returns final_provider when present" do
+      agent_run = create(:agent_run, agent_type: "claude_code", final_provider: "codex")
+      expect(agent_run.effective_provider).to eq("codex")
+    end
+
+    it "returns agent_type when final_provider is nil" do
+      agent_run = create(:agent_run, agent_type: "claude_code", final_provider: nil)
+      expect(agent_run.effective_provider).to eq("claude_code")
+    end
+
+    it "returns agent_type when final_provider is blank" do
+      agent_run = create(:agent_run, agent_type: "claude_code", final_provider: "")
+      expect(agent_run.effective_provider).to eq("claude_code")
+    end
+  end
+
   describe "#agent_summary_with_stderr_fallback" do
     let(:agent_run) { create(:agent_run) }
 

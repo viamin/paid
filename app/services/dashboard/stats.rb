@@ -22,6 +22,8 @@ module Dashboard
         phase_breakdown: phase_breakdown,
         cost_and_tokens: cost_and_tokens,
         runs_by_agent_type: runs_by_agent_type,
+        runs_by_provider: runs_by_provider,
+        provider_fallback_stats: provider_fallback_stats,
         runs_by_project: runs_by_project,
         cost_by_project: cost_by_project,
         issue_completion: issue_completion
@@ -150,6 +152,30 @@ module Dashboard
 
     def runs_by_agent_type
       agent_runs.group(:agent_type).count.sort_by { |_, v| -v }
+    end
+
+    def runs_by_provider
+      agent_runs
+        .group(Arel.sql("COALESCE(NULLIF(final_provider, ''), agent_type)"))
+        .count
+        .sort_by { |_, v| -v }
+    end
+
+    def provider_fallback_stats
+      total = agent_runs.count
+      fallback_runs = agent_runs.where("provider_switches > 0")
+      fallback_count = fallback_runs.count
+
+      {
+        total_runs: total,
+        fallback_count: fallback_count,
+        fallback_rate: total.zero? ? 0.0 : (fallback_count.to_f / total * 100).round(1),
+        by_requested_provider: fallback_runs.group(:agent_type).count.sort_by { |_, v| -v },
+        by_effective_provider: fallback_runs
+          .group(Arel.sql("COALESCE(NULLIF(final_provider, ''), agent_type)"))
+          .count
+          .sort_by { |_, v| -v }
+      }
     end
 
     def runs_by_project
