@@ -5,11 +5,14 @@ class ServiceContainer < ApplicationRecord
 
   has_many :project_service_containers, dependent: :destroy
   has_many :projects, through: :project_service_containers
+  has_many :service_container_metrics, dependent: :delete_all
 
   validates :image, presence: true
   validates :name, presence: true, uniqueness: true
   validates :port, presence: true, numericality: { only_integer: true, greater_than: 0, less_than: 65_536 }
   validates :status, presence: true, inclusion: { in: STATUSES }
+  validates :docker_container_id, length: { maximum: 128 }, allow_blank: true
+  validates :container_metrics_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :image_in_allowlist, if: :validate_image?
   validate :env_json_valid
 
