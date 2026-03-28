@@ -21,7 +21,7 @@ module Activities
       "codex" => %w[codex exec --full-auto --],
       "gemini" => %w[gemini -y -p],
       "kilocode" => %w[kilo run --auto],
-      "opencode" => %w[opencode --non-interactive --message],
+      "opencode" => %w[opencode run],
       "cursor" => %w[cursor-agent --message],
       "aider" => %w[aider --yes --no-auto-commits --message]
     }.freeze
@@ -401,13 +401,34 @@ module Activities
     def subscription_auth_command(provider, command_prefix, prompt)
       base = command_prefix.shelljoin
       env_flag = "PAID_#{provider.upcase}_SUBSCRIPTION_AUTH"
-      unset_flags = ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS
-        .fetch(provider)
+      unset_flags = subscription_auth_unset_vars_for(provider)
         .map { |var| "-u #{var}" }
         .join(" ")
 
       script = "if [ \"$#{env_flag}\" = \"1\" ]; then env #{unset_flags} #{base} \"$1\"; else #{base} \"$1\"; fi"
       [ "sh", "-c", script, "--", prompt ]
+    end
+
+    def subscription_auth_unset_vars_for(provider)
+      return ProviderSupport.subscription_auth_unset_vars_for(provider) if ProviderSupport.respond_to?(:subscription_auth_unset_vars_for)
+      return ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS.fetch(provider) if ProviderSupport.const_defined?(:SUBSCRIPTION_AUTH_UNSET_VARS, false)
+
+      {
+        "codex" => %w[
+          OPENAI_API_KEY
+          OPENAI_BASE_URL
+          OPENAI_HEADER_X_AGENT_RUN_ID
+          OPENAI_HEADER_X_PROXY_TOKEN
+        ].freeze,
+        "gemini" => %w[
+          GEMINI_API_KEY
+          GOOGLE_GEMINI_BASE_URL
+          GOOGLE_GENAI_BASE_URL
+          GOOGLE_HEADER_X_AGENT_RUN_ID
+          GOOGLE_HEADER_X_PROXY_TOKEN
+          GEMINI_CLI_CUSTOM_HEADERS
+        ].freeze
+      }.fetch(provider).freeze
     end
 
     def capture_head_sha(container_service, agent_run)

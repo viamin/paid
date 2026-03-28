@@ -29,14 +29,21 @@ RSpec.describe Providers::TestAgent do
     allow(AgentRun).to receive(:find).with(1).and_return(test_run)
   end
 
+  def stub_proxy_api_key(provider_name, value)
+    credentials = Rails.application.credentials
+    allow(credentials).to receive(:dig).and_call_original
+    allow(credentials).to receive(:dig).with(:llm, :"#{provider_name}_api_key").and_return(value)
+  end
+
   describe ".call" do
-    context "when agent-harness health check succeeds" do
-      let(:health_result) { { name: :claude, status: "ok", message: "All checks passed", latency_ms: 12 } }
+    context "when claude is tested through the container runtime path" do
+      let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentHarness).to receive(:check_provider).and_return(health_result)
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
       it "returns a successful result" do
@@ -47,20 +54,33 @@ RSpec.describe Providers::TestAgent do
         expect(result.error_type).to be_nil
       end
 
-      it "uses agent-harness for the health check" do
+      it "executes the claude cli inside the container" do
         described_class.call(provider: provider)
 
-        expect(AgentHarness).to have_received(:check_provider).with(:claude, timeout: 30)
+        expect(test_run).to have_received(:execute_in_container).with(
+          array_including("claude", "--print", "--output-format=text", "--dangerously-skip-permissions", "-p", "Respond with exactly: PING OK"),
+          timeout: 30,
+          stream: false
+        )
       end
     end
 
-    context "when agent-harness health check reports an auth error" do
-      let(:health_result) { { name: :claude, status: "error", message: "Session expired", latency_ms: 12 } }
+    context "when claude returns an auth error from the container runtime path" do
+      let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "No authentication token found",
+          stdout: "",
+          stderr: "No authentication token found",
+          exit_code: 1
+        )
+      end
 
       before do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "claude")
-        allow(AgentHarness).to receive(:check_provider).and_return(health_result)
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
       end
 
       it "maps the health check failure to an authentication error" do
@@ -68,7 +88,45 @@ RSpec.describe Providers::TestAgent do
 
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
-        expect(result.message).to eq("Session expired")
+        expect(result.message).to eq("No authentication token found")
+      end
+    end
+
+    context "when codex has a Paid-managed OpenAI API key configured" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:health_result) { { name: :codex, status: "ok", message: "All checks passed", latency_ms: 12 } }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "codex")
+        stub_proxy_api_key(:openai, "sk-test-key")
+        allow(AgentHarness).to receive(:check_provider).and_return(health_result)
+      end
+
+      it "uses agent-harness for the health check" do
+        result = described_class.call(provider: provider)
+
+        expect(result).to be_success
+        expect(AgentHarness).to have_received(:check_provider).with(:codex, timeout: 30)
+      end
+    end
+
+    context "when gemini has a Paid-managed Google API key configured" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:health_result) { { name: :gemini, status: "ok", message: "All checks passed", latency_ms: 12 } }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+        stub_proxy_api_key(:google, "AIza-test-key")
+        allow(AgentHarness).to receive(:check_provider).and_return(health_result)
+      end
+
+      it "uses agent-harness for the health check" do
+        result = described_class.call(provider: provider)
+
+        expect(result).to be_success
+        expect(AgentHarness).to have_received(:check_provider).with(:gemini, timeout: 30)
       end
     end
 
@@ -328,6 +386,54 @@ RSpec.describe Providers::TestAgent do
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
         expect(result.message).to eq("Codex did not forward the Paid container credentials to the OpenAI proxy.")
+      end
+    end
+
+    context "when opencode emits ansi noise before an auth failure" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "opencode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "\e[0m▄\e[0m\n[API Error: {\"error\":\"API key not configured for openai\"}]",
+          stdout: "",
+          stderr: "\e[0m▄\e[0m\n[API Error: {\"error\":\"API key not configured for openai\"}]",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "opencode")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "returns the translated auth error instead of ansi noise" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:authentication)
+        expect(result.message).to eq("Paid is not configured with an OpenAI API key for containerized OpenAI-backed runs (Codex or OpenCode).")
+      end
+    end
+
+    context "when opencode is tested" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "opencode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "opencode")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "uses the current opencode run command" do
+        described_class.call(provider: provider)
+
+        expect(test_run).to have_received(:execute_in_container).with(
+          array_including("opencode", "run", "Respond with exactly: PING OK"),
+          timeout: 30,
+          stream: false
+        )
       end
     end
 

@@ -55,7 +55,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     it "includes a command mapping for opencode" do
       expect(described_class::AGENT_COMMANDS).to have_key("opencode")
-      expect(described_class::AGENT_COMMANDS["opencode"]).to include("opencode")
+      expect(described_class::AGENT_COMMANDS["opencode"]).to eq(%w[opencode run])
     end
   end
 

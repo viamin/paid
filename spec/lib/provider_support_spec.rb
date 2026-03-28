@@ -60,4 +60,14 @@ RSpec.describe ProviderSupport do
       expect(described_class.container_executable_provider_key?("cursor")).to be false
     end
   end
+
+  describe ".subscription_auth_unset_vars_for" do
+    it "returns the codex unset vars" do
+      expect(described_class.subscription_auth_unset_vars_for("codex")).to include("OPENAI_API_KEY")
+    end
+
+    it "returns the gemini unset vars" do
+      expect(described_class.subscription_auth_unset_vars_for("gemini")).to include("GEMINI_API_KEY")
+    end
+  end
 end
