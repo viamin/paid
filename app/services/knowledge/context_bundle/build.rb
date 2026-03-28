@@ -18,12 +18,15 @@ module Knowledge
     class Build
       DEFAULT_TOKEN_BUDGET = 4000
 
-      # Section builders in priority order per the issue spec:
-      # routes → symbols → hotspots → conventions → decision records → stats
+      # Section builders in priority order.
+      # Conventions section is not yet implemented — will be added when
+      # a conventions collector lands in the knowledge pipeline.
       SECTION_ORDER = %i[routes symbols hotspots decisions stats].freeze
 
       attr_reader :issue, :project, :token_budget
 
+      # issue is accepted for future relevance-ranking of artifacts.
+      # Currently unused — all active artifacts are included project-wide.
       def initialize(issue:, project:, token_budget: nil)
         @issue = issue
         @project = project
@@ -35,7 +38,7 @@ module Knowledge
       end
 
       def call
-        sections = build_sections
+        sections, queries_made = build_sections
         return empty_result if sections.empty?
 
         content = render(sections)
@@ -43,7 +46,7 @@ module Knowledge
           content: content,
           sections: sections.map { |s| s[:name] },
           total_tokens: estimate_tokens(content),
-          queries_made: sections.size
+          queries_made: queries_made
         }
       end
 
@@ -54,10 +57,12 @@ module Knowledge
         header_overhead = estimate_tokens("## Codebase Context (auto-generated from knowledge base)\n")
         remaining_budget = token_budget - header_overhead
         built = []
+        queries_made = 0
 
         SECTION_ORDER.each do |section_name|
           break if remaining_budget <= 0
 
+          queries_made += 1
           section = send(:"build_#{section_name}_section")
           next if section.nil?
 
@@ -73,7 +78,7 @@ module Knowledge
           end
         end
 
-        built
+        [ built, queries_made ]
       end
 
       def build_routes_section
@@ -81,7 +86,7 @@ module Knowledge
         return nil if artifacts.empty?
 
         lines = artifacts.map do |a|
-          "- #{a.identifier}"
+          "- #{a.content.presence || a.identifier}"
         end
 
         { name: :routes, heading: "Relevant Routes", content: lines.join("\n") }
@@ -92,9 +97,8 @@ module Knowledge
         return nil if artifacts.empty?
 
         lines = artifacts.map do |a|
-          scope = a.scope_path
           description = a.content.to_s.truncate(120)
-          "- `#{scope}` — #{a.identifier} #{description}".strip
+          "- #{a.identifier} #{description}".strip
         end
 
         { name: :symbols, heading: "Related Code", content: lines.join("\n") }

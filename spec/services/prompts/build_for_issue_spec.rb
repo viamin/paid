@@ -420,6 +420,41 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
+    context "when knowledge context bundle has content" do
+      before do
+        allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(
+          content: "## Codebase Context (auto-generated from knowledge base)\n\n### Relevant Routes\n- GET /api/users → UsersController#index",
+          sections: [ :routes ],
+          total_tokens: 50,
+          queries_made: 5
+        )
+      end
+
+      it "includes knowledge context in the prompt" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).to include("Codebase Context")
+        expect(prompt).to include("Relevant Routes")
+      end
+    end
+
+    context "when knowledge context bundle is empty" do
+      before do
+        allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(
+          content: "",
+          sections: [],
+          total_tokens: 0,
+          queries_made: 0
+        )
+      end
+
+      it "omits knowledge context from the prompt" do
+        prompt = described_class.call(issue: issue, project: project)
+
+        expect(prompt).not_to include("Codebase Context")
+      end
+    end
+
     context "when issue body is nil" do
       let(:issue) do
         OpenStruct.new(

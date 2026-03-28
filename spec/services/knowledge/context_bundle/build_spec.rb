@@ -32,12 +32,12 @@ RSpec.describe Knowledge::ContextBundle::Build do
           project: project,
           collector_run: collector_run,
           artifact_type: "route",
-          identifier: "POST /api/users → UsersController#create",
-          content: "POST /api/users",
+          identifier: "POST /api/users",
+          content: "POST /api/users → UsersController#create",
           status: "active")
       end
 
-      it "includes a routes section" do
+      it "includes a routes section with controller info from content" do
         result = described_class.call(issue: issue, project: project)
 
         expect(result[:sections]).to include(:routes)
@@ -53,8 +53,8 @@ RSpec.describe Knowledge::ContextBundle::Build do
           collector_run: collector_run,
           artifact_type: "symbol",
           scope_path: "app/models/user.rb",
-          identifier: "User",
-          content: "User model with Devise authentication",
+          identifier: "app/models/user.rb::User",
+          content: "class User",
           status: "active")
       end
 
@@ -63,8 +63,8 @@ RSpec.describe Knowledge::ContextBundle::Build do
 
         expect(result[:sections]).to include(:symbols)
         expect(result[:content]).to include("Related Code")
-        expect(result[:content]).to include("app/models/user.rb")
-        expect(result[:content]).to include("User")
+        expect(result[:content]).to include("app/models/user.rb::User")
+        expect(result[:content]).to include("class User")
       end
     end
 
@@ -137,11 +137,11 @@ RSpec.describe Knowledge::ContextBundle::Build do
         create(:knowledge_artifact,
           project: project, collector_run: collector_run,
           artifact_type: "route", identifier: "GET /api/users",
-          content: "GET /api/users", status: "active")
+          content: "GET /api/users → UsersController#index", status: "active")
         create(:knowledge_artifact,
           project: project, collector_run: collector_run,
           artifact_type: "symbol", scope_path: "app/models/user.rb",
-          identifier: "User", content: "User model", status: "active")
+          identifier: "app/models/user.rb::User", content: "class User", status: "active")
         create(:knowledge_artifact,
           project: project, collector_run: collector_run,
           artifact_type: "churn_hotspot", scope_path: "app/models/user.rb",
@@ -162,10 +162,10 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:content]).to include("Codebase Context")
       end
 
-      it "reports queries_made equal to number of sections" do
+      it "reports queries_made as the number of section types queried" do
         result = described_class.call(issue: issue, project: project)
 
-        expect(result[:queries_made]).to eq(5)
+        expect(result[:queries_made]).to eq(Knowledge::ContextBundle::Build::SECTION_ORDER.size)
       end
     end
 
