@@ -319,5 +319,31 @@ RSpec.describe Knowledge::Staleness::Detector do
         expect(result[:collection_enqueued]).to be false
       end
     end
+
+    context "when only failed collector runs exist for target SHA" do
+      before do
+        old_version = create(:project_version, project: project, commit_sha: old_sha)
+        create(:collector_run, :completed, project_version: old_version)
+
+        new_version = create(:project_version, project: project, commit_sha: new_sha)
+        create(:collector_run, :failed, project_version: new_version)
+
+        allow(detector).to receive(:run_git)
+          .with("rev-list", "--count", "#{old_sha}..#{new_sha}")
+          .and_return("3\n")
+        allow(detector).to receive(:run_git)
+          .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
+          .and_return("app/models/user.rb\n")
+      end
+
+      it "enqueues re-collection so the failed attempt can be retried" do
+        expect(RunCollectorsJob).to receive(:perform_later)
+          .with(project.id, new_sha, branch: project.default_branch)
+
+        result = detector.call
+        expect(result[:stale]).to be true
+        expect(result[:collection_enqueued]).to be true
+      end
+    end
   end
 end

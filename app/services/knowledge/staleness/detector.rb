@@ -131,7 +131,10 @@ module Knowledge
         )
         return false unless version
 
-        CollectorRun.exists?(project_version_id: version.id)
+        CollectorRun.exists?(
+          project_version_id: version.id,
+          status: %w[pending running completed]
+        )
       end
 
       def worktree_service
