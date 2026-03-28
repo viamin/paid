@@ -219,6 +219,18 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "configures a writable tmpfs for Cursor agent CLI config" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.cursor-agent")
+          expect(tmpfs["/home/agent/.cursor-agent"]).to include("mode=0700")
+          expect(tmpfs["/home/agent/.cursor-agent"]).to include("size=#{64 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
       it "configures a writable tmpfs for Gemini CLI config" do
         expect(Docker::Container).to receive(:create) do |config|
           tmpfs = config["HostConfig"]["Tmpfs"]
