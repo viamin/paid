@@ -87,6 +87,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-018](RDR-018-semantic-code-search.md) | Semantic Code Search (Qdrant + MeiliSearch) | Draft | Medium |
+| [RDR-021](RDR-021-knowledge-base.md) | Knowledge Base Architecture | Final | High |
 
 ### AI-Native Evolution (Phase 4)
 
