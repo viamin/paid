@@ -74,10 +74,12 @@ module Knowledge
           else
             truncated = truncate_section(section, remaining_budget)
             if truncated
+              truncated_tokens = estimate_tokens("### #{truncated[:heading]}\n#{truncated[:content]}")
+              next if truncated_tokens <= 0
+
               built << truncated
-              break
-            else
-              next
+              remaining_budget -= truncated_tokens
+              break if remaining_budget <= 0
             end
           end
         end

@@ -36,6 +36,15 @@ RSpec.describe Prompts::BuildForIssue do
   end
 
   describe ".call" do
+    # The spec uses OpenStruct projects, but BuildForIssue unconditionally calls
+    # Knowledge::ContextBundle::Build which queries ActiveRecord. Stub it globally
+    # to return empty content; specific contexts override this when testing knowledge injection.
+    before do
+      allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(
+        content: "", sections: [], total_tokens: 0, queries_made: 0
+      )
+    end
+
     it "builds a prompt containing the issue title and number" do
       prompt = described_class.call(issue: issue, project: project)
 
