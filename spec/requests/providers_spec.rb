@@ -167,10 +167,17 @@ RSpec.describe "Providers" do
     end
 
     it "rejects providers that are known to agent harness but not installed in paid-agent" do
-      post providers_path, params: { provider: { provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: false } }
+      # All current supported providers are container-executable, so stub the
+      # set to simulate a provider whose CLI is not yet installed in the image.
+      stub_const("ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS", Set.new(%w[claude]))
+      ProviderSupport.reset_supported_provider_keys!
+
+      post providers_path, params: { provider: { provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false } }
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("is not available in paid-agent yet")
+    ensure
+      ProviderSupport.reset_supported_provider_keys!
     end
 
     it "creates a gemini provider successfully" do

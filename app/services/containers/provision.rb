@@ -152,7 +152,6 @@ module Containers
       fix_copilot_tmpfs_ownership!
       seed_copilot_credentials!
       fix_aider_tmpfs_ownership!
-      fix_claude_tmpfs_ownership!
       seed_claude_credentials!
       apply_network_restrictions!
 
@@ -684,13 +683,6 @@ module Containers
     # write to it. Tmpfs mounts are created as root-owned.
     def fix_aider_tmpfs_ownership!
       fix_tmpfs_ownership!(".aider")
-    end
-
-    # Fixes ownership of the ~/.claude tmpfs so the non-root agent user can
-    # write to it. This is needed even when seed_claude_credentials! is a no-op
-    # (e.g. proxy/API-key mode with no host creds).
-    def fix_claude_tmpfs_ownership!
-      fix_tmpfs_ownership!(".claude")
     end
 
     # Fixes ownership of a tmpfs mount under /home/agent so the non-root
