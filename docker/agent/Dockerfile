@@ -174,14 +174,15 @@ RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
 # The top-level wheel hash is verified for supply-chain security (consistent with
 # other tool installs in this Dockerfile). Transitive dependency hashes are not
 # pinned because aider-chat has 100+ deps, making --require-hashes impractical.
+# All deps are downloaded upfront, then installed from local files (--no-index)
+# to avoid a second round of network I/O and improve build reliability.
 # To update: pip download aider-chat==<version> --no-deps -d /tmp && sha256sum /tmp/aider_chat-*.whl
 ARG AIDER_CHAT_WHEEL_SHA256=ab43331d62df05a11c320fc89820a32929fb9b230d386ea60568c4ea6d3a8982
-RUN pip3 download --no-cache-dir aider-chat==0.82.3 --no-deps -d /tmp/aider-dl \
+RUN pip3 download --no-cache-dir aider-chat==0.82.3 -d /tmp/aider-dl \
     && set -- /tmp/aider-dl/aider_chat-*.whl \
     && if [ "$#" -ne 1 ] || [ "$1" = '/tmp/aider-dl/aider_chat-*.whl' ]; then echo "Expected exactly one aider_chat wheel, found $#: $*"; exit 1; fi \
-    && AIDER_WHEEL="$1" \
-    && echo "${AIDER_CHAT_WHEEL_SHA256}  ${AIDER_WHEEL}" | sha256sum -c - \
-    && pip3 install --no-cache-dir --break-system-packages "${AIDER_WHEEL}" \
+    && echo "${AIDER_CHAT_WHEEL_SHA256}  $1" | sha256sum -c - \
+    && pip3 install --no-cache-dir --break-system-packages --no-index --find-links /tmp/aider-dl aider-chat==0.82.3 \
     && rm -rf /tmp/aider-dl
 
 # Install git credential helper for proxy-based authentication.
