@@ -16,13 +16,13 @@ RSpec.describe Knowledge::ContextBundle::Build do
 
   describe ".call" do
     context "when knowledge base is empty" do
-      it "returns an empty result" do
+      it "returns an empty result with accurate query count" do
         result = described_class.call(issue: issue, project: project)
 
         expect(result[:content]).to eq("")
         expect(result[:sections]).to be_empty
         expect(result[:total_tokens]).to eq(0)
-        expect(result[:queries_made]).to eq(0)
+        expect(result[:queries_made]).to eq(Knowledge::ContextBundle::Build::SECTION_ORDER.size)
       end
     end
 
@@ -252,6 +252,54 @@ RSpec.describe Knowledge::ContextBundle::Build do
       result = described_class.new(issue: issue, project: project)
 
       expect(result.token_budget).to eq(4000)
+    end
+
+    it "falls back to default for blank ENV value" do
+      original = ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"]
+      ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"] = "  "
+      result = described_class.new(issue: issue, project: project)
+      expect(result.token_budget).to eq(4000)
+    ensure
+      ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"] = original
+    end
+
+    it "falls back to default for non-numeric ENV value" do
+      original = ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"]
+      ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"] = "abc"
+      result = described_class.new(issue: issue, project: project)
+      expect(result.token_budget).to eq(4000)
+    ensure
+      ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"] = original
+    end
+
+    it "falls back to default for zero or negative ENV value" do
+      original = ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"]
+      ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"] = "0"
+      result = described_class.new(issue: issue, project: project)
+      expect(result.token_budget).to eq(4000)
+    ensure
+      ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"] = original
+    end
+  end
+
+  describe "truncation skips oversized sections" do
+    it "includes a later smaller section when an earlier section is too large" do
+      # Create a single route with many words so even one line exceeds the budget
+      long_content = (1..60).map { |i| "word#{i}" }.join(" ")
+      create(:knowledge_artifact,
+        project: project, collector_run: collector_run,
+        artifact_type: "route",
+        identifier: "GET /api/huge",
+        content: long_content,
+        status: "active")
+      create(:decision_record, project: project, title: "Use JWT", status: "active")
+
+      # Budget too small for routes (single very long line) but enough for decisions
+      result = described_class.call(issue: issue, project: project, token_budget: 40)
+
+      # Without the fix, the bundle would break on the oversized route and miss decisions
+      expect(result[:sections]).to include(:decisions)
+      expect(result[:sections]).not_to include(:routes)
     end
   end
 end

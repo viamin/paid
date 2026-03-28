@@ -39,7 +39,7 @@ module Knowledge
 
       def call
         sections, queries_made = build_sections
-        return empty_result if sections.empty?
+        return empty_result(queries_made) if sections.empty?
 
         content = render(sections)
         {
@@ -73,8 +73,12 @@ module Knowledge
             remaining_budget -= section_tokens
           else
             truncated = truncate_section(section, remaining_budget)
-            built << truncated if truncated
-            break
+            if truncated
+              built << truncated
+              break
+            else
+              next
+            end
           end
         end
 
@@ -191,11 +195,20 @@ module Knowledge
       end
 
       def env_token_budget
-        ENV.fetch("KNOWLEDGE_CONTEXT_TOKEN_BUDGET", DEFAULT_TOKEN_BUDGET).to_i
+        raw = ENV["KNOWLEDGE_CONTEXT_TOKEN_BUDGET"]
+        return DEFAULT_TOKEN_BUDGET if raw.nil?
+
+        value = raw.strip
+        return DEFAULT_TOKEN_BUDGET if value.empty?
+
+        parsed = Integer(value, exception: false)
+        return DEFAULT_TOKEN_BUDGET if parsed.nil? || parsed <= 0
+
+        parsed
       end
 
-      def empty_result
-        { content: "", sections: [], total_tokens: 0, queries_made: 0 }
+      def empty_result(queries_made = 0)
+        { content: "", sections: [], total_tokens: 0, queries_made: queries_made }
       end
     end
   end
