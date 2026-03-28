@@ -151,11 +151,17 @@ RUN npm install -g @kilocode/cli@7.1.3
 RUN npm install -g opencode-ai@1.3.2
 
 # Install Cursor agent CLI
+# Pin the install script checksum for reproducible builds and supply-chain security.
 # The installer places the binary under /root/.local/ which is inaccessible to the
 # non-root "agent" user. Copy the resolved binary to a system-wide path instead.
-RUN curl -fsSL https://cursor.com/install | bash \
+# To update: curl -fsSL https://cursor.com/install | sha256sum
+ARG CURSOR_AGENT_INSTALL_SHA256="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
+    && echo "${CURSOR_AGENT_INSTALL_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
+    && bash /tmp/cursor-install.sh \
     && cp -L /root/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
-    && chmod +x /usr/local/bin/cursor-agent
+    && chmod +x /usr/local/bin/cursor-agent \
+    && rm /tmp/cursor-install.sh
 
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
