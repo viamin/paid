@@ -90,6 +90,14 @@ module ProviderSupport
     provider_key.to_s
   end
 
+  def subscription_auth_unset_vars_for(provider_key)
+    SUBSCRIPTION_AUTH_UNSET_VARS.fetch(provider_key.to_s, [])
+  end
+
+  def subscription_auth_unset_vars
+    SUBSCRIPTION_AUTH_UNSET_VARS
+  end
+
   # Environment variables to unset when running a provider with its own
   # subscription auth (so the agent talks directly to the provider instead of
   # through the Paid proxy). Shared between RunAgentActivity and TestAgent to

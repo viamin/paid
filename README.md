@@ -169,10 +169,49 @@ bin/dev                 # Start dev server (Rails + JS + CSS watchers)
 | `TEMPORAL_TASK_QUEUE` | Temporal task queue name | `paid-tasks` |
 | `TEMPORAL_UI_URL` | Temporal UI base URL for monitoring links | `http://localhost:8080` |
 | `OPENAI_API_KEY` | OpenAI API key (for agents that use OpenAI) | _(none)_ |
+| `GOOGLE_API_KEY` | Google API key for Gemini proxy requests | _(none)_ |
 | `AGENT_TIMEOUT` | Agent execution timeout in seconds | `3600` |
 | `CLAUDE_CONFIG_DIR` | Host path to `~/.claude/` for Claude Code subscription auth | _(none)_ |
+| `CODEX_CONFIG_DIR` | Host path to `~/.codex/` for Codex subscription auth | _(none)_ |
+| `CODEX_HOME` | Alternate Codex config root if `CODEX_CONFIG_DIR` is not set | _(none)_ |
+| `GEMINI_CONFIG_DIR` | Host path to `~/.gemini/` for Gemini subscription auth | _(none)_ |
 | `PAID_PROXY_PORT` | Port the secrets proxy listens on (used by agent containers) | `3000` |
 | `PAID_DATABASE_PASSWORD` | Production database password | _(none)_ |
+
+## Provider Auth Setup
+
+By default, provider tests and real agent runs use the same containerized auth path. For Codex and Gemini, when a Paid-managed proxy key is configured on the `web` service, Test Agent can instead use the agent-harness auth path for faster validation. Each provider can usually be configured in one of two ways:
+
+1. Paid-managed proxy auth using an API key on the `web` service.
+2. Subscription auth using local CLI login state that Paid copies into the agent container.
+
+### Claude
+
+- Proxy auth: set `ANTHROPIC_API_KEY` on the `web` service.
+- Subscription auth: run `claude login` on the host or devcontainer and make `~/.claude/.credentials.json` visible to Paid.
+- If Claude credentials live outside the default location, set `CLAUDE_CONFIG_DIR` to the directory containing `.credentials.json`.
+
+### Codex and OpenCode
+
+- Proxy auth: set `OPENAI_API_KEY` on the `web` service.
+- Subscription auth: sign in with the Codex CLI and make `~/.codex/auth.json` visible to Paid.
+- If Codex credentials live outside the default location, set `CODEX_CONFIG_DIR` or `CODEX_HOME`.
+- OpenCode uses the same OpenAI proxy key path and does not currently have a separate subscription-auth mount in Paid.
+
+### Gemini
+
+- Proxy auth: set `GOOGLE_API_KEY` on the `web` service.
+- Subscription auth: run `gemini auth login` and make `~/.gemini/oauth_creds.json` visible to Paid.
+- If Gemini credentials live outside the default location, set `GEMINI_CONFIG_DIR`.
+
+### After Updating Auth
+
+- Restart the `web` and `worker` services so new env vars and credential mounts are picked up.
+- Re-run `Test Agent` from the Providers page.
+- If a provider still fails, compare the error with the expected file/env setup above:
+  - `API key not configured for google` means `GOOGLE_API_KEY` is missing on `web`.
+  - `API key not configured for openai` means `OPENAI_API_KEY` is missing on `web` for Codex or OpenCode.
+  - `No authentication token found` usually means the provider CLI login files are not mounted where Paid expects them.
 
 ## Docker Compose Services
 
