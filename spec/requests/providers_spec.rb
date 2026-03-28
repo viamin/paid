@@ -170,7 +170,6 @@ RSpec.describe "Providers" do
       # All current supported providers are container-executable, so stub the
       # set to simulate a provider whose CLI is not yet installed in the image.
       stub_const("ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS", Set.new(%w[claude]))
-      ProviderSupport.reset_supported_provider_keys!
 
       post providers_path, params: { provider: { provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false } }
 
