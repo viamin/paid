@@ -5,6 +5,7 @@ export default class extends Controller {
   static values = { name: String }
 
   connect() {
+    this.buttonTarget.disabled = true
     this.validate()
   }
 
