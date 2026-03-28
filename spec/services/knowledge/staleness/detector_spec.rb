@@ -359,7 +359,10 @@ RSpec.describe Knowledge::Staleness::Detector do
           .with(project.id, new_sha, branch: project.default_branch)
 
         result = detector.call
-        expect(result[:stale]).to be true
+        # stale is false because last_collected_version is new_version (it has a
+        # completed run), so current_sha == last_collected_sha.  The important
+        # assertion is that re-collection is still enqueued for the failed run.
+        expect(result[:stale]).to be false
         expect(result[:collection_enqueued]).to be true
       end
     end

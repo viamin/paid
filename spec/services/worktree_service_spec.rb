@@ -66,7 +66,7 @@ RSpec.describe WorktreeService do
 
         it "fetches when FETCH_HEAD is older than max_fetch_age" do
           fetch_head = File.join(repo_path, "FETCH_HEAD")
-          FileUtils.touch(fetch_head, mtime: 5.minutes.ago)
+          FileUtils.touch(fetch_head, mtime: 5.minutes.ago.to_time)
 
           expect(service).to receive(:fetch_latest)
 
