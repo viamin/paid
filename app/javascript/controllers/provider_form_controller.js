@@ -13,6 +13,12 @@ export default class extends Controller {
   }
 
   toggleAuthType() {
+    const radios = this.element.querySelectorAll("input[name*='auth_type']")
+
+    // On edit, auth_type radios are not rendered — leave server-rendered
+    // state alone so persisted API-key providers keep their fields visible.
+    if (radios.length === 0) return
+
     const selected = this.element.querySelector(
       "input[name*='auth_type']:checked"
     )

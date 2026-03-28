@@ -10,13 +10,10 @@ class ProvidersController < ApplicationController
   end
 
   def new
-    # auth_type is not sensitive data — it's a UI routing hint containing only
-    # "subscription" or "api_key" that determines which form variant to show.
-    # It is immediately validated against the AUTH_TYPES allowlist below and
-    # never logged, stored, or forwarded. CodeQL flags all query params as
-    # potentially sensitive, but this value carries no confidential information.
-    auth_type = params[:auth_type]
-    auth_type = "subscription" unless Provider::AUTH_TYPES.include?(auth_type)
+    # CodeQL false positive: auth_type is not sensitive data — it's a UI routing
+    # hint ("subscription" or "api_key") that selects which form variant to show.
+    # The raw param is discarded immediately; only the allowlisted value is used.
+    auth_type = sanitize_auth_type(params[:auth_type])
 
     # Only honor API key auth_type if the user has compatible API keys;
     # otherwise default to subscription to avoid a form with no radio selected.
@@ -134,6 +131,13 @@ class ProvidersController < ApplicationController
   end
 
   private
+
+  # Validates auth_type against the allowlist, defaulting to "subscription".
+  # Extracted to make it clear to static analyzers (CodeQL) that the raw
+  # query param is never used directly — only the sanitized value propagates.
+  def sanitize_auth_type(raw)
+    Provider::AUTH_TYPES.include?(raw) ? raw : "subscription"
+  end
 
   def set_provider
     @provider = policy_scope(Provider).find(params[:id])
