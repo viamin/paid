@@ -103,6 +103,7 @@ config.status
 /.pg-src/
 /.pg.jar
 /.pg-run/
+/.pgs/
 
 # PostgreSQL runtime logs
 .pg.log
