@@ -167,6 +167,12 @@ RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
     && chmod +x /usr/local/bin/cursor-agent \
     && rm /tmp/cursor-install.sh
 
+# Install Aider CLI (AI pair programming tool)
+# Pin version for reproducible builds; update intentionally when upgrading Aider.
+# Uses --break-system-packages because the container is single-purpose and does
+# not use a virtualenv.
+RUN pip3 install --break-system-packages aider-chat==0.82.3
+
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
 COPY scripts/git-credential-paid /usr/local/bin/git-credential-paid
