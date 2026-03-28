@@ -22,12 +22,16 @@ module Knowledge
       end
 
       def call
-        validate!
+        validate_records!
 
-        DecisionRecord.transaction do
+        original.with_lock do
+          unless original.status.in?(%w[draft active])
+            raise ArgumentError, "original must be draft or active to supersede"
+          end
+
           original.update!(status: "superseded", superseded_by: superseding)
 
-          superseding.decision_record_links.create!(
+          superseding.decision_record_links.find_or_create_by!(
             linkable_type: "DecisionRecord",
             linkable_id: original.id.to_s,
             link_type: "reverts"
@@ -39,7 +43,7 @@ module Knowledge
 
       private
 
-      def validate!
+      def validate_records!
         unless original.persisted? && superseding.persisted?
           raise ArgumentError, "original and superseding must be persisted records"
         end
@@ -47,8 +51,6 @@ module Knowledge
         if original.equal?(superseding) || original.id == superseding.id
           raise ArgumentError, "original and superseding must be different records"
         end
-
-        raise ArgumentError, "original must not already be superseded" if original.status == "superseded"
       end
     end
   end

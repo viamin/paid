@@ -35,7 +35,14 @@ RSpec.describe Knowledge::Decisions::Supersede do
       original.update!(status: "superseded")
       expect {
         described_class.call(original: original, superseding: superseding)
-      }.to raise_error(ArgumentError, /already be superseded/)
+      }.to raise_error(ArgumentError, /must be draft or active/)
+    end
+
+    it "raises when original is reverted" do
+      original.update!(status: "reverted")
+      expect {
+        described_class.call(original: original, superseding: superseding)
+      }.to raise_error(ArgumentError, /must be draft or active/)
     end
 
     it "raises when records are not persisted" do
