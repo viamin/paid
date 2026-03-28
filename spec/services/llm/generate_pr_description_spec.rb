@@ -90,30 +90,22 @@ RSpec.describe Llm::GeneratePrDescription do
       expect(result).to be_nil
     end
 
-    it "returns nil on agent_harness error and logs warning" do
+    it "lets AgentHarness errors propagate to the caller for contextual logging" do
       allow(AgentHarness).to receive(:send_message)
         .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
 
-      expect(Rails.logger).to receive(:warn).with(hash_including(
-        message: "agent_execution.pr_description_failed"
-      ))
-
-      result = described_class.call(agent_summary: agent_summary)
-
-      expect(result).to be_nil
+      expect {
+        described_class.call(agent_summary: agent_summary)
+      }.to raise_error(AgentHarness::ProviderError)
     end
 
-    it "returns nil on timeout and logs warning" do
+    it "lets timeout errors propagate to the caller for contextual logging" do
       allow(AgentHarness).to receive(:send_message)
         .and_raise(AgentHarness::TimeoutError.new("Timed out"))
 
-      expect(Rails.logger).to receive(:warn).with(hash_including(
-        message: "agent_execution.pr_description_failed"
-      ))
-
-      result = described_class.call(agent_summary: agent_summary)
-
-      expect(result).to be_nil
+      expect {
+        described_class.call(agent_summary: agent_summary)
+      }.to raise_error(AgentHarness::TimeoutError)
     end
 
     it "truncates long agent summaries in the prompt" do

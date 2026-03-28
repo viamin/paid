@@ -6,8 +6,8 @@ module Llm
   # full scope, and surfaces design decisions — following the guidelines in
   # GitHub issue #581.
   #
-  # On errors, logs a warning and returns nil so callers can fall back to the
-  # raw agent summary. PR creation is never blocked by description generation.
+  # Raises on LLM errors so the caller can log with full context (e.g.
+  # agent_run_id, issue_number) and fall back to the raw agent summary.
   #
   # @example
   #   body = Llm::GeneratePrDescription.call(
@@ -66,13 +66,6 @@ module Llm
 
       description = request_description
       description.present? ? description.truncate(MAX_DESCRIPTION_LENGTH) : nil
-    rescue AgentHarness::Error => e
-      Rails.logger.warn(
-        message: "agent_execution.pr_description_failed",
-        error_class: e.class.name,
-        error: e.message
-      )
-      nil
     end
 
     private
