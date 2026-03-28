@@ -47,7 +47,9 @@ module Activities
 
     def find_paid_prs(project)
       project.issues
-        .where(is_pull_request: true, github_state: "open", auto_continue_paused: false)
+        .pull_requests_only
+        .auto_continue_active
+        .where(github_state: "open")
         .where("labels @> ?", [ project.automation_label_name ].to_json)
     end
 

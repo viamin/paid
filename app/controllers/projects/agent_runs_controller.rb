@@ -134,7 +134,12 @@ module Projects
       if pr.auto_continue_paused?
         @project.agent_runs
           .where(source_pull_request_number: pr.github_number, trigger_type: "automatic", status: "queued")
-          .find_each(&:cancel!)
+          .find_each do |run|
+            run.with_lock do
+              next unless run.status == "queued"
+              run.cancel!
+            end
+          end
       end
 
       @project.broadcast_pull_requests_update
