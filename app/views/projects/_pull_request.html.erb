@@ -25,6 +25,7 @@
                   method: :post,
                   class: "text-xs font-medium #{pull_request.auto_continue_paused? ? 'text-green-600 hover:text-green-900' : 'text-yellow-600 hover:text-yellow-900'}",
                   title: pull_request.auto_continue_paused? ? "Resume auto-continue" : "Pause auto-continue",
+                  aria: { label: pull_request.auto_continue_paused? ? "Resume auto-continue" : "Pause auto-continue" },
                   form: { data: { action_button: true } } do %>
       <%= pull_request.auto_continue_paused? ? "▶️" : "⏸️" %>
     <% end %>

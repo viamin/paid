@@ -51,7 +51,6 @@ class Issue < ApplicationRecord
   scope :sub_issues_only, -> { where.not(parent_issue_id: nil) }
   scope :issues_only, -> { where(is_pull_request: false) }
   scope :pull_requests_only, -> { where(is_pull_request: true) }
-  scope :auto_continue_active, -> { where(auto_continue_paused: false) }
   scope :ready_for_work, ->(project) {
     blocked_by_local = IssueDependency
       .joins(:issue, :depends_on_issue)

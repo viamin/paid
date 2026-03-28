@@ -130,6 +130,13 @@ module Projects
       end
 
       pr.update!(auto_continue_paused: !pr.auto_continue_paused)
+
+      if pr.auto_continue_paused?
+        @project.agent_runs
+          .where(source_pull_request_number: pr.github_number, trigger_type: "automatic", status: "queued")
+          .find_each(&:cancel!)
+      end
+
       @project.broadcast_pull_requests_update
 
       action = pr.auto_continue_paused? ? "paused" : "resumed"
