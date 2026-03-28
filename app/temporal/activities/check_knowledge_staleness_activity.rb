@@ -40,7 +40,9 @@ module Activities
       logger.error(
         message: "knowledge.staleness_check_failed",
         project_id: project_id,
-        error: e.message
+        error: e.message,
+        error_class: e.class.name,
+        backtrace: e.backtrace&.first(5)
       )
       {
         stale: false,

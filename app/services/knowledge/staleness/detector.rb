@@ -40,7 +40,7 @@ module Knowledge
         return not_stale_result(current_sha, last_sha:) if commit_distance < STALENESS_THRESHOLD
 
         changed_files = changed_files_between(last_sha, current_sha)
-        stale_count = mark_stale_artifacts(changed_files)
+        stale_count = mark_stale_artifacts(changed_files, last_version)
         enqueued = enqueue_recollection(current_sha)
 
         {
@@ -89,11 +89,15 @@ module Knowledge
         []
       end
 
-      def mark_stale_artifacts(changed_files)
-        return 0 if changed_files.empty?
+      def mark_stale_artifacts(changed_files, last_version = last_collected_version)
+        return 0 if changed_files.empty? || last_version.nil?
 
         ActiveRecord::Base.transaction do
+          # Scope to artifacts from the last collected version to avoid
+          # accidentally staling artifacts from an in-progress collection.
           stale_artifacts = KnowledgeArtifact
+            .joins(:collector_run)
+            .where(collector_runs: { project_version_id: last_version.id })
             .where(project: project, status: "active")
             .where(scope_path: changed_files)
 

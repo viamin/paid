@@ -169,6 +169,27 @@ RSpec.describe Knowledge::Staleness::Detector do
         expect(chunk.reload.status).to eq("stale")
       end
 
+      it "does not mark artifacts from an in-progress collection as stale" do
+        # Artifact from the old (completed) version — should be staled
+        old_artifact = create(:knowledge_artifact,
+          collector_run: completed_run, project: project,
+          scope_path: "app/models/user.rb")
+
+        # Simulate an in-progress collection for new_sha
+        new_version = create(:project_version, project: project, commit_sha: new_sha)
+        in_progress_run = create(:collector_run, project_version: new_version)
+        new_artifact = create(:knowledge_artifact,
+          collector_run: in_progress_run, project: project,
+          scope_path: "app/models/user.rb")
+
+        allow(RunCollectorsJob).to receive(:perform_later)
+
+        detector.call
+
+        expect(old_artifact.reload.status).to eq("stale")
+        expect(new_artifact.reload.status).to eq("active")
+      end
+
       it "does not mark already-stale artifacts" do
         create(:knowledge_artifact, :stale,
           collector_run: completed_run, project: project,
