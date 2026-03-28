@@ -110,7 +110,7 @@ overmind_available() {
 }
 
 overmind_running() {
-  overmind_available && overmind status &>/dev/null
+  overmind_available && dev_supervisor_run_overmind overmind status &>/dev/null
 }
 
 remove_stale_overmind_socket() {
@@ -147,7 +147,15 @@ stop_overmind() {
     # Use setsid to run overmind quit in a new session so that stopping
     # Overmind does not kill this script (which may be a child of Overmind).
     local quit_output
-    if ! quit_output="$(setsid overmind quit 2>&1)"; then
+    if ! quit_output="$(setsid env \
+      -u BUNDLE_BIN_PATH \
+      -u BUNDLE_GEMFILE \
+      -u BUNDLER_SETUP \
+      -u BUNDLER_VERSION \
+      -u RUBYLIB \
+      -u RUBYOPT \
+      -u RUBYGEMS_GEMDEPS \
+      overmind quit 2>&1)"; then
       log "Warning: overmind quit returned a non-zero exit status."
     fi
     log_command_output "overmind quit" "$quit_output"
@@ -187,7 +195,7 @@ start_dev() {
   if overmind_running; then
     log "Overmind is already running, restarting processes."
     local restart_output
-    restart_output="$(overmind restart 2>&1)"
+    restart_output="$(dev_supervisor_run_overmind overmind restart 2>&1)"
     log_command_output "overmind restart" "$restart_output"
     log "Overmind process restart requested."
     return 0

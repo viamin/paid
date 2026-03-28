@@ -52,9 +52,42 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "starts overmind successfully even when bundler env is present" do
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = bundler_contaminated_env(dir)
+      stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "overmind-start-ran"))).to be(true)
+      expect(overmind_invocation_log(dir)).to include("CMD=start")
+      expect(overmind_invocation_log(dir)).not_to include("CMD=start\nBUNDLE_GEMFILE=")
+      expect(overmind_invocation_log(dir)).not_to include("CMD=start\nRUBYOPT=")
+    end
+  end
+
   def write_executable(path, contents)
     File.write(path, contents)
     FileUtils.chmod("+x", path)
+  end
+
+  def bundler_contaminated_env(dir)
+    {
+      "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+      "SKIP_DEV_CLEANUP" => "1",
+      "OVERMIND_SOCKET" => ".overmind.sock",
+      "BUNDLE_GEMFILE" => File.join(dir, "Gemfile"),
+      "BUNDLE_BIN_PATH" => "/tmp/fake-bundle-bin",
+      "BUNDLER_SETUP" => "/tmp/fake-bundler-setup",
+      "BUNDLER_VERSION" => "2.7.2",
+      "RUBYLIB" => "/tmp/fake-rubylib",
+      "RUBYOPT" => "-r/tmp/fake-bundler/setup",
+      "RUBYGEMS_GEMDEPS" => "-"
+    }
+  end
+
+  def overmind_invocation_log(dir)
+    File.read(File.join(dir, "stubbin", "overmind-env.log"))
   end
 
   def prepare_script_fixture(dir)
@@ -72,6 +105,11 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
       File.join(dir, "stubbin", "overmind"),
       <<~BASH
         #!/usr/bin/env bash
+        {
+          printf 'CMD=%s\n' "$1"
+          env | sort | grep -E '^(BUNDLE_GEMFILE|BUNDLE_BIN_PATH|BUNDLER_SETUP|BUNDLER_VERSION|RUBYLIB|RUBYOPT|RUBYGEMS_GEMDEPS)=' || true
+          printf "--\n"
+        } >> "#{dir}/stubbin/overmind-env.log"
         case "$1" in
           status)
             exit 1

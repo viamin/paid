@@ -164,9 +164,41 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "clears bundler env before calling overmind during restart" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true)
+      env = poll_env.merge(bundler_contaminated_env(dir))
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(overmind_invocation_log(dir)).to include("CMD=restart")
+      expect(overmind_invocation_log(dir)).not_to include("CMD=restart\nBUNDLE_GEMFILE=")
+      expect(overmind_invocation_log(dir)).not_to include("CMD=restart\nRUBYOPT=")
+      expect(File.exist?(File.join(dir, "overmind-restart-ran"))).to be(true)
+    end
+  end
+
   def write_executable(path, contents)
     File.write(path, contents)
     FileUtils.chmod("+x", path)
+  end
+
+  def bundler_contaminated_env(dir)
+    {
+      "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+      "OVERMIND_SOCKET" => ".overmind.sock",
+      "BUNDLE_GEMFILE" => File.join(dir, "Gemfile"),
+      "BUNDLE_BIN_PATH" => "/tmp/fake-bundle-bin",
+      "BUNDLER_SETUP" => "/tmp/fake-bundler-setup",
+      "BUNDLER_VERSION" => "2.7.2",
+      "RUBYLIB" => "/tmp/fake-rubylib",
+      "RUBYOPT" => "-r/tmp/fake-bundler/setup",
+      "RUBYGEMS_GEMDEPS" => "-"
+    }
+  end
+
+  def overmind_invocation_log(dir)
+    File.read(File.join(dir, "stubbin", "overmind-env.log"))
   end
 
   def read_updater_log(dir)
@@ -253,6 +285,11 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       File.join(dir, "stubbin", "overmind"),
       <<~BASH
         #!/usr/bin/env bash
+        {
+          printf 'CMD=%s\n' "$1"
+          env | sort | grep -E '^(BUNDLE_GEMFILE|BUNDLE_BIN_PATH|BUNDLER_SETUP|BUNDLER_VERSION|RUBYLIB|RUBYOPT|RUBYGEMS_GEMDEPS)=' || true
+          printf "--\n"
+        } >> "#{dir}/stubbin/overmind-env.log"
         case "$1" in
           status)
             [ -e "#{dir}/overmind-running" ]
