@@ -304,6 +304,52 @@ RSpec.describe Issue do
     end
   end
 
+  describe "#associated_pull_request" do
+    let(:project) { create(:project) }
+
+    it "returns the pull request sub-issue when one exists" do
+      issue = create(:issue, project: project)
+      pr = create(:issue, :pull_request, project: project, parent_issue: issue)
+
+      expect(issue.associated_pull_request).to eq(pr)
+    end
+
+    it "returns nil when no sub-issues exist" do
+      issue = create(:issue, project: project)
+
+      expect(issue.associated_pull_request).to be_nil
+    end
+
+    it "returns nil when sub-issues are not pull requests" do
+      issue = create(:issue, project: project)
+      create(:issue, project: project, parent_issue: issue)
+
+      expect(issue.associated_pull_request).to be_nil
+    end
+
+    context "when sub_issues are preloaded" do
+      it "returns the pull request from preloaded sub-issues" do
+        issue = create(:issue, project: project)
+        pr = create(:issue, :pull_request, project: project, parent_issue: issue)
+
+        preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+        expect(preloaded_issue.sub_issues).to be_loaded
+        expect(preloaded_issue.associated_pull_request).to eq(pr)
+      end
+
+      it "returns nil when preloaded sub-issues have no pull requests" do
+        issue = create(:issue, project: project)
+        create(:issue, project: project, parent_issue: issue)
+
+        preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+        expect(preloaded_issue.sub_issues).to be_loaded
+        expect(preloaded_issue.associated_pull_request).to be_nil
+      end
+    end
+  end
+
   describe "#ready_to_work?" do
     let(:project) { create(:project) }
 

@@ -109,6 +109,14 @@ class Issue < ApplicationRecord
     end
   end
 
+  def associated_pull_request
+    if sub_issues.loaded?
+      sub_issues.find(&:is_pull_request?)
+    else
+      sub_issues.pull_requests_only.first
+    end
+  end
+
   def draft_phase?
     pr_review_phase.in?(%w[draft restarted])
   end
