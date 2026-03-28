@@ -176,7 +176,9 @@ RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
 # pinned because aider-chat has 100+ deps, making --require-hashes impractical.
 # All deps are downloaded upfront, then installed from local files (--no-index)
 # to avoid a second round of network I/O and improve build reliability.
-# To update: pip download aider-chat==<version> --no-deps -d /tmp && sha256sum /tmp/aider_chat-*.whl
+# To update the hash: pip download aider-chat==<version> --no-deps -d /tmp/aider-dl && sha256sum /tmp/aider-dl/aider_chat-*.whl
+# (--no-deps is intentional: only the top-level wheel is hash-verified; the full
+# install below downloads all dependencies into the same directory)
 ARG AIDER_CHAT_WHEEL_SHA256=ab43331d62df05a11c320fc89820a32929fb9b230d386ea60568c4ea6d3a8982
 RUN pip3 download --no-cache-dir aider-chat==0.82.3 -d /tmp/aider-dl \
     && set -- /tmp/aider-dl/aider_chat-*.whl \
