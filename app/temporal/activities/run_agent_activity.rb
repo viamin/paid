@@ -10,8 +10,9 @@ module Activities
     # Each entry is an array of command parts; the prompt is appended as the last argument.
     #
     # NOTE: This hash defines command templates for all providers the system
-    # knows how to run. Currently Claude CLI, Codex CLI, Gemini CLI, Kilocode CLI,
-    # and OpenCode CLI are installed in the agent Docker container (docker/agent/Dockerfile). Actual container execution is
+    # knows how to run. Currently Claude CLI, Codex CLI, Cursor agent CLI,
+    # Gemini CLI, Kilocode CLI, and OpenCode CLI are installed in the agent
+    # Docker container (docker/agent/Dockerfile). Actual container execution is
     # gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS — providers
     # not in that set are filtered out upstream (UserSetting, ProvidersController)
     # before reaching provider_order.
