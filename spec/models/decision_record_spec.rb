@@ -48,6 +48,13 @@ RSpec.describe DecisionRecord do
         expect(record).not_to be_valid
         expect(record.errors[:superseded_by]).to include("must belong to the same project")
       end
+
+      it "rejects superseded_by referencing itself" do
+        record = create(:decision_record)
+        record.superseded_by = record
+        expect(record).not_to be_valid
+        expect(record.errors[:superseded_by]).to include("cannot reference itself")
+      end
     end
   end
 
@@ -114,6 +121,11 @@ RSpec.describe DecisionRecord do
       original.supersede!(new_record)
       expect(original.reload.status).to eq("superseded")
       expect(original.superseded_by).to eq(new_record)
+    end
+
+    it "raises when superseding with itself" do
+      record = create(:decision_record)
+      expect { record.supersede!(record) }.to raise_error(ArgumentError, "cannot supersede with itself")
     end
   end
 

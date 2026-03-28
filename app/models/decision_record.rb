@@ -28,6 +28,7 @@ class DecisionRecord < ApplicationRecord
   validate :agent_run_belongs_to_same_project, if: -> { agent_run.present? }
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :superseded_by_belongs_to_same_project, if: -> { superseded_by.present? }
+  validate :superseded_by_is_not_self
 
   scope :active, -> { where(status: "active") }
   scope :draft, -> { where(status: "draft") }
@@ -39,6 +40,8 @@ class DecisionRecord < ApplicationRecord
   end
 
   def supersede!(new_record)
+    raise ArgumentError, "cannot supersede with itself" if new_record == self
+
     transaction do
       update!(status: "superseded", superseded_by: new_record)
     end
@@ -66,6 +69,12 @@ class DecisionRecord < ApplicationRecord
     return if superseded_by.project_id == project_id
 
     errors.add(:superseded_by, "must belong to the same project")
+  end
+
+  def superseded_by_is_not_self
+    return unless persisted? && superseded_by_id == id
+
+    errors.add(:superseded_by, "cannot reference itself")
   end
 
   def enforce_immutability
