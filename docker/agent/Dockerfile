@@ -171,7 +171,15 @@ RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
 # Pin version for reproducible builds; update intentionally when upgrading Aider.
 # Uses --break-system-packages because the container is single-purpose and does
 # not use a virtualenv.
-RUN pip3 install --no-cache-dir --break-system-packages aider-chat==0.82.3
+# The top-level wheel hash is verified for supply-chain security (consistent with
+# other tool installs in this Dockerfile). Transitive dependency hashes are not
+# pinned because aider-chat has 100+ deps, making --require-hashes impractical.
+# To update: pip download aider-chat==<version> --no-deps -d /tmp && sha256sum /tmp/aider_chat-*.whl
+ARG AIDER_CHAT_WHEEL_SHA256=ab43331d62df05a11c320fc89820a32929fb9b230d386ea60568c4ea6d3a8982
+RUN pip3 download --no-cache-dir aider-chat==0.82.3 --no-deps -d /tmp/aider-dl \
+    && echo "${AIDER_CHAT_WHEEL_SHA256}  $(ls /tmp/aider-dl/aider_chat-*.whl)" | sha256sum -c - \
+    && pip3 install --no-cache-dir --break-system-packages /tmp/aider-dl/aider_chat-*.whl \
+    && rm -rf /tmp/aider-dl
 
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
