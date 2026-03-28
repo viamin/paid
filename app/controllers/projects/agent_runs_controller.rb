@@ -120,6 +120,34 @@ module Projects
       redirect_to project_path(@project), notice: "Priority bumped for PR ##{pr.github_number}."
     end
 
+    def toggle_auto_continue_pause
+      authorize @project, :run_agent?
+
+      pr = resolve_pull_request_record
+      unless pr
+        redirect_to project_path(@project), alert: "Please select a pull request."
+        return
+      end
+
+      pr.update!(auto_continue_paused: !pr.auto_continue_paused)
+
+      if pr.auto_continue_paused?
+        @project.agent_runs
+          .where(source_pull_request_number: pr.github_number, trigger_type: "automatic", status: "queued")
+          .find_each do |run|
+            run.with_lock do
+              next unless run.status == "queued"
+              run.cancel!
+            end
+          end
+      end
+
+      @project.broadcast_pull_requests_update
+
+      action = pr.auto_continue_paused? ? "paused" : "resumed"
+      redirect_to project_path(@project), notice: "Auto-continue #{action} for PR ##{pr.github_number}."
+    end
+
     def retry
       authorize @agent_run
 

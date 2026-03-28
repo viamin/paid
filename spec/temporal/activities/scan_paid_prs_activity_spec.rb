@@ -99,6 +99,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a PR has auto_continue_paused set to true" do
+      before do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed",
+          auto_continue_paused: true)
+      end
+
+      it "does not include the paused PR in scan results" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "when a paid-generated PR has CI failures" do
       let(:pr_issue) do
         create(:issue, :pull_request,

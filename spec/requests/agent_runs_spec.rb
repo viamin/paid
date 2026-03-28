@@ -756,6 +756,81 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/toggle_auto_continue_pause" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: 1 }
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      let(:pr) { create(:issue, :pull_request, project: project, github_number: 77, title: "Fix styles") }
+
+      before { sign_in user }
+
+      it "pauses auto-continue for a PR" do
+        expect(pr.auto_continue_paused).to be false
+
+        post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(pr.reload.auto_continue_paused).to be true
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:notice]).to include("paused")
+      end
+
+      it "resumes auto-continue for a paused PR" do
+        pr.update!(auto_continue_paused: true)
+
+        post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(pr.reload.auto_continue_paused).to be false
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:notice]).to include("resumed")
+      end
+
+      it "cancels queued automatic runs when pausing" do
+        queued_run = create(:agent_run, :queued, :automatic, project: project,
+          source_pull_request_number: 77, custom_prompt: "Fix PR")
+
+        post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(queued_run.reload.status).to eq("cancelled")
+      end
+
+      it "does not cancel queued manual runs when pausing" do
+        manual_run = create(:agent_run, :queued, :manual, project: project,
+          source_pull_request_number: 77, custom_prompt: "Manual fix")
+
+        post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(manual_run.reload.status).to eq("queued")
+      end
+
+      it "does not cancel runs when resuming" do
+        pr.update!(auto_continue_paused: true)
+        queued_run = create(:agent_run, :queued, :automatic, project: project,
+          source_pull_request_number: 77, custom_prompt: "Fix PR")
+
+        post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(queued_run.reload.status).to eq("queued")
+      end
+
+      it "redirects with error when no pull request selected" do
+        post toggle_auto_continue_pause_project_agent_runs_path(project)
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:alert]).to include("Please select a pull request")
+      end
+
+      it "redirects with error when pull_request_id is invalid" do
+        post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: 999_999 }
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:alert]).to include("Please select a pull request")
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/:id/retry" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
