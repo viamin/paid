@@ -65,7 +65,7 @@ module Llm
 
       description = request_description
       description.present? ? description.truncate(MAX_DESCRIPTION_LENGTH) : nil
-    rescue StandardError => e
+    rescue AgentHarness::Error => e
       Rails.logger.warn(
         message: "agent_execution.llm_generate_pr_description_failed",
         error_class: e.class.name,

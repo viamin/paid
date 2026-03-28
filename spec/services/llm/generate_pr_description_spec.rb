@@ -144,18 +144,13 @@ RSpec.describe Llm::GeneratePrDescription do
       end
     end
 
-    it "returns nil on unexpected errors and logs warning" do
+    it "lets unexpected (non-AgentHarness) errors propagate to the caller" do
       allow(AgentHarness).to receive(:send_message)
         .and_raise(Encoding::UndefinedConversionError.new("incompatible encoding"))
 
-      expect(Rails.logger).to receive(:warn).with(hash_including(
-        message: "agent_execution.llm_generate_pr_description_failed",
-        error_class: "Encoding::UndefinedConversionError"
-      ))
-
-      result = described_class.call(agent_summary: agent_summary)
-
-      expect(result).to be_nil
+      expect {
+        described_class.call(agent_summary: agent_summary)
+      }.to raise_error(Encoding::UndefinedConversionError)
     end
 
     it "truncates descriptions exceeding MAX_DESCRIPTION_LENGTH" do

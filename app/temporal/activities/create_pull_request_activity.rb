@@ -53,7 +53,7 @@ module Activities
       parts = []
 
       summary = agent_run.agent_summary
-      description = generate_description(summary, issue)
+      description = generate_description(summary, issue, agent_run_id: agent_run.id)
 
       if description.present?
         parts << description
@@ -76,7 +76,7 @@ module Activities
       parts.join("\n")
     end
 
-    def generate_description(summary, issue)
+    def generate_description(summary, issue, agent_run_id:)
       return nil if summary.blank?
 
       Llm::GeneratePrDescription.call(
@@ -87,6 +87,8 @@ module Activities
     rescue StandardError => e
       logger.warn(
         message: "agent_execution.generate_pr_description_failed",
+        agent_run_id: agent_run_id,
+        issue_number: issue&.github_number,
         error_class: e.class.name,
         error: e.message
       )
