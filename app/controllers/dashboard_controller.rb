@@ -6,6 +6,7 @@ class DashboardController < ApplicationController
 
   def show
     @stats = Dashboard::Stats.call(account: current_account)
+    @knowledge_stats = Knowledge::DashboardStats.call(account: current_account)
   end
 
   def live
