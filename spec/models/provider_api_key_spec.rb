@@ -13,7 +13,7 @@ RSpec.describe ProviderApiKey do
 
     it { is_expected.to validate_presence_of(:name) }
     it { is_expected.to validate_uniqueness_of(:name).scoped_to(:user_id) }
-    it { is_expected.to validate_presence_of(:api_key_ciphertext) }
+    it { is_expected.to validate_presence_of(:api_key) }
     it { is_expected.to validate_presence_of(:compatible_providers) }
 
     it "rejects unsupported provider keys in compatible_providers" do

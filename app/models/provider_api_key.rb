@@ -4,11 +4,11 @@ class ProviderApiKey < ApplicationRecord
   belongs_to :user
   has_many :providers, dependent: :restrict_with_error
 
-  encrypts :api_key_ciphertext
+  encrypts :api_key
 
   validates :name, presence: true, length: { maximum: 100 }
   validates :name, uniqueness: { scope: :user_id }
-  validates :api_key_ciphertext, presence: true
+  validates :api_key, presence: true
   validates :compatible_providers, presence: true
 
   validate :compatible_providers_must_be_valid
@@ -20,6 +20,15 @@ class ProviderApiKey < ApplicationRecord
 
   def compatible_with?(provider_key)
     compatible_providers.include?(provider_key.to_s)
+  end
+
+  def masked_api_key
+    raw = api_key.to_s
+    if raw.length > 12
+      "#{raw[0..7]}****#{raw[-4..]}"
+    else
+      "****"
+    end
   end
 
   def display_compatible_providers

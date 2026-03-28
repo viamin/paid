@@ -71,9 +71,8 @@ RSpec.describe "ProviderApiKeys" do
       it "does not allow viewing API keys from other users" do
         other_user = create(:user)
         other_key = create(:provider_api_key, user: other_user)
-        expect {
-          get provider_api_key_path(other_key)
-        }.to raise_error(ActiveRecord::RecordNotFound)
+        get provider_api_key_path(other_key)
+        expect(response).to have_http_status(:not_found)
       end
     end
   end
@@ -100,7 +99,7 @@ RSpec.describe "ProviderApiKeys" do
   describe "POST /provider_api_keys" do
     context "when not authenticated" do
       it "redirects to sign in" do
-        post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key_ciphertext: "sk-test-abc123", compatible_providers: [ "claude" ] } }
+        post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc123", compatible_providers: [ "claude" ] } }
         expect(response).to redirect_to(new_user_session_path)
       end
     end
@@ -110,7 +109,7 @@ RSpec.describe "ProviderApiKeys" do
 
       context "with valid parameters" do
         let(:valid_params) do
-          { provider_api_key: { name: "My API Key", api_key_ciphertext: "sk-test-abc123def456", compatible_providers: [ "claude" ] } }
+          { provider_api_key: { name: "My API Key", api_key: "sk-test-abc123def456", compatible_providers: [ "claude" ] } }
         end
 
         it "creates a new API key" do
@@ -137,23 +136,23 @@ RSpec.describe "ProviderApiKeys" do
 
       context "with invalid parameters" do
         it "re-renders the form when name is missing" do
-          post provider_api_keys_path, params: { provider_api_key: { name: "", api_key_ciphertext: "sk-test-abc", compatible_providers: [ "claude" ] } }
+          post provider_api_keys_path, params: { provider_api_key: { name: "", api_key: "sk-test-abc", compatible_providers: [ "claude" ] } }
           expect(response).to have_http_status(:unprocessable_content)
         end
 
         it "re-renders the form when api key is missing" do
-          post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key_ciphertext: "", compatible_providers: [ "claude" ] } }
+          post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "", compatible_providers: [ "claude" ] } }
           expect(response).to have_http_status(:unprocessable_content)
         end
 
         it "re-renders the form when compatible providers is empty" do
-          post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key_ciphertext: "sk-test-abc", compatible_providers: [] } }
+          post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc", compatible_providers: [] } }
           expect(response).to have_http_status(:unprocessable_content)
         end
       end
 
       it "filters blank values from compatible_providers" do
-        post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key_ciphertext: "sk-test-abc123", compatible_providers: [ "claude", "" ] } }
+        post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc123", compatible_providers: [ "claude", "" ] } }
         expect(ProviderApiKey.last.compatible_providers).to eq([ "claude" ])
       end
     end
@@ -188,9 +187,8 @@ RSpec.describe "ProviderApiKeys" do
       it "cannot delete API keys from other users" do
         other_user = create(:user)
         other_key = create(:provider_api_key, user: other_user)
-        expect {
-          delete provider_api_key_path(other_key)
-        }.to raise_error(ActiveRecord::RecordNotFound)
+        delete provider_api_key_path(other_key)
+        expect(response).to have_http_status(:not_found)
       end
 
       it "blocks deletion when providers reference the key" do

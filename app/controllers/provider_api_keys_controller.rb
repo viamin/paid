@@ -48,7 +48,7 @@ class ProviderApiKeysController < ApplicationController
   end
 
   def provider_api_key_params
-    permitted = params.require(:provider_api_key).permit(:name, :api_key_ciphertext, compatible_providers: [])
+    permitted = params.require(:provider_api_key).permit(:name, :api_key, compatible_providers: [])
     permitted[:compatible_providers] = Array(permitted[:compatible_providers]).reject(&:blank?)
     permitted
   end

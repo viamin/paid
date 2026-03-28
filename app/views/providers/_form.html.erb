@@ -54,6 +54,7 @@
             <%= form.select :provider_key,
                 @subscription_provider_options.map { |key| [key.titleize, key] },
                 {},
+                id: "provider_provider_key_subscription",
                 class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
                 disabled: is_api_key %>
           </div>
@@ -63,6 +64,7 @@
             <%= form.select :provider_key,
                 @api_key_provider_options.map { |key| [key.titleize, key] },
                 {},
+                id: "provider_provider_key_api_key",
                 class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
                 disabled: !is_api_key %>
           </div>
@@ -113,7 +115,7 @@
           {},
           class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
     </div>
-    <p class="mt-1 text-xs text-gray-500">Rate-limit fallback entries are only used when the subscription provider for the same key is rate-limited.</p>
+    <p class="mt-1 text-xs text-gray-500">Rate-limit fallback entries will be used when the subscription provider for the same key is rate-limited. (Automatic fallback execution is planned; currently these entries are tracked but not yet auto-invoked.)</p>
   </div>
 
   <div class="space-y-3 rounded-lg border border-gray-200 p-4">
