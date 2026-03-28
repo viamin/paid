@@ -3,8 +3,9 @@
 require "spec_helper"
 require "fileutils"
 require "tmpdir"
+require_relative "../../../lib/paid/log_truncator"
 
-RSpec.describe "dev-update log cleanup in bin/setup" do # rubocop:disable RSpec/DescribeClass
+RSpec.describe Paid::LogTruncator do
   let(:max_log_bytes) { 524_288 }
   let(:keep_log_bytes) { 102_400 }
   let(:log_dir) { File.join(tmp_dir, "log", "dev-update") }
@@ -14,20 +15,11 @@ RSpec.describe "dev-update log cleanup in bin/setup" do # rubocop:disable RSpec/
 
   after { FileUtils.rm_rf(tmp_dir) }
 
-  def truncate_logs(dir)
-    Dir[File.join(dir, "*.log")].each do |log_file|
-      next unless File.size(log_file) > max_log_bytes
-
-      tail = File.binread(log_file, keep_log_bytes, File.size(log_file) - keep_log_bytes)
-      File.binwrite(log_file, tail)
-    end
-  end
-
   it "truncates oversized log files to the configured keep size" do
     log_path = File.join(log_dir, "dev-update.log")
     File.write(log_path, "A" * 600_000)
 
-    truncate_logs(log_dir)
+    described_class.truncate_logs(log_dir, max_bytes: max_log_bytes, keep_bytes: keep_log_bytes)
 
     expect(File.size(log_path)).to eq(keep_log_bytes)
     expect(File.read(log_path)).to eq("A" * keep_log_bytes)
@@ -38,7 +30,7 @@ RSpec.describe "dev-update log cleanup in bin/setup" do # rubocop:disable RSpec/
     log_path = File.join(log_dir, "dev-update.log")
     File.write(log_path, content)
 
-    truncate_logs(log_dir)
+    described_class.truncate_logs(log_dir, max_bytes: max_log_bytes, keep_bytes: keep_log_bytes)
 
     result = File.read(log_path)
     expect(result.size).to eq(keep_log_bytes)
@@ -50,7 +42,7 @@ RSpec.describe "dev-update log cleanup in bin/setup" do # rubocop:disable RSpec/
     log_path = File.join(log_dir, "dev-update.log")
     File.write(log_path, small_content)
 
-    truncate_logs(log_dir)
+    described_class.truncate_logs(log_dir, max_bytes: max_log_bytes, keep_bytes: keep_log_bytes)
 
     expect(File.read(log_path)).to eq(small_content)
   end
@@ -60,7 +52,7 @@ RSpec.describe "dev-update log cleanup in bin/setup" do # rubocop:disable RSpec/
       File.write(File.join(log_dir, name), "X" * 600_000)
     end
 
-    truncate_logs(log_dir)
+    described_class.truncate_logs(log_dir, max_bytes: max_log_bytes, keep_bytes: keep_log_bytes)
 
     %w[dev-update.log dev-start.log].each do |name|
       expect(File.size(File.join(log_dir, name))).to eq(keep_log_bytes)
@@ -68,6 +60,6 @@ RSpec.describe "dev-update log cleanup in bin/setup" do # rubocop:disable RSpec/
   end
 
   it "is a no-op when log directory has no files" do
-    expect { truncate_logs(log_dir) }.not_to raise_error
+    expect { described_class.truncate_logs(log_dir) }.not_to raise_error
   end
 end

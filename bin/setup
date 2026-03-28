@@ -49,14 +49,8 @@ FileUtils.chdir APP_ROOT do
   FileUtils.rm_rf(%w[tmp/cache tmp/pids tmp/sockets tmp/screenshots tmp/storage])
 
   puts "\n== Truncating dev-update logs =="
-  max_log_bytes = 524_288 # 512 KB
-  keep_log_bytes = 102_400 # 100 KB
-  Dir["log/dev-update/*.log"].each do |log_file|
-    next unless File.size(log_file) > max_log_bytes
-
-    tail = File.binread(log_file, keep_log_bytes, File.size(log_file) - keep_log_bytes)
-    File.binwrite(log_file, tail)
-  end
+  require_relative "../lib/paid/log_truncator"
+  Paid::LogTruncator.truncate_logs("log/dev-update")
 
   puts "\n== Cleaning up stale state from previous run =="
   system "bin/rails dev:cleanup"
