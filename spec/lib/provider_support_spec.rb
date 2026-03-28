@@ -96,7 +96,7 @@ RSpec.describe ProviderSupport do
     end
 
     it "returns false for non-executable providers" do
-      expect(described_class.container_executable_provider_key?("aider")).to be false
+      expect(described_class.container_executable_provider_key?("unknown_provider")).to be false
     end
   end
 

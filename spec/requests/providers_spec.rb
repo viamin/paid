@@ -176,8 +176,6 @@ RSpec.describe "Providers" do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("is not available in paid-agent yet")
-    ensure
-      ProviderSupport.reset_supported_provider_keys!
     end
 
     it "creates a gemini provider successfully" do
