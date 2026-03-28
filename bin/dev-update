@@ -21,13 +21,22 @@
 set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$APP_ROOT"
+cd "$APP_ROOT" || exit
+
+# shellcheck source=bin/lib/dev_supervisor.sh
+source "${APP_ROOT}/bin/lib/dev_supervisor.sh"
 
 MODE="${1:---lightweight}"
 LOG_PREFIX="[dev-update]"
-OVERMIND_SOCKET="${OVERMIND_SOCKET:-.overmind.sock}"
+DEFAULT_OVERMIND_SOCKET="${APP_ROOT}/.overmind.sock"
+OVERMIND_SOCKET="${OVERMIND_SOCKET:-$DEFAULT_OVERMIND_SOCKET}"
+if [[ "$OVERMIND_SOCKET" != /* ]]; then
+  OVERMIND_SOCKET="${APP_ROOT}/${OVERMIND_SOCKET}"
+fi
 SCRIPT_LOG="log/dev-update/dev-update.log"
 START_DEV_LOG="log/dev-update/dev-start.log"
+TMUX_LOG="log/dev-update/tmux.log"
+OVERMIND_LOG="log/dev-update/overmind.log"
 STOPPED_OVERMIND=0
 OVERMIND_STOP_POLL_COUNT="${DEV_UPDATE_OVERMIND_STOP_POLL_COUNT:-10}"
 OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
@@ -55,11 +64,14 @@ truncate_log_if_oversized() {
 truncate_dev_update_logs() {
   truncate_log_if_oversized "$SCRIPT_LOG"
   truncate_log_if_oversized "$START_DEV_LOG"
+  truncate_log_if_oversized "$TMUX_LOG"
+  truncate_log_if_oversized "$OVERMIND_LOG"
 }
 
 configure_logging() {
   mkdir -p "$(dirname "$SCRIPT_LOG")"
   truncate_dev_update_logs
+  dev_supervisor_prepare_logging
 
   if [ -t 1 ]; then
     exec > >(tee -a "$SCRIPT_LOG") 2>&1
@@ -170,6 +182,7 @@ run_setup() {
 start_dev() {
   mkdir -p "$(dirname "$START_DEV_LOG")"
   remove_stale_overmind_socket
+  dev_supervisor_cleanup_stale_tmux_sockets
 
   if overmind_running; then
     log "Overmind is already running, restarting processes."
@@ -182,6 +195,7 @@ start_dev() {
 
   log "Starting dev environment..."
   log "Streaming detached bin/dev output to $START_DEV_LOG"
+  dev_supervisor_snapshot_state "dev-update-before-start"
   # Start bin/dev detached so this script can exit cleanly.
   nohup bin/dev >>"$START_DEV_LOG" 2>&1 &
   disown
@@ -202,6 +216,7 @@ start_dev() {
     log "Warning: Overmind restart did not become healthy before timeout. No socket present."
   fi
 
+  dev_supervisor_snapshot_state "dev-update-start-timeout"
   log "Inspect $START_DEV_LOG for detached bin/dev output."
   return 1
 }
