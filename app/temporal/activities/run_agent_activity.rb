@@ -232,8 +232,9 @@ module Activities
 
     # Builds the ordered list of providers to attempt.
     # Uses fallback providers if enabled, otherwise just the agent's type.
-    # Rate-limit fallback providers are tracked separately and injected
-    # after their corresponding subscription provider in the order.
+    # Rate-limit fallback providers are tracked separately (via
+    # @rate_limit_fallback_keys) and handled during execution; they do not
+    # modify the provider order returned by this method.
     #
     # @return [Array<String>] Provider names in priority order
     def build_provider_order(agent_run, user_settings)
