@@ -151,6 +151,7 @@ module Containers
       fix_opencode_data_tmpfs_ownership!
       fix_copilot_tmpfs_ownership!
       seed_copilot_credentials!
+      fix_aider_tmpfs_ownership!
       seed_claude_credentials!
       apply_network_restrictions!
 
@@ -678,6 +679,12 @@ module Containers
       fix_tmpfs_ownership!(".config/github-copilot", log_key: "config_github_copilot")
     end
 
+    # Fixes ownership of the ~/.aider tmpfs so the non-root agent user can
+    # write to it. Tmpfs mounts are created as root-owned.
+    def fix_aider_tmpfs_ownership!
+      fix_tmpfs_ownership!(".aider")
+    end
+
     # Fixes ownership of a tmpfs mount under /home/agent so the non-root
     # agent user can write to it. Tmpfs mounts are created as root-owned.
     #
@@ -767,6 +774,7 @@ module Containers
     #   /home/agent/.config/opencode         - tmpfs (64MB, for OpenCode CLI config)
     #   /home/agent/.local/share/opencode    - tmpfs (64MB, for OpenCode CLI data)
     #   /home/agent/.config/github-copilot   - tmpfs (64MB, for GitHub Copilot CLI config)
+    #   /home/agent/.aider                   - tmpfs (64MB, for Aider CLI config/session data)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
       {
@@ -867,6 +875,10 @@ module Containers
       # GitHub Copilot CLI stores config under ~/.config/github-copilot.
       # Ownership is fixed by fix_copilot_tmpfs_ownership! after container start.
       tmpfs["/home/agent/.config/github-copilot"] = "size=#{64 * 1024 * 1024},mode=0700"
+
+      # Aider CLI stores config and session data under ~/.aider.
+      # Ownership is fixed by fix_aider_tmpfs_ownership! after container start.
+      tmpfs["/home/agent/.aider"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       {
         "Memory" => options[:memory_bytes],
