@@ -83,10 +83,13 @@ class IntegrationCredentialsController < ApplicationController
     params.require(:integration_credential).permit(:name, :service_key, :category, :auth_kind, :secret, :expires_at)
   end
 
+  # Derive category from the credential's saved state so the redirect
+  # always matches the credential's actual category — even when the user
+  # changed service_key to a service in a different category during the form.
   def return_filter_params
     filter_params = {}
 
-    category_value = params[:category].presence || @integration_credential.category
+    category_value = @integration_credential.category.presence || params[:category].presence
     filter_params[:category] = category_value if category_value.present?
 
     service_key_value = params[:service_key].presence
