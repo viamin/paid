@@ -38,8 +38,6 @@
         <% end %>
       </div>
     </div>
-  <% else %>
-    <%= form.hidden_field :auth_type %>
   <% end %>
 
   <div>
@@ -47,7 +45,7 @@
     <div class="mt-2">
       <% if provider.persisted? %>
         <%= form.hidden_field :provider_key, value: provider.provider_key %>
-        <input type="text" value="<%= provider.provider_key.titleize %>" disabled class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
+        <input type="text" value="<%= provider.display_name %>" disabled class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
       <% else %>
         <% if @subscription_provider_options.any? %>
           <div data-provider-form-target="subscriptionFields" <%= "hidden" if is_api_key %>>

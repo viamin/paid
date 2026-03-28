@@ -13,6 +13,13 @@ class ProvidersController < ApplicationController
     auth_type = params[:auth_type]
     auth_type = "subscription" unless Provider::AUTH_TYPES.include?(auth_type)
 
+    # Only honor API key auth_type if the user has compatible API keys;
+    # otherwise default to subscription to avoid a form with no radio selected.
+    if auth_type == "api_key"
+      load_provider_options unless instance_variable_defined?(:@api_key_provider_options)
+      auth_type = "subscription" if @api_key_provider_options.blank?
+    end
+
     @provider = current_user.providers.new(auth_type: auth_type)
     authorize @provider
   end

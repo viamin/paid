@@ -144,13 +144,13 @@ module Activities
             agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
 
-            # TODO(#546): Implement actual retry with API-key-backed provider.
-            # The UI allows users to configure rate-limit fallback entries, but
-            # automatic execution is not yet wired up. Full implementation
-            # requires injecting the selected API key into the container
-            # environment and adding api_key variants to the provider order.
-            # Only logging availability for now — no switch counters or
-            # AgentRun mutation until the fallback is actually executed.
+            # Rate-limit fallback execution is not yet implemented. #546
+            # added the UI for configuring API-key-backed fallback entries;
+            # actual execution requires injecting the selected API key into
+            # the container environment and adding api_key variants to the
+            # provider order. Tracked separately — only logging availability
+            # for now; no switch counters or AgentRun mutation until the
+            # fallback is actually executed.
             canonical = canonical_provider(provider)
             if @rate_limit_fallback_keys&.include?(canonical)
               logger.info(message: "agent_execution.rate_limit_fallback_available", provider: canonical, agent_run_id: agent_run.id)

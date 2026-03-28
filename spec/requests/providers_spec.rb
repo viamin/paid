@@ -191,7 +191,7 @@ RSpec.describe "Providers" do
       post providers_path, params: { provider: { provider_key: "cursor", auth_type: "subscription" } }
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(assigns(:subscription_provider_options)).to include("cursor")
+      expect(response.body).to include("Cursor")
     end
 
     it "creates a gemini provider successfully" do
