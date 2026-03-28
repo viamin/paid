@@ -10,6 +10,7 @@ module Knowledge
     # no clone needed, keeping detection fast (~100ms).
     class Detector
       STALENESS_THRESHOLD = ENV.fetch("KNOWLEDGE_STALENESS_THRESHOLD", "1").to_i
+      FETCH_THROTTLE = 2.minutes
 
       attr_reader :project
 
@@ -56,10 +57,9 @@ module Knowledge
       private
 
       # Fetch from remote before reading HEAD so we detect remote advances.
-      # ensure_cloned is a lightweight no-op when the bare repo already exists
-      # (just runs `git fetch --all --prune`).
+      # Throttled to avoid excessive network/disk I/O when polled frequently.
       def fetch_current_sha
-        worktree_service.ensure_cloned
+        worktree_service.ensure_cloned(max_fetch_age: FETCH_THROTTLE)
         worktree_service.current_commit_sha
       rescue WorktreeService::Error, Errno::ENOENT
         nil
@@ -123,16 +123,18 @@ module Knowledge
       end
 
       def recently_collected?(sha)
-        version = ProjectVersion.find_by(
-          project: project,
-          commit_sha: sha
-        )
+        version = ProjectVersion.find_by(project: project, commit_sha: sha)
         return false unless version
 
-        CollectorRun.exists?(
-          project_version_id: version.id,
-          status: %w[pending running completed]
-        )
+        runs = CollectorRun.where(project_version_id: version.id)
+        return false unless runs.exists?
+
+        # If any collector is in-flight, wait for it to finish
+        return true if runs.exists?(status: %w[pending running])
+
+        # If any collector failed with none in-flight, allow re-collection
+        # so RunCollectorsJob can retry. It's idempotent and skips completed collectors.
+        !runs.exists?(status: "failed")
       end
 
       def worktree_service

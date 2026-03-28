@@ -52,6 +52,27 @@ RSpec.describe WorktreeService do
 
         service.ensure_cloned
       end
+
+      context "with max_fetch_age and a recent FETCH_HEAD" do
+        before do
+          FileUtils.touch(File.join(repo_path, "FETCH_HEAD"))
+        end
+
+        it "skips fetching when fetched within max_fetch_age" do
+          expect(service).not_to receive(:fetch_latest)
+
+          service.ensure_cloned(max_fetch_age: 2.minutes)
+        end
+
+        it "fetches when FETCH_HEAD is older than max_fetch_age" do
+          fetch_head = File.join(repo_path, "FETCH_HEAD")
+          FileUtils.touch(fetch_head, mtime: 5.minutes.ago)
+
+          expect(service).to receive(:fetch_latest)
+
+          service.ensure_cloned(max_fetch_age: 2.minutes)
+        end
+      end
     end
 
     it "returns the repo path" do
