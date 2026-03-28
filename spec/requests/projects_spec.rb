@@ -928,16 +928,16 @@ RSpec.describe "Projects" do
       context "when user has permission" do
         # First user in account automatically gets owner role
 
-        it "deletes the project" do
+        it "deletes the project when name confirmation matches" do
           project = create(:project, account: account, github_token: github_token)
           expect {
-            delete project_path(project)
+            delete project_path(project), params: { name_confirmation: project.name }
           }.to change(Project, :count).by(-1)
         end
 
         it "redirects with success message" do
           project = create(:project, account: account, github_token: github_token)
-          delete project_path(project)
+          delete project_path(project), params: { name_confirmation: project.name }
           expect(response).to redirect_to(projects_path)
           expect(flash[:notice]).to include("deleted")
         end
@@ -946,8 +946,26 @@ RSpec.describe "Projects" do
           project = create(:project, account: account, github_token: github_token)
           create_list(:agent_run, 3, project: project)
           expect {
-            delete project_path(project)
+            delete project_path(project), params: { name_confirmation: project.name }
           }.to change(AgentRun, :count).by(-3)
+        end
+
+        it "rejects deletion when name confirmation does not match" do
+          project = create(:project, account: account, github_token: github_token)
+          expect {
+            delete project_path(project), params: { name_confirmation: "wrong-name" }
+          }.not_to change(Project, :count)
+          expect(response).to redirect_to(edit_project_path(project))
+          expect(flash[:alert]).to include("does not match")
+        end
+
+        it "rejects deletion when name confirmation is missing" do
+          project = create(:project, account: account, github_token: github_token)
+          expect {
+            delete project_path(project)
+          }.not_to change(Project, :count)
+          expect(response).to redirect_to(edit_project_path(project))
+          expect(flash[:alert]).to include("does not match")
         end
       end
 

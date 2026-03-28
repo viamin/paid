@@ -104,6 +104,12 @@ class ProjectsController < ApplicationController
 
   def destroy
     authorize @project
+
+    if params[:name_confirmation] != @project.name
+      redirect_to edit_project_path(@project), alert: "Project name does not match. Please type the exact project name to confirm deletion."
+      return
+    end
+
     @project.destroy!
     redirect_to projects_path, notice: "Project was successfully deleted."
   end
