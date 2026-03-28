@@ -39,7 +39,7 @@ module Knowledge
     end
 
     def projects_indexed
-      @projects_indexed ||= KnowledgeArtifact.where(project_id: project_ids)
+      @projects_indexed ||= artifacts.where.not(status: "deleted")
         .select(:project_id).distinct.count
     end
 

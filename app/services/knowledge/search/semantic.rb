@@ -125,6 +125,7 @@ module Knowledge
 
         {
           chunk_id: chunk.id,
+          artifact_id: artifact.id,
           artifact_type: artifact.artifact_type,
           identifier: artifact.identifier,
           content: chunk.content,

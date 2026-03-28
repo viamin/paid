@@ -54,9 +54,8 @@ RSpec.describe "Knowledge::Artifacts" do
         other_artifact = create(:knowledge_artifact, collector_run: other_run, project: other_project,
           artifact_type: "route", identifier: "GET /secret")
 
-        expect {
-          get knowledge_artifact_path(other_artifact)
-        }.to raise_error(ActiveRecord::RecordNotFound)
+        get knowledge_artifact_path(other_artifact)
+        expect(response).to have_http_status(:not_found)
       end
     end
   end
