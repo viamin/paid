@@ -6,9 +6,11 @@ require "open3"
 require "socket"
 require "tmpdir"
 require_relative "../support/exec_tmpdir"
+require_relative "../support/overmind_env_helpers"
 
 RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
   include ExecTmpdir
+  include OvermindEnvHelpers
   let(:script_source) { File.expand_path("../../bin/dev", __dir__) }
 
   it "removes a stale Overmind socket before starting overmind" do
@@ -52,6 +54,22 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "starts overmind successfully even when bundler env is present" do
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = bundler_contaminated_env(dir).merge("SKIP_DEV_CLEANUP" => "1")
+      stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "overmind-start-ran"))).to be(true)
+      log = overmind_invocation_log(dir)
+      expect(log).to include("CMD=start")
+      start_block = log.split("\n--\n").find { |block| block.lines.first&.start_with?("CMD=start") }
+      expect(start_block).not_to include("BUNDLE_GEMFILE=")
+      expect(start_block).not_to include("RUBYOPT=")
+    end
+  end
+
   def write_executable(path, contents)
     File.write(path, contents)
     FileUtils.chmod("+x", path)
@@ -72,6 +90,11 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
       File.join(dir, "stubbin", "overmind"),
       <<~BASH
         #!/usr/bin/env bash
+        {
+          printf 'CMD=%s\n' "$1"
+          env | sort | grep -E '^(BUNDLE_GEMFILE|BUNDLE_BIN_PATH|BUNDLER_SETUP|BUNDLER_VERSION|RUBYLIB|RUBYOPT|RUBYGEMS_GEMDEPS)=' || true
+          printf '%s\n' '--'
+        } >> "#{dir}/stubbin/overmind-env.log"
         case "$1" in
           status)
             exit 1
