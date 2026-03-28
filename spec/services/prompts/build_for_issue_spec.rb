@@ -4,11 +4,11 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Prompts::BuildForIssue do
-  let(:running_containers) { [] }
+  let(:configured_containers) { [] }
 
   let(:service_containers_relation) do
-    running_scope = OpenStruct.new(to_a: running_containers)
-    OpenStruct.new(running: running_scope)
+    running_scope = OpenStruct.new(to_a: configured_containers)
+    OpenStruct.new(running: running_scope, to_a: configured_containers)
   end
 
   let(:project) do
@@ -176,8 +176,8 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
-    context "when project has running service containers" do
-      let(:running_containers) do
+    context "when project has configured service containers" do
+      let(:configured_containers) do
         [ OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432) ]
       end
 
@@ -199,7 +199,7 @@ RSpec.describe Prompts::BuildForIssue do
         prompt = described_class.call(issue: issue, project: project)
 
         expect(prompt).to include("Run `bin/rails db:prepare`")
-        expect(prompt).to include("DATABASE_URL is already configured")
+        expect(prompt).to include("DATABASE_URL")
       end
 
       context "with a non-Ruby project" do
@@ -227,8 +227,8 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
-    context "when project has running non-database service containers" do
-      let(:running_containers) do
+    context "when project has configured non-database service containers" do
+      let(:configured_containers) do
         [ OpenStruct.new(image: "redis:7", name: "redis", port: 6379) ]
       end
 
@@ -239,11 +239,11 @@ RSpec.describe Prompts::BuildForIssue do
         expect(prompt).to include("REDIS_URL")
         expect(prompt).to include("Environment Constraints")
         expect(prompt).to include("Do NOT attempt to install PostgreSQL")
-        expect(prompt).not_to include("DATABASE_URL is already configured")
+        expect(prompt).not_to include("Run `bin/rails db:prepare`")
       end
     end
 
-    context "when project has only stopped service containers" do
+    context "when project has configured stopped service containers" do
       let(:service_containers_relation) do
         # The .running scope returns empty even though containers exist —
         # simulates containers that were provisioned but are now stopped.
@@ -252,11 +252,12 @@ RSpec.describe Prompts::BuildForIssue do
         OpenStruct.new(running: running_scope, to_a: all_scope)
       end
 
-      it "treats stopped containers as unavailable" do
+      it "treats configured containers as available for the run" do
         prompt = described_class.call(issue: issue, project: project)
 
-        expect(prompt).to include("Environment Constraints")
-        expect(prompt).not_to include("Available Services")
+        expect(prompt).to include("Available Services")
+        expect(prompt).to include("DATABASE_URL")
+        expect(prompt).not_to include("Environment Constraints")
       end
     end
 
