@@ -22,7 +22,10 @@ class AgentRun < ApplicationRecord
   has_one :worktree, dependent: :nullify
   has_one :model_selection, dependent: :destroy
 
+  attr_readonly :mcp_server_snapshot
+
   before_create :generate_proxy_token
+  before_create :snapshot_mcp_servers
 
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
@@ -705,6 +708,13 @@ class AgentRun < ApplicationRecord
 
   def generate_proxy_token
     self.proxy_token ||= SecureRandom.hex(32)
+  end
+
+  def snapshot_mcp_servers
+    return if mcp_server_snapshot.present? && mcp_server_snapshot.any?
+
+    definitions = project.mcp_server_definitions.enabled.order(:id)
+    self.mcp_server_snapshot = definitions.map(&:to_snapshot)
   end
 
   def update_project_last_agent_run_at
