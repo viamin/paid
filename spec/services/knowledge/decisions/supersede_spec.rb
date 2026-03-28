@@ -37,5 +37,12 @@ RSpec.describe Knowledge::Decisions::Supersede do
         described_class.call(original: original, superseding: superseding)
       }.to raise_error(ArgumentError, /already be superseded/)
     end
+
+    it "raises when records are not persisted" do
+      unpersisted = build(:decision_record, project: project)
+      expect {
+        described_class.call(original: unpersisted, superseding: superseding)
+      }.to raise_error(ArgumentError, /must be persisted/)
+    end
   end
 end

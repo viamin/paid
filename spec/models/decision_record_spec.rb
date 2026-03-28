@@ -59,6 +59,14 @@ RSpec.describe DecisionRecord do
       expect(record.errors[:title]).to include("is immutable after creation")
     end
 
+    it "prevents updating foreign key fields after creation" do
+      record = create(:decision_record)
+      other_project = create(:project)
+      record.project_id = other_project.id
+      expect(record.save).to be false
+      expect(record.errors[:project_id]).to include("is immutable after creation")
+    end
+
     it "allows updating status" do
       record = create(:decision_record)
       record.status = "superseded"

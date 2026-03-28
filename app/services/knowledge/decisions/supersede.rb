@@ -7,16 +7,14 @@ module Knowledge
     # @example
     #   Knowledge::Decisions::Supersede.call(
     #     original: old_decision,
-    #     superseding: new_decision,
-    #     reason: "Updated auth approach"
+    #     superseding: new_decision
     #   )
     class Supersede
-      attr_reader :original, :superseding, :reason
+      attr_reader :original, :superseding
 
-      def initialize(original:, superseding:, reason: nil)
+      def initialize(original:, superseding:)
         @original = original
         @superseding = superseding
-        @reason = reason
       end
 
       def self.call(...)
@@ -42,7 +40,8 @@ module Knowledge
       private
 
       def validate!
-        raise ArgumentError, "original and superseding must be different records" if original.id == superseding.id
+        raise ArgumentError, "original and superseding must be persisted records" unless original.persisted? && superseding.persisted?
+        raise ArgumentError, "original and superseding must be different records" if original.equal?(superseding) || original.id == superseding.id
         raise ArgumentError, "original must not already be superseded" if original.status == "superseded"
       end
     end

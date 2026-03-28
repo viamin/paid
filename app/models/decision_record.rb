@@ -2,7 +2,7 @@
 
 class DecisionRecord < ApplicationRecord
   STATUSES = %w[draft active superseded reverted].freeze
-  CONTENT_FIELDS = %w[title summary context decision consequences tags commit_sha_start commit_sha_end].freeze
+  MUTABLE_FIELDS = %w[status superseded_by_id updated_at].freeze
 
   belongs_to :project
   belongs_to :agent_run, optional: true
@@ -67,10 +67,10 @@ class DecisionRecord < ApplicationRecord
   def enforce_immutability
     return if new_record?
 
-    changed_content = changed & CONTENT_FIELDS
-    return if changed_content.empty?
+    immutable_changes = changed - MUTABLE_FIELDS
+    return if immutable_changes.empty?
 
-    changed_content.each do |field|
+    immutable_changes.each do |field|
       errors.add(field, "is immutable after creation")
     end
 
