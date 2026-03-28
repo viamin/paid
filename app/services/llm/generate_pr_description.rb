@@ -79,7 +79,28 @@ module Llm
       )
       return nil unless response.success?
 
-      response.output.presence
+      normalize_output(response.output).presence
+    end
+
+    def normalize_output(text)
+      return nil if text.nil?
+
+      cleaned = text.strip
+
+      # Strip a single outer markdown code fence if present
+      lines = cleaned.lines
+      if lines.size >= 2 && lines.first.match?(/\A```/) && lines.last.strip == "```"
+        cleaned = (lines[1...-1] || []).join.strip
+      end
+
+      # Strip a single pair of surrounding quotes if present
+      if cleaned.length >= 2 &&
+          ((cleaned.start_with?('"') && cleaned.end_with?('"')) ||
+          (cleaned.start_with?("'") && cleaned.end_with?("'")))
+        cleaned = cleaned[1...-1].strip
+      end
+
+      cleaned
     end
 
     def prompt

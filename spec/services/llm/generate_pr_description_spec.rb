@@ -30,7 +30,7 @@ RSpec.describe Llm::GeneratePrDescription do
         issue_body: issue_body
       )
 
-      expect(result).to eq(generated_description)
+      expect(result).to eq(generated_description.strip)
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_including("Lead with", "Agent Output", agent_summary),
         provider: :claude,
@@ -61,7 +61,7 @@ RSpec.describe Llm::GeneratePrDescription do
 
       result = described_class.call(agent_summary: agent_summary)
 
-      expect(result).to eq(generated_description)
+      expect(result).to eq(generated_description.strip)
       expect(AgentHarness).to have_received(:send_message) do |prompt, **_opts|
         expect(prompt).to include("N/A")
       end
@@ -142,6 +142,26 @@ RSpec.describe Llm::GeneratePrDescription do
       expect {
         described_class.call(agent_summary: agent_summary)
       }.to raise_error(Encoding::UndefinedConversionError)
+    end
+
+    it "strips outer markdown code fences from the output" do
+      fenced = "```markdown\n## Summary\n\nSome description\n```"
+      response = instance_double(AgentHarness::Response, success?: true, output: fenced)
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      result = described_class.call(agent_summary: agent_summary)
+
+      expect(result).to eq("## Summary\n\nSome description")
+    end
+
+    it "strips surrounding quotes from the output" do
+      quoted = %("## Summary\n\nSome description")
+      response = instance_double(AgentHarness::Response, success?: true, output: quoted)
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      result = described_class.call(agent_summary: agent_summary)
+
+      expect(result).to eq("## Summary\n\nSome description")
     end
 
     it "truncates descriptions exceeding MAX_DESCRIPTION_LENGTH" do
