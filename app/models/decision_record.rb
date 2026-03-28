@@ -13,7 +13,7 @@ class DecisionRecord < ApplicationRecord
   has_many :supersedes, class_name: "DecisionRecord", foreign_key: :superseded_by_id,
     inverse_of: :superseded_by, dependent: :nullify
 
-  before_update :enforce_immutability
+  validate :enforce_immutability, on: :update
 
   validates :title, presence: true, length: { maximum: 500 }
   validates :summary, presence: true
@@ -65,15 +65,11 @@ class DecisionRecord < ApplicationRecord
   end
 
   def enforce_immutability
-    return if new_record?
-
     immutable_changes = changed - MUTABLE_FIELDS
     return if immutable_changes.empty?
 
     immutable_changes.each do |field|
       errors.add(field, "is immutable after creation")
     end
-
-    throw :abort
   end
 end

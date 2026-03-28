@@ -11,6 +11,9 @@ class CreateDecisionRecords < ActiveRecord::Migration[8.1]
       t.text :context
       t.text :decision, null: false
       t.text :consequences
+      # Default to "draft" as a safety net — the Draft service explicitly sets "active"
+      # when creating from a completed agent run, but records created through other
+      # paths should start as drafts requiring explicit activation.
       t.string :status, limit: 50, null: false, default: "draft"
       t.bigint :superseded_by_id
       t.string :commit_sha_start, limit: 40
