@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "set"
 
 RSpec.describe "Providers" do
   let(:user) { create(:user) }
@@ -167,7 +168,11 @@ RSpec.describe "Providers" do
     end
 
     it "rejects providers that are known to agent harness but not installed in paid-agent" do
-      post providers_path, params: { provider: { provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: false } }
+      # All current supported providers are container-executable, so stub the
+      # set to simulate a provider whose CLI is not yet installed in the image.
+      stub_const("ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS", Set.new(%w[claude]))
+
+      post providers_path, params: { provider: { provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false } }
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("is not available in paid-agent yet")
@@ -206,6 +211,13 @@ RSpec.describe "Providers" do
 
       expect(response).to redirect_to(providers_path)
       expect(user.providers.find_by(provider_key: "opencode")).to be_present
+    end
+
+    it "creates an aider provider successfully" do
+      post providers_path, params: { provider: { provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
+
+      expect(response).to redirect_to(providers_path)
+      expect(user.providers.find_by(provider_key: "aider")).to be_present
     end
   end
 
