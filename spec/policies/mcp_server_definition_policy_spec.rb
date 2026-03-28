@@ -54,6 +54,17 @@ RSpec.describe McpServerDefinitionPolicy do
     it { is_expected.not_to be_destroy }
   end
 
+  context "when user is from a different account" do
+    subject { described_class.new(other_user, mcp_server_definition) }
+
+    let(:other_account) { create(:account) }
+    let(:other_user) { create(:user, :owner, account: other_account) }
+
+    it { is_expected.not_to be_show }
+    it { is_expected.not_to be_update }
+    it { is_expected.not_to be_destroy }
+  end
+
   describe described_class::Scope do
     subject(:scope) { described_class.new(user, McpServerDefinition).resolve }
 
@@ -93,6 +104,19 @@ RSpec.describe McpServerDefinitionPolicy do
       let(:user) { create(:user, :viewer, account: account) }
 
       it "returns no MCP server definitions" do
+        expect(scope).to be_empty
+      end
+    end
+
+    context "when user is an owner from a different account" do
+      let(:other_account) { create(:account) }
+      let(:user) { create(:user, :owner, account: other_account) }
+
+      it "does not include definitions from other accounts" do
+        expect(scope).not_to include(mcp_server_definition)
+      end
+
+      it "returns only definitions from the user's own account" do
         expect(scope).to be_empty
       end
     end
