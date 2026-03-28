@@ -6,10 +6,12 @@
 |------|-------------------|
 | Check Qdrant health | `Paid.qdrant_client.healthy?` |
 | List collections | `Paid.qdrant_client.collections.list` |
-| Rebuild project knowledge | `Knowledge::CollectorRunner.new(project: project, commit_sha: commit_sha).run` |
+| Rebuild PostgreSQL project knowledge (collector artifacts only) | `Knowledge::CollectorRunner.new(project: project, commit_sha: commit_sha).run` |
 | Check embedding backlog | `KnowledgeChunk.needs_embedding.count` |
 | View recent audit events | `KnowledgeAuditEvent.for_project(project).ordered.limit(20)` |
 | Rebuild Qdrant collection | `Knowledge::Qdrant::CollectionManager.new(project: project).rebuild_schema!` |
+
+**Note**: `Knowledge::CollectorRunner#run` only rebuilds PostgreSQL-side knowledge (collector artifacts, chunks, etc.). It does *not* generate embeddings or sync points to Qdrant; run the embedding pipeline separately if you need to fully restore semantic retrieval.
 
 ## Health Checks
 
@@ -28,8 +30,8 @@ Paid.qdrant_client.collections.get(collection_name: "project_42")
 
 **If unhealthy**:
 
-1. Check Qdrant container is running: `docker ps | grep qdrant`
-2. Check Qdrant logs: `docker logs qdrant`
+1. Check Qdrant container is running: `docker compose ps qdrant`
+2. Check Qdrant logs: `docker compose logs qdrant`
 3. Verify `QDRANT_URL` environment variable is correct
 4. Check network connectivity between Rails and Qdrant on `paid_internal`
 
@@ -70,12 +72,25 @@ project = Project.find(id)
 # Step 1: Drop and recreate Qdrant collection
 Knowledge::Qdrant::CollectionManager.new(project: project).rebuild_schema!
 
-# Step 2: Re-run all collectors for the current commit
+# Step 2: Re-collect knowledge for the current commit
+# Clear existing collector runs so CollectorRunner does not skip completed runs
 worktree = project.worktrees.find_by(default: true) || project.worktrees.first
 commit_sha = `git -C #{worktree.path} rev-parse HEAD`.strip
+project_version = ProjectVersion.find_by(project: project, commit_sha: commit_sha)
+
+if project_version
+  CollectorRun.where(project_version: project_version).destroy_all
+  KnowledgeArtifact.where(project_version: project_version).destroy_all
+  KnowledgeChunk.where(project_version: project_version).destroy_all
+  KnowledgeLink.where(project_version: project_version).destroy_all
+end
+
 Knowledge::CollectorRunner.new(project: project, commit_sha: commit_sha).run
 
-# Step 3: Re-embed all active chunks
+# Step 3: Reset embedding_model so active chunks are picked up by the pipeline
+KnowledgeChunk.where(project: project, active: true).update_all(embedding_model: nil)
+
+# Step 4: Re-embed all active chunks
 Knowledge::Embeddings::Pipeline.call(project: project)
 ```
 
@@ -91,6 +106,9 @@ manager = Knowledge::Qdrant::CollectionManager.new(project: project)
 
 # Drop and recreate collection schema in Qdrant
 manager.rebuild_schema!
+
+# Reset embedding_model so active chunks are picked up by the pipeline
+KnowledgeChunk.where(project: project, active: true).update_all(embedding_model: nil)
 
 # Re-embed all active chunks for this project and push them to Qdrant
 # (this will recompute vectors; there is no "Qdrant-only" sync without re-embedding)
@@ -176,7 +194,7 @@ puts "Qdrant points: #{info.dig('result', 'points_count')}"
 **Resolution**:
 
 1. If chunks are pending, run the embedding pipeline: `Knowledge::Embeddings::Pipeline.call(project: project)`
-2. If embeddings exist in PostgreSQL but not in Qdrant, run the Qdrant-only rebuild (see above)
+2. If chunks are marked embedded in PostgreSQL (e.g., `embedding_model` is set) but Qdrant is missing points, run the Qdrant-only rebuild (see above)
 3. Check for embedding API errors in the logs: search for `embedding_error` or `Knowledge::Embeddings`
 
 ### Qdrant Collection Missing

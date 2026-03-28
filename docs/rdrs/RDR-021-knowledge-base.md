@@ -10,6 +10,7 @@
 - **Priority**: High
 - **Related Issues**: #267 (Knowledge Base Architecture Docs), #66 (Semantic data investigation)
 - **Related RDRs**: [RDR-018](RDR-018-semantic-code-search.md) (Semantic Code Search)
+- **Note**: The #267 implementation plan originally referenced this as RDR-019. It was renumbered to RDR-021 because RDR-019 was already assigned to Remote Container Execution.
 - **Related Tests**: `spec/services/knowledge/`, `spec/models/knowledge_*.rb`
 
 ## Problem Statement
