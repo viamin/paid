@@ -259,7 +259,7 @@ module Providers
     end
 
     def harness_provider_name
-      Provider.harness_provider_key_for(provider.provider_key).to_sym
+      ProviderSupport.harness_provider_key_for(provider.provider_key).to_sym
     end
 
     def clear_provider_state_if_healthy!
