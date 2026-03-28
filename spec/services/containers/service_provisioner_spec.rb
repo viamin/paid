@@ -41,7 +41,7 @@ RSpec.describe Containers::ServiceProvisioner do
         create(:project_service_container, project: project, service_container: service_container)
       end
 
-      it "starts stopped containers" do
+      it "starts stopped containers and enqueues metrics collection" do
         docker_container = instance_double(Docker::Container, id: "abc123")
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
@@ -53,6 +53,7 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(result).to include("DATABASE_URL")
         expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@test-postgres:5432/agent_test")
         expect(agent_run.reload.service_container_ids).to eq([ service_container.id ])
+        expect(ServiceContainerMetricsCollectionJob).to have_been_enqueued.with(service_container.id)
       end
 
       it "reuses running containers when Docker container is alive" do
@@ -233,12 +234,62 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(result["DATABASE_URL"]).to eq("postgres://u:p@pg:5432/d")
       end
 
+      it "injects default postgres env and healthcheck when env is empty" do
+        sc = create(:service_container, image: "postgres:16", name: "pg-defaults", port: 5432, env: {})
+        create(:project_service_container, project: project, service_container: sc)
+
+        provisioner.provision(agent_run)
+
+        expect(Docker::Container).to have_received(:create).with(
+          hash_including(
+            "Env" => include(
+              "POSTGRES_USER=agent",
+              "POSTGRES_PASSWORD=agent",
+              "POSTGRES_DB=agent_test"
+            ),
+            "Healthcheck" => hash_including(
+              "Test" => [ "CMD", "pg_isready", "-U", "agent", "-d", "agent_test" ]
+            )
+          )
+        )
+      end
+
+      it "treats blank postgres env values as missing and applies defaults" do
+        sc = create(:service_container, image: "postgres:16", name: "pg-blank", port: 5432,
+          env: { "POSTGRES_USER" => "", "POSTGRES_PASSWORD" => "  ", "POSTGRES_DB" => nil })
+        create(:project_service_container, project: project, service_container: sc)
+
+        result = provisioner.provision(agent_run)
+
+        expect(Docker::Container).to have_received(:create).with(
+          hash_including(
+            "Env" => include(
+              "POSTGRES_USER=agent",
+              "POSTGRES_PASSWORD=agent",
+              "POSTGRES_DB=agent_test"
+            )
+          )
+        )
+        expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@pg-blank:5432/agent_test")
+      end
+
       it "generates REDIS_URL for redis images" do
         sc = create(:service_container, :redis, name: "redis-test", port: 6379)
         create(:project_service_container, project: project, service_container: sc)
 
         result = provisioner.provision(agent_run)
         expect(result["REDIS_URL"]).to eq("redis://redis-test:6379")
+      end
+
+      it "omits Healthcheck key for non-postgres containers" do
+        sc = create(:service_container, :redis, name: "redis-nohc", port: 6379)
+        create(:project_service_container, project: project, service_container: sc)
+
+        provisioner.provision(agent_run)
+
+        expect(Docker::Container).to have_received(:create).with(
+          hash_not_including("Healthcheck")
+        )
       end
 
       it "generates SELENIUM_URL for selenium images" do
@@ -376,6 +427,41 @@ RSpec.describe Containers::ServiceProvisioner do
 
       result = provisioner.send(:docker_healthcheck_status, sc)
       expect(result).to be_nil
+    end
+  end
+
+  describe "metrics collection scheduling" do
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, project: project) }
+    let(:agent_run) { create(:agent_run, project: project, issue: issue) }
+    let(:service_container) do
+      create(:service_container,
+        image: "postgres:16",
+        name: "metrics-postgres",
+        port: 5432,
+        env: { "POSTGRES_USER" => "agent", "POSTGRES_PASSWORD" => "agent", "POSTGRES_DB" => "agent_test" })
+    end
+
+    before do
+      create(:project_service_container, project: project, service_container: service_container)
+      allow(NetworkPolicy).to receive(:ensure_network!)
+      allow(Docker::Image).to receive(:create)
+      allow(Docker::Container).to receive(:create).and_return(
+        instance_double(Docker::Container, id: "m123").tap { |c| allow(c).to receive(:start) }
+      )
+      allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
+    end
+
+    it "silently handles concurrency errors from duplicate metrics job enqueues" do
+      allow(ServiceContainerMetricsCollectionJob).to receive(:perform_later)
+        .and_raise(GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError)
+      allow(Rails.logger).to receive(:info).and_call_original
+
+      expect { provisioner.provision(agent_run) }.not_to raise_error
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(message: "service_provisioner.metrics_job_already_enqueued",
+                       service_container_id: service_container.id)
+      )
     end
   end
 
