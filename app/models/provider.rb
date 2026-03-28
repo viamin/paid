@@ -21,7 +21,7 @@ class Provider < ApplicationRecord
   validates :fallback_role, presence: true, inclusion: { in: FALLBACK_ROLES }
   validates :name, length: { maximum: 100 }
   validates :provider_key,
-    uniqueness: { scope: :user_id, message: "already has a subscription entry" },
+    uniqueness: { scope: [ :user_id, :auth_type ], message: "already has a subscription entry" },
     if: -> { subscription? }
   validates :provider_key,
     uniqueness: { scope: [ :user_id, :provider_api_key_id ], message: "already has an entry with this API key" },

@@ -81,9 +81,9 @@
         <div class="flex items-center justify-between">
           <div>
             <h3 class="text-sm font-medium text-gray-900">Delete API Key</h3>
-            <p class="text-sm text-gray-500">This will also remove the API key from any provider entries using it.</p>
+            <p class="text-sm text-gray-500">This API key can only be deleted if no provider entries are currently using it. If any providers use this key, you'll need to update or remove those references first.</p>
           </div>
-          <%= button_to "Delete", provider_api_key_path(@provider_api_key), method: :delete, class: "rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500", form: { data: { turbo_confirm: "Are you sure? Provider entries using this key will lose their API key reference." } } %>
+          <%= button_to "Delete", provider_api_key_path(@provider_api_key), method: :delete, class: "rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500", form: { data: { turbo_confirm: "Are you sure you want to delete this API key? Deletion will be blocked if any provider entries are still using it." } } %>
         </div>
       </div>
     <% end %>
