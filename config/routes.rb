@@ -68,6 +68,11 @@ Rails.application.routes.draw do
   # Quality metrics dashboard
   resource :quality_dashboard, only: [ :show ]
 
+  # Knowledge search and artifacts
+  get "knowledge/search", to: "knowledge/search#index", as: :knowledge_search
+  get "knowledge/search/results", to: "knowledge/search#search", as: :knowledge_search_results
+  resources :knowledge_artifacts, only: [ :show ], controller: "knowledge/artifacts", as: :knowledge_artifacts
+
   # Projects management
   resources :projects do
     post :toggle_auto_pick, on: :member

@@ -1,0 +1,121 @@
+<% content_for(:title) { "Artifact - #{@artifact.identifier || @artifact.artifact_type} - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to knowledge_search_path(project_id: @project.id), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Search
+    <% end %>
+  </div>
+
+  <div class="bg-white shadow sm:rounded-lg">
+    <div class="px-4 py-5 sm:px-6">
+      <h1 class="text-xl font-semibold text-gray-900">
+        <%= @artifact.identifier || @artifact.artifact_type %>
+      </h1>
+      <div class="mt-2 flex items-center gap-3">
+        <span class="inline-flex items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+          <%= @artifact.artifact_type %>
+        </span>
+        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+          <%= @artifact.status == 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700' %>">
+          <%= @artifact.status.capitalize %>
+        </span>
+      </div>
+    </div>
+
+    <%# Provenance %>
+    <div class="border-t border-gray-200">
+      <dl class="divide-y divide-gray-200">
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Project</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <%= link_to @project.name, project_path(@project), class: "text-indigo-600 hover:text-indigo-900" %>
+          </dd>
+        </div>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Collector</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0"><%= @artifact.collector_type %></dd>
+        </div>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Version</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <code class="rounded bg-gray-100 px-2 py-1 font-mono text-sm"><%= @project_version.commit_sha.first(7) %></code>
+            on <code class="rounded bg-gray-100 px-2 py-1 font-mono text-sm"><%= @project_version.branch %></code>
+          </dd>
+        </div>
+        <% if @artifact.scope_path.present? %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500">Scope Path</dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+              <code class="rounded bg-gray-100 px-2 py-1 font-mono text-sm"><%= @artifact.scope_path %></code>
+            </dd>
+          </div>
+        <% end %>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Content Hash</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <code class="rounded bg-gray-100 px-2 py-1 font-mono text-xs"><%= @artifact.content_hash %></code>
+          </dd>
+        </div>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">Collected</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <% if @collector_run.completed_at %>
+              <%= time_ago_in_words(@collector_run.completed_at) %> ago
+              (<%= @collector_run.completed_at.strftime("%Y-%m-%d %H:%M:%S UTC") %>)
+            <% else %>
+              <%= time_ago_in_words(@artifact.created_at) %> ago
+            <% end %>
+          </dd>
+        </div>
+        <% if @artifact.metadata.present? %>
+          <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+            <dt class="text-sm font-medium text-gray-500">Metadata</dt>
+            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+              <pre class="whitespace-pre-wrap font-mono text-xs bg-gray-50 rounded p-2 max-h-40 overflow-y-auto"><%= JSON.pretty_generate(@artifact.metadata) %></pre>
+            </dd>
+          </div>
+        <% end %>
+      </dl>
+    </div>
+  </div>
+
+  <%# Chunks %>
+  <div class="mt-8">
+    <h2 class="text-lg font-medium text-gray-900">Chunks (<%= @chunks.size %>)</h2>
+    <% if @chunks.any? %>
+      <div class="mt-4 space-y-4">
+        <% @chunks.each_with_index do |chunk, idx| %>
+          <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-4 sm:px-6">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-medium text-gray-900">Chunk #<%= idx + 1 %></span>
+                  <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                    <%= chunk.chunk_type %>
+                  </span>
+                </div>
+                <span class="text-xs text-gray-400">seq: <%= chunk.sequence %></span>
+              </div>
+              <div class="mt-2">
+                <pre class="whitespace-pre-wrap font-mono text-xs bg-gray-50 rounded p-3 max-h-60 overflow-y-auto"><%= chunk.content %></pre>
+              </div>
+              <% if chunk.embedding_model.present? %>
+                <div class="mt-2 text-xs text-gray-400">
+                  Embedding: <%= chunk.embedding_model %>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 text-sm text-gray-500">No chunks for this artifact.</div>
+      </div>
+    <% end %>
+  </div>
+</div>
