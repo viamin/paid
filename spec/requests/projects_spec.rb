@@ -538,21 +538,19 @@ RSpec.describe "Projects" do
 
       it "shows Paused badge for paused PRs with automation label" do
         project = create(:project, account: account, github_token: github_token)
-        create(:issue, :pull_request, project: project, github_number: 12, title: "Paused PR",
+        create(:issue, :pull_request, project: project, github_number: 12, title: "Automated PR",
           github_state: "open", labels: [ project.automation_label_name ], auto_continue_paused: true)
         get project_path(project)
-        expect(response.body).to include("Paused")
+        expect(response.body).to include("bg-yellow-100")
+        expect(response.body).to include(">Paused</span>")
       end
 
       it "hides Paused badge for paused PRs without automation label" do
         project = create(:project, account: account, github_token: github_token)
-        create(:issue, :pull_request, project: project, github_number: 13, title: "Paused Release PR",
+        create(:issue, :pull_request, project: project, github_number: 13, title: "Release PR",
           github_state: "open", labels: [ "release" ], auto_continue_paused: true)
         get project_path(project)
-        # The word "Paused" should not appear in the badge context for this PR
-        expect(response.body).not_to match(
-          /Paused Release PR.*?Paused/m
-        )
+        expect(response.body).not_to include(">Paused</span>")
       end
 
       it "shows automation settings with their current state" do
