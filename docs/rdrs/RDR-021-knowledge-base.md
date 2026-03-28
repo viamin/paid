@@ -60,7 +60,7 @@ Six tables form the knowledge schema:
 
 **`collector_runs`** — One row per (version, collector_type) pair. Tracks status, duration, artifact count, tool version, and error details. Unique constraint prevents duplicate runs.
 
-**`knowledge_artifacts`** — File-level or logical groupings produced by collectors. Keyed by content hash for deduplication. Support `active`, `stale`, and `deleted` statuses.
+**`knowledge_artifacts`** — File-level or logical groupings produced by collectors. Each artifact has an `artifact_type` (e.g. `route`, `symbol`, `dependency`, `language_stat`) which is distinct from the `collector_type` recorded on `collector_runs` (e.g. `routes`, `symbol_index`). Artifacts are keyed by content hash for deduplication and support `active`, `stale`, and `deleted` statuses.
 
 **`knowledge_chunks`** — Embeddable text units with UUID primary keys (used directly as Qdrant point IDs). Support `active`, `stale`, `deleted`, and `redacted` statuses. Include `content_tsvector` for PostgreSQL full-text search.
 

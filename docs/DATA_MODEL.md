@@ -1194,7 +1194,7 @@ CREATE TABLE knowledge_artifacts (
   collector_run_id  BIGINT NOT NULL REFERENCES collector_runs(id) ON DELETE CASCADE,
   project_id        BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
 
-  artifact_type     VARCHAR(100) NOT NULL,   -- routes, symbol_index, dependency, etc.
+  artifact_type     VARCHAR(100) NOT NULL,   -- route, symbol, dependency, etc.
   collector_type    VARCHAR(100) NOT NULL,
   scope_path        VARCHAR(1000),           -- file path or logical scope
   identifier        VARCHAR(500),            -- function/class name

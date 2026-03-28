@@ -113,15 +113,15 @@ Collectors are the data ingestion layer. Each collector analyzes one aspect of a
 
 ### Registered Collectors
 
-| Collector | Type | Description |
-|-----------|------|-------------|
-| `RoutesCollector` | `routes` | Rails/HTTP endpoint index |
-| `SymbolIndexCollector` | `symbol_index` | Language symbols (functions, classes, constants) |
-| `DependencyCollector` | `dependency` | Package/gem dependency manifest |
-| `LanguageStatsCollector` | `language_stat` | Code statistics (lines, languages) |
-| `ChurnHotspotCollector` | `churn_hotspot` | Git churn analysis for change-heavy files |
-| `ConfigKeyCollector` | `config_key` | Configuration keys and constants |
-| `TreeSitterCollector` | `tree_sitter` | Generic AST-based extraction |
+| Collector | Collector Type | Artifact Type | Description |
+|-----------|---------------|---------------|-------------|
+| `RoutesCollector` | `routes` | `route` | Rails/HTTP endpoint index |
+| `SymbolIndexCollector` | `symbol_index` | `symbol` | Language symbols (functions, classes, constants) |
+| `DependencyCollector` | `dependency` | `dependency` | Package/gem dependency manifest |
+| `LanguageStatsCollector` | `language_stat` | `language_stat` | Code statistics (lines, languages) |
+| `ChurnHotspotCollector` | `churn_hotspot` | `churn_hotspot` | Git churn analysis for change-heavy files |
+| `ConfigKeyCollector` | `config_key` | `config_key` | Configuration keys and constants |
+| `TreeSitterCollector` | `tree_sitter` | `structure` | Generic AST-based extraction |
 
 ### Idempotency
 
@@ -207,7 +207,7 @@ GET /api/knowledge/search
   &q=authentication middleware
   &mode=hybrid          # exact | semantic | hybrid
   &type=symbol          # optional artifact_type filter (e.g., symbol, route)
-  &version=1            # optional knowledge artifact version filter
+  &version=abc123       # optional commit SHA (project version) used to boost/rank results
   &limit=20             # max 100
 ```
 
