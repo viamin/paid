@@ -64,6 +64,12 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-012](RDR-012-github-integration.md) | GitHub Integration Strategy | Final | High |
 
+### Service Infrastructure
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-020](RDR-020-service-container-architecture.md) | Service Container Architecture | Implemented | High |
+
 ### Scaling & Distribution
 
 | RDR | Title | Status | Priority |

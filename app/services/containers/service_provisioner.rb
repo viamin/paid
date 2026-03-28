@@ -7,9 +7,31 @@ module Containers
   # Manages Docker lifecycle for service containers (PostgreSQL, Redis, etc.)
   # that agents need for running tests and setup commands.
   #
-  # Service containers are attached to the same Docker network as the agent
-  # container (paid_agent for API-key mode, paid_internal for subscription-auth)
-  # so they are always reachable from the agent.
+  # == High-Level Data Flow
+  #
+  # 1. A project defines service containers (image, name, port) via the admin UI.
+  # 2. When an agent run starts, ProvisionServicesActivity calls #provision.
+  # 3. #provision records the container IDs on the agent run (for reference counting),
+  #    then ensures each container is running on the agent's Docker network.
+  # 4. Environment variables (DATABASE_URL, REDIS_URL, etc.) are generated from
+  #    the running containers and stored on the agent run.
+  # 5. The agent container receives these env vars and can connect to services
+  #    by hostname (containers register DNS aliases on the shared network).
+  # 6. When the agent run completes, CleanupServicesActivity calls #cleanup,
+  #    which only stops containers with zero remaining active runs.
+  #
+  # == Key Design Decisions
+  #
+  # - Containers are shared across concurrent agent runs in the same project
+  #   to avoid duplicate instances and reduce startup latency.
+  # - Reference counting (via AgentRun.service_container_ids JSONB) prevents
+  #   premature cleanup while other runs still need the service.
+  # - Row-level locking (with_lock) prevents race conditions during concurrent
+  #   provisioning of the same service container.
+  # - Three background jobs handle edge cases: metrics collection, DB/Docker
+  #   status reconciliation, and orphan container cleanup.
+  #
+  # See RDR-020 for the full architectural decision record.
   #
   # @example Provision services for an agent run
   #   provisioner = Containers::ServiceProvisioner.new

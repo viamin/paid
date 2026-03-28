@@ -33,6 +33,10 @@ Paid is composed of four main subsystems that work together to orchestrate AI-dr
 │  │  │   Docker     │ │   Project    │ │  Git         │ │   Secrets    │  │ │
 │  │  │   Engine     │ │  Containers  │ │  Worktrees   │ │   Proxy      │  │ │
 │  │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘  │ │
+│  │  ┌──────────────┐                                                     │ │
+│  │  │   Service    │                                                     │ │
+│  │  │  Containers  │                                                     │ │
+│  │  └──────────────┘                                                     │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 │                                    │                                         │
 │                                    ▼                                         │
@@ -243,6 +247,19 @@ The proxy:
 - Adds appropriate API keys
 - Forwards to LLM providers
 - Logs usage for cost tracking
+
+#### Service Containers
+
+Agents often need external services (PostgreSQL, Redis, Selenium) for running tests. Service containers provide these as shared Docker containers on the same network as the agent:
+
+- **Shared across runs**: Multiple concurrent agent runs within a project reuse the same service containers, reducing startup latency and resource consumption
+- **Reference counting**: Containers are only stopped when no active agent runs reference them
+- **Image allowlist**: Operators control which Docker images are permitted via admin settings (defaults: `postgres:16`, `redis:7-alpine`, `selenium/standalone-chromium:latest`)
+- **Environment injection**: The provisioner generates well-known env vars (`DATABASE_URL`, `REDIS_URL`, `SELENIUM_URL`) and injects them into the agent container
+- **Health checking**: Dual-mode checks (Docker HEALTHCHECK + TCP probe) with a 30-second timeout ensure services are ready before agents connect
+- **Drift reconciliation**: Background jobs detect and correct mismatches between database status and actual Docker state
+
+See [RDR-020](rdrs/RDR-020-service-container-architecture.md) for the full architectural decision record.
 
 ### 4. External Integrations
 

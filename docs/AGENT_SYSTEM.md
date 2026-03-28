@@ -630,6 +630,116 @@ Paid uses ruby-llm directly for planning, quality evaluation, and other non-CLI 
 
 ---
 
+## Service Containers
+
+Agents frequently need external services (databases, caches, browsers) to run tests and setup commands. Service containers provide these as shared Docker containers on the same network as the agent.
+
+### Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│              Docker Network (paid_agent or paid_internal)                     │
+│                                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│  │ Agent         │  │ PostgreSQL   │  │ Redis        │  │ Selenium     │    │
+│  │ Container     │  │ Container    │  │ Container    │  │ Container    │    │
+│  │               │  │              │  │              │  │              │    │
+│  │ DATABASE_URL  │  │ :5432        │  │ :6379        │  │ :4444        │    │
+│  │ REDIS_URL     │  │              │  │              │  │              │    │
+│  │ SELENIUM_URL  │  │              │  │              │  │              │    │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Provisioning Flow
+
+Service containers are provisioned as part of the agent execution workflow via `ProvisionServicesActivity`:
+
+1. **Record association** — The agent run's `service_container_ids` is updated with the IDs of all service containers for the project. This happens before starting containers so that concurrent cleanup operations count this run.
+
+2. **Ensure running** — For each service container (under a row-level lock):
+   - If already running and Docker container is alive: reuse it
+   - If marked running but Docker container is dead: re-provision
+   - If stopped: pull image, create Docker container, start, wait for health check
+
+3. **Generate env vars** — Well-known environment variables are generated based on the image type and stored in `agent_run.service_environment`:
+   - `postgres` → `DATABASE_URL=postgres://agent:agent@<name>:5432/agent_test`
+   - `redis` → `REDIS_URL=redis://<name>:6379`
+   - `selenium`/`chromium` → `SELENIUM_URL=http://<name>:4444`
+   - Other images → `SERVICE_<NAME>_HOST` and `SERVICE_<NAME>_PORT`
+
+4. **Pass to agent** — The generated env vars are injected into the agent container's environment.
+
+### Network Setup
+
+Service containers are placed on the same Docker network as the agent container. The network is selected by `NetworkPolicy.agent_network`:
+
+- **`paid_agent`** — Restricted network for API-key mode. Outbound traffic is limited to the secrets proxy, GitHub, DNS, and service containers via iptables rules.
+- **`paid_internal`** — Infrastructure network for subscription-auth mode (e.g., `claude login`). Allows outbound HTTPS for direct provider API access.
+
+Service containers register a DNS alias matching their name, so agents can reach them by hostname (e.g., `proj-postgres`, `proj-redis`).
+
+### Shared Containers and Reference Counting
+
+Service containers are **shared across concurrent agent runs** within a project. This avoids the overhead of starting duplicate Postgres or Redis instances for each run.
+
+**Cleanup safety** is ensured by reference counting:
+
+- `ServiceContainer#active_agent_run_count` uses a PostgreSQL JSONB containment query to count active runs referencing the container.
+- `ServiceProvisioner#cleanup(agent_run)` only stops containers with zero active runs.
+- `DockerOrphanCleanupJob` (every 5 minutes) catches containers missed by normal cleanup.
+
+### Image Allowlist
+
+Operators control which Docker images can be used as service containers through the admin settings UI:
+
+- **Storage**: `UserSetting#allowed_service_images` (JSONB array per admin/owner user)
+- **Defaults**: `postgres:16`, `redis:7-alpine`, `selenium/standalone-chromium:latest`
+- **Validation**: `ServiceContainer` validates the image against the union of allowlists from account admins/owners
+- **Admin UI**: Managed via user settings as a comma-separated list (#245)
+
+### Health Checking
+
+The provisioner waits up to 30 seconds for a service container to become healthy using dual-mode checks:
+
+1. **Docker HEALTHCHECK** — If the image defines one (or the provisioner configures one, as it does for Postgres with `pg_isready`), the Docker health status is monitored.
+2. **TCP port probe** — If no Docker HEALTHCHECK is available, the provisioner probes the service port via TCP socket.
+
+### Resource Limits
+
+Each service container runs with bounded resources:
+
+| Image Pattern | Memory | CPU | PIDs |
+|---------------|--------|-----|------|
+| `postgres`    | 2 GB   | 1   | 200  |
+| `redis`       | 1 GB   | 1   | 100  |
+| `selenium`    | 2 GB   | 2   | 300  |
+| `chromium`    | 2 GB   | 2   | 300  |
+| _(default)_   | 1 GB   | 1   | 200  |
+
+### Background Operations
+
+Three background jobs maintain service container health:
+
+| Job | Schedule | Purpose |
+|-----|----------|---------|
+| `ServiceContainerMetricsCollectionJob` | Self-rescheduling while running | Collects CPU/memory/PID metrics |
+| `ServiceContainerReconciliationJob` | Every 5 minutes | Corrects DB status when Docker state drifts |
+| `DockerOrphanCleanupJob` | Every 5 minutes | Removes containers with zero active runs |
+
+### Operator Configuration
+
+Service containers are configured per-project through the admin UI:
+
+1. **Add service containers** to a project (image, name, port, optional env overrides)
+2. **Manage the image allowlist** in user settings (comma-separated list of allowed Docker images)
+3. **Monitor** service container status in the admin dashboard (metrics and active run counts are planned for a future iteration, tracked in #245)
+4. **Lifecycle operations** (stop, restart) via the admin UI are planned future work tracked in #246
+
+For the full architectural decision record, see [RDR-020](rdrs/RDR-020-service-container-architecture.md).
+
+---
+
 ## Agent Monitoring
 
 ### Guardrails
