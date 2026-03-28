@@ -69,9 +69,8 @@ RSpec.describe AgentRun, "#snapshot_mcp_servers" do
     project = create(:project)
     agent_run = create(:agent_run, project: project)
 
-    agent_run.update!(mcp_server_snapshot: [ { "name" => "injected" } ])
-    agent_run.reload
-
-    expect(agent_run.mcp_server_snapshot).to eq([])
+    expect {
+      agent_run.update!(mcp_server_snapshot: [ { "name" => "injected" } ])
+    }.to raise_error(ActiveRecord::ReadonlyAttributeError)
   end
 end
