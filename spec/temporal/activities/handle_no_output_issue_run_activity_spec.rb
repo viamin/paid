@@ -151,7 +151,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
-        existing_comment = Struct.new(:body).new(body: "<!-- paid:needs-input -->\nOld comment")
+        existing_comment = Struct.new(:body).new("<!-- paid:needs-input -->\nOld comment")
         allow(client).to receive(:recent_issue_comments).and_return([ existing_comment ])
 
         activity.execute(agent_run_id: agent_run.id, output_present: false)
@@ -163,7 +163,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue)
 
-        existing_comment = Struct.new(:body).new(body: "<!-- paid:recommend-close -->\nOld comment")
+        existing_comment = Struct.new(:body).new("<!-- paid:recommend-close -->\nOld comment")
         allow(client).to receive(:recent_issue_comments).and_return([ existing_comment ])
 
         activity.execute(agent_run_id: agent_run.id, output_present: true)

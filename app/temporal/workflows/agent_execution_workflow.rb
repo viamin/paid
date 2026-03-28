@@ -178,8 +178,8 @@ module Workflows
         else
           # No changes produced by agent
           if issue_id.present? && !source_pull_request_number
-            # Issue-based run with no output: classify as needs_input or
-            # recommend_close and post an actionable GitHub comment.
+            # Issue-based run with no code changes / no PR: classify as
+            # needs_input or recommend_close and post an actionable GitHub comment.
             run_activity(Activities::HandleNoOutputIssueRunActivity,
               { agent_run_id: agent_run_id,
                 output_present: agent_result.fetch(:output_present, false) }, timeout: 30)

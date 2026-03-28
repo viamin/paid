@@ -35,9 +35,9 @@ module Activities
         agent_summary = agent_run.agent_summary_with_stderr_fallback(limit: 100)
 
         if outcome == "needs_input"
-          handle_needs_input(client, project, issue, agent_run, agent_summary)
+          handle_needs_input(client, agent_run, agent_summary)
         else
-          handle_recommend_close(client, project, issue, agent_run, agent_summary)
+          handle_recommend_close(client, agent_run, agent_summary)
         end
 
         agent_run.complete!
@@ -58,14 +58,18 @@ module Activities
 
     private
 
-    def handle_needs_input(client, project, issue, agent_run, agent_summary)
+    def handle_needs_input(client, agent_run, agent_summary)
+      project = agent_run.project
+      issue = agent_run.issue
       issue.update!(paid_state: "needs_input")
       add_needs_input_label(client, project, issue)
       remove_trigger_labels(client, project, issue, agent_run.id)
       post_needs_input_comment(client, project, issue, agent_summary)
     end
 
-    def handle_recommend_close(client, project, issue, agent_run, agent_summary)
+    def handle_recommend_close(client, agent_run, agent_summary)
+      project = agent_run.project
+      issue = agent_run.issue
       issue.update!(paid_state: "recommend_close")
       remove_trigger_labels(client, project, issue, agent_run.id)
       post_recommend_close_comment(client, project, issue, agent_summary)
@@ -81,12 +85,6 @@ module Activities
     def add_needs_input_label(client, project, issue)
       label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
       add_phase_label(client, project, issue.github_number, label)
-    rescue GithubClient::Error => e
-      logger.warn(
-        message: "agent_execution.add_needs_input_label_failed",
-        issue_number: issue.github_number,
-        error: e.message
-      )
     end
 
     def remove_trigger_labels(client, project, issue, agent_run_id)
