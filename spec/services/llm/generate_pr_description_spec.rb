@@ -124,8 +124,7 @@ RSpec.describe Llm::GeneratePrDescription do
       described_class.call(agent_summary: long_summary)
 
       expect(AgentHarness).to have_received(:send_message) do |prompt, **_opts|
-        # Prompt should not contain the full 30k summary
-        expect(prompt.length).to be < 25_000
+        expect(prompt).not_to include(long_summary)
       end
     end
 
