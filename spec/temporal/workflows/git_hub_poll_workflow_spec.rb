@@ -73,6 +73,32 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "CheckKnowledgeStalenessActivity patch guard" do
+    let(:workflow) { described_class.new }
+
+    before do
+      allow(workflow).to receive(:run_activity).and_return({})
+    end
+
+    it "runs CheckKnowledgeStalenessActivity when patched returns true" do
+      allow(Temporalio::Workflow).to receive(:patched).with("add-check-knowledge-staleness-v1").and_return(true)
+
+      workflow.send(:maybe_check_knowledge_staleness, 1)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CheckKnowledgeStalenessActivity, { project_id: 1 }, timeout: 30)
+    end
+
+    it "skips CheckKnowledgeStalenessActivity when patched returns false" do
+      allow(Temporalio::Workflow).to receive(:patched).with("add-check-knowledge-staleness-v1").and_return(false)
+
+      workflow.send(:maybe_check_knowledge_staleness, 1)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckKnowledgeStalenessActivity, anything, anything)
+    end
+  end
+
   describe "#handle_detection" do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }

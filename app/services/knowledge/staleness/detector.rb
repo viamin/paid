@@ -55,7 +55,11 @@ module Knowledge
 
       private
 
+      # Fetch from remote before reading HEAD so we detect remote advances.
+      # ensure_cloned is a lightweight no-op when the bare repo already exists
+      # (just runs `git fetch --all --prune`).
       def fetch_current_sha
+        worktree_service.ensure_cloned
         worktree_service.current_commit_sha
       rescue WorktreeService::Error, Errno::ENOENT
         nil

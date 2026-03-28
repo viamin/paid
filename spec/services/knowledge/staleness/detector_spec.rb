@@ -9,8 +9,12 @@ RSpec.describe Knowledge::Staleness::Detector do
   let(:old_sha) { "a" * 40 }
   let(:new_sha) { "b" * 40 }
 
+  let(:worktree_service) { instance_double(WorktreeService) }
+
   before do
-    allow(detector).to receive(:fetch_current_sha).and_return(new_sha)
+    allow(WorktreeService).to receive(:new).with(project).and_return(worktree_service)
+    allow(worktree_service).to receive(:ensure_cloned)
+    allow(worktree_service).to receive(:current_commit_sha).and_return(new_sha)
     allow(detector).to receive(:run_git).and_call_original
   end
 
@@ -26,7 +30,10 @@ RSpec.describe Knowledge::Staleness::Detector do
 
   describe "#call" do
     context "when current SHA cannot be fetched" do
-      before { allow(detector).to receive(:fetch_current_sha).and_return(nil) }
+      before do
+        allow(worktree_service).to receive(:current_commit_sha)
+          .and_raise(WorktreeService::Error, "git failed")
+      end
 
       it "returns not stale" do
         result = detector.call
@@ -35,13 +42,23 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
     end
 
-    context "when fetching the current SHA raises Errno::ENOENT" do
+    context "when ensure_cloned raises Errno::ENOENT" do
       before do
-        worktree = instance_double(WorktreeService)
-        allow(WorktreeService).to receive(:new).and_return(worktree)
-        allow(worktree).to receive(:current_commit_sha)
+        allow(worktree_service).to receive(:ensure_cloned)
           .and_raise(Errno::ENOENT, "No such file or directory - /repos/repo")
-        allow(detector).to receive(:fetch_current_sha).and_call_original
+      end
+
+      it "handles the error and returns not stale" do
+        result = detector.call
+        expect(result[:stale]).to be false
+        expect(result[:current_sha]).to be_nil
+      end
+    end
+
+    context "when current_commit_sha raises Errno::ENOENT" do
+      before do
+        allow(worktree_service).to receive(:current_commit_sha)
+          .and_raise(Errno::ENOENT, "No such file or directory - /repos/repo")
       end
 
       it "handles the error and returns not stale" do
