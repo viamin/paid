@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_27_000516) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_28_002231) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -338,6 +338,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_27_000516) do
     t.index ["scheduled_at"], name: "index_good_jobs_on_scheduled_at", where: "(finished_at IS NULL)"
   end
 
+  create_table "integration_credentials", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "auth_kind", null: false
+    t.string "category", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.datetime "expires_at"
+    t.datetime "last_used_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.string "name", null: false
+    t.datetime "revoked_at"
+    t.text "secret", null: false
+    t.string "service_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "category"], name: "index_integration_credentials_on_account_id_and_category"
+    t.index ["account_id", "revoked_at"], name: "index_integration_credentials_on_account_id_and_revoked_at"
+    t.index ["account_id", "service_key", "name"], name: "idx_on_account_id_service_key_name_e4c03e1ea7", unique: true
+    t.index ["account_id", "service_key"], name: "index_integration_credentials_on_account_id_and_service_key"
+    t.index ["account_id"], name: "index_integration_credentials_on_account_id"
+    t.index ["created_by_id"], name: "index_integration_credentials_on_created_by_id"
+  end
+
   create_table "issue_dependencies", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "depends_on_issue_id"
@@ -354,6 +376,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_27_000516) do
   end
 
   create_table "issues", force: :cascade do |t|
+    t.boolean "auto_continue_paused", default: false, null: false
     t.text "body"
     t.datetime "created_at", null: false
     t.integer "draft_review_count", default: 0, null: false
@@ -840,6 +863,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_27_000516) do
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
+  add_foreign_key "integration_credentials", "accounts"
+  add_foreign_key "integration_credentials", "users", column: "created_by_id"
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issues", "issues", column: "parent_issue_id"
