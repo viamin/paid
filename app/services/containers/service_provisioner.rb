@@ -327,7 +327,7 @@ module Containers
       db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
 
       {
-        "Test" => [ "CMD", "pg_isready", "-h", "127.0.0.1", "-p", service_container.port.to_s, "-U", user, "-d", db ],
+        "Test" => [ "CMD", "pg_isready", "-U", user, "-d", db ],
         "Interval" => 5_000_000_000,
         "Timeout" => 3_000_000_000,
         "Retries" => 10,

@@ -248,7 +248,7 @@ RSpec.describe Containers::ServiceProvisioner do
               "POSTGRES_DB=agent_test"
             ),
             "Healthcheck" => hash_including(
-              "Test" => [ "CMD", "pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "agent", "-d", "agent_test" ]
+              "Test" => [ "CMD", "pg_isready", "-U", "agent", "-d", "agent_test" ]
             )
           )
         )
