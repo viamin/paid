@@ -105,10 +105,11 @@ module ScopeAnalysis
       }
 
       raw_confidence = scores.sum { |signal, score| SIGNAL_WEIGHTS[signal] * score }
+      confidence = raw_confidence.round(2)
 
       Result.new(
-        should_decompose: raw_confidence >= threshold,
-        confidence: raw_confidence.round(2),
+        should_decompose: confidence >= threshold,
+        confidence: confidence,
         sub_components: extract_sub_components
       )
     end
@@ -155,11 +156,20 @@ module ScopeAnalysis
 
     def canonical_component_label(raw)
       case raw
-      when "job", "jobs"           then "background jobs"
+      when "job", "jobs" then "background jobs"
       when "controller", "controllers" then "web controllers"
-      when "service", "services"   then "service layer"
-      when "mailer", "mailers"     then "email"
-      when "spec", "specs"         then "tests"
+      when "service", "services" then "service layer"
+      when "mailer", "mailers" then "email"
+      when "spec", "specs", "test", "tests", "testing" then "tests"
+      when "route", "routes", "routing" then "routing"
+      when "validation", "validations" then "validations"
+      when "callback", "callbacks" then "callbacks"
+      when "serializer", "serializers" then "serializers"
+      when "helper", "helpers" then "helpers"
+      when "migration", "migrations" then "migrations"
+      when "model", "models" then "models"
+      when "view", "views" then "views"
+      when "middleware" then "middleware"
       else raw
       end
     end
