@@ -668,7 +668,7 @@ module Containers
     # Fixes ownership of the ~/.config/github-copilot tmpfs so the non-root
     # agent user can write to it. Tmpfs mounts are created as root-owned.
     def fix_copilot_tmpfs_ownership!
-      fix_tmpfs_ownership!(".config/github-copilot")
+      fix_tmpfs_ownership!(".config/github-copilot", log_key: "config_github_copilot")
     end
 
     # Fixes ownership of a tmpfs mount under /home/agent so the non-root
@@ -756,8 +756,9 @@ module Containers
     #   /home/agent/.codex    - tmpfs (64MB, for Codex CLI config/session data)
     #   /home/agent/.gemini   - tmpfs (64MB, for Gemini CLI config/session data)
     #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI config/session data)
-    #   /home/agent/.config/opencode      - tmpfs (64MB, for OpenCode CLI config)
-    #   /home/agent/.local/share/opencode - tmpfs (64MB, for OpenCode CLI data)
+    #   /home/agent/.config/opencode         - tmpfs (64MB, for OpenCode CLI config)
+    #   /home/agent/.local/share/opencode    - tmpfs (64MB, for OpenCode CLI data)
+    #   /home/agent/.config/github-copilot   - tmpfs (64MB, for GitHub Copilot CLI config)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
       {
@@ -913,8 +914,6 @@ module Containers
         "PAID_GEMINI_SUBSCRIPTION_AUTH=#{gemini_subscription_auth? ? 1 : 0}"
       ])
 
-      env << "PAID_COPILOT_SUBSCRIPTION_AUTH=#{copilot_subscription_auth? ? 1 : 0}"
-
       env << "PAID_CLAUDE_SUBSCRIPTION_AUTH=#{claude_subscription_auth? ? 1 : 0}"
 
       if claude_subscription_auth?
@@ -942,7 +941,7 @@ module Containers
     # Returns true when any provider CLI config is available for
     # subscription-based authentication via copied host login state.
     def subscription_auth?
-      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth? || copilot_subscription_auth?
+      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth?
     end
 
     def proxy_base_url

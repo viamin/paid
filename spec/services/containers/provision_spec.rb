@@ -213,6 +213,7 @@ RSpec.describe Containers::Provision do
           expect(binds.none? { |bind| bind.include?("/home/agent/.claude-host:ro") }).to be true
           expect(binds.none? { |bind| bind.include?("/home/agent/.codex-host:ro") }).to be true
           expect(binds.none? { |bind| bind.include?("/home/agent/.gemini-host:ro") }).to be true
+          expect(binds.none? { |bind| bind.include?("/home/agent/.config/github-copilot-host:ro") }).to be true
           mock_container
         end
 
@@ -249,6 +250,18 @@ RSpec.describe Containers::Provision do
           expect(tmpfs).to have_key("/home/agent/.local/share/opencode")
           expect(tmpfs["/home/agent/.local/share/opencode"]).to include("mode=0700")
           expect(tmpfs["/home/agent/.local/share/opencode"]).to include("size=#{64 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "configures a writable tmpfs for GitHub Copilot CLI config" do
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs).to have_key("/home/agent/.config/github-copilot")
+          expect(tmpfs["/home/agent/.config/github-copilot"]).to include("mode=0700")
+          expect(tmpfs["/home/agent/.config/github-copilot"]).to include("size=#{64 * 1024 * 1024}")
           mock_container
         end
 
@@ -498,7 +511,8 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
-        allow(service).to receive_messages(codex_local_config_path: nil, gemini_local_config_path: nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(codex_local_config_path: nil, gemini_local_config_path: nil, copilot_local_config_path: nil)
       end
 
       after do
@@ -598,7 +612,8 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(gemini_config_dir)
-        allow(service).to receive_messages(claude_local_config_path: nil, codex_local_config_path: nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(claude_local_config_path: nil, codex_local_config_path: nil, copilot_local_config_path: nil)
       end
 
       after do
@@ -642,10 +657,12 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
         allow(service).to receive_messages(
           claude_local_config_path: nil,
           codex_local_config_path: nil,
-          gemini_local_config_path: gemini_local_dir
+          gemini_local_config_path: gemini_local_dir,
+          copilot_local_config_path: nil
         )
       end
 
@@ -695,7 +712,8 @@ RSpec.describe Containers::Provision do
         allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
         allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(codex_config_dir)
-        allow(service).to receive_messages(claude_local_config_path: nil, gemini_local_config_path: nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(claude_local_config_path: nil, gemini_local_config_path: nil, copilot_local_config_path: nil)
       end
 
       after do
@@ -724,6 +742,106 @@ RSpec.describe Containers::Provision do
         )
         expect(mock_container).not_to have_received(:exec).with(
           [ "sh", "-lc", include("/home/agent/.codex/config.toml").and(include('model_provider = "paid"')) ],
+          user: "agent"
+        )
+      end
+    end
+
+    context "with Copilot subscription auth (COPILOT_CONFIG_DIR)" do
+      let(:copilot_config_dir) { Dir.mktmpdir("copilot-config") }
+
+      before do
+        File.write(File.join(copilot_config_dir, "hosts.json"), "{}")
+
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(copilot_config_dir)
+        allow(service).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: nil
+        )
+      end
+
+      after do
+        FileUtils.rm_rf(copilot_config_dir)
+      end
+
+      it "mounts Copilot config at a staging path" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds).to include("#{copilot_config_dir}:/home/agent/.config/github-copilot-host:ro")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "does not switch to the infrastructure network for Copilot alone" do
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "seeds cached Copilot credentials from the host bind mount" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-c", include("/home/agent/.config/github-copilot-host/hosts.json").and(include("/home/agent/.config/github-copilot/hosts.json")) ],
+          user: "agent"
+        )
+      end
+    end
+
+    context "with Copilot subscription auth from the devcontainer filesystem" do
+      let(:copilot_local_dir) { Dir.mktmpdir("copilot-local") }
+
+      before do
+        File.write(File.join(copilot_local_dir, "hosts.json"), '{"github.com":{"oauth_token":"test-token"}}')
+        File.write(File.join(copilot_local_dir, "apps.json"), '{}')
+
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: copilot_local_dir
+        )
+      end
+
+      after do
+        FileUtils.rm_rf(copilot_local_dir)
+      end
+
+      it "does not add a host bind mount" do
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds.none? { |bind| bind.include?("/home/agent/.config/github-copilot-host:ro") }).to be true
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "writes Copilot credentials into the agent tmpfs from the local filesystem" do
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.config/github-copilot/hosts.json") && decoded_base64_content(cmd).include?("oauth_token") } ],
           user: "agent"
         )
       end
