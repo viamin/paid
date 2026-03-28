@@ -82,6 +82,49 @@
     </table>
   </div>
 
+  <div class="mt-6 rounded-lg border border-sky-200 bg-sky-50 p-4">
+    <h2 class="text-base font-semibold text-sky-950">Provider Auth Setup</h2>
+    <p class="mt-1 text-sm text-sky-900">
+      By default, Test Agent uses the same containerized auth path as real runs. For Codex and Gemini when using Paid-managed proxy keys, it can instead use the agent-harness auth path. Configure either Paid-managed API keys on the <code>web</code> service or provider-specific subscription credentials that the agent container can copy at runtime.
+    </p>
+
+    <div class="mt-4 grid gap-4 md:grid-cols-3">
+      <div class="rounded-md bg-white/80 p-3 shadow-sm ring-1 ring-sky-100">
+        <h3 class="text-sm font-semibold text-gray-900">Claude</h3>
+        <p class="mt-1 text-xs text-gray-600">Use one of these:</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-700">
+          <li>Set <code>ANTHROPIC_API_KEY</code> on the <code>web</code> service for proxy-based auth.</li>
+          <li>Or sign in with <code>claude login</code> and make <code>~/.claude/.credentials.json</code> visible to Paid.</li>
+          <li>If Claude creds live elsewhere, set <code>CLAUDE_CONFIG_DIR</code>.</li>
+        </ul>
+      </div>
+
+      <div class="rounded-md bg-white/80 p-3 shadow-sm ring-1 ring-sky-100">
+        <h3 class="text-sm font-semibold text-gray-900">Codex and OpenCode</h3>
+        <p class="mt-1 text-xs text-gray-600">Use one of these:</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-700">
+          <li>Set <code>OPENAI_API_KEY</code> on the <code>web</code> service for proxy-based auth.</li>
+          <li>Or sign in with the Codex CLI and make <code>~/.codex/auth.json</code> visible to Paid.</li>
+          <li>If Codex creds live elsewhere, set <code>CODEX_CONFIG_DIR</code> or <code>CODEX_HOME</code>. OpenCode uses the proxy path and does not currently have a separate local credential directory.</li>
+        </ul>
+      </div>
+
+      <div class="rounded-md bg-white/80 p-3 shadow-sm ring-1 ring-sky-100">
+        <h3 class="text-sm font-semibold text-gray-900">Gemini</h3>
+        <p class="mt-1 text-xs text-gray-600">Use one of these:</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-700">
+          <li>Set <code>GOOGLE_API_KEY</code> on the <code>web</code> service for proxy-based auth.</li>
+          <li>Or run <code>gemini auth login</code> and make <code>~/.gemini/oauth_creds.json</code> visible to Paid.</li>
+          <li>If Gemini creds live elsewhere, set <code>GEMINI_CONFIG_DIR</code>.</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="mt-4 text-xs text-sky-900">
+      After changing env vars or credential mounts, restart the <code>web</code> and <code>worker</code> services before testing again. See <a href="https://github.com/viamin/paid#provider-auth-setup" class="font-medium underline">README: Provider Auth Setup</a> for the full checklist.
+    </p>
+  </div>
+
   <div class="mt-8">
     <%= render "settings" %>
   </div>
