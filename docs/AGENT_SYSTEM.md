@@ -729,12 +729,12 @@ Three background jobs maintain service container health:
 
 ### Operator Configuration
 
-Service containers are configured per-project through the admin UI (#245):
+Service containers are configured per-project through the admin UI:
 
 1. **Add service containers** to a project (image, name, port, optional env overrides)
 2. **Manage the image allowlist** in user settings (comma-separated list of allowed Docker images)
-3. **Monitor** service container status, metrics, and active run counts in the admin dashboard (#245)
-4. **Lifecycle operations** (stop, restart) are available through the admin UI (#246)
+3. **Monitor** service container status in the admin dashboard (metrics and active run counts are planned for a future iteration, tracked in #245)
+4. **Lifecycle operations** (stop, restart) via the admin UI are planned future work tracked in #246
 
 For the full architectural decision record, see [RDR-020](rdrs/RDR-020-service-container-architecture.md).
 
