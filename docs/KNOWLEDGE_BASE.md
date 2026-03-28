@@ -118,7 +118,7 @@ Collectors are the data ingestion layer. Each collector analyzes one aspect of a
 | `RoutesCollector` | `routes` | Rails/HTTP endpoint index |
 | `SymbolIndexCollector` | `symbol_index` | Language symbols (functions, classes, constants) |
 | `DependencyCollector` | `dependency` | Package/gem dependency manifest |
-| `LanguageStatsCollector` | `language_stats` | Code statistics (lines, languages) |
+| `LanguageStatsCollector` | `language_stat` | Code statistics (lines, languages) |
 | `ChurnHotspotCollector` | `churn_hotspot` | Git churn analysis for change-heavy files |
 | `ConfigKeyCollector` | `config_key` | Configuration keys and constants |
 | `TreeSitterCollector` | `tree_sitter` | Generic AST-based extraction |
@@ -206,7 +206,8 @@ GET /api/knowledge/search
   ?project_id=123
   &q=authentication middleware
   &mode=hybrid          # exact | semantic | hybrid
-  &type=symbol_index        # optional filter
+  &type=symbol          # optional artifact_type filter (e.g., symbol, route)
+  &version=1            # optional knowledge artifact version filter
   &limit=20             # max 100
 ```
 
@@ -270,7 +271,7 @@ qdrant:
 ## Design Principles
 
 1. **PostgreSQL is the source of truth** — Qdrant is a derived index. If Qdrant data is lost, it can be rebuilt from PostgreSQL.
-2. **Redaction-first** — Chunks support a `redacted` status. Sensitive content can be removed from both PostgreSQL and Qdrant without breaking the knowledge graph.
+2. **Redaction-first** — Chunks support a `redacted` status as a logical flag for excluding sensitive content from processing and search. A future workflow will drive physical removal from PostgreSQL and Qdrant; the flag alone does not automatically scrub stored content or vectors.
 3. **Project isolation** — Each project has its own Qdrant collection. No cross-project data leakage.
 4. **Idempotent operations** — Collection, storage, and embedding are all safe to retry.
 5. **Provenance tracking** — Every mutation is recorded in `knowledge_audit_events` with actor, target, and event-specific details.

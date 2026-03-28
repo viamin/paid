@@ -129,11 +129,13 @@ If Qdrant data is lost, the full vector index can be rebuilt from PostgreSQL.
 
 ### Why redaction-first?
 
-Codebases may contain secrets, credentials, or sensitive business logic that should not persist in the knowledge base. The `redacted` status on chunks allows:
+Codebases may contain secrets, credentials, or sensitive business logic that should not persist in the knowledge base. The `redacted` status on chunks is the basis for redaction workflows and today provides:
 
-- Immediate removal from both PostgreSQL content and Qdrant vectors
-- Preservation of the knowledge graph structure (links remain, content is cleared)
-- Audit trail of what was redacted and when
+- A logical flag that marks chunks as redacted so they can be excluded from future processing and search where that flag is enforced
+- Preservation of the knowledge graph structure (links remain, content can be cleared or ignored)
+- An audit trail of what was marked as redacted and when
+
+A future redaction workflow is intended to use this status to drive physical removal or scrubbing of content from PostgreSQL and Qdrant. As of this design, that workflow is not yet implemented; operators must not assume that setting `redacted` automatically deletes or scrubs stored content or vectors.
 
 ### Why UUID primary keys for chunks?
 

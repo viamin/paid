@@ -6,12 +6,12 @@
 |------|-------------------|
 | Check Qdrant health | `Paid.qdrant_client.healthy?` |
 | List collections | `Paid.qdrant_client.collections.list` |
-| Rebuild PostgreSQL project knowledge (collector artifacts only) | `Knowledge::CollectorRunner.new(project: project, commit_sha: commit_sha).run` |
+| Rebuild PostgreSQL project knowledge (collector artifacts only) | `Knowledge::CollectorRunner.new(project: project, commit_sha: commit_sha, committed_at: committed_at).run` |
 | Check embedding backlog | `KnowledgeChunk.needs_embedding.count` |
 | View recent audit events | `KnowledgeAuditEvent.for_project(project).ordered.limit(20)` |
 | Rebuild Qdrant collection | `Knowledge::Qdrant::CollectionManager.new(project: project).rebuild_schema!` |
 
-**Note**: `Knowledge::CollectorRunner#run` only rebuilds PostgreSQL-side knowledge (collector artifacts, chunks, etc.). It does *not* generate embeddings or sync points to Qdrant; run the embedding pipeline separately if you need to fully restore semantic retrieval.
+**Note**: `Knowledge::CollectorRunner#run` only rebuilds PostgreSQL-side knowledge (collector artifacts, chunks, etc.). It does *not* generate embeddings or sync points to Qdrant; run the embedding pipeline separately if you need to fully restore semantic retrieval. When invoking it, you should pass a `committed_at` timestamp (and optionally `branch`) for the `ProjectVersion`; omitting `committed_at` disables cross-version stale marking and can leave artifacts from older versions incorrectly marked as `active`.
 
 ## Health Checks
 
@@ -83,7 +83,8 @@ if project_version
   CollectorRun.where(project_version: project_version).destroy_all
 end
 
-Knowledge::CollectorRunner.new(project: project, commit_sha: commit_sha).run
+committed_at = `git -C #{worktree.path} show -s --format=%cI #{commit_sha}`.strip
+Knowledge::CollectorRunner.new(project: project, commit_sha: commit_sha, committed_at: committed_at).run
 
 # Step 3: Reset embedding_model so active chunks are picked up by the pipeline
 KnowledgeChunk.active.where(project: project).update_all(embedding_model: nil)
@@ -130,7 +131,8 @@ CollectorRun.find_by(
 # Re-run just that collector
 runner = Knowledge::CollectorRunner.new(
   project: project,
-  commit_sha: version.commit_sha
+  commit_sha: version.commit_sha,
+  committed_at: version.committed_at
 )
 runner.run
 ```
@@ -245,7 +247,7 @@ KnowledgeAuditEvent
   .count
 ```
 
-**Resolution**: The `KnowledgeAuditRetentionJob` handles pruning. Verify it's running in the GoodJob dashboard. Default retention is configurable — check the job implementation for the current threshold.
+**Resolution**: The `KnowledgeAuditRetentionJob` handles pruning. Verify it's running in the GoodJob dashboard. Retention is currently fixed at 90 days (see `KnowledgeAuditRetentionJob::RETENTION_PERIOD`).
 
 ## Monitoring Embedding Costs
 
@@ -302,6 +304,7 @@ puts "Estimated monthly embedding cost: $#{'%.2f' % estimated_cost}"
 
 ```ruby
 # Check collection storage
+project = Project.find(id)
 info = Paid.qdrant_client.collections.get(
   collection_name: "project_#{project.id}"
 )
