@@ -37,8 +37,29 @@ log() {
   echo "$LOG_PREFIX $(date '+%Y-%m-%d %H:%M:%S') $*"
 }
 
+MAX_LOG_BYTES="${DEV_UPDATE_MAX_LOG_BYTES:-524288}"  # 512 KB default
+KEEP_LOG_BYTES="${DEV_UPDATE_KEEP_LOG_BYTES:-102400}" # 100 KB tail to keep
+
+truncate_log_if_oversized() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  local size
+  size="$(wc -c < "$file")"
+  if [ "$size" -gt "$MAX_LOG_BYTES" ]; then
+    local tmp="${file}.trim"
+    tail -c "$KEEP_LOG_BYTES" "$file" > "$tmp"
+    mv "$tmp" "$file"
+  fi
+}
+
+truncate_dev_update_logs() {
+  truncate_log_if_oversized "$SCRIPT_LOG"
+  truncate_log_if_oversized "$START_DEV_LOG"
+}
+
 configure_logging() {
   mkdir -p "$(dirname "$SCRIPT_LOG")"
+  truncate_dev_update_logs
 
   if [ -t 1 ]; then
     exec > >(tee -a "$SCRIPT_LOG") 2>&1
