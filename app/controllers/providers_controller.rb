@@ -249,11 +249,13 @@ class ProvidersController < ApplicationController
     @enabled_agent_providers = UserSetting.enabled_agent_providers(current_user)
     @fallback_candidate_providers = UserSetting.fallback_candidate_providers(current_user)
     @available_api_keys = current_user.provider_api_keys.ordered
-    has_api_keys = @available_api_keys.any?
     existing_subscription_keys = current_user.providers.subscription.pluck(:provider_key)
     addable_keys = Provider.addable_provider_keys
-    @addable_provider_options = (addable_keys - existing_subscription_keys).presence ||
-      (has_api_keys ? addable_keys : [])
+    api_key_compatible_addable_keys =
+      addable_keys & @available_api_keys.flat_map(&:compatible_providers).uniq
+    @addable_provider_options = (
+      (addable_keys - existing_subscription_keys) + api_key_compatible_addable_keys
+    ).uniq.presence || []
   end
 
   def update_fallback_provider_flags!
