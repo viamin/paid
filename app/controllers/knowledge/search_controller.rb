@@ -3,8 +3,7 @@
 module Knowledge
   class SearchController < ApplicationController
     before_action :authenticate_user!
-    skip_after_action :verify_authorized
-    skip_after_action :verify_policy_scoped
+    skip_after_action :verify_authorized, only: :index
 
     def index
       @projects = policy_scope(Project).order(:name)
@@ -18,16 +17,17 @@ module Knowledge
       @query = params[:q].to_s.strip
 
       if @project.nil?
-        flash.now[:alert] = "Please select a project."
-        return render :index
-      end
-
-      if @query.blank?
-        flash.now[:alert] = "Please enter a search query."
+        skip_authorization
+        @error = "Please select a project."
         return render :index
       end
 
       authorize @project, :show?
+
+      if @query.blank?
+        @error = "Please enter a search query."
+        return render :index
+      end
 
       result = ::Knowledge::Search.call(
         project: @project,
@@ -40,10 +40,7 @@ module Knowledge
       @results = result[:results]
       @meta = result[:meta]
 
-      respond_to do |format|
-        format.html { render :index }
-        format.turbo_stream
-      end
+      render :index
     end
   end
 end

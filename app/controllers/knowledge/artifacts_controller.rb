@@ -3,10 +3,9 @@
 module Knowledge
   class ArtifactsController < ApplicationController
     before_action :authenticate_user!
-    skip_after_action :verify_policy_scoped
 
     def show
-      @artifact = KnowledgeArtifact.find(params[:id])
+      @artifact = KnowledgeArtifact.joins(:project).merge(policy_scope(Project)).find(params[:id])
       @project = @artifact.project
       authorize @project, :show?
 

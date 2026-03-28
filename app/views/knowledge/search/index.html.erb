@@ -32,55 +32,6 @@
   </div>
 
   <%= turbo_frame_tag "search-results" do %>
-    <% if @results %>
-      <div class="mt-4 text-sm text-gray-500">
-        <%= @meta[:total] %> results in <%= @meta[:took_ms] %>ms
-        (mode: <%= @meta[:mode] %>)
-      </div>
-
-      <% if @results.any? %>
-        <div class="mt-4 space-y-4">
-          <% @results.each do |result| %>
-            <div class="overflow-hidden rounded-lg bg-white shadow">
-              <div class="px-4 py-4 sm:px-6">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-3">
-                    <span class="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                      <%= result[:artifact_type] %>
-                    </span>
-                    <% if result[:identifier].present? %>
-                      <span class="text-sm font-medium text-gray-900">
-                        <% if result[:artifact_id] %>
-                          <%= link_to result[:identifier], knowledge_artifact_path(result[:artifact_id]), class: "hover:text-indigo-600" %>
-                        <% else %>
-                          <%= result[:identifier] %>
-                        <% end %>
-                      </span>
-                    <% end %>
-                  </div>
-                  <% if result[:score] %>
-                    <span class="text-xs text-gray-400">score: <%= format("%.3f", result[:score]) %></span>
-                  <% end %>
-                </div>
-                <% if result[:content].present? %>
-                  <div class="mt-2 text-sm text-gray-600">
-                    <pre class="whitespace-pre-wrap font-mono text-xs bg-gray-50 rounded p-2 max-h-32 overflow-y-auto"><%= truncate(result[:content], length: 500) %></pre>
-                  </div>
-                <% end %>
-                <% if result[:scope_path].present? %>
-                  <div class="mt-2 text-xs text-gray-400">
-                    <code><%= result[:scope_path] %></code>
-                  </div>
-                <% end %>
-              </div>
-            </div>
-          <% end %>
-        </div>
-      <% else %>
-        <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
-          <div class="px-4 py-5 text-sm text-gray-500">No results found.</div>
-        </div>
-      <% end %>
-    <% end %>
+    <%= render "knowledge/search/results" %>
   <% end %>
 </div>

@@ -45,6 +45,19 @@ RSpec.describe "Knowledge::Artifacts" do
         expect(response.body).to include("Test chunk content")
         expect(response.body).to include("Chunks (1)")
       end
+
+      it "returns 404 for artifacts belonging to other accounts" do
+        other_account = create(:account)
+        other_project = create(:project, account: other_account)
+        other_version = create(:project_version, project: other_project)
+        other_run = create(:collector_run, :completed, project_version: other_version)
+        other_artifact = create(:knowledge_artifact, collector_run: other_run, project: other_project,
+          artifact_type: "route", identifier: "GET /secret")
+
+        expect {
+          get knowledge_artifact_path(other_artifact)
+        }.to raise_error(ActiveRecord::RecordNotFound)
+      end
     end
   end
 end
