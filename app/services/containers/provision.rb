@@ -149,6 +149,8 @@ module Containers
       fix_kilocode_tmpfs_ownership!
       fix_opencode_config_tmpfs_ownership!
       fix_opencode_data_tmpfs_ownership!
+      fix_copilot_tmpfs_ownership!
+      seed_copilot_credentials!
       seed_claude_credentials!
       apply_network_restrictions!
 
@@ -556,6 +558,30 @@ module Containers
       end
     end
 
+    def seed_copilot_credentials!
+      source_files = %w[hosts.json apps.json]
+      return unless copilot_subscription_auth?
+
+      host = copilot_config_host_path
+      if host.present? && File.file?(File.join(host, "hosts.json"))
+        seed_host_credentials!(
+          staging_path: "/home/agent/.config/github-copilot-host",
+          target_path: "/home/agent/.config/github-copilot",
+          files: source_files,
+          success_log_key: "container.copilot_credentials_seeded",
+          failure_log_key: "container.copilot_credentials_seed_failed"
+        )
+      elsif copilot_local_config_path.present?
+        seed_local_credentials!(
+          source_path: copilot_local_config_path,
+          target_path: "/home/agent/.config/github-copilot",
+          files: source_files,
+          success_log_key: "container.copilot_credentials_seeded",
+          failure_log_key: "container.copilot_credentials_seed_failed"
+        )
+      end
+    end
+
     def seed_host_credentials!(staging_path:, target_path:, files:, success_log_key:, failure_log_key:)
       copy_commands = files.map do |filename|
         "cp #{Shellwords.escape("#{staging_path}/#{filename}")} #{Shellwords.escape("#{target_path}/#{filename}")} 2>/dev/null"
@@ -646,6 +672,12 @@ module Containers
       fix_tmpfs_ownership!(".local/share/opencode")
     end
 
+    # Fixes ownership of the ~/.config/github-copilot tmpfs so the non-root
+    # agent user can write to it. Tmpfs mounts are created as root-owned.
+    def fix_copilot_tmpfs_ownership!
+      fix_tmpfs_ownership!(".config/github-copilot", log_key: "config_github_copilot")
+    end
+
     # Fixes ownership of a tmpfs mount under /home/agent so the non-root
     # agent user can write to it. Tmpfs mounts are created as root-owned.
     #
@@ -732,8 +764,9 @@ module Containers
     #   /home/agent/.gemini   - tmpfs (64MB, for Gemini CLI config/session data)
     #   /home/agent/.cursor-agent - tmpfs (64MB, for Cursor agent CLI config/session data)
     #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI config/session data)
-    #   /home/agent/.config/opencode      - tmpfs (64MB, for OpenCode CLI config)
-    #   /home/agent/.local/share/opencode - tmpfs (64MB, for OpenCode CLI data)
+    #   /home/agent/.config/opencode         - tmpfs (64MB, for OpenCode CLI config)
+    #   /home/agent/.local/share/opencode    - tmpfs (64MB, for OpenCode CLI data)
+    #   /home/agent/.config/github-copilot   - tmpfs (64MB, for GitHub Copilot CLI config)
     # All other paths are read-only via ReadonlyRootfs.
     def container_config
       {
@@ -790,6 +823,13 @@ module Containers
         binds << "#{gemini_config_host_path}:/home/agent/.gemini-host:ro"
       end
 
+      if copilot_config_host_path.present? &&
+         File.directory?(copilot_config_host_path) &&
+         File.file?(File.join(copilot_config_host_path, "hosts.json")) &&
+         copilot_subscription_auth?
+        binds << "#{copilot_config_host_path}:/home/agent/.config/github-copilot-host:ro"
+      end
+
       tmpfs = {
         "/tmp" => "size=#{options[:tmpfs_tmp_size]},mode=1777",
         "/home/agent/.cache" => "size=#{options[:tmpfs_cache_size]},mode=0755"
@@ -823,6 +863,10 @@ module Containers
       # after container start.
       tmpfs["/home/agent/.config/opencode"] = "size=#{64 * 1024 * 1024},mode=0700"
       tmpfs["/home/agent/.local/share/opencode"] = "size=#{64 * 1024 * 1024},mode=0700"
+
+      # GitHub Copilot CLI stores config under ~/.config/github-copilot.
+      # Ownership is fixed by fix_copilot_tmpfs_ownership! after container start.
+      tmpfs["/home/agent/.config/github-copilot"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       {
         "Memory" => options[:memory_bytes],
@@ -882,6 +926,8 @@ module Containers
         "PAID_GEMINI_SUBSCRIPTION_AUTH=#{gemini_subscription_auth? ? 1 : 0}"
       ])
 
+      env << "PAID_COPILOT_SUBSCRIPTION_AUTH=#{copilot_subscription_auth? ? 1 : 0}"
+
       env << "PAID_CLAUDE_SUBSCRIPTION_AUTH=#{claude_subscription_auth? ? 1 : 0}"
 
       if claude_subscription_auth?
@@ -909,7 +955,7 @@ module Containers
     # Returns true when any provider CLI config is available for
     # subscription-based authentication via copied host login state.
     def subscription_auth?
-      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth?
+      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth? || copilot_subscription_auth?
     end
 
     def proxy_base_url
@@ -959,6 +1005,19 @@ module Containers
     def codex_subscription_auth?
       paths = [ codex_config_host_path, codex_local_config_path ].compact
       paths.any? { |base| File.file?(File.join(base, "auth.json")) }
+    end
+
+    def copilot_config_host_path
+      @copilot_config_host_path ||= ENV["COPILOT_CONFIG_DIR"].presence || detect_host_config_path("/.config/github-copilot")
+    end
+
+    def copilot_local_config_path
+      @copilot_local_config_path ||= local_config_path(".config/github-copilot")
+    end
+
+    def copilot_subscription_auth?
+      paths = [ copilot_config_host_path, copilot_local_config_path ].compact
+      paths.any? { |base| File.file?(File.join(base, "hosts.json")) }
     end
 
     def detect_host_config_path(suffix)
