@@ -1,5 +1,7 @@
-<%= form_with model: provider, class: "space-y-6" do |form| %>
-  <% selectable_provider = provider.persisted? || @provider_options.any? %>
+<%= form_with model: provider, class: "space-y-6", data: { controller: "provider-form" } do |form| %>
+  <% is_api_key = provider.api_key? %>
+  <% is_new = !provider.persisted? %>
+  <% selectable_provider = provider.persisted? || @subscription_provider_options.any? || @api_key_provider_options.any? %>
 
   <% if provider.errors.any? %>
     <div class="rounded-md bg-red-50 p-4">
@@ -14,24 +16,107 @@
     </div>
   <% end %>
 
+  <% if is_new %>
+    <div>
+      <span class="block text-sm font-medium text-gray-900">Authentication Type</span>
+      <div class="mt-2 flex gap-4">
+        <label class="flex items-center">
+          <%= form.radio_button :auth_type, "subscription", class: "h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-600",
+              data: { action: "change->provider-form#toggleAuthType" } %>
+          <span class="ml-2 text-sm text-gray-700">Subscription</span>
+        </label>
+        <% if @api_key_provider_options.any? %>
+          <label class="flex items-center">
+            <%= form.radio_button :auth_type, "api_key", class: "h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-600",
+                data: { action: "change->provider-form#toggleAuthType" } %>
+            <span class="ml-2 text-sm text-gray-700">API Key</span>
+          </label>
+        <% else %>
+          <span class="flex items-center text-sm text-gray-400">
+            API Key (add compatible keys on the <%= link_to "LLM API Keys page", provider_api_keys_path, class: "text-indigo-600 hover:text-indigo-500" %> first)
+          </span>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+
   <div>
-    <%= form.label :provider_key, "Provider", class: "block text-sm font-medium text-gray-900" %>
+    <span id="provider_key_label" class="block text-sm font-medium text-gray-900">Provider</span>
     <div class="mt-2">
       <% if provider.persisted? %>
         <%= form.hidden_field :provider_key, value: provider.provider_key %>
-        <input type="text" value="<%= provider.provider_key.titleize %>" disabled class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
-      <% elsif @provider_options.any? %>
-        <%= form.select :provider_key,
-            @provider_options.map { |key| [key.titleize, key] },
-            {},
-            class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+        <input type="text" value="<%= provider.display_name %>" disabled class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
       <% else %>
-        <%= form.text_field :provider_key, value: "No additional providers are installed in paid-agent yet", disabled: true, class: "block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-500 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6" %>
+        <% if @subscription_provider_options.any? %>
+          <div data-provider-form-target="subscriptionFields" <%= "hidden" if is_api_key %>>
+            <%= form.select :provider_key,
+                @subscription_provider_options.map { |key| [key.titleize, key] },
+                {},
+                id: "provider_provider_key_subscription",
+                "aria-labelledby": "provider_key_label",
+                class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+                disabled: is_api_key %>
+          </div>
+        <% end %>
+        <% if @api_key_provider_options.any? %>
+          <div data-provider-form-target="apiKeyFields" <%= "hidden" unless is_api_key %>>
+            <%= form.select :provider_key,
+                @api_key_provider_options.map { |key| [key.titleize, key] },
+                {},
+                id: "provider_provider_key_api_key",
+                "aria-labelledby": "provider_key_label",
+                class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+                disabled: !is_api_key %>
+          </div>
+        <% end %>
+        <% unless @subscription_provider_options.any? || @api_key_provider_options.any? %>
+          <%= form.text_field :provider_key, value: "No additional providers are installed in paid-agent yet", disabled: true, class: "block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-500 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6" %>
+        <% end %>
       <% end %>
     </div>
     <% unless selectable_provider %>
       <p class="mt-2 text-xs text-gray-500">Install and ship provider support in the paid-agent image before it can be added here.</p>
     <% end %>
+  </div>
+
+  <div>
+    <%= form.label :name, "Custom Name (optional)", class: "block text-sm font-medium text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_field :name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "e.g., Claude via OpenRouter" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">A custom label to distinguish this provider entry.</p>
+  </div>
+
+  <% if is_new && @available_api_keys.any? %>
+    <div data-provider-form-target="apiKeySelect" <%= "hidden" unless is_api_key %>>
+      <%= form.label :provider_api_key_id, "API Key", class: "block text-sm font-medium text-gray-900" %>
+      <div class="mt-2">
+        <%= form.select :provider_api_key_id,
+            @available_api_keys.map { |ak| [ak.name, ak.id] },
+            { include_blank: "Select an API key" },
+            class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+            disabled: !is_api_key %>
+      </div>
+    </div>
+  <% elsif provider.persisted? && is_api_key %>
+    <div>
+      <%= form.label :provider_api_key_id, "API Key", class: "block text-sm font-medium text-gray-900" %>
+      <div class="mt-2">
+        <input type="text" value="<%= provider.provider_api_key&.name || 'None' %>" disabled class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
+      </div>
+    </div>
+  <% end %>
+
+  <div data-provider-form-target="fallbackRoleField" <%= "hidden" unless is_api_key %>>
+    <%= form.label :fallback_role, "Fallback Role", class: "block text-sm font-medium text-gray-900" %>
+    <div class="mt-2">
+      <%= form.select :fallback_role,
+          [["Standard", "standard"], ["Rate-limit fallback only", "rate_limit_fallback"]],
+          {},
+          class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+          disabled: !is_api_key %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Rate-limit fallback entries will be used when the subscription provider for the same key is rate-limited. (Automatic fallback execution is planned; currently these entries are tracked but not yet auto-invoked.)</p>
   </div>
 
   <div class="space-y-3 rounded-lg border border-gray-200 p-4">
