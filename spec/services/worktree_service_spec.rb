@@ -295,11 +295,19 @@ RSpec.describe WorktreeService do
       expect(service.run_repo_command("rev-list", "--count", "abc..def")).to eq("5\n")
     end
 
-    it "converts Errno::ENOENT to WorktreeService::Error" do
+    it "raises repo directory missing when directory does not exist" do
+      FileUtils.rm_rf(repo_path)
       allow(service).to receive(:run_git).and_raise(Errno::ENOENT, "No such file")
 
       expect { service.run_repo_command("status") }
         .to raise_error(WorktreeService::Error, /Repo directory missing/)
+    end
+
+    it "raises spawn error when directory exists but git executable is missing" do
+      allow(service).to receive(:run_git).and_raise(Errno::ENOENT, "No such file")
+
+      expect { service.run_repo_command("status") }
+        .to raise_error(WorktreeService::Error, /Failed to execute git/)
     end
   end
 

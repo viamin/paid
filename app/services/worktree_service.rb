@@ -161,7 +161,11 @@ class WorktreeService
   def run_repo_command(*args)
     run_git(*args, chdir: project_repo_path)
   rescue Errno::ENOENT => e
-    raise Error, "Repo directory missing: #{e.message}"
+    if !Dir.exist?(project_repo_path)
+      raise Error, "Repo directory missing: #{project_repo_path}"
+    else
+      raise Error, "Failed to execute git (missing executable or spawn error): #{e.message}"
+    end
   end
 
   # Get the current commit SHA of the default branch.
