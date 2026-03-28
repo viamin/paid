@@ -42,3 +42,6 @@ application.register("elapsed-time", ElapsedTimeController)
 
 import ProviderFormController from "./provider_form_controller"
 application.register("provider-form", ProviderFormController)
+
+import ConfirmDeleteController from "./confirm_delete_controller"
+application.register("confirm-delete", ConfirmDeleteController)
