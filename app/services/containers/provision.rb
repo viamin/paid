@@ -914,6 +914,8 @@ module Containers
         "PAID_GEMINI_SUBSCRIPTION_AUTH=#{gemini_subscription_auth? ? 1 : 0}"
       ])
 
+      env << "PAID_COPILOT_SUBSCRIPTION_AUTH=#{copilot_subscription_auth? ? 1 : 0}"
+
       env << "PAID_CLAUDE_SUBSCRIPTION_AUTH=#{claude_subscription_auth? ? 1 : 0}"
 
       if claude_subscription_auth?
@@ -941,7 +943,7 @@ module Containers
     # Returns true when any provider CLI config is available for
     # subscription-based authentication via copied host login state.
     def subscription_auth?
-      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth?
+      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth? || copilot_subscription_auth?
     end
 
     def proxy_base_url

@@ -283,8 +283,7 @@ RSpec.describe Containers::Provision do
           env = config["Env"]
           expect(env).to include(
             "PAID_PROXY_URL=http://paid-proxy:3000",
-            "PROJECT_ID=#{project.id}",
-            "AGENT_RUN_ID=#{agent_run.id}",
+            "PROJECT_ID=#{project.id}", "AGENT_RUN_ID=#{agent_run.id}",
             "ANTHROPIC_BASE_URL=http://paid-proxy:3000/api/proxy/anthropic",
             "OPENAI_BASE_URL=http://paid-proxy:3000/api/proxy/openai",
             "ANTHROPIC_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
@@ -292,9 +291,8 @@ RSpec.describe Containers::Provision do
             "ANTHROPIC_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
             "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
             "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
-            "PAID_CLAUDE_SUBSCRIPTION_AUTH=0",
-            "PAID_CODEX_SUBSCRIPTION_AUTH=0",
-            "PAID_GEMINI_SUBSCRIPTION_AUTH=0"
+            "PAID_CLAUDE_SUBSCRIPTION_AUTH=0", "PAID_CODEX_SUBSCRIPTION_AUTH=0",
+            "PAID_GEMINI_SUBSCRIPTION_AUTH=0", "PAID_COPILOT_SUBSCRIPTION_AUTH=0"
           )
           mock_container
         end
@@ -561,15 +559,14 @@ RSpec.describe Containers::Provision do
             "OPENAI_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
             "OPENAI_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
             "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
-            "PAID_CLAUDE_SUBSCRIPTION_AUTH=1",
-            "PAID_CODEX_SUBSCRIPTION_AUTH=0",
+            "PAID_CLAUDE_SUBSCRIPTION_AUTH=1", "PAID_CODEX_SUBSCRIPTION_AUTH=0",
+            "PAID_COPILOT_SUBSCRIPTION_AUTH=0", "PAID_GEMINI_SUBSCRIPTION_AUTH=0",
             "GOOGLE_GEMINI_BASE_URL=http://web:3000/api/proxy/google",
             "GOOGLE_GENAI_BASE_URL=http://web:3000/api/proxy/google",
             "GOOGLE_HEADER_X_AGENT_RUN_ID=#{agent_run.id}",
             "GOOGLE_HEADER_X_PROXY_TOKEN=#{agent_run.proxy_token}",
             "GEMINI_CLI_CUSTOM_HEADERS=X-Agent-Run-Id: #{agent_run.id}, X-Proxy-Token: #{agent_run.proxy_token}",
-            "GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
-            "PAID_GEMINI_SUBSCRIPTION_AUTH=0"
+            "GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}"
           )
           mock_container
         end
@@ -772,19 +769,21 @@ RSpec.describe Containers::Provision do
         FileUtils.rm_rf(copilot_config_dir)
       end
 
-      it "mounts Copilot config at a staging path" do
+      it "mounts Copilot config at a staging path and sets the subscription marker" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
           expect(binds).to include("#{copilot_config_dir}:/home/agent/.config/github-copilot-host:ro")
+          env = config["Env"]
+          expect(env).to include("PAID_COPILOT_SUBSCRIPTION_AUTH=1")
           mock_container
         end
 
         service.provision
       end
 
-      it "does not switch to the infrastructure network for Copilot alone" do
+      it "uses the infrastructure network for Copilot subscription auth" do
         expect(Docker::Container).to receive(:create) do |config|
-          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::NETWORK_NAME)
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
           mock_container
         end
 
@@ -827,10 +826,11 @@ RSpec.describe Containers::Provision do
         FileUtils.rm_rf(copilot_local_dir)
       end
 
-      it "does not add a host bind mount" do
+      it "sets the subscription marker without requiring a host bind mount" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
           expect(binds.none? { |bind| bind.include?("/home/agent/.config/github-copilot-host:ro") }).to be true
+          expect(config["Env"]).to include("PAID_COPILOT_SUBSCRIPTION_AUTH=1")
           mock_container
         end
 
