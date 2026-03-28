@@ -704,6 +704,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_055556) do
     t.index ["user_id", "provider_key", "provider_api_key_id"], name: "idx_providers_unique_api_key", unique: true, where: "((auth_type)::text = 'api_key'::text)"
     t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "((auth_type)::text = 'subscription'::text)"
     t.index ["user_id"], name: "index_providers_on_user_id"
+    t.check_constraint "(auth_type)::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
+    t.check_constraint "(auth_type)::text <> 'subscription'::text OR provider_api_key_id IS NULL AND (fallback_role)::text = 'standard'::text", name: "providers_subscription_invariants"
   end
 
   create_table "quality_metrics", force: :cascade do |t|

@@ -16,6 +16,8 @@ FactoryBot.define do
     end
 
     trait :rate_limit_fallback do
+      auth_type { "api_key" }
+      provider_api_key
       fallback_role { "rate_limit_fallback" }
     end
   end
