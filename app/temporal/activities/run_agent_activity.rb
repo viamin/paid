@@ -23,7 +23,7 @@ module Activities
       "codex" => %w[codex exec --full-auto --],
       "gemini" => %w[gemini -y -p],
       "kilocode" => %w[kilo run --auto],
-      "opencode" => %w[opencode --non-interactive --message],
+      "opencode" => %w[opencode run],
       "copilot" => %w[github-copilot-cli --message],
       "cursor" => %w[cursor-agent --message],
       "aider" => %w[aider --yes --no-auto-commits --message]
@@ -400,17 +400,20 @@ module Activities
     # provider. The prompt is passed as a positional parameter ($1) to
     # preserve multi-line content from augment_prompt_for_goal. The
     # unset-var list is shared with Providers::TestAgent via
-    # ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS.
+    # ProviderSupport.subscription_auth_unset_vars_for.
     def subscription_auth_command(provider, command_prefix, prompt)
       base = command_prefix.shelljoin
       env_flag = "PAID_#{provider.upcase}_SUBSCRIPTION_AUTH"
-      unset_flags = ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS
-        .fetch(provider)
+      unset_flags = subscription_auth_unset_vars_for(provider)
         .map { |var| "-u #{var}" }
         .join(" ")
 
       script = "if [ \"$#{env_flag}\" = \"1\" ]; then env #{unset_flags} #{base} \"$1\"; else #{base} \"$1\"; fi"
       [ "sh", "-c", script, "--", prompt ]
+    end
+
+    def subscription_auth_unset_vars_for(provider)
+      ProviderSupport.subscription_auth_unset_vars_for(provider)
     end
 
     def capture_head_sha(container_service, agent_run)
