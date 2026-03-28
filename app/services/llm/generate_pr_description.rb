@@ -16,6 +16,8 @@ module Llm
   #     issue_body: "We need OAuth for..."
   #   )
   class GeneratePrDescription
+    include OutputNormalizer
+
     DEFAULT_MODEL = "claude-sonnet-4-6"
     MAX_DESCRIPTION_LENGTH = 50_000
     MAX_SUMMARY_INPUT = 20_000
@@ -86,24 +88,8 @@ module Llm
       return nil if text.nil?
 
       cleaned = text.strip
-
-      # Strip a single outer markdown code fence if present
-      lines = cleaned.lines
-      if lines.size >= 2 && lines.first.match?(/\A```/) && lines.last.strip == "```"
-        cleaned = (lines[1...-1] || []).join.strip
-      end
-
-      # Strip a single pair of surrounding quotes if present.
-      # Matches the same quote pairs handled by Llm::GenerateIssueTitle.
-      quote_pairs = [ [ '"', '"' ], [ "'", "'" ], [ "`", "`" ], [ "\u201C", "\u201D" ], [ "\u2018", "\u2019" ] ]
-      quote_pairs.each do |left, right|
-        if cleaned.start_with?(left) && cleaned.end_with?(right) && cleaned.length >= left.length + right.length
-          cleaned = cleaned[left.length..-(right.length + 1)].strip
-          break
-        end
-      end
-
-      cleaned
+      cleaned = strip_markdown_fence(cleaned)
+      strip_surrounding_quotes(cleaned)
     end
 
     def prompt
