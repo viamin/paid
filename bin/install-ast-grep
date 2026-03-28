@@ -2,5 +2,46 @@
 set -euo pipefail
 
 AST_GREP_VERSION="${AST_GREP_VERSION:-0.42.0}"
+INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
-npm install -g "@ast-grep/cli@${AST_GREP_VERSION}"
+case "$(uname -s)" in
+  Linux) ;;
+  *)
+    echo "Unsupported OS: $(uname -s)" >&2
+    exit 1
+    ;;
+esac
+
+case "$(dpkg --print-architecture)" in
+  amd64)
+    RUST_TRIPLE="x86_64-unknown-linux-gnu"
+    case "${AST_GREP_VERSION}" in
+      0.42.0) EXPECTED_CHECKSUM="e825a05603f0bcc4cd9076c4cc8c9abd6d008b7cd07d9aa3cc323ba4b8606651" ;;
+      0.41.0) EXPECTED_CHECKSUM="e71afdcbb2e79f7710a56d2f89662bdd0a6e9d639c4abecd5d5f129d80a38bac" ;;
+      *) echo "No checksum configured for ast-grep ${AST_GREP_VERSION} on amd64" >&2; exit 1 ;;
+    esac
+    ;;
+  arm64)
+    RUST_TRIPLE="aarch64-unknown-linux-gnu"
+    case "${AST_GREP_VERSION}" in
+      0.42.0) EXPECTED_CHECKSUM="5c830eae8456569e2f7212434ed9c238f58dca412d76045418ed6d394a755836" ;;
+      0.41.0) EXPECTED_CHECKSUM="6f089d014d5fda8fed2e63e5095acf8ebec4c4cd2e721bd663f2284ace42b623" ;;
+      *) echo "No checksum configured for ast-grep ${AST_GREP_VERSION} on arm64" >&2; exit 1 ;;
+    esac
+    ;;
+  *)
+    echo "Unsupported architecture: $(dpkg --print-architecture)" >&2
+    exit 1
+    ;;
+esac
+
+ZIPFILE="app-${RUST_TRIPLE}.zip"
+URL="https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/${ZIPFILE}"
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "${TMPDIR}"' EXIT
+
+echo "Installing ast-grep ${AST_GREP_VERSION} from ${URL}..."
+curl -fsSL -o "${TMPDIR}/${ZIPFILE}" "${URL}"
+echo "${EXPECTED_CHECKSUM}  ${TMPDIR}/${ZIPFILE}" | sha256sum -c -
+unzip -j -o "${TMPDIR}/${ZIPFILE}" ast-grep -d "${TMPDIR}"
+install -m 0755 "${TMPDIR}/ast-grep" "${INSTALL_DIR}/ast-grep"
