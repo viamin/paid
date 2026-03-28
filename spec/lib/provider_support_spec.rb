@@ -16,8 +16,16 @@ RSpec.describe ProviderSupport do
       expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("kilocode")
     end
 
+    it "includes cursor" do
+      expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("cursor")
+    end
+
     it "includes opencode" do
       expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("opencode")
+    end
+
+    it "includes copilot" do
+      expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("copilot")
     end
   end
 
@@ -28,6 +36,11 @@ RSpec.describe ProviderSupport do
       expect(keys).to include("codex")
     end
 
+    it "includes cursor when backed by the agent harness registry" do
+      keys = described_class.container_executable_provider_keys
+      expect(keys).to include("cursor")
+    end
+
     it "includes kilocode when backed by the agent harness registry" do
       keys = described_class.container_executable_provider_keys
       expect(keys).to include("kilocode")
@@ -36,6 +49,11 @@ RSpec.describe ProviderSupport do
     it "includes opencode when backed by the agent harness registry" do
       keys = described_class.container_executable_provider_keys
       expect(keys).to include("opencode")
+    end
+
+    it "includes copilot when backed by the agent harness registry" do
+      keys = described_class.container_executable_provider_keys
+      expect(keys).to include("copilot")
     end
   end
 
@@ -48,6 +66,10 @@ RSpec.describe ProviderSupport do
       expect(described_class.container_executable_provider_key?("claude")).to be true
     end
 
+    it "returns true for cursor" do
+      expect(described_class.container_executable_provider_key?("cursor")).to be true
+    end
+
     it "returns true for kilocode" do
       expect(described_class.container_executable_provider_key?("kilocode")).to be true
     end
@@ -56,8 +78,12 @@ RSpec.describe ProviderSupport do
       expect(described_class.container_executable_provider_key?("opencode")).to be true
     end
 
+    it "returns true for copilot" do
+      expect(described_class.container_executable_provider_key?("copilot")).to be true
+    end
+
     it "returns false for non-executable providers" do
-      expect(described_class.container_executable_provider_key?("cursor")).to be false
+      expect(described_class.container_executable_provider_key?("aider")).to be false
     end
   end
 end

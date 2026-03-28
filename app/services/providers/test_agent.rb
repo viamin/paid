@@ -21,9 +21,11 @@ module Providers
     CONTAINER_COMMANDS = Activities::RunAgentActivity::AGENT_COMMANDS.slice(
       "claude",
       "codex",
+      "cursor",
       "gemini",
       "kilocode",
-      "opencode"
+      "opencode",
+      "copilot"
     ).freeze
     RATE_LIMIT_PATTERNS = Activities::RunAgentActivity::RATE_LIMIT_PATTERNS
     AUTHENTICATION_ERROR_PATTERNS = [
