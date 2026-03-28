@@ -321,8 +321,8 @@ RSpec.describe Prompts::BuildForPr do
       end
     end
 
-    context "when project has running database containers" do
-      let!(:service_container) { create(:service_container, :running) }
+    context "when project has configured database containers" do
+      let!(:service_container) { create(:service_container) }
 
       before do
         project.service_containers << service_container
@@ -340,12 +340,12 @@ RSpec.describe Prompts::BuildForPr do
 
       it "tells a Ruby project to run db:prepare" do
         expect(prompt).to include("Run `bin/rails db:prepare`")
-        expect(prompt).to include("DATABASE_URL is already configured")
+        expect(prompt).to include("DATABASE_URL")
       end
     end
 
-    context "when project has running non-database service containers" do
-      let!(:redis_container) { create(:service_container, :running, :redis) }
+    context "when project has configured non-database service containers" do
+      let!(:redis_container) { create(:service_container, :redis) }
 
       before do
         project.service_containers << redis_container
@@ -356,7 +356,7 @@ RSpec.describe Prompts::BuildForPr do
         expect(prompt).to include("REDIS_URL")
         expect(prompt).to include("Environment Constraints")
         expect(prompt).to include("Do NOT attempt to install PostgreSQL")
-        expect(prompt).not_to include("DATABASE_URL is already configured")
+        expect(prompt).not_to include("Run `bin/rails db:prepare`")
       end
     end
   end

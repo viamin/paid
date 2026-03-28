@@ -28,20 +28,24 @@ module Activities
       if custom_prompt.blank? && issue.present? && issue.trusted?
         prompt_version = Prompts::Resolve.call(slug: "coding.issue_implementation", project: project)
         if prompt_version
-          custom_prompt = prompt_version.render(
+          rendered_prompt = prompt_version.render(
             title: issue.title,
             issue_number: issue.github_number.to_s,
             body: issue.body.to_s,
             test_command: test_command_for(project),
             lint_command: lint_command_for(project)
           )
-          # Append trusted issue comments so they reach the agent even when
-          # the rendered PromptVersion is stored as custom_prompt (which
-          # bypasses BuildForIssue in effective_prompt).
-          custom_prompt += Prompts::BuildForIssue.conversation_section_for(
-            project: project, issue: issue,
-            github_client: project.github_token&.client
-          )
+          custom_prompt = [
+            rendered_prompt,
+            # Append trusted issue comments so they reach the agent even when
+            # the rendered PromptVersion is stored as custom_prompt (which
+            # bypasses BuildForIssue in effective_prompt).
+            Prompts::BuildForIssue.conversation_section_for(
+              project: project, issue: issue,
+              github_client: project.github_token&.client
+            ),
+            Prompts::BuildForIssue.service_environment_section_for(project: project)
+          ].reject(&:blank?).join("\n\n")
         end
       end
 
