@@ -9,7 +9,7 @@ module Knowledge
       @project = @artifact.project
       authorize @project, :show?
 
-      @chunks = @artifact.chunks.where(status: %w[active stale]).order(created_at: :asc)
+      @chunks = @artifact.knowledge_chunks.where(status: %w[active stale]).order(created_at: :asc)
       @collector_run = @artifact.collector_run
       @project_version = @collector_run.project_version
     end
