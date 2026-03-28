@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_28_055556) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_28_101939) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -222,6 +222,40 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_055556) do
     t.bigint "project_id", null: false
     t.datetime "updated_at", null: false
     t.index ["project_id", "budget_type"], name: "index_cost_budgets_on_project_id_and_budget_type", unique: true
+  end
+
+  create_table "decision_record_links", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "decision_record_id", null: false
+    t.string "link_type", limit: 50, null: false
+    t.string "linkable_id", limit: 100, null: false
+    t.string "linkable_type", limit: 100, null: false
+    t.index ["decision_record_id"], name: "index_decision_record_links_on_decision_record_id"
+    t.index ["linkable_type", "linkable_id"], name: "index_decision_record_links_on_linkable_type_and_linkable_id"
+  end
+
+  create_table "decision_records", force: :cascade do |t|
+    t.bigint "agent_run_id"
+    t.string "commit_sha_end", limit: 40
+    t.string "commit_sha_start", limit: 40
+    t.text "consequences"
+    t.text "context"
+    t.datetime "created_at", null: false
+    t.text "decision", null: false
+    t.bigint "issue_id"
+    t.bigint "project_id", null: false
+    t.string "status", limit: 50, default: "draft", null: false
+    t.text "summary", null: false
+    t.bigint "superseded_by_id"
+    t.jsonb "tags", default: [], null: false
+    t.string "title", limit: 500, null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_decision_records_on_agent_run_id"
+    t.index ["issue_id"], name: "index_decision_records_on_issue_id"
+    t.index ["project_id", "status"], name: "index_decision_records_on_project_id_and_status"
+    t.index ["project_id"], name: "index_decision_records_on_project_id"
+    t.index ["superseded_by_id"], name: "index_decision_records_on_superseded_by_id"
+    t.index ["tags"], name: "index_decision_records_on_tags", using: :gin
   end
 
   create_table "github_tokens", force: :cascade do |t|
@@ -903,6 +937,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_055556) do
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
+  add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
+  add_foreign_key "decision_records", "agent_runs"
+  add_foreign_key "decision_records", "decision_records", column: "superseded_by_id"
+  add_foreign_key "decision_records", "issues"
+  add_foreign_key "decision_records", "projects"
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "integration_credentials", "accounts"
