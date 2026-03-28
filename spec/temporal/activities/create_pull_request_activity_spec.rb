@@ -14,6 +14,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:create_pull_request).and_return(pr_response)
     allow(github_client).to receive(:add_labels_to_issue)
+    # By default, stub LLM description generation to return nil (fallback behavior)
+    allow(Llm::GeneratePrDescription).to receive(:call).and_return(nil)
   end
 
   describe "#execute" do
@@ -130,6 +132,53 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(github_client).to have_received(:add_labels_to_issue).with(
           project.full_name, 42, [ "custom-generated", "custom-automation" ]
         )
+      end
+    end
+
+    context "when LLM generates a structured description" do
+      let(:llm_description) { "## Summary\n\nAdds OAuth support for third-party integrations." }
+
+      it "uses the LLM-generated description in the PR body" do
+        agent_run.log!("stdout", "Added OAuth middleware")
+        allow(Llm::GeneratePrDescription).to receive(:call).and_return(llm_description)
+
+        expect(github_client).to receive(:create_pull_request).with(
+          anything,
+          hash_including(
+            body: a_string_including("## Summary")
+              .and(including("OAuth support"))
+              .and(including("Closes ##{issue.github_number}"))
+          )
+        ).and_return(pr_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "passes issue context to the LLM service" do
+        agent_run.log!("stdout", "Added OAuth middleware")
+        allow(Llm::GeneratePrDescription).to receive(:call).and_return(llm_description)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(Llm::GeneratePrDescription).to have_received(:call).with(
+          agent_summary: a_string_including("Added OAuth middleware"),
+          issue_title: issue.title,
+          issue_body: issue.body
+        )
+      end
+
+      it "falls back to raw summary when LLM returns nil" do
+        agent_run.log!("stdout", "Raw agent output here")
+        allow(Llm::GeneratePrDescription).to receive(:call).and_return(nil)
+
+        expect(github_client).to receive(:create_pull_request).with(
+          anything,
+          hash_including(
+            body: a_string_including("Raw agent output here")
+          )
+        ).and_return(pr_response)
+
+        activity.execute(agent_run_id: agent_run.id)
       end
     end
 

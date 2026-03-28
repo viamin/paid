@@ -53,7 +53,11 @@ module Activities
       parts = []
 
       summary = agent_run.agent_summary
-      if summary.present?
+      description = generate_description(summary, issue)
+
+      if description.present?
+        parts << description
+      elsif summary.present?
         parts << summary.truncate(50_000)
       else
         parts << "## Summary"
@@ -70,6 +74,16 @@ module Activities
       end
 
       parts.join("\n")
+    end
+
+    def generate_description(summary, issue)
+      return nil if summary.blank?
+
+      Llm::GeneratePrDescription.call(
+        agent_summary: summary,
+        issue_title: issue&.title,
+        issue_body: issue&.body
+      )
     end
 
     def add_pr_labels(client, project, pr_number, agent_run_id)
