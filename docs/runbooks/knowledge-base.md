@@ -4,12 +4,12 @@
 
 | Task | Command / Endpoint |
 |------|-------------------|
-| Check Qdrant health | `QdrantClient.instance.healthy?` |
-| List collections | `QdrantClient.instance.collections.list` |
-| Rebuild project knowledge | `Knowledge::CollectorRunner.new(project:, commit_sha:).run` |
+| Check Qdrant health | `Paid.qdrant_client.healthy?` |
+| List collections | `Paid.qdrant_client.collections.list` |
+| Rebuild project knowledge | `Knowledge::CollectorRunner.new(project: project, commit_sha: commit_sha).run` |
 | Check embedding backlog | `KnowledgeChunk.needs_embedding.count` |
 | View recent audit events | `KnowledgeAuditEvent.for_project(project).ordered.limit(20)` |
-| Rebuild Qdrant collection | `Knowledge::Qdrant::CollectionManager.new(project:).rebuild_schema!` |
+| Rebuild Qdrant collection | `Knowledge::Qdrant::CollectionManager.new(project: project).rebuild_schema!` |
 
 ## Health Checks
 
@@ -17,11 +17,11 @@
 
 ```ruby
 # Rails console
-QdrantClient.instance.healthy?
+Paid.qdrant_client.healthy?
 # => true
 
 # Check specific collection
-QdrantClient.instance.collections.get(collection_name: "project_42")
+Paid.qdrant_client.collections.get(collection_name: "project_42")
 ```
 
 **Expected**: Returns collection info with `points_count`, `vectors_count`, and `status: "green"`.
@@ -71,28 +71,30 @@ project = Project.find(id)
 Knowledge::Qdrant::CollectionManager.new(project: project).rebuild_schema!
 
 # Step 2: Re-run all collectors for the current commit
-commit_sha = `git -C #{project.repo_path} rev-parse HEAD`.strip
+worktree = project.worktrees.find_by(default: true) || project.worktrees.first
+commit_sha = `git -C #{worktree.path} rev-parse HEAD`.strip
 Knowledge::CollectorRunner.new(project: project, commit_sha: commit_sha).run
 
 # Step 3: Re-embed all active chunks
-Knowledge::Embeddings::Pipeline.new(project: project).run
+Knowledge::Embeddings::Pipeline.call(project: project)
 ```
 
 ### Qdrant-Only Rebuild
 
-Use when PostgreSQL data is intact but Qdrant needs re-syncing.
+Use when PostgreSQL data is intact but Qdrant needs re-syncing. Note that because
+embeddings (vectors) are not stored in PostgreSQL, Qdrant cannot be resynced
+without re-embedding the chunks.
 
 ```ruby
 project = Project.find(id)
 manager = Knowledge::Qdrant::CollectionManager.new(project: project)
 
-# Drop and recreate collection
+# Drop and recreate collection schema in Qdrant
 manager.rebuild_schema!
 
-# Re-sync all embedded chunks to Qdrant
-KnowledgeChunk.for_project(project).embeddable.find_each do |chunk|
-  Knowledge::Qdrant::PointSync.new(project: project).upsert_chunk!(chunk)
-end
+# Re-embed all active chunks for this project and push them to Qdrant
+# (this will recompute vectors; there is no "Qdrant-only" sync without re-embedding)
+Knowledge::Embeddings::Pipeline.call(project: project)
 ```
 
 ### Single Collector Re-run
@@ -165,7 +167,7 @@ embedded = KnowledgeChunk.for_project(project).embeddable.count
 puts "Pending: #{pending}, Embedded: #{embedded}"
 
 # Check Qdrant point count
-info = QdrantClient.instance.collections.get(
+info = Paid.qdrant_client.collections.get(
   collection_name: "project_#{project.id}"
 )
 puts "Qdrant points: #{info.dig('result', 'points_count')}"
@@ -173,7 +175,7 @@ puts "Qdrant points: #{info.dig('result', 'points_count')}"
 
 **Resolution**:
 
-1. If chunks are pending, run the embedding pipeline: `Knowledge::Embeddings::Pipeline.new(project: project).run`
+1. If chunks are pending, run the embedding pipeline: `Knowledge::Embeddings::Pipeline.call(project: project)`
 2. If embeddings exist in PostgreSQL but not in Qdrant, run the Qdrant-only rebuild (see above)
 3. Check for embedding API errors in the logs: search for `embedding_error` or `Knowledge::Embeddings`
 
@@ -284,7 +286,7 @@ puts "Estimated monthly embedding cost: $#{'%.2f' % estimated_cost}"
 
 ```ruby
 # Check collection storage
-info = QdrantClient.instance.collections.get(
+info = Paid.qdrant_client.collections.get(
   collection_name: "project_#{project.id}"
 )
 puts info.dig("result", "points_count")

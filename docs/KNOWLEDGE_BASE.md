@@ -166,7 +166,7 @@ Qdrant collection: project_{project_id}
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `QDRANT_URL` | `http://qdrant:6333` | Qdrant REST endpoint |
+| `QDRANT_URL` | `http://localhost:6333` | Qdrant REST endpoint (use `http://qdrant:6333` when running via Docker Compose) |
 | `QDRANT_API_KEY` | (none) | Optional API key |
 | `EMBEDDING_DIMENSIONS` | `3072` | Vector dimensions (text-embedding-3-large) |
 
@@ -204,9 +204,9 @@ Combines exact and semantic results with reranking (`Knowledge::Search::Reranker
 ```
 GET /api/knowledge/search
   ?project_id=123
-  &query=authentication middleware
+  &q=authentication middleware
   &mode=hybrid          # exact | semantic | hybrid
-  &artifact_type=symbol_index  # optional filter
+  &type=symbol_index        # optional filter
   &limit=20             # max 100
 ```
 
@@ -215,8 +215,10 @@ Returns:
 ```json
 {
   "results": [...],
-  "metadata": {
+  "meta": {
     "took_ms": 42,
+    "mode": "hybrid",
+    "total": 20,
     "exact_count": 5,
     "semantic_count": 15
   }
@@ -236,8 +238,8 @@ PostgreSQL `tsvector` columns on `knowledge_chunks` provide traditional full-tex
 qdrant:
   image: qdrant/qdrant:v1.13.2
   ports:
-    - "6333:6333"   # REST API
-    - "6334:6334"   # gRPC
+    - "6333:6333"   # HTTP/REST API (default). gRPC (6334) is optional and not exposed by default.
+    # To expose gRPC, also publish: "6334:6334"
   volumes:
     - qdrant-data:/qdrant/storage
   networks:
@@ -263,7 +265,7 @@ qdrant:
 |-----|-------|----------------|
 | `RunCollectorsJob` | default | Trigger collection for a project |
 | `QdrantCollectionCleanupJob` | default | Clean up Qdrant on project deletion |
-| `KnowledgeAuditRetentionJob` | default | Prune old audit events |
+| `KnowledgeAuditRetentionJob` | maintenance | Prune old audit events |
 
 ## Design Principles
 
