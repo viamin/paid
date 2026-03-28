@@ -4,6 +4,7 @@ module Dashboard
   class Stats
     PHASE_BREAKDOWN_WINDOW = 30.days
     PHASE_BREAKDOWN_RUN_LIMIT = 500
+    EFFECTIVE_PROVIDER_SQL = "COALESCE(NULLIF(final_provider, ''), agent_type)"
 
     attr_reader :account
 
@@ -156,7 +157,7 @@ module Dashboard
 
     def runs_by_provider
       agent_runs
-        .group(Arel.sql("COALESCE(NULLIF(final_provider, ''), agent_type)"))
+        .group(Arel.sql(EFFECTIVE_PROVIDER_SQL))
         .count
         .sort_by { |_, v| -v }
     end
@@ -172,7 +173,7 @@ module Dashboard
         fallback_rate: total.zero? ? 0.0 : (fallback_count.to_f / total * 100).round(1),
         by_requested_provider: fallback_runs.group(:agent_type).count.sort_by { |_, v| -v },
         by_effective_provider: fallback_runs
-          .group(Arel.sql("COALESCE(NULLIF(final_provider, ''), agent_type)"))
+          .group(Arel.sql(EFFECTIVE_PROVIDER_SQL))
           .count
           .sort_by { |_, v| -v }
       }

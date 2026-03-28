@@ -479,8 +479,10 @@ class AgentRun < ApplicationRecord
   end
 
   # Returns the provider that actually produced the output for this run.
-  # Uses final_provider (set during fallback execution) when available,
-  # otherwise falls back to agent_type (the originally requested provider).
+  # Prefers final_provider (the provider that ultimately completed successfully)
+  # when present, otherwise falls back to agent_type (the originally requested provider).
+  # Note: whether a fallback occurred should be determined via provider tracking
+  # fields (e.g., providers_attempted / provider_switches), not by final_provider alone.
   #
   # @return [String] The effective provider name
   def effective_provider
