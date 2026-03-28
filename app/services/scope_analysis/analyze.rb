@@ -8,9 +8,9 @@ module ScopeAnalysis
   # sequential phases, cross-cutting concerns, complexity markers, and length)
   # and returns a Result indicating whether decomposition is warranted.
   #
-  # Integration: called early in the issue-to-agent-run pipeline (e.g.
-  # Issues::Plan or AgentRuns::Create) to gate decomposition. The call site
-  # will be added when the decomposition planner is wired up.
+  # Integration: called in CreateAgentRunActivity when an issue is present.
+  # Results are logged and returned in the activity output so downstream
+  # steps (e.g. a future decomposition planner) can act on the signal.
   #
   # @example
   #   result = ScopeAnalysis::Analyze.call(text: issue.body)
@@ -113,7 +113,7 @@ module ScopeAnalysis
       rounded_confidence = raw_confidence.round(2)
 
       Result.new(
-        should_decompose: raw_confidence >= threshold,
+        should_decompose: rounded_confidence >= threshold,
         confidence: rounded_confidence,
         sub_components: extract_sub_components
       )
