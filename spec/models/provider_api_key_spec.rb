@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe ProviderApiKey do
   describe "associations" do
     it { is_expected.to belong_to(:user) }
-    it { is_expected.to have_many(:providers).dependent(:nullify) }
+    it { is_expected.to have_many(:providers).dependent(:restrict_with_error) }
   end
 
   describe "validations" do
@@ -40,6 +40,22 @@ RSpec.describe ProviderApiKey do
 
     it "returns false for incompatible providers" do
       expect(api_key.compatible_with?("cursor")).to be(false)
+    end
+  end
+
+  describe "destroy restriction" do
+    it "prevents deletion when providers are associated" do
+      api_key = create(:provider_api_key)
+      create(:provider, user: api_key.user, provider_key: "claude", auth_type: "api_key", provider_api_key: api_key)
+
+      expect(api_key.destroy).to be(false)
+      expect(api_key.errors[:base]).to be_present
+    end
+
+    it "allows deletion when no providers are associated" do
+      api_key = create(:provider_api_key)
+
+      expect(api_key.destroy).to be_truthy
     end
   end
 

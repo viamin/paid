@@ -5,7 +5,7 @@ class ProviderApiKeysController < ApplicationController
   skip_after_action :verify_authorized, only: :index
 
   def index
-    @provider_api_keys = policy_scope(ProviderApiKey).ordered
+    @provider_api_keys = policy_scope(ProviderApiKey).includes(:providers).ordered
   end
 
   def show
@@ -33,8 +33,12 @@ class ProviderApiKeysController < ApplicationController
 
   def destroy
     authorize @provider_api_key
-    @provider_api_key.destroy!
-    redirect_to provider_api_keys_path, notice: "API key deleted."
+    if @provider_api_key.destroy
+      redirect_to provider_api_keys_path, notice: "API key deleted."
+    else
+      redirect_to provider_api_key_path(@provider_api_key),
+        alert: "Cannot delete this API key because it is used by provider entries. Remove those provider entries first."
+    end
   end
 
   private

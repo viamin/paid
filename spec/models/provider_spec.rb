@@ -50,6 +50,23 @@ RSpec.describe Provider do
       expect(provider.errors[:provider_api_key]).to include("must not be set for subscription authentication")
     end
 
+    it "prevents duplicate subscription entries for the same user and provider_key" do
+      create(:provider, user: provider.user, provider_key: "cursor", auth_type: "subscription")
+      duplicate = build(:provider, user: provider.user, provider_key: "cursor", auth_type: "subscription")
+
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:provider_key]).to include("already has a subscription entry")
+    end
+
+    it "prevents duplicate api_key entries for the same user, provider_key, and api key" do
+      api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[cursor])
+      create(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key)
+      duplicate = build(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key)
+
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:provider_key]).to include("already has an entry with this API key")
+    end
+
     it "validates API key compatibility with provider_key" do
       api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[gemini])
       provider.auth_type = "api_key"

@@ -20,6 +20,12 @@ class Provider < ApplicationRecord
   validates :auth_type, presence: true, inclusion: { in: AUTH_TYPES }
   validates :fallback_role, presence: true, inclusion: { in: FALLBACK_ROLES }
   validates :name, length: { maximum: 100 }
+  validates :provider_key,
+    uniqueness: { scope: :user_id, message: "already has a subscription entry" },
+    if: -> { subscription? }
+  validates :provider_key,
+    uniqueness: { scope: [ :user_id, :provider_api_key_id ], message: "already has an entry with this API key" },
+    if: -> { api_key? }
 
   validate :must_keep_at_least_one_agent_run_provider
   validate :default_provider_must_remain_enabled_for_agent_runs

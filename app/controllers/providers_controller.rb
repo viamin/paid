@@ -29,6 +29,9 @@ class ProvidersController < ApplicationController
     else
       render :new, status: :unprocessable_content
     end
+  rescue ActiveRecord::RecordNotUnique
+    @provider.errors.add(:provider_key, "already has an entry with this configuration")
+    render :new, status: :unprocessable_content
   end
 
   def edit

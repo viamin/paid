@@ -2,7 +2,7 @@
 
 class ProviderApiKey < ApplicationRecord
   belongs_to :user
-  has_many :providers, dependent: :nullify
+  has_many :providers, dependent: :restrict_with_error
 
   encrypts :api_key_ciphertext
 

@@ -139,7 +139,10 @@ module Activities
             agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
 
-            # If this provider has a rate-limit fallback entry, retry with API key auth
+            # TODO(#546): Implement actual retry with API-key-backed provider.
+            # Currently this only logs the intent to switch. Full implementation
+            # requires injecting the selected API key into the container
+            # environment and adding api_key variants to the provider order.
             canonical = canonical_provider(provider)
             if @rate_limit_fallback_keys&.include?(canonical)
               logger.info(message: "agent_execution.trying_rate_limit_fallback", provider: canonical, agent_run_id: agent_run.id)
