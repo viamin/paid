@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_28_055556) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_28_060002) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -139,6 +139,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_055556) do
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.bigint "issue_id"
     t.integer "iterations", default: 0
+    t.jsonb "mcp_server_snapshot", default: [], null: false
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
     t.bigint "project_id", null: false
@@ -521,6 +522,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_055556) do
     t.index ["provider"], name: "index_llm_models_on_provider"
   end
 
+  create_table "mcp_server_definitions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.jsonb "args", default: [], null: false
+    t.string "command", limit: 500
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.jsonb "env", default: {}, null: false
+    t.string "image", limit: 500
+    t.string "install_type", limit: 50, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.string "name", limit: 255, null: false
+    t.string "transport", limit: 50, null: false
+    t.datetime "updated_at", null: false
+    t.string "url", limit: 2048
+    t.index ["account_id", "enabled"], name: "index_mcp_server_definitions_on_account_id_and_enabled"
+    t.index ["account_id", "name"], name: "index_mcp_server_definitions_on_account_id_and_name", unique: true
+    t.index ["account_id"], name: "index_mcp_server_definitions_on_account_id"
+  end
+
   create_table "model_selections", force: :cascade do |t|
     t.bigint "agent_run_id", null: false
     t.integer "budget_limit_cents"
@@ -535,6 +555,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_055556) do
     t.index ["agent_run_id"], name: "index_model_selections_on_agent_run_id", unique: true
     t.index ["llm_model_id"], name: "index_model_selections_on_llm_model_id"
     t.index ["selector_type"], name: "index_model_selections_on_selector_type"
+  end
+
+  create_table "project_mcp_servers", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "mcp_server_definition_id", null: false
+    t.bigint "project_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["mcp_server_definition_id"], name: "index_project_mcp_servers_on_mcp_server_definition_id"
+    t.index ["project_id", "mcp_server_definition_id"], name: "idx_project_mcp_servers_unique", unique: true
+    t.index ["project_id"], name: "index_project_mcp_servers_on_project_id"
   end
 
   create_table "project_memberships", force: :cascade do |t|
@@ -704,8 +734,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_055556) do
     t.index ["user_id", "provider_key", "provider_api_key_id"], name: "idx_providers_unique_api_key", unique: true, where: "((auth_type)::text = 'api_key'::text)"
     t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "((auth_type)::text = 'subscription'::text)"
     t.index ["user_id"], name: "index_providers_on_user_id"
-    t.check_constraint "(auth_type)::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
-    t.check_constraint "(auth_type)::text <> 'subscription'::text OR provider_api_key_id IS NULL AND (fallback_role)::text = 'standard'::text", name: "providers_subscription_invariants"
+    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
+    t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
   end
 
   create_table "quality_metrics", force: :cascade do |t|
@@ -920,8 +950,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_055556) do
   add_foreign_key "knowledge_links", "knowledge_chunks", column: "target_chunk_id", on_delete: :cascade
   add_foreign_key "linear_tokens", "accounts"
   add_foreign_key "linear_tokens", "users", column: "created_by_id"
+  add_foreign_key "mcp_server_definitions", "accounts"
   add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
+  add_foreign_key "project_mcp_servers", "mcp_server_definitions"
+  add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"
   add_foreign_key "project_memberships", "users"
   add_foreign_key "project_service_containers", "projects", on_delete: :cascade
