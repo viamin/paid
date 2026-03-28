@@ -44,6 +44,7 @@ module Knowledge
       def build_content(record)
         parts = []
         parts << "# #{record.title}"
+        parts << "\nStatus: #{record.status}"
         parts << "\n## Summary\n#{record.summary}"
         parts << "\n## Context\n#{record.context}" if record.context.present?
         parts << "\n## Decision\n#{record.decision}"

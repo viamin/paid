@@ -73,6 +73,10 @@ RSpec.describe Knowledge::Collectors::DecisionRecordCollector do
         expect(artifact[:content]).to include("## Decision")
       end
 
+      it "includes status in content so content_hash changes with status transitions" do
+        expect(artifact[:content]).to include("Status: active")
+      end
+
       it "includes context section when present" do
         expect(artifact[:content]).to include("## Context")
         expect(artifact[:content]).to include("Session auth was insufficient.")
