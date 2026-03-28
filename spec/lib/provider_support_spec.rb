@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "set"
 
 RSpec.describe ProviderSupport do
   describe "CONTAINER_EXECUTABLE_PROVIDER_KEYS" do
@@ -26,6 +27,10 @@ RSpec.describe ProviderSupport do
 
     it "includes copilot" do
       expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("copilot")
+    end
+
+    it "includes aider" do
+      expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("aider")
     end
   end
 
@@ -55,6 +60,11 @@ RSpec.describe ProviderSupport do
       keys = described_class.container_executable_provider_keys
       expect(keys).to include("copilot")
     end
+
+    it "includes aider when backed by the agent harness registry" do
+      keys = described_class.container_executable_provider_keys
+      expect(keys).to include("aider")
+    end
   end
 
   describe ".container_executable_provider_key?" do
@@ -82,8 +92,20 @@ RSpec.describe ProviderSupport do
       expect(described_class.container_executable_provider_key?("copilot")).to be true
     end
 
-    it "returns false for non-executable providers" do
-      expect(described_class.container_executable_provider_key?("aider")).to be false
+    it "returns true for aider" do
+      expect(described_class.container_executable_provider_key?("aider")).to be true
+    end
+
+    it "returns false for unsupported providers" do
+      expect(described_class.container_executable_provider_key?("unknown_provider")).to be false
+    end
+
+    it "returns false for supported providers not in the container-executable set" do
+      # All current supported providers are container-executable. Stub the set
+      # to simulate a provider whose CLI has not yet been installed in the image.
+      stub_const("ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS", Set.new(%w[claude]))
+
+      expect(described_class.container_executable_provider_key?("codex")).to be false
     end
   end
 

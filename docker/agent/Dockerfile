@@ -167,6 +167,20 @@ RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
     && chmod +x /usr/local/bin/cursor-agent \
     && rm /tmp/cursor-install.sh
 
+# Install Aider CLI.
+# Follow the official Aider "Install with uv" flow so the tool lives in its own
+# isolated environment instead of the system Python:
+# https://aider.chat/docs/install.html#install-with-uv
+# Pin both uv and aider-chat for reproducible builds.
+ARG UV_VERSION=0.8.17
+ARG AIDER_CHAT_VERSION=0.86.2
+ENV UV_TOOL_BIN_DIR=/usr/local/bin
+ENV UV_TOOL_DIR=/opt/uv/tools
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
+RUN mkdir -p "${UV_TOOL_DIR}" "${UV_PYTHON_INSTALL_DIR}" \
+    && python3 -m pip install --no-cache-dir --break-system-packages "uv==${UV_VERSION}" \
+    && uv tool install --force --python python3.12 --with pip "aider-chat==${AIDER_CHAT_VERSION}"
+
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
 COPY scripts/git-credential-paid /usr/local/bin/git-credential-paid
