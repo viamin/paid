@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_28_151609) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_28_194042) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -231,6 +231,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_151609) do
     t.string "link_type", limit: 50, null: false
     t.string "linkable_id", limit: 100, null: false
     t.string "linkable_type", limit: 100, null: false
+    t.index ["decision_record_id", "linkable_type", "linkable_id", "link_type"], name: "index_decision_record_links_on_record_and_linkable_and_type", unique: true
     t.index ["decision_record_id"], name: "index_decision_record_links_on_decision_record_id"
     t.index ["linkable_type", "linkable_id"], name: "index_decision_record_links_on_linkable_type_and_linkable_id"
   end

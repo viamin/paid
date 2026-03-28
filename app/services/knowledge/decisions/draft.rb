@@ -53,7 +53,19 @@ module Knowledge
         parsed = parse_response(response)
         return nil unless parsed
 
+        # Guard against malformed LLM output missing required fields.
+        required_keys = %i[title summary decision]
+        return nil unless required_keys.all? { |key| parsed[key].present? }
+
         create_decision_record(parsed)
+      rescue AgentHarness::Error, ActiveRecord::RecordInvalid => e
+        Rails.logger.error(
+          message: "knowledge.decisions.draft_failed",
+          agent_run_id: agent_run.id,
+          error_class: e.class.name,
+          error: e.message
+        )
+        nil
       end
 
       private
@@ -78,10 +90,15 @@ module Knowledge
 
       def parse_response(response)
         if response.respond_to?(:success?) && !response.success?
-          Rails.logger.warn(
+          log_payload = {
             message: "knowledge.decisions.draft_llm_failed",
             agent_run_id: agent_run.id
-          )
+          }
+          log_payload[:error] = response.error if response.respond_to?(:error) && response.error
+          log_payload[:exit_code] = response.exit_code if response.respond_to?(:exit_code) && response.exit_code
+          log_payload[:provider] = response.provider if response.respond_to?(:provider) && response.provider
+          log_payload[:model] = response.model if response.respond_to?(:model) && response.model
+          Rails.logger.warn(log_payload)
           return nil
         end
 

@@ -15,11 +15,12 @@ class DecisionRecord < ApplicationRecord
   has_many :supersedes, class_name: "DecisionRecord", foreign_key: :superseded_by_id,
     inverse_of: :superseded_by, dependent: :nullify
 
-  # NOTE: The PR description originally mentioned a before_update callback,
-  # but this was changed to a validation. before_update runs after validations
-  # in Rails' callback order, so changing project_id would trigger
-  # agent_run_belongs_to_same_project first (failing with a misleading error)
-  # before immutability could reject the change.
+  # NOTE: enforce_immutability is implemented as a validation rather than a
+  # before_update callback because before_update runs after validations in
+  # Rails' callback order. If project_id (an immutable field) is changed,
+  # project-consistency validations such as agent_run_belongs_to_same_project
+  # would otherwise run first and raise a misleading error instead of
+  # immutability rejecting the change.
   validate :enforce_immutability, on: :update
 
   validates :title, presence: true, length: { maximum: 500 }

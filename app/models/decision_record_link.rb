@@ -13,5 +13,9 @@ class DecisionRecordLink < ApplicationRecord
 
   validates :linkable_type, presence: true, length: { maximum: 100 }, inclusion: { in: LINKABLE_TYPES }
   validates :linkable_id, presence: true, length: { maximum: 100 }
-  validates :link_type, presence: true, length: { maximum: 50 }, inclusion: { in: LINK_TYPES }
+  validates :link_type,
+            presence: true,
+            length: { maximum: 50 },
+            inclusion: { in: LINK_TYPES },
+            uniqueness: { scope: %i[decision_record_id linkable_type linkable_id] }
 end

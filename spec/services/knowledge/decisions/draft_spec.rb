@@ -106,5 +106,32 @@ RSpec.describe Knowledge::Decisions::Draft do
         dangerous_mode: false
       )
     end
+
+    it "returns nil when LLM response is missing required fields" do
+      incomplete = { title: "Missing fields", tags: %w[test] }.to_json
+      allow(llm_response).to receive(:output).and_return(incomplete)
+
+      result = described_class.call(agent_run: agent_run)
+      expect(result).to be_nil
+    end
+
+    it "returns nil and logs when AgentHarness raises an error" do
+      allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "timeout")
+
+      result = described_class.call(agent_run: agent_run)
+      expect(result).to be_nil
+    end
+
+    it "returns nil and logs when record creation raises RecordInvalid" do
+      # Title exceeding max length after truncation would still pass, so use a
+      # different approach: temporarily make the project association invalid to
+      # trigger RecordInvalid from create!
+      json = { title: "T", summary: "S", decision: "D", tags: [] }.to_json
+      allow(llm_response).to receive(:output).and_return(json)
+      allow(agent_run).to receive(:project).and_return(nil)
+
+      result = described_class.call(agent_run: agent_run)
+      expect(result).to be_nil
+    end
   end
 end
