@@ -229,6 +229,28 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(agent_run.custom_prompt).to include("Conversation Comments")
         expect(agent_run.custom_prompt).to include("Please also update the docs")
       end
+
+      it "appends service environment guidance for configured database containers" do
+        project.service_containers << create(:service_container)
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.custom_prompt).to include("Service Environment")
+        expect(agent_run.custom_prompt).to include("Run `bin/rails db:prepare`")
+        expect(agent_run.custom_prompt).to include("DATABASE_URL")
+        expect(agent_run.custom_prompt).not_to include("Environment Constraints")
+      end
+
+      it "separates appended sections from a template without a trailing newline" do
+        prompt.current_version.update_column(:template, "Work on {{title}}")
+        project.service_containers << create(:service_container)
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.custom_prompt).to include("Work on #{issue.title}\n\n# Service Environment")
+      end
     end
 
     context "with agent_run_id (resuming queued run)" do

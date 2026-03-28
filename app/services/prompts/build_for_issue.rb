@@ -32,6 +32,10 @@ module Prompts
       new(...).build
     end
 
+    def self.service_environment_section_for(project:)
+      ServiceContainerSections.service_environment_section_for(project: project)
+    end
+
     def build
       raise UntrustedIssueError, "Cannot build prompt for issue from untrusted user: #{issue.github_creator_login}" unless issue.trusted?
 
@@ -69,7 +73,7 @@ module Prompts
         - Focus on completing the specific task in the issue
 
         When you're done, commit all your changes. Do not push.
-        #{available_services_section}#{no_infrastructure_section}
+        #{service_environment_section}
       PROMPT
 
       StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
