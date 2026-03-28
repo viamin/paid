@@ -253,6 +253,41 @@ RSpec.describe Activities::CreateAgentRunActivity do
       end
     end
 
+    context "with scope analysis" do
+      it "includes scope_analysis in the result when issue has a body" do
+        issue.update!(body: <<~TEXT)
+          Redesign the notification system. Create models, controllers, views,
+          services, and migrations. Add authentication, authorization, and
+          background jobs. Refactor the existing code.
+        TEXT
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:scope_analysis]).to be_present
+        expect(result[:scope_analysis][:confidence]).to be_a(Float)
+        expect(result[:scope_analysis][:should_decompose]).to be(true).or be(false)
+        expect(result[:scope_analysis][:sub_components]).to be_an(Array)
+      end
+
+      it "returns nil scope_analysis when no issue is present" do
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: nil,
+          custom_prompt: "Do something"
+        )
+
+        expect(result[:scope_analysis]).to be_nil
+      end
+
+      it "returns nil scope_analysis when issue body is blank" do
+        issue.update!(body: "")
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:scope_analysis]).to be_nil
+      end
+    end
+
     context "with agent_run_id (resuming queued run)" do
       it "transitions a queued run to pending" do
         queued_run = create(:agent_run, :queued, project: project, issue: issue)

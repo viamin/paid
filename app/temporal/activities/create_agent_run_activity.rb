@@ -49,6 +49,8 @@ module Activities
         end
       end
 
+      scope_result = analyze_scope(issue)
+
       agent_run = AgentRun.create!(
         project: project,
         issue: issue,
@@ -78,6 +80,8 @@ module Activities
         # if no LlmModel records exist yet.
         select_model(agent_run)
 
+        log_scope_analysis(agent_run, scope_result)
+
         logger.info(
           message: "agent_execution.agent_run_created",
           agent_run_id: agent_run.id,
@@ -91,7 +95,12 @@ module Activities
           agent_run_id: agent_run.id,
           provider_attempt_count: provider_attempt_count_for(agent_type, user_settings),
           agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
-          issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
+          issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,
+          scope_analysis: scope_result ? {
+            should_decompose: scope_result.should_decompose?,
+            confidence: scope_result.confidence,
+            sub_components: scope_result.sub_components
+          } : nil
         }
       end
     end
@@ -131,6 +140,24 @@ module Activities
         agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
         issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
       }
+    end
+
+    def analyze_scope(issue)
+      return unless issue&.body.present?
+
+      ScopeAnalysis::Analyze.call(text: issue.body)
+    end
+
+    def log_scope_analysis(agent_run, scope_result)
+      return unless scope_result
+
+      logger.info(
+        message: "agent_execution.scope_analysis_complete",
+        agent_run_id: agent_run.id,
+        should_decompose: scope_result.should_decompose?,
+        confidence: scope_result.confidence,
+        sub_components: scope_result.sub_components
+      )
     end
 
     def select_model(agent_run)
