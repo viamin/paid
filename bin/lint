@@ -131,7 +131,7 @@ if [ "$FILE_FILTER" = true ]; then
     echo "  No shell files to lint."
   fi
 else
-  shellcheck scripts/*.sh .devcontainer/*.sh .githooks/* bin/audit bin/dev bin/docker-entrypoint bin/lint
+  shellcheck -x scripts/*.sh .devcontainer/*.sh .githooks/* bin/audit bin/dev bin/dev-update bin/docker-entrypoint bin/lib/dev_supervisor.sh bin/lint
 fi
 
 echo "All lint checks passed."

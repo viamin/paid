@@ -23,6 +23,7 @@ set -euo pipefail
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP_ROOT" || exit
 
+# shellcheck source=bin/lib/dev_supervisor.sh
 source "${APP_ROOT}/bin/lib/dev_supervisor.sh"
 
 MODE="${1:---lightweight}"
