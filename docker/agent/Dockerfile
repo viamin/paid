@@ -155,7 +155,7 @@ RUN npm install -g opencode-ai@1.3.2
 # The installer places the binary under /root/.local/ which is inaccessible to the
 # non-root "agent" user. Copy the resolved binary to a system-wide path instead.
 # To update: curl -fsSL https://cursor.com/install | sha256sum
-ARG CURSOR_AGENT_INSTALL_SHA256="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+ARG CURSOR_AGENT_INSTALL_SHA256=ea67e726a29c229e4fed799b55fde7884efafdd45ccba6666b1ff68cacd2e9e1
 RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
     && echo "${CURSOR_AGENT_INSTALL_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
     && bash /tmp/cursor-install.sh \
