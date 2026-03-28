@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 
-export OVERMIND_SOCKET="${OVERMIND_SOCKET:-.overmind.sock}"
+set -u
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$APP_ROOT" || exit
+
+# shellcheck source=bin/lib/dev_supervisor.sh
+source "${APP_ROOT}/bin/lib/dev_supervisor.sh"
+
+DEFAULT_OVERMIND_SOCKET="${APP_ROOT}/.overmind.sock"
+export OVERMIND_SOCKET="${OVERMIND_SOCKET:-$DEFAULT_OVERMIND_SOCKET}"
+if [[ "$OVERMIND_SOCKET" != /* ]]; then
+  export OVERMIND_SOCKET="${APP_ROOT}/${OVERMIND_SOCKET}"
+fi
 
 if ! command -v overmind &> /dev/null
 then
@@ -12,6 +24,9 @@ if [ -S "$OVERMIND_SOCKET" ] && ! overmind status &>/dev/null; then
   echo "Removing stale Overmind socket..."
   rm -f "$OVERMIND_SOCKET"
 fi
+
+dev_supervisor_prepare_logging
+dev_supervisor_cleanup_stale_tmux_sockets
 
 # Let the debug gem allow remote connections,
 # but avoid loading until `debugger` is called
@@ -29,4 +44,14 @@ if [ "${SKIP_DEV_CLEANUP:-0}" != "1" ]; then
   bin/rake dev:cleanup 2>/dev/null || true
 fi
 
-overmind start -f Procfile.dev "$@"
+dev_supervisor_snapshot_state "bin-dev-before-start"
+
+if overmind start -f Procfile.dev -F "$(dev_supervisor_tmux_config)" "$@" \
+  2> >(tee -a "$(dev_supervisor_overmind_log)" >&2); then
+  :
+else
+  exit_code=$?
+  dev_supervisor_log_line "$(dev_supervisor_overmind_log)" "overmind start exited with code ${exit_code}"
+  dev_supervisor_snapshot_state "bin-dev-overmind-start-failed"
+  exit "$exit_code"
+fi
