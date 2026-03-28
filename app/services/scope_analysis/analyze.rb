@@ -64,7 +64,7 @@ module ScopeAnalysis
       "authentication" => /\bauthenticat(?:e|ion|ed|ing)\b|\bauth\b|\blogin\b|\bsign.?in\b/i,
       "authorization" => /\bauthoriz(?:e|ation|ed|ing)\b|\bpermission(?:s)?\b|\brole(?:s)?\b|\baccess.?control\b/i,
       "background jobs" => /\bbackground\s+job(?:s)?\b|\basync(?:hronous)?\b|\bworker(?:s)?\b|\bqueue(?:s|d|ing)?\b/i,
-      "api endpoints" => /\bapi\s+endpoint(?:s)?\b|\brest(?:ful)?\s+api\b|\bendpoint(?:s)?\b/i,
+      "api endpoints" => /\bapi\s+endpoint(?:s)?\b|\brest(?:ful)?\s+api\b/i,
       "ui" => /\bui\b|\buser\s+interface\b|\bfrontend\b|\bfront.?end\b|\bdashboard\b/i,
       "database" => /\bdatabase\b|\bschema\b|\btable(?:s)?\b|\bcolumn(?:s)?\b|\bindex(?:es)?\b/i,
       "notifications" => /\bnotificat(?:ion|ions)\b|\bemail(?:s)?\b|\bwebhook(?:s)?\b|\balert(?:s)?\b/i,
@@ -194,7 +194,7 @@ module ScopeAnalysis
       def initialize(should_decompose:, confidence:, sub_components:)
         @should_decompose = should_decompose
         @confidence = confidence
-        @sub_components = sub_components.freeze
+        @sub_components = (sub_components || []).dup.freeze
       end
 
       def should_decompose?
