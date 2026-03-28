@@ -7,7 +7,7 @@
             rel: "noopener noreferrer",
             class: "flex-shrink-0 text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
       <span class="truncate text-sm text-gray-900"><%= pull_request.title %></span>
-      <% if pull_request.auto_continue_paused? %>
+      <% if pull_request.auto_continue_paused? && pull_request.has_label?(project.automation_label_name) %>
         <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">Paused</span>
       <% end %>
     </div>
@@ -21,13 +21,15 @@
   </div>
   <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
     <%= paid_state_badge(pull_request.paid_state) %>
-    <%= button_to toggle_auto_continue_pause_project_agent_runs_path(project, pull_request_id: pull_request.id),
-                  method: :post,
-                  class: "text-xs font-medium #{pull_request.auto_continue_paused? ? 'text-green-600 hover:text-green-900' : 'text-yellow-600 hover:text-yellow-900'}",
-                  title: pull_request.auto_continue_paused? ? "Resume auto-continue" : "Pause auto-continue",
-                  aria: { label: pull_request.auto_continue_paused? ? "Resume auto-continue" : "Pause auto-continue" },
-                  form: { data: { action_button: true } } do %>
-      <%= pull_request.auto_continue_paused? ? "▶️" : "⏸️" %>
+    <% if pull_request.has_label?(project.automation_label_name) %>
+      <%= button_to toggle_auto_continue_pause_project_agent_runs_path(project, pull_request_id: pull_request.id),
+                    method: :post,
+                    class: "text-xs font-medium #{pull_request.auto_continue_paused? ? 'text-green-600 hover:text-green-900' : 'text-yellow-600 hover:text-yellow-900'}",
+                    title: pull_request.auto_continue_paused? ? "Resume auto-continue" : "Pause auto-continue",
+                    aria: { label: pull_request.auto_continue_paused? ? "Resume auto-continue" : "Pause auto-continue" },
+                    form: { data: { action_button: true } } do %>
+        <%= pull_request.auto_continue_paused? ? "▶️" : "⏸️" %>
+      <% end %>
     <% end %>
     <%# Three states: "Bump Priority" when queued automatic runs exist (only queued runs can be
         reprioritized — pending/running are already claimed by a worker), "Run in progress" when
