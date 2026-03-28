@@ -81,6 +81,13 @@ class AgentRun < ApplicationRecord
     end
   }
 
+  # SQL expression for the effective provider: the provider that actually
+  # produced the output. Mirrors the Ruby #effective_provider method so that
+  # both SQL aggregations and Ruby code share the same logic.
+  def self.effective_provider_sql
+    "COALESCE(NULLIF(final_provider, ''), agent_type)"
+  end
+
   ransacker :tokens_total, type: :integer do
     Arel.sql("COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)")
   end
@@ -476,6 +483,17 @@ class AgentRun < ApplicationRecord
   # @return [String] The review prompt
   def prompt_for_review
     "Review pull request ##{source_pull_request_number} in #{project.full_name}."
+  end
+
+  # Returns the provider that actually produced the output for this run.
+  # Prefers final_provider (the provider that ultimately completed successfully)
+  # when present, otherwise falls back to agent_type (the originally requested provider).
+  # Note: whether a fallback occurred should be determined via provider tracking
+  # fields (e.g., providers_attempted / provider_switches), not by final_provider alone.
+  #
+  # @return [String] The effective provider name
+  def effective_provider
+    final_provider.presence || agent_type
   end
 
   # Records a provider attempt in the providers_attempted array.
