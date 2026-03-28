@@ -30,6 +30,12 @@ class ProjectsController < ApplicationController
     @pr_numbers_with_active_runs = @project.pr_numbers_with_active_runs
     @cost_budgets = @project.cost_budgets.load
     @quality_summary = QualityMetrics::DashboardStats.overview(project: @project)
+    @collector_runs = CollectorRun
+      .joins(:project_version)
+      .where(project_versions: { project_id: @project.id })
+      .includes(:project_version)
+      .order(created_at: :desc)
+      .limit(20)
   end
 
   def new

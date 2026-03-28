@@ -125,8 +125,10 @@ module Knowledge
 
         {
           chunk_id: chunk.id,
+          artifact_id: artifact.id,
           artifact_type: artifact.artifact_type,
           identifier: artifact.identifier,
+          scope_path: artifact.scope_path,
           content: chunk.content,
           score: score,
           source: "semantic",
