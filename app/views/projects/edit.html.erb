@@ -264,9 +264,10 @@
           Permanently remove this project and all associated agent runs. This action cannot be undone.
         </p>
 
-        <div class="mt-4" data-controller="confirm-delete" data-confirm-delete-name-value="<%= @project.name %>">
+        <% persisted_name = @project.name_in_database %>
+        <div class="mt-4" data-controller="confirm-delete" data-confirm-delete-name-value="<%= persisted_name %>">
           <label for="delete_confirmation" class="block text-sm font-medium leading-6 text-gray-900">
-            Type <strong><%= @project.name %></strong> to confirm deletion
+            Type <strong><%= persisted_name %></strong> to confirm deletion
           </label>
           <div class="mt-2 flex items-center gap-x-3">
             <input type="text" id="delete_confirmation" name="name_confirmation"
@@ -274,7 +275,7 @@
               data-confirm-delete-target="input"
               data-action="input->confirm-delete#validate"
               class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-red-600 sm:text-sm sm:leading-6"
-              placeholder="<%= @project.name %>"
+              placeholder="<%= persisted_name %>"
               autocomplete="off" />
           </div>
 
