@@ -1,11 +1,23 @@
 # frozen_string_literal: true
 
 class AddUniqueIndexToDecisionRecordsAgentRunId < ActiveRecord::Migration[8.1]
-  def change
+  disable_ddl_transaction!
+
+  def up
     # Enforce 1:1 relationship between agent_run and decision_record at the DB level.
     # Partial index (WHERE NOT NULL) allows multiple records with NULL agent_run_id.
     # Also prevents duplicate records from Temporal activity retries.
-    remove_index :decision_records, :agent_run_id, if_exists: true
-    add_index :decision_records, :agent_run_id, unique: true, where: "agent_run_id IS NOT NULL"
+    remove_index :decision_records, :agent_run_id, if_exists: true, algorithm: :concurrently
+    add_index :decision_records,
+              :agent_run_id,
+              unique: true,
+              where: "agent_run_id IS NOT NULL",
+              algorithm: :concurrently
+  end
+
+  def down
+    # Best-effort rollback: drop the unique partial index and recreate a standard index.
+    remove_index :decision_records, :agent_run_id, if_exists: true, algorithm: :concurrently
+    add_index :decision_records, :agent_run_id, algorithm: :concurrently
   end
 end

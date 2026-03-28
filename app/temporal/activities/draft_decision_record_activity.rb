@@ -68,6 +68,8 @@ module Activities
           { agent_run_id: agent_run_id, decision_record_id: nil, success: true }
         end
       end
+    rescue Temporalio::Error::CanceledError
+      raise
     rescue => e
       logger.warn(
         message: "knowledge.decisions.draft_failed",

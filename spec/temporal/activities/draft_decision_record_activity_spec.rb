@@ -55,5 +55,11 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
       expect(result[:success]).to be false
       expect(result[:error]).to eq("LLM timeout")
     end
+
+    it "re-raises Temporalio::Error::CanceledError instead of swallowing it" do
+      allow(Knowledge::Decisions::Draft).to receive(:call).and_raise(Temporalio::Error::CanceledError, "activity canceled")
+
+      expect { activity.execute(agent_run_id: agent_run.id) }.to raise_error(Temporalio::Error::CanceledError)
+    end
   end
 end
