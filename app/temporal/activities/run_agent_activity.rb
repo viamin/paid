@@ -11,8 +11,9 @@ module Activities
     #
     # NOTE: This hash defines command templates for all providers the system
     # knows how to run. Currently Claude CLI, Codex CLI, Cursor agent CLI,
-    # Gemini CLI, Kilocode CLI, and OpenCode CLI are installed in the agent
-    # Docker container (docker/agent/Dockerfile). Actual container execution is
+    # Gemini CLI, Kilocode CLI, OpenCode CLI, and GitHub Copilot CLI are
+    # installed in the agent Docker container (docker/agent/Dockerfile).
+    # Actual container execution is
     # gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS — providers
     # not in that set are filtered out upstream (UserSetting, ProvidersController)
     # before reaching provider_order.
@@ -23,6 +24,7 @@ module Activities
       "gemini" => %w[gemini -y -p],
       "kilocode" => %w[kilo run --auto],
       "opencode" => %w[opencode --non-interactive --message],
+      "copilot" => %w[github-copilot-cli --message],
       "cursor" => %w[cursor-agent --message],
       "aider" => %w[aider --yes --no-auto-commits --message]
     }.freeze
