@@ -1,7 +1,17 @@
 # frozen_string_literal: true
 
 class RunCollectorsJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
   queue_as :default
+
+  # Prevent duplicate enqueues for the same project+SHA when staleness detection
+  # polls frequently and the prior job hasn't started yet.
+  good_job_control_concurrency_with(
+    total_limit: 1,
+    enqueue_limit: 1,
+    key: -> { "run_collectors_#{arguments[0]}_#{arguments[1]}" }
+  )
 
   def perform(project_id, commit_sha, branch: "main", committed_at: nil)
     project = Project.find(project_id)
