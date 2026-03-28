@@ -400,7 +400,7 @@ module Activities
     # provider. The prompt is passed as a positional parameter ($1) to
     # preserve multi-line content from augment_prompt_for_goal. The
     # unset-var list is shared with Providers::TestAgent via
-    # ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS.
+    # ProviderSupport.subscription_auth_unset_vars_for.
     def subscription_auth_command(provider, command_prefix, prompt)
       base = command_prefix.shelljoin
       env_flag = "PAID_#{provider.upcase}_SUBSCRIPTION_AUTH"

@@ -356,9 +356,7 @@ module Providers
         tmp_output="$(mktemp)" &&
         tmp_error="$(mktemp)" &&
         if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then
-          env
-          #{unset_flags}
-          codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+          env #{unset_flags} codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
         else
           codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
         fi;
@@ -381,9 +379,7 @@ module Providers
         tmp_error="$(mktemp)" &&
         before_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)" &&
         if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
-          env
-          #{unset_flags}
-          #{command} >"$tmp_output" 2>"$tmp_error";
+          env #{unset_flags} #{command} >"$tmp_output" 2>"$tmp_error";
         else
           #{command} >"$tmp_output" 2>"$tmp_error";
         fi;
@@ -413,10 +409,9 @@ module Providers
         .flatten
         .uniq
         .map { |var| "-u #{var}" }
-        .join("\n")
+        .join(" ")
       <<~SH.squish
-        env
-        #{all_unset_flags}
+        env #{all_unset_flags}
         timeout 20s kilo run --auto --print-logs #{escaped_prompt}
       SH
     end
@@ -424,7 +419,7 @@ module Providers
     def subscription_auth_unset_flags(provider)
       subscription_auth_unset_vars_for(provider)
         .map { |var| "-u #{var}" }
-        .join("\n")
+        .join(" ")
     end
 
     def subscription_auth_unset_vars_for(provider)
