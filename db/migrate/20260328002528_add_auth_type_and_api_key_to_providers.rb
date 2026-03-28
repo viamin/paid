@@ -10,7 +10,7 @@ class AddAuthTypeAndApiKeyToProviders < ActiveRecord::Migration[8.1]
 
     # Replace the old unique index with partial indexes that allow multiple
     # entries per provider_key as long as they differ by auth_type/api_key.
-    remove_index :providers, [ :user_id, :provider_key ], unique: true
+    remove_index :providers, [ :user_id, :provider_key ]
 
     # One subscription entry per provider per user
     add_index :providers, [ :user_id, :provider_key ],
