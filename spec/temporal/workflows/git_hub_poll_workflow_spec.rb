@@ -69,7 +69,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:maybe_scan_paid_prs, 1)
 
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::ScanPaidPrsActivity, anything, anything)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
     end
   end
 
@@ -95,7 +95,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:maybe_check_knowledge_staleness, 1)
 
       expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::CheckKnowledgeStalenessActivity, anything, anything)
+        .with(Activities::CheckKnowledgeStalenessActivity, anything, timeout: anything)
     end
   end
 

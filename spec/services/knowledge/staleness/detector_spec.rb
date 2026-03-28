@@ -79,9 +79,24 @@ RSpec.describe Knowledge::Staleness::Detector do
         expect(result[:last_collected_sha]).to be_nil
       end
 
-      context "when a ProjectVersion already exists for the SHA" do
+      context "when a ProjectVersion exists for the SHA without a CollectorRun" do
         before do
           create(:project_version, project: project, commit_sha: new_sha)
+        end
+
+        it "enqueues collection since no collector has run" do
+          expect(RunCollectorsJob).to receive(:perform_later)
+            .with(project.id, new_sha, branch: project.default_branch)
+
+          result = detector.call
+          expect(result[:collection_enqueued]).to be true
+        end
+      end
+
+      context "when a ProjectVersion exists with a CollectorRun for the SHA" do
+        before do
+          version = create(:project_version, project: project, commit_sha: new_sha)
+          create(:collector_run, project_version: version)
         end
 
         it "does not enqueue duplicate collection" do
@@ -202,6 +217,29 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
     end
 
+    context "when a force-push/rewind results in zero commit distance" do
+      before do
+        old_version = create(:project_version, project: project, commit_sha: old_sha)
+        create(:collector_run, :completed, project_version: old_version)
+
+        allow(detector).to receive(:run_git)
+          .with("rev-list", "--count", "#{old_sha}..#{new_sha}")
+          .and_return("0\n")
+        allow(detector).to receive(:run_git)
+          .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
+          .and_return("app/models/user.rb\n")
+      end
+
+      it "detects staleness when SHAs differ but commit distance is zero" do
+        allow(RunCollectorsJob).to receive(:perform_later)
+
+        result = detector.call
+        expect(result[:stale]).to be true
+        expect(result[:current_sha]).to eq(new_sha)
+        expect(result[:last_collected_sha]).to eq(old_sha)
+      end
+    end
+
     context "when below staleness threshold" do
       before do
         old_version = create(:project_version, project: project, commit_sha: old_sha)
@@ -261,8 +299,9 @@ RSpec.describe Knowledge::Staleness::Detector do
         old_version = create(:project_version, project: project, commit_sha: old_sha)
         create(:collector_run, :completed, project_version: old_version)
 
-        # Already have a version for new_sha (collection in progress)
-        create(:project_version, project: project, commit_sha: new_sha)
+        # Already have a version for new_sha with a collector run in progress
+        new_version = create(:project_version, project: project, commit_sha: new_sha)
+        create(:collector_run, project_version: new_version)
 
         allow(detector).to receive(:run_git)
           .with("rev-list", "--count", "#{old_sha}..#{new_sha}")

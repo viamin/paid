@@ -37,7 +37,9 @@ module Knowledge
         return not_stale_result(current_sha, last_sha:) if current_sha == last_sha
 
         commit_distance = commits_between(last_sha, current_sha)
-        return not_stale_result(current_sha, last_sha:) if commit_distance < STALENESS_THRESHOLD
+        # commit_distance == 0 with different SHAs indicates a force-push/rewind
+        # (new_sha is an ancestor of old_sha), which should be treated as stale.
+        return not_stale_result(current_sha, last_sha:) if commit_distance.positive? && commit_distance < STALENESS_THRESHOLD
 
         changed_files = changed_files_between(last_sha, current_sha)
         stale_count = mark_stale_artifacts(changed_files, last_version)
@@ -123,10 +125,13 @@ module Knowledge
       end
 
       def recently_collected?(sha)
-        ProjectVersion.exists?(
+        version = ProjectVersion.find_by(
           project: project,
           commit_sha: sha
         )
+        return false unless version
+
+        CollectorRun.exists?(project_version_id: version.id)
       end
 
       def worktree_service
