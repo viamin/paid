@@ -234,7 +234,11 @@ class WorktreeService
 
   def recently_fetched?(repo_path, max_age)
     fetch_head = File.join(repo_path, "FETCH_HEAD")
-    File.exist?(fetch_head) && File.mtime(fetch_head) > max_age.ago
+    begin
+      File.mtime(fetch_head) > max_age.ago
+    rescue Errno::ENOENT
+      false
+    end
   end
 
   def clone_repository
