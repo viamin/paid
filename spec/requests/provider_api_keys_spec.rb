@@ -66,6 +66,7 @@ RSpec.describe "ProviderApiKeys" do
         api_key = create(:provider_api_key, user: user)
         get provider_api_key_path(api_key)
         expect(response.body).to include("****")
+        expect(response.body).not_to include(api_key.api_key.to_s)
       end
 
       it "does not allow viewing API keys from other users" do

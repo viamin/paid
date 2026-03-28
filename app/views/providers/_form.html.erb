@@ -43,10 +43,7 @@
   <% end %>
 
   <div>
-    <%# Use a <span> instead of form.label because the actual <select> IDs vary by
-        auth type (provider_provider_key_subscription / provider_provider_key_api_key).
-        A label with a mismatched `for` attribute hurts accessibility. %>
-    <span class="block text-sm font-medium text-gray-900">Provider</span>
+    <span id="provider_key_label" class="block text-sm font-medium text-gray-900">Provider</span>
     <div class="mt-2">
       <% if provider.persisted? %>
         <%= form.hidden_field :provider_key, value: provider.provider_key %>
@@ -58,6 +55,7 @@
                 @subscription_provider_options.map { |key| [key.titleize, key] },
                 {},
                 id: "provider_provider_key_subscription",
+                "aria-labelledby": "provider_key_label",
                 class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
                 disabled: is_api_key %>
           </div>
@@ -68,6 +66,7 @@
                 @api_key_provider_options.map { |key| [key.titleize, key] },
                 {},
                 id: "provider_provider_key_api_key",
+                "aria-labelledby": "provider_key_label",
                 class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
                 disabled: !is_api_key %>
           </div>
