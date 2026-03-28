@@ -39,3 +39,6 @@ application.register("live-dashboard", LiveDashboardController)
 
 import ElapsedTimeController from "./elapsed_time_controller"
 application.register("elapsed-time", ElapsedTimeController)
+
+import ProviderFormController from "./provider_form_controller"
+application.register("provider-form", ProviderFormController)

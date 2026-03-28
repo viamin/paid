@@ -10,7 +10,19 @@ class ProvidersController < ApplicationController
   end
 
   def new
-    @provider = current_user.providers.new
+    # CodeQL false positive: auth_type is not sensitive data — it's a UI routing
+    # hint ("subscription" or "api_key") that selects which form variant to show.
+    # The raw param is discarded immediately; only the allowlisted value is used.
+    auth_type = sanitize_auth_type(params[:auth_type])
+
+    # Only honor API key auth_type if the user has compatible API keys;
+    # otherwise default to subscription to avoid a form with no radio selected.
+    if auth_type == "api_key"
+      load_provider_options unless instance_variable_defined?(:@api_key_provider_options)
+      auth_type = "subscription" if @api_key_provider_options.blank?
+    end
+
+    @provider = current_user.providers.new(auth_type: auth_type)
     authorize @provider
   end
 
@@ -27,8 +39,13 @@ class ProvidersController < ApplicationController
         redirect_to providers_path, alert: "Provider created, but settings reconciliation failed. Please review settings."
       end
     else
+      preserve_submitted_provider_key_in_options
       render :new, status: :unprocessable_content
     end
+  rescue ActiveRecord::RecordNotUnique
+    @provider.errors.add(:provider_key, "already has an entry with this configuration")
+    preserve_submitted_provider_key_in_options
+    render :new, status: :unprocessable_content
   end
 
   def edit
@@ -115,23 +132,57 @@ class ProvidersController < ApplicationController
 
   private
 
+  # Validates auth_type against the allowlist, defaulting to "subscription".
+  # Extracted to make it clear to static analyzers (CodeQL) that the raw
+  # query param is never used directly — only the sanitized value propagates.
+  def sanitize_auth_type(raw)
+    Provider::AUTH_TYPES.include?(raw) ? raw : "subscription"
+  end
+
   def set_provider
     @provider = policy_scope(Provider).find(params[:id])
   end
 
   def provider_params
-    permitted = [ :enabled_for_agent_runs, :enabled_for_fallback ]
-    permitted << :provider_key if action_name == "create"
+    permitted = [ :enabled_for_agent_runs, :enabled_for_fallback, :name, :fallback_role ]
+    if action_name == "create"
+      permitted.push(:provider_key, :auth_type, :provider_api_key_id)
+    end
     params.require(:provider).permit(*permitted)
   end
 
   def load_provider_options
     addable_keys = Provider.addable_provider_keys
-    existing_keys = current_user.providers.pluck(:provider_key)
-    @provider_options = if @provider&.persisted?
-      (addable_keys - (existing_keys - [ @provider.provider_key ]))
+    existing_subscription_keys = current_user.providers.subscription.pluck(:provider_key)
+
+    # Subscription providers: only show keys not yet added
+    @subscription_provider_options = if @provider&.persisted?
+      addable_keys - (existing_subscription_keys - [ @provider.provider_key ])
     else
-      addable_keys - existing_keys
+      addable_keys - existing_subscription_keys
+    end
+
+    # API key providers: show all addable keys that have a compatible API key
+    @available_api_keys = current_user.provider_api_keys.ordered
+    @api_key_provider_options = addable_keys.select do |key|
+      @available_api_keys.any? { |ak| ak.compatible_with?(key) }
+    end
+
+    # Combined for backward compat
+    @provider_options = @subscription_provider_options
+  end
+
+  # When re-rendering :new after a validation failure, ensure the submitted
+  # provider_key is present in the relevant options list so the <select>
+  # preserves the user's selection and error messages make sense.
+  def preserve_submitted_provider_key_in_options
+    key = @provider.provider_key
+    return if key.blank?
+
+    if @provider.subscription?
+      @subscription_provider_options |= [ key ] unless @subscription_provider_options.include?(key)
+    elsif @provider.api_key?
+      @api_key_provider_options |= [ key ] unless @api_key_provider_options.include?(key)
     end
   end
 
@@ -212,7 +263,7 @@ class ProvidersController < ApplicationController
     default_key = Provider.default_provider_key
     return [] unless default_key
 
-    default = current_user.providers.find_or_initialize_by(provider_key: default_key)
+    default = current_user.providers.find_or_initialize_by(provider_key: default_key, auth_type: "subscription")
     default.enabled_for_agent_runs = true
     default.enabled_for_fallback = true if default.new_record?
 
@@ -232,7 +283,14 @@ class ProvidersController < ApplicationController
     @user_setting = current_user.settings
     @enabled_agent_providers = UserSetting.enabled_agent_providers(current_user)
     @fallback_candidate_providers = UserSetting.fallback_candidate_providers(current_user)
-    @addable_provider_options = Provider.addable_provider_keys - current_user.providers.pluck(:provider_key)
+    @available_api_keys = current_user.provider_api_keys.ordered
+    existing_subscription_keys = current_user.providers.subscription.pluck(:provider_key)
+    addable_keys = Provider.addable_provider_keys
+    api_key_compatible_addable_keys =
+      addable_keys & @available_api_keys.flat_map(&:compatible_providers).uniq
+    @addable_provider_options = (
+      (addable_keys - existing_subscription_keys) + api_key_compatible_addable_keys
+    ).uniq.presence || []
   end
 
   def update_fallback_provider_flags!

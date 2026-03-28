@@ -75,6 +75,7 @@ module Integrations
           { key: "jira", label: "Jira", icon: :jira },
           credential_counts
         )
+        sections[:llm_provider][:cards] << provider_card(Integrations::LlmApiKeyProvider, account)
         sections[:llm_provider][:cards] << stored_credential_card(
           { key: "provider_credentials", label: "Provider Credentials",
             description: provider_credentials_description, category: :llm_provider, icon: :provider },

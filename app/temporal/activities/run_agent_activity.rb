@@ -143,6 +143,18 @@ module Activities
             persist_rate_limit(user_settings, provider, provider_states, e.reset_at)
             agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
+
+            # Rate-limit fallback execution is not yet implemented. #546
+            # added the UI for configuring API-key-backed fallback entries;
+            # actual execution requires injecting the selected API key into
+            # the container environment and adding api_key variants to the
+            # provider order. Tracked separately — only logging availability
+            # for now; no switch counters or AgentRun mutation until the
+            # fallback is actually executed.
+            canonical = canonical_provider(provider)
+            if @rate_limit_fallback_keys&.include?(canonical)
+              logger.info(message: "agent_execution.rate_limit_fallback_available", provider: canonical, agent_run_id: agent_run.id)
+            end
           rescue ProviderTimeoutError => e
             last_error = "timeout"
             timeout_error ||= e.message
@@ -220,6 +232,9 @@ module Activities
 
     # Builds the ordered list of providers to attempt.
     # Uses fallback providers if enabled, otherwise just the agent's type.
+    # Rate-limit fallback providers are tracked separately (via
+    # @rate_limit_fallback_keys) and handled during execution; they do not
+    # modify the provider order returned by this method.
     #
     # @return [Array<String>] Provider names in priority order
     def build_provider_order(agent_run, user_settings)
@@ -227,11 +242,16 @@ module Activities
         primary_provider: canonical_provider(agent_run.agent_type)
       )
 
-      self.class.provider_order(
+      providers = self.class.provider_order(
         agent_type: agent_run.agent_type,
         fallback_enabled: user_settings.fallback_enabled,
         fallback_providers: fallback_providers
       )
+
+      # Cache rate-limit fallback provider keys for use during execution
+      @rate_limit_fallback_keys = UserSetting.rate_limit_fallback_providers(user_settings.user).to_set
+
+      providers
     end
 
     # Checks if a provider is currently unavailable (rate limited or circuit open).
