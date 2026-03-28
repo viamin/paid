@@ -13,7 +13,15 @@ module Knowledge
       # staleness. With the default of 1, any single commit advance is enough.
       # Set KNOWLEDGE_STALENESS_THRESHOLD=N to require N commits before
       # re-collection (e.g., 5 means "at least 5 commits ahead").
-      STALENESS_THRESHOLD = ENV.fetch("KNOWLEDGE_STALENESS_THRESHOLD", "1").to_i
+      STALENESS_THRESHOLD = begin
+        val = Integer(ENV.fetch("KNOWLEDGE_STALENESS_THRESHOLD", "1"), exception: false)
+        if val.nil? || val < 1
+          Rails.logger&.warn("[Knowledge::Staleness::Detector] Invalid KNOWLEDGE_STALENESS_THRESHOLD=#{ENV["KNOWLEDGE_STALENESS_THRESHOLD"].inspect}; using default of 1")
+          1
+        else
+          val
+        end
+      end
       FETCH_THROTTLE = 2.minutes
 
       attr_reader :project
