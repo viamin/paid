@@ -3,6 +3,18 @@
 require "rails_helper"
 
 RSpec.describe Providers::TestAgent do
+  # Clear provider API keys that control harness-vs-container path selection
+  # so tests don't unexpectedly take the harness path when a developer has
+  # these env vars set locally.
+  around do |example|
+    original_openai = ENV.delete("OPENAI_API_KEY")
+    original_google = ENV.delete("GOOGLE_API_KEY")
+    example.run
+  ensure
+    original_openai ? ENV["OPENAI_API_KEY"] = original_openai : ENV.delete("OPENAI_API_KEY")
+    original_google ? ENV["GOOGLE_API_KEY"] = original_google : ENV.delete("GOOGLE_API_KEY")
+  end
+
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:github_token) { create(:github_token, account: account, created_by: user) }
