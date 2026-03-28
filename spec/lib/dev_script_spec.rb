@@ -6,9 +6,11 @@ require "open3"
 require "socket"
 require "tmpdir"
 require_relative "../support/exec_tmpdir"
+require_relative "../support/overmind_env_helpers"
 
 RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
   include ExecTmpdir
+  include OvermindEnvHelpers
   let(:script_source) { File.expand_path("../../bin/dev", __dir__) }
 
   it "removes a stale Overmind socket before starting overmind" do
@@ -55,7 +57,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
   it "starts overmind successfully even when bundler env is present" do
     Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
-      env = bundler_contaminated_env(dir)
+      env = bundler_contaminated_env(dir).merge("SKIP_DEV_CLEANUP" => "1")
       stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
@@ -71,25 +73,6 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
   def write_executable(path, contents)
     File.write(path, contents)
     FileUtils.chmod("+x", path)
-  end
-
-  def bundler_contaminated_env(dir)
-    {
-      "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
-      "SKIP_DEV_CLEANUP" => "1",
-      "OVERMIND_SOCKET" => ".overmind.sock",
-      "BUNDLE_GEMFILE" => File.join(dir, "Gemfile"),
-      "BUNDLE_BIN_PATH" => "/tmp/fake-bundle-bin",
-      "BUNDLER_SETUP" => "/tmp/fake-bundler-setup",
-      "BUNDLER_VERSION" => "2.7.2",
-      "RUBYLIB" => "/tmp/fake-rubylib",
-      "RUBYOPT" => "-r/tmp/fake-bundler/setup",
-      "RUBYGEMS_GEMDEPS" => "-"
-    }
-  end
-
-  def overmind_invocation_log(dir)
-    File.read(File.join(dir, "stubbin", "overmind-env.log"))
   end
 
   def prepare_script_fixture(dir)
