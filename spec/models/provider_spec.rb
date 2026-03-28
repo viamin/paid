@@ -23,14 +23,25 @@ RSpec.describe Provider do
 
     it "validates auth_type inclusion" do
       expect(provider).to allow_value("subscription").for(:auth_type)
-      expect(provider).to allow_value("api_key").for(:auth_type)
       expect(provider).not_to allow_value("free_trial").for(:auth_type)
+    end
+
+    it "allows api_key auth_type with a valid provider_api_key" do
+      api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[cursor])
+      provider.provider_api_key = api_key
+      expect(provider).to allow_value("api_key").for(:auth_type)
     end
 
     it "validates fallback_role inclusion" do
       expect(provider).to allow_value("standard").for(:fallback_role)
-      expect(provider).to allow_value("rate_limit_fallback").for(:fallback_role)
       expect(provider).not_to allow_value("primary").for(:fallback_role)
+    end
+
+    it "allows rate_limit_fallback role on api_key providers" do
+      api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[cursor])
+      provider.auth_type = "api_key"
+      provider.provider_api_key = api_key
+      expect(provider).to allow_value("rate_limit_fallback").for(:fallback_role)
     end
 
     it "requires standard fallback_role for subscription providers" do

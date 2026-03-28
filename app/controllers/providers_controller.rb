@@ -10,8 +10,11 @@ class ProvidersController < ApplicationController
   end
 
   def new
-    # auth_type is not sensitive — it's a UI routing hint ("subscription" or "api_key")
-    # that determines which form variant to show. Validated against AUTH_TYPES allowlist.
+    # auth_type is not sensitive data — it's a UI routing hint containing only
+    # "subscription" or "api_key" that determines which form variant to show.
+    # It is immediately validated against the AUTH_TYPES allowlist below and
+    # never logged, stored, or forwarded. CodeQL flags all query params as
+    # potentially sensitive, but this value carries no confidential information.
     auth_type = params[:auth_type]
     auth_type = "subscription" unless Provider::AUTH_TYPES.include?(auth_type)
 
