@@ -41,20 +41,19 @@ RSpec.describe Containers::ServiceProvisioner do
         create(:project_service_container, project: project, service_container: service_container)
       end
 
-      it "starts stopped containers" do
+      it "starts stopped containers and enqueues metrics collection" do
         docker_container = instance_double(Docker::Container, id: "abc123")
         allow(Docker::Image).to receive(:create)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
         allow(docker_container).to receive(:start)
         allow(provisioner).to receive_messages(docker_healthcheck_status: nil, tcp_port_open?: true)
-        allow(ServiceContainerMetricsCollectionJob).to receive(:perform_later)
 
         result = provisioner.provision(agent_run)
 
         expect(result).to include("DATABASE_URL")
         expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@test-postgres:5432/agent_test")
         expect(agent_run.reload.service_container_ids).to eq([ service_container.id ])
-        expect(ServiceContainerMetricsCollectionJob).to have_received(:perform_later).with(service_container.id)
+        expect(ServiceContainerMetricsCollectionJob).to have_been_enqueued.with(service_container.id)
       end
 
       it "reuses running containers when Docker container is alive" do
@@ -456,8 +455,13 @@ RSpec.describe Containers::ServiceProvisioner do
     it "silently handles concurrency errors from duplicate metrics job enqueues" do
       allow(ServiceContainerMetricsCollectionJob).to receive(:perform_later)
         .and_raise(GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError)
+      allow(Rails.logger).to receive(:info).and_call_original
 
       expect { provisioner.provision(agent_run) }.not_to raise_error
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(message: "service_provisioner.metrics_job_already_enqueued",
+                       service_container_id: service_container.id)
+      )
     end
   end
 
