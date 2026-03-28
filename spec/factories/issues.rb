@@ -39,6 +39,14 @@ FactoryBot.define do
       paid_state { "failed" }
     end
 
+    trait :needs_input do
+      paid_state { "needs_input" }
+    end
+
+    trait :recommend_close do
+      paid_state { "recommend_close" }
+    end
+
     trait :with_labels do
       labels { [ "paid:planning", "bug", "enhancement" ] }
     end

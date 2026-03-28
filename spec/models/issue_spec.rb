@@ -449,7 +449,7 @@ RSpec.describe Issue do
 
   describe "paid state machine values" do
     it "defines valid PAID_STATES" do
-      expect(described_class::PAID_STATES).to eq(%w[new planning in_progress completed failed])
+      expect(described_class::PAID_STATES).to eq(%w[new planning in_progress completed failed needs_input recommend_close])
     end
 
     it "defaults paid_state to new" do

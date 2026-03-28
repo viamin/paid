@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Issue < ApplicationRecord
-  PAID_STATES = %w[new planning in_progress completed failed].freeze
+  PAID_STATES = %w[new planning in_progress completed failed needs_input recommend_close].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
 
   # Constants for synthetic Dependabot alert issues. Shared with
