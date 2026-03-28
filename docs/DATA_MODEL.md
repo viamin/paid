@@ -8,6 +8,8 @@ This document describes the database schema for Paid. The schema is designed aro
 
 **Phase 2 tables (implemented)**: prompts, prompt_versions
 
+**Knowledge base tables (implemented)**: project_versions, collector_runs, knowledge_artifacts, knowledge_chunks, knowledge_links, knowledge_audit_events
+
 **Phase 2 tables (planned)**: models, model_selections, model_overrides, style_guides, token_usages, cost_budgets, quality_metrics, ab_tests, ab_test_variants, ab_test_assignments
 
 **Implementation notes**:
@@ -1107,6 +1109,229 @@ CREATE INDEX idx_quality_metrics_prompt_created ON quality_metrics(prompt_versio
 
 ---
 
+## Knowledge Base
+
+The knowledge base stores versioned, semantic understanding of project codebases. PostgreSQL is the canonical source of truth; Qdrant serves as a derived vector index for semantic search.
+
+See [KNOWLEDGE_BASE.md](KNOWLEDGE_BASE.md) for full architecture documentation and [RDR-021](rdrs/RDR-021-knowledge-base.md) for decision rationale.
+
+### project_versions
+
+Commit-SHA-keyed snapshots of a project. Each collection run targets a specific version.
+
+```sql
+CREATE TABLE project_versions (
+  id              BIGSERIAL PRIMARY KEY,
+  project_id      BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+
+  commit_sha      VARCHAR(40) NOT NULL,
+  parent_sha      VARCHAR(40),
+  branch          VARCHAR(255) NOT NULL DEFAULT 'main',
+  committed_at    TIMESTAMP,
+  metadata        JSONB DEFAULT '{}',
+
+  created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_project_versions_project_sha ON project_versions(project_id, commit_sha);
+CREATE INDEX idx_project_versions_project_committed ON project_versions(project_id, committed_at DESC);
+```
+
+**Rails Model:**
+
+```ruby
+class ProjectVersion < ApplicationRecord
+  belongs_to :project
+  has_many :collector_runs, dependent: :destroy
+  has_many :knowledge_artifacts, through: :collector_runs
+end
+```
+
+### collector_runs
+
+Provenance tracking for each collector execution against a project version. Unique on `(project_version_id, collector_type)`.
+
+```sql
+CREATE TABLE collector_runs (
+  id                  BIGSERIAL PRIMARY KEY,
+  project_version_id  BIGINT NOT NULL REFERENCES project_versions(id) ON DELETE CASCADE,
+
+  collector_type      VARCHAR(100) NOT NULL,
+  status              VARCHAR(50) NOT NULL DEFAULT 'pending',  -- pending, running, completed, failed, stale
+  started_at          TIMESTAMP,
+  completed_at        TIMESTAMP,
+  duration_ms         INTEGER,
+  artifacts_count     INTEGER DEFAULT 0,
+  tool_version        VARCHAR(100),
+  error_message       TEXT,
+  metadata            JSONB DEFAULT '{}',
+
+  created_at          TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_collector_runs_version_type ON collector_runs(project_version_id, collector_type);
+CREATE INDEX idx_collector_runs_status ON collector_runs(status);
+```
+
+**Rails Model:**
+
+```ruby
+class CollectorRun < ApplicationRecord
+  belongs_to :project_version
+  has_many :knowledge_artifacts, dependent: :destroy
+end
+```
+
+### knowledge_artifacts
+
+File-level or logical code groupings produced by collectors. Content-hash deduplication prevents duplicate artifacts.
+
+```sql
+CREATE TABLE knowledge_artifacts (
+  id                BIGSERIAL PRIMARY KEY,
+  collector_run_id  BIGINT NOT NULL REFERENCES collector_runs(id) ON DELETE CASCADE,
+  project_id        BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+
+  artifact_type     VARCHAR(100) NOT NULL,   -- route, symbol, dependency, etc.
+  collector_type    VARCHAR(100) NOT NULL,
+  scope_path        VARCHAR(1000),           -- file path or logical scope
+  identifier        VARCHAR(500),            -- function/class name
+  content           TEXT,
+  content_hash      VARCHAR(64) NOT NULL,    -- SHA-256 for deduplication
+  status            VARCHAR(50) NOT NULL DEFAULT 'active',  -- active, stale, deleted
+  metadata          JSONB DEFAULT '{}',
+
+  created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_artifacts_run_hash ON knowledge_artifacts(collector_run_id, content_hash);
+CREATE UNIQUE INDEX idx_artifacts_active_unique
+  ON knowledge_artifacts(project_id, artifact_type, scope_path, identifier, collector_type)
+  WHERE status = 'active';
+CREATE INDEX idx_artifacts_identifier_trgm ON knowledge_artifacts USING gin (identifier gin_trgm_ops);
+CREATE INDEX idx_artifacts_project ON knowledge_artifacts(project_id);
+CREATE INDEX idx_artifacts_status ON knowledge_artifacts(status);
+```
+
+**Rails Model:**
+
+```ruby
+class KnowledgeArtifact < ApplicationRecord
+  belongs_to :collector_run
+  belongs_to :project
+  has_many :knowledge_chunks, dependent: :destroy
+end
+```
+
+### knowledge_chunks
+
+Embeddable text units with UUID primary keys (used directly as Qdrant point IDs). Includes a `tsvector` column for PostgreSQL full-text search.
+
+```sql
+CREATE TABLE knowledge_chunks (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  knowledge_artifact_id   BIGINT NOT NULL REFERENCES knowledge_artifacts(id) ON DELETE CASCADE,
+  project_id              BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+
+  chunk_type              VARCHAR(50) NOT NULL,   -- definition, summary, context, evidence
+  content                 TEXT NOT NULL,
+  content_hash            VARCHAR(64) NOT NULL,
+  content_tsvector        TSVECTOR,               -- auto-maintained for full-text search
+  embedding_model         VARCHAR(100),            -- set after embedding generation
+  sequence                INTEGER DEFAULT 0,
+  scope_tags              JSONB DEFAULT '[]',
+  status                  VARCHAR(50) NOT NULL DEFAULT 'active',  -- active, stale, deleted, redacted
+
+  created_at              TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at              TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_chunks_artifact ON knowledge_chunks(knowledge_artifact_id);
+CREATE INDEX idx_chunks_project_status ON knowledge_chunks(project_id, status);
+CREATE INDEX idx_chunks_content_hash ON knowledge_chunks(content_hash);
+CREATE INDEX idx_chunks_tsvector ON knowledge_chunks USING gin (content_tsvector);
+```
+
+**Rails Model:**
+
+```ruby
+class KnowledgeChunk < ApplicationRecord
+  belongs_to :knowledge_artifact
+  belongs_to :project
+  has_many :outgoing_links, class_name: "KnowledgeLink", foreign_key: :source_chunk_id
+  has_many :incoming_links, class_name: "KnowledgeLink", foreign_key: :target_chunk_id
+end
+```
+
+### knowledge_links
+
+Typed directed edges between chunks forming a knowledge graph.
+
+```sql
+CREATE TABLE knowledge_links (
+  id                BIGSERIAL PRIMARY KEY,
+  source_chunk_id   UUID NOT NULL REFERENCES knowledge_chunks(id) ON DELETE CASCADE,
+  target_chunk_id   UUID NOT NULL REFERENCES knowledge_chunks(id) ON DELETE CASCADE,
+
+  link_type         VARCHAR(50) NOT NULL,  -- calls, implements, tests, relates_to, depends_on, supersedes
+  weight            DECIMAL(5,3) DEFAULT 1.0,
+  metadata          JSONB DEFAULT '{}',
+
+  created_at        TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_links_uniqueness ON knowledge_links(source_chunk_id, target_chunk_id, link_type);
+CREATE INDEX idx_links_target ON knowledge_links(target_chunk_id);
+CREATE INDEX idx_links_type ON knowledge_links(link_type);
+```
+
+**Rails Model:**
+
+```ruby
+class KnowledgeLink < ApplicationRecord
+  belongs_to :source_chunk, class_name: "KnowledgeChunk"
+  belongs_to :target_chunk, class_name: "KnowledgeChunk"
+end
+```
+
+### knowledge_audit_events
+
+Append-only audit trail for all knowledge mutations. Uses BRIN index on `created_at` for efficient time-range queries.
+
+```sql
+CREATE TABLE knowledge_audit_events (
+  id            BIGSERIAL PRIMARY KEY,
+  project_id    BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+
+  event_type    VARCHAR(100) NOT NULL,  -- artifact_created, artifact_staled, chunk_embedded, collection_rebuilt
+  actor_type    VARCHAR(50),            -- collector, system, user
+  actor_id      VARCHAR(100),
+  target_type   VARCHAR(100),           -- KnowledgeArtifact, KnowledgeChunk
+  target_id     VARCHAR(100),
+  details       JSONB DEFAULT '{}',     -- event-specific context
+
+  created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_events_project_time ON knowledge_audit_events(project_id, created_at DESC, id DESC);
+CREATE INDEX idx_audit_events_target ON knowledge_audit_events(target_type, target_id);
+CREATE INDEX idx_audit_events_type ON knowledge_audit_events(event_type);
+CREATE INDEX idx_audit_events_created USING brin ON knowledge_audit_events(created_at);
+```
+
+**Rails Model:**
+
+```ruby
+class KnowledgeAuditEvent < ApplicationRecord
+  belongs_to :project
+end
+```
+
+---
+
 ## Data Retention
 
 Consider implementing data retention policies:
@@ -1118,6 +1343,7 @@ Consider implementing data retention policies:
 | quality_metrics | Indefinite | Valuable for prompt evolution |
 | ab_test_assignments | Until test completion + 30 days | Analysis only |
 | workflow_states | 30 days | Operational data |
+| knowledge_audit_events | 90 days | Operational audit trail; `KnowledgeAuditRetentionJob` handles pruning |
 
 Implement via `pg_partman` or application-level cleanup jobs.
 
