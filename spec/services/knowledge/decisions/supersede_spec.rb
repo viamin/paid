@@ -51,5 +51,13 @@ RSpec.describe Knowledge::Decisions::Supersede do
         described_class.call(original: unpersisted, superseding: superseding)
       }.to raise_error(ArgumentError, /must be persisted/)
     end
+
+    it "raises when records belong to different projects" do
+      other_project = create(:project)
+      other_record = create(:decision_record, project: other_project)
+      expect {
+        described_class.call(original: original, superseding: other_record)
+      }.to raise_error(ArgumentError, /must belong to the same project/)
+    end
   end
 end

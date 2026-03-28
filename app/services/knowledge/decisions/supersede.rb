@@ -52,6 +52,10 @@ module Knowledge
         if original.equal?(superseding) || original.id == superseding.id
           raise ArgumentError, "original and superseding must be different records"
         end
+
+        if original.project_id != superseding.project_id
+          raise ArgumentError, "original and superseding must belong to the same project"
+        end
       end
     end
   end
