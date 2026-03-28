@@ -129,7 +129,7 @@ export default class extends Controller {
   troubleshootingFor(errorType) {
     const messages = {
       connection: "Could not reach the agent. Verify the provider URL is correct and the agent container is running.",
-      authentication: "Authentication is missing, invalid, or expired. Containerized tests use Paid's own provider configuration, not the devcontainer's local CLI login.",
+      authentication: "Authentication is missing, invalid, or expired. Claude checks now use agent-harness; some other providers still use the containerized auth/runtime path.",
       timeout: "The agent did not respond in time. Ensure the agent container has sufficient resources and is not in a crash loop.",
       installation: "The provider CLI is not installed in the agent container. Verify the container image includes this provider and that it is on the PATH.",
       rate_limited: "The provider rejected the request due to usage or rate limits. Check the message above for the provider's reset or quota details.",

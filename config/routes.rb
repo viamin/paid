@@ -21,6 +21,7 @@ Rails.application.routes.draw do
 
   # Integrations hub
   resources :integrations, only: [ :index ]
+  resources :integration_credentials, only: [ :index, :new, :create, :show, :destroy ]
 
   # GitHub tokens management
   resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ] do

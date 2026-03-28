@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "shellwords"
+
 module Activities
   class RunAgentActivity < BaseActivity
     activity_name "RunAgent"
@@ -17,7 +19,7 @@ module Activities
       "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "codex" => %w[codex exec --full-auto --],
-      "gemini" => %w[gemini -s],
+      "gemini" => %w[gemini -y -p],
       "kilocode" => %w[kilo run --auto],
       "opencode" => %w[opencode --non-interactive --message],
       "cursor" => %w[cursor-agent --message],
@@ -307,7 +309,7 @@ module Activities
       end
 
       prompt = augment_prompt_for_goal(agent_run, prompt)
-      command = command_prefix + [ prompt ]
+      command = build_command(provider, command_prefix, prompt)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
@@ -396,6 +398,33 @@ module Activities
       end
     rescue StandardError
       1.hour.from_now
+    end
+
+    def build_command(provider, command_prefix, prompt)
+      case provider
+      when "codex", "gemini"
+        subscription_auth_command(provider, command_prefix, prompt)
+      else
+        command_prefix + [ prompt ]
+      end
+    end
+
+    # Wraps a provider command so that, when subscription auth is active,
+    # proxy-related env vars are unset and the CLI talks directly to the
+    # provider. The prompt is passed as a positional parameter ($1) to
+    # preserve multi-line content from augment_prompt_for_goal. The
+    # unset-var list is shared with Providers::TestAgent via
+    # ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS.
+    def subscription_auth_command(provider, command_prefix, prompt)
+      base = command_prefix.shelljoin
+      env_flag = "PAID_#{provider.upcase}_SUBSCRIPTION_AUTH"
+      unset_flags = ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS
+        .fetch(provider)
+        .map { |var| "-u #{var}" }
+        .join(" ")
+
+      script = "if [ \"$#{env_flag}\" = \"1\" ]; then env #{unset_flags} #{base} \"$1\"; else #{base} \"$1\"; fi"
+      [ "sh", "-c", script, "--", prompt ]
     end
 
     def capture_head_sha(container_service, agent_run)

@@ -100,11 +100,38 @@ module Activities
 
     def trusted_user_added_label?(project, issue, label)
       client = project.github_token.client
-      client.issue_events(project.full_name, issue.github_number).any? do |event|
-        event.event == "labeled" &&
-          event_label_name(event) == label &&
-          project.trusted_github_user?(event.actor&.login)
+      events = client.issue_events(project.full_name, issue.github_number)
+
+      # Walk label/unlabel events in chronological order to determine who
+      # last caused the label to become present. This prevents a bypass where
+      # a trusted user once added the label but later removed it and an
+      # untrusted user re-added it.
+      relevant = events.select do |event|
+        (event.event == "labeled" || event.event == "unlabeled") &&
+          event_label_name(event) == label
       end
+
+      return false if relevant.empty?
+
+      sorted = relevant.sort_by do |event|
+        event.respond_to?(:created_at) && event.created_at ? event.created_at : Time.at(0)
+      end
+
+      label_present = false
+      last_labeled_actor = nil
+
+      sorted.each do |event|
+        case event.event
+        when "labeled"
+          label_present = true
+          last_labeled_actor = event.actor&.login
+        when "unlabeled"
+          label_present = false
+          last_labeled_actor = nil
+        end
+      end
+
+      label_present && project.trusted_github_user?(last_labeled_actor)
     rescue GithubClient::RateLimitError
       raise
     rescue => e
