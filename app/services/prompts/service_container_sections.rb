@@ -10,14 +10,34 @@ module Prompts
     def setup_database_instruction
       if has_database_container?
         if detected_language == "ruby"
-          "   Run `bin/rails db:prepare` to set up the database (DATABASE_URL is already configured)."
+          "   Run `bin/rails db:prepare` to set up the database (`DATABASE_URL` will be configured for you)."
         else
-          "   A database service is already running and available via the `DATABASE_URL` environment variable." \
+          "   A database service will be available via the `DATABASE_URL` environment variable." \
           " Use your framework's standard command to create and migrate the database schema."
         end
       else
         "   Do NOT run `bin/setup`, `db:prepare`, or `db:migrate` — no database is available in this environment."
       end
+    end
+
+    def service_environment_section(include_setup_instruction: false)
+      sections = []
+
+      if include_setup_instruction
+        sections << <<~SECTION
+          # Service Environment
+
+          #{setup_database_instruction}
+        SECTION
+      end
+
+      services = available_services_section
+      sections << services if services.present?
+
+      constraints = no_infrastructure_section
+      sections << constraints if constraints.present?
+
+      sections.join
     end
 
     def no_infrastructure_section
@@ -42,7 +62,7 @@ module Prompts
     end
 
     def available_services_section
-      containers = running_service_containers
+      containers = configured_service_containers
       return "" if containers.empty?
 
       lines = containers.map { |sc| service_description(sc) }
@@ -51,22 +71,22 @@ module Prompts
 
         # Available Services
 
-        The following services are already running and available:
+        The following services are configured for this project and will be available in the agent environment:
         #{lines.join("\n")}
 
-        Do NOT install or build these services from source. They are already running.
-        Use the environment variables above to connect.
+        Do NOT install or build these services from source.
+        Use the provided environment variables to connect.
       SECTION
     end
 
-    def running_service_containers
-      @running_service_containers ||= project.service_containers.running.to_a
+    def configured_service_containers
+      @configured_service_containers ||= project.service_containers.to_a
     end
 
     def has_database_container?
       return @has_database_container unless @has_database_container.nil?
 
-      @has_database_container = running_service_containers.any? do |sc|
+      @has_database_container = configured_service_containers.any? do |sc|
         sc.image.include?("postgres")
       end
     end

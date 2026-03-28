@@ -45,8 +45,7 @@ module Prompts
       sections << conversation_section if trusted_comments.any?
       sections << instructions_section
       sections << rules_section
-      sections << available_services_section
-      sections << no_infrastructure_section
+      sections << service_environment_section
       base_prompt = sections.join("\n").delete("\x00")
 
       StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
