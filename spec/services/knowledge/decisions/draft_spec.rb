@@ -89,6 +89,12 @@ RSpec.describe Knowledge::Decisions::Draft do
       expect(result).to be_nil
     end
 
+    it "returns nil when LLM response indicates failure" do
+      allow(llm_response).to receive(:success?).and_return(false)
+      result = described_class.call(agent_run: agent_run)
+      expect(result).to be_nil
+    end
+
     it "calls AgentHarness with correct parameters" do
       described_class.call(agent_run: agent_run)
 

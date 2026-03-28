@@ -77,6 +77,14 @@ module Knowledge
       end
 
       def parse_response(response)
+        if response.respond_to?(:success?) && !response.success?
+          Rails.logger.warn(
+            message: "knowledge.decisions.draft_llm_failed",
+            agent_run_id: agent_run.id
+          )
+          return nil
+        end
+
         output = response.respond_to?(:output) ? response.output : response.to_s
         return nil if output.blank?
 

@@ -23,6 +23,32 @@ RSpec.describe DecisionRecord do
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
     it { is_expected.to validate_length_of(:commit_sha_start).is_at_most(40) }
     it { is_expected.to validate_length_of(:commit_sha_end).is_at_most(40) }
+
+    describe "project consistency" do
+      it "rejects agent_run from a different project" do
+        other_project = create(:project)
+        other_run = create(:agent_run, :completed, project: other_project)
+        record = build(:decision_record, agent_run: other_run)
+        expect(record).not_to be_valid
+        expect(record.errors[:agent_run]).to include("must belong to the same project")
+      end
+
+      it "rejects issue from a different project" do
+        other_project = create(:project)
+        other_issue = create(:issue, project: other_project)
+        record = build(:decision_record, issue: other_issue)
+        expect(record).not_to be_valid
+        expect(record.errors[:issue]).to include("must belong to the same project")
+      end
+
+      it "rejects superseded_by from a different project" do
+        other_project = create(:project)
+        other_record = create(:decision_record, project: other_project)
+        record = build(:decision_record, superseded_by: other_record)
+        expect(record).not_to be_valid
+        expect(record.errors[:superseded_by]).to include("must belong to the same project")
+      end
+    end
   end
 
   describe "immutability" do

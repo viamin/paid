@@ -21,6 +21,9 @@ class DecisionRecord < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :commit_sha_start, length: { maximum: 40 }
   validates :commit_sha_end, length: { maximum: 40 }
+  validate :agent_run_belongs_to_same_project, if: -> { agent_run.present? }
+  validate :issue_belongs_to_same_project, if: -> { issue.present? }
+  validate :superseded_by_belongs_to_same_project, if: -> { superseded_by.present? }
 
   scope :active, -> { where(status: "active") }
   scope :draft, -> { where(status: "draft") }
@@ -42,6 +45,24 @@ class DecisionRecord < ApplicationRecord
   end
 
   private
+
+  def agent_run_belongs_to_same_project
+    return if agent_run.project_id == project_id
+
+    errors.add(:agent_run, "must belong to the same project")
+  end
+
+  def issue_belongs_to_same_project
+    return if issue.project_id == project_id
+
+    errors.add(:issue, "must belong to the same project")
+  end
+
+  def superseded_by_belongs_to_same_project
+    return if superseded_by.project_id == project_id
+
+    errors.add(:superseded_by, "must belong to the same project")
+  end
 
   def enforce_immutability
     return if new_record?
