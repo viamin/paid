@@ -154,8 +154,38 @@ RSpec.describe Llm::GeneratePrDescription do
       expect(result).to eq("## Summary\n\nSome description")
     end
 
-    it "strips surrounding quotes from the output" do
+    it "strips surrounding ASCII quotes from the output" do
       quoted = %("## Summary\n\nSome description")
+      response = instance_double(AgentHarness::Response, success?: true, output: quoted)
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      result = described_class.call(agent_summary: agent_summary)
+
+      expect(result).to eq("## Summary\n\nSome description")
+    end
+
+    it "strips surrounding backticks from the output" do
+      quoted = "`## Summary\n\nSome description`"
+      response = instance_double(AgentHarness::Response, success?: true, output: quoted)
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      result = described_class.call(agent_summary: agent_summary)
+
+      expect(result).to eq("## Summary\n\nSome description")
+    end
+
+    it "strips surrounding curly double quotes from the output" do
+      quoted = "\u201C## Summary\n\nSome description\u201D"
+      response = instance_double(AgentHarness::Response, success?: true, output: quoted)
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      result = described_class.call(agent_summary: agent_summary)
+
+      expect(result).to eq("## Summary\n\nSome description")
+    end
+
+    it "strips surrounding curly single quotes from the output" do
+      quoted = "\u2018## Summary\n\nSome description\u2019"
       response = instance_double(AgentHarness::Response, success?: true, output: quoted)
       allow(AgentHarness).to receive(:send_message).and_return(response)
 

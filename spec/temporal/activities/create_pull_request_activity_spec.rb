@@ -14,8 +14,10 @@ RSpec.describe Activities::CreatePullRequestActivity do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:create_pull_request).and_return(pr_response)
     allow(github_client).to receive(:add_labels_to_issue)
-    # By default, stub LLM description generation to return nil (fallback behavior)
-    allow(Llm::GeneratePrDescription).to receive(:call).and_return(nil)
+    # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
+    # By default, return a failed response so the activity falls back to raw summary.
+    allow(AgentHarness).to receive(:send_message)
+      .and_return(instance_double(AgentHarness::Response, success?: false, output: ""))
   end
 
   describe "#execute" do
@@ -140,7 +142,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       it "uses the LLM-generated description in the PR body" do
         agent_run.log!("stdout", "Added OAuth middleware")
-        allow(Llm::GeneratePrDescription).to receive(:call).and_return(llm_description)
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true, output: llm_description))
 
         expect(github_client).to receive(:create_pull_request).with(
           anything,
@@ -154,22 +157,22 @@ RSpec.describe Activities::CreatePullRequestActivity do
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "passes issue context to the LLM service" do
+      it "passes issue context to the LLM service via AgentHarness" do
         agent_run.log!("stdout", "Added OAuth middleware")
-        allow(Llm::GeneratePrDescription).to receive(:call).and_return(llm_description)
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true, output: llm_description))
 
         activity.execute(agent_run_id: agent_run.id)
 
-        expect(Llm::GeneratePrDescription).to have_received(:call).with(
-          agent_summary: a_string_including("Added OAuth middleware"),
-          issue_title: issue.title,
-          issue_body: issue.body
+        expect(AgentHarness).to have_received(:send_message).with(
+          a_string_including(issue.title).and(including(issue.body)),
+          hash_including(provider: :claude)
         )
       end
 
       it "falls back to raw summary when LLM provider fails and logs with context" do
         agent_run.log!("stdout", "Raw agent output here")
-        allow(Llm::GeneratePrDescription).to receive(:call)
+        allow(AgentHarness).to receive(:send_message)
           .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
         mock_logger = instance_double(ActiveSupport::Logger, info: nil)
         allow(activity).to receive(:logger).and_return(mock_logger)
@@ -189,7 +192,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       it "falls back to raw summary when LLM raises an unexpected error and logs with context" do
         agent_run.log!("stdout", "Raw agent output here")
-        allow(Llm::GeneratePrDescription).to receive(:call)
+        allow(AgentHarness).to receive(:send_message)
           .and_raise(RuntimeError.new("unexpected failure"))
         mock_logger = instance_double(ActiveSupport::Logger, info: nil)
         allow(activity).to receive(:logger).and_return(mock_logger)
@@ -207,9 +210,9 @@ RSpec.describe Activities::CreatePullRequestActivity do
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "falls back to raw summary when LLM returns nil" do
+      it "falls back to raw summary when LLM returns a failed response" do
         agent_run.log!("stdout", "Raw agent output here")
-        allow(Llm::GeneratePrDescription).to receive(:call).and_return(nil)
+        # Default before block already stubs a failed response
 
         expect(github_client).to receive(:create_pull_request).with(
           anything,
