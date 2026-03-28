@@ -8,6 +8,10 @@ module ScopeAnalysis
   # sequential phases, cross-cutting concerns, complexity markers, and length)
   # and returns a Result indicating whether decomposition is warranted.
   #
+  # Integration: called early in the issue-to-agent-run pipeline (e.g.
+  # Issues::Plan or AgentRuns::Create) to gate decomposition. The call site
+  # will be added when the decomposition planner is wired up.
+  #
   # @example
   #   result = ScopeAnalysis::Analyze.call(text: issue.body)
   #   result.should_decompose?  # => true
@@ -44,6 +48,8 @@ module ScopeAnalysis
       /\bhelper(?:s)?\b/i
     ].freeze
 
+    NUMBERED_LIST_PATTERN = /^\s*\d+\.\s+/m
+
     PHASE_PATTERNS = [
       /\bfirst(?:ly)?\b.*\bthen\b/im,
       /\bstep\s+\d/i,
@@ -51,7 +57,7 @@ module ScopeAnalysis
       /\bfinally\b/i,
       /\bafter\s+that\b/i,
       /\bnext\b.*\bthen\b/im,
-      /^\s*\d+\.\s+/m
+      NUMBERED_LIST_PATTERN
     ].freeze
 
     CROSS_CUTTING_CONCERNS = {
@@ -82,7 +88,7 @@ module ScopeAnalysis
 
     def initialize(text:, threshold: DEFAULT_THRESHOLD)
       @text = text.to_s
-      @threshold = threshold
+      @threshold = normalize_threshold(threshold)
     end
 
     def self.call(...)
@@ -115,9 +121,8 @@ module ScopeAnalysis
     end
 
     def score_phases
-      numbered_list_pattern = /^\s*\d+\.\s+/m
-      numbered_list_items = text.scan(numbered_list_pattern).size
-      phase_keyword_matches = PHASE_PATTERNS.count { |pattern| pattern != numbered_list_pattern && text.match?(pattern) }
+      numbered_list_items = text.scan(NUMBERED_LIST_PATTERN).size
+      phase_keyword_matches = PHASE_PATTERNS.count { |pattern| pattern != NUMBERED_LIST_PATTERN && text.match?(pattern) }
       signal = phase_keyword_matches + [ numbered_list_items, 3 ].min
       normalize(signal, max: 5)
     end
@@ -137,23 +142,39 @@ module ScopeAnalysis
       normalize(word_count, max: WORD_COUNT_THRESHOLD)
     end
 
+    def normalize_threshold(value)
+      result = Float(value)
+      result.clamp(0.0, 1.0)
+    rescue ArgumentError, TypeError
+      raise ArgumentError, "threshold must be numeric between 0.0 and 1.0 (got #{value.inspect})"
+    end
+
     def normalize(value, max:)
       [ value.to_f / max, 1.0 ].min
     end
 
+    def canonical_component_label(raw)
+      case raw
+      when "job", "jobs"           then "background jobs"
+      when "controller", "controllers" then "web controllers"
+      when "service", "services"   then "service layer"
+      when "mailer", "mailers"     then "email"
+      when "spec", "specs"         then "tests"
+      else raw
+      end
+    end
+
     def extract_sub_components
-      components = []
-
-      CROSS_CUTTING_CONCERNS.each do |name, pattern|
-        components << name if text.match?(pattern)
+      cross_cutting = CROSS_CUTTING_CONCERNS.filter_map do |name, pattern|
+        name if text.match?(pattern)
       end
 
-      COMPONENT_PATTERNS.each do |pattern|
+      component_mentions = COMPONENT_PATTERNS.filter_map do |pattern|
         match = text.match(pattern)
-        components << match[0].downcase if match
+        canonical_component_label(match[0].downcase) if match
       end
 
-      components.uniq
+      (cross_cutting + component_mentions).uniq
     end
 
     # Immutable result value object.

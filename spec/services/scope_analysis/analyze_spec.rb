@@ -191,6 +191,31 @@ RSpec.describe ScopeAnalysis::Analyze, :no_db do
         result = described_class.call(text: text, threshold: 0.9)
         expect(result.should_decompose?).to be false
       end
+
+      it "accepts a string threshold" do
+        result = described_class.call(text: text, threshold: "0.1")
+        expect(result.should_decompose?).to be true
+      end
+
+      it "clamps threshold above 1.0 to 1.0" do
+        result = described_class.call(text: text, threshold: 2.0)
+        expect(result.should_decompose?).to be false
+      end
+
+      it "clamps threshold below 0.0 to 0.0" do
+        result = described_class.call(text: text, threshold: -1.0)
+        expect(result.should_decompose?).to be true
+      end
+
+      it "raises ArgumentError for non-numeric threshold" do
+        expect { described_class.call(text: text, threshold: "abc") }
+          .to raise_error(ArgumentError, /threshold must be numeric/)
+      end
+
+      it "raises ArgumentError for nil threshold" do
+        expect { described_class.call(text: text, threshold: nil) }
+          .to raise_error(ArgumentError, /threshold must be numeric/)
+      end
     end
   end
 
