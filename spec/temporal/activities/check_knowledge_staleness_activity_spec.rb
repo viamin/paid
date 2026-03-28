@@ -25,20 +25,26 @@ RSpec.describe Activities::CheckKnowledgeStalenessActivity do
           .and_return(detection_result)
       end
 
-      it "returns detection result" do
+      it "returns detection result with project_id" do
         result = activity.execute(project_id: project.id)
         expect(result[:stale]).to be true
         expect(result[:current_sha]).to eq("b" * 40)
         expect(result[:stale_artifacts_count]).to eq(2)
         expect(result[:collection_enqueued]).to be true
+        expect(result[:project_id]).to eq(project.id)
       end
     end
 
     context "when project is missing" do
-      it "returns not stale with project_missing flag" do
+      it "returns consistent shape with project_missing flag" do
         result = activity.execute(project_id: -1)
         expect(result[:stale]).to be false
         expect(result[:project_missing]).to be true
+        expect(result[:project_id]).to eq(-1)
+        expect(result[:current_sha]).to be_nil
+        expect(result[:changed_files]).to eq([])
+        expect(result[:stale_artifacts_count]).to eq(0)
+        expect(result[:collection_enqueued]).to be false
       end
     end
 
@@ -50,10 +56,15 @@ RSpec.describe Activities::CheckKnowledgeStalenessActivity do
           .and_raise(StandardError, "unexpected error")
       end
 
-      it "returns not stale with error message" do
+      it "returns consistent shape with error message" do
         result = activity.execute(project_id: project.id)
         expect(result[:stale]).to be false
         expect(result[:error]).to eq("unexpected error")
+        expect(result[:project_id]).to eq(project.id)
+        expect(result[:current_sha]).to be_nil
+        expect(result[:changed_files]).to eq([])
+        expect(result[:stale_artifacts_count]).to eq(0)
+        expect(result[:collection_enqueued]).to be false
       end
     end
   end

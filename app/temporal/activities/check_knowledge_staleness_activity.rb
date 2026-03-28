@@ -8,8 +8,21 @@ module Activities
     activity_name "CheckKnowledgeStaleness"
 
     def execute(input)
-      project = Project.find_by(id: input[:project_id])
-      return { stale: false, project_missing: true } unless project
+      project_id = input[:project_id]
+      project = Project.find_by(id: project_id)
+
+      unless project
+        return {
+          stale: false,
+          project_id: project_id,
+          project_missing: true,
+          current_sha: nil,
+          last_collected_sha: nil,
+          changed_files: [],
+          stale_artifacts_count: 0,
+          collection_enqueued: false
+        }
+      end
 
       result = Knowledge::Staleness::Detector.call(project: project)
 
@@ -22,14 +35,23 @@ module Activities
         :changed_files,
         :stale_artifacts_count,
         :collection_enqueued
-      )
+      ).merge(project_id: project_id)
     rescue => e
       logger.error(
         message: "knowledge.staleness_check_failed",
-        project_id: input[:project_id],
+        project_id: project_id,
         error: e.message
       )
-      { stale: false, error: e.message }
+      {
+        stale: false,
+        project_id: project_id,
+        error: e.message,
+        current_sha: nil,
+        last_collected_sha: nil,
+        changed_files: [],
+        stale_artifacts_count: 0,
+        collection_enqueued: false
+      }
     end
 
     private

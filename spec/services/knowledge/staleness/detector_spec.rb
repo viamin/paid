@@ -35,6 +35,22 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
     end
 
+    context "when fetching the current SHA raises Errno::ENOENT" do
+      before do
+        worktree = instance_double(WorktreeService)
+        allow(WorktreeService).to receive(:new).and_return(worktree)
+        allow(worktree).to receive(:current_commit_sha)
+          .and_raise(Errno::ENOENT, "No such file or directory - /repos/repo")
+        allow(detector).to receive(:fetch_current_sha).and_call_original
+      end
+
+      it "handles the error and returns not stale" do
+        result = detector.call
+        expect(result[:stale]).to be false
+        expect(result[:current_sha]).to be_nil
+      end
+    end
+
     context "when no previous collection exists" do
       it "enqueues initial collection" do
         expect(RunCollectorsJob).to receive(:perform_later)

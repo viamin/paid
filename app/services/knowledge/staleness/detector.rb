@@ -57,7 +57,7 @@ module Knowledge
 
       def fetch_current_sha
         worktree_service.current_commit_sha
-      rescue WorktreeService::Error
+      rescue WorktreeService::Error, Errno::ENOENT
         nil
       end
 
@@ -93,11 +93,10 @@ module Knowledge
             .where(project: project, status: "active")
             .where(scope_path: changed_files)
 
-          artifact_ids = stale_artifacts.pluck(:id)
-          return 0 if artifact_ids.empty?
+          return 0 unless stale_artifacts.exists?
 
           KnowledgeChunk
-            .where(knowledge_artifact_id: artifact_ids, status: "active")
+            .where(knowledge_artifact_id: stale_artifacts.select(:id), status: "active")
             .update_all(status: "stale", updated_at: Time.current)
 
           stale_artifacts.update_all(status: "stale", updated_at: Time.current)
@@ -141,6 +140,8 @@ module Knowledge
         end
 
         stdout
+      rescue Errno::ENOENT => e
+        raise WorktreeService::Error, "Repo directory missing: #{e.message}"
       end
 
       def not_stale_result(current_sha, last_sha: nil)
