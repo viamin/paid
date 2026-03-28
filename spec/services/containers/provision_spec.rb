@@ -4,6 +4,17 @@ require "rails_helper"
 require "timeout"
 
 RSpec.describe Containers::Provision do
+  # Extracts and decodes the base64 payload from a write_container_file command
+  def decoded_base64_content(cmd)
+    match = cmd.match(/echo (\S+) \| base64 -d >/)
+    return "" unless match
+
+    # Shellwords.escape adds backslashes before = signs; remove them
+    Base64.strict_decode64(match[1].delete("\\"))
+  rescue ArgumentError
+    ""
+  end
+
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project) }
   let(:worktree_path) { Dir.mktmpdir("worktree") }
@@ -190,7 +201,7 @@ RSpec.describe Containers::Provision do
           [
             "sh",
             "-lc",
-            include("/home/agent/.codex/config.toml").and(include('model_provider = "paid"'))
+            satisfy { |cmd| cmd.include?("/home/agent/.codex/config.toml") && decoded_base64_content(cmd).include?('model_provider = "paid"') }
           ],
           user: "agent"
         )
@@ -657,7 +668,7 @@ RSpec.describe Containers::Provision do
         service.provision
 
         expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-lc", include("/home/agent/.gemini/oauth_creds.json").and(include("access_token")) ],
+          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.gemini/oauth_creds.json") && decoded_base64_content(cmd).include?("access_token") } ],
           user: "agent"
         )
       end
@@ -666,7 +677,7 @@ RSpec.describe Containers::Provision do
         service.provision
 
         expect(mock_container).to have_received(:exec).with(
-          [ "sh", "-lc", include("/home/agent/.gemini/settings.json").and(include("\"selectedType\": \"oauth-personal\"\n")).and(include("}\nEOF\n")) ],
+          [ "sh", "-lc", satisfy { |cmd| cmd.include?("/home/agent/.gemini/settings.json") && decoded_base64_content(cmd).include?('"selectedType": "oauth-personal"') } ],
           user: "agent"
         )
       end

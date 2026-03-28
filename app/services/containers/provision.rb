@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "base64"
 require "docker-api"
 require "shellwords"
 
@@ -673,9 +674,9 @@ module Containers
     end
 
     def write_container_file(path, content)
-      normalized_content = content.end_with?("\n") ? content : "#{content}\n"
-      heredoc = "cat > #{Shellwords.escape(path)} <<'EOF'\n#{normalized_content}EOF\n"
-      container.exec([ "sh", "-lc", heredoc ], user: "agent")
+      encoded = Base64.strict_encode64(content)
+      cmd = "echo #{Shellwords.escape(encoded)} | base64 -d > #{Shellwords.escape(path)}"
+      container.exec([ "sh", "-lc", cmd ], user: "agent")
     end
 
     def cleanup_workspace_volume

@@ -19,7 +19,7 @@
         </div>
       <% end %>
 
-      <%= form_with model: @integration_credential, url: integration_credentials_path, class: "mt-6 space-y-6" do |form| %>
+      <%= form_with model: @integration_credential, url: integration_credentials_path(category: @category_filter, service_key: @service_key_filter), class: "mt-6 space-y-6" do |form| %>
         <% if @integration_credential.errors.any? %>
           <div class="rounded-md bg-red-50 p-4">
             <h2 class="text-sm font-medium text-red-800">Please fix the following:</h2>
