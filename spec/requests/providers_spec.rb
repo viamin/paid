@@ -183,6 +183,17 @@ RSpec.describe "Providers" do
       expect(response).to have_http_status(:unprocessable_content)
     end
 
+    it "preserves the submitted provider_key in options when re-rendering after duplicate subscription error" do
+      allow(ProviderSupport).to receive(:addable_provider_key?).and_call_original
+      allow(ProviderSupport).to receive(:addable_provider_key?).with("cursor").and_return(true)
+      user.providers.create!(provider_key: "cursor")
+
+      post providers_path, params: { provider: { provider_key: "cursor", auth_type: "subscription" } }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(assigns(:subscription_provider_options)).to include("cursor")
+    end
+
     it "creates a gemini provider successfully" do
       post providers_path, params: { provider: { provider_key: "gemini", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 

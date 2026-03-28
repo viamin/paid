@@ -41,6 +41,14 @@ RSpec.describe Provider do
       expect(provider.errors[:provider_api_key]).to include("is required for API key authentication")
     end
 
+    it "rejects a non-existent provider_api_key_id for api_key auth type" do
+      provider.auth_type = "api_key"
+      provider.provider_api_key_id = -1
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:provider_api_key]).to include("is required for API key authentication")
+    end
+
     it "rejects provider_api_key for subscription auth type" do
       api_key = create(:provider_api_key, user: provider.user)
       provider.auth_type = "subscription"

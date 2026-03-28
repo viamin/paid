@@ -185,7 +185,7 @@ class Provider < ApplicationRecord
 
   def api_key_auth_requires_provider_api_key
     return unless api_key?
-    return if provider_api_key_id.present?
+    return if provider_api_key.present?
 
     errors.add(:provider_api_key, "is required for API key authentication")
   end

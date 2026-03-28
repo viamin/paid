@@ -30,10 +30,12 @@ class ProvidersController < ApplicationController
         redirect_to providers_path, alert: "Provider created, but settings reconciliation failed. Please review settings."
       end
     else
+      preserve_submitted_provider_key_in_options
       render :new, status: :unprocessable_content
     end
   rescue ActiveRecord::RecordNotUnique
     @provider.errors.add(:provider_key, "already has an entry with this configuration")
+    preserve_submitted_provider_key_in_options
     render :new, status: :unprocessable_content
   end
 
@@ -152,6 +154,20 @@ class ProvidersController < ApplicationController
 
     # Combined for backward compat
     @provider_options = @subscription_provider_options
+  end
+
+  # When re-rendering :new after a validation failure, ensure the submitted
+  # provider_key is present in the relevant options list so the <select>
+  # preserves the user's selection and error messages make sense.
+  def preserve_submitted_provider_key_in_options
+    key = @provider.provider_key
+    return if key.blank?
+
+    if @provider.subscription?
+      @subscription_provider_options |= [ key ] unless @subscription_provider_options.include?(key)
+    elsif @provider.api_key?
+      @api_key_provider_options |= [ key ] unless @api_key_provider_options.include?(key)
+    end
   end
 
   def validate_provider_key_enabled!
