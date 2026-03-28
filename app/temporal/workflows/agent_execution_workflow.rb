@@ -322,7 +322,8 @@ module Workflows
       Temporalio::Workflow.logger.warn(
         message: "agent_execution.draft_decision_record_failed",
         agent_run_id: agent_run_id,
-        error: e.message
+        error: e.message,
+        error_class: e.class.name
       )
     end
 

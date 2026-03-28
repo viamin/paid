@@ -25,6 +25,7 @@ module Knowledge
         validate_records!
 
         original.with_lock do
+          original.reload
           unless original.status.in?(%w[draft active])
             raise ArgumentError, "original must be draft or active to supersede"
           end

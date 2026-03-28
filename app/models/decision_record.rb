@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class DecisionRecord < ApplicationRecord
+  class InvalidTransitionError < StandardError; end
+
   STATUSES = %w[draft active superseded reverted].freeze
   MUTABLE_FIELDS = %w[status superseded_by_id updated_at].freeze
 
@@ -36,19 +38,35 @@ class DecisionRecord < ApplicationRecord
   scope :by_status, ->(status) { where(status: status) }
 
   def activate!
-    update!(status: "active")
+    with_lock do
+      reload
+      unless status.in?(%w[draft])
+        raise InvalidTransitionError, "cannot activate from #{status}"
+      end
+      update!(status: "active")
+    end
   end
 
   def supersede!(new_record)
     raise ArgumentError, "cannot supersede with itself" if new_record == self
 
-    transaction do
+    with_lock do
+      reload
+      unless status.in?(%w[draft active])
+        raise InvalidTransitionError, "cannot supersede from #{status}"
+      end
       update!(status: "superseded", superseded_by: new_record)
     end
   end
 
   def revert!
-    update!(status: "reverted")
+    with_lock do
+      reload
+      unless status.in?(%w[draft active])
+        raise InvalidTransitionError, "cannot revert from #{status}"
+      end
+      update!(status: "reverted")
+    end
   end
 
   private

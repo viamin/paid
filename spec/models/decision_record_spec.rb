@@ -107,10 +107,20 @@ RSpec.describe DecisionRecord do
   end
 
   describe "#activate!" do
-    it "transitions to active status" do
+    it "transitions from draft to active status" do
       record = create(:decision_record, :draft)
       record.activate!
       expect(record.reload.status).to eq("active")
+    end
+
+    it "raises when already active" do
+      record = create(:decision_record, status: "active")
+      expect { record.activate! }.to raise_error(DecisionRecord::InvalidTransitionError, /cannot activate from active/)
+    end
+
+    it "raises when superseded" do
+      record = create(:decision_record, status: "superseded")
+      expect { record.activate! }.to raise_error(DecisionRecord::InvalidTransitionError, /cannot activate from superseded/)
     end
   end
 
@@ -127,6 +137,18 @@ RSpec.describe DecisionRecord do
       record = create(:decision_record)
       expect { record.supersede!(record) }.to raise_error(ArgumentError, "cannot supersede with itself")
     end
+
+    it "raises when already superseded" do
+      record = create(:decision_record, status: "superseded")
+      other = create(:decision_record, project: record.project)
+      expect { record.supersede!(other) }.to raise_error(DecisionRecord::InvalidTransitionError, /cannot supersede from superseded/)
+    end
+
+    it "raises when reverted" do
+      record = create(:decision_record, status: "reverted")
+      other = create(:decision_record, project: record.project)
+      expect { record.supersede!(other) }.to raise_error(DecisionRecord::InvalidTransitionError, /cannot supersede from reverted/)
+    end
   end
 
   describe "#revert!" do
@@ -134,6 +156,16 @@ RSpec.describe DecisionRecord do
       record = create(:decision_record)
       record.revert!
       expect(record.reload.status).to eq("reverted")
+    end
+
+    it "raises when already superseded" do
+      record = create(:decision_record, status: "superseded")
+      expect { record.revert! }.to raise_error(DecisionRecord::InvalidTransitionError, /cannot revert from superseded/)
+    end
+
+    it "raises when already reverted" do
+      record = create(:decision_record, status: "reverted")
+      expect { record.revert! }.to raise_error(DecisionRecord::InvalidTransitionError, /cannot revert from reverted/)
     end
   end
 end

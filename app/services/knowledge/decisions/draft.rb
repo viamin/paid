@@ -95,7 +95,8 @@ module Knowledge
         Rails.logger.warn(
           message: "knowledge.decisions.draft_parse_failed",
           agent_run_id: agent_run.id,
-          error: e.message
+          error: e.message,
+          error_class: e.class.name
         )
         nil
       end
