@@ -347,14 +347,14 @@ RSpec.describe Issue do
       expect(issue.associated_pull_request).to eq(newest_pr)
     end
 
-    it "falls back to the most recently updated closed PR when no open PRs exist" do
+    it "returns nil when only closed PRs exist" do
       issue = create(:issue, project: project)
       create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
              github_updated_at: 2.days.ago)
-      newest_closed_pr = create(:issue, :pull_request, :closed, project: project,
-                                parent_issue: issue, github_updated_at: 1.hour.ago)
+      create(:issue, :pull_request, :closed, project: project,
+             parent_issue: issue, github_updated_at: 1.hour.ago)
 
-      expect(issue.associated_pull_request).to eq(newest_closed_pr)
+      expect(issue.associated_pull_request).to be_nil
     end
 
     context "when sub_issues are preloaded" do
@@ -389,6 +389,17 @@ RSpec.describe Issue do
 
         expect(preloaded_issue.sub_issues).to be_loaded
         expect(preloaded_issue.associated_pull_request).to eq(open_pr)
+      end
+
+      it "returns nil when only closed PRs exist with preloaded data" do
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
+               github_updated_at: 2.days.ago)
+
+        preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+        expect(preloaded_issue.sub_issues).to be_loaded
+        expect(preloaded_issue.associated_pull_request).to be_nil
       end
 
       it "returns the most recently updated open PR with preloaded data" do

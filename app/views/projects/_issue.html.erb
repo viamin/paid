@@ -26,7 +26,8 @@
   <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
     <%= paid_state_badge(issue.paid_state) %>
     <% if (pr = issue.associated_pull_request) %>
-      <%= link_to pr.github_url,
+      <%# Build URL from the parent issue's project to avoid N+1 on sub_issues: :project %>
+      <%= link_to "#{project.github_url}/pull/#{pr.github_number}",
                   target: "_blank",
                   rel: "noopener noreferrer",
                   class: "inline-flex items-center space-x-1 text-xs font-medium text-indigo-600 hover:text-indigo-900" do %>
