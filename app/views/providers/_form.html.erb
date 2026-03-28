@@ -25,7 +25,7 @@
               data: { action: "change->provider-form#toggleAuthType" } %>
           <span class="ml-2 text-sm text-gray-700">Subscription</span>
         </label>
-        <% if @available_api_keys.any? %>
+        <% if @api_key_provider_options.any? %>
           <label class="flex items-center">
             <%= form.radio_button :auth_type, "api_key", class: "h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-600",
                 data: { action: "change->provider-form#toggleAuthType" } %>
@@ -33,7 +33,7 @@
           </label>
         <% else %>
           <span class="flex items-center text-sm text-gray-400">
-            API Key (add keys on the <%= link_to "LLM API Keys page", provider_api_keys_path, class: "text-indigo-600 hover:text-indigo-500" %> first)
+            API Key (add compatible keys on the <%= link_to "LLM API Keys page", provider_api_keys_path, class: "text-indigo-600 hover:text-indigo-500" %> first)
           </span>
         <% end %>
       </div>
@@ -43,7 +43,10 @@
   <% end %>
 
   <div>
-    <%= form.label :provider_key, "Provider", class: "block text-sm font-medium text-gray-900" %>
+    <%# Use a <span> instead of form.label because the actual <select> IDs vary by
+        auth type (provider_provider_key_subscription / provider_provider_key_api_key).
+        A label with a mismatched `for` attribute hurts accessibility. %>
+    <span class="block text-sm font-medium text-gray-900">Provider</span>
     <div class="mt-2">
       <% if provider.persisted? %>
         <%= form.hidden_field :provider_key, value: provider.provider_key %>

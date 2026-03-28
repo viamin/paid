@@ -127,7 +127,7 @@ class UserSetting < ApplicationRecord
     return [] if user.new_record?
 
     executable_keys = ProviderSupport.container_executable_provider_keys
-    user.providers.api_key.rate_limit_fallback.for_agent_runs
+    user.providers.api_key.rate_limit_fallback.for_agent_runs.for_fallback
       .pluck(:provider_key).uniq & executable_keys
   end
 

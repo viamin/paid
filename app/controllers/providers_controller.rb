@@ -10,7 +10,10 @@ class ProvidersController < ApplicationController
   end
 
   def new
-    @provider = current_user.providers.new(auth_type: params[:auth_type] || "subscription")
+    auth_type = params[:auth_type]
+    auth_type = "subscription" unless Provider::AUTH_TYPES.include?(auth_type)
+
+    @provider = current_user.providers.new(auth_type: auth_type)
     authorize @provider
   end
 

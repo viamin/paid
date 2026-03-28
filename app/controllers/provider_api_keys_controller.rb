@@ -54,7 +54,7 @@ class ProviderApiKeysController < ApplicationController
   end
 
   def load_provider_options
-    @compatible_provider_options = ProviderSupport.supported_provider_keys.map do |key|
+    @compatible_provider_options = Provider.addable_provider_keys.map do |key|
       [ key.titleize, key ]
     end
   end

@@ -45,8 +45,8 @@ class ProviderApiKey < ApplicationRecord
       return
     end
 
-    supported = ProviderSupport.supported_provider_keys
-    invalid = compatible_providers - supported
+    allowed = (ProviderSupport.addable_provider_keys + ProviderSupport.container_executable_provider_keys).uniq
+    invalid = compatible_providers - allowed
     return if invalid.empty?
 
     errors.add(:compatible_providers, "contains unsupported providers: #{invalid.join(', ')}")
