@@ -24,7 +24,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       script_path = prepare_script_fixture(dir)
       socket_path = create_stale_socket(dir)
 
-      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
       updater_log = read_updater_log(dir)
 
@@ -47,7 +47,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       script_path = prepare_script_fixture(dir, setup_exit_status: 1, start_overmind_running: true)
       create_stale_socket(dir)
 
-      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
       updater_log = read_updater_log(dir)
 
@@ -65,13 +65,14 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, dev_starts_overmind: false)
 
-      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
       updater_log = read_updater_log(dir)
 
       expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
       expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
       expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+      expect(Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*dev-update-start-timeout.log"))).not_to be_empty
       expect(updater_log).to include("Inspect log/dev-update/dev-start.log for detached bin/dev output.")
       expect(updater_log).to include("ERROR: Full restart completed setup but failed to restore a healthy Overmind session.")
     end
@@ -81,7 +82,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, start_overmind_running: true)
 
-      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
       updater_log = read_updater_log(dir)
 
@@ -102,6 +103,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
 
       env = poll_env.merge(
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
         "DEV_UPDATE_MAX_LOG_BYTES" => "524288",
         "DEV_UPDATE_KEEP_LOG_BYTES" => "102400"
       )
@@ -114,6 +116,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       # Both logs were truncated to ~100 KB then appended to by the script/bin/dev
       expect(File.size(File.join(log_dir, "dev-update.log"))).to be < 200_000
       expect(File.size(File.join(log_dir, "dev-start.log"))).to be < 200_000
+      expect(File.size(File.join(log_dir, "tmux.log"))).to be < 200_000
+      expect(File.size(File.join(log_dir, "overmind.log"))).to be < 200_000
     end
   end
 
@@ -127,7 +131,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       small_content = "previous run output\n" * 100
       File.write(File.join(log_dir, "dev-update.log"), small_content)
 
-      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
       stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
 
       expect(status.success?).to be(true), lambda {
@@ -146,7 +150,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
 
-      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
       stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
@@ -188,12 +192,13 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
   def seed_oversized_logs(dir, size)
     log_dir = File.join(dir, "log", "dev-update")
     FileUtils.mkdir_p(log_dir)
-    %w[dev-update.log dev-start.log].each { |f| File.write(File.join(log_dir, f), "x" * size) }
+    %w[dev-update.log dev-start.log tmux.log overmind.log].each { |f| File.write(File.join(log_dir, f), "x" * size) }
     log_dir
   end
 
   def prepare_script_fixture(dir, setup_exit_status: 0, start_overmind_running: false, dev_starts_overmind: true)
     FileUtils.mkdir_p(File.join(dir, "bin"))
+    FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
     FileUtils.mkdir_p(File.join(dir, "log"))
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
 
@@ -202,6 +207,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     script_path = File.join(dir, "bin", "dev-update")
     FileUtils.cp(script_source, script_path)
     FileUtils.chmod("+x", script_path)
+    FileUtils.cp(File.expand_path("../../bin/lib/dev_supervisor.sh", __dir__), File.join(dir, "bin", "lib", "dev_supervisor.sh"))
 
     dev_start_line = dev_starts_overmind ? %(touch "#{dir}/overmind-running") : ""
 
