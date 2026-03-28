@@ -272,6 +272,30 @@ RSpec.describe Dashboard::Stats do
       end
     end
 
+    context "with provider fallback via skipped primary (no provider_switches)" do
+      before do
+        # Primary provider was skipped as unavailable; fallback used directly.
+        # final_provider differs from agent_type but provider_switches remains 0.
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_provider: "cursor", provider_switches: 0)
+        # Normal run with no fallback
+        create(:agent_run, :completed, project: project, agent_type: "claude_code")
+      end
+
+      it "counts the skipped-primary run as a fallback" do
+        fs = stats[:provider_fallback_stats]
+        expect(fs[:total_runs]).to eq(2)
+        expect(fs[:fallback_count]).to eq(1)
+        expect(fs[:fallback_rate]).to eq(50.0)
+      end
+
+      it "attributes the skipped-primary run to the effective provider" do
+        providers = stats[:runs_by_provider].to_h
+        expect(providers["cursor"]).to eq(1)
+        expect(providers["claude_code"]).to eq(1)
+      end
+    end
+
     context "with multiple projects" do
       let(:project2) { create(:project, account: account, name: "Active Project") }
 

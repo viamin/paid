@@ -81,6 +81,13 @@ class AgentRun < ApplicationRecord
     end
   }
 
+  # SQL expression for the effective provider: the provider that actually
+  # produced the output. Mirrors the Ruby #effective_provider method so that
+  # both SQL aggregations and Ruby code share the same logic.
+  def self.effective_provider_sql
+    "COALESCE(NULLIF(final_provider, ''), agent_type)"
+  end
+
   ransacker :tokens_total, type: :integer do
     Arel.sql("COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)")
   end
