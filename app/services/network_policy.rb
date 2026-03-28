@@ -54,17 +54,17 @@ class NetworkPolicy
       subscription_auth? ? INFRA_NETWORK_NAME : NETWORK_NAME
     end
 
-    # Returns true when Claude CLI config is available for
-    # subscription-based authentication (e.g. from `claude login`).
+    # Returns true when any provider CLI config is available for
+    # subscription-based authentication (e.g. from `claude login`,
+    # `gemini auth login`, or Codex `auth.json`).
     #
     # Mirrors the detection logic in Containers::Provision#subscription_auth?
     # so that service containers are always placed on the same network as the
-    # agent container. Checks CLAUDE_CONFIG_DIR first, then auto-detects a
-    # standard Claude config mount (for DooD/devcontainer setups).
+    # agent container.
     #
     # @return [Boolean]
     def subscription_auth?
-      claude_config_dir.present?
+      claude_subscription_auth? || codex_subscription_auth? || gemini_subscription_auth?
     end
 
     # Ensures the agent Docker network exists. Creates it if missing.
@@ -148,34 +148,81 @@ class NetworkPolicy
 
     private
 
+    # Per-provider subscription auth checks mirror
+    # Containers::Provision#claude_subscription_auth? etc.
+    # Each looks for the specific credential file that proves a real login.
+
+    def claude_subscription_auth?
+      dir = claude_config_dir
+      dir.present? && File.file?(File.join(dir, ".credentials.json"))
+    end
+
+    def codex_subscription_auth?
+      dir = codex_config_dir
+      dir.present? && File.file?(File.join(dir, "auth.json"))
+    end
+
+    def gemini_subscription_auth?
+      dir = gemini_config_dir
+      dir.present? && File.file?(File.join(dir, "oauth_creds.json"))
+    end
+
     # Returns the Claude config directory path, checking the explicit
     # environment variable first, then auto-detecting standard locations.
-    #
-    # Mirrors Containers::Provision#subscription_auth? detection:
-    # - ENV["CLAUDE_CONFIG_DIR"] (explicit override)
-    # - $HOME/.claude (DooD/devcontainer mount from host)
-    # - $HOME/.config/claude (standard Claude CLI config on Linux)
     def claude_config_dir
-      return ENV["CLAUDE_CONFIG_DIR"] if ENV["CLAUDE_CONFIG_DIR"].present?
-
-      home = ENV["HOME"].presence || (Dir.respond_to?(:home) ? Dir.home : nil)
-
-      if home.present?
-        # Check $HOME/.claude first — in DooD setups the host mounts ~/.claude
-        # into the devcontainer, which Containers::Provision detects via Docker
-        # mount introspection. We check the filesystem equivalent here.
-        dot_claude = File.join(home, ".claude")
-        return dot_claude if Dir.exist?(dot_claude)
-
-        # Fall back to standard Claude CLI config location on Linux.
-        config_claude = File.join(home, ".config", "claude")
-        return config_claude if Dir.exist?(config_claude)
+      if ENV["CLAUDE_CONFIG_DIR"].present?
+        return ENV["CLAUDE_CONFIG_DIR"] if credential_present?(ENV["CLAUDE_CONFIG_DIR"], ".credentials.json")
       end
 
-      # Last-resort check matching Containers::Provision's Docker mount
-      # detection of a /.claude destination. Without $HOME we cannot build
-      # a path, but /.claude may exist as a direct mount point.
-      "/.claude" if Dir.exist?("/.claude")
+      home = home_dir
+      if home.present?
+        dot_claude = File.join(home, ".claude")
+        return dot_claude if credential_present?(dot_claude, ".credentials.json")
+
+        config_claude = File.join(home, ".config", "claude")
+        return config_claude if credential_present?(config_claude, ".credentials.json")
+      end
+
+      "/.claude" if credential_present?("/.claude", ".credentials.json")
+    end
+
+    # Returns the Codex config directory path.
+    def codex_config_dir
+      [ ENV["CODEX_CONFIG_DIR"], ENV["CODEX_HOME"] ].each do |env_path|
+        return env_path if env_path.present? && credential_present?(env_path, "auth.json")
+      end
+
+      home = home_dir
+      if home.present?
+        dot_codex = File.join(home, ".codex")
+        return dot_codex if credential_present?(dot_codex, "auth.json")
+      end
+
+      "/.codex" if credential_present?("/.codex", "auth.json")
+    end
+
+    # Returns the Gemini config directory path.
+    def gemini_config_dir
+      if ENV["GEMINI_CONFIG_DIR"].present?
+        return ENV["GEMINI_CONFIG_DIR"] if credential_present?(ENV["GEMINI_CONFIG_DIR"], "oauth_creds.json")
+      end
+
+      home = home_dir
+      if home.present?
+        dot_gemini = File.join(home, ".gemini")
+        return dot_gemini if credential_present?(dot_gemini, "oauth_creds.json")
+      end
+
+      "/.gemini" if credential_present?("/.gemini", "oauth_creds.json")
+    end
+
+    # Returns true when the directory exists and contains the given credential file.
+    def credential_present?(dir, filename)
+      Dir.exist?(dir) && File.file?(File.join(dir, filename))
+    end
+
+    def home_dir
+      ENV["HOME"].presence || (Dir.respond_to?(:home) ? Dir.home : nil)
     end
 
     def create_network

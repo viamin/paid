@@ -17,6 +17,7 @@ module Providers
     PROMPT = "Respond with exactly: PING OK"
     EXPECTED_OUTPUT = "PING OK"
     TIMEOUT = 30
+    HARNESS_HEALTH_CHECK_PROVIDER_KEYS = %w[claude].freeze
     CONTAINER_COMMANDS = Activities::RunAgentActivity::AGENT_COMMANDS.slice(
       "claude",
       "codex",
@@ -34,6 +35,7 @@ module Providers
       /token/i,
       /unauthori[sz]ed/i,
       /invalid credentials/i,
+      /session.*expired/i,
       /ValidationRequiredError/i,
       /Verify your account to continue\./i,
       /Please set an Auth method/i,
@@ -120,8 +122,15 @@ module Providers
 
     def call
       validate!
-      response = execute_test
-      process_response(response)
+      result = if harness_health_check_supported?
+        process_harness_result(execute_harness_health_check)
+      else
+        response = execute_container_test
+        process_container_response(response)
+      end
+
+      clear_provider_state_if_healthy! if result.success?
+      result
     rescue NotContainerExecutableError
       Result.new(success: false, error_type: :installation,
         message: "Provider #{provider.provider_key} CLI is not installed in the agent container")
@@ -156,10 +165,16 @@ module Providers
           "Provider #{provider.provider_key} is not installed in the agent container"
       end
 
+      return if harness_health_check_supported?
+
       raise MissingProjectContextError, "Add a project before testing providers in the agent container" unless test_project
     end
 
-    def execute_test
+    def execute_harness_health_check
+      AgentHarness.check_provider(harness_provider_name, timeout: TIMEOUT)
+    end
+
+    def execute_container_test
       test_run = build_test_run
 
       begin
@@ -171,7 +186,22 @@ module Providers
       end
     end
 
-    def process_response(response)
+    def process_harness_result(result)
+      status = result[:status].to_s
+      message = result[:message].presence || "Provider health check returned no message"
+
+      if status == "ok"
+        Result.new(success: true, error_type: nil, message: "Agent is healthy")
+      else
+        Result.new(
+          success: false,
+          error_type: classify_failed_response(message),
+          message: message
+        )
+      end
+    end
+
+    def process_container_response(response)
       unless response.success?
         raw_message = response[:stderr].presence || response[:stdout].presence || response.error
         message = extract_user_facing_error(raw_message)
@@ -224,11 +254,26 @@ module Providers
         provider.user.member_projects.active.order(:id).first
     end
 
+    def harness_health_check_supported?
+      HARNESS_HEALTH_CHECK_PROVIDER_KEYS.include?(provider.provider_key)
+    end
+
+    def harness_provider_name
+      ProviderSupport.harness_provider_key_for(provider.provider_key).to_sym
+    end
+
+    def clear_provider_state_if_healthy!
+      provider.user.provider_states.find_by(provider_name: provider.provider_key)&.record_success!
+    end
+
     def test_command
       command = CONTAINER_COMMANDS[provider.provider_key]
       raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}" unless command
 
+      # TODO(#544): Switch Gemini and Codex to AgentHarness.check_provider
+      # once provider-specific auth_status / health_status hooks exist upstream (agent-harness#41).
       return codex_test_command if provider.provider_key == "codex"
+      return gemini_test_command if provider.provider_key == "gemini"
       return kilocode_test_command if provider.provider_key == "kilocode"
 
       command + [ PROMPT ]
@@ -283,11 +328,52 @@ module Providers
 
     def codex_test_command
       escaped_prompt = Shellwords.escape(PROMPT)
+      unset_flags = subscription_auth_unset_flags("codex")
       <<~SH.squish
         tmp_output="$(mktemp)" &&
         tmp_error="$(mktemp)" &&
-        codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+        if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then
+          env
+          #{unset_flags}
+          codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+        else
+          codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+        fi;
         status=$?;
+        if [ "$status" -eq 0 ]; then
+          cat "$tmp_output" 2>/dev/null;
+        else
+          cat "$tmp_error" 2>/dev/null;
+        fi;
+        exit $status
+      SH
+    end
+
+    def gemini_test_command
+      escaped_prompt = Shellwords.escape(PROMPT)
+      command = "gemini -y -p #{escaped_prompt}"
+      unset_flags = subscription_auth_unset_flags("gemini")
+      <<~SH.squish
+        tmp_output="$(mktemp)" &&
+        tmp_error="$(mktemp)" &&
+        before_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)" &&
+        if [ "$PAID_GEMINI_SUBSCRIPTION_AUTH" = "1" ]; then
+          env
+          #{unset_flags}
+          #{command} >"$tmp_output" 2>"$tmp_error";
+        else
+          #{command} >"$tmp_output" 2>"$tmp_error";
+        fi;
+        status=$?;
+        after_report="$(ls -t /tmp/gemini-client-error-*.json 2>/dev/null | head -n 1 || true)";
+        if [ "$status" -eq 0 ] && grep -q "Error when talking to Gemini API" "$tmp_error"; then
+          if [ -n "$after_report" ] && [ "$after_report" != "$before_report" ]; then
+            ruby -rjson -e 'path = ARGV[0]; data = JSON.parse(File.read(path)); puts(data.dig("error", "message") || File.read(path))' "$after_report" || cat "$tmp_error" 2>/dev/null;
+          else
+            cat "$tmp_error" 2>/dev/null;
+          fi;
+          exit 1;
+        fi;
         if [ "$status" -eq 0 ]; then
           cat "$tmp_output" 2>/dev/null;
         else
@@ -299,20 +385,24 @@ module Providers
 
     def kilocode_test_command
       escaped_prompt = Shellwords.escape(PROMPT)
+      all_unset_flags = ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS
+        .values
+        .flatten
+        .uniq
+        .map { |var| "-u #{var}" }
+        .join("\n")
       <<~SH.squish
         env
-        -u OPENAI_API_KEY
-        -u OPENAI_BASE_URL
-        -u OPENAI_HEADER_X_AGENT_RUN_ID
-        -u OPENAI_HEADER_X_PROXY_TOKEN
-        -u GEMINI_API_KEY
-        -u GOOGLE_GEMINI_BASE_URL
-        -u GOOGLE_GENAI_BASE_URL
-        -u GOOGLE_HEADER_X_AGENT_RUN_ID
-        -u GOOGLE_HEADER_X_PROXY_TOKEN
-        -u GEMINI_CLI_CUSTOM_HEADERS
+        #{all_unset_flags}
         timeout 20s kilo run --auto --print-logs #{escaped_prompt}
       SH
+    end
+
+    def subscription_auth_unset_flags(provider)
+      ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS
+        .fetch(provider)
+        .map { |var| "-u #{var}" }
+        .join("\n")
     end
 
     class Result
