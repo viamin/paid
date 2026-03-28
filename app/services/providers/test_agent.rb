@@ -23,7 +23,8 @@ module Providers
       "codex",
       "gemini",
       "kilocode",
-      "opencode"
+      "opencode",
+      "copilot"
     ).freeze
     RATE_LIMIT_PATTERNS = Activities::RunAgentActivity::RATE_LIMIT_PATTERNS
     AUTHENTICATION_ERROR_PATTERNS = [
