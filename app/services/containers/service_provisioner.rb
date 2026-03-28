@@ -29,9 +29,10 @@ module Containers
 
     ENV_MAPPINGS = {
       "postgres" => ->(sc) {
-        user = sc.env["POSTGRES_USER"].to_s.strip.presence || "agent"
-        pass = sc.env["POSTGRES_PASSWORD"].to_s.strip.presence || "agent"
-        db = sc.env["POSTGRES_DB"].to_s.strip.presence || "agent_test"
+        defaults = POSTGRES_DEFAULT_ENV
+        user = sc.env["POSTGRES_USER"].to_s.strip.presence || defaults["POSTGRES_USER"]
+        pass = sc.env["POSTGRES_PASSWORD"].to_s.strip.presence || defaults["POSTGRES_PASSWORD"]
+        db = sc.env["POSTGRES_DB"].to_s.strip.presence || defaults["POSTGRES_DB"]
         { "DATABASE_URL" => "postgres://#{user}:#{pass}@#{sc.name}:#{sc.port}/#{db}" }
       },
       "redis" => ->(sc) {
@@ -322,8 +323,8 @@ module Containers
     def healthcheck_for(service_container, env)
       return nil unless service_container.image.include?("postgres")
 
-      user = env.fetch("POSTGRES_USER", "agent")
-      db = env.fetch("POSTGRES_DB", "agent_test")
+      user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
+      db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
 
       {
         "Test" => [ "CMD", "pg_isready", "-h", "127.0.0.1", "-p", service_container.port.to_s, "-U", user, "-d", db ],
