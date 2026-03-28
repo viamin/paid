@@ -174,7 +174,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         mock_logger = instance_double(ActiveSupport::Logger, info: nil)
         allow(activity).to receive(:logger).and_return(mock_logger)
         expect(mock_logger).to receive(:warn).with(hash_including(
-          message: "agent_execution.generate_pr_description_failed",
+          message: "agent_execution.pr_description_failed",
           agent_run_id: agent_run.id,
           issue_number: issue.github_number,
           error_class: "RuntimeError"

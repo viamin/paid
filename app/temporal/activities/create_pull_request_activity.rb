@@ -86,7 +86,7 @@ module Activities
       )
     rescue StandardError => e
       logger.warn(
-        message: "agent_execution.generate_pr_description_failed",
+        message: "agent_execution.pr_description_failed",
         agent_run_id: agent_run_id,
         issue_number: issue&.github_number,
         error_class: e.class.name,

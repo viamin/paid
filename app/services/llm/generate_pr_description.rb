@@ -30,6 +30,7 @@ module Llm
       3. **Surface design decisions** — call out important trade-offs, constraints, or choices a reviewer should understand.
       4. **Scale depth to complexity** — keep it concise for small changes; use structured sections for large cross-cutting changes.
       5. **Mention operational concerns** — note any deployment steps, migration notes, or infrastructure changes if relevant.
+      6. **Include visuals for UI changes** — if the agent output indicates user-facing UI changes, add a ## Screenshots section with a placeholder reminding the author to attach before/after screenshots.
 
       Use markdown formatting. Start with a ## Summary section containing 1-3 sentences explaining the purpose. Then add a ## Changes section with a bulleted breakdown organized by concern. If there are notable design decisions, add a ## Design Decisions section. Do NOT include a test plan section.
 
@@ -67,7 +68,7 @@ module Llm
       description.present? ? description.truncate(MAX_DESCRIPTION_LENGTH) : nil
     rescue AgentHarness::Error => e
       Rails.logger.warn(
-        message: "agent_execution.llm_generate_pr_description_failed",
+        message: "agent_execution.pr_description_failed",
         error_class: e.class.name,
         error: e.message
       )

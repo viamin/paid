@@ -95,7 +95,7 @@ RSpec.describe Llm::GeneratePrDescription do
         .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
 
       expect(Rails.logger).to receive(:warn).with(hash_including(
-        message: "agent_execution.llm_generate_pr_description_failed"
+        message: "agent_execution.pr_description_failed"
       ))
 
       result = described_class.call(agent_summary: agent_summary)
@@ -108,7 +108,7 @@ RSpec.describe Llm::GeneratePrDescription do
         .and_raise(AgentHarness::TimeoutError.new("Timed out"))
 
       expect(Rails.logger).to receive(:warn).with(hash_including(
-        message: "agent_execution.llm_generate_pr_description_failed"
+        message: "agent_execution.pr_description_failed"
       ))
 
       result = described_class.call(agent_summary: agent_summary)
