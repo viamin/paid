@@ -50,7 +50,7 @@ RSpec.describe AgentRun, "#snapshot_mcp_servers" do
     expect(agent_run.mcp_server_snapshot).to eq(pre_set)
   end
 
-  it "snapshot is immutable after creation" do
+  it "snapshot is immutable after creation (source changes do not propagate)" do
     account = create(:account)
     project = create(:project, account: account)
     definition = create(:mcp_server_definition, account: account, name: "original-name")
@@ -63,5 +63,15 @@ RSpec.describe AgentRun, "#snapshot_mcp_servers" do
     agent_run.reload
 
     expect(agent_run.mcp_server_snapshot).to eq(original_snapshot)
+  end
+
+  it "snapshot column is read-only after creation" do
+    project = create(:project)
+    agent_run = create(:agent_run, project: project)
+
+    agent_run.update!(mcp_server_snapshot: [ { "name" => "injected" } ])
+    agent_run.reload
+
+    expect(agent_run.mcp_server_snapshot).to eq([])
   end
 end

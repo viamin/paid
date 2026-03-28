@@ -22,6 +22,8 @@ class AgentRun < ApplicationRecord
   has_one :worktree, dependent: :nullify
   has_one :model_selection, dependent: :destroy
 
+  attr_readonly :mcp_server_snapshot
+
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 

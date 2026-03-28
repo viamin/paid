@@ -54,6 +54,15 @@ RSpec.describe McpServerDefinitionPolicy do
     it { is_expected.not_to be_destroy }
   end
 
+  context "when authorizing against the class (for index/create)" do
+    subject { described_class.new(user, McpServerDefinition) }
+
+    let(:user) { create(:user, :owner, account: account) }
+
+    it { is_expected.to be_index }
+    it { is_expected.to be_create }
+  end
+
   context "when user is from a different account" do
     subject { described_class.new(other_user, mcp_server_definition) }
 

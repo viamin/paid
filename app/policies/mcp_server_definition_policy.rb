@@ -21,6 +21,12 @@ class McpServerDefinitionPolicy < ApplicationPolicy
     has_account_role?(:owner)
   end
 
+  private
+
+  def account_for_record
+    user&.account
+  end
+
   class Scope < ApplicationPolicy::Scope
     def resolve
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
