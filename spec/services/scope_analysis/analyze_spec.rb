@@ -81,6 +81,10 @@ RSpec.describe ScopeAnalysis::Analyze, :no_db do
         expect(result.sub_components).to include("background jobs")
         expect(result.sub_components).to include("api endpoints")
         expect(result.sub_components).to include("database")
+        expect(result.sub_components).to include("web controllers")
+        expect(result.sub_components).to include("service layer")
+        expect(result.sub_components).to include("migrations")
+        expect(result.sub_components).to include("tests")
       end
     end
 

@@ -33,14 +33,19 @@ module ScopeAnalysis
     COMPONENT_PATTERNS = [
       /\bmodel(?:s)?\b/i,
       /\bcontroller(?:s)?\b/i,
+      /Controller\b/,
       /\bview(?:s)?\b/i,
       /\bservice(?:s)?\b/i,
+      /Service\b/,
       /\bmigration(?:s)?\b/i,
       /\btest(?:s|ing)?\b/i,
       /\bspec(?:s)?\b/i,
       /\bjob(?:s)?\b/i,
+      /Job\b/,
       /\bmailer(?:s)?\b/i,
+      /Mailer\b/,
       /\bserializer(?:s)?\b/i,
+      /Serializer\b/,
       /\bmiddleware\b/i,
       /\broute(?:s|ing)?\b/i,
       /\bvalidation(?:s)?\b/i,
@@ -105,11 +110,11 @@ module ScopeAnalysis
       }
 
       raw_confidence = scores.sum { |signal, score| SIGNAL_WEIGHTS[signal] * score }
-      confidence = raw_confidence.round(2)
+      rounded_confidence = raw_confidence.round(2)
 
       Result.new(
-        should_decompose: confidence >= threshold,
-        confidence: confidence,
+        should_decompose: raw_confidence >= threshold,
+        confidence: rounded_confidence,
         sub_components: extract_sub_components
       )
     end
