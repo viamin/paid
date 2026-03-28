@@ -52,6 +52,27 @@ RSpec.describe WorktreeService do
 
         service.ensure_cloned
       end
+
+      context "with max_fetch_age and a recent FETCH_HEAD" do
+        before do
+          FileUtils.touch(File.join(repo_path, "FETCH_HEAD"))
+        end
+
+        it "skips fetching when fetched within max_fetch_age" do
+          expect(service).not_to receive(:fetch_latest)
+
+          service.ensure_cloned(max_fetch_age: 2.minutes)
+        end
+
+        it "fetches when FETCH_HEAD is older than max_fetch_age" do
+          fetch_head = File.join(repo_path, "FETCH_HEAD")
+          FileUtils.touch(fetch_head, mtime: 5.minutes.ago.to_time)
+
+          expect(service).to receive(:fetch_latest)
+
+          service.ensure_cloned(max_fetch_age: 2.minutes)
+        end
+      end
     end
 
     it "returns the repo path" do
@@ -258,6 +279,35 @@ RSpec.describe WorktreeService do
         .and_return("#{expected_sha}\n")
 
       expect(service.current_commit_sha).to eq(expected_sha)
+    end
+  end
+
+  describe "#run_repo_command" do
+    before do
+      FileUtils.mkdir_p(repo_path)
+    end
+
+    it "delegates to run_git with the project repo path" do
+      allow(service).to receive(:run_git)
+        .with("rev-list", "--count", "abc..def", chdir: repo_path)
+        .and_return("5\n")
+
+      expect(service.run_repo_command("rev-list", "--count", "abc..def")).to eq("5\n")
+    end
+
+    it "raises repo directory missing when directory does not exist" do
+      FileUtils.rm_rf(repo_path)
+      allow(service).to receive(:run_git).and_raise(Errno::ENOENT, "No such file")
+
+      expect { service.run_repo_command("status") }
+        .to raise_error(WorktreeService::Error, /Repo directory missing/)
+    end
+
+    it "raises spawn error when directory exists but git executable is missing" do
+      allow(service).to receive(:run_git).and_raise(Errno::ENOENT, "No such file")
+
+      expect { service.run_repo_command("status") }
+        .to raise_error(WorktreeService::Error, /Failed to execute git/)
     end
   end
 
