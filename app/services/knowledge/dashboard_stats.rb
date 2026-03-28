@@ -26,16 +26,14 @@ module Knowledge
 
     private
 
-    def project_ids
-      @project_ids ||= Project.where(account_id: account.id).pluck(:id)
-    end
-
     def artifacts
-      @artifacts ||= KnowledgeArtifact.where(project_id: project_ids)
+      @artifacts ||= KnowledgeArtifact
+        .joins(:project)
+        .where(projects: { account_id: account.id })
     end
 
     def projects_total
-      @projects_total ||= project_ids.size
+      @projects_total ||= Project.where(account_id: account.id).count
     end
 
     def projects_indexed
