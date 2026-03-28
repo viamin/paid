@@ -40,8 +40,14 @@ module Knowledge
       private
 
       def validate!
-        raise ArgumentError, "original and superseding must be persisted records" unless original.persisted? && superseding.persisted?
-        raise ArgumentError, "original and superseding must be different records" if original.equal?(superseding) || original.id == superseding.id
+        unless original.persisted? && superseding.persisted?
+          raise ArgumentError, "original and superseding must be persisted records"
+        end
+
+        if original.equal?(superseding) || original.id == superseding.id
+          raise ArgumentError, "original and superseding must be different records"
+        end
+
         raise ArgumentError, "original must not already be superseded" if original.status == "superseded"
       end
     end

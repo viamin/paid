@@ -47,7 +47,10 @@ module Workflows
       agent_run_id = agent_run_result[:agent_run_id]
       provider_attempt_count = [ agent_run_result.fetch(:provider_attempt_count, 1), 1 ].max
       agent_timeout_seconds = agent_run_result.fetch(:agent_timeout_seconds, AGENT_TIMEOUT_DEFAULT)
-      issue_goal_timeout_seconds = agent_run_result.fetch(:issue_goal_timeout_seconds, Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT)
+      issue_goal_timeout_seconds = agent_run_result.fetch(
+        :issue_goal_timeout_seconds,
+        Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
+      )
 
       begin
         # Step 1.5: Provision service containers (database, redis, etc.)

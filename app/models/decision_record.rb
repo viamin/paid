@@ -13,6 +13,10 @@ class DecisionRecord < ApplicationRecord
   has_many :supersedes, class_name: "DecisionRecord", foreign_key: :superseded_by_id,
     inverse_of: :superseded_by, dependent: :nullify
 
+  # Uses validate instead of before_update because before_update runs after
+  # validations in Rails' callback order. With before_update, changing project_id
+  # would trigger agent_run_belongs_to_same_project first (failing with a
+  # misleading error) before immutability could reject the change.
   validate :enforce_immutability, on: :update
 
   validates :title, presence: true, length: { maximum: 500 }

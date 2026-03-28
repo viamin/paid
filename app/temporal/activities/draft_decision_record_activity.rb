@@ -17,7 +17,12 @@ module Activities
         logger.warn(
           message: "knowledge.decisions.draft_missing_agent_run_id"
         )
-        return { agent_run_id: agent_run_id, decision_record_id: nil, success: false, error: "agent_run_id is required" }
+        return {
+          agent_run_id: agent_run_id,
+          decision_record_id: nil,
+          success: false,
+          error: "agent_run_id is required"
+        }
       end
 
       # Ensure idempotency: if a DecisionRecord already exists for this agent_run,
@@ -29,12 +34,21 @@ module Activities
           decision_record_id: existing_record.id
         )
 
-        return { agent_run_id: agent_run_id, decision_record_id: existing_record.id, success: true }
+        return {
+          agent_run_id: agent_run_id,
+          decision_record_id: existing_record.id,
+          success: true
+        }
       end
 
       agent_run = AgentRun.find(agent_run_id)
 
-      track_phase(agent_run_id: agent_run_id, phase_key: "draft_decision_record", phase_group: "post", agent_run: agent_run) do
+      track_phase(
+        agent_run_id: agent_run_id,
+        phase_key: "draft_decision_record",
+        phase_group: "post",
+        agent_run: agent_run
+      ) do
         record = Knowledge::Decisions::Draft.call(agent_run: agent_run)
 
         if record
@@ -62,7 +76,12 @@ module Activities
         error: e.message
       )
 
-      { agent_run_id: agent_run_id, decision_record_id: nil, success: false, error: e.message }
+      {
+        agent_run_id: agent_run_id,
+        decision_record_id: nil,
+        success: false,
+        error: e.message
+      }
     end
   end
 end
