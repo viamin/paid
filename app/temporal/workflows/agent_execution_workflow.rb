@@ -47,7 +47,10 @@ module Workflows
       agent_run_id = agent_run_result[:agent_run_id]
       provider_attempt_count = [ agent_run_result.fetch(:provider_attempt_count, 1), 1 ].max
       agent_timeout_seconds = agent_run_result.fetch(:agent_timeout_seconds, AGENT_TIMEOUT_DEFAULT)
-      issue_goal_timeout_seconds = agent_run_result.fetch(:issue_goal_timeout_seconds, Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT)
+      issue_goal_timeout_seconds = agent_run_result.fetch(
+        :issue_goal_timeout_seconds,
+        Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
+      )
 
       begin
         # Step 1.5: Provision service containers (database, redis, etc.)
@@ -154,6 +157,9 @@ module Workflows
             if complete_result[:pr_review_phase].in?(%w[draft restarted ready escalated])
               request_copilot_review(project_id, source_pull_request_number)
             end
+
+            # Draft a decision record for existing PR changes (best-effort)
+            draft_decision_record(agent_run_id)
           else
             # Step 6: Create PR
             pr_result = run_activity(Activities::CreatePullRequestActivity,
@@ -165,6 +171,9 @@ module Workflows
 
             # Step 8: Request Copilot review on the new draft PR (best-effort)
             request_copilot_review(project_id, pr_result[:pull_request_number])
+
+            # Step 9: Draft a decision record (best-effort)
+            draft_decision_record(agent_run_id)
           end
         else
           # No changes - mark as completed without PR
@@ -301,6 +310,20 @@ module Workflows
         project_id: project_id,
         pr_number: pr_number,
         error: e.message
+      )
+    end
+
+    def draft_decision_record(agent_run_id)
+      run_activity(Activities::DraftDecisionRecordActivity,
+        { agent_run_id: agent_run_id }, timeout: 60, retry_policy: NO_RETRY)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.draft_decision_record_failed",
+        agent_run_id: agent_run_id,
+        error: e.message,
+        error_class: e.class.name
       )
     end
 
