@@ -9,13 +9,14 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
 
   describe "#execute" do
     it "returns success when a decision record is drafted" do
-      record = create(:decision_record, agent_run: agent_run, project: project)
-      allow(Knowledge::Decisions::Draft).to receive(:call).and_return(record)
+      allow(Knowledge::Decisions::Draft).to receive(:call).and_return(
+        build(:decision_record, id: 42, agent_run: agent_run, project: project)
+      )
 
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:success]).to be true
-      expect(result[:decision_record_id]).to eq(record.id)
+      expect(result[:decision_record_id]).to eq(42)
       expect(result[:agent_run_id]).to eq(agent_run.id)
     end
 
@@ -26,6 +27,17 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
 
       expect(result[:success]).to be true
       expect(result[:decision_record_id]).to be_nil
+    end
+
+    it "returns existing record without calling Draft service (idempotency)" do
+      record = create(:decision_record, agent_run: agent_run, project: project)
+      allow(Knowledge::Decisions::Draft).to receive(:call)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(Knowledge::Decisions::Draft).not_to have_received(:call)
+      expect(result[:success]).to be true
+      expect(result[:decision_record_id]).to eq(record.id)
     end
 
     it "returns failure without raising when draft errors" do

@@ -10,6 +10,19 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
+
+      # Ensure idempotency: if a DecisionRecord already exists for this agent_run,
+      # reuse it instead of drafting a new one (Temporal activities may be retried).
+      if (existing_record = DecisionRecord.find_by(agent_run_id: agent_run_id))
+        logger.info(
+          message: "knowledge.decisions.draft_exists",
+          agent_run_id: agent_run_id,
+          decision_record_id: existing_record.id
+        )
+
+        return { agent_run_id: agent_run_id, decision_record_id: existing_record.id, success: true }
+      end
+
       agent_run = AgentRun.find(agent_run_id)
 
       track_phase(agent_run_id: agent_run_id, phase_key: "draft_decision_record", phase_group: "post", agent_run: agent_run) do
