@@ -63,13 +63,12 @@ RSpec.describe Paid::LogTruncator do
     expect { described_class.truncate_logs(log_dir) }.not_to raise_error
   end
 
-  it "clamps keep_bytes to file size when keep_bytes exceeds file size" do
+  it "clamps keep_bytes to max_bytes when keep_bytes exceeds max_bytes" do
     log_path = File.join(log_dir, "dev-update.log")
-    content = "A" * 600_000
-    File.write(log_path, content)
+    File.write(log_path, "A" * 600_000)
 
     described_class.truncate_logs(log_dir, max_bytes: 500_000, keep_bytes: 700_000)
 
-    expect(File.size(log_path)).to eq(600_000)
+    expect(File.size(log_path)).to eq(500_000)
   end
 end

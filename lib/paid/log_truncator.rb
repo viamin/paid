@@ -7,11 +7,13 @@ module Paid
     module_function
 
     def truncate_logs(directory, max_bytes: 524_288, keep_bytes: 102_400)
+      effective_keep = [ keep_bytes, max_bytes ].min
+
       Dir[File.join(directory, "*.log")].each do |log_file|
         file_size = File.size(log_file)
         next unless file_size > max_bytes
 
-        bytes_to_keep = [ keep_bytes, file_size ].min
+        bytes_to_keep = [ effective_keep, file_size ].min
         offset = file_size - bytes_to_keep
         next if offset <= 0
 
