@@ -33,6 +33,7 @@ class Provider < ApplicationRecord
   validate :subscription_auth_must_not_have_api_key
   validate :api_key_must_be_compatible
   validate :api_key_must_belong_to_same_user
+  validate :subscription_must_have_standard_fallback_role
 
   before_destroy :prevent_destroying_last_agent_run_provider
   before_destroy :prevent_destroying_default_provider
@@ -215,5 +216,12 @@ class Provider < ApplicationRecord
     return if provider_api_key.user_id == user_id
 
     errors.add(:provider_api_key, "must belong to the same user")
+  end
+
+  def subscription_must_have_standard_fallback_role
+    return unless subscription?
+    return if fallback_role == "standard"
+
+    errors.add(:fallback_role, "must be standard for subscription providers")
   end
 end

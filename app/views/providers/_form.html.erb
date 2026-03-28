@@ -107,13 +107,14 @@
     </div>
   <% end %>
 
-  <div>
+  <div data-provider-form-target="fallbackRoleField" <%= "hidden" unless is_api_key %>>
     <%= form.label :fallback_role, "Fallback Role", class: "block text-sm font-medium text-gray-900" %>
     <div class="mt-2">
       <%= form.select :fallback_role,
           [["Standard", "standard"], ["Rate-limit fallback only", "rate_limit_fallback"]],
           {},
-          class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+          class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+          disabled: !is_api_key %>
     </div>
     <p class="mt-1 text-xs text-gray-500">Rate-limit fallback entries will be used when the subscription provider for the same key is rate-limited. (Automatic fallback execution is planned; currently these entries are tracked but not yet auto-invoked.)</p>
   </div>

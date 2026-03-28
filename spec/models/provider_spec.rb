@@ -33,6 +33,14 @@ RSpec.describe Provider do
       expect(provider).not_to allow_value("primary").for(:fallback_role)
     end
 
+    it "requires standard fallback_role for subscription providers" do
+      provider.auth_type = "subscription"
+      provider.fallback_role = "rate_limit_fallback"
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:fallback_role]).to include("must be standard for subscription providers")
+    end
+
     it "requires provider_api_key for api_key auth type" do
       provider.auth_type = "api_key"
       provider.provider_api_key = nil

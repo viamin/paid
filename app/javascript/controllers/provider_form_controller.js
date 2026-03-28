@@ -5,6 +5,7 @@ export default class extends Controller {
     "subscriptionFields",
     "apiKeyFields",
     "apiKeySelect",
+    "fallbackRoleField",
   ]
 
   connect() {
@@ -32,6 +33,13 @@ export default class extends Controller {
     })
 
     this.apiKeySelectTargets.forEach((el) => {
+      el.hidden = !isApiKey
+      el.querySelectorAll("select, input").forEach((control) => {
+        control.disabled = !isApiKey
+      })
+    })
+
+    this.fallbackRoleFieldTargets.forEach((el) => {
       el.hidden = !isApiKey
       el.querySelectorAll("select, input").forEach((control) => {
         control.disabled = !isApiKey

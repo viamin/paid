@@ -10,6 +10,8 @@ class ProvidersController < ApplicationController
   end
 
   def new
+    # auth_type is not sensitive — it's a UI routing hint ("subscription" or "api_key")
+    # that determines which form variant to show. Validated against AUTH_TYPES allowlist.
     auth_type = params[:auth_type]
     auth_type = "subscription" unless Provider::AUTH_TYPES.include?(auth_type)
 
