@@ -12,7 +12,7 @@ module Knowledge
     #   Knowledge::Decisions::Draft.call(agent_run: agent_run)
     class Draft
       TIMEOUT = 30
-      DEFAULT_MODEL = "claude-sonnet-4-5-20250514"
+      DEFAULT_MODEL = "claude-sonnet-4-6"
 
       DRAFT_PROMPT = <<~PROMPT
         You are drafting a Decision Record (ADR-lite) for a code change.
