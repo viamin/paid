@@ -25,7 +25,11 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
       issue = agent_run.issue
 
-      return mark_complete_without_issue(agent_run) unless issue
+      unless issue
+        return track_phase(agent_run_id: agent_run_id, phase_key: "handle_no_output_issue_run", phase_group: "post", agent_run: agent_run, metadata: { outcome: "no_issue" }) do
+          mark_complete_without_issue(agent_run)
+        end
+      end
 
       project = agent_run.project
       client = project.github_token.client
@@ -92,15 +96,18 @@ module Activities
         label = project.label_for_stage(stage)
         next unless label && issue.has_label?(label)
 
-        client.remove_label_from_issue(project.full_name, issue.github_number, label)
+        begin
+          client.remove_label_from_issue(project.full_name, issue.github_number, label)
+        rescue GithubClient::Error => e
+          logger.warn(
+            message: "agent_execution.remove_trigger_label_failed",
+            agent_run_id: agent_run_id,
+            issue_number: issue.github_number,
+            label: label,
+            error: e.message
+          )
+        end
       end
-    rescue GithubClient::Error => e
-      logger.warn(
-        message: "agent_execution.remove_trigger_label_failed",
-        agent_run_id: agent_run_id,
-        issue_number: issue.github_number,
-        error: e.message
-      )
     end
 
     def post_needs_input_comment(client, project, issue, agent_summary)
