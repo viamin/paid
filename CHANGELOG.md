@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.11.0](https://github.com/viamin/paid/compare/v0.10.0...v0.11.0) (2026-03-28)
+
+
+### Features
+
+* **providers:** improve Test Agent reliability and auth messaging ([#568](https://github.com/viamin/paid/issues/568)) ([8857a95](https://github.com/viamin/paid/commit/8857a95732019b9e780d43ac38df6f1785337345))
+
+
+### Bug Fixes
+
+* 248: Document service container architecture and operator setup guide ([#566](https://github.com/viamin/paid/issues/566)) ([085d155](https://github.com/viamin/paid/commit/085d155a87f26f262996eaecfdaa3c4c1e67c59f))
+* 261: Decision Records — Why Capture Integrated into Agent Workflows ([#572](https://github.com/viamin/paid/issues/572)) ([01fa998](https://github.com/viamin/paid/commit/01fa998ebf74206ed268765c3808eb10fd73e969))
+* 264: Minimal Admin UI — Inspect Knowledge Artifacts, Collector Runs, and Search ([#574](https://github.com/viamin/paid/issues/574)) ([ee52b7f](https://github.com/viamin/paid/commit/ee52b7fe806a7696da29d107710a55e4c2c55cbb))
+* 265: Staleness Detection and Re-collection Triggers ([#573](https://github.com/viamin/paid/issues/573)) ([96eb7f6](https://github.com/viamin/paid/commit/96eb7f6edf9c45d0916f6639183b8d0af0333df2))
+* 267: Knowledge Base Architecture Docs and Operational Runbook ([#576](https://github.com/viamin/paid/issues/576)) ([37a9b1e](https://github.com/viamin/paid/commit/37a9b1e590e1c765d527a05576a6cbb0ddf2c8aa))
+* 402: feat(providers): add Cursor support to paid-agent containers ([#562](https://github.com/viamin/paid/issues/562)) ([28413d4](https://github.com/viamin/paid/commit/28413d4cb9187afe596f493858381584072140a6))
+* 404: feat(providers): add GitHub Copilot support to paid-agent containers ([#564](https://github.com/viamin/paid/issues/564)) ([38e18b0](https://github.com/viamin/paid/commit/38e18b0cb6c33c4b7cafd77b5a5a47103999e397))
+* 405: feat(providers): add Aider support to paid-agent containers ([#565](https://github.com/viamin/paid/issues/565)) ([3af495e](https://github.com/viamin/paid/commit/3af495ebb9b3030cb3b305bca1c64e1c7f7e698d))
+* 452: feat(agent-runs): add scope analysis heuristic to detect decomposable features ([#570](https://github.com/viamin/paid/issues/570)) ([f3cd3cc](https://github.com/viamin/paid/commit/f3cd3cc388349a72e0a50c47ee9ae1cf4c75835c))
+* 546: feat(providers): allow multiple provider entries with different auth types (subscription vs API key) ([#559](https://github.com/viamin/paid/issues/559)) ([b3db2ba](https://github.com/viamin/paid/commit/b3db2ba728b220ae603a16bd68a2e20ed9f1cda8))
+* 549: Clean up persistent dev-update logs ([#575](https://github.com/viamin/paid/issues/575)) ([30b2af5](https://github.com/viamin/paid/commit/30b2af562f63e92e7f8edeb964577d36c8f5e1be))
+* 550: feat(mcp): add persisted MCP server definitions, project associations, and run snapshots ([#571](https://github.com/viamin/paid/issues/571)) ([48f59fa](https://github.com/viamin/paid/commit/48f59faba32eb0a31c3f67735db23f2496726096))
+* 563: Move delete project button into edit form with name confirmation ([#577](https://github.com/viamin/paid/issues/577)) ([b3e3b20](https://github.com/viamin/paid/commit/b3e3b2047c1d996694e332babd790ce7613cef8e))
+* 578: Hide pause button for PRs without paid-automation enabled ([#579](https://github.com/viamin/paid/issues/579)) ([7a638d3](https://github.com/viamin/paid/commit/7a638d3220a0959f0823c40d5fbf74a0d8dc2be5))
+* **dev:** capture overmind and tmux diagnostics ([#582](https://github.com/viamin/paid/issues/582)) ([b36d46d](https://github.com/viamin/paid/commit/b36d46ddefa24a8c2f406eced1a346f2750adfde))
+* **prompts:** align service guidance with configured containers ([#569](https://github.com/viamin/paid/issues/569)) ([9da3a12](https://github.com/viamin/paid/commit/9da3a12aa1c1cb6ac5d7378ca4f6aac84d693b93))
+
 ## [0.10.0](https://github.com/viamin/paid/compare/v0.9.5...v0.10.0) (2026-03-28)
 
 
