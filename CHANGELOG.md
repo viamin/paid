@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.10.0](https://github.com/viamin/paid/compare/v0.9.5...v0.10.0) (2026-03-28)
+
+
+### Features
+
+* add qdrant test integration coverage ([#524](https://github.com/viamin/paid/issues/524)) ([c5f1b46](https://github.com/viamin/paid/commit/c5f1b46ec070edc7edbd6f937ae7830393bb0caa))
+* **agent-runs:** queue auto-pick work ahead of spare capacity ([#533](https://github.com/viamin/paid/issues/533)) ([3235016](https://github.com/viamin/paid/commit/3235016901437647718137679e5afc7d3965a405))
+* **integrations:** restore hub and add credential catalog ([#539](https://github.com/viamin/paid/issues/539)) ([bfedfdc](https://github.com/viamin/paid/commit/bfedfdc92740bd2d4d4b713ce7f09bfdb9efa9ea))
+
+
+### Bug Fixes
+
+* 147: implement live operations dashboard ([#531](https://github.com/viamin/paid/issues/531)) ([e97d9c1](https://github.com/viamin/paid/commit/e97d9c1b7ea3c9f337469f426665594d9c8e81fd))
+* 263: Provenance Tracking and Audit Log ([#522](https://github.com/viamin/paid/issues/522)) ([5ac5331](https://github.com/viamin/paid/commit/5ac53310445ac349208eaf87599b4a32edbb3112))
+* 525: Expose automation settings in project configuration section ([#529](https://github.com/viamin/paid/issues/529)) ([68245e4](https://github.com/viamin/paid/commit/68245e403f4fe06e0b27b41b387f6505d1fcd800))
+* 535: Consolidate Configuration and Automation sections in the project page ([#555](https://github.com/viamin/paid/issues/555)) ([5461090](https://github.com/viamin/paid/commit/5461090dd774b500c0e09211a311e6ae10dd750b))
+* 536: Expand quality metrics to all agent run goal types and add PR interaction signals ([#541](https://github.com/viamin/paid/issues/541)) ([ee81c30](https://github.com/viamin/paid/commit/ee81c3030f7c4889a6287dbbad4ccfdbbae3086f))
+* 544: Add pause/resume functionality for auto-continue on individual PRs ([#558](https://github.com/viamin/paid/issues/558)) ([da0cd5e](https://github.com/viamin/paid/commit/da0cd5e132ca6d547ad1ef1545c5d71762f03de4))
+* 545: Allow disabling individual providers as fallback providers ([#556](https://github.com/viamin/paid/issues/556)) ([a37593e](https://github.com/viamin/paid/commit/a37593e1b55b158f7b2fa0a72848c2c24ce4552e))
+* 547: Dashboard metrics should count fallback provider usage for agent runs ([#560](https://github.com/viamin/paid/issues/560)) ([12cbb05](https://github.com/viamin/paid/commit/12cbb0518dfa88caf8621ce241f00e1d4f429ed2))
+* **build:** install ast-grep from release binaries ([46af202](https://github.com/viamin/paid/commit/46af2022848da5fea1e0886fc93b7beef7c9bacb))
+* **build:** install ast-grep from release binaries ([8378ae3](https://github.com/viamin/paid/commit/8378ae330b891b47e324a894bdd060832219d156))
+* **dev-update:** preserve restart diagnostics across setup ([43aae85](https://github.com/viamin/paid/commit/43aae855187ed152e5e9ed9d8abc61766e28e5c5))
+* **dev-update:** preserve restart diagnostics across setup ([ecbadec](https://github.com/viamin/paid/commit/ecbadece4647c8bae309a0c1a30d9629391ea64a))
+* **devcontainer:** export OVERMIND_SOCKET so any terminal can reach overmind ([f5b490c](https://github.com/viamin/paid/commit/f5b490c49d6eb6fd7a536e899dde81de4668aa1d))
+* **github-sync:** fetch automation-labeled pull requests ([#537](https://github.com/viamin/paid/issues/537)) ([f36e124](https://github.com/viamin/paid/commit/f36e124ae87875c4ff42503120b82d698514a414))
+* **github-sync:** sync all issues and gate automation by labels ([#542](https://github.com/viamin/paid/issues/542)) ([93277b3](https://github.com/viamin/paid/commit/93277b364e03ef495ad7d3071a4b0a69ba96ecb8))
+* run provider tests in real container context ([#538](https://github.com/viamin/paid/issues/538)) ([7bbf433](https://github.com/viamin/paid/commit/7bbf4331598ca6337ac39349f1b5309827d21b4e))
+* **service-containers:** add postgres health checks and metrics ([#557](https://github.com/viamin/paid/issues/557)) ([5f4c2b3](https://github.com/viamin/paid/commit/5f4c2b3f87b98ec9af2462ab13c260d7bffbd2cc))
+* **setup:** make solid cable setup idempotent ([b55b250](https://github.com/viamin/paid/commit/b55b250b07af48c72af08108acc6e1687e175a59))
+* **setup:** make solid cable setup idempotent ([b1a797d](https://github.com/viamin/paid/commit/b1a797db45f5532662a5e3960840f4e3454ac432))
+
 ## [0.9.5](https://github.com/viamin/paid/compare/v0.9.4...v0.9.5) (2026-03-26)
 
 

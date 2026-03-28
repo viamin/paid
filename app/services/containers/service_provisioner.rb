@@ -7,9 +7,31 @@ module Containers
   # Manages Docker lifecycle for service containers (PostgreSQL, Redis, etc.)
   # that agents need for running tests and setup commands.
   #
-  # Service containers are attached to the same Docker network as the agent
-  # container (paid_agent for API-key mode, paid_internal for subscription-auth)
-  # so they are always reachable from the agent.
+  # == High-Level Data Flow
+  #
+  # 1. A project defines service containers (image, name, port) via the admin UI.
+  # 2. When an agent run starts, ProvisionServicesActivity calls #provision.
+  # 3. #provision records the container IDs on the agent run (for reference counting),
+  #    then ensures each container is running on the agent's Docker network.
+  # 4. Environment variables (DATABASE_URL, REDIS_URL, etc.) are generated from
+  #    the running containers and stored on the agent run.
+  # 5. The agent container receives these env vars and can connect to services
+  #    by hostname (containers register DNS aliases on the shared network).
+  # 6. When the agent run completes, CleanupServicesActivity calls #cleanup,
+  #    which only stops containers with zero remaining active runs.
+  #
+  # == Key Design Decisions
+  #
+  # - Containers are shared across concurrent agent runs in the same project
+  #   to avoid duplicate instances and reduce startup latency.
+  # - Reference counting (via AgentRun.service_container_ids JSONB) prevents
+  #   premature cleanup while other runs still need the service.
+  # - Row-level locking (with_lock) prevents race conditions during concurrent
+  #   provisioning of the same service container.
+  # - Three background jobs handle edge cases: metrics collection, DB/Docker
+  #   status reconciliation, and orphan container cleanup.
+  #
+  # See RDR-020 for the full architectural decision record.
   #
   # @example Provision services for an agent run
   #   provisioner = Containers::ServiceProvisioner.new
@@ -21,11 +43,18 @@ module Containers
   class ServiceProvisioner
     class Error < StandardError; end
 
+    POSTGRES_DEFAULT_ENV = {
+      "POSTGRES_USER" => "agent",
+      "POSTGRES_PASSWORD" => "agent",
+      "POSTGRES_DB" => "agent_test"
+    }.freeze
+
     ENV_MAPPINGS = {
       "postgres" => ->(sc) {
-        user = sc.env["POSTGRES_USER"] || "agent"
-        pass = sc.env["POSTGRES_PASSWORD"] || "agent"
-        db = sc.env["POSTGRES_DB"] || "agent_test"
+        defaults = POSTGRES_DEFAULT_ENV
+        user = sc.env["POSTGRES_USER"].to_s.strip.presence || defaults["POSTGRES_USER"]
+        pass = sc.env["POSTGRES_PASSWORD"].to_s.strip.presence || defaults["POSTGRES_PASSWORD"]
+        db = sc.env["POSTGRES_DB"].to_s.strip.presence || defaults["POSTGRES_DB"]
         { "DATABASE_URL" => "postgres://#{user}:#{pass}@#{sc.name}:#{sc.port}/#{db}" }
       },
       "redis" => ->(sc) {
@@ -129,6 +158,7 @@ module Containers
     def ensure_running!(service_container)
       if service_container.running?
         if docker_container_alive?(service_container.docker_container_id)
+          schedule_metrics_collection(service_container)
           return
         else
           log_info("service_provisioner.container_dead", name: service_container.name)
@@ -156,6 +186,7 @@ module Containers
       end
 
       wait_for_health!(service_container)
+      schedule_metrics_collection(service_container)
 
       log_info(adopted ? "service_provisioner.adopted" : "service_provisioner.started",
         name: service_container.name,
@@ -259,11 +290,12 @@ module Containers
 
     def create_docker_container(service_container)
       limits = resource_limits_for(service_container.image)
+      env = container_env_for(service_container)
 
-      Docker::Container.create(
+      options = {
         "Image" => service_container.image,
         "name" => service_container.name,
-        "Env" => service_container.env.map { |k, v| "#{k}=#{v}" },
+        "Env" => env.map { |k, v| "#{k}=#{v}" },
         "HostConfig" => {
           "NetworkMode" => @network,
           "Memory" => limits[:memory],
@@ -283,7 +315,46 @@ module Containers
           "paid.service_container" => "true",
           "paid.service_container_id" => service_container.id.to_s
         }
-      )
+      }
+
+      healthcheck = healthcheck_for(service_container, env)
+      options["Healthcheck"] = healthcheck if healthcheck
+
+      Docker::Container.create(options)
+    end
+
+    def container_env_for(service_container)
+      env = service_container.env
+
+      return env unless service_container.image.include?("postgres")
+
+      # Normalize Postgres env: treat nil/blank values as missing so they do
+      # not override the safe defaults in POSTGRES_DEFAULT_ENV.
+      normalized = env.each_with_object({}) do |(key, value), memo|
+        next if value.nil?
+
+        stripped = value.to_s.strip
+        next if stripped.empty?
+
+        memo[key] = stripped
+      end
+
+      POSTGRES_DEFAULT_ENV.merge(normalized)
+    end
+
+    def healthcheck_for(service_container, env)
+      return nil unless service_container.image.include?("postgres")
+
+      user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
+      db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
+
+      {
+        "Test" => [ "CMD", "pg_isready", "-U", user, "-d", db ],
+        "Interval" => 5_000_000_000,
+        "Timeout" => 3_000_000_000,
+        "Retries" => 10,
+        "StartPeriod" => 5_000_000_000
+      }
     end
 
     def resource_limits_for(image)
@@ -380,6 +451,13 @@ module Containers
         "SERVICE_#{key}_HOST" => service_container.name,
         "SERVICE_#{key}_PORT" => service_container.port.to_s
       }
+    end
+
+    def schedule_metrics_collection(service_container)
+      ServiceContainerMetricsCollectionJob.perform_later(service_container.id)
+    rescue GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError
+      log_info("service_provisioner.metrics_job_already_enqueued",
+        service_container_id: service_container.id)
     end
 
     def log_info(message, **metadata)

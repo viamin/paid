@@ -20,9 +20,11 @@ module Providers
     CONTAINER_COMMANDS = Activities::RunAgentActivity::AGENT_COMMANDS.slice(
       "claude",
       "codex",
+      "cursor",
       "gemini",
       "kilocode",
-      "opencode"
+      "opencode",
+      "copilot"
     ).freeze
     RATE_LIMIT_PATTERNS = Activities::RunAgentActivity::RATE_LIMIT_PATTERNS
     AUTHENTICATION_ERROR_PATTERNS = [
@@ -426,36 +428,11 @@ module Providers
     end
 
     def subscription_auth_unset_vars_for(provider)
-      return ProviderSupport.subscription_auth_unset_vars_for(provider) if ProviderSupport.respond_to?(:subscription_auth_unset_vars_for)
-      return ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS.fetch(provider) if ProviderSupport.const_defined?(:SUBSCRIPTION_AUTH_UNSET_VARS, false)
-
-      fallback_subscription_auth_unset_vars.fetch(provider)
+      ProviderSupport.subscription_auth_unset_vars_for(provider)
     end
 
     def all_subscription_auth_unset_vars
-      return ProviderSupport.subscription_auth_unset_vars if ProviderSupport.respond_to?(:subscription_auth_unset_vars)
-      return ProviderSupport::SUBSCRIPTION_AUTH_UNSET_VARS if ProviderSupport.const_defined?(:SUBSCRIPTION_AUTH_UNSET_VARS, false)
-
-      fallback_subscription_auth_unset_vars
-    end
-
-    def fallback_subscription_auth_unset_vars
-      {
-        "codex" => %w[
-          OPENAI_API_KEY
-          OPENAI_BASE_URL
-          OPENAI_HEADER_X_AGENT_RUN_ID
-          OPENAI_HEADER_X_PROXY_TOKEN
-        ].freeze,
-        "gemini" => %w[
-          GEMINI_API_KEY
-          GOOGLE_GEMINI_BASE_URL
-          GOOGLE_GENAI_BASE_URL
-          GOOGLE_HEADER_X_AGENT_RUN_ID
-          GOOGLE_HEADER_X_PROXY_TOKEN
-          GEMINI_CLI_CUSTOM_HEADERS
-        ].freeze
-      }.freeze
+      ProviderSupport.subscription_auth_unset_vars
     end
 
     class Result
