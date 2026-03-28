@@ -91,7 +91,7 @@ module ProviderSupport
   end
 
   def subscription_auth_unset_vars_for(provider_key)
-    SUBSCRIPTION_AUTH_UNSET_VARS.fetch(provider_key.to_s)
+    SUBSCRIPTION_AUTH_UNSET_VARS.fetch(provider_key.to_s, [])
   end
 
   def subscription_auth_unset_vars

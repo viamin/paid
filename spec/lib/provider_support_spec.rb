@@ -95,5 +95,9 @@ RSpec.describe ProviderSupport do
     it "returns the gemini unset vars" do
       expect(described_class.subscription_auth_unset_vars_for("gemini")).to include("GEMINI_API_KEY")
     end
+
+    it "returns an empty array for unknown providers" do
+      expect(described_class.subscription_auth_unset_vars_for("unknown_provider")).to eq([])
+    end
   end
 end
