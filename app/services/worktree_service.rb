@@ -47,14 +47,19 @@ class WorktreeService
 
   # Ensure we have an up-to-date clone of the repository.
   #
+  # @param max_fetch_age [ActiveSupport::Duration, nil] When set, skip fetching
+  #   if the last fetch was within this duration (uses FETCH_HEAD mtime).
+  #   Callers like staleness detection use this to throttle network I/O.
   # @return [String] Path to the bare repository
-  def ensure_cloned
+  def ensure_cloned(max_fetch_age: nil)
     repo_path = project_repo_path
 
-    if File.exist?(File.join(repo_path, "HEAD"))
-      fetch_latest
-    else
-      clone_repository
+    @mutex.synchronize do
+      if File.exist?(File.join(repo_path, "HEAD"))
+        fetch_latest unless max_fetch_age && recently_fetched?(repo_path, max_fetch_age)
+      else
+        clone_repository
+      end
     end
 
     repo_path
@@ -147,6 +152,24 @@ class WorktreeService
     worktree&.mark_cleanup_failed!
   end
 
+  # Run a git command against the bare repository.
+  #
+  # Centralizes git execution (credential redaction, error handling) so
+  # callers like Knowledge::Staleness::Detector don't need to duplicate it.
+  #
+  # @param args [Array<String>] Git arguments (e.g. "rev-list", "--count", "sha..sha")
+  # @return [String] stdout from the command
+  # @raise [Error] when the git command fails
+  def run_repo_command(*args)
+    run_git(*args, chdir: project_repo_path)
+  rescue Errno::ENOENT => e
+    if !Dir.exist?(project_repo_path)
+      raise Error, "Repo directory missing: #{project_repo_path}"
+    else
+      raise Error, "Failed to execute git (missing executable or spawn error): #{e.message}"
+    end
+  end
+
   # Get the current commit SHA of the default branch.
   #
   # @return [String] The 40-character SHA
@@ -213,6 +236,15 @@ class WorktreeService
 
   def worktrees_path
     File.join(self.class.workspace_root, project.account_id.to_s, project.id.to_s, "worktrees")
+  end
+
+  def recently_fetched?(repo_path, max_age)
+    fetch_head = File.join(repo_path, "FETCH_HEAD")
+    begin
+      File.mtime(fetch_head) > max_age.ago
+    rescue Errno::ENOENT
+      false
+    end
   end
 
   def clone_repository
