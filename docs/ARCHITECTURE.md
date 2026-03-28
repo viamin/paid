@@ -261,7 +261,38 @@ Agents often need external services (PostgreSQL, Redis, Selenium) for running te
 
 See [RDR-020](rdrs/RDR-020-service-container-architecture.md) for the full architectural decision record.
 
-### 4. External Integrations
+### 4. Knowledge Base
+
+The knowledge base provides agents with persistent, semantic understanding of the codebases they work on. See [KNOWLEDGE_BASE.md](KNOWLEDGE_BASE.md) for full documentation and [RDR-021](rdrs/RDR-021-knowledge-base.md) for the architectural decision record.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      KNOWLEDGE BASE                           │
+│                                                               │
+│  ┌────────────────┐  ┌───────────────┐  ┌────────────────┐  │
+│  │   Collector    │  │  PostgreSQL   │  │    Qdrant      │  │
+│  │   Framework    │  │  (canonical   │  │  (vector       │  │
+│  │  (7 types)     │  │   store)      │  │   index)       │  │
+│  └───────┬────────┘  └───────┬───────┘  └───────┬────────┘  │
+│          │                   │                   │           │
+│          ▼                   ▼                   ▼           │
+│  ┌────────────────┐  ┌───────────────┐  ┌────────────────┐  │
+│  │   Embedding    │  │  Hybrid       │  │  Audit &       │  │
+│  │   Pipeline     │  │  Search       │  │  Provenance    │  │
+│  │  (OpenAI)      │  │  Service      │  │                │  │
+│  └────────────────┘  └───────────────┘  └────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Key components:
+
+- **Collectors**: Seven collector types analyze codebases (routes, symbols, dependencies, language stats, churn hotspots, config keys, AST structures)
+- **PostgreSQL**: Canonical store for artifacts, chunks, links, and audit events
+- **Qdrant**: Vector database for semantic search (one collection per project, cosine similarity)
+- **Embedding Pipeline**: Generates 3,072-dimensional vectors via OpenAI text-embedding-3-large
+- **Hybrid Search**: Combines exact (trigram) and semantic (vector) search with reranking
+
+### 5. External Integrations
 
 #### GitHub (PAT-based)
 
@@ -299,7 +330,7 @@ Two modes of agent execution:
 - Model registry provides capabilities/costs
 - Used by meta-agent for model selection
 
-### 5. Model Selection System
+### 6. Model Selection System
 
 The meta-agent chooses models based on:
 
@@ -415,6 +446,7 @@ Starts:
 - Rails app
 - PostgreSQL
 - Temporal (server, UI, admin-tools)
+- Qdrant (vector database for knowledge base)
 - No Redis dependencies (Action Cable uses async adapter in dev)
 
 ### Production (Self-Hosted)
