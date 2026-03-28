@@ -176,7 +176,8 @@ RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
 # pinned because aider-chat has 100+ deps, making --require-hashes impractical.
 # To update: pip3 download --no-deps aider-chat==<version> -d /tmp/aider-dl && sha256sum /tmp/aider-dl/aider_chat-*.whl
 ARG AIDER_CHAT_WHEEL_SHA256=ab43331d62df05a11c320fc89820a32929fb9b230d386ea60568c4ea6d3a8982
-RUN pip3 download --no-cache-dir --no-deps aider-chat==0.82.3 -d /tmp/aider-dl \
+RUN pip3 install --no-cache-dir --break-system-packages pip==25.1.1 \
+    && pip3 download --no-cache-dir --no-deps aider-chat==0.82.3 -d /tmp/aider-dl \
     && set -- /tmp/aider-dl/aider_chat-*.whl \
     && if [ "$#" -ne 1 ] || [ "$1" = '/tmp/aider-dl/aider_chat-*.whl' ]; then echo "Expected exactly one aider_chat wheel, found $#: $*"; exit 1; fi \
     && echo "${AIDER_CHAT_WHEEL_SHA256}  $1" | sha256sum -c - \
