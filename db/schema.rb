@@ -738,8 +738,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_101939) do
     t.index ["user_id", "provider_key", "provider_api_key_id"], name: "idx_providers_unique_api_key", unique: true, where: "((auth_type)::text = 'api_key'::text)"
     t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "((auth_type)::text = 'subscription'::text)"
     t.index ["user_id"], name: "index_providers_on_user_id"
-    t.check_constraint "(auth_type)::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
-    t.check_constraint "(auth_type)::text <> 'subscription'::text OR provider_api_key_id IS NULL AND (fallback_role)::text = 'standard'::text", name: "providers_subscription_invariants"
+    t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
+    t.check_constraint "auth_type::text <> 'subscription'::text OR provider_api_key_id IS NULL AND fallback_role::text = 'standard'::text", name: "providers_subscription_invariants"
   end
 
   create_table "quality_metrics", force: :cascade do |t|
@@ -938,10 +938,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_101939) do
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
   add_foreign_key "decision_record_links", "decision_records", on_delete: :cascade
-  add_foreign_key "decision_records", "agent_runs"
-  add_foreign_key "decision_records", "decision_records", column: "superseded_by_id"
-  add_foreign_key "decision_records", "issues"
-  add_foreign_key "decision_records", "projects"
+  add_foreign_key "decision_records", "agent_runs", on_delete: :nullify
+  add_foreign_key "decision_records", "decision_records", column: "superseded_by_id", on_delete: :nullify
+  add_foreign_key "decision_records", "issues", on_delete: :nullify
+  add_foreign_key "decision_records", "projects", on_delete: :cascade
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "integration_credentials", "accounts"
