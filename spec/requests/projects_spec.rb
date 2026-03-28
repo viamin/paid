@@ -514,6 +514,47 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Quick Run")
       end
 
+      it "shows pause button for PRs with automation label" do
+        project = create(:project, account: account, github_token: github_token)
+        pr = create(:issue, :pull_request, project: project, github_number: 10, title: "Automated PR",
+          github_state: "open", labels: [ project.automation_label_name ])
+        get project_path(project)
+        expect(response.body).to include(
+          toggle_auto_continue_pause_project_agent_runs_path(project, pull_request_id: pr.id)
+        )
+        expect(response.body).to include("Pause auto-continue")
+      end
+
+      it "hides pause button for PRs without automation label" do
+        project = create(:project, account: account, github_token: github_token)
+        pr = create(:issue, :pull_request, project: project, github_number: 11, title: "Release PR",
+          github_state: "open", labels: [ "release" ])
+        get project_path(project)
+        expect(response.body).not_to include(
+          toggle_auto_continue_pause_project_agent_runs_path(project, pull_request_id: pr.id)
+        )
+        expect(response.body).not_to include("Pause auto-continue")
+      end
+
+      it "shows Paused badge for paused PRs with automation label" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:issue, :pull_request, project: project, github_number: 12, title: "Paused PR",
+          github_state: "open", labels: [ project.automation_label_name ], auto_continue_paused: true)
+        get project_path(project)
+        expect(response.body).to include("Paused")
+      end
+
+      it "hides Paused badge for paused PRs without automation label" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:issue, :pull_request, project: project, github_number: 13, title: "Paused Release PR",
+          github_state: "open", labels: [ "release" ], auto_continue_paused: true)
+        get project_path(project)
+        # The word "Paused" should not appear in the badge context for this PR
+        expect(response.body).not_to match(
+          /Paused Release PR.*?Paused/m
+        )
+      end
+
       it "shows automation settings with their current state" do
         project = create(:project, account: account, github_token: github_token,
           auto_add_labels_enabled: true, automation_on_label_enabled: false,
