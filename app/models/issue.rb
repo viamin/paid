@@ -111,9 +111,19 @@ class Issue < ApplicationRecord
 
   def associated_pull_request
     if sub_issues.loaded?
-      sub_issues.find(&:is_pull_request?)
+      prs = sub_issues.select(&:is_pull_request?)
+      return nil if prs.empty?
+
+      open_prs = prs.select { |pr| pr.github_state == "open" }
+      candidates = open_prs.any? ? open_prs : prs
+
+      candidates.max_by { |pr| pr.github_updated_at || pr.updated_at || Time.at(0) }
     else
-      sub_issues.pull_requests_only.first
+      scope = sub_issues.pull_requests_only
+      open_scope = scope.where(github_state: "open")
+
+      open_scope.order(github_updated_at: :desc, updated_at: :desc).first ||
+        scope.order(github_updated_at: :desc, updated_at: :desc).first
     end
   end
 
