@@ -33,7 +33,7 @@ module Prompts
     end
 
     def self.service_environment_section_for(project:)
-      new(issue: nil, project: project).send(:service_environment_section, include_setup_instruction: true)
+      ServiceContainerSections.service_environment_section_for(project: project)
     end
 
     def build

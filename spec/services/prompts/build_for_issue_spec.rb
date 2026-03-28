@@ -4,11 +4,11 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Prompts::BuildForIssue do
-  let(:running_containers) { [] }
+  let(:configured_containers) { [] }
 
   let(:service_containers_relation) do
-    running_scope = OpenStruct.new(to_a: running_containers)
-    OpenStruct.new(running: running_scope, to_a: running_containers)
+    running_scope = OpenStruct.new(to_a: configured_containers)
+    OpenStruct.new(running: running_scope, to_a: configured_containers)
   end
 
   let(:project) do
@@ -177,7 +177,7 @@ RSpec.describe Prompts::BuildForIssue do
     end
 
     context "when project has configured service containers" do
-      let(:running_containers) do
+      let(:configured_containers) do
         [ OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432) ]
       end
 
@@ -228,7 +228,7 @@ RSpec.describe Prompts::BuildForIssue do
     end
 
     context "when project has configured non-database service containers" do
-      let(:running_containers) do
+      let(:configured_containers) do
         [ OpenStruct.new(image: "redis:7", name: "redis", port: 6379) ]
       end
 
