@@ -354,6 +354,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_002528) do
   end
 
   create_table "issues", force: :cascade do |t|
+    t.boolean "auto_continue_paused", default: false, null: false
     t.text "body"
     t.datetime "created_at", null: false
     t.integer "draft_review_count", default: 0, null: false
@@ -889,7 +890,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_002528) do
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
   add_foreign_key "provider_states", "users", on_delete: :cascade
-  add_foreign_key "providers", "provider_api_keys", on_delete: :nullify
+  add_foreign_key "providers", "provider_api_keys", on_delete: :restrict
   add_foreign_key "providers", "users", on_delete: :cascade
   add_foreign_key "quality_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
