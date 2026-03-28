@@ -180,7 +180,7 @@ bin/dev                 # Start dev server (Rails + JS + CSS watchers)
 
 ## Provider Auth Setup
 
-Provider tests and real agent runs use the same containerized auth path. Each provider can usually be configured in one of two ways:
+By default, provider tests and real agent runs use the same containerized auth path. For Codex and Gemini, when a Paid-managed proxy key is configured on the `web` service, Test Agent can instead use the agent-harness auth path for faster validation. Each provider can usually be configured in one of two ways:
 
 1. Paid-managed proxy auth using an API key on the `web` service.
 2. Subscription auth using local CLI login state that Paid copies into the agent container.

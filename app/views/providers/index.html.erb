@@ -69,7 +69,7 @@
   <div class="mt-6 rounded-lg border border-sky-200 bg-sky-50 p-4">
     <h2 class="text-base font-semibold text-sky-950">Provider Auth Setup</h2>
     <p class="mt-1 text-sm text-sky-900">
-      Test Agent uses the same containerized auth path as real runs. Configure either Paid-managed API keys on the <code>web</code> service or provider-specific subscription credentials that the agent container can copy at runtime.
+      By default, Test Agent uses the same containerized auth path as real runs. For Codex and Gemini when using Paid-managed proxy keys, it can instead use the agent-harness auth path. Configure either Paid-managed API keys on the <code>web</code> service or provider-specific subscription credentials that the agent container can copy at runtime.
     </p>
 
     <div class="mt-4 grid gap-4 md:grid-cols-3">
