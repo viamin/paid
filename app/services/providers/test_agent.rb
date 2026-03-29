@@ -257,11 +257,8 @@ module Providers
     end
 
     def harness_health_check_supported?
-      case provider.provider_key
-      when "codex"  then proxy_api_key_configured?(:openai)
-      when "gemini" then proxy_api_key_configured?(:google)
-      else false
-      end
+      api_key_name = ProviderSupport.proxy_health_check_api_key_for(provider.provider_key)
+      api_key_name && proxy_api_key_configured?(api_key_name)
     end
 
     def harness_provider_name

@@ -98,6 +98,57 @@ module ProviderSupport
     SUBSCRIPTION_AUTH_UNSET_VARS
   end
 
+  # Returns the proxy API key name (e.g. :openai, :google) for a provider
+  # that supports harness-based health checks, or nil if the provider
+  # requires a full container test instead.
+  def proxy_health_check_api_key_for(provider_key)
+    PROXY_HEALTH_CHECK_API_KEYS[provider_key.to_s]
+  end
+
+  # Returns true if the given login matches a known provider bot username.
+  def provider_bot_username?(login)
+    return false if login.blank?
+
+    normalized = login.downcase
+    PROVIDER_BOT_USERNAMES.any? { |_provider, usernames| usernames.include?(normalized) }
+  end
+
+  # Returns true if the given login matches a known bot username for the
+  # specified provider key.
+  def provider_bot_username_for?(provider_key, login)
+    return false if login.blank?
+
+    usernames = PROVIDER_BOT_USERNAMES[provider_key.to_s]
+    return false unless usernames
+
+    usernames.include?(login.downcase)
+  end
+
+  # Maps provider keys to their upstream proxy API key name (used by
+  # harness-based health checks). Providers listed here can be health-checked
+  # via AgentHarness.check_provider when the corresponding API key is
+  # configured, instead of spinning up a full container test run.
+  PROXY_HEALTH_CHECK_API_KEYS = {
+    "codex" => :openai,
+    "gemini" => :google
+  }.freeze
+
+  # Bot usernames associated with each provider, used for filtering automated
+  # review comments during PR scanning. Centralised here so that
+  # ScanPaidPrsActivity does not hard-code provider-specific usernames.
+  PROVIDER_BOT_USERNAMES = {
+    "copilot" => %w[
+      copilot
+      copilot[bot]
+      copilot-pull-request-reviewer
+      copilot-pull-request-reviewer[bot]
+    ].freeze,
+    "claude" => %w[
+      claude[bot]
+      claude-code[bot]
+    ].freeze
+  }.freeze
+
   # Environment variables to unset when running a provider with its own
   # subscription auth (so the agent talks directly to the provider instead of
   # through the Paid proxy). Shared between RunAgentActivity and TestAgent to
