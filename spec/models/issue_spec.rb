@@ -362,6 +362,16 @@ RSpec.describe Issue do
 
       expect(issue.blocking_issues).to contain_exactly(open_dep)
     end
+
+    it "excludes open dependencies in recommend_close state" do
+      open_dep = create(:issue, project: project, github_state: "open")
+      recommend_close_dep = create(:issue, :recommend_close, project: project, github_state: "open")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: open_dep)
+      create(:issue_dependency, issue: issue, depends_on_issue: recommend_close_dep)
+
+      expect(issue.blocking_issues).to contain_exactly(open_dep)
+    end
   end
 
   describe "#dependent_issues" do
@@ -449,7 +459,7 @@ RSpec.describe Issue do
 
   describe "paid state machine values" do
     it "defines valid PAID_STATES" do
-      expect(described_class::PAID_STATES).to eq(%w[new planning in_progress completed failed])
+      expect(described_class::PAID_STATES).to eq(%w[new planning in_progress completed failed needs_input recommend_close])
     end
 
     it "defaults paid_state to new" do
