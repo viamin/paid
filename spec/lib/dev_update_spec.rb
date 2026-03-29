@@ -166,6 +166,36 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "passes a startup cleanup grace period to bin/setup during full restart" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.read(File.join(dir, "setup-env.log"))).to eq("300\n")
+    end
+  end
+
+  it "unsets PORT before launching bin/dev so the default base port is used" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, capture_port_in_dev: true)
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "PORT" => "3300"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      port_log = File.join(dir, "dev-port.log")
+      expect(File.exist?(port_log)).to be(true)
+      expect(File.read(port_log).strip).to eq(""), "PORT should be unset when bin/dev is launched"
+    end
+  end
+
   it "clears bundler env before calling overmind during restart" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, start_overmind_running: true)
@@ -214,7 +244,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     log_dir
   end
 
-  def prepare_script_fixture(dir, setup_exit_status: 0, start_overmind_running: false, dev_starts_overmind: true)
+  def prepare_script_fixture(dir, setup_exit_status: 0, start_overmind_running: false, dev_starts_overmind: true, capture_port_in_dev: false)
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
     FileUtils.mkdir_p(File.join(dir, "log"))
@@ -228,12 +258,14 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.cp(File.expand_path("../../bin/lib/dev_supervisor.sh", __dir__), File.join(dir, "bin", "lib", "dev_supervisor.sh"))
 
     dev_start_line = dev_starts_overmind ? %(touch "#{dir}/overmind-running") : ""
+    capture_port_line = capture_port_in_dev ? %(printf '%s\n' "${PORT:-}" > "#{dir}/dev-port.log") : ""
 
     write_executable(
       File.join(dir, "bin", "setup"),
       <<~BASH
         #!/usr/bin/env bash
         touch "#{dir}/setup-ran"
+        printf '%s\n' "${STARTUP_CLEANUP_GRACE_PERIOD:-}" > "#{dir}/setup-env.log"
         exit #{setup_exit_status}
       BASH
     )
@@ -243,6 +275,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       <<~BASH
         #!/usr/bin/env bash
         touch "#{dir}/dev-ran"
+        #{capture_port_line}
         #{dev_start_line}
         echo "bin/dev booted"
       BASH
