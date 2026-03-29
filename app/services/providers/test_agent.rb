@@ -237,6 +237,7 @@ module Providers
       result = AgentRun.insert_all!(
         [ {
           project_id: test_project.id,
+          provider_id: provider.id,
           agent_type: Provider.agent_type_for(provider.provider_key),
           status: "pending",
           goal: "create_pr",
@@ -271,7 +272,9 @@ module Providers
     end
 
     def clear_provider_state_if_healthy!
-      provider.user.provider_states.find_by(provider_name: provider.provider_key)&.record_success!
+      [ provider.state_key, provider.provider_key ].uniq.each do |provider_name|
+        provider.user.provider_states.find_by(provider_name: provider_name)&.record_success!
+      end
     end
 
     def test_command
@@ -281,6 +284,7 @@ module Providers
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
       return kilocode_test_command if provider.provider_key == "kilocode"
+      return opencode_test_command if provider.provider_key == "opencode" && provider.requires_direct_outbound?
 
       command + [ PROMPT ]
     end
@@ -421,6 +425,16 @@ module Providers
       <<~SH.squish
         env #{all_unset_flags}
         timeout 20s kilo run --auto --print-logs #{escaped_prompt}
+      SH
+    end
+
+    def opencode_test_command
+      encoded_config = Shellwords.escape(Base64.strict_encode64(provider.opencode_config_json))
+      escaped_prompt = Shellwords.escape(PROMPT)
+      <<~SH.squish
+        mkdir -p /home/agent/.config/opencode &&
+        echo #{encoded_config} | base64 -d > /home/agent/.config/opencode/opencode.json &&
+        opencode run #{escaped_prompt}
       SH
     end
 

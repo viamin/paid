@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 class ProviderApiKey < ApplicationRecord
+  COMPATIBILITY_LABELS = {
+    "openrouter" => "OpenRouter"
+  }.freeze
+
   belongs_to :user
   has_many :providers, dependent: :restrict_with_error
 
@@ -22,6 +26,14 @@ class ProviderApiKey < ApplicationRecord
     compatible_providers.include?(provider_key.to_s)
   end
 
+  def self.compatibility_target_labels
+    provider_labels = Provider.addable_provider_keys.index_with do |key|
+      Provider.display_name(key)
+    end
+
+    provider_labels.merge(COMPATIBILITY_LABELS)
+  end
+
   def masked_api_key
     raw = api_key.to_s
     if raw.length > 12
@@ -32,7 +44,8 @@ class ProviderApiKey < ApplicationRecord
   end
 
   def display_compatible_providers
-    compatible_providers.map(&:titleize).join(", ")
+    labels = self.class.compatibility_target_labels
+    compatible_providers.map { |key| labels[key] || key.to_s.titleize }.join(", ")
   end
 
   private
@@ -45,7 +58,7 @@ class ProviderApiKey < ApplicationRecord
       return
     end
 
-    allowed = (ProviderSupport.addable_provider_keys + ProviderSupport.container_executable_provider_keys).uniq
+    allowed = (ProviderSupport.addable_provider_keys + ProviderSupport.container_executable_provider_keys + COMPATIBILITY_LABELS.keys).uniq
     invalid = compatible_providers - allowed
     return if invalid.empty?
 

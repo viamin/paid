@@ -903,7 +903,16 @@ module Containers
     end
 
     def direct_outbound_provider?
-      agent_run.agent_type.to_s == "kilocode"
+      return true if agent_run.agent_type.to_s == "kilocode"
+      return true if agent_run.provider&.requires_direct_outbound?
+
+      settings = AgentRuns::UserSettingsResolver.call(project: agent_run.project, strict: false)
+      return false unless settings
+
+      primary_identifier = agent_run.provider&.routing_key || settings.default_provider_identifier
+      settings.fallback_priority_for(primary_provider: primary_identifier, identifiers: true).any? do |identifier|
+        Provider.for_identifier(settings.user, identifier)&.requires_direct_outbound?
+      end
     end
 
     def environment_variables

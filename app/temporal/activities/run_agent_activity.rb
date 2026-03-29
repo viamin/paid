@@ -102,13 +102,14 @@ module Activities
         rate_limit_reset_at = nil
         skipped_rate_limited_count = 0
 
-        providers.each_with_index do |provider, index|
+        providers.each_with_index do |provider_candidate, index|
+          provider = provider_command_key(provider_candidate, agent_run)
+          provider_state_name = state_key_for(provider_candidate, provider)
           heartbeat("provider_attempt", provider, index)
 
           # Skip unavailable providers, tracking rate-limited skips separately
-          if provider_unavailable?(user_settings, provider, provider_states)
-            canonical = canonical_provider(provider)
-            state = provider_states[canonical]
+          if provider_unavailable?(user_settings, provider_state_name, provider_states)
+            state = provider_states[provider_state_name]
             error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
             skipped_rate_limited_count += 1 if error_type == "rate_limited"
             agent_run.record_provider_attempt(provider, success: false, error_type: error_type)
@@ -122,12 +123,12 @@ module Activities
 
           begin
             last_attempted_provider = provider
-            provider_result = run_agent_with_provider(agent_run, provider, prompt, user_settings)
+            provider_result = run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
 
             # Success - heartbeat and record final provider
             heartbeat("provider_completed", provider)
-            record_provider_success(user_settings, provider, provider_states)
+            record_provider_success(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(provider, success: true)
             agent_run.update!(final_provider: provider)
 
@@ -148,7 +149,7 @@ module Activities
           rescue ProviderRateLimitError => e
             last_error = "rate_limited"
             rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
-            persist_rate_limit(user_settings, provider, provider_states, e.reset_at)
+            persist_rate_limit(user_settings, provider_state_name, provider_states, e.reset_at)
             agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
 
@@ -159,20 +160,19 @@ module Activities
             # provider order. Tracked separately — only logging availability
             # for now; no switch counters or AgentRun mutation until the
             # fallback is actually executed.
-            canonical = canonical_provider(provider)
-            if @rate_limit_fallback_keys&.include?(canonical)
-              logger.info(message: "agent_execution.rate_limit_fallback_available", provider: canonical, agent_run_id: agent_run.id)
+            if @rate_limit_fallback_keys&.include?(provider_state_name)
+              logger.info(message: "agent_execution.rate_limit_fallback_available", provider: provider_state_name, agent_run_id: agent_run.id)
             end
           rescue ProviderTimeoutError => e
             last_error = "timeout"
             timeout_error ||= e.message
-            record_provider_failure(user_settings, provider, provider_states)
+            record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(provider, success: false, error_type: "timeout")
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
             break
           rescue ProviderExecutionError => e
             last_error = "error"
-            record_provider_failure(user_settings, provider, provider_states)
+            record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(provider, success: false, error_type: "error")
             logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
           end
@@ -183,7 +183,7 @@ module Activities
         all_skipped_rate_limited = providers.any? && skipped_rate_limited_count == providers.size
         if rate_limit_reset_at.nil? && all_skipped_rate_limited
           reset_candidates = providers.filter_map do |provider|
-            state = provider_states[canonical_provider(provider)]
+            state = provider_states[state_key_for(provider, provider_command_key(provider, agent_run))]
             state&.rate_limited_until
           end
           rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
@@ -248,17 +248,28 @@ module Activities
     #
     # @return [Array<String>] Provider names in priority order
     def build_provider_order(agent_run, user_settings)
-      fallback_providers = user_settings.fallback_priority_for(
-        primary_provider: canonical_provider(agent_run.agent_type)
-      )
+      if agent_run.provider
+        providers = [ agent_run.provider ]
+        if user_settings.fallback_enabled
+          providers.concat(
+            user_settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true)
+              .filter_map { |identifier| Provider.for_identifier(user_settings.user, identifier) }
+          )
+        end
+      else
+        fallback_providers = user_settings.fallback_priority_for(
+          primary_provider: canonical_provider(agent_run.agent_type),
+          identifiers: true
+        ).map do |identifier|
+          Provider.for_identifier(user_settings.user, identifier)&.provider_key || identifier
+        end
+        providers = self.class.provider_order(
+          agent_type: agent_run.agent_type,
+          fallback_enabled: user_settings.fallback_enabled,
+          fallback_providers: fallback_providers
+        )
+      end
 
-      providers = self.class.provider_order(
-        agent_type: agent_run.agent_type,
-        fallback_enabled: user_settings.fallback_enabled,
-        fallback_providers: fallback_providers
-      )
-
-      # Cache rate-limit fallback provider keys for use during execution
       @rate_limit_fallback_keys = UserSetting.rate_limit_fallback_providers(user_settings.user).to_set
 
       providers
@@ -267,9 +278,8 @@ module Activities
     # Checks if a provider is currently unavailable (rate limited or circuit open).
     #
     # @return [Boolean] true if provider should be skipped
-    def provider_unavailable?(user_settings, provider, provider_states)
-      canonical = canonical_provider(provider)
-      state = provider_states[canonical]
+    def provider_unavailable?(user_settings, provider_state_name, provider_states)
+      state = provider_states[provider_state_name]
       return false unless state
 
       # Check for circuit recovery before deciding
@@ -279,21 +289,20 @@ module Activities
     end
 
     # Records a rate limit for a provider.
-    def persist_rate_limit(user_settings, provider, provider_states, reset_at = nil)
-      state = provider_state_for(user_settings, provider, provider_states)
+    def persist_rate_limit(user_settings, provider_state_name, provider_states, reset_at = nil)
+      state = provider_state_for(user_settings, provider_state_name, provider_states)
       state.mark_rate_limited!(reset_at: reset_at)
     end
 
     # Records a successful provider execution.
-    def record_provider_success(user_settings, provider, provider_states = nil)
-      canonical = canonical_provider(provider)
-      state = provider_states ? provider_states[canonical] : user_settings.user.provider_states.find_by(provider_name: canonical)
+    def record_provider_success(user_settings, provider_state_name, provider_states = nil)
+      state = provider_states ? provider_states[provider_state_name] : user_settings.user.provider_states.find_by(provider_name: provider_state_name)
       state&.record_success!
     end
 
     # Records a failed provider execution.
-    def record_provider_failure(user_settings, provider, provider_states)
-      state = provider_state_for(user_settings, provider, provider_states)
+    def record_provider_failure(user_settings, provider_state_name, provider_states)
+      state = provider_state_for(user_settings, provider_state_name, provider_states)
       state.record_failure!(threshold: user_settings.circuit_breaker_failure_threshold)
     end
 
@@ -302,22 +311,22 @@ module Activities
       AGENT_TYPE_TO_PROVIDER.fetch(provider, provider)
     end
 
-    def provider_state_for(user_settings, provider, provider_states)
-      canonical = canonical_provider(provider)
-      provider_states[canonical] ||= user_settings.provider_state_for(canonical)
+    def provider_state_for(user_settings, provider_state_name, provider_states)
+      provider_states[provider_state_name] ||= user_settings.provider_state_for(provider_state_name)
     end
 
     def load_provider_state_cache(user, providers)
-      canonical_providers = providers.map { |provider| canonical_provider(provider) }.uniq
-      user.provider_states.where(provider_name: canonical_providers).index_by(&:provider_name)
+      provider_state_names = providers.map { |provider| state_key_for(provider, provider.is_a?(Provider) ? provider.provider_key : provider) }.uniq
+      user.provider_states.where(provider_name: provider_state_names).index_by(&:provider_name)
     end
 
     # Runs the agent with a specific provider.
     # Raises ProviderRateLimitError, ProviderTimeoutError, or ProviderExecutionError on failure.
     #
     # @return [Hash] The pre-agent SHA and whether output was present
-    def run_agent_with_provider(agent_run, provider, prompt, user_settings)
+    def run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
       container_service = reconnect_container(agent_run)
+      provider = provider_command_key(provider_candidate, agent_run)
 
       command_prefix = AGENT_COMMANDS[provider]
       unless command_prefix
@@ -325,7 +334,7 @@ module Activities
       end
 
       prompt = augment_prompt_for_goal(agent_run, prompt)
-      command = build_command(provider, command_prefix, prompt)
+      command = build_command(provider_candidate, provider, command_prefix, prompt)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
@@ -499,12 +508,44 @@ module Activities
       worker.value
     end
 
-    def build_command(provider, command_prefix, prompt)
-      if ProviderSupport.subscription_auth_unset_vars_for(provider).any?
+    def build_command(provider_candidate, provider = nil, command_prefix = nil, prompt = nil)
+      if prompt.nil?
+        prompt = command_prefix
+        command_prefix = provider
+        provider = provider_candidate.is_a?(Provider) ? provider_candidate.provider_key : provider_candidate
+      end
+
+      if provider_candidate.is_a?(Provider) && provider_candidate.requires_direct_outbound?
+        opencode_direct_command(provider_candidate, command_prefix, prompt)
+      elsif ProviderSupport.subscription_auth_unset_vars_for(provider).any?
         subscription_auth_command(provider, command_prefix, prompt)
       else
         command_prefix + [ prompt ]
       end
+    end
+
+    def opencode_direct_command(provider, command_prefix, prompt)
+      config = Shellwords.escape(Base64.strict_encode64(provider.opencode_config_json))
+      command = (command_prefix + [ "$1" ]).shelljoin
+      script = <<~SH.squish
+        mkdir -p /home/agent/.config/opencode &&
+        echo #{config} | base64 -d > /home/agent/.config/opencode/opencode.json &&
+        #{command}
+      SH
+      [ "sh", "-lc", script, "--", prompt ]
+    end
+
+    def provider_command_key(provider_candidate, agent_run)
+      return provider_candidate unless provider_candidate.is_a?(Provider)
+      return "claude_code" if provider_candidate.id == agent_run.provider_id && provider_candidate.provider_key == "claude" && agent_run.agent_type == "claude_code"
+
+      provider_candidate.provider_key
+    end
+
+    def state_key_for(provider_candidate, provider)
+      return provider_candidate.state_key if provider_candidate.is_a?(Provider)
+
+      canonical_provider(provider)
     end
 
     # Wraps a provider command so that, when subscription auth is active,

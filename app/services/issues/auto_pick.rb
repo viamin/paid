@@ -214,22 +214,24 @@ module Issues
     end
 
     def create_agent_run(issue)
+      provider = resolve_provider
+
       AgentRun.create!(
         project: @project,
         issue: issue,
-        agent_type: resolve_agent_type,
+        provider: provider,
+        agent_type: Provider.agent_type_for(provider.provider_key),
         status: "queued",
         trigger_type: "automatic",
         auto_pick: true
       )
     end
 
-    def resolve_agent_type
+    def resolve_provider
       settings = AgentRuns::UserSettingsResolver.call(project: @project, strict: false)
-      return "claude_code" unless settings
+      return Provider.ensure_default_for(@project.created_by) unless settings
 
-      provider_key = settings.default_agent_provider
-      provider_key == "claude" ? "claude_code" : provider_key
+      Provider.for_identifier(settings.user, settings.default_provider_identifier) || Provider.ensure_default_for(settings.user)
     end
   end
 end

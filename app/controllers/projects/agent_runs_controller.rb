@@ -24,7 +24,8 @@ module Projects
 
     def new
       authorize @project, :run_agent?
-      @default_agent_type = provider_key_to_agent_type(current_user.settings.default_agent_provider)
+      @default_provider_identifier = current_user.settings.provider_priority(identifiers: true).first
+      @available_run_provider_options = available_run_provider_options
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")
@@ -88,7 +89,7 @@ module Projects
       create_run_and_redirect(
         on_error_path: project_path(@project),
         issue: issue,
-        agent_type: provider_key_to_agent_type(current_user.settings.default_agent_provider),
+        provider_identifier: current_user.settings.default_provider_identifier,
         goal: "create_pr",
         source_pull_request_number: source_pr_number
       )
@@ -164,9 +165,16 @@ module Projects
         return
       end
 
+      retry_provider = if params[:provider].present?
+        provider_for_identifier(params[:provider])
+      else
+        @agent_run.provider
+      end
+
       new_run = AgentRun.create!(
         project: @project,
         issue: @agent_run.issue,
+        provider: retry_provider,
         agent_type: agent_type,
         custom_prompt: @agent_run.custom_prompt,
         source_pull_request_number: @agent_run.source_pull_request_number,
@@ -233,6 +241,7 @@ module Projects
       new_run = AgentRun.create!(
         project: @project,
         issue: @agent_run.issue,
+        provider: @agent_run.provider,
         agent_type: @agent_run.agent_type,
         custom_prompt: @agent_run.custom_prompt,
         source_pull_request_number: @agent_run.source_pull_request_number,
@@ -294,9 +303,14 @@ module Projects
       @project.issues.pull_requests_only.find_by(id: params[:pull_request_id])
     end
 
-    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, goal: nil)
+    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil)
       requested_agent_type = agent_type || params[:agent_type].presence
-      resolved_agent_type = resolve_agent_type(requested_agent_type: requested_agent_type)
+      requested_provider_identifier = provider_identifier || params[:provider].presence
+      resolved_provider = resolve_provider_selection(
+        requested_agent_type: requested_agent_type,
+        requested_provider_identifier: requested_provider_identifier
+      )
+      resolved_agent_type = provider_key_to_agent_type(resolved_provider.provider_key)
 
       goal ||= params[:goal].presence || "create_pr"
       goal = "create_pr" unless AgentRun::GOALS.include?(goal)
@@ -304,6 +318,7 @@ module Projects
       AgentRun.create!(
         project: @project,
         issue: issue,
+        provider: resolved_provider,
         agent_type: resolved_agent_type,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
@@ -347,26 +362,34 @@ module Projects
     end
 
     def retry_provider_options_for(agent_run)
-      UserSetting.enabled_agent_providers(current_user).filter_map do |provider_key|
-        agent_type = provider_key_to_agent_type(provider_key)
+      UserSetting.enabled_agent_providers(current_user, identifiers: true).filter_map do |provider_identifier|
+        provider = provider_for_identifier(provider_identifier)
+        next unless provider
+
+        agent_type = provider_key_to_agent_type(provider.provider_key)
         next unless AgentRun::AGENT_TYPES.include?(agent_type)
 
         {
-          provider_key: provider_key,
+          provider_key: provider_identifier,
           agent_type: agent_type,
-          label: Provider.display_name(provider_key),
-          current: agent_type == agent_run.agent_type
+          label: provider.display_name,
+          current: provider.id == agent_run.provider_id
         }
       end
     end
 
     def retry_agent_type_for(agent_run)
-      requested_provider_key = params[:provider].presence
+      requested_provider_identifier = params[:provider].presence
       requested_agent_type = params[:agent_type].presence
 
-      return agent_run.agent_type if requested_provider_key.blank? && requested_agent_type.blank?
+      return agent_run.agent_type if requested_provider_identifier.blank? && requested_agent_type.blank?
 
-      requested_agent_type = provider_key_to_agent_type(requested_provider_key) if requested_provider_key.present?
+      if requested_provider_identifier.present?
+        provider = provider_for_identifier(requested_provider_identifier)
+        return nil unless provider
+
+        requested_agent_type = provider_key_to_agent_type(provider.provider_key)
+      end
       return nil unless retry_agent_type_allowed?(requested_agent_type)
 
       requested_agent_type
@@ -378,44 +401,51 @@ module Projects
       provider_key = agent_type_to_provider_key(agent_type)
       return true unless managed_provider_key?(provider_key)
 
-      UserSetting.enabled_agent_providers(current_user).include?(provider_key)
+      UserSetting.enabled_agent_providers(current_user, identifiers: true).any? do |identifier|
+        provider = provider_for_identifier(identifier)
+        provider&.provider_key == provider_key
+      end
     end
 
-    def resolve_agent_type(requested_agent_type:)
-      configured_providers = UserSetting.enabled_agent_providers(current_user)
-      priority_providers = current_user.settings.provider_priority
-      default_provider = current_user.settings.default_agent_provider
-      resolved_agent_type = nil
+    def resolve_provider_selection(requested_agent_type:, requested_provider_identifier:)
+      configured_identifiers = UserSetting.enabled_agent_providers(current_user, identifiers: true)
+      priority_identifiers = current_user.settings.provider_priority(identifiers: true)
+      default_identifier = priority_identifiers.first
+
+      if requested_provider_identifier.present?
+        provider = provider_for_identifier(requested_provider_identifier)
+        return provider if provider && configured_identifiers.include?(provider.routing_key)
+      end
 
       if requested_agent_type.present? && AgentRun::AGENT_TYPES.include?(requested_agent_type)
         requested_provider_key = agent_type_to_provider_key(requested_agent_type)
-        if managed_provider_key?(requested_provider_key) && !configured_providers.include?(requested_provider_key)
-          requested_agent_type = nil
-        else
-          resolved_agent_type = requested_agent_type
-        end
+        provider = configured_identifiers
+          .map { |identifier| provider_for_identifier(identifier) }
+          .compact
+          .find { |entry| entry.provider_key == requested_provider_key }
+        return provider if provider
       end
 
-      unless resolved_agent_type
-        provider_key = requested_agent_type || default_provider || "claude"
-        provider_key = default_provider if configured_providers.include?(default_provider) && !configured_providers.include?(provider_key)
-        provider_key = priority_providers.first if priority_providers.any? && !configured_providers.include?(provider_key)
-
-        resolved_agent_type = provider_key_to_agent_type(provider_key)
-        resolved_agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(resolved_agent_type)
-      end
-
-      if managed_provider_key?(agent_type_to_provider_key(resolved_agent_type))
-        provider_key = agent_type_to_provider_key(resolved_agent_type)
-        unless configured_providers.include?(provider_key)
-          fallback_key = priority_providers.any? ? priority_providers.first : "claude"
-          resolved_agent_type = provider_key_to_agent_type(fallback_key)
-        end
+      selected_identifier = if configured_identifiers.include?(default_identifier)
+        default_identifier
       else
-        resolved_agent_type = "claude_code" unless AgentRun::AGENT_TYPES.include?(resolved_agent_type)
+        priority_identifiers.first || configured_identifiers.first
       end
 
-      resolved_agent_type
+      provider_for_identifier(selected_identifier) || Provider.ensure_default_for(current_user)
+    end
+
+    def provider_for_identifier(identifier)
+      Provider.for_identifier(current_user, identifier)
+    end
+
+    def available_run_provider_options
+      UserSetting.enabled_agent_providers(current_user, identifiers: true).filter_map do |identifier|
+        provider = provider_for_identifier(identifier)
+        next unless provider
+
+        [ provider.display_name, identifier ]
+      end
     end
   end
 end

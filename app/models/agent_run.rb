@@ -12,6 +12,7 @@ class AgentRun < ApplicationRecord
   belongs_to :project
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
+  belongs_to :provider, optional: true
 
   has_many :agent_run_logs, dependent: :destroy
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy

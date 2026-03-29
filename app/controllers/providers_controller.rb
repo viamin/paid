@@ -148,7 +148,9 @@ class ProvidersController < ApplicationController
     if action_name == "create"
       permitted.push(:provider_key, :auth_type, :provider_api_key_id)
     end
-    params.require(:provider).permit(*permitted)
+    attrs = params.require(:provider).permit(*permitted, config: [ opencode: [ :api_provider, :model ] ])
+    attrs[:config] = attrs[:config].to_h if attrs[:config].respond_to?(:to_h)
+    attrs
   end
 
   def load_provider_options
@@ -165,7 +167,10 @@ class ProvidersController < ApplicationController
     # API key providers: show all addable keys that have a compatible API key
     @available_api_keys = current_user.provider_api_keys.ordered
     @api_key_provider_options = addable_keys.select do |key|
-      @available_api_keys.any? { |ak| ak.compatible_with?(key) }
+      @available_api_keys.any? { |ak| compatible_api_key_for_provider?(api_key: ak, provider_key: key) }
+    end
+    @available_api_keys_by_provider = addable_keys.index_with do |key|
+      @available_api_keys.select { |ak| compatible_api_key_for_provider?(api_key: ak, provider_key: key) }
     end
 
     # Combined for backward compat
@@ -235,16 +240,17 @@ class ProvidersController < ApplicationController
   def reconcile_settings!
     settings = current_user.settings
 
-    run_keys = ensure_run_enabled_provider_keys!
-    return false if run_keys.blank?
+    run_identifiers = ensure_run_enabled_provider_identifiers!
+    return false if run_identifiers.blank?
 
-    fallback_keys = UserSetting.fallback_candidate_providers(current_user)
+    fallback_identifiers = fallback_candidate_provider_identifiers
 
     attrs = {
-      fallback_providers: Array(settings.fallback_providers) & fallback_keys
+      fallback_providers: settings.sanitize_provider_tokens(settings.fallback_providers, candidates: fallback_identifiers)
     }
 
-    attrs[:default_agent_provider] = run_keys.first unless run_keys.include?(settings.default_agent_provider)
+    default_identifier = settings.default_provider_identifier
+    attrs[:default_agent_provider] = run_identifiers.first unless default_identifier && run_identifiers.include?(default_identifier)
 
     return true if settings.update(attrs)
 
@@ -256,9 +262,9 @@ class ProvidersController < ApplicationController
     false
   end
 
-  def ensure_run_enabled_provider_keys!
-    run_keys = UserSetting.enabled_agent_providers(current_user)
-    return run_keys if run_keys.present?
+  def ensure_run_enabled_provider_identifiers!
+    run_identifiers = enabled_agent_provider_identifiers
+    return run_identifiers if run_identifiers.present?
 
     default_key = Provider.default_provider_key
     return [] unless default_key
@@ -267,7 +273,7 @@ class ProvidersController < ApplicationController
     default.enabled_for_agent_runs = true
     default.enabled_for_fallback = true if default.new_record?
 
-    return UserSetting.enabled_agent_providers(current_user) if default.save
+    return enabled_agent_provider_identifiers if default.save
 
     Rails.logger.error(
       message: "providers.ensure_run_enabled_provider_failed",
@@ -281,13 +287,24 @@ class ProvidersController < ApplicationController
     @providers = policy_scope(Provider).ordered
     @provider_states = current_user.provider_states.index_by(&:provider_name)
     @user_setting = current_user.settings
-    @enabled_agent_providers = UserSetting.enabled_agent_providers(current_user)
-    @fallback_candidate_providers = UserSetting.fallback_candidate_providers(current_user)
+    @enabled_agent_providers = enabled_agent_provider_identifiers
+    @fallback_candidate_providers = fallback_candidate_provider_identifiers
+    @default_provider_identifier = @user_setting.default_provider_identifier
+    @saved_fallback_provider_tokens = @user_setting.sanitize_provider_tokens(
+      @user_setting.fallback_providers,
+      candidates: (@enabled_agent_providers + @fallback_candidate_providers).uniq
+    )
+    @provider_labels = @providers.each_with_object({}) do |provider, labels|
+      labels[provider.routing_key] = provider.display_name
+      labels[provider.provider_key] ||= provider.display_name
+    end
     @available_api_keys = current_user.provider_api_keys.ordered
     existing_subscription_keys = current_user.providers.subscription.pluck(:provider_key)
     addable_keys = Provider.addable_provider_keys
     api_key_compatible_addable_keys =
-      addable_keys & @available_api_keys.flat_map(&:compatible_providers).uniq
+      addable_keys.select do |key|
+        @available_api_keys.any? { |api_key| compatible_api_key_for_provider?(api_key: api_key, provider_key: key) }
+      end
     @addable_provider_options = (
       (addable_keys - existing_subscription_keys) + api_key_compatible_addable_keys
     ).uniq.presence || []
@@ -316,5 +333,24 @@ class ProvidersController < ApplicationController
     end
 
     permitted
+  end
+
+  def compatible_api_key_for_provider?(api_key:, provider_key:)
+    Provider.required_api_key_targets_for(provider_key: provider_key)
+      .any? { |target| api_key.compatible_with?(target) }
+  end
+
+  def enabled_agent_provider_identifiers
+    executable_keys = ProviderSupport.container_executable_provider_keys
+    providers = current_user.providers.for_agent_runs.ordered
+      .select { |provider| executable_keys.include?(provider.provider_key) }
+    UserSetting.provider_identifiers_for(providers, identifiers: true)
+  end
+
+  def fallback_candidate_provider_identifiers
+    executable_keys = ProviderSupport.container_executable_provider_keys
+    providers = current_user.providers.for_fallback.ordered
+      .select { |provider| executable_keys.include?(provider.provider_key) }
+    UserSetting.provider_identifiers_for(providers, identifiers: true)
   end
 end

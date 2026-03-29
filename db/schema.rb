@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_29_095600) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -144,6 +144,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_095600) do
     t.bigint "peak_memory_bytes"
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
+    t.bigint "provider_id"
     t.integer "provider_switches", default: 0, null: false
     t.jsonb "providers_attempted", default: [], null: false
     t.string "proxy_token", limit: 64
@@ -152,7 +153,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_095600) do
     t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
     t.datetime "review_posted_at"
-    t.string "review_url", limit: 500
+    t.string "review_url"
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
@@ -168,11 +169,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_095600) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
+    t.index ["provider_id"], name: "index_agent_runs_on_provider_id"
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
@@ -389,8 +391,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_095600) do
     t.string "service_key", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "category"], name: "index_integration_credentials_on_account_id_and_category"
+    t.index ["account_id", "name"], name: "index_integration_credentials_on_account_id_and_name", unique: true
     t.index ["account_id", "revoked_at"], name: "index_integration_credentials_on_account_id_and_revoked_at"
-    t.index ["account_id", "service_key", "name"], name: "idx_on_account_id_service_key_name_e4c03e1ea7", unique: true
     t.index ["account_id", "service_key"], name: "index_integration_credentials_on_account_id_and_service_key"
     t.index ["account_id"], name: "index_integration_credentials_on_account_id"
     t.index ["created_by_id"], name: "index_integration_credentials_on_created_by_id"
@@ -767,7 +769,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_095600) do
     t.bigint "user_id", null: false
     t.index ["auth_type"], name: "index_providers_on_auth_type"
     t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
-    t.index ["user_id", "provider_key", "provider_api_key_id"], name: "idx_providers_unique_api_key", unique: true, where: "((auth_type)::text = 'api_key'::text)"
+    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "((auth_type)::text = 'api_key'::text)"
     t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "((auth_type)::text = 'subscription'::text)"
     t.index ["user_id"], name: "index_providers_on_user_id"
     t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
@@ -966,6 +968,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_095600) do
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
+  add_foreign_key "agent_runs", "providers"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade
