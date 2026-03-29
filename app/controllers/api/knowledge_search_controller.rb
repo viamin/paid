@@ -5,6 +5,7 @@ module Api
     RATE_LIMIT_MAX_REQUESTS = 60
     RATE_LIMIT_PERIOD = 1.minute
 
+    # Uses Rails 8 built-in rate_limit (ActionController::RateLimiting)
     rate_limit to: RATE_LIMIT_MAX_REQUESTS, within: RATE_LIMIT_PERIOD,
       by: -> { current_user&.id },
       with: -> { render json: { error: "Rate limit exceeded" }, status: :too_many_requests }

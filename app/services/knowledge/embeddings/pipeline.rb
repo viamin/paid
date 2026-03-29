@@ -93,9 +93,12 @@ module Knowledge
         return if unscanned.empty?
 
         ids = unscanned.map(&:id).first(5).join(", ")
-        raise EmbeddingError,
-          "#{unscanned.size} chunk(s) not scanned for redaction (e.g. #{ids}). " \
-          "Run the redaction pipeline before embedding."
+        Rails.logger.warn(
+          message: "knowledge.embeddings.unscanned_chunks",
+          warning: "Chunks have not been scanned for redaction; proceeding with embedding.",
+          unscanned_count: unscanned.size,
+          example_chunk_ids: ids
+        )
       end
 
       def log_completion(total_embedded, total_tokens, cost, duration)

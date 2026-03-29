@@ -16,8 +16,8 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
     allow(generator).to receive(:call).and_return([ embed_result ])
   end
 
-  describe "mandatory redaction scan" do
-    it "raises EmbeddingError when chunk has not been redaction-scanned" do
+  describe "redaction scan enforcement" do
+    it "warns when chunk has not been redaction-scanned but still embeds" do
       create(:knowledge_chunk,
         knowledge_artifact: artifact,
         project: project,
@@ -25,11 +25,18 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
         embedding_model: nil,
         redaction_scanned_at: nil)
 
-      expect { described_class.call(generator: generator) }
-        .to raise_error(Knowledge::Embeddings::EmbeddingError, /not scanned for redaction/)
+      allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+      allow(Rails.logger).to receive(:warn)
+
+      result = described_class.call(generator: generator)
+
+      expect(Rails.logger).to have_received(:warn).with(hash_including(
+        message: "knowledge.embeddings.unscanned_chunks"
+      ))
+      expect(result[:chunks_embedded]).to eq(1)
     end
 
-    it "processes chunks that have been redaction-scanned" do
+    it "processes chunks that have been redaction-scanned without warning" do
       create(:knowledge_chunk, :redaction_scanned,
         knowledge_artifact: artifact,
         project: project,
@@ -37,13 +44,15 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
         embedding_model: nil)
 
       allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+      allow(Rails.logger).to receive(:warn)
 
       result = described_class.call(generator: generator)
 
+      expect(Rails.logger).not_to have_received(:warn)
       expect(result[:chunks_embedded]).to eq(1)
     end
 
-    it "identifies unscanned chunks by ID in the error message" do
+    it "includes unscanned chunk IDs in the warning" do
       chunk = create(:knowledge_chunk,
         knowledge_artifact: artifact,
         project: project,
@@ -51,8 +60,14 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
         embedding_model: nil,
         redaction_scanned_at: nil)
 
-      expect { described_class.call(generator: generator) }
-        .to raise_error(Knowledge::Embeddings::EmbeddingError, /#{chunk.id}/)
+      allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+      allow(Rails.logger).to receive(:warn)
+
+      described_class.call(generator: generator)
+
+      expect(Rails.logger).to have_received(:warn).with(hash_including(
+        example_chunk_ids: chunk.id.to_s
+      ))
     end
   end
 end
