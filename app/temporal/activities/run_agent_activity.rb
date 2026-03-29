@@ -135,6 +135,7 @@ module Activities
               agent_run_id: agent_run_id,
               success: true,
               has_changes: has_changes,
+              output_present: provider_result.fetch(:output_present),
               final_provider: provider
             }
           rescue ProviderRateLimitError => e
