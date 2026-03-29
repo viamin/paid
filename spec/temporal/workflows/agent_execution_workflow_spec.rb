@@ -428,6 +428,225 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "container retention for unknown post-agent failures" do
+    let(:input) { { project_id: 1, issue_id: 1 } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    def stub_post_agent_failure(called_activities, retain_error: nil, retain_result: { agent_run_id: 42, retained: true })
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        called_activities << activity_class
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::PushBranchActivity"
+          raise Temporalio::Error::ApplicationError.new("Push failed", type: "PushError")
+        when "Activities::MarkAgentRunFailedActivity" then {}
+        when "Activities::RetainContainerActivity"
+          raise retain_error if retain_error
+          retain_result
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        when "Activities::EnqueueJanitorActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    it "retains the container when agent succeeded but post-agent step fails" do
+      called_activities = []
+      stub_post_agent_failure(called_activities)
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
+
+      expect(called_activities).to include(Activities::RetainContainerActivity)
+      expect(called_activities).not_to include(Activities::CleanupContainerActivity)
+    end
+
+    it "cleans up normally when agent step fails (known failure)" do
+      called_activities = []
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        called_activities << activity_class
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity"
+          raise Temporalio::Error::ApplicationError.new(
+            "All providers exhausted", type: "AllProvidersExhausted", non_retryable: true
+          )
+        when "Activities::MarkAgentRunFailedActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        when "Activities::EnqueueJanitorActivity" then {}
+        else {}
+        end
+      end
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
+
+      expect(called_activities).to include(Activities::CleanupContainerActivity)
+      expect(called_activities).not_to include(Activities::RetainContainerActivity)
+    end
+
+    it "cleans up normally on success (no workflow error)" do
+      called_activities = []
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        called_activities << activity_class
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        when "Activities::EnqueueJanitorActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      expect(called_activities).to include(Activities::CleanupContainerActivity)
+      expect(called_activities).not_to include(Activities::RetainContainerActivity)
+    end
+
+    it "falls back to cleanup when RetainContainerActivity fails" do
+      called_activities = []
+      stub_post_agent_failure(called_activities, retain_error: StandardError.new("DB write failed"))
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
+
+      expect(called_activities).to include(Activities::RetainContainerActivity)
+      expect(called_activities).to include(Activities::CleanupContainerActivity)
+    end
+
+    it "falls back to cleanup when RetainContainerActivity returns retained: false" do
+      called_activities = []
+      stub_post_agent_failure(called_activities, retain_result: { agent_run_id: 42, retained: false })
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
+
+      expect(called_activities).to include(Activities::RetainContainerActivity)
+      expect(called_activities).to include(Activities::CleanupContainerActivity)
+    end
+  end
+
+  describe "#should_retain_container?" do
+    let(:workflow) { described_class.new }
+
+    def activity_error_with_cause(cause)
+      activity_err = Temporalio::Error::ActivityError.new(
+        "activity failed",
+        scheduled_event_id: 1,
+        started_event_id: 2,
+        identity: "",
+        activity_type: "PushBranch",
+        activity_id: "1",
+        retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
+      )
+      begin
+        begin
+          raise cause
+        rescue
+          raise activity_err
+        end
+      rescue => e
+        e
+      end
+    end
+
+    it "returns true when agent succeeded and error is unknown" do
+      cause = Temporalio::Error::ApplicationError.new("Push failed", type: "PushError")
+      error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be true
+    end
+
+    it "returns false when agent did not succeed" do
+      error = RuntimeError.new("something")
+
+      expect(workflow.send(:should_retain_container?, false, error)).to be false
+    end
+
+    it "returns false when there is no workflow error" do
+      expect(workflow.send(:should_retain_container?, true, nil)).to be false
+    end
+
+    it "returns false for CanceledError" do
+      error = Temporalio::Error::CanceledError.new("cancelled")
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+
+    it "returns false for known failure types" do
+      described_class::KNOWN_FAILURE_TYPES.each do |type|
+        cause = Temporalio::Error::ApplicationError.new("error", type: type)
+        error = activity_error_with_cause(cause)
+
+        expect(workflow.send(:should_retain_container?, true, error)).to be(false),
+          "Expected false for known failure type #{type}"
+      end
+    end
+
+    it "returns false for known failure types nested deeper in the cause chain" do
+      # ActivityError -> RuntimeError(wrapper) -> ApplicationError(known type)
+      # The known type is two levels deep in the cause chain from the ActivityError.
+      app_error = Temporalio::Error::ApplicationError.new("exhausted", type: "AllProvidersExhausted")
+
+      wrapper =
+        begin
+          begin
+            raise app_error
+          rescue
+            raise RuntimeError, "wrapper"
+          end
+        rescue => e
+          e
+        end
+
+      error = activity_error_with_cause(wrapper)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+
+    it "returns false for CanceledError wrapped in ActivityError" do
+      cause = Temporalio::Error::CanceledError.new("cancelled")
+      error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+
+    it "returns false for GithubClient::RateLimitError" do
+      error = GithubClient::RateLimitError.new(Time.current + 3600)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+
+    it "returns false for GithubClient::AuthenticationError" do
+      error = GithubClient::AuthenticationError.new("token expired")
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+
+    it "returns false for GithubClient::RateLimitError wrapped as ApplicationError" do
+      cause = Temporalio::Error::ApplicationError.new("rate limited", type: "GithubClient::RateLimitError")
+      error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+
+    it "returns false for GithubClient::AuthenticationError wrapped as ApplicationError" do
+      cause = Temporalio::Error::ApplicationError.new("token expired", type: "GithubClient::AuthenticationError")
+      error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+  end
+
   describe "#unwrap_error_message" do
     let(:workflow) { described_class.new }
 
