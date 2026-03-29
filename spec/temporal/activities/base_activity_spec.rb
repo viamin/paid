@@ -41,4 +41,18 @@ RSpec.describe Activities::BaseActivity do
     expect(result).to eq(project_id: 456)
     expect(connection_pool).not_to have_received(:release_connection)
   end
+
+  it "releases the DB connection even when execute raises" do
+    error_activity_class = Class.new(described_class) do
+      def execute(_input)
+        raise RuntimeError, "activity failed"
+      end
+    end
+    stub_const("ErrorActivity", error_activity_class)
+    error_activity = ErrorActivity.new
+
+    expect { error_activity.execute("project_id" => 789) }.to raise_error(RuntimeError, "activity failed")
+    expect(executor).to have_received(:wrap)
+    expect(connection_pool).to have_received(:release_connection)
+  end
 end
