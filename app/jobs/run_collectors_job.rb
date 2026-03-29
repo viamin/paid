@@ -37,7 +37,7 @@ class RunCollectorsJob < ApplicationJob
     update_knowledge_status(project, result)
   rescue ActiveRecord::RecordNotFound
     raise # Re-raise so discard_on can handle it above the StandardError rescue
-  rescue StandardError => e
+  rescue StandardError
     begin
       project&.update(knowledge_status: "failed") unless project&.knowledge_status == "failed"
     rescue StandardError => update_error
@@ -47,7 +47,7 @@ class RunCollectorsJob < ApplicationJob
         error: update_error.message
       )
     end
-    raise e
+    raise
   end
 
   private
