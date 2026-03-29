@@ -1028,7 +1028,7 @@ RSpec.describe Containers::Provision do
 
       it "stops and deletes the container" do
         expect(mock_container).to receive(:stop).with(timeout: 10)
-        expect(mock_container).to receive(:delete).with(force: false)
+        expect(mock_container).to receive(:delete).with(force: false, v: true)
 
         service.cleanup
       end
@@ -1041,7 +1041,7 @@ RSpec.describe Containers::Provision do
 
       it "only deletes the container" do
         expect(mock_container).not_to receive(:stop)
-        expect(mock_container).to receive(:delete).with(force: false)
+        expect(mock_container).to receive(:delete).with(force: false, v: true)
 
         service.cleanup
       end
@@ -1054,7 +1054,7 @@ RSpec.describe Containers::Provision do
 
       it "force stops and deletes the container" do
         expect(mock_container).to receive(:stop).with(timeout: 0)
-        expect(mock_container).to receive(:delete).with(force: true)
+        expect(mock_container).to receive(:delete).with(force: true, v: true)
 
         service.cleanup(force: true)
       end
@@ -1067,8 +1067,8 @@ RSpec.describe Containers::Provision do
       end
 
       it "attempts force cleanup" do
-        expect(mock_container).to receive(:delete).with(force: false).and_raise(Docker::Error::ServerError)
-        expect(mock_container).to receive(:delete).with(force: true)
+        expect(mock_container).to receive(:delete).with(force: false, v: true).and_raise(Docker::Error::ServerError)
+        expect(mock_container).to receive(:delete).with(force: true, v: true)
 
         service.cleanup
       end

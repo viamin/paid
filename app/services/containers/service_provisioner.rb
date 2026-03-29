@@ -202,7 +202,11 @@ module Containers
       if service_container.docker_container_id.present?
         begin
           container = Docker::Container.get(service_container.docker_container_id)
-          container.stop(timeout: 10)
+          begin
+            container.stop(timeout: 10)
+          rescue Docker::Error::NotFoundError, Docker::Error::ClientError
+            # Already stopped or gone
+          end
           container.delete(force: true, v: true)
         rescue Docker::Error::NotFoundError
           # Already gone
@@ -221,7 +225,11 @@ module Containers
       if container_id.present?
         begin
           container = Docker::Container.get(container_id)
-          container.stop(timeout: 10)
+          begin
+            container.stop(timeout: 10)
+          rescue Docker::Error::NotFoundError, Docker::Error::ClientError
+            # Already stopped or gone
+          end
           container.delete(force: true, v: true)
         rescue Docker::Error::NotFoundError
           # Container already gone

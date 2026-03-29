@@ -123,6 +123,27 @@ RSpec.describe Containers::ServiceProvisioner do
         expect(service_container.reload.status).to eq("error")
         expect(service_container.docker_container_id).to be_nil
       end
+
+      it "still deletes the container when stop raises ClientError during cleanup" do
+        docker_container = instance_double(Docker::Container, id: "leak456")
+        allow(Docker::Image).to receive(:create)
+        allow(Docker::Container).to receive(:create).and_return(docker_container)
+        allow(docker_container).to receive(:start)
+        allow(Docker::Container).to receive(:get).with("leak456").and_return(docker_container)
+        allow(docker_container).to receive(:stop)
+          .and_raise(Docker::Error::ClientError, "container already stopped")
+        allow(docker_container).to receive(:delete)
+
+        allow(provisioner).to receive(:wait_for_health!).and_raise(
+          Containers::ServiceProvisioner::Error,
+          "Health check timeout for fail-postgres:5432"
+        )
+
+        expect { provisioner.provision(agent_run) }
+          .to raise_error(Containers::ServiceProvisioner::Error, /Failed to start/)
+
+        expect(docker_container).to have_received(:delete).with(force: true, v: true)
+      end
     end
 
     context "when Docker container name conflicts" do
@@ -507,6 +528,23 @@ RSpec.describe Containers::ServiceProvisioner do
         service_container_ids: [])
 
       expect { provisioner.cleanup(agent_run) }.not_to raise_error
+    end
+
+    it "still deletes the container when stop raises ClientError" do
+      agent_run = create(:agent_run, :completed, project: project, issue: issue,
+        service_container_ids: [ service_container.id ])
+
+      docker_container = instance_double(Docker::Container)
+      allow(Docker::Container).to receive(:get)
+        .with(service_container.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:stop)
+        .and_raise(Docker::Error::ClientError, "container already stopped")
+      allow(docker_container).to receive(:delete)
+
+      provisioner.cleanup(agent_run)
+
+      expect(docker_container).to have_received(:delete).with(force: true, v: true)
+      expect(service_container.reload.status).to eq("stopped")
     end
   end
 end
