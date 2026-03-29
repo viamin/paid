@@ -258,7 +258,7 @@ module Providers
 
     def harness_health_check_supported?
       api_key_name = ProviderSupport.proxy_health_check_api_key_for(provider.provider_key)
-      api_key_name && proxy_api_key_configured?(api_key_name)
+      !!(api_key_name && proxy_api_key_configured?(api_key_name))
     end
 
     def harness_provider_name
