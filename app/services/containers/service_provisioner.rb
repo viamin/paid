@@ -202,8 +202,12 @@ module Containers
       if service_container.docker_container_id.present?
         begin
           container = Docker::Container.get(service_container.docker_container_id)
-          container.stop(timeout: 10)
-          container.delete(force: true)
+          begin
+            container.stop(timeout: 10)
+          rescue Docker::Error::NotFoundError, Docker::Error::ClientError
+            # Already stopped or gone
+          end
+          container.delete(force: true, v: true)
         rescue Docker::Error::NotFoundError
           # Already gone
         rescue Docker::Error::DockerError => e
@@ -221,8 +225,12 @@ module Containers
       if container_id.present?
         begin
           container = Docker::Container.get(container_id)
-          container.stop(timeout: 10)
-          container.delete(force: true)
+          begin
+            container.stop(timeout: 10)
+          rescue Docker::Error::NotFoundError, Docker::Error::ClientError
+            # Already stopped or gone
+          end
+          container.delete(force: true, v: true)
         rescue Docker::Error::NotFoundError
           # Container already gone
         rescue Docker::Error::DockerError => docker_err
@@ -282,7 +290,7 @@ module Containers
         log_warn("service_provisioner.stale_container_stop_failed",
           name: name, error: e.message)
       end
-      existing.delete(force: true)
+      existing.delete(force: true, v: true)
       log_info("service_provisioner.stale_container_removed", name: name)
     rescue Docker::Error::NotFoundError
       # Container disappeared during cleanup; already removed.

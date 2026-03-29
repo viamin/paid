@@ -48,7 +48,7 @@ RSpec.describe DockerOrphanCleanupJob do
 
         job.perform
 
-        expect(container).to have_received(:delete).with(force: true)
+        expect(container).to have_received(:delete).with(force: true, v: true)
       end
 
       it "attempts to stop containers before removing them" do
@@ -59,7 +59,7 @@ RSpec.describe DockerOrphanCleanupJob do
         job.perform
 
         expect(container).to have_received(:stop).with(timeout: 10)
-        expect(container).to have_received(:delete).with(force: true)
+        expect(container).to have_received(:delete).with(force: true, v: true)
       end
 
       it "still removes containers when stop raises ClientError" do
@@ -70,7 +70,16 @@ RSpec.describe DockerOrphanCleanupJob do
 
         job.perform
 
-        expect(container).to have_received(:delete).with(force: true)
+        expect(container).to have_received(:delete).with(force: true, v: true)
+      end
+
+      it "treats NotFoundError on delete as successful removal" do
+        completed_run = create(:agent_run, :completed)
+        container = make_container(labels: { "paid.agent_run_id" => completed_run.id.to_s })
+        allow(container).to receive(:delete).and_raise(Docker::Error::NotFoundError, "no such container")
+        stub_agent_containers(container)
+
+        expect { job.perform }.not_to raise_error
       end
 
       it "skips containers for active agent runs" do
@@ -89,7 +98,7 @@ RSpec.describe DockerOrphanCleanupJob do
 
         job.perform
 
-        expect(container).to have_received(:delete).with(force: true)
+        expect(container).to have_received(:delete).with(force: true, v: true)
       end
 
       it "continues processing when individual container removal fails" do
@@ -102,7 +111,7 @@ RSpec.describe DockerOrphanCleanupJob do
 
         job.perform
 
-        expect(container2).to have_received(:delete).with(force: true)
+        expect(container2).to have_received(:delete).with(force: true, v: true)
       end
 
       it "handles Docker errors when listing containers" do
@@ -133,7 +142,7 @@ RSpec.describe DockerOrphanCleanupJob do
 
         job.perform
 
-        expect(container).to have_received(:delete).with(force: true)
+        expect(container).to have_received(:delete).with(force: true, v: true)
         expect(sc.reload.status).to eq("stopped")
       end
 
@@ -161,7 +170,7 @@ RSpec.describe DockerOrphanCleanupJob do
 
         job.perform
 
-        expect(container).to have_received(:delete).with(force: true)
+        expect(container).to have_received(:delete).with(force: true, v: true)
       end
     end
 

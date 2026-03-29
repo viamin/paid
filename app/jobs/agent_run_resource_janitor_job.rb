@@ -43,7 +43,7 @@ class AgentRunResourceJanitorJob < ApplicationJob
       rescue Docker::Error::NotFoundError, Docker::Error::ClientError
         # Already stopped or gone
       end
-      container.delete(force: true)
+      container.delete(force: true, v: true)
     rescue Docker::Error::NotFoundError
       # Container already removed — clear the stale reference
     end
