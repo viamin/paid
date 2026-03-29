@@ -13,7 +13,39 @@ module Activities
   class BaseActivity < Temporalio::Activity::Definition
     module InputNormalizer
       def execute(input)
-        super(input.is_a?(Hash) ? input.deep_symbolize_keys : input)
+        normalized_input = input.is_a?(Hash) ? input.deep_symbolize_keys : input
+
+        with_rails_executor do
+          with_connection_cleanup do
+            super(normalized_input)
+          end
+        end
+      end
+
+      private
+
+      def with_rails_executor(&block)
+        executor = Rails.application.executor if defined?(Rails) && Rails.respond_to?(:application) &&
+          Rails.application.respond_to?(:executor)
+        return block.call unless executor
+
+        executor.wrap(&block)
+      end
+
+      # Release any DB connection checked out during this block rather than
+      # holding one for the entire activity duration. Activities often perform
+      # long-running external I/O (container ops, GitHub calls) and keeping a
+      # connection checked out would starve the pool.
+      def with_connection_cleanup(&block)
+        pool = ActiveRecord::Base.connection_pool if defined?(ActiveRecord::Base) &&
+          ActiveRecord::Base.respond_to?(:connection_pool)
+        return block.call unless pool
+
+        begin
+          block.call
+        ensure
+          pool.release_connection if pool.respond_to?(:active_connection?) && pool.active_connection?
+        end
       end
     end
 
