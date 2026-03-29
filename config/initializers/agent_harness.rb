@@ -47,7 +47,7 @@ AgentHarness.configure do |config|
 
       # Forward container execution flags (e.g. sandbox bypass) to the harness
       # so its command builder matches the container runtime behaviour.
-      # TODO(#595): Remove once agent-harness (viamin/agent-harness#48)
+      # TODO(#596): Remove once agent-harness (viamin/agent-harness#48)
       # handles container sandbox mode natively.
       container_flags = ProviderSupport.container_execution_flags_for(provider_key)
       provider.default_flags = container_flags if container_flags.any?
