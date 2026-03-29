@@ -56,20 +56,24 @@ module Knowledge
       end
 
       def process_batch(chunks)
-        texts = chunks.map(&:content)
-        redacted = redaction_check(texts)
+        embeddable, redaction_audit = redact_chunks(chunks)
 
-        results = generator.call(texts: redacted)
+        Knowledge::Provenance::AuditLog.record_batch(redaction_audit) if redaction_audit.any?
 
-        if results.size != chunks.size
+        return { embedded: 0, tokens: 0 } if embeddable.empty?
+
+        texts = embeddable.map(&:content)
+        results = generator.call(texts: texts)
+
+        if results.size != embeddable.size
           raise EmbeddingError,
-            "Embedding count mismatch: expected #{chunks.size}, got #{results.size}"
+            "Embedding count mismatch: expected #{embeddable.size}, got #{results.size}"
         end
 
         tokens = 0
         audit_events = []
 
-        chunks.zip(results).each do |chunk, result|
+        embeddable.zip(results).each do |chunk, result|
           Knowledge::Qdrant::PointSync.upsert_chunk!(chunk, vector: result.vector)
           chunk.update!(embedding_model: generator.model)
           tokens += result.token_count
@@ -85,13 +89,56 @@ module Knowledge
 
         Knowledge::Provenance::AuditLog.record_batch(audit_events)
 
-        { embedded: chunks.size, tokens: tokens }
+        { embedded: embeddable.size, tokens: tokens }
       end
 
-      # Placeholder for redaction — passes through until redaction issue is done.
-      # Future: filter/redact sensitive content before embedding.
-      def redaction_check(texts)
-        texts
+      def redact_chunks(chunks)
+        embeddable = []
+        audit_events = []
+
+        chunks.each do |chunk|
+          result = Knowledge::Redaction::Redactor.call(text: chunk.content)
+
+          if result.fully_redacted?
+            chunk.update!(status: "redacted")
+            log_redaction(chunk, result)
+            audit_events << redaction_audit_event(chunk, result, fully_redacted: true)
+          elsif result.redacted?
+            chunk.update!(content: result.clean_text, content_hash: Digest::SHA256.hexdigest(result.clean_text))
+            log_redaction(chunk, result)
+            audit_events << redaction_audit_event(chunk, result, fully_redacted: false)
+            embeddable << chunk
+          else
+            embeddable << chunk
+          end
+        end
+
+        [ embeddable, audit_events ]
+      end
+
+      def log_redaction(chunk, result)
+        Rails.logger.info(
+          message: "knowledge.redaction",
+          project_id: chunk.project_id,
+          chunk_id: chunk.id,
+          patterns_found: result.redactions.map(&:pattern).uniq,
+          redaction_count: result.redactions.size,
+          fully_redacted: result.fully_redacted?
+        )
+      end
+
+      def redaction_audit_event(chunk, result, fully_redacted:)
+        {
+          event: :chunk_redacted,
+          project: chunk.project,
+          actor: { type: "redaction_pipeline" },
+          target: { type: "KnowledgeChunk", id: chunk.id },
+          details: {
+            patterns_found: result.redactions.map(&:pattern).uniq.map(&:to_s),
+            redaction_count: result.redactions.size,
+            fully_redacted: fully_redacted
+          }
+        }
       end
 
       def log_completion(total_embedded, total_tokens, cost, duration)

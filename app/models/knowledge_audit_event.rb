@@ -6,7 +6,7 @@ class KnowledgeAuditEvent < ApplicationRecord
   # implemented in future issues.
   EVENT_TYPES = %w[
     artifact_created artifact_staled chunk_embedded
-    collection_rebuilt
+    chunk_redacted collection_rebuilt
   ].freeze
 
   # Provenance chain: audit event → target (artifact/chunk) → collector_run → project.

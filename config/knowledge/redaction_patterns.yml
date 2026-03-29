@@ -1,0 +1,14 @@
+# Sensitive data patterns for Knowledge::Redaction::Scanner
+#
+# Each entry maps a pattern name to a regex string.
+# Patterns are compiled once at load time and reused across scans.
+# Order does not matter — all patterns are tested against every chunk.
+
+api_key: '(?:api[_-]?key|apikey)\s*[:=]\s*[\"'']?([a-zA-Z0-9_\-]{20,})[\"'']?'
+aws_key: '(?:AKIA|ABIA|ACCA|ASIA)[0-9A-Z]{16}'
+github_token: 'gh[ps]_[a-zA-Z0-9]{36,}'
+jwt: 'eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+'
+password: '(?:password|passwd|secret)\s*[:=]\s*[\"'']([^\"'']+)[\"'']'
+email: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+connection_string: '(?:postgres|mysql|redis|mongodb):\/\/[^\s\"'']+'
+private_key: '-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----'
