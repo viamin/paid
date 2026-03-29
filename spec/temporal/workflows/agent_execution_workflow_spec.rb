@@ -436,27 +436,6 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
     end
 
-    def activity_error_with_cause(cause)
-      activity_err = Temporalio::Error::ActivityError.new(
-        "activity failed",
-        scheduled_event_id: 1,
-        started_event_id: 2,
-        identity: "",
-        activity_type: "PushBranch",
-        activity_id: "1",
-        retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
-      )
-      begin
-        begin
-          raise cause
-        rescue
-          raise activity_err
-        end
-      rescue => e
-        e
-      end
-    end
-
     def stub_post_agent_failure(called_activities, retain_error: nil)
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         called_activities << activity_class
@@ -601,6 +580,14 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         expect(workflow.send(:should_retain_container?, true, error)).to be(false),
           "Expected false for known failure type #{type}"
       end
+    end
+
+    it "returns false for known failure types nested deeper in the cause chain" do
+      # ActivityError -> ApplicationError(known type) — the known type is two levels deep
+      cause = Temporalio::Error::ApplicationError.new("exhausted", type: "AllProvidersExhausted")
+      error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
     end
   end
 

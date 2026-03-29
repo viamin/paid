@@ -52,7 +52,7 @@ module Activities
     end
 
     def disk_pressure?
-      stat = Etc.sysconfdir ? `df --output=pcent / 2>/dev/null`.strip.split("\n").last : nil
+      stat = `df --output=pcent / 2>/dev/null`.strip.split("\n").last
       return false unless stat
 
       usage_percent = stat.strip.delete_suffix("%").to_i

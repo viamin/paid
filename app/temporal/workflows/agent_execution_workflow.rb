@@ -405,10 +405,15 @@ module Workflows
       # Cancellations are intentional — no diagnostic value in retaining
       return false if workflow_error.is_a?(Temporalio::Error::CanceledError)
 
-      # Check for known failure types in the error cause chain
-      cause = workflow_error.respond_to?(:cause) ? workflow_error.cause : nil
-      if cause.is_a?(Temporalio::Error::ApplicationError)
-        return false if KNOWN_FAILURE_TYPES.include?(cause.type)
+      # Walk the error cause chain looking for known failure types
+      current_error = workflow_error
+      while current_error
+        if current_error.is_a?(Temporalio::Error::ApplicationError)
+          return false if KNOWN_FAILURE_TYPES.include?(current_error.type)
+        end
+
+        break unless current_error.respond_to?(:cause)
+        current_error = current_error.cause
       end
 
       true

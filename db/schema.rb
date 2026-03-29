@@ -134,8 +134,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_170336) do
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
     t.text "custom_prompt"
-    t.string "diagnosis_issue_url"
-    t.string "diagnosis_status"
     t.integer "duration_seconds"
     t.text "error_message"
     t.string "final_provider", limit: 50
@@ -494,7 +492,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_170336) do
     t.string "embedding_model", limit: 100
     t.bigint "knowledge_artifact_id", null: false
     t.bigint "project_id", null: false
-    t.datetime "redaction_scanned_at"
     t.jsonb "scope_tags", default: []
     t.integer "sequence", default: 0
     t.string "status", limit: 50, default: "active", null: false
