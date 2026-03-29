@@ -348,6 +348,10 @@ module Activities
         user_settings&.review_goal_idle_timeout_seconds || DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT
       end
 
+      # Periodic heartbeats during container execution complement the
+      # checkpoint heartbeats at provider attempt boundaries (lines 106, 129).
+      # Provider calls can run for many minutes, so without periodic
+      # heartbeats the 120s heartbeat_timeout would fire mid-execution.
       result = with_periodic_heartbeat("executing", provider) do
         container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
       end
@@ -442,21 +446,29 @@ module Activities
         error = e
       end
 
+      canceled = false
       begin
         # Periodically heartbeat while the worker thread is still running.
         until worker.join(interval)
           begin
             context.heartbeat(*details)
           rescue Temporalio::Error::CanceledError
-            # Propagate cancellation to the activity.
+            canceled = true
             raise
           rescue StandardError
             # Best-effort; next iteration will retry.
           end
         end
       ensure
-        # Ensure the worker has finished before returning or raising.
-        worker.join
+        # On cancellation, give the worker a short window to finish rather
+        # than blocking indefinitely — this allows the activity to shut
+        # down promptly during worker shutdown or workflow cancellation.
+        if canceled
+          worker.join(5)
+          worker.kill if worker.alive?
+        else
+          worker.join
+        end
       end
 
       raise error if error

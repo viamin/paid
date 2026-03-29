@@ -98,7 +98,7 @@ module Workflows
               rebase_succeeded: rebase_result[:rebase_succeeded] }, timeout: 60)
         end
 
-        # Step 4: Run the agent (long timeout, no retry)
+        # Step 4: Run the agent (long timeout, limited retry for worker recovery)
         # Budget based on the expected provider attempts for this run
         # (from CreateAgentRunActivity), plus a small Temporal buffer.
         # Issue goals use a shorter timeout since they only need to create
