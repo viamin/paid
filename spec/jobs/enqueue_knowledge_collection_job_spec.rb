@@ -40,6 +40,14 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       }.to have_enqueued_job(RunCollectorsJob).with(project.id, commit_sha, branch: "develop")
     end
 
+    it "does not overwrite terminal knowledge_status" do
+      project.update!(knowledge_status: "ready")
+
+      described_class.new.perform(project.id)
+
+      expect(project.reload.knowledge_status).to eq("ready")
+    end
+
     it "raises WorktreeService::Error for retry_on to handle" do
       allow(worktree_service).to receive(:ensure_cloned).and_raise(WorktreeService::Error, "not cloned")
 

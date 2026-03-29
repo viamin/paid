@@ -35,8 +35,10 @@ class RunCollectorsJob < ApplicationJob
     end
 
     update_knowledge_status(project, result)
+  rescue ActiveRecord::RecordNotFound
+    raise
   rescue StandardError
-    project.update!(knowledge_status: "failed") unless project.knowledge_status == "failed"
+    project&.update!(knowledge_status: "failed") unless project&.knowledge_status == "failed"
     raise
   end
 
