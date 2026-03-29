@@ -14,6 +14,10 @@ RSpec.describe Activities::CreatePullRequestActivity do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:create_pull_request).and_return(pr_response)
     allow(github_client).to receive(:add_labels_to_issue)
+    # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
+    # By default, return a failed response so the activity falls back to raw summary.
+    allow(AgentHarness).to receive(:send_message)
+      .and_return(instance_double(AgentHarness::Response, success?: false, output: ""))
   end
 
   describe "#execute" do
@@ -130,6 +134,96 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(github_client).to have_received(:add_labels_to_issue).with(
           project.full_name, 42, [ "custom-generated", "custom-automation" ]
         )
+      end
+    end
+
+    context "when LLM generates a structured description" do
+      let(:llm_description) { "## Summary\n\nAdds OAuth support for third-party integrations." }
+
+      it "uses the LLM-generated description in the PR body" do
+        agent_run.log!("stdout", "Added OAuth middleware")
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true, output: llm_description))
+
+        expect(github_client).to receive(:create_pull_request).with(
+          anything,
+          hash_including(
+            body: a_string_including("## Summary")
+              .and(including("OAuth support"))
+              .and(including("Closes ##{issue.github_number}"))
+          )
+        ).and_return(pr_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "passes issue context to the LLM service via AgentHarness" do
+        agent_run.log!("stdout", "Added OAuth middleware")
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true, output: llm_description))
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(AgentHarness).to have_received(:send_message).with(
+          a_string_including(issue.title).and(including(issue.body)),
+          provider: :claude,
+          model: Llm::GeneratePrDescription::DEFAULT_MODEL,
+          timeout: Llm::GeneratePrDescription::TIMEOUT
+        )
+      end
+
+      it "falls back to raw summary when LLM provider fails and logs with context" do
+        agent_run.log!("stdout", "Raw agent output here")
+        allow(AgentHarness).to receive(:send_message)
+          .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+        expect(mock_logger).to receive(:warn).with(hash_including(
+          message: "agent_execution.pr_description_failed",
+          agent_run_id: agent_run.id,
+          issue_number: issue.github_number,
+          error_class: "AgentHarness::ProviderError"
+        ))
+        expect(github_client).to receive(:create_pull_request).with(
+          anything,
+          hash_including(body: a_string_including("Raw agent output here"))
+        ).and_return(pr_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "falls back to raw summary when LLM raises an unexpected error and logs with context" do
+        agent_run.log!("stdout", "Raw agent output here")
+        allow(AgentHarness).to receive(:send_message)
+          .and_raise(RuntimeError.new("unexpected failure"))
+        mock_logger = instance_double(ActiveSupport::Logger, info: nil)
+        allow(activity).to receive(:logger).and_return(mock_logger)
+        expect(mock_logger).to receive(:warn).with(hash_including(
+          message: "agent_execution.pr_description_failed",
+          agent_run_id: agent_run.id,
+          issue_number: issue.github_number,
+          error_class: "RuntimeError"
+        ))
+        expect(github_client).to receive(:create_pull_request).with(
+          anything,
+          hash_including(body: a_string_including("Raw agent output here"))
+        ).and_return(pr_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "falls back to raw summary when LLM returns a failed response" do
+        agent_run.log!("stdout", "Raw agent output here")
+        # Default before block already stubs a failed response
+
+        expect(github_client).to receive(:create_pull_request).with(
+          anything,
+          hash_including(
+            body: a_string_including("Raw agent output here")
+          )
+        ).and_return(pr_response)
+
+        activity.execute(agent_run_id: agent_run.id)
       end
     end
 
