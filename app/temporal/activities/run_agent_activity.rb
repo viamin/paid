@@ -85,7 +85,11 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
       track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
         prompt = agent_run.effective_prompt
-        raise Temporalio::Error::ApplicationError.new("No prompt available for agent run", type: "MissingPrompt") unless prompt
+        unless prompt
+          raise Temporalio::Error::ApplicationError.new(
+            "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
+          )
+        end
 
         user_settings = resolve_user_settings(agent_run)
         providers = build_provider_order(agent_run, user_settings)
@@ -98,7 +102,9 @@ module Activities
         rate_limit_reset_at = nil
         skipped_rate_limited_count = 0
 
-        providers.each do |provider|
+        providers.each_with_index do |provider, index|
+          heartbeat("provider_attempt", provider, index)
+
           # Skip unavailable providers, tracking rate-limited skips separately
           if provider_unavailable?(user_settings, provider, provider_states)
             canonical = canonical_provider(provider)
@@ -119,7 +125,8 @@ module Activities
             provider_result = run_agent_with_provider(agent_run, provider, prompt, user_settings)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
 
-            # Success - record and update final provider
+            # Success - heartbeat and record final provider
+            heartbeat("provider_completed", provider)
             record_provider_success(user_settings, provider, provider_states)
             agent_run.record_provider_attempt(provider, success: true)
             agent_run.update!(final_provider: provider)
@@ -200,7 +207,8 @@ module Activities
         end
         raise Temporalio::Error::ApplicationError.new(
           "All providers exhausted",
-          type: "AllProvidersExhausted"
+          type: "AllProvidersExhausted",
+          non_retryable: true
         )
       end
     end
@@ -227,7 +235,8 @@ module Activities
     rescue AgentRuns::UserSettingsResolver::MissingUserError
       raise Temporalio::Error::ApplicationError.new(
         "No user available for agent run settings",
-        type: "MissingUser"
+        type: "MissingUser",
+        non_retryable: true
       )
     end
 
@@ -339,7 +348,13 @@ module Activities
         user_settings&.review_goal_idle_timeout_seconds || DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT
       end
 
-      result = container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
+      # Periodic heartbeats during container execution complement the
+      # checkpoint heartbeats at provider attempt boundaries (lines 106, 129).
+      # Provider calls can run for many minutes, so without periodic
+      # heartbeats the 120s heartbeat_timeout would fire mid-execution.
+      result = with_periodic_heartbeat("executing", provider) do
+        container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
+      end
 
       if result.success?
         output_present = result[:stdout].present? || result[:stderr].present?
@@ -405,6 +420,83 @@ module Activities
       end
     rescue StandardError
       1.hour.from_now
+    end
+
+    # Runs a block while sending periodic heartbeats from the activity's
+    # execution thread. The activity context is thread/fiber-local, so
+    # heartbeats must be emitted from the calling thread — not a background
+    # thread. We therefore run the wrapped work in a background thread and
+    # heartbeat from the calling (activity) thread while waiting for it to
+    # complete.
+    #
+    # The interval (default 30s) is well under the 120s heartbeat timeout
+    # configured on the workflow side, giving plenty of margin.
+    HEARTBEAT_INTERVAL = 30
+
+    def with_periodic_heartbeat(*details, interval: HEARTBEAT_INTERVAL)
+      context = Temporalio::Activity::Context.current_or_nil
+      return yield unless context
+
+      # Wrap the worker thread in Rails executor and ActiveRecord connection
+      # pool management. The executor handles autoloading/reloading and the
+      # with_connection block ensures the DB connection is checked out only
+      # for the duration of the work and returned to the pool afterward,
+      # preventing connection-pool exhaustion from long-running activities.
+      worker = Thread.new do
+        executor = Rails.application.executor if defined?(Rails) && Rails.respond_to?(:application) && Rails.application.respond_to?(:executor)
+        work = proc { yield }
+
+        db_scoped = proc do
+          if defined?(ActiveRecord::Base) && ActiveRecord::Base.respond_to?(:connection_pool)
+            ActiveRecord::Base.connection_pool.with_connection { work.call }
+          else
+            work.call
+          end
+        end
+
+        if executor
+          executor.wrap(&db_scoped)
+        else
+          db_scoped.call
+        end
+      end
+
+      canceled = false
+      begin
+        # Periodically heartbeat while the worker thread is still running.
+        until worker.join(interval)
+          begin
+            context.heartbeat(*details)
+          rescue Temporalio::Error::CanceledError
+            canceled = true
+            raise
+          rescue StandardError
+            # Best-effort; next iteration will retry.
+          end
+        end
+      ensure
+        # On cancellation, give the worker a short window to finish rather
+        # than blocking indefinitely — this allows the activity to shut
+        # down promptly during worker shutdown or workflow cancellation.
+        if canceled
+          worker.join(5)
+          if worker.alive?
+            # Use Thread#raise instead of Thread#kill so that ensure blocks
+            # in the worker (e.g., Docker exec teardown) still execute.
+            worker.raise(Interrupt)
+            worker.join(5)
+            # Last resort if the thread is stuck in an uninterruptible call.
+            worker.kill if worker.alive?
+          end
+        else
+          worker.join
+        end
+      end
+
+      # Thread#value re-raises the original exception with its backtrace
+      # intact, unlike manual capture-and-reraise which replaces the
+      # backtrace with this method's call site.
+      worker.value
     end
 
     def build_command(provider, command_prefix, prompt)
@@ -644,17 +736,21 @@ module Activities
       unless repo.match?(%r{\A[A-Za-z0-9\-_.]+/[A-Za-z0-9\-_.]+\z})
         raise Temporalio::Error::ApplicationError.new(
           "Invalid repository name format: #{repo.inspect}",
-          type: "InvalidRepoName"
+          type: "InvalidRepoName",
+          non_retryable: true
         )
       end
       repo
     end
 
     def reconnect_container(agent_run)
-      raise Temporalio::Error::ApplicationError.new(
-        "No container provisioned for agent run #{agent_run.id}",
-        type: "ContainerNotProvisioned"
-      ) if agent_run.container_id.blank?
+      if agent_run.container_id.blank?
+        raise Temporalio::Error::ApplicationError.new(
+          "No container provisioned for agent run #{agent_run.id}",
+          type: "ContainerNotProvisioned",
+          non_retryable: true
+        )
+      end
 
       Containers::Provision.reconnect(
         agent_run: agent_run,
