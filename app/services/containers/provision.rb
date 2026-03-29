@@ -349,12 +349,12 @@ module Containers
 
       begin
         stop_container(force: force)
-        container.delete(force: force)
+        container.delete(force: force, v: true)
         log_system("container.cleanup.success")
       rescue Docker::Error::DockerError => e
         log_system("container.cleanup.failed", error: e.message)
         begin
-          container.delete(force: true)
+          container.delete(force: true, v: true)
         rescue Docker::Error::DockerError
           # Container may already be gone
         end

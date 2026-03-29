@@ -16,7 +16,7 @@ RSpec.describe AgentRunResourceJanitorJob do
         described_class.new.perform(agent_run.id)
 
         expect(container).to have_received(:stop).with(timeout: 10)
-        expect(container).to have_received(:delete).with(force: true)
+        expect(container).to have_received(:delete).with(force: true, v: true)
         expect(agent_run.reload.container_id).to be_nil
       end
 
