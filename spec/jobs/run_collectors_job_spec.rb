@@ -61,10 +61,18 @@ RSpec.describe RunCollectorsJob do
         project.update!(knowledge_status: "pending")
         allow(Knowledge::CollectorRunner).to receive(:call) do
           expect(project.reload.knowledge_status).to eq("collecting")
-          { results: [] }
+          { results: [ { collector_type: "tree_sitter", status: "completed" } ] }
         end
 
         described_class.new.perform(project.id, commit_sha)
+      end
+
+      it "sets knowledge_status to failed when no collectors run" do
+        allow(Knowledge::CollectorRunner).to receive(:call).and_return(results: [])
+
+        described_class.new.perform(project.id, commit_sha)
+
+        expect(project.reload.knowledge_status).to eq("failed")
       end
     end
 

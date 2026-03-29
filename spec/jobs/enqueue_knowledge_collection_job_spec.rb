@@ -40,7 +40,7 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       }.to have_enqueued_job(RunCollectorsJob).with(project.id, commit_sha, branch: "develop")
     end
 
-    it "retries on WorktreeService::Error" do
+    it "raises WorktreeService::Error for retry_on to handle" do
       allow(worktree_service).to receive(:ensure_cloned).and_raise(WorktreeService::Error, "not cloned")
 
       expect { described_class.new.perform(project.id) }.to raise_error(WorktreeService::Error)

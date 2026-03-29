@@ -13,12 +13,12 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
     worktree_service.ensure_cloned
     commit_sha = worktree_service.current_commit_sha
 
-    project.update!(knowledge_status: "collecting")
-
     RunCollectorsJob.perform_later(
       project.id,
       commit_sha,
       branch: project.default_branch
     )
+
+    project.update!(knowledge_status: "collecting")
   end
 end

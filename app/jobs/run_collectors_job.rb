@@ -40,7 +40,9 @@ class RunCollectorsJob < ApplicationJob
 
   def update_knowledge_status(project, result)
     statuses = Array(result&.dig(:results)).map { |r| r[:status] }
-    if statuses.any? { |s| s == "failed" }
+    if statuses.empty?
+      project.update!(knowledge_status: "failed")
+    elsif statuses.any? { |s| s == "failed" }
       project.update!(knowledge_status: "failed")
     elsif statuses.all? { |s| s == "completed" || s == "skipped" }
       project.update!(knowledge_status: "ready")
