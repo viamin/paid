@@ -141,6 +141,27 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
     end
 
+    context "when commenting fails after merge" do
+      let(:pr_data) { double("pr_data", merged_at: nil) } # rubocop:disable RSpec/VerifiedDoubles
+
+      before do
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 42)
+          .and_return(pr_data)
+        allow(github_client).to receive(:merge_pull_request)
+        allow(github_client).to receive(:add_labels_to_issue)
+        allow(github_client).to receive(:add_comment)
+          .and_raise(GithubClient::ApiError.new("Not found", status: 404))
+      end
+
+      it "does not raise and still returns merged: true" do
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result[:merged]).to be true
+        expect(github_client).to have_received(:add_comment)
+      end
+    end
+
     context "when merge fails with expected error (409 conflict)" do
       let(:pr_data) { double("pr_data", merged_at: nil) } # rubocop:disable RSpec/VerifiedDoubles
 

@@ -47,7 +47,7 @@ module Activities
         # already-merged PRs may have been merged manually by a human.
         unless pr_data.merged_at
           add_phase_label(client, project, pr_number, PAID_AUTO_MERGED_LABEL)
-          client.add_comment(project.full_name, pr_number, AUTO_MERGE_COMMENT)
+          add_merge_comment(client, project, pr_number)
         end
       end
 
@@ -55,6 +55,17 @@ module Activities
     end
 
     private
+
+    def add_merge_comment(client, project, pr_number)
+      client.add_comment(project.full_name, pr_number, AUTO_MERGE_COMMENT)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_review.add_comment_failed",
+        project_id: project.id,
+        pr_number: pr_number,
+        error: e.message
+      )
+    end
 
     def attempt_merge(client, project, pr_number)
       client.merge_pull_request(
