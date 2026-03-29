@@ -44,6 +44,14 @@ module Workflows
       MissingPrompt
       MissingUser
       ContainerNotProvisioned
+      RateLimit
+    ].freeze
+
+    # Non-ApplicationError exception classes that represent expected/recoverable
+    # failures and should not trigger container retention.
+    KNOWN_FAILURE_CLASSES = [
+      "GithubClient::RateLimitError",
+      "GithubClient::AuthenticationError"
     ].freeze
 
     def execute(input)
@@ -402,15 +410,20 @@ module Workflows
       return false unless agent_step_succeeded
       return false unless workflow_error
 
-      # Cancellations are intentional — no diagnostic value in retaining
-      return false if workflow_error.is_a?(Temporalio::Error::CanceledError)
-
-      # Walk the error cause chain looking for known failure types
+      # Walk the error cause chain looking for cancellations, known
+      # ApplicationError types, and known exception classes.
+      # Cancellations can be wrapped (e.g. ActivityError whose cause is
+      # CanceledError), so we check at every level rather than only the
+      # top-level error.
       current_error = workflow_error
       while current_error
+        return false if current_error.is_a?(Temporalio::Error::CanceledError)
+
         if current_error.is_a?(Temporalio::Error::ApplicationError)
           return false if KNOWN_FAILURE_TYPES.include?(current_error.type)
         end
+
+        return false if KNOWN_FAILURE_CLASSES.include?(current_error.class.name)
 
         break unless current_error.respond_to?(:cause)
         current_error = current_error.cause

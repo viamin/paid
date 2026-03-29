@@ -583,9 +583,41 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
 
     it "returns false for known failure types nested deeper in the cause chain" do
-      # ActivityError -> ApplicationError(known type) — the known type is two levels deep
-      cause = Temporalio::Error::ApplicationError.new("exhausted", type: "AllProvidersExhausted")
+      # ActivityError -> RuntimeError(wrapper) -> ApplicationError(known type)
+      # The known type is two levels deep in the cause chain from the ActivityError.
+      app_error = Temporalio::Error::ApplicationError.new("exhausted", type: "AllProvidersExhausted")
+
+      wrapper =
+        begin
+          begin
+            raise app_error
+          rescue
+            raise RuntimeError, "wrapper"
+          end
+        rescue => e
+          e
+        end
+
+      error = activity_error_with_cause(wrapper)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+
+    it "returns false for CanceledError wrapped in ActivityError" do
+      cause = Temporalio::Error::CanceledError.new("cancelled")
       error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+
+    it "returns false for GithubClient::RateLimitError" do
+      error = GithubClient::RateLimitError.new(Time.current + 3600)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+
+    it "returns false for GithubClient::AuthenticationError" do
+      error = GithubClient::AuthenticationError.new("token expired")
 
       expect(workflow.send(:should_retain_container?, true, error)).to be false
     end
