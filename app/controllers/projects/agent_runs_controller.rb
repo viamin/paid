@@ -79,7 +79,7 @@ module Projects
         return
       end
 
-      if issue&.has_associated_pull_requests?
+      if issue&.associated_pull_request
         redirect_to project_path(@project),
           alert: "This issue already has an associated pull request."
         return
