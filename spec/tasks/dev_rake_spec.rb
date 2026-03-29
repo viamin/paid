@@ -7,6 +7,16 @@ require "rake"
 RSpec.describe "dev:cleanup" do
   let(:task) { Rake::Task["dev:cleanup"] }
 
+  # Default grace period is now 300s for Temporal recovery. Tests in the
+  # top-level context verify immediate-cleanup behavior, so force grace=0.
+  around do |example|
+    old_val = ENV["STARTUP_CLEANUP_GRACE_PERIOD"]
+    ENV["STARTUP_CLEANUP_GRACE_PERIOD"] = "0"
+    example.run
+  ensure
+    ENV["STARTUP_CLEANUP_GRACE_PERIOD"] = old_val
+  end
+
   before do
     Rails.application.load_tasks unless Rake::Task.task_defined?("dev:cleanup")
     task.reenable
@@ -241,6 +251,31 @@ RSpec.describe "dev:cleanup" do
       task.invoke
 
       expect(running_run.reload.status).to eq("timeout")
+    end
+  end
+
+  context "with default STARTUP_CLEANUP_GRACE_PERIOD (unset)" do
+    around do |example|
+      old_val = ENV.delete("STARTUP_CLEANUP_GRACE_PERIOD")
+      example.run
+    ensure
+      ENV["STARTUP_CLEANUP_GRACE_PERIOD"] = old_val
+    end
+
+    it "preserves recent runs for Temporal recovery" do
+      recent_run = create(:agent_run, :running, updated_at: 1.minute.ago)
+
+      task.invoke
+
+      expect(recent_run.reload.status).to eq("running")
+    end
+
+    it "times out runs older than the default grace period" do
+      old_run = create(:agent_run, :running, updated_at: 10.minutes.ago)
+
+      task.invoke
+
+      expect(old_run.reload.status).to eq("timeout")
     end
   end
 end

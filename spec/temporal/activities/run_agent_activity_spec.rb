@@ -31,6 +31,67 @@ RSpec.describe Activities::RunAgentActivity do
       .and_return(git_ops)
   end
 
+  describe "#with_periodic_heartbeat" do
+    let(:mock_context) { instance_double(Temporalio::Activity::Context) }
+
+    before do
+      allow(mock_context).to receive(:heartbeat)
+    end
+
+    it "yields the block and returns its result" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+
+      result = activity.send(:with_periodic_heartbeat, "test", interval: 0.01) { 42 }
+
+      expect(result).to eq(42)
+    end
+
+    it "emits heartbeats while the block is running" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+
+      activity.send(:with_periodic_heartbeat, "test", interval: 0.05) do
+        sleep 0.15
+        :done
+      end
+
+      expect(mock_context).to have_received(:heartbeat).with("test").at_least(:once)
+    end
+
+    it "propagates exceptions from the block with original backtrace" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+
+      expect {
+        activity.send(:with_periodic_heartbeat, "test", interval: 0.01) do
+          raise ArgumentError, "boom"
+        end
+      }.to raise_error(ArgumentError, "boom") { |e|
+        # Thread#value preserves the original backtrace from inside the
+        # worker thread rather than replacing it with this call site.
+        expect(e.backtrace.first).to include("run_agent_activity_spec.rb")
+      }
+    end
+
+    it "yields without heartbeating when outside activity context" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(nil)
+
+      result = activity.send(:with_periodic_heartbeat, "test") { 99 }
+
+      expect(result).to eq(99)
+    end
+
+    it "re-raises CanceledError from heartbeat" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+      allow(mock_context).to receive(:heartbeat).and_raise(Temporalio::Error::CanceledError, "canceled")
+
+      expect {
+        activity.send(:with_periodic_heartbeat, "test", interval: 0.01) do
+          sleep 0.05
+          :done
+        end
+      }.to raise_error(Temporalio::Error::CanceledError)
+    end
+  end
+
   describe "AGENT_COMMANDS" do
     it "includes a command mapping for codex" do
       expect(described_class::AGENT_COMMANDS).to have_key("codex")
