@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.1](https://github.com/viamin/paid/compare/v0.11.0...v0.11.1) (2026-03-29)
+
+
+### Bug Fixes
+
+* 260: Agent Context Bundle Builder for Agent-Harness Consumption ([#587](https://github.com/viamin/paid/issues/587)) ([290cba1](https://github.com/viamin/paid/commit/290cba1c67bd970a2461219ead4e2e66ab040bf6))
+* 580: Show PR link instead of quick run button for synced issues with active PRs ([#585](https://github.com/viamin/paid/issues/585)) ([9a5d581](https://github.com/viamin/paid/commit/9a5d581dd2fb3d3d5e68d52796021f0acbd9936f))
+* 581: PR descriptions should summarize full scope and purpose, not just recent work ([#583](https://github.com/viamin/paid/issues/583)) ([b516a35](https://github.com/viamin/paid/commit/b516a35f6a9816ab4a60621e2c74864aad0798dc))
+* 584: Handle no-output issue runs with explicit needs-input / recommend-close follow-up ([#586](https://github.com/viamin/paid/issues/586)) ([408e118](https://github.com/viamin/paid/commit/408e118748756eedd71207972f94d4ff2f89b2ad))
+* **containers:** remove attached volumes during cleanup ([#590](https://github.com/viamin/paid/issues/590)) ([8045ae4](https://github.com/viamin/paid/commit/8045ae42f55fac1b4224c65f07725bdf44302f00))
+* **dev:** isolate overmind from bundler env ([#588](https://github.com/viamin/paid/issues/588)) ([af87de9](https://github.com/viamin/paid/commit/af87de95826bdeb847b621c2ae4690b1edfd635e))
+
 ## [0.11.0](https://github.com/viamin/paid/compare/v0.10.0...v0.11.0) (2026-03-28)
 
 
