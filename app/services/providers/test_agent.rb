@@ -351,14 +351,20 @@ module Providers
 
     def codex_test_command
       escaped_prompt = Shellwords.escape(PROMPT)
+      command = command_with_flags_before_separator(
+        CONTAINER_COMMANDS.fetch("codex"),
+        "--skip-git-repo-check",
+        "--output-last-message",
+        "$tmp_output"
+      ).join(" ")
       unset_flags = subscription_auth_unset_flags("codex")
       <<~SH.squish
         tmp_output="$(mktemp)" &&
         tmp_error="$(mktemp)" &&
         if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then
-          env #{unset_flags} codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+          env #{unset_flags} #{command} #{escaped_prompt} >/dev/null 2>"$tmp_error";
         else
-          codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+          #{command} #{escaped_prompt} >/dev/null 2>"$tmp_error";
         fi;
         status=$?;
         if [ "$status" -eq 0 ]; then
@@ -368,6 +374,11 @@ module Providers
         fi;
         exit $status
       SH
+    end
+
+    def command_with_flags_before_separator(command, *flags)
+      separator_index = command.index("--") || command.length
+      command[0...separator_index] + flags + command[separator_index..]
     end
 
     def gemini_test_command
