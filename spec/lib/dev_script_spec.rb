@@ -71,7 +71,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
   end
 
   it "exits cleanly when overmind is already running and healthy" do
-    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+    Dir.mktmpdir("dev", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, overmind_running: true, tmux_pane_dead: false)
 
       env = {
@@ -91,7 +91,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
   end
 
   it "restarts an unhealthy overmind session with dead processes from overmind status" do
-    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+    Dir.mktmpdir("dev", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, overmind_running: true, overmind_process_dead: true, tmux_pane_dead: false)
 
       env = {

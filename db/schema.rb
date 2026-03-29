@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_28_194042) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_29_095600) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -656,6 +656,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_194042) do
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
+    t.string "knowledge_status", limit: 50, default: "pending", null: false
     t.jsonb "label_mappings", default: {}, null: false
     t.datetime "last_agent_run_at"
     t.datetime "last_github_activity_at"
