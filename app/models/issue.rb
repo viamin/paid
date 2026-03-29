@@ -130,7 +130,7 @@ class Issue < ApplicationRecord
   end
 
   def blocking_issues
-    dependencies.where(github_state: "open")
+    dependencies.where(github_state: "open").where.not(paid_state: "recommend_close")
   end
 
   def blocking_external_dependencies

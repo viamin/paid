@@ -362,6 +362,16 @@ RSpec.describe Issue do
 
       expect(issue.blocking_issues).to contain_exactly(open_dep)
     end
+
+    it "excludes open dependencies in recommend_close state" do
+      open_dep = create(:issue, project: project, github_state: "open")
+      recommend_close_dep = create(:issue, :recommend_close, project: project, github_state: "open")
+      issue = create(:issue, project: project)
+      create(:issue_dependency, issue: issue, depends_on_issue: open_dep)
+      create(:issue_dependency, issue: issue, depends_on_issue: recommend_close_dep)
+
+      expect(issue.blocking_issues).to contain_exactly(open_dep)
+    end
   end
 
   describe "#dependent_issues" do

@@ -39,7 +39,7 @@ module Activities
     private
 
     def determine_action(project, issue)
-      return "none" unless issue.paid_state.in?(%w[new needs_input])
+      return "none" unless issue.paid_state.in?(%w[new needs_input recommend_close])
 
       trigger = triggering_label(project, issue)
       return "none" unless trigger

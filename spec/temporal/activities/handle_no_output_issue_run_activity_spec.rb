@@ -174,6 +174,26 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(client).to have_received(:add_comment)
           .with(auto_project.full_name, issue.github_number, a_string_including("my-auto"))
       end
+
+      it "removes the automation trigger label from the issue" do
+        issue = create(:issue, :in_progress, project: auto_project, labels: [ "my-auto" ])
+        agent_run = create(:agent_run, :running, project: auto_project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: false)
+
+        expect(client).to have_received(:remove_label_from_issue)
+          .with(auto_project.full_name, issue.github_number, "my-auto")
+      end
+
+      it "removes the automation trigger label on recommend_close" do
+        issue = create(:issue, :in_progress, project: auto_project, labels: [ "my-auto" ])
+        agent_run = create(:agent_run, :running, project: auto_project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(client).to have_received(:remove_label_from_issue)
+          .with(auto_project.full_name, issue.github_number, "my-auto")
+      end
     end
 
     context "when agent run has no issue" do

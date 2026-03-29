@@ -91,7 +91,7 @@ module Activities
       if project.automation_on_label_enabled? && project.automation_label_name.present?
         project.automation_label_name
       else
-        project.label_for_stage("build") || "paid-build"
+        project.label_for_stage("build")
       end
     end
 
@@ -116,9 +116,14 @@ module Activities
     end
 
     def remove_trigger_labels(client, project, issue, agent_run_id)
-      %w[build plan].each do |stage|
-        label = project.label_for_stage(stage)
-        next unless label && issue.has_label?(label)
+      labels_to_remove = %w[build plan].filter_map { |stage| project.label_for_stage(stage) }
+
+      if project.automation_on_label_enabled? && project.automation_label_name.present?
+        labels_to_remove << project.automation_label_name
+      end
+
+      labels_to_remove.uniq.each do |label|
+        next unless issue.has_label?(label)
 
         begin
           client.remove_label_from_issue(project.full_name, issue.github_number, label)
@@ -157,13 +162,20 @@ module Activities
         ])
       end
 
-      lines.concat([
+      next_steps = [
         "**Next steps:**",
         "1. A trusted collaborator should reply to this issue with clarifying details.",
-        "2. Remove the `#{needs_input_label}` label.",
-        "3. Add the `#{automation_label}` label to trigger another run.",
-        ""
-      ])
+        "2. Remove the `#{needs_input_label}` label."
+      ]
+
+      if automation_label
+        next_steps << "3. Add the `#{automation_label}` label to trigger another run."
+      else
+        next_steps << "3. Re-trigger the automation to start another run."
+      end
+
+      next_steps << ""
+      lines.concat(next_steps)
 
       client.add_comment(project.full_name, issue.github_number, lines.join("\n"))
     rescue GithubClient::Error => e
@@ -176,6 +188,8 @@ module Activities
 
     def post_recommend_close_comment(client, project, issue, agent_summary)
       return if comment_exists?(client, project, issue, RECOMMEND_CLOSE_COMMENT_MARKER)
+
+      automation_label = triggering_label_for(project)
 
       lines = [
         RECOMMEND_CLOSE_COMMENT_MARKER,
@@ -195,10 +209,16 @@ module Activities
         ])
       end
 
+      retrigger_instruction = if automation_label
+        "add clarifying details and add the `#{automation_label}` label to trigger another run."
+      else
+        "add clarifying details and re-trigger the automation."
+      end
+
       lines.concat([
         "**Next steps:**",
         "- If this issue is resolved, close it.",
-        "- If more work is needed, add clarifying details and re-trigger the automation.",
+        "- If more work is needed, #{retrigger_instruction}",
         ""
       ])
 
