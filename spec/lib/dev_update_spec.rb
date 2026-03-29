@@ -183,6 +183,23 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "forwards an overridden startup cleanup grace period to both setup and dev during full restart" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, capture_startup_cleanup_grace_period_in_dev: true)
+
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_STARTUP_CLEANUP_GRACE_PERIOD" => "600"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.read(File.join(dir, "setup-env.log"))).to eq("600\n")
+      expect(File.read(File.join(dir, "dev-env.log"))).to eq("600\n")
+    end
+  end
+
   it "unsets PORT before launching bin/dev so the default base port is used" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, capture_port_in_dev: true)
