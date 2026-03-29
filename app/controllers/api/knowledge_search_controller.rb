@@ -14,6 +14,10 @@ module Api
       render json: { error: "Project not found" }, status: :not_found
     end
 
+    rescue_from Pundit::NotAuthorizedError do
+      render json: { error: "Forbidden" }, status: :forbidden
+    end
+
     # GET /api/knowledge/search?project_id=X&q=...&mode=exact|semantic|hybrid&type=route&version=abc123&limit=20
     def search
       @project = Project.find(params[:project_id])
@@ -29,6 +33,15 @@ module Api
       )
 
       render json: result
+    end
+
+    private
+
+    # Override Devise redirect to return JSON 401 for this API endpoint.
+    def authenticate_user!
+      return if user_signed_in?
+
+      render json: { error: "Unauthorized" }, status: :unauthorized
     end
   end
 end

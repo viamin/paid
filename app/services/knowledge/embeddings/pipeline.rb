@@ -88,17 +88,29 @@ module Knowledge
         { embedded: chunks.size, tokens: tokens }
       end
 
+      # Enforces that all chunks have passed redaction scanning before embedding.
+      # No code path currently sets redaction_scanned_at (redaction scanner is not yet
+      # implemented), so SKIP_REDACTION_SCAN=1 allows the pipeline to proceed. Once the
+      # redaction scanning service is built, remove the env var escape hatch.
       def enforce_redaction_scan!(chunks)
         unscanned = chunks.reject(&:redaction_scanned?)
         return if unscanned.empty?
 
         ids = unscanned.map(&:id).first(5).join(", ")
-        Rails.logger.warn(
-          message: "knowledge.embeddings.unscanned_chunks",
-          warning: "Chunks have not been scanned for redaction; proceeding with embedding.",
-          unscanned_count: unscanned.size,
-          example_chunk_ids: ids
-        )
+
+        if ENV["SKIP_REDACTION_SCAN"] == "1"
+          Rails.logger.warn(
+            message: "knowledge.embeddings.unscanned_chunks",
+            warning: "Chunks have not been scanned for redaction; proceeding because SKIP_REDACTION_SCAN=1.",
+            unscanned_count: unscanned.size,
+            example_chunk_ids: ids
+          )
+          return
+        end
+
+        raise EmbeddingError,
+          "Refusing to embed #{unscanned.size} knowledge chunks that have not passed redaction scanning " \
+          "(example IDs: #{ids}). Set SKIP_REDACTION_SCAN=1 to bypass until redaction scanner is implemented."
       end
 
       def log_completion(total_embedded, total_tokens, cost, duration)
