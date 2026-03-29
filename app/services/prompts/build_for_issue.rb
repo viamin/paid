@@ -76,7 +76,8 @@ module Prompts
         #{service_environment_section}
       PROMPT
 
-      StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
+      with_knowledge = inject_knowledge_context(base_prompt)
+      StyleGuides::InjectIntoPrompt.call(prompt: with_knowledge, project: project)
     end
 
     # Fetches and formats trusted issue comments as a prompt section.
@@ -132,6 +133,13 @@ module Prompts
       self.class.conversation_section_for(
         project: project, issue: issue, github_client: github_client
       )
+    end
+
+    def inject_knowledge_context(prompt)
+      bundle = Knowledge::ContextBundle::Build.call(issue: issue, project: project)
+      return prompt if bundle[:content].blank?
+
+      "#{prompt}\n#{bundle[:content]}\n"
     end
 
     def test_command
