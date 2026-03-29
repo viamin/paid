@@ -54,6 +54,11 @@ Rails.application.configure do
       cron: "0 3 * * *",
       class: "KnowledgeAuditRetentionJob",
       description: "Delete knowledge audit events older than 90 days"
+    },
+    delayed_human_feedback: {
+      cron: "0 */4 * * *",
+      class: "DelayedHumanFeedbackCollectionJob",
+      description: "Collect delayed human feedback (reactions, reviews) for recent agent runs"
     }
   }
 end
