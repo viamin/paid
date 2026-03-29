@@ -44,6 +44,7 @@ RSpec.describe Activities::MergePullRequestActivity do
           .and_return(pr_data)
         allow(github_client).to receive(:merge_pull_request)
         allow(github_client).to receive(:add_labels_to_issue)
+        allow(github_client).to receive(:add_comment)
       end
 
       it "merges the PR using project merge method" do
@@ -66,6 +67,13 @@ RSpec.describe Activities::MergePullRequestActivity do
           .with(project.full_name, 42, [ described_class::PAID_AUTO_MERGED_LABEL ])
       end
 
+      it "posts an auto-merge comment on the PR" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(github_client).to have_received(:add_comment)
+          .with(project.full_name, 42, described_class::AUTO_MERGE_COMMENT)
+      end
+
       it "returns merged: true" do
         result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
@@ -82,6 +90,7 @@ RSpec.describe Activities::MergePullRequestActivity do
           .and_return(pr_data)
         allow(github_client).to receive(:merge_pull_request)
         allow(github_client).to receive(:add_labels_to_issue)
+        allow(github_client).to receive(:add_comment)
       end
 
       it "skips the merge call and label" do
@@ -96,12 +105,18 @@ RSpec.describe Activities::MergePullRequestActivity do
         expect(issue.reload.pr_review_phase).to eq("merged")
       end
 
-      # Intentional: already-merged PRs skip labeling because they may have
-      # been merged manually by a human, not by this activity.
+      # Intentional: already-merged PRs skip labeling and commenting because
+      # they may have been merged manually by a human, not by this activity.
       it "does not add the paid-auto-merged label (may have been merged manually)" do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+
+      it "does not post an auto-merge comment" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(github_client).not_to have_received(:add_comment)
       end
     end
 
@@ -115,6 +130,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         allow(github_client).to receive(:merge_pull_request)
         allow(github_client).to receive(:add_labels_to_issue)
           .and_raise(GithubClient::ApiError.new("Not found", status: 404))
+        allow(github_client).to receive(:add_comment)
       end
 
       it "does not raise and still returns merged: true" do
@@ -122,6 +138,27 @@ RSpec.describe Activities::MergePullRequestActivity do
 
         expect(result[:merged]).to be true
         expect(github_client).to have_received(:add_labels_to_issue)
+      end
+    end
+
+    context "when commenting fails after merge" do
+      let(:pr_data) { double("pr_data", merged_at: nil) } # rubocop:disable RSpec/VerifiedDoubles
+
+      before do
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, 42)
+          .and_return(pr_data)
+        allow(github_client).to receive(:merge_pull_request)
+        allow(github_client).to receive(:add_labels_to_issue)
+        allow(github_client).to receive(:add_comment)
+          .and_raise(GithubClient::ApiError.new("Not found", status: 404))
+      end
+
+      it "does not raise and still returns merged: true" do
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result[:merged]).to be true
+        expect(github_client).to have_received(:add_comment)
       end
     end
 
@@ -183,6 +220,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         allow(github_client).to receive(:pull_request).and_return(pr_data)
         allow(github_client).to receive(:merge_pull_request)
         allow(github_client).to receive(:add_labels_to_issue)
+        allow(github_client).to receive(:add_comment)
       end
 
       it "uses the project's configured merge method" do
