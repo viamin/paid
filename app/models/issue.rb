@@ -114,7 +114,9 @@ class Issue < ApplicationRecord
       open_prs = sub_issues.select { |si| si.is_pull_request? && si.github_state == "open" }
       return nil if open_prs.empty?
 
-      open_prs.max_by { |pr| pr.github_updated_at || pr.updated_at || Time.at(0) }
+      open_prs.max_by do |pr|
+        [ pr.github_updated_at || Time.at(0), pr.updated_at || Time.at(0) ]
+      end
     else
       sub_issues.pull_requests_only
         .where(github_state: "open")
