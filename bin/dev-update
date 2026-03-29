@@ -41,6 +41,7 @@ STOPPED_OVERMIND=0
 OVERMIND_STOP_POLL_COUNT="${DEV_UPDATE_OVERMIND_STOP_POLL_COUNT:-10}"
 OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
 OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
+STARTUP_CLEANUP_GRACE_PERIOD="${DEV_UPDATE_STARTUP_CLEANUP_GRACE_PERIOD:-300}"
 
 log() {
   echo "$LOG_PREFIX $(date '+%Y-%m-%d %H:%M:%S') $*"
@@ -184,7 +185,7 @@ stop_overmind() {
 
 run_setup() {
   log "Running bin/setup --skip-server..."
-  bin/setup --skip-server
+  STARTUP_CLEANUP_GRACE_PERIOD="$STARTUP_CLEANUP_GRACE_PERIOD" bin/setup --skip-server
 }
 
 start_dev() {
@@ -205,7 +206,9 @@ start_dev() {
   log "Streaming detached bin/dev output to $START_DEV_LOG"
   dev_supervisor_snapshot_state "dev-update-before-start"
   # Start bin/dev detached so this script can exit cleanly.
-  nohup bin/dev >>"$START_DEV_LOG" 2>&1 &
+  # Unset PORT so bin/dev applies its own default (3000) instead of
+  # inheriting a per-process port assigned by the previous Overmind session.
+  env -u PORT STARTUP_CLEANUP_GRACE_PERIOD="$STARTUP_CLEANUP_GRACE_PERIOD" nohup bin/dev >>"$START_DEV_LOG" 2>&1 &
   disown
   log "Dev environment start command launched (PID $!)."
 
