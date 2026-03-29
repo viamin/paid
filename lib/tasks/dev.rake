@@ -39,7 +39,7 @@ end
 namespace :dev do
   desc "Mark stale agent runs as timed out, stop their containers (+ orphans when grace=0), and process the run queue"
   task cleanup: :environment do
-    raw = ENV.fetch("STARTUP_CLEANUP_GRACE_PERIOD", "0")
+    raw = ENV.fetch("STARTUP_CLEANUP_GRACE_PERIOD", "300")
     grace = begin
       Integer(raw).clamp(0..).seconds
     rescue ArgumentError
