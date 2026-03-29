@@ -2,6 +2,13 @@
 
 module Api
   class KnowledgeSearchController < ApplicationController
+    RATE_LIMIT_MAX_REQUESTS = 60
+    RATE_LIMIT_PERIOD = 1.minute
+
+    rate_limit to: RATE_LIMIT_MAX_REQUESTS, within: RATE_LIMIT_PERIOD,
+      by: -> { current_user&.id },
+      with: -> { render json: { error: "Rate limit exceeded" }, status: :too_many_requests }
+
     rescue_from ActiveRecord::RecordNotFound do
       render json: { error: "Project not found" }, status: :not_found
     end
@@ -9,7 +16,7 @@ module Api
     # GET /api/knowledge/search?project_id=X&q=...&mode=exact|semantic|hybrid&type=route&version=abc123&limit=20
     def search
       @project = Project.find(params[:project_id])
-      authorize @project, :show?
+      authorize @project, :search?, policy_class: KnowledgeSearchPolicy
 
       result = Knowledge::Search.call(
         project: @project,

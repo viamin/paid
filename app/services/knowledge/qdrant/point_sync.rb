@@ -3,6 +3,10 @@
 module Knowledge
   module Qdrant
     class PointSync
+      # Payload keys that must never be sent to Qdrant. Prevents accidental
+      # storage of source code or secrets in the vector database.
+      FORBIDDEN_PAYLOAD_KEYS = %w[content text body secret password token].freeze
+
       attr_reader :client
 
       def initialize(client: Paid.qdrant_client)
@@ -27,6 +31,8 @@ module Knowledge
 
       def upsert_chunk!(chunk, vector:)
         artifact = chunk.knowledge_artifact
+        payload = build_payload(chunk, artifact)
+        validate_payload!(payload)
 
         client.points.upsert(
           collection_name: CollectionManager.collection_name(chunk.project),
@@ -34,7 +40,7 @@ module Knowledge
             {
               id: chunk.id,
               vector: vector,
-              payload: build_payload(chunk, artifact)
+              payload: payload
             }
           ],
           wait: true
@@ -62,6 +68,11 @@ module Knowledge
       end
 
       private
+
+      def validate_payload!(payload)
+        forbidden = payload.keys.map(&:to_s) & FORBIDDEN_PAYLOAD_KEYS
+        raise SecurityError, "Forbidden payload keys: #{forbidden.join(', ')}" if forbidden.any?
+      end
 
       def build_payload(chunk, artifact)
         {

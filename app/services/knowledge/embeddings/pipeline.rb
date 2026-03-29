@@ -56,10 +56,10 @@ module Knowledge
       end
 
       def process_batch(chunks)
-        texts = chunks.map(&:content)
-        redacted = redaction_check(texts)
+        enforce_redaction_scan!(chunks)
 
-        results = generator.call(texts: redacted)
+        texts = chunks.map(&:content)
+        results = generator.call(texts: texts)
 
         if results.size != chunks.size
           raise EmbeddingError,
@@ -88,10 +88,14 @@ module Knowledge
         { embedded: chunks.size, tokens: tokens }
       end
 
-      # Placeholder for redaction — passes through until redaction issue is done.
-      # Future: filter/redact sensitive content before embedding.
-      def redaction_check(texts)
-        texts
+      def enforce_redaction_scan!(chunks)
+        unscanned = chunks.reject(&:redaction_scanned?)
+        return if unscanned.empty?
+
+        ids = unscanned.map(&:id).first(5).join(", ")
+        raise EmbeddingError,
+          "#{unscanned.size} chunk(s) not scanned for redaction (e.g. #{ids}). " \
+          "Run the redaction pipeline before embedding."
       end
 
       def log_completion(total_embedded, total_tokens, cost, duration)

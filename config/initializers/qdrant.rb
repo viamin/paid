@@ -31,7 +31,14 @@ module Paid
     end
 
     def qdrant_api_key
-      ENV["QDRANT_API_KEY"]
+      key = Rails.application.credentials.dig(:qdrant, :api_key) || ENV["QDRANT_API_KEY"]
+
+      if key.blank? && Rails.env.production?
+        raise "QDRANT_API_KEY is required in production. " \
+              "Set it via Rails credentials (qdrant.api_key) or QDRANT_API_KEY env var."
+      end
+
+      key
     end
 
     def embedding_dimensions
