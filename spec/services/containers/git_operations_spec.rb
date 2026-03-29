@@ -443,6 +443,25 @@ RSpec.describe Containers::GitOperations do
       expect { git_ops.push_branch }.to raise_error(described_class::PushError, /error/)
     end
 
+    it "raises PushError when stderr is binary encoded" do
+      binary_stderr = "fatal: remote rejected push \xFF".b
+      binary_failure = Containers::Provision::Result.failure(
+        error: "Command exited with code 1",
+        stdout: "",
+        stderr: binary_stderr,
+        exit_code: 1
+      )
+
+      allow(container_service).to receive(:execute)
+        .with(array_including("push"), anything)
+        .and_return(binary_failure)
+
+      expect { git_ops.push_branch }.to raise_error(
+        described_class::PushError,
+        /Command exited with code 1.*fatal: remote rejected push/
+      )
+    end
+
     it "treats a new-branch retry as success when the remote branch already exists at HEAD" do
       branch_exists_result = Containers::Provision::Result.failure(
         error: "Command exited with code 1",
