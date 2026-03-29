@@ -408,8 +408,7 @@ module Activities
     end
 
     def build_command(provider, command_prefix, prompt)
-      case provider
-      when "codex", "gemini"
+      if ProviderSupport.subscription_auth_unset_vars_for(provider).any?
         subscription_auth_command(provider, command_prefix, prompt)
       else
         command_prefix + [ prompt ]

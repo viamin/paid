@@ -122,4 +122,58 @@ RSpec.describe ProviderSupport do
       expect(described_class.subscription_auth_unset_vars_for("unknown_provider")).to eq([])
     end
   end
+
+  describe ".proxy_health_check_api_key_for" do
+    it "returns :openai for codex" do
+      expect(described_class.proxy_health_check_api_key_for("codex")).to eq(:openai)
+    end
+
+    it "returns :google for gemini" do
+      expect(described_class.proxy_health_check_api_key_for("gemini")).to eq(:google)
+    end
+
+    it "returns nil for providers without proxy health checks" do
+      expect(described_class.proxy_health_check_api_key_for("claude")).to be_nil
+    end
+  end
+
+  describe ".provider_bot_username?" do
+    it "returns true for known copilot bot usernames" do
+      expect(described_class.provider_bot_username?("copilot[bot]")).to be true
+      expect(described_class.provider_bot_username?("copilot-pull-request-reviewer")).to be true
+    end
+
+    it "returns true for known claude bot usernames" do
+      expect(described_class.provider_bot_username?("claude[bot]")).to be true
+      expect(described_class.provider_bot_username?("claude-code[bot]")).to be true
+    end
+
+    it "is case-insensitive" do
+      expect(described_class.provider_bot_username?("Claude[bot]")).to be true
+      expect(described_class.provider_bot_username?("COPILOT")).to be true
+    end
+
+    it "returns false for unknown usernames" do
+      expect(described_class.provider_bot_username?("random-user")).to be false
+    end
+
+    it "returns false for blank input" do
+      expect(described_class.provider_bot_username?(nil)).to be false
+      expect(described_class.provider_bot_username?("")).to be false
+    end
+  end
+
+  describe ".provider_bot_username_for?" do
+    it "returns true when login matches the specified provider" do
+      expect(described_class.provider_bot_username_for?("claude", "claude[bot]")).to be true
+    end
+
+    it "returns false when login matches a different provider" do
+      expect(described_class.provider_bot_username_for?("claude", "copilot[bot]")).to be false
+    end
+
+    it "returns false for an unknown provider" do
+      expect(described_class.provider_bot_username_for?("unknown", "claude[bot]")).to be false
+    end
+  end
 end
