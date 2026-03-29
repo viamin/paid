@@ -158,7 +158,7 @@ RSpec.describe Providers::TestAgent do
         expect(test_run).to have_received(:execute_in_container).with(
           a_string_including('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
             .and(include("-u OPENAI_API_KEY"))
-            .and(include("codex exec --full-auto --skip-git-repo-check --output-last-message")),
+            .and(include("codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --output-last-message")),
           timeout: 30,
           stream: false
         )

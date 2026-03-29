@@ -356,9 +356,9 @@ module Providers
         tmp_output="$(mktemp)" &&
         tmp_error="$(mktemp)" &&
         if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then
-          env #{unset_flags} codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+          env #{unset_flags} codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
         else
-          codex exec --full-auto --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
+          codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --output-last-message "$tmp_output" -- #{escaped_prompt} >/dev/null 2>"$tmp_error";
         fi;
         status=$?;
         if [ "$status" -eq 0 ]; then
