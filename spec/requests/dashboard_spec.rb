@@ -86,21 +86,28 @@ RSpec.describe "Dashboard" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
-        details_elements = doc.css("details")
+
+        live_metrics = doc.at_xpath("//details[summary[contains(text(), 'Live Metrics')]]")
+        cumulative = doc.at_xpath("//details[summary[contains(text(), 'Cumulative')]]")
+        recent_activity = doc.at_xpath("//details[summary[contains(text(), 'Recent Activity')]]")
+
+        expect(live_metrics).to be_present
+        expect(cumulative).to be_present
+        expect(recent_activity).to be_present
 
         # First two sections should be open (boolean attribute present)
-        expect(details_elements[0].has_attribute?("open")).to be true
-        expect(details_elements[1].has_attribute?("open")).to be true
+        expect(live_metrics.has_attribute?("open")).to be true
+        expect(cumulative.has_attribute?("open")).to be true
         # Recent Activity should be collapsed (no open attribute)
-        expect(details_elements[2].has_attribute?("open")).to be false
+        expect(recent_activity.has_attribute?("open")).to be false
       end
     end
   end
 
   describe "GET /dashboard/live" do
     it "redirects to the dashboard" do
-      get "/dashboard/live"
-      expect(response).to redirect_to("/dashboard")
+      get dashboard_live_path
+      expect(response).to redirect_to(dashboard_path)
     end
   end
 
