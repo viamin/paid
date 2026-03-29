@@ -302,117 +302,117 @@ RSpec.describe Issue do
         end
       end
     end
-  end
 
-  describe "#associated_pull_request" do
-    let(:project) { create(:project) }
+    describe "#associated_pull_request" do
+      let(:project) { create(:project) }
 
-    it "returns the pull request sub-issue when one exists" do
-      issue = create(:issue, project: project)
-      pr = create(:issue, :pull_request, project: project, parent_issue: issue)
-
-      expect(issue.associated_pull_request).to eq(pr)
-    end
-
-    it "returns nil when no sub-issues exist" do
-      issue = create(:issue, project: project)
-
-      expect(issue.associated_pull_request).to be_nil
-    end
-
-    it "returns nil when sub-issues are not pull requests" do
-      issue = create(:issue, project: project)
-      create(:issue, project: project, parent_issue: issue)
-
-      expect(issue.associated_pull_request).to be_nil
-    end
-
-    it "prefers an open PR over a closed PR" do
-      issue = create(:issue, project: project)
-      create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
-             github_updated_at: 2.days.ago)
-      open_pr = create(:issue, :pull_request, project: project, parent_issue: issue,
-                       github_updated_at: 3.days.ago)
-
-      expect(issue.associated_pull_request).to eq(open_pr)
-    end
-
-    it "returns the most recently updated open PR when multiple exist" do
-      issue = create(:issue, project: project)
-      create(:issue, :pull_request, project: project, parent_issue: issue,
-             github_updated_at: 2.days.ago)
-      newest_pr = create(:issue, :pull_request, project: project, parent_issue: issue,
-                         github_updated_at: 1.hour.ago)
-
-      expect(issue.associated_pull_request).to eq(newest_pr)
-    end
-
-    it "returns nil when only closed PRs exist" do
-      issue = create(:issue, project: project)
-      create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
-             github_updated_at: 2.days.ago)
-      create(:issue, :pull_request, :closed, project: project,
-             parent_issue: issue, github_updated_at: 1.hour.ago)
-
-      expect(issue.associated_pull_request).to be_nil
-    end
-
-    context "when sub_issues are preloaded" do
-      it "returns the pull request from preloaded sub-issues" do
+      it "returns the pull request sub-issue when one exists" do
         issue = create(:issue, project: project)
         pr = create(:issue, :pull_request, project: project, parent_issue: issue)
 
-        preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
-
-        expect(preloaded_issue.sub_issues).to be_loaded
-        expect(preloaded_issue.associated_pull_request).to eq(pr)
+        expect(issue.associated_pull_request).to eq(pr)
       end
 
-      it "returns nil when preloaded sub-issues have no pull requests" do
+      it "returns nil when no sub-issues exist" do
+        issue = create(:issue, project: project)
+
+        expect(issue.associated_pull_request).to be_nil
+      end
+
+      it "returns nil when sub-issues are not pull requests" do
         issue = create(:issue, project: project)
         create(:issue, project: project, parent_issue: issue)
 
-        preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
-
-        expect(preloaded_issue.sub_issues).to be_loaded
-        expect(preloaded_issue.associated_pull_request).to be_nil
+        expect(issue.associated_pull_request).to be_nil
       end
 
-      it "prefers an open PR over a closed PR with preloaded data" do
+      it "prefers an open PR over a closed PR" do
         issue = create(:issue, project: project)
         create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
                github_updated_at: 2.days.ago)
         open_pr = create(:issue, :pull_request, project: project, parent_issue: issue,
                          github_updated_at: 3.days.ago)
 
-        preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
-
-        expect(preloaded_issue.sub_issues).to be_loaded
-        expect(preloaded_issue.associated_pull_request).to eq(open_pr)
+        expect(issue.associated_pull_request).to eq(open_pr)
       end
 
-      it "returns nil when only closed PRs exist with preloaded data" do
-        issue = create(:issue, project: project)
-        create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
-               github_updated_at: 2.days.ago)
-
-        preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
-
-        expect(preloaded_issue.sub_issues).to be_loaded
-        expect(preloaded_issue.associated_pull_request).to be_nil
-      end
-
-      it "returns the most recently updated open PR with preloaded data" do
+      it "returns the most recently updated open PR when multiple exist" do
         issue = create(:issue, project: project)
         create(:issue, :pull_request, project: project, parent_issue: issue,
                github_updated_at: 2.days.ago)
         newest_pr = create(:issue, :pull_request, project: project, parent_issue: issue,
                            github_updated_at: 1.hour.ago)
 
-        preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+        expect(issue.associated_pull_request).to eq(newest_pr)
+      end
 
-        expect(preloaded_issue.sub_issues).to be_loaded
-        expect(preloaded_issue.associated_pull_request).to eq(newest_pr)
+      it "returns nil when only closed PRs exist" do
+        issue = create(:issue, project: project)
+        create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
+               github_updated_at: 2.days.ago)
+        create(:issue, :pull_request, :closed, project: project,
+               parent_issue: issue, github_updated_at: 1.hour.ago)
+
+        expect(issue.associated_pull_request).to be_nil
+      end
+
+      context "when sub_issues are preloaded" do
+        it "returns the pull request from preloaded sub-issues" do
+          issue = create(:issue, project: project)
+          pr = create(:issue, :pull_request, project: project, parent_issue: issue)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.associated_pull_request).to eq(pr)
+        end
+
+        it "returns nil when preloaded sub-issues have no pull requests" do
+          issue = create(:issue, project: project)
+          create(:issue, project: project, parent_issue: issue)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.associated_pull_request).to be_nil
+        end
+
+        it "prefers an open PR over a closed PR with preloaded data" do
+          issue = create(:issue, project: project)
+          create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
+                 github_updated_at: 2.days.ago)
+          open_pr = create(:issue, :pull_request, project: project, parent_issue: issue,
+                           github_updated_at: 3.days.ago)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.associated_pull_request).to eq(open_pr)
+        end
+
+        it "returns nil when only closed PRs exist with preloaded data" do
+          issue = create(:issue, project: project)
+          create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
+                 github_updated_at: 2.days.ago)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.associated_pull_request).to be_nil
+        end
+
+        it "returns the most recently updated open PR with preloaded data" do
+          issue = create(:issue, project: project)
+          create(:issue, :pull_request, project: project, parent_issue: issue,
+                 github_updated_at: 2.days.ago)
+          newest_pr = create(:issue, :pull_request, project: project, parent_issue: issue,
+                             github_updated_at: 1.hour.ago)
+
+          preloaded_issue = described_class.includes(:sub_issues).find(issue.id)
+
+          expect(preloaded_issue.sub_issues).to be_loaded
+          expect(preloaded_issue.associated_pull_request).to eq(newest_pr)
+        end
       end
     end
   end
