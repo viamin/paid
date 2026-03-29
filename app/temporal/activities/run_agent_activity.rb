@@ -20,7 +20,7 @@ module Activities
     AGENT_COMMANDS = {
       "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
-      "codex" => %w[codex exec --full-auto --],
+      "codex" => %w[codex exec --dangerously-bypass-approvals-and-sandbox --],
       "gemini" => %w[gemini -y -p],
       "kilocode" => %w[kilo run --auto],
       "opencode" => %w[opencode run],
