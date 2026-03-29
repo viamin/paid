@@ -402,6 +402,12 @@ class AgentRun < ApplicationRecord
     status == "rate_limited"
   end
 
+  # Returns true when the container is retained for post-failure diagnostics.
+  # A retained container has a non-nil TTL that hasn't expired yet.
+  def container_retained?
+    container_retained_until.present? && container_retained_until > Time.current
+  end
+
   def rate_limit!(error: nil, reset_at: nil)
     update!(
       status: "rate_limited",

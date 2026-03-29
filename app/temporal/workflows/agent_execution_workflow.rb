@@ -35,6 +35,17 @@ module Workflows
       max_attempts: 5
     )
 
+    # Error types from activities where the agent never produced useful work
+    # or the outcome is expected/recoverable — containers are cleaned up
+    # immediately for these rather than retained for diagnostics.
+    KNOWN_FAILURE_TYPES = %w[
+      AllProvidersExhausted
+      AgentExecutionFailed
+      MissingPrompt
+      MissingUser
+      ContainerNotProvisioned
+    ].freeze
+
     def execute(input)
       project_id = input[:project_id]
       issue_id = input[:issue_id]
@@ -62,6 +73,9 @@ module Workflows
         :issue_goal_timeout_seconds,
         Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
       )
+
+      agent_step_succeeded = false
+      workflow_error = nil
 
       begin
         # Step 1.5: Provision service containers (database, redis, etc.)
@@ -121,6 +135,8 @@ module Workflows
             type: "AgentExecutionFailed"
           )
         end
+
+        agent_step_succeeded = true
 
         if goal == "create_issue"
           # Issue goal: check if the agent created an issue via the proxy
@@ -212,6 +228,7 @@ module Workflows
         { success: true, agent_run_id: agent_run_id }
 
       rescue => e
+        workflow_error = e
         request_project_resync(project_id) if stale_pull_request_error?(e)
 
         # Mark agent run as failed.
@@ -224,27 +241,53 @@ module Workflows
         raise
 
       ensure
-        # Always cleanup container (including workspace directory) and worktree DB records.
+        # Cleanup container (including workspace directory) and worktree DB records.
         # Each cleanup retries transient Docker failures (up to 5 attempts with exponential
         # backoff). Per-attempt timeout is 120s; schedule_to_close_timeout caps total wall
         # time per cleanup activity at 5 minutes to prevent the ensure block from stalling.
         # Failures are logged but do not mask the primary workflow outcome.
         #
+        # When the agent step completed successfully but the workflow failed for an
+        # unknown reason (e.g. push or PR creation failure), retain the container
+        # temporarily for diagnostics and possible work recovery.
+        #
         # Skip cleanup activities when agent_run_id is not present — calling
         # AgentRun.find(nil) would raise and waste retry budget on a known no-op.
         if agent_run_id.present?
-          begin
-            run_activity(Activities::CleanupContainerActivity,
-              { agent_run_id: agent_run_id },
-              start_to_close_timeout: 120, schedule_to_close_timeout: 300,
-              retry_policy: CLEANUP_RETRY_POLICY)
-          rescue => e
-            Temporalio::Workflow.logger.warn(
-              message: "agent_execution.cleanup_container_failed",
-              agent_run_id: agent_run_id,
-              error_class: e.class.name,
-              error: e.message
-            )
+          retain = should_retain_container?(agent_step_succeeded, workflow_error)
+
+          if retain
+            begin
+              run_activity(Activities::RetainContainerActivity,
+                { agent_run_id: agent_run_id },
+                start_to_close_timeout: 30,
+                retry_policy: Temporalio::RetryPolicy.new(max_attempts: 3, initial_interval: 1))
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.retain_container_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+              # Fall through to normal cleanup if retention fails
+              retain = false
+            end
+          end
+
+          unless retain
+            begin
+              run_activity(Activities::CleanupContainerActivity,
+                { agent_run_id: agent_run_id },
+                start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+                retry_policy: CLEANUP_RETRY_POLICY)
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.cleanup_container_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+            end
           end
 
           begin
@@ -279,6 +322,7 @@ module Workflows
         # Enqueue a janitor job as a second cleanup pass outside the workflow
         # lifecycle. If the retries above succeeded this is a no-op; if they
         # failed the janitor provides another attempt at cleanup outside the workflow.
+        # For retained containers the janitor respects the retention TTL.
         begin
           if agent_run_id.present?
             run_activity(Activities::EnqueueJanitorActivity,
@@ -347,6 +391,27 @@ module Workflows
         error: e.message,
         error_class: e.class.name
       )
+    end
+
+    # Determines whether the container should be retained for diagnostics
+    # instead of immediate cleanup. Only retains when:
+    #   1. The agent step completed successfully (produced potentially useful work)
+    #   2. The workflow failed (there's something to diagnose)
+    #   3. The failure is not a known/expected outcome
+    def should_retain_container?(agent_step_succeeded, workflow_error)
+      return false unless agent_step_succeeded
+      return false unless workflow_error
+
+      # Cancellations are intentional — no diagnostic value in retaining
+      return false if workflow_error.is_a?(Temporalio::Error::CanceledError)
+
+      # Check for known failure types in the error cause chain
+      cause = workflow_error.respond_to?(:cause) ? workflow_error.cause : nil
+      if cause.is_a?(Temporalio::Error::ApplicationError)
+        return false if KNOWN_FAILURE_TYPES.include?(cause.type)
+      end
+
+      true
     end
 
     def request_project_resync(project_id)

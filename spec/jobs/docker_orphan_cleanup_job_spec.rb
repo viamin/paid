@@ -92,6 +92,26 @@ RSpec.describe DockerOrphanCleanupJob do
         expect(container).not_to have_received(:delete)
       end
 
+      it "skips containers for retained agent runs" do
+        retained_run = create(:agent_run, :failed, container_retained_until: 2.hours.from_now)
+        container = make_container(labels: { "paid.agent_run_id" => retained_run.id.to_s })
+        stub_agent_containers(container)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
+      end
+
+      it "removes containers for agent runs with expired retention" do
+        expired_run = create(:agent_run, :failed, container_retained_until: 1.hour.ago)
+        container = make_container(labels: { "paid.agent_run_id" => expired_run.id.to_s })
+        stub_agent_containers(container)
+
+        job.perform
+
+        expect(container).to have_received(:delete).with(force: true, v: true)
+      end
+
       it "removes containers with no matching agent run in DB" do
         container = make_container(labels: { "paid.agent_run_id" => "999999" })
         stub_agent_containers(container)
@@ -199,6 +219,26 @@ RSpec.describe DockerOrphanCleanupJob do
 
       it "removes volumes with no matching agent run" do
         volume = instance_double(Docker::Volume, id: "paid-workspace-nonexistent-id", remove: true)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).to have_received(:remove)
+      end
+
+      it "skips volumes for retained agent runs" do
+        retained_run = create(:agent_run, :failed, container_retained_until: 2.hours.from_now)
+        volume = instance_double(Docker::Volume, id: "paid-workspace-#{retained_run.id}", remove: true)
+        allow(Docker::Volume).to receive(:all).and_return([ volume ])
+
+        job.perform
+
+        expect(volume).not_to have_received(:remove)
+      end
+
+      it "removes volumes for agent runs with expired retention" do
+        expired_run = create(:agent_run, :failed, container_retained_until: 1.hour.ago)
+        volume = instance_double(Docker::Volume, id: "paid-workspace-#{expired_run.id}", remove: true)
         allow(Docker::Volume).to receive(:all).and_return([ volume ])
 
         job.perform
