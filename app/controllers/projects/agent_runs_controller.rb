@@ -151,6 +151,12 @@ module Projects
     def diagnose_error
       authorize @agent_run
 
+      unless @agent_run.finished?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Only finished runs can be diagnosed."
+        return
+      end
+
       unless @agent_run.error_message.present?
         redirect_to project_agent_run_path(@project, @agent_run),
           alert: "Only runs with errors can be diagnosed."
@@ -160,6 +166,12 @@ module Projects
       if @agent_run.diagnosis_status == "in_progress"
         redirect_to project_agent_run_path(@project, @agent_run),
           alert: "Diagnosis is already in progress."
+        return
+      end
+
+      if @agent_run.diagnosis_status == "completed"
+        redirect_to project_agent_run_path(@project, @agent_run),
+          notice: "Diagnosis has already been completed."
         return
       end
 

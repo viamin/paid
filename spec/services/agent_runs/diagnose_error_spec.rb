@@ -115,6 +115,35 @@ RSpec.describe AgentRuns::DiagnoseError do
       end
     end
 
+    context "when error message contains secrets" do
+      let(:agent_run) do
+        create(:agent_run, :failed, project: project,
+          error_message: "Connection failed: API_KEY=sk_live_abcdef1234567890 host unreachable")
+      end
+
+      it "redacts secrets before sending to the LLM" do
+        described_class.call(agent_run: agent_run)
+
+        expect(AgentHarness).to have_received(:send_message).with(
+          a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_abcdef1234567890") }),
+          provider: :claude,
+          model: "claude-sonnet-4-6",
+          timeout: 60
+        )
+      end
+
+      it "redacts secrets in the GitHub issue body" do
+        described_class.call(agent_run: agent_run)
+
+        expect(github_client).to have_received(:create_issue).with(
+          project.full_name,
+          title: anything,
+          body: a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_abcdef1234567890") }),
+          labels: [ "diagnosis" ]
+        )
+      end
+    end
+
     context "when GitHub issue creation fails" do
       before do
         allow(github_client).to receive(:create_issue)

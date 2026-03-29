@@ -280,7 +280,7 @@
           </svg>
           Diagnosing error&hellip;
         </span>
-      <% elsif agent_run.diagnosis_status == "completed" && agent_run.diagnosis_issue_url.present? %>
+      <% elsif agent_run.diagnosis_status == "completed" && safe_github_url?(agent_run.diagnosis_issue_url) %>
         <div class="rounded-lg border border-green-200 bg-green-50 p-3">
           <p class="text-sm text-green-800">
             Diagnosis complete.
