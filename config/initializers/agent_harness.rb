@@ -44,6 +44,13 @@ AgentHarness.configure do |config|
       provider.enabled = true
       provider.priority = (index + 1) * 10
       provider.timeout = AGENT_TIMEOUT_DEFAULT if harness_provider_key == :claude
+
+      # Forward container execution flags (e.g. sandbox bypass) to the harness
+      # so its command builder matches the container runtime behaviour.
+      # TODO(viamin/agent-harness#48): Remove once the harness handles
+      # container sandbox mode natively.
+      container_flags = ProviderSupport.container_execution_flags_for(provider_key)
+      provider.default_flags = container_flags if container_flags.any?
     end
   end
 

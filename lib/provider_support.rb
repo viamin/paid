@@ -90,6 +90,10 @@ module ProviderSupport
     provider_key.to_s
   end
 
+  def container_execution_flags_for(provider_key)
+    CONTAINER_EXECUTION_FLAGS.fetch(provider_key.to_s, [])
+  end
+
   def subscription_auth_unset_vars_for(provider_key)
     SUBSCRIPTION_AUTH_UNSET_VARS.fetch(provider_key.to_s, [])
   end
@@ -147,6 +151,18 @@ module ProviderSupport
       claude[bot]
       claude-code[bot]
     ].freeze
+  }.freeze
+
+  # Provider-specific CLI flags required for container execution.
+  # These flags ensure providers run correctly inside Paid's isolated Docker
+  # containers. For example, Codex needs its inner sandbox disabled because
+  # the container already provides isolation via Docker namespaces.
+  #
+  # TODO(viamin/agent-harness#48): Move container execution flag knowledge
+  # upstream to agent-harness. Once that lands, source these flags from the
+  # harness provider configuration and remove this constant.
+  CONTAINER_EXECUTION_FLAGS = {
+    "codex" => %w[--dangerously-bypass-approvals-and-sandbox].freeze
   }.freeze
 
   # Environment variables to unset when running a provider with its own
