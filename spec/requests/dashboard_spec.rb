@@ -14,6 +14,7 @@ RSpec.describe "Dashboard" do
     context "when authenticated" do
       let(:account) { create(:account, name: "Test Company") }
       let(:user) { create(:user, account: account, name: "John Doe") }
+      let(:project) { create(:project, account: account) }
 
       before { sign_in user }
 
@@ -50,32 +51,14 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Average End-to-End Composition")
         expect(response.body).to include('aria-label="Average end-to-end composition by phase"')
       end
-    end
-  end
 
-  describe "GET /dashboard/live" do
-    context "when not authenticated" do
-      it "redirects to the sign in page" do
-        get live_dashboard_path
-        expect(response).to redirect_to(new_user_session_path)
-      end
-    end
-
-    context "when authenticated" do
-      let(:account) { create(:account, name: "Test Company") }
-      let(:user) { create(:user, account: account, name: "John Doe") }
-      let(:project) { create(:project, account: account) }
-
-      before { sign_in user }
-
-      it "renders the live dashboard" do
+      it "shows live metrics section with active runs" do
         create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
         create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)
 
-        get live_dashboard_path
+        get dashboard_path
 
-        expect(response).to have_http_status(:ok)
-        expect(response.body).to include("Live Dashboard")
+        expect(response.body).to include("Live Metrics")
         expect(response.body).to include("Active Runs")
         expect(response.body).to include("Recent Activity")
       end
@@ -84,11 +67,40 @@ RSpec.describe "Dashboard" do
         create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
         create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)
 
-        get live_dashboard_path
+        get dashboard_path
 
         expect(response.body).to include(project.full_name)
         expect(response.body).to include("42s")
       end
+
+      it "has collapsible sections" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        details_elements = doc.css("details")
+
+        expect(details_elements.length).to eq(3)
+      end
+
+      it "collapses recent activity by default" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        details_elements = doc.css("details")
+
+        # First two sections should be open (boolean attribute present)
+        expect(details_elements[0].has_attribute?("open")).to be true
+        expect(details_elements[1].has_attribute?("open")).to be true
+        # Recent Activity should be collapsed (no open attribute)
+        expect(details_elements[2].has_attribute?("open")).to be false
+      end
+    end
+  end
+
+  describe "GET /dashboard/live" do
+    it "redirects to the dashboard" do
+      get "/dashboard/live"
+      expect(response).to redirect_to("/dashboard")
     end
   end
 
@@ -106,7 +118,7 @@ RSpec.describe "Dashboard" do
 
       post dashboard_cancel_run_path(agent_run)
 
-      expect(response).to redirect_to(live_dashboard_path)
+      expect(response).to redirect_to(dashboard_path)
       expect(response).to have_http_status(:see_other)
       expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
       expect(agent_run.reload.status).to eq("cancelled")
@@ -119,7 +131,7 @@ RSpec.describe "Dashboard" do
 
       post dashboard_cancel_run_path(agent_run)
 
-      expect(response).to redirect_to(live_dashboard_path)
+      expect(response).to redirect_to(dashboard_path)
       expect(response).to have_http_status(:see_other)
       expect(flash[:alert]).to eq("Unable to cancel agent run. Please try again.")
       expect(agent_run.reload.status).to eq("running")
@@ -138,7 +150,7 @@ RSpec.describe "Dashboard" do
 
       post dashboard_cancel_run_path(agent_run)
 
-      expect(response).to redirect_to(live_dashboard_path)
+      expect(response).to redirect_to(dashboard_path)
       expect(response).to have_http_status(:see_other)
       expect(flash[:notice]).to eq("Agent run is no longer active.")
     end
@@ -155,7 +167,7 @@ RSpec.describe "Dashboard" do
 
       post dashboard_cancel_run_path(agent_run)
 
-      expect(response).to redirect_to(live_dashboard_path)
+      expect(response).to redirect_to(dashboard_path)
       expect(response).to have_http_status(:see_other)
       expect(flash[:notice]).to eq("Agent run finished before it could be cancelled.")
     end

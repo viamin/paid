@@ -7,9 +7,6 @@ class DashboardController < ApplicationController
   def show
     @stats = Dashboard::Stats.call(account: current_account)
     @knowledge_stats = Knowledge::DashboardStats.call(account: current_account)
-  end
-
-  def live
     @live_stats = Dashboard::LiveStats.call(account: current_account)
     @active_runs = live_agent_runs.active.includes(:project, :issue)
       .order("agent_runs.created_at DESC")
@@ -21,7 +18,7 @@ class DashboardController < ApplicationController
 
   def cancel_run
     unless @agent_run.active?
-      redirect_to live_dashboard_path, status: :see_other, notice: "Agent run is no longer active."
+      redirect_to dashboard_path, status: :see_other, notice: "Agent run is no longer active."
       return
     end
 
@@ -35,7 +32,7 @@ class DashboardController < ApplicationController
         error_class: e.class.name,
         error_message: e.message
       )
-      redirect_to live_dashboard_path, status: :see_other, alert: "Unable to cancel agent run. Please try again."
+      redirect_to dashboard_path, status: :see_other, alert: "Unable to cancel agent run. Please try again."
       return
     end
 
@@ -50,9 +47,9 @@ class DashboardController < ApplicationController
     end
 
     if cancelled
-      redirect_to live_dashboard_path, status: :see_other, notice: "Agent run cancelled."
+      redirect_to dashboard_path, status: :see_other, notice: "Agent run cancelled."
     else
-      redirect_to live_dashboard_path, status: :see_other, notice: "Agent run finished before it could be cancelled."
+      redirect_to dashboard_path, status: :see_other, notice: "Agent run finished before it could be cancelled."
     end
   end
 
