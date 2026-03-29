@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.2](https://github.com/viamin/paid/compare/v0.11.1...v0.11.2) (2026-03-29)
+
+
+### Bug Fixes
+
+* **agent-runs:** bypass codex sandbox in agent containers ([a590342](https://github.com/viamin/paid/commit/a590342d866173a75a3ab9afc59bdb37813237e1))
+* **agent-runs:** bypass codex sandbox in agent containers ([51be01b](https://github.com/viamin/paid/commit/51be01be7c3f4dfdb250c5c7af4dbf4c60ebc3e0))
+* **dev:** pass startup cleanup grace period to relaunched bin/dev ([499d1b3](https://github.com/viamin/paid/commit/499d1b3606784ba7f0406a294406218c6d57ca08))
+* **dev:** preserve recent runs across full dev updates ([e7f25e8](https://github.com/viamin/paid/commit/e7f25e887786d12482f08c831474525a90b9854f))
+* **dev:** preserve recent runs across full dev updates ([525a4d0](https://github.com/viamin/paid/commit/525a4d0678af0ba72a084b646393ed229000bbba))
+* **dev:** recover from dead overmind processes ([0d5a8e7](https://github.com/viamin/paid/commit/0d5a8e7f1c1e3506ef54c77b1426da1fde1c8895))
+* **dev:** recover from dead overmind processes ([2407202](https://github.com/viamin/paid/commit/240720262224d4da98e8bb437daccb9dca2571fb))
+* **providers:** reuse codex runtime command in tests ([094e5ae](https://github.com/viamin/paid/commit/094e5ae9a488a3933bc4ba70675f769f410d3a5f))
+
 ## [0.11.1](https://github.com/viamin/paid/compare/v0.11.0...v0.11.1) (2026-03-29)
 
 
