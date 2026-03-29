@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "open3"
+
 module Activities
   # Sets a retention TTL on the agent run's container so that cleanup is
   # deferred for post-failure diagnostics and possible work recovery.
@@ -52,7 +54,10 @@ module Activities
     end
 
     def disk_pressure?
-      stat = `df --output=pcent / 2>/dev/null`.strip.split("\n").last
+      stdout, _stderr, status = Open3.capture3("df", "--output=pcent", "/")
+      return false unless status.success?
+
+      stat = stdout.strip.split("\n").last
       return false unless stat
 
       usage_percent = stat.strip.delete_suffix("%").to_i

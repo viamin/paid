@@ -46,4 +46,39 @@ RSpec.describe Activities::RetainContainerActivity do
       end
     end
   end
+
+  describe "#disk_pressure?" do
+    it "returns true when disk usage exceeds threshold" do
+      status = instance_double(Process::Status, success?: true)
+      allow(Open3).to receive(:capture3)
+        .with("df", "--output=pcent", "/")
+        .and_return([ "Use%\n 90%\n", "", status ])
+
+      expect(activity.send(:disk_pressure?)).to be true
+    end
+
+    it "returns false when disk usage is below threshold" do
+      status = instance_double(Process::Status, success?: true)
+      allow(Open3).to receive(:capture3)
+        .with("df", "--output=pcent", "/")
+        .and_return([ "Use%\n 50%\n", "", status ])
+
+      expect(activity.send(:disk_pressure?)).to be false
+    end
+
+    it "returns false when the command fails" do
+      status = instance_double(Process::Status, success?: false)
+      allow(Open3).to receive(:capture3)
+        .with("df", "--output=pcent", "/")
+        .and_return([ "", "error", status ])
+
+      expect(activity.send(:disk_pressure?)).to be false
+    end
+
+    it "returns false when Open3 raises" do
+      allow(Open3).to receive(:capture3).and_raise(Errno::ENOENT)
+
+      expect(activity.send(:disk_pressure?)).to be false
+    end
+  end
 end

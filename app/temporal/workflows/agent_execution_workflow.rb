@@ -266,10 +266,12 @@ module Workflows
 
           if retain
             begin
-              run_activity(Activities::RetainContainerActivity,
+              retain_result = run_activity(Activities::RetainContainerActivity,
                 { agent_run_id: agent_run_id },
-                start_to_close_timeout: 30,
+                start_to_close_timeout: 30, schedule_to_close_timeout: 120,
                 retry_policy: Temporalio::RetryPolicy.new(max_attempts: 3, initial_interval: 1))
+              # Only skip cleanup if the activity explicitly reports the container was retained.
+              retain = retain_result.is_a?(Hash) && retain_result[:retained] == true
             rescue => e
               Temporalio::Workflow.logger.warn(
                 message: "agent_execution.retain_container_failed",

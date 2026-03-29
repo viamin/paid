@@ -436,7 +436,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
     end
 
-    def stub_post_agent_failure(called_activities, retain_error: nil)
+    def stub_post_agent_failure(called_activities, retain_error: nil, retain_result: { agent_run_id: 42, retained: true })
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         called_activities << activity_class
         case activity_class.name
@@ -447,7 +447,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::MarkAgentRunFailedActivity" then {}
         when "Activities::RetainContainerActivity"
           raise retain_error if retain_error
-          { agent_run_id: 42, retained: true }
+          retain_result
         when "Activities::CleanupContainerActivity" then {}
         when "Activities::CleanupServicesActivity" then {}
         when "Activities::CleanupWorktreeActivity" then {}
@@ -517,6 +517,16 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     it "falls back to cleanup when RetainContainerActivity fails" do
       called_activities = []
       stub_post_agent_failure(called_activities, retain_error: StandardError.new("DB write failed"))
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
+
+      expect(called_activities).to include(Activities::RetainContainerActivity)
+      expect(called_activities).to include(Activities::CleanupContainerActivity)
+    end
+
+    it "falls back to cleanup when RetainContainerActivity returns retained: false" do
+      called_activities = []
+      stub_post_agent_failure(called_activities, retain_result: { agent_run_id: 42, retained: false })
 
       expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
 
