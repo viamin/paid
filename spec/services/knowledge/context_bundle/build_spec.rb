@@ -121,6 +121,33 @@ RSpec.describe Knowledge::ContextBundle::Build do
       end
     end
 
+    context "with more than 20 hotspots" do
+      before do
+        # Create 25 hotspots where the highest-ranked ones sort last alphabetically
+        25.times do |i|
+          identifier = format("zzz/file_%02d.rb", i)
+          create(:knowledge_artifact,
+            project: project, collector_run: collector_run,
+            artifact_type: "churn_hotspot", identifier: identifier,
+            scope_path: identifier, content: "hotspot",
+            metadata: { "rank" => i + 1, "revisions" => 100 - i }, status: "active")
+        end
+        # Add a top-ranked hotspot that would be excluded by a LIMIT 20 + ORDER BY identifier
+        create(:knowledge_artifact,
+          project: project, collector_run: collector_run,
+          artifact_type: "churn_hotspot", identifier: "zzz/top_hotspot.rb",
+          scope_path: "zzz/top_hotspot.rb", content: "hotspot",
+          metadata: { "rank" => 1, "revisions" => 200 }, status: "active")
+      end
+
+      it "includes the highest-ranked hotspots regardless of identifier ordering" do
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:sections]).to include(:hotspots)
+        expect(result[:content]).to include("zzz/top_hotspot.rb")
+      end
+    end
+
     context "with decision records" do
       before do
         create(:decision_record,

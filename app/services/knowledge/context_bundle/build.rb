@@ -166,13 +166,23 @@ module Knowledge
       end
 
       def active_artifacts(type)
-        KnowledgeArtifact
+        scope = KnowledgeArtifact
           .for_project(project)
           .active
           .by_type(type)
-          .order(:identifier)
-          .limit(20)
-          .to_a
+
+        if type == "churn_hotspot"
+          # Hotspots are re-ranked by metadata (rank/revisions) in
+          # build_hotspots_section, so we must not pre-limit or pre-order
+          # by identifier — that would risk excluding the highest-priority
+          # hotspots before they can be properly sorted.
+          scope.to_a
+        else
+          scope
+            .order(:identifier)
+            .limit(20)
+            .to_a
+        end
       end
 
       def render(sections)
