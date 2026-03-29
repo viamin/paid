@@ -30,19 +30,16 @@ module Activities
 
     # Send a heartbeat to Temporal so the server knows this activity is still
     # alive. Safe to call frequently — the SDK throttles heartbeats internally
-    # based on the configured heartbeat_timeout. Swallows errors when called
+    # based on the configured heartbeat_timeout. Swallows calls when made
     # outside a real activity context (e.g. in tests).
     def heartbeat(*details)
-      Temporalio::Activity::Context.current.heartbeat(*details)
+      context = Temporalio::Activity::Context.current_or_nil
+      return unless context
+
+      context.heartbeat(*details)
     rescue Temporalio::Error::CanceledError
       # Allow cooperative cancellation to propagate
       raise
-    rescue Temporalio::Error => e
-      # Swallow only the "not in activity context" error (e.g. when called in tests)
-      raise unless e.message.to_s.match?(/not.*activity.*context/i)
-    rescue StandardError
-      # Fallback for non-Temporal errors (e.g. test doubles)
-      nil
     end
 
     def update_workflow_state(workflow_id, attributes)

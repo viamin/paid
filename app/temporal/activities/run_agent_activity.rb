@@ -416,16 +416,22 @@ module Activities
     # This keeps long-running container executions from triggering heartbeat
     # timeouts. The interval (default 30s) is well under the 120s heartbeat
     # timeout configured on the workflow side, giving plenty of margin.
+    #
+    # The activity context is thread-local, so we capture it on the calling
+    # thread and use it directly in the background thread.
     HEARTBEAT_INTERVAL = 30
 
     def with_periodic_heartbeat(*details, interval: HEARTBEAT_INTERVAL)
+      context = Temporalio::Activity::Context.current_or_nil
+      return yield unless context
+
       stop = Thread::Queue.new
       heartbeat_thread = Thread.new do
         loop do
           break if stop.pop(timeout: interval)
 
           begin
-            heartbeat(*details)
+            context.heartbeat(*details)
           rescue Temporalio::Error::CanceledError
             break
           rescue StandardError
