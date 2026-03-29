@@ -20,12 +20,30 @@ then
   gem install overmind
 fi
 
-if [ -S "$OVERMIND_SOCKET" ] && ! dev_supervisor_run_overmind overmind status &>/dev/null; then
-  echo "Removing stale Overmind socket..."
-  rm -f "$OVERMIND_SOCKET"
+dev_supervisor_prepare_logging
+
+if [ -S "$OVERMIND_SOCKET" ]; then
+  if ! status_output="$(dev_supervisor_overmind_status_output)"; then
+    echo "Removing stale Overmind socket..."
+    rm -f "$OVERMIND_SOCKET"
+  elif dev_supervisor_overmind_has_dead_processes "$status_output" || dev_supervisor_tmux_has_dead_panes; then
+    echo "Detected unhealthy Overmind session with dead processes. Restarting it..."
+    dev_supervisor_snapshot_state "bin-dev-unhealthy-overmind"
+    if ! dev_supervisor_run_overmind overmind quit >> "$(dev_supervisor_overmind_log)" 2>&1; then
+      echo "Warning: overmind quit returned a non-zero exit status. Continuing recovery..."
+    fi
+    sleep 1
+    if [ -S "$OVERMIND_SOCKET" ] && ! dev_supervisor_run_overmind overmind status &>/dev/null; then
+      rm -f "$OVERMIND_SOCKET"
+    fi
+  else
+    echo "Overmind is already running and healthy."
+    echo "Use 'overmind connect web' to attach, or 'overmind restart' to restart processes."
+    printf '%s\n' "$status_output"
+    exit 0
+  fi
 fi
 
-dev_supervisor_prepare_logging
 dev_supervisor_cleanup_stale_tmux_sockets
 
 # Let the debug gem allow remote connections,

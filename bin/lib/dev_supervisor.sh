@@ -45,6 +45,15 @@ dev_supervisor_run_overmind() {
     "$@"
 }
 
+dev_supervisor_overmind_status_output() {
+  dev_supervisor_run_overmind overmind status 2>&1
+}
+
+dev_supervisor_overmind_has_dead_processes() {
+  local output="$1"
+  printf '%s\n' "$output" | awk 'NR > 1 { print $3 }' | grep -qx 'dead'
+}
+
 dev_supervisor_log_line() {
   local file="$1"
   shift
@@ -117,4 +126,44 @@ dev_supervisor_cleanup_stale_tmux_sockets() {
   if [ "$found" -eq 0 ]; then
     dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "No overmind tmux sockets found in $socket_dir"
   fi
+}
+
+dev_supervisor_tmux_sockets() {
+  local socket_dir
+  socket_dir="$(dev_supervisor_tmux_socket_dir)"
+
+  [ -d "$socket_dir" ] || return 0
+
+  local socket
+  for socket in "$socket_dir"/overmind-"$(dev_supervisor_app_name)"-*; do
+    [ -S "$socket" ] || continue
+    printf '%s\n' "$socket"
+  done
+}
+
+dev_supervisor_tmux_has_dead_panes() {
+  local socket
+  local output
+
+  while IFS= read -r socket; do
+    [ -n "$socket" ] || continue
+
+    if ! tmux -S "$socket" ls >> "$(dev_supervisor_tmux_log)" 2>&1; then
+      dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "Treating tmux socket $socket as unhealthy because tmux ls failed"
+      return 0
+    fi
+
+    if ! output="$(tmux -S "$socket" list-panes -a -F '#{pane_dead} #{session_name}:#{window_name}.#{pane_index} #{pane_current_command}' 2>> "$(dev_supervisor_tmux_log)")"; then
+      dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "Treating tmux socket $socket as unhealthy because list-panes failed"
+      return 0
+    fi
+
+    if printf '%s\n' "$output" | grep -q '^1 '; then
+      dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "Detected dead tmux panes on $socket"
+      printf '%s\n' "$output" >> "$(dev_supervisor_tmux_log)"
+      return 0
+    fi
+  done < <(dev_supervisor_tmux_sockets)
+
+  return 1
 }
