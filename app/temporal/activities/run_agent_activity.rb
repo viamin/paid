@@ -437,7 +437,29 @@ module Activities
       context = Temporalio::Activity::Context.current_or_nil
       return yield unless context
 
-      worker = Thread.new { yield }
+      # Wrap the worker thread in Rails executor and ActiveRecord connection
+      # pool management. The executor handles autoloading/reloading and the
+      # with_connection block ensures the DB connection is checked out only
+      # for the duration of the work and returned to the pool afterward,
+      # preventing connection-pool exhaustion from long-running activities.
+      worker = Thread.new do
+        executor = Rails.application.executor if defined?(Rails) && Rails.respond_to?(:application) && Rails.application.respond_to?(:executor)
+        work = proc { yield }
+
+        db_scoped = proc do
+          if defined?(ActiveRecord::Base) && ActiveRecord::Base.respond_to?(:connection_pool)
+            ActiveRecord::Base.connection_pool.with_connection { work.call }
+          else
+            work.call
+          end
+        end
+
+        if executor
+          executor.wrap(&db_scoped)
+        else
+          db_scoped.call
+        end
+      end
 
       canceled = false
       begin
