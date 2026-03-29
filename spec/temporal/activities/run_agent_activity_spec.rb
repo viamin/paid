@@ -39,7 +39,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     it "uses codex exec subcommand for non-interactive mode" do
       cmd = described_class::AGENT_COMMANDS["codex"]
-      expect(cmd).to start_with("codex", "exec", "--full-auto")
+      expect(cmd).to start_with("codex", "exec", "--dangerously-bypass-approvals-and-sandbox")
       expect(cmd).to include("--")
     end
 
@@ -156,7 +156,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command[0..1]).to eq(%w[sh -c])
       expect(script).to include('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
       expect(script).to include("-u OPENAI_API_KEY")
-      expect(script).to include("codex exec --full-auto --")
+      expect(script).to include("codex exec --dangerously-bypass-approvals-and-sandbox --")
       expect(command[3]).to eq("--")
       expect(command[4]).to eq("say 'hi'")
     end
