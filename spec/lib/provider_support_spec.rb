@@ -109,6 +109,18 @@ RSpec.describe ProviderSupport do
     end
   end
 
+  describe ".container_execution_flags_for" do
+    it "returns sandbox bypass flag for codex" do
+      expect(described_class.container_execution_flags_for("codex"))
+        .to eq(%w[--dangerously-bypass-approvals-and-sandbox])
+    end
+
+    it "returns an empty array for providers without container execution flags" do
+      expect(described_class.container_execution_flags_for("claude")).to eq([])
+      expect(described_class.container_execution_flags_for("unknown")).to eq([])
+    end
+  end
+
   describe ".subscription_auth_unset_vars_for" do
     it "returns the codex unset vars" do
       expect(described_class.subscription_auth_unset_vars_for("codex")).to include("OPENAI_API_KEY")
