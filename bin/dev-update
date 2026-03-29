@@ -208,7 +208,7 @@ start_dev() {
   # Start bin/dev detached so this script can exit cleanly.
   # Unset PORT so bin/dev applies its own default (3000) instead of
   # inheriting a per-process port assigned by the previous Overmind session.
-  env -u PORT nohup bin/dev >>"$START_DEV_LOG" 2>&1 &
+  env -u PORT STARTUP_CLEANUP_GRACE_PERIOD="$STARTUP_CLEANUP_GRACE_PERIOD" nohup bin/dev >>"$START_DEV_LOG" 2>&1 &
   disown
   log "Dev environment start command launched (PID $!)."
 
