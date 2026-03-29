@@ -23,12 +23,25 @@ puts "Activities: #{activities.map(&:name).join(", ")}"
 puts "Workflows: #{workflows.map(&:name).join(", ")}"
 
 graceful_shutdown = ENV.fetch("TEMPORAL_GRACEFUL_SHUTDOWN_PERIOD", "30").to_i
+workflow_slots = ENV.fetch("TEMPORAL_WORKFLOW_SLOTS", "20").to_i
+activity_slots = ENV.fetch("TEMPORAL_ACTIVITY_SLOTS", "4").to_i
+local_activity_slots = ENV.fetch("TEMPORAL_LOCAL_ACTIVITY_SLOTS", activity_slots.to_s).to_i
+activity_task_polls = ENV.fetch("TEMPORAL_MAX_CONCURRENT_ACTIVITY_TASK_POLLS", activity_slots.to_s).to_i
+
+puts "Temporal concurrency: workflows=#{workflow_slots} activities=#{activity_slots} " \
+     "local_activities=#{local_activity_slots} activity_polls=#{activity_task_polls}"
 
 worker = Temporalio::Worker.new(
   client: Paid.temporal_client,
   task_queue: Paid.task_queue,
   activities: activities.map(&:new),
   workflows: workflows,
+  tuner: Temporalio::Worker::Tuner.create_fixed(
+    workflow_slots: workflow_slots,
+    activity_slots: activity_slots,
+    local_activity_slots: local_activity_slots
+  ),
+  max_concurrent_activity_task_polls: activity_task_polls,
   graceful_shutdown_period: graceful_shutdown
 )
 
