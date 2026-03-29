@@ -18,7 +18,7 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
       expect(metric.metadata["webhook_comment_count"]).to eq(1)
       expect(metric.metadata["commenters"]).to eq([ "alice" ])
       expect(metric.metadata["feedback_sources"]).to include("comment")
-      expect(metric.scores).to have_key("review_comment_count")
+      expect(metric.scores).to have_key("webhook_comment_count_score")
     end
 
     it "increments comment count on repeated calls" do
@@ -70,8 +70,18 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
       )
 
       expect(metric.scores).to have_key("reaction_score")
-      expect(metric.scores).to have_key("review_comment_count")
+      expect(metric.scores).to have_key("webhook_comment_count_score")
       expect(metric.metadata["feedback_sources"]).to include("pr_reaction", "comment")
+    end
+
+    it "returns nil when commenter is blank" do
+      result = described_class.call(
+        agent_run: agent_run,
+        commenter: nil
+      )
+
+      expect(result).to be_nil
+      expect(agent_run.quality_metrics.human.count).to eq(0)
     end
 
     it "records the last comment timestamp" do

@@ -69,7 +69,7 @@ module Api
       QualityMetrics::CollectHumanFeedback.call(
         agent_run: agent_run,
         pr_merged: true,
-        feedback_source: "webhook"
+        feedback_source: "pr_merge"
       )
 
       head :ok
@@ -104,8 +104,7 @@ module Api
 
       QualityMetrics::CollectCommentFeedback.call(
         agent_run: agent_run,
-        commenter: comment.dig("user", "login"),
-        comment_body: comment["body"].to_s
+        commenter: comment.dig("user", "login")
       )
 
       head :ok

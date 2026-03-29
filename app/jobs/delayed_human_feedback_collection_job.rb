@@ -14,11 +14,18 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
   LOOKBACK_WINDOW = 7.days
 
   def perform
-    AgentRun
+    agent_runs = AgentRun
       .where(status: "completed")
-      .where(updated_at: LOOKBACK_WINDOW.ago..)
-      .find_each do |agent_run|
-        HumanFeedbackCollectionJob.perform_later(agent_run.id)
-      end
+      .where(
+        AgentRun.arel_table[:completed_at].gteq(LOOKBACK_WINDOW.ago)
+          .or(
+            AgentRun.arel_table[:completed_at].eq(nil)
+              .and(AgentRun.arel_table[:updated_at].gteq(LOOKBACK_WINDOW.ago))
+          )
+      )
+
+    agent_runs.find_each do |agent_run|
+      HumanFeedbackCollectionJob.perform_later(agent_run.id)
+    end
   end
 end

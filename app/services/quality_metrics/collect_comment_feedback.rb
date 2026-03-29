@@ -12,51 +12,63 @@ module QualityMetrics
   # @example
   #   QualityMetrics::CollectCommentFeedback.call(
   #     agent_run: agent_run,
-  #     commenter: "octocat",
-  #     comment_body: "Looks good, minor nit on line 42"
+  #     commenter: "octocat"
   #   )
   class CollectCommentFeedback
-    attr_reader :agent_run, :commenter, :comment_body
+    attr_reader :agent_run, :commenter
 
-    def initialize(agent_run:, commenter:, comment_body:)
+    def initialize(agent_run:, commenter:, comment_body: nil)
       @agent_run = agent_run
       @commenter = commenter
-      @comment_body = comment_body
     end
 
     def self.call(...)
       new(...).call
     end
 
+    MAX_RETRIES = 3
+
     def call
-      ActiveRecord::Base.transaction do
-        metric = agent_run.quality_metrics.where(metric_type: "human").lock.first
-        metric ||= agent_run.quality_metrics.build(metric_type: "human")
+      return nil if commenter.blank?
 
-        metric.prompt_version = agent_run.prompt_version
-        metric.feedback_source ||= "comment"
+      retries = 0
 
-        existing_metadata = metric.metadata || {}
-        existing_sources = Array(existing_metadata["feedback_sources"])
-        comment_count = (existing_metadata["webhook_comment_count"] || 0) + 1
-        commenters = (Array(existing_metadata["commenters"]) + [ commenter ]).uniq
+      begin
+        ActiveRecord::Base.transaction do
+          metric = agent_run.quality_metrics.where(metric_type: "human").lock.first
+          metric ||= agent_run.quality_metrics.build(metric_type: "human")
 
-        metric.metadata = existing_metadata.merge(
-          "feedback_sources" => (existing_sources + [ "comment" ]).uniq,
-          "webhook_comment_count" => comment_count,
-          "commenters" => commenters,
-          "last_comment_at" => Time.current.iso8601
-        )
+          metric.prompt_version = agent_run.prompt_version
+          metric.feedback_source ||= "comment"
 
-        metric.scores = (metric.scores || {}).merge(
-          "review_comment_count" => QualityMetric.review_comment_count_score(comment_count)
-        )
-        metric.composite_score = metric.calculate_composite_score
-        metric.save!
-        metric
+          existing_metadata = metric.metadata || {}
+          existing_sources = Array(existing_metadata["feedback_sources"])
+          comment_count = (existing_metadata["webhook_comment_count"] || 0) + 1
+          existing_commenters = Array(existing_metadata["commenters"]).reject(&:blank?)
+          commenters = existing_commenters.dup
+          commenters << commenter unless commenter.blank?
+          commenters.uniq!
+
+          metric.metadata = existing_metadata.merge(
+            "feedback_sources" => (existing_sources + [ "comment" ]).uniq,
+            "webhook_comment_count" => comment_count,
+            "commenters" => commenters,
+            "last_comment_at" => Time.current.iso8601
+          )
+
+          metric.scores = (metric.scores || {}).merge(
+            "webhook_comment_count_score" => QualityMetric.review_comment_count_score(comment_count)
+          )
+          metric.composite_score = metric.calculate_composite_score
+          metric.save!
+          metric
+        end
+      rescue ActiveRecord::RecordNotUnique
+        retries += 1
+        raise if retries > MAX_RETRIES
+        sleep(0.05 * retries)
+        retry
       end
-    rescue ActiveRecord::RecordNotUnique
-      retry
     end
   end
 end
