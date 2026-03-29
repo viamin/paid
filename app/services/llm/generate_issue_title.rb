@@ -9,6 +9,8 @@ module Llm
   #   title = Llm::GenerateIssueTitle.call(summary: "# Auth Analysis\n\nThe auth system...")
   #   # => "Authentication system security review"
   class GenerateIssueTitle
+    include OutputNormalizer
+
     DEFAULT_MODEL = "claude-haiku-4-5-20251001"
     MAX_TITLE_LENGTH = 255
     MAX_SUMMARY_INPUT = 4000
@@ -59,19 +61,7 @@ module Llm
     def clean_title(text)
       return nil if text.blank?
 
-      cleaned = text.strip
-
-      # LLMs sometimes wrap titles in quotes despite being told not to.
-      # Strip common quote pairs: ASCII double/single, backticks, curly quotes.
-      quote_pairs = [ [ '"', '"' ], [ "'", "'" ], [ "`", "`" ], [ "\u201C", "\u201D" ], [ "\u2018", "\u2019" ] ]
-      quote_pairs.each do |left, right|
-        if cleaned.start_with?(left) && cleaned.end_with?(right) && cleaned.length >= left.length + right.length
-          cleaned = cleaned[left.length..-(right.length + 1)].strip
-          break
-        end
-      end
-
-      cleaned.presence
+      strip_surrounding_quotes(text.strip).presence
     end
   end
 end
