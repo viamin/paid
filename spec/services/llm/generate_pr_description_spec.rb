@@ -144,6 +144,16 @@ RSpec.describe Llm::GeneratePrDescription do
       }.to raise_error(Encoding::UndefinedConversionError)
     end
 
+    it "strips quotes wrapping a markdown fence from the output" do
+      quoted_fenced = %("```markdown\n## Summary\n\nSome description\n```")
+      response = instance_double(AgentHarness::Response, success?: true, output: quoted_fenced)
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      result = described_class.call(agent_summary: agent_summary)
+
+      expect(result).to eq("## Summary\n\nSome description")
+    end
+
     it "strips outer markdown code fences from the output" do
       fenced = "```markdown\n## Summary\n\nSome description\n```"
       response = instance_double(AgentHarness::Response, success?: true, output: fenced)

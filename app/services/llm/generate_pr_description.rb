@@ -88,8 +88,16 @@ module Llm
       return nil if text.nil?
 
       cleaned = text.strip
-      cleaned = strip_markdown_fence(cleaned)
-      strip_surrounding_quotes(cleaned)
+      # Iterate until stable: quotes may wrap fences or vice-versa.
+      # Try fences first (since backticks overlap with quote pairs),
+      # then quotes, and repeat in case quotes were wrapping a fence.
+      loop do
+        previous = cleaned
+        cleaned = strip_markdown_fence(cleaned)
+        cleaned = strip_surrounding_quotes(cleaned)
+        break if cleaned == previous
+      end
+      cleaned
     end
 
     def prompt
