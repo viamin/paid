@@ -157,7 +157,8 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command[0..1]).to eq(%w[sh -c])
       expect(script).to include('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
       expect(script).to include("-u OPENAI_API_KEY")
-      expect(script).to include("codex exec --dangerously-bypass-approvals-and-sandbox --")
+      codex_flags = ProviderSupport.container_execution_flags_for("codex").join(" ")
+      expect(script).to include("codex exec #{codex_flags} --")
       expect(command[3]).to eq("--")
       expect(command[4]).to eq("say 'hi'")
     end

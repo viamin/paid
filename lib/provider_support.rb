@@ -158,9 +158,9 @@ module ProviderSupport
   # containers. For example, Codex needs its inner sandbox disabled because
   # the container already provides isolation via Docker namespaces.
   #
-  # TODO(viamin/agent-harness#48): Move container execution flag knowledge
-  # upstream to agent-harness. Once that lands, source these flags from the
-  # harness provider configuration and remove this constant.
+  # TODO(#595): Move container execution flag knowledge upstream to
+  # agent-harness (see viamin/agent-harness#48). Once that lands, source
+  # these flags from the harness provider configuration and remove this constant.
   CONTAINER_EXECUTION_FLAGS = {
     "codex" => %w[--dangerously-bypass-approvals-and-sandbox].freeze
   }.freeze
