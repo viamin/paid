@@ -693,9 +693,19 @@ module Containers
     # Without this, errors only show "Command exited with code N" which
     # makes debugging impossible.
     def error_with_stderr(result)
-      parts = [ result.error ]
-      parts << result[:stderr] if result[:stderr].present?
+      parts = [ normalize_output(result.error) ]
+      stderr = normalize_output(result[:stderr])
+      parts << stderr if stderr.present?
       parts.join(" — ")
+    end
+
+    def normalize_output(value)
+      return "" if value.nil?
+
+      text = value.to_s
+      return text if text.encoding == Encoding::UTF_8 && text.valid_encoding?
+
+      text.dup.force_encoding(Encoding::UTF_8).scrub
     end
   end
 end
