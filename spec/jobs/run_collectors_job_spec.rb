@@ -74,6 +74,16 @@ RSpec.describe RunCollectorsJob do
 
         expect(project.reload.knowledge_status).to eq("failed")
       end
+
+      it "sets knowledge_status to failed and re-raises when runner raises" do
+        allow(Knowledge::CollectorRunner).to receive(:call).and_raise(RuntimeError, "container exploded")
+
+        expect {
+          described_class.new.perform(project.id, commit_sha)
+        }.to raise_error(RuntimeError, "container exploded")
+
+        expect(project.reload.knowledge_status).to eq("failed")
+      end
     end
 
     context "when Docker is available" do

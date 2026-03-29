@@ -3,6 +3,7 @@
 class EnqueueKnowledgeCollectionJob < ApplicationJob
   queue_as :default
 
+  discard_on ActiveRecord::RecordNotFound
   retry_on WorktreeService::Error, wait: :polynomially_longer, attempts: 5
   retry_on Errno::ENOENT, wait: :polynomially_longer, attempts: 5
 

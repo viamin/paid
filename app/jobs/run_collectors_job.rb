@@ -4,6 +4,7 @@ class RunCollectorsJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
   queue_as :default
+  discard_on ActiveRecord::RecordNotFound
 
   # Prevent duplicate enqueues for the same project+SHA when staleness detection
   # polls frequently and the prior job hasn't started yet.
@@ -34,6 +35,9 @@ class RunCollectorsJob < ApplicationJob
     end
 
     update_knowledge_status(project, result)
+  rescue StandardError
+    project.update!(knowledge_status: "failed") unless project.knowledge_status == "failed"
+    raise
   end
 
   private
@@ -47,7 +51,8 @@ class RunCollectorsJob < ApplicationJob
     elsif statuses.all? { |s| s == "completed" || s == "skipped" }
       project.update!(knowledge_status: "ready")
     end
-  rescue => e
+  rescue StandardError => e
     Rails.logger.error(message: "knowledge.status_update_failed", project_id: project.id, error: e.message)
+    raise
   end
 end
