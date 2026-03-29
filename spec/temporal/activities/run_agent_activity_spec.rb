@@ -57,14 +57,18 @@ RSpec.describe Activities::RunAgentActivity do
       expect(mock_context).to have_received(:heartbeat).with("test").at_least(:once)
     end
 
-    it "propagates exceptions from the block" do
+    it "propagates exceptions from the block with original backtrace" do
       allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
 
       expect {
         activity.send(:with_periodic_heartbeat, "test", interval: 0.01) do
           raise ArgumentError, "boom"
         end
-      }.to raise_error(ArgumentError, "boom")
+      }.to raise_error(ArgumentError, "boom") { |e|
+        # Thread#value preserves the original backtrace from inside the
+        # worker thread rather than replacing it with this call site.
+        expect(e.backtrace.first).to include("run_agent_activity_spec.rb")
+      }
     end
 
     it "yields without heartbeating when outside activity context" do

@@ -437,14 +437,7 @@ module Activities
       context = Temporalio::Activity::Context.current_or_nil
       return yield unless context
 
-      result = nil
-      error = nil
-
-      worker = Thread.new do
-        result = yield
-      rescue StandardError => e
-        error = e
-      end
+      worker = Thread.new { yield }
 
       canceled = false
       begin
@@ -465,14 +458,23 @@ module Activities
         # down promptly during worker shutdown or workflow cancellation.
         if canceled
           worker.join(5)
-          worker.kill if worker.alive?
+          if worker.alive?
+            # Use Thread#raise instead of Thread#kill so that ensure blocks
+            # in the worker (e.g., Docker exec teardown) still execute.
+            worker.raise(Interrupt)
+            worker.join(5)
+            # Last resort if the thread is stuck in an uninterruptible call.
+            worker.kill if worker.alive?
+          end
         else
           worker.join
         end
       end
 
-      raise error if error
-      result
+      # Thread#value re-raises the original exception with its backtrace
+      # intact, unlike manual capture-and-reraise which replaces the
+      # backtrace with this method's call site.
+      worker.value
     end
 
     def build_command(provider, command_prefix, prompt)
