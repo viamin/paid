@@ -342,7 +342,9 @@ module Activities
         user_settings&.review_goal_idle_timeout_seconds || DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT
       end
 
-      result = container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
+      result = with_periodic_heartbeat("executing", provider) do
+        container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
+      end
 
       if result.success?
         output_present = result[:stdout].present? || result[:stderr].present?
@@ -408,6 +410,34 @@ module Activities
       end
     rescue StandardError
       1.hour.from_now
+    end
+
+    # Runs a block while sending periodic heartbeats on a background thread.
+    # This keeps long-running container executions from triggering heartbeat
+    # timeouts. The interval (default 30s) is well under the 120s heartbeat
+    # timeout configured on the workflow side, giving plenty of margin.
+    HEARTBEAT_INTERVAL = 30
+
+    def with_periodic_heartbeat(*details, interval: HEARTBEAT_INTERVAL)
+      stop = Thread::Queue.new
+      heartbeat_thread = Thread.new do
+        loop do
+          break if stop.pop(timeout: interval)
+
+          begin
+            heartbeat(*details)
+          rescue Temporalio::Error::CanceledError
+            break
+          rescue StandardError
+            # Best-effort; next iteration will retry
+          end
+        end
+      end
+
+      yield
+    ensure
+      stop&.push(true)
+      heartbeat_thread&.join(5)
     end
 
     def build_command(provider, command_prefix, prompt)

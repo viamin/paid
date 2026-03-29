@@ -34,8 +34,14 @@ module Activities
     # outside a real activity context (e.g. in tests).
     def heartbeat(*details)
       Temporalio::Activity::Context.current.heartbeat(*details)
+    rescue Temporalio::Error::CanceledError
+      # Allow cooperative cancellation to propagate
+      raise
+    rescue Temporalio::Error => e
+      # Swallow only the "not in activity context" error (e.g. when called in tests)
+      raise unless e.message.to_s.match?(/not.*activity.*context/i)
     rescue StandardError
-      # Not running inside a real Temporal activity context (e.g. tests)
+      # Fallback for non-Temporal errors (e.g. test doubles)
       nil
     end
 
