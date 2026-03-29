@@ -631,6 +631,20 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       expect(workflow.send(:should_retain_container?, true, error)).to be false
     end
+
+    it "returns false for GithubClient::RateLimitError wrapped as ApplicationError" do
+      cause = Temporalio::Error::ApplicationError.new("rate limited", type: "GithubClient::RateLimitError")
+      error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+
+    it "returns false for GithubClient::AuthenticationError wrapped as ApplicationError" do
+      cause = Temporalio::Error::ApplicationError.new("token expired", type: "GithubClient::AuthenticationError")
+      error = activity_error_with_cause(cause)
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
   end
 
   describe "#unwrap_error_message" do

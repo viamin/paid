@@ -422,10 +422,14 @@ module Workflows
         return false if current_error.is_a?(Temporalio::Error::CanceledError)
 
         if current_error.is_a?(Temporalio::Error::ApplicationError)
+          # For ApplicationError, the underlying exception type is carried in
+          # `type`, so compare both known failure *types* and *classes* against it.
           return false if KNOWN_FAILURE_TYPES.include?(current_error.type)
+          return false if KNOWN_FAILURE_CLASSES.include?(current_error.type)
+        else
+          # For non-ApplicationError exceptions, compare against the Ruby class name.
+          return false if KNOWN_FAILURE_CLASSES.include?(current_error.class.name)
         end
-
-        return false if KNOWN_FAILURE_CLASSES.include?(current_error.class.name)
 
         break unless current_error.respond_to?(:cause)
         current_error = current_error.cause
