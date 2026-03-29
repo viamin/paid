@@ -36,10 +36,18 @@ class RunCollectorsJob < ApplicationJob
 
     update_knowledge_status(project, result)
   rescue ActiveRecord::RecordNotFound
-    raise
-  rescue StandardError
-    project&.update!(knowledge_status: "failed") unless project&.knowledge_status == "failed"
-    raise
+    raise # Re-raise so discard_on can handle it above the StandardError rescue
+  rescue StandardError => e
+    begin
+      project&.update(knowledge_status: "failed") unless project&.knowledge_status == "failed"
+    rescue StandardError => update_error
+      Rails.logger.error(
+        message: "knowledge.job_status_update_failed",
+        project_id: project&.id,
+        error: update_error.message
+      )
+    end
+    raise e
   end
 
   private
@@ -52,6 +60,14 @@ class RunCollectorsJob < ApplicationJob
       project.update!(knowledge_status: "failed")
     elsif statuses.all? { |s| s == "completed" || s == "skipped" }
       project.update!(knowledge_status: "ready")
+    elsif statuses.any? { |s| s == "in_progress" }
+      project.update!(knowledge_status: "collecting") unless project.knowledge_status == "collecting"
+    else
+      Rails.logger.warn(
+        message: "knowledge.unhandled_statuses",
+        project_id: project.id,
+        statuses: statuses
+      )
     end
   rescue StandardError => e
     Rails.logger.error(message: "knowledge.status_update_failed", project_id: project.id, error: e.message)

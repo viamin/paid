@@ -75,6 +75,19 @@ RSpec.describe RunCollectorsJob do
         expect(project.reload.knowledge_status).to eq("failed")
       end
 
+      it "keeps knowledge_status as collecting when any collector is in_progress" do
+        allow(Knowledge::CollectorRunner).to receive(:call).and_return(
+          results: [
+            { collector_type: "tree_sitter", status: "completed" },
+            { collector_type: "dependency", status: "in_progress" }
+          ]
+        )
+
+        described_class.new.perform(project.id, commit_sha)
+
+        expect(project.reload.knowledge_status).to eq("collecting")
+      end
+
       it "sets knowledge_status to failed and re-raises when runner raises" do
         allow(Knowledge::CollectorRunner).to receive(:call).and_raise(RuntimeError, "container exploded")
 
