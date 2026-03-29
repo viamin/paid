@@ -662,6 +662,26 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#container_retained?" do
+      it "returns true when retention TTL is in the future" do
+        agent_run = build(:agent_run, container_retained_until: 2.hours.from_now)
+
+        expect(agent_run.container_retained?).to be true
+      end
+
+      it "returns false when retention TTL is in the past" do
+        agent_run = build(:agent_run, container_retained_until: 1.hour.ago)
+
+        expect(agent_run.container_retained?).to be false
+      end
+
+      it "returns false when retention TTL is nil" do
+        agent_run = build(:agent_run, container_retained_until: nil)
+
+        expect(agent_run.container_retained?).to be false
+      end
+    end
+
     describe "#rate_limit!" do
       it "sets status to rate_limited with error and reset time" do
         freeze_time do

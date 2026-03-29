@@ -18,6 +18,7 @@ class AgentRunResourceJanitorJob < ApplicationJob
     agent_run = AgentRun.find_by(id: agent_run_id)
     return unless agent_run
     return if agent_run.active?
+    return if agent_run.container_retained?
 
     container_cleaned = cleanup_container(agent_run)
     volume_cleaned = cleanup_volume(agent_run)
