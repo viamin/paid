@@ -11,6 +11,7 @@ module Activities
 
     EXPECTED_MERGE_STATUSES = [ 405, 409, 422 ].freeze
     PAID_AUTO_MERGED_LABEL = "paid-auto-merged"
+    AUTO_MERGE_COMMENT = "This PR was automatically merged by paid's auto-merge feature."
 
     def execute(input)
       project = Project.find(input[:project_id])
@@ -42,9 +43,12 @@ module Activities
 
       if merged
         issue.update!(pr_review_phase: "merged")
-        # Only label PRs that this activity actually merged — already-merged
-        # PRs may have been merged manually by a human.
-        add_phase_label(client, project, pr_number, PAID_AUTO_MERGED_LABEL) unless pr_data.merged_at
+        # Only label and comment on PRs that this activity actually merged —
+        # already-merged PRs may have been merged manually by a human.
+        unless pr_data.merged_at
+          add_phase_label(client, project, pr_number, PAID_AUTO_MERGED_LABEL)
+          client.add_comment(project.full_name, pr_number, AUTO_MERGE_COMMENT)
+        end
       end
 
       { merged: merged, pr_number: pr_number }
