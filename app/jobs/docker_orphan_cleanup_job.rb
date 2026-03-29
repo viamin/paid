@@ -136,7 +136,7 @@ class DockerOrphanCleanupJob < ApplicationJob
     rescue Docker::Error::NotFoundError, Docker::Error::ClientError
       # Already stopped or gone
     end
-    container.delete(force: true)
+    container.delete(force: true, v: true)
     true
   rescue Docker::Error::DockerError => e
     Rails.logger.warn(

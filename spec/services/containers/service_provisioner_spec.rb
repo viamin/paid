@@ -119,7 +119,7 @@ RSpec.describe Containers::ServiceProvisioner do
           .to raise_error(Containers::ServiceProvisioner::Error, /Failed to start/)
 
         expect(docker_container).to have_received(:stop).with(timeout: 10)
-        expect(docker_container).to have_received(:delete).with(force: true)
+        expect(docker_container).to have_received(:delete).with(force: true, v: true)
         expect(service_container.reload.status).to eq("error")
         expect(service_container.docker_container_id).to be_nil
       end
@@ -165,7 +165,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
         result = provisioner.provision(agent_run)
 
-        expect(stale).to have_received(:delete).with(force: true)
+        expect(stale).to have_received(:delete).with(force: true, v: true)
         expect(result).to include("DATABASE_URL")
       end
 
@@ -486,6 +486,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
       provisioner.cleanup(agent_run)
 
+      expect(docker_container).to have_received(:delete).with(force: true, v: true)
       expect(service_container.reload.status).to eq("stopped")
       expect(agent_run.reload.service_container_ids).to eq([])
     end
