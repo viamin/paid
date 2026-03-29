@@ -187,6 +187,29 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "heartbeat_timeout for RunAgentActivity" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
+
+    before do
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    it "configures heartbeat_timeout on RunAgentActivity" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity"
+          expect(opts[:heartbeat_timeout]).to eq(120)
+          { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+    end
+  end
+
   describe "activity timeout for create_pr goal" do
     let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
 

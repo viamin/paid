@@ -98,7 +98,9 @@ module Activities
         rate_limit_reset_at = nil
         skipped_rate_limited_count = 0
 
-        providers.each do |provider|
+        providers.each_with_index do |provider, index|
+          heartbeat("provider_attempt", provider, index)
+
           # Skip unavailable providers, tracking rate-limited skips separately
           if provider_unavailable?(user_settings, provider, provider_states)
             canonical = canonical_provider(provider)
@@ -119,7 +121,8 @@ module Activities
             provider_result = run_agent_with_provider(agent_run, provider, prompt, user_settings)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
 
-            # Success - record and update final provider
+            # Success - heartbeat and record final provider
+            heartbeat("provider_completed", provider)
             record_provider_success(user_settings, provider, provider_states)
             agent_run.record_provider_attempt(provider, success: true)
             agent_run.update!(final_provider: provider)

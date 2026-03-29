@@ -22,11 +22,14 @@ puts "Starting Temporal worker..."
 puts "Activities: #{activities.map(&:name).join(", ")}"
 puts "Workflows: #{workflows.map(&:name).join(", ")}"
 
+graceful_shutdown = ENV.fetch("TEMPORAL_GRACEFUL_SHUTDOWN_PERIOD", "30").to_i
+
 worker = Temporalio::Worker.new(
   client: Paid.temporal_client,
   task_queue: Paid.task_queue,
   activities: activities.map(&:new),
-  workflows: workflows
+  workflows: workflows,
+  graceful_shutdown_period: graceful_shutdown
 )
 
 worker.run(shutdown_signals: %w[INT TERM])

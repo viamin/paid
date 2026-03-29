@@ -28,6 +28,17 @@ module Activities
       Rails.logger
     end
 
+    # Send a heartbeat to Temporal so the server knows this activity is still
+    # alive. Safe to call frequently — the SDK throttles heartbeats internally
+    # based on the configured heartbeat_timeout. Swallows errors when called
+    # outside a real activity context (e.g. in tests).
+    def heartbeat(*details)
+      Temporalio::Activity::Context.current.heartbeat(*details)
+    rescue StandardError
+      # Not running inside a real Temporal activity context (e.g. tests)
+      nil
+    end
+
     def update_workflow_state(workflow_id, attributes)
       WorkflowState.upsert(
         attributes.merge(temporal_workflow_id: workflow_id),

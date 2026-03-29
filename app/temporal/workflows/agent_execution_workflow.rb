@@ -100,7 +100,9 @@ module Workflows
         activity_timeout = (per_provider_timeout * provider_attempt_count) + 300
         agent_result = run_activity(Activities::RunAgentActivity,
           { agent_run_id: agent_run_id },
-          start_to_close_timeout: activity_timeout, retry_policy: NO_RETRY)
+          start_to_close_timeout: activity_timeout,
+          heartbeat_timeout: 120,
+          retry_policy: NO_RETRY)
 
         unless agent_result[:success]
           raise Temporalio::Error::ApplicationError.new(
