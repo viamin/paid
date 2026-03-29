@@ -19,16 +19,26 @@ RSpec.describe Activities::BaseActivity do
 
   before do
     allow(ActiveRecord::Base).to receive(:connection_pool).and_return(connection_pool)
-    allow(connection_pool).to receive(:with_connection).and_yield
+    allow(connection_pool).to receive(:active_connection?).and_return(true)
+    allow(connection_pool).to receive(:release_connection)
     allow(Rails.application).to receive(:executor).and_return(executor)
     allow(executor).to receive(:wrap).and_yield
   end
 
-  it "normalizes hash inputs and wraps execution in executor and DB connection scopes" do
+  it "normalizes hash inputs, wraps execution in the executor, and releases the DB connection" do
     result = activity.execute("project_id" => 123)
 
     expect(result).to eq(project_id: 123)
     expect(executor).to have_received(:wrap)
-    expect(connection_pool).to have_received(:with_connection)
+    expect(connection_pool).to have_received(:release_connection)
+  end
+
+  it "skips release when no active connection is checked out" do
+    allow(connection_pool).to receive(:active_connection?).and_return(false)
+
+    result = activity.execute("project_id" => 456)
+
+    expect(result).to eq(project_id: 456)
+    expect(connection_pool).not_to have_received(:release_connection)
   end
 end
