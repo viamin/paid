@@ -85,7 +85,11 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
       track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
         prompt = agent_run.effective_prompt
-        raise Temporalio::Error::ApplicationError.new("No prompt available for agent run", type: "MissingPrompt") unless prompt
+        unless prompt
+          raise Temporalio::Error::ApplicationError.new(
+            "No prompt available for agent run", type: "MissingPrompt", non_retryable: true
+          )
+        end
 
         user_settings = resolve_user_settings(agent_run)
         providers = build_provider_order(agent_run, user_settings)
@@ -203,7 +207,8 @@ module Activities
         end
         raise Temporalio::Error::ApplicationError.new(
           "All providers exhausted",
-          type: "AllProvidersExhausted"
+          type: "AllProvidersExhausted",
+          non_retryable: true
         )
       end
     end
@@ -230,7 +235,8 @@ module Activities
     rescue AgentRuns::UserSettingsResolver::MissingUserError
       raise Temporalio::Error::ApplicationError.new(
         "No user available for agent run settings",
-        type: "MissingUser"
+        type: "MissingUser",
+        non_retryable: true
       )
     end
 
@@ -412,38 +418,49 @@ module Activities
       1.hour.from_now
     end
 
-    # Runs a block while sending periodic heartbeats on a background thread.
-    # This keeps long-running container executions from triggering heartbeat
-    # timeouts. The interval (default 30s) is well under the 120s heartbeat
-    # timeout configured on the workflow side, giving plenty of margin.
+    # Runs a block while sending periodic heartbeats from the activity's
+    # execution thread. The activity context is thread/fiber-local, so
+    # heartbeats must be emitted from the calling thread — not a background
+    # thread. We therefore run the wrapped work in a background thread and
+    # heartbeat from the calling (activity) thread while waiting for it to
+    # complete.
     #
-    # The activity context is thread-local, so we capture it on the calling
-    # thread and use it directly in the background thread.
+    # The interval (default 30s) is well under the 120s heartbeat timeout
+    # configured on the workflow side, giving plenty of margin.
     HEARTBEAT_INTERVAL = 30
 
     def with_periodic_heartbeat(*details, interval: HEARTBEAT_INTERVAL)
       context = Temporalio::Activity::Context.current_or_nil
       return yield unless context
 
-      stop = Thread::Queue.new
-      heartbeat_thread = Thread.new do
-        loop do
-          break if stop.pop(timeout: interval)
+      result = nil
+      error = nil
 
+      worker = Thread.new do
+        result = yield
+      rescue StandardError => e
+        error = e
+      end
+
+      begin
+        # Periodically heartbeat while the worker thread is still running.
+        until worker.join(interval)
           begin
             context.heartbeat(*details)
           rescue Temporalio::Error::CanceledError
-            break
+            # Propagate cancellation to the activity.
+            raise
           rescue StandardError
-            # Best-effort; next iteration will retry
+            # Best-effort; next iteration will retry.
           end
         end
+      ensure
+        # Ensure the worker has finished before returning or raising.
+        worker.join
       end
 
-      yield
-    ensure
-      stop&.push(true)
-      heartbeat_thread&.join(5)
+      raise error if error
+      result
     end
 
     def build_command(provider, command_prefix, prompt)
@@ -683,17 +700,21 @@ module Activities
       unless repo.match?(%r{\A[A-Za-z0-9\-_.]+/[A-Za-z0-9\-_.]+\z})
         raise Temporalio::Error::ApplicationError.new(
           "Invalid repository name format: #{repo.inspect}",
-          type: "InvalidRepoName"
+          type: "InvalidRepoName",
+          non_retryable: true
         )
       end
       repo
     end
 
     def reconnect_container(agent_run)
-      raise Temporalio::Error::ApplicationError.new(
-        "No container provisioned for agent run #{agent_run.id}",
-        type: "ContainerNotProvisioned"
-      ) if agent_run.container_id.blank?
+      if agent_run.container_id.blank?
+        raise Temporalio::Error::ApplicationError.new(
+          "No container provisioned for agent run #{agent_run.id}",
+          type: "ContainerNotProvisioned",
+          non_retryable: true
+        )
+      end
 
       Containers::Provision.reconnect(
         agent_run: agent_run,

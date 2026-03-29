@@ -187,19 +187,28 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
-  describe "heartbeat_timeout for RunAgentActivity" do
+  describe "RUN_AGENT_RETRY_POLICY" do
+    it "allows 2 attempts for infrastructure-level recovery" do
+      policy = described_class::RUN_AGENT_RETRY_POLICY
+      expect(policy).to be_a(Temporalio::RetryPolicy)
+      expect(policy.max_attempts).to eq(2)
+    end
+  end
+
+  describe "heartbeat_timeout and retry_policy for RunAgentActivity" do
     let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
 
     before do
       allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
     end
 
-    it "configures heartbeat_timeout on RunAgentActivity" do
+    it "configures heartbeat_timeout and RUN_AGENT_RETRY_POLICY on RunAgentActivity" do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
         when "Activities::RunAgentActivity"
           expect(opts[:heartbeat_timeout]).to eq(120)
+          expect(opts[:retry_policy]).to eq(described_class::RUN_AGENT_RETRY_POLICY)
           { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
         else {}

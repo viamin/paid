@@ -17,6 +17,17 @@ module Workflows
   class AgentExecutionWorkflow < BaseWorkflow
     NO_RETRY = Temporalio::RetryPolicy.new(max_attempts: 1)
 
+    # RunAgentActivity uses a limited retry policy so Temporal can reschedule
+    # the activity on a new worker when the original worker dies (detected via
+    # heartbeat timeout). Application-level errors are marked non_retryable in
+    # the activity itself, so only infrastructure failures (worker crash,
+    # heartbeat timeout) trigger a retry.
+    RUN_AGENT_RETRY_POLICY = Temporalio::RetryPolicy.new(
+      max_attempts: 2,
+      initial_interval: 5,
+      max_interval: 5
+    )
+
     CLEANUP_RETRY_POLICY = Temporalio::RetryPolicy.new(
       initial_interval: 2,
       max_interval: 15,
@@ -102,7 +113,7 @@ module Workflows
           { agent_run_id: agent_run_id },
           start_to_close_timeout: activity_timeout,
           heartbeat_timeout: 120,
-          retry_policy: NO_RETRY)
+          retry_policy: RUN_AGENT_RETRY_POLICY)
 
         unless agent_result[:success]
           raise Temporalio::Error::ApplicationError.new(
