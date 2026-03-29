@@ -554,25 +554,7 @@ module Activities
     # --- Helpers ---
 
     def review_bot?(login)
-      copilot_user?(login) || claude_user?(login)
-    end
-
-    def copilot_user?(login)
-      return false if login.blank?
-
-      normalized = login.downcase
-      normalized == "copilot" ||
-        normalized == "copilot[bot]" ||
-        normalized == "copilot-pull-request-reviewer" ||
-        normalized == "copilot-pull-request-reviewer[bot]"
-    end
-
-    def claude_user?(login)
-      return false if login.blank?
-
-      normalized = login.downcase
-      normalized == "claude[bot]" ||
-        normalized == "claude-code[bot]"
+      ProviderSupport.provider_bot_username?(login)
     end
 
     def extract_actionable_labels(triggers)
