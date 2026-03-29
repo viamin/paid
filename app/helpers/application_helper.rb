@@ -56,7 +56,9 @@ module ApplicationHelper
     "planning" => { bg: "bg-purple-100", text: "text-purple-700", label: "Planning" },
     "in_progress" => { bg: "bg-blue-100", text: "text-blue-700", label: "In Progress" },
     "completed" => { bg: "bg-green-100", text: "text-green-700", label: "Completed" },
-    "failed" => { bg: "bg-red-100", text: "text-red-700", label: "Failed" }
+    "failed" => { bg: "bg-red-100", text: "text-red-700", label: "Failed" },
+    "needs_input" => { bg: "bg-amber-100", text: "text-amber-700", label: "Needs Input" },
+    "recommend_close" => { bg: "bg-orange-100", text: "text-orange-700", label: "Recommend Close" }
   }.freeze
 
   def paid_state_badge(state)
