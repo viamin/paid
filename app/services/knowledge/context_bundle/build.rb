@@ -114,16 +114,9 @@ module Knowledge
         artifacts = active_artifacts("churn_hotspot")
         return nil if artifacts.empty?
 
-        # Sort by hotspot rank (lower = hotter), then by revision count descending for ties.
-        # ChurnHotspotCollector stores rank and revisions in metadata.
-        sorted = artifacts.sort_by do |a|
-          metadata = a.metadata || {}
-          rank = metadata["rank"]
-          revisions = metadata["revisions"] || metadata["revision_count"]
-          [ rank.nil? ? 1 : 0, rank.to_i, -revisions.to_i ]
-        end
-
-        lines = sorted.first(10).map do |a|
+        # Artifacts are already sorted by rank/revisions and limited to 10
+        # in active_artifacts via SQL ordering.
+        lines = artifacts.map do |a|
           revisions = a.metadata&.dig("revisions") || a.metadata&.dig("revision_count")
           path = a.scope_path || a.identifier
           if revisions
@@ -137,7 +130,11 @@ module Knowledge
       end
 
       def build_decisions_section
-        records = DecisionRecord.for_project(project).where(status: %w[active draft]).order(created_at: :desc).limit(10)
+        records = DecisionRecord.for_project(project)
+                                .where(status: %w[active draft])
+                                .order(created_at: :desc)
+                                .limit(10)
+                                .to_a
         return nil if records.empty?
 
         lines = records.map do |dr|
@@ -172,11 +169,18 @@ module Knowledge
           .by_type(type)
 
         if type == "churn_hotspot"
-          # Hotspots are re-ranked by metadata (rank/revisions) in
-          # build_hotspots_section, so we must not pre-limit or pre-order
-          # by identifier — that would risk excluding the highest-priority
-          # hotspots before they can be properly sorted.
-          scope.to_a
+          # Order by hotspot rank (lower = hotter), with nulls last, then by
+          # revision count descending for ties. Limit in SQL to avoid loading
+          # unbounded rows on large repos — build_hotspots_section takes the
+          # top 10, so 10 is sufficient here.
+          scope
+            .order(
+              Arel.sql("CASE WHEN metadata->>'rank' IS NULL THEN 1 ELSE 0 END"),
+              Arel.sql("(metadata->>'rank')::int"),
+              Arel.sql("COALESCE((metadata->>'revisions')::int, (metadata->>'revision_count')::int, 0) DESC")
+            )
+            .limit(10)
+            .to_a
         else
           scope
             .order(:identifier)
