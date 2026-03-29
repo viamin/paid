@@ -1,6 +1,18 @@
 <div id="<%= dom_id(project, :knowledge) %>" class="mt-8">
   <div class="flex items-center justify-between">
-    <h2 class="text-lg font-medium text-gray-900">Knowledge Base</h2>
+    <div class="flex items-center space-x-3">
+      <h2 class="text-lg font-medium text-gray-900">Knowledge Base</h2>
+      <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+        <%= case project.knowledge_status
+            when 'ready' then 'bg-green-100 text-green-700'
+            when 'collecting' then 'bg-blue-100 text-blue-700'
+            when 'failed' then 'bg-red-100 text-red-700'
+            when 'stale' then 'bg-yellow-100 text-yellow-700'
+            when 'pending' then 'bg-gray-100 text-gray-600'
+            end %>">
+        <%= project.knowledge_status.capitalize %>
+      </span>
+    </div>
     <%= link_to "Search", knowledge_search_path(project_id: project.id), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
   </div>
 

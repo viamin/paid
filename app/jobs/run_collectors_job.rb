@@ -15,8 +15,9 @@ class RunCollectorsJob < ApplicationJob
 
   def perform(project_id, commit_sha, branch: "main", committed_at: nil)
     project = Project.find(project_id)
+    project.update!(knowledge_status: "collecting") unless project.knowledge_status == "collecting"
 
-    if Knowledge::ContainerizedRunner.available?
+    result = if Knowledge::ContainerizedRunner.available?
       Knowledge::ContainerizedRunner.call(
         project: project,
         commit_sha: commit_sha,
@@ -31,5 +32,20 @@ class RunCollectorsJob < ApplicationJob
         committed_at: committed_at
       )
     end
+
+    update_knowledge_status(project, result)
+  end
+
+  private
+
+  def update_knowledge_status(project, result)
+    statuses = Array(result&.dig(:results)).map { |r| r[:status] }
+    if statuses.any? { |s| s == "failed" }
+      project.update!(knowledge_status: "failed")
+    elsif statuses.all? { |s| s == "completed" || s == "skipped" }
+      project.update!(knowledge_status: "ready")
+    end
+  rescue => e
+    Rails.logger.error(message: "knowledge.status_update_failed", project_id: project.id, error: e.message)
   end
 end

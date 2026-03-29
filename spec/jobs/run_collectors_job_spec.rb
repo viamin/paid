@@ -33,6 +33,39 @@ RSpec.describe RunCollectorsJob do
 
         described_class.new.perform(project.id, commit_sha, branch: "develop")
       end
+
+      it "sets knowledge_status to ready when all collectors succeed" do
+        allow(Knowledge::CollectorRunner).to receive(:call).and_return(
+          results: [ { collector_type: "tree_sitter", status: "completed" } ]
+        )
+
+        described_class.new.perform(project.id, commit_sha)
+
+        expect(project.reload.knowledge_status).to eq("ready")
+      end
+
+      it "sets knowledge_status to failed when any collector fails" do
+        allow(Knowledge::CollectorRunner).to receive(:call).and_return(
+          results: [
+            { collector_type: "tree_sitter", status: "completed" },
+            { collector_type: "dependency", status: "failed" }
+          ]
+        )
+
+        described_class.new.perform(project.id, commit_sha)
+
+        expect(project.reload.knowledge_status).to eq("failed")
+      end
+
+      it "sets knowledge_status to collecting before running" do
+        project.update!(knowledge_status: "pending")
+        allow(Knowledge::CollectorRunner).to receive(:call) do
+          expect(project.reload.knowledge_status).to eq("collecting")
+          { results: [] }
+        end
+
+        described_class.new.perform(project.id, commit_sha)
+      end
     end
 
     context "when Docker is available" do

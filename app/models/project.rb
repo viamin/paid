@@ -2,6 +2,7 @@
 
 class Project < ApplicationRecord
   MERGE_METHODS = %w[squash merge rebase].freeze
+  KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
 
   AUTOMATION_SETTINGS = [
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
@@ -53,6 +54,7 @@ class Project < ApplicationRecord
   validates :generated_label_name, presence: true
   validates :automation_label_name, presence: true
   validates :security_severity_threshold, inclusion: { in: Issue::SEVERITY_ORDER }
+  validates :knowledge_status, inclusion: { in: KNOWLEDGE_STATUSES }
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
@@ -71,6 +73,7 @@ class Project < ApplicationRecord
   end
 
   after_create_commit :start_github_polling
+  after_create_commit :enqueue_knowledge_collection
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
   after_update_commit :trigger_auto_pick, if: :auto_pick_just_enabled?
   after_destroy_commit :stop_github_polling
@@ -276,6 +279,12 @@ class Project < ApplicationRecord
     ProcessRunQueueJob.perform_later
   rescue => e
     Rails.logger.error(message: "auto_pick.trigger_failed", project_id: id, error: e.message)
+  end
+
+  def enqueue_knowledge_collection
+    EnqueueKnowledgeCollectionJob.perform_later(id)
+  rescue => e
+    Rails.logger.error(message: "knowledge.enqueue_collection_failed", project_id: id, error: e.message)
   end
 
   def start_github_polling

@@ -24,6 +24,18 @@ RSpec.describe Project do
     it { is_expected.to validate_uniqueness_of(:github_id).scoped_to(:account_id) }
     it { is_expected.to validate_numericality_of(:poll_interval_seconds).is_greater_than_or_equal_to(60) }
 
+    it "validates knowledge_status inclusion" do
+      project = build(:project)
+      project.knowledge_status = "invalid"
+      expect(project).not_to be_valid
+      expect(project.errors[:knowledge_status]).to be_present
+    end
+
+    it "defaults knowledge_status to pending" do
+      project = build(:project)
+      expect(project.knowledge_status).to eq("pending")
+    end
+
     describe "github_token account validation" do
       it "allows github_token from the same account" do
         account = create(:account)
@@ -201,6 +213,23 @@ RSpec.describe Project do
         create(:project, :inactive)
 
         expect(temporal_client).not_to have_received(:start_workflow)
+      end
+
+      it "enqueues EnqueueKnowledgeCollectionJob" do
+        expect {
+          create(:project)
+        }.to have_enqueued_job(EnqueueKnowledgeCollectionJob)
+      end
+
+      it "logs error when knowledge collection enqueue fails" do
+        allow(EnqueueKnowledgeCollectionJob).to receive(:perform_later).and_raise(StandardError, "queue unavailable")
+        allow(Rails.logger).to receive(:error)
+
+        project = create(:project)
+
+        expect(Rails.logger).to have_received(:error).with(
+          hash_including(message: "knowledge.enqueue_collection_failed", project_id: project.id)
+        )
       end
     end
 
