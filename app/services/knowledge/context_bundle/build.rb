@@ -114,7 +114,16 @@ module Knowledge
         artifacts = active_artifacts("churn_hotspot")
         return nil if artifacts.empty?
 
-        lines = artifacts.first(10).map do |a|
+        # Sort by hotspot rank (lower = hotter), then by revision count descending for ties.
+        # ChurnHotspotCollector stores rank and revisions in metadata.
+        sorted = artifacts.sort_by do |a|
+          metadata = a.metadata || {}
+          rank = metadata["rank"]
+          revisions = metadata["revisions"] || metadata["revision_count"]
+          [ rank.nil? ? 1 : 0, rank.to_i, -revisions.to_i ]
+        end
+
+        lines = sorted.first(10).map do |a|
           revisions = a.metadata&.dig("revisions") || a.metadata&.dig("revision_count")
           path = a.scope_path || a.identifier
           if revisions
@@ -163,6 +172,7 @@ module Knowledge
           .by_type(type)
           .order(:identifier)
           .limit(20)
+          .to_a
       end
 
       def render(sections)

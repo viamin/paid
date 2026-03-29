@@ -91,6 +91,36 @@ RSpec.describe Knowledge::ContextBundle::Build do
       end
     end
 
+    context "with hotspots sorted by rank and revisions" do
+      before do
+        create(:knowledge_artifact,
+          project: project, collector_run: collector_run,
+          artifact_type: "churn_hotspot", identifier: "app/models/zzz.rb",
+          scope_path: "app/models/zzz.rb", content: "hotspot",
+          metadata: { "rank" => 1, "revisions" => 50 }, status: "active")
+        create(:knowledge_artifact,
+          project: project, collector_run: collector_run,
+          artifact_type: "churn_hotspot", identifier: "app/models/aaa.rb",
+          scope_path: "app/models/aaa.rb", content: "hotspot",
+          metadata: { "rank" => 3, "revisions" => 10 }, status: "active")
+        create(:knowledge_artifact,
+          project: project, collector_run: collector_run,
+          artifact_type: "churn_hotspot", identifier: "app/models/mmm.rb",
+          scope_path: "app/models/mmm.rb", content: "hotspot",
+          metadata: { "rank" => 1, "revisions" => 80 }, status: "active")
+      end
+
+      it "orders hotspots by rank then by revision count descending" do
+        result = described_class.call(issue: issue, project: project)
+        hotspot_section = result[:content][/### Hotspot Warning\n(.+?)(\n\n###|\z)/m, 1]
+        lines = hotspot_section.split("\n")
+
+        expect(lines[0]).to include("mmm.rb")  # rank 1, 80 revisions
+        expect(lines[1]).to include("zzz.rb")  # rank 1, 50 revisions
+        expect(lines[2]).to include("aaa.rb")  # rank 3, 10 revisions
+      end
+    end
+
     context "with decision records" do
       before do
         create(:decision_record,
