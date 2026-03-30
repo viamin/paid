@@ -572,7 +572,7 @@ module Activities
     # for subscription/legacy providers.
     def provider_attempt_label(provider_candidate, agent_run, user)
       provider_entry = provider_entry_for(provider_candidate, user)
-      return provider_entry.routing_key if provider_entry
+      return provider_entry.routing_key if provider_entry&.api_key?
       provider_command_key(provider_candidate, agent_run, user)
     end
 
