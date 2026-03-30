@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "base64"
 require "shellwords"
 
 class Provider < ApplicationRecord
@@ -71,7 +72,14 @@ class Provider < ApplicationRecord
   end
 
   def matches_identifier?(identifier)
-    identifier.to_s == routing_key || identifier.to_s == provider_key.to_s
+    id_str = identifier.to_s
+    return true if id_str == routing_key || id_str == provider_key.to_s
+
+    # Also match agent_type identifiers (e.g. "claude_code") that map
+    # to this provider's key (e.g. "claude") so that legacy final_provider
+    # values are handled correctly.
+    normalized = ProviderSupport.provider_key_for_agent_type(id_str)
+    normalized != id_str && normalized == provider_key.to_s
   end
 
   def state_key

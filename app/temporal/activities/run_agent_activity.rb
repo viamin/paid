@@ -572,11 +572,14 @@ module Activities
     # Returns a per-entry identifier suitable for persisting in
     # providers_attempted and final_provider. Uses the routing key for
     # API-key-backed entries so that multiple entries sharing the same
-    # provider_key remain distinguishable; falls back to the command key
-    # for subscription/legacy providers.
+    # provider_key remain distinguishable; uses provider_key for
+    # subscription entries so the value stays compatible with
+    # matches_identifier?, effective_provider_sql, and dashboard
+    # aggregations (which group by provider key, not agent_type).
     def provider_attempt_label(provider_candidate, agent_run, user)
       provider_entry = provider_entry_for(provider_candidate, user)
       return provider_entry.routing_key if provider_entry&.api_key?
+      return provider_entry.provider_key if provider_entry
       provider_command_key(provider_candidate, agent_run, user)
     end
 
