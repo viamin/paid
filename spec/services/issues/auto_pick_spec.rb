@@ -335,6 +335,20 @@ RSpec.describe Issues::AutoPick do
       )
     end
 
+    it "returns nil and warns when no runnable provider can be resolved" do
+      create(:issue, project: project)
+      allow(Provider).to receive(:ensure_default_for).and_return(nil)
+      allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(nil)
+      allow(Rails.logger).to receive(:warn)
+
+      result = described_class.new(project).call
+
+      expect(result).to be_nil
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(message: "auto_pick.no_runnable_provider", project_id: project.id)
+      )
+    end
+
     context "with concurrent auto-pick runs" do
       it "queues another run when project already has a queued agent run" do
         create(:agent_run, :queued, project: project)

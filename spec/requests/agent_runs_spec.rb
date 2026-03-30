@@ -269,7 +269,7 @@ RSpec.describe "AgentRuns" do
 
       it "shows retry provider options for configured providers" do
         allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
-        user.providers.create!(provider_key: "cursor")
+        project.effective_owner.providers.create!(provider_key: "cursor")
         agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
 
         get project_agent_run_path(project, agent_run)
@@ -284,9 +284,10 @@ RSpec.describe "AgentRuns" do
 
       it "marks only one retry option current for legacy runs without provider_id" do
         allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
-        api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
-        create_opencode_provider_entry(user: user, api_key: api_key, name: "Kimi K2.5", model: "moonshotai/kimi-k2-0905")
-        create_opencode_provider_entry(user: user, api_key: api_key, name: "Opus via OpenCode", model: "anthropic/claude-opus-4.1")
+        owner = project.effective_owner
+        api_key = create(:provider_api_key, user: owner, compatible_providers: %w[openrouter])
+        create_opencode_provider_entry(user: owner, api_key: api_key, name: "Kimi K2.5", model: "moonshotai/kimi-k2-0905")
+        create_opencode_provider_entry(user: owner, api_key: api_key, name: "Opus via OpenCode", model: "anthropic/claude-opus-4.1")
         agent_run = create(:agent_run, :failed, project: project, agent_type: "opencode", provider: nil)
 
         get project_agent_run_path(project, agent_run)
@@ -565,6 +566,38 @@ RSpec.describe "AgentRuns" do
         post project_agent_runs_path(project), params: { issue_id: issue.id, agent_type: "cursor" }
 
         expect(AgentRun.last.agent_type).to eq("claude_code")
+      end
+
+      it "uses the project owner's provider selection when the signed-in user is not the owner" do
+        owner = project.created_by
+        owner_cursor = owner.providers.create!(
+          provider_key: "cursor",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true
+        )
+        owner.settings.update!(default_agent_provider: owner_cursor.routing_key)
+
+        post project_agent_runs_path(project), params: { issue_id: issue.id }
+
+        expect(AgentRun.last.provider).to eq(owner_cursor)
+        expect(AgentRun.last.agent_type).to eq("cursor")
+      end
+
+      it "redirects with an error when no runnable provider can be resolved" do
+        owner = project.effective_owner
+        allow(UserSetting).to receive(:enabled_agent_providers).with(owner, identifiers: true).and_return([])
+        allow(owner.settings).to receive(:provider_priority).with(identifiers: true).and_return([])
+        allow(Provider).to receive(:for_identifier).and_return(nil)
+        allow(Provider).to receive(:ensure_default_for).with(owner).and_return(nil)
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
+        follow_redirect!
+        expect(response.body).to include("No runnable provider could be resolved for this project")
       end
 
       context "with goal=review" do
@@ -909,7 +942,7 @@ RSpec.describe "AgentRuns" do
 
       it "creates a retry using a different configured provider" do
         allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
-        user.providers.create!(provider_key: "cursor")
+        project.effective_owner.providers.create!(provider_key: "cursor")
         agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
 
         post retry_project_agent_run_path(project, agent_run), params: { provider: "cursor" }
@@ -934,10 +967,11 @@ RSpec.describe "AgentRuns" do
 
       it "rejects retrying with a disabled explicit provider identifier" do
         allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
-        api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
-        disabled_provider = create_opencode_provider_entry(user: user, api_key: api_key, name: "Disabled Kimi",
+        owner = project.effective_owner
+        api_key = create(:provider_api_key, user: owner, compatible_providers: %w[openrouter])
+        disabled_provider = create_opencode_provider_entry(user: owner, api_key: api_key, name: "Disabled Kimi",
           model: "moonshotai/kimi-k2-0905", enabled_for_agent_runs: false)
-        create_opencode_provider_entry(user: user, api_key: api_key, name: "Enabled Opus", model: "anthropic/claude-opus-4.1")
+        create_opencode_provider_entry(user: owner, api_key: api_key, name: "Enabled Opus", model: "anthropic/claude-opus-4.1")
         agent_run = create(:agent_run, :failed, project: project, agent_type: "opencode")
 
         expect {
@@ -951,10 +985,11 @@ RSpec.describe "AgentRuns" do
 
       it "resolves plain provider keys against enabled retry providers" do
         allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
-        api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
-        user.providers.create!(provider_key: "opencode", enabled_for_agent_runs: false)
+        owner = project.effective_owner
+        api_key = create(:provider_api_key, user: owner, compatible_providers: %w[openrouter])
+        owner.providers.create!(provider_key: "opencode", enabled_for_agent_runs: false)
         enabled_provider = create_opencode_provider_entry(
-          user: user,
+          user: owner,
           api_key: api_key,
           name: "Enabled Kimi",
           model: "moonshotai/kimi-k2-0905"

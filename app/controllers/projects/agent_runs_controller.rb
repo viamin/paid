@@ -2,6 +2,8 @@
 
 module Projects
   class AgentRunsController < ApplicationController
+    NoRunnableProviderError = Class.new(StandardError)
+
     before_action :set_project
     before_action :set_agent_run, only: [ :show, :retry, :refresh_auth, :diagnose_error ]
 
@@ -26,7 +28,7 @@ module Projects
 
     def new
       authorize @project, :run_agent?
-      @default_provider_identifier = current_user.settings.provider_priority(identifiers: true).first
+      @default_provider_identifier = settings_owner&.settings&.provider_priority(identifiers: true)&.first
       @available_run_provider_options = available_run_provider_options
       @issues = @project.issues
         .issues_only
@@ -91,7 +93,7 @@ module Projects
       create_run_and_redirect(
         on_error_path: project_path(@project),
         issue: issue,
-        provider_identifier: current_user.settings.default_provider_identifier,
+        provider_identifier: settings_owner&.settings&.default_provider_identifier,
         goal: "create_pr",
         source_pull_request_number: source_pr_number
       )
@@ -349,6 +351,8 @@ module Projects
         requested_agent_type: requested_agent_type,
         requested_provider_identifier: requested_provider_identifier
       )
+      raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless resolved_provider
+
       resolved_agent_type = provider_key_to_agent_type(resolved_provider.provider_key)
 
       goal ||= params[:goal].presence || "create_pr"
@@ -371,7 +375,7 @@ module Projects
       create_agent_run(**attrs)
       ProcessRunQueueJob.perform_later
 
-      capacity_user = @project.created_by || current_user
+      capacity_user = settings_owner || current_user
       notice = if AgentRun.has_run_capacity?(user: capacity_user) && AgentRun.queued.count <= 1
         "Agent run created and will start momentarily."
       else
@@ -379,6 +383,8 @@ module Projects
       end
 
       redirect_to project_path(@project), notice: notice
+    rescue NoRunnableProviderError => e
+      redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique => e
       alert = if e.cause&.message&.include?("proxy_token")
         "An unexpected error occurred. Please try again."
@@ -422,7 +428,7 @@ module Projects
       provider_key = agent_type_to_provider_key(agent_run.agent_type)
       return unless provider_key
 
-      Provider.for_identifier(current_user, provider_key)
+      Provider.for_identifier(settings_owner, provider_key)
     end
 
     def retry_agent_type_for(agent_run)
@@ -452,8 +458,11 @@ module Projects
     end
 
     def resolve_provider_selection(requested_agent_type:, requested_provider_identifier:)
-      configured_identifiers = UserSetting.enabled_agent_providers(current_user, identifiers: true)
-      priority_identifiers = current_user.settings.provider_priority(identifiers: true)
+      owner = settings_owner
+      return unless owner
+
+      configured_identifiers = UserSetting.enabled_agent_providers(owner, identifiers: true)
+      priority_identifiers = owner.settings.provider_priority(identifiers: true)
       default_identifier = priority_identifiers.first
 
       if requested_provider_identifier.present?
@@ -474,47 +483,56 @@ module Projects
         priority_identifiers.first || configured_identifiers.first
       end
 
-      provider_for_identifier(selected_identifier) || Provider.ensure_default_for(current_user)
+      provider_for_identifier(selected_identifier) || Provider.ensure_default_for(owner)
     end
 
     def provider_for_identifier(identifier)
-      Provider.for_identifier(current_user, identifier)
+      Provider.for_identifier(settings_owner, identifier)
     end
 
     # Returns [identifier, provider] pairs for all enabled agent providers,
     # bulk-loaded in two queries to avoid N+1.
     def enabled_retry_provider_entries
       @enabled_retry_provider_entries ||= begin
-        identifiers = UserSetting.enabled_agent_providers(current_user, identifiers: true)
+        owner = settings_owner
+        unless owner
+          []
+        else
+          identifiers = UserSetting.enabled_agent_providers(owner, identifiers: true)
 
-        routing_ids = []
-        plain_keys = []
-        identifiers.each do |id|
-          if Provider.routing_key?(id)
-            routing_ids << Provider.id_from_routing_key(id)
-          else
-            plain_keys << id
+          routing_ids = []
+          plain_keys = []
+          identifiers.each do |id|
+            if Provider.routing_key?(id)
+              routing_ids << Provider.id_from_routing_key(id)
+            else
+              plain_keys << id
+            end
           end
-        end
 
-        providers_by_id = current_user.providers.where(id: routing_ids).index_by(&:id)
-        providers_by_key = current_user.providers.where(provider_key: plain_keys).ordered
-          .group_by(&:provider_key)
+          providers_by_id = owner.providers.where(id: routing_ids).index_by(&:id)
+          providers_by_key = owner.providers.where(provider_key: plain_keys).ordered
+            .group_by(&:provider_key)
 
-        identifiers.filter_map do |identifier|
-          provider = if Provider.routing_key?(identifier)
-            providers_by_id[Provider.id_from_routing_key(identifier)]
-          else
-            group = providers_by_key[identifier]
-            next unless group
-            # Prefer subscription entry, matching Provider.for_identifier behavior
-            group.find(&:subscription?) || group.first
+          identifiers.filter_map do |identifier|
+            provider = if Provider.routing_key?(identifier)
+              providers_by_id[Provider.id_from_routing_key(identifier)]
+            else
+              group = providers_by_key[identifier]
+              next unless group
+              # Prefer subscription entry, matching Provider.for_identifier behavior
+              group.find(&:subscription?) || group.first
+            end
+            next unless provider
+
+            [ identifier, provider ]
           end
-          next unless provider
-
-          [ identifier, provider ]
         end
       end
+    end
+
+    def settings_owner
+      @settings_owner ||= @project.effective_owner
     end
 
     def enabled_retry_providers
