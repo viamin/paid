@@ -198,14 +198,33 @@ RSpec.describe Issues::AutoPick do
         expect(result.issue).to eq(tracker)
       end
 
-      it "picks a tracker issue when it has no body references" do
+      it "skips a tracker issue when it has no body references" do
         tracker = create(:issue, project: project, github_number: 100,
           title: "Completion criteria tracker",
           body: "Just some text with no issue refs")
+        normal_issue = create(:issue, project: project, github_state: "open",
+          title: "Regular issue to work on")
 
         result = described_class.new(project).call
 
-        expect(result.issue).to eq(tracker)
+        expect(result.issue).to eq(normal_issue)
+        expect(result.issue).not_to eq(tracker)
+      end
+
+      it "blocks a tracker when body-referenced issues are not synced locally" do
+        tracker = create(:issue, project: project, github_number: 413,
+          title: "Phase 2 remaining work tracker",
+          body: "## Required\n- #262 Redaction\n- #269 Security")
+        # Neither #262 nor #269 exist in local DB (unsynced)
+        normal_issue = create(:issue, project: project, github_state: "open",
+          title: "Regular issue to work on")
+
+        result = described_class.new(project).call
+
+        # Tracker is blocked because unsynced references are treated as
+        # potentially open (conservative safety net for incomplete sync).
+        expect(result.issue).to eq(normal_issue)
+        expect(result.issue).not_to eq(tracker)
       end
 
       it "does not treat a non-tracker issue with body references as blocked" do
