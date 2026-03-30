@@ -5,7 +5,11 @@
         <div>
           <h1 class="text-xl font-semibold text-gray-900">Agent Run #<%= agent_run.id %></h1>
           <p class="mt-1 text-sm text-gray-500">
-            <%= agent_run.provider&.display_name || agent_run.agent_type.titleize %>
+            <% if agent_run.final_provider.present? && agent_run.provider.present? && !agent_run.provider.matches_identifier?(agent_run.final_provider) %>
+              <%= agent_run.final_provider.titleize %>
+            <% else %>
+              <%= agent_run.provider&.display_name || agent_run.agent_type.titleize %>
+            <% end %>
             <% if agent_run.started_at.present? %>
               &middot; Started <%= time_ago_in_words(agent_run.started_at) %> ago
             <% else %>

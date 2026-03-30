@@ -134,6 +134,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
     t.text "custom_prompt"
+    t.string "diagnosis_issue_url", limit: 500
+    t.string "diagnosis_status", limit: 50
     t.integer "duration_seconds"
     t.text "error_message"
     t.string "final_provider", limit: 50
@@ -170,8 +172,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -392,8 +394,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
     t.string "service_key", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "category"], name: "index_integration_credentials_on_account_id_and_category"
-    t.index ["account_id", "service_key", "name"], name: "idx_on_account_id_service_key_name_e4c03e1ea7", unique: true
     t.index ["account_id", "revoked_at"], name: "index_integration_credentials_on_account_id_and_revoked_at"
+    t.index ["account_id", "service_key", "name"], name: "idx_on_account_id_service_key_name_e4c03e1ea7", unique: true
     t.index ["account_id", "service_key"], name: "index_integration_credentials_on_account_id_and_service_key"
     t.index ["account_id"], name: "index_integration_credentials_on_account_id"
     t.index ["created_by_id"], name: "index_integration_credentials_on_created_by_id"
