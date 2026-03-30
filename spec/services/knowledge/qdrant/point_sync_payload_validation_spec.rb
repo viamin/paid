@@ -40,31 +40,23 @@ RSpec.describe Knowledge::Qdrant::PointSync do
         expect(payload.keys.map(&:to_s)).not_to include(*described_class::FORBIDDEN_PAYLOAD_KEYS)
       end
     end
-  end
 
-  describe "#validate_payload!" do
-    subject(:sync) { described_class.new(client: qdrant_client) }
+    it "raises ForbiddenPayloadError when payload contains a forbidden key" do
+      sync = described_class.new(client: qdrant_client)
 
-    described_class::FORBIDDEN_PAYLOAD_KEYS.each do |key|
-      it "raises SecurityError when payload contains '#{key}'" do
-        payload = { project_id: 1, key.to_sym => "some value" }
+      # Stub build_payload to inject a forbidden key, exercising the public upsert_chunk! path
+      allow(sync).to receive(:build_payload).and_return({ project_id: 1, content: "leaked" })
 
-        expect { sync.send(:validate_payload!, payload) }
-          .to raise_error(SecurityError, /Forbidden payload keys.*#{key}/)
-      end
+      expect { sync.upsert_chunk!(chunk, vector: vector) }
+        .to raise_error(Knowledge::Qdrant::ForbiddenPayloadError, /Forbidden payload keys.*content/)
     end
 
-    it "allows safe payload keys" do
-      payload = { project_id: 1, artifact_type: "route", status: "active" }
+    it "raises ForbiddenPayloadError listing all forbidden keys present" do
+      sync = described_class.new(client: qdrant_client)
+      allow(sync).to receive(:build_payload).and_return({ content: "x", token: "y", project_id: 1 })
 
-      expect { sync.send(:validate_payload!, payload) }.not_to raise_error
-    end
-
-    it "raises with multiple forbidden keys listed" do
-      payload = { content: "x", token: "y", project_id: 1 }
-
-      expect { sync.send(:validate_payload!, payload) }
-        .to raise_error(SecurityError, /content.*token|token.*content/)
+      expect { sync.upsert_chunk!(chunk, vector: vector) }
+        .to raise_error(Knowledge::Qdrant::ForbiddenPayloadError, /content.*token|token.*content/)
     end
   end
 end

@@ -84,5 +84,23 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
       expect { described_class.call(generator: generator) }
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /#{chunk.id}/)
     end
+
+    it "rejects SKIP_REDACTION_SCAN bypass in production" do
+      create(:knowledge_chunk,
+        knowledge_artifact: artifact,
+        project: project,
+        status: "active",
+        embedding_model: nil,
+        redaction_scanned_at: nil)
+
+      allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("SKIP_REDACTION_SCAN").and_return("1")
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+
+      expect { described_class.call(generator: generator) }
+        .to raise_error(Knowledge::Embeddings::EmbeddingError, /Refusing to embed/)
+    end
   end
 end

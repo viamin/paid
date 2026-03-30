@@ -32,27 +32,17 @@ module Paid
 
     def qdrant_api_key
       cred_key = Rails.application.credentials.dig(:qdrant, :api_key)
-      env_key = ENV["QDRANT_API_KEY"]
 
       if cred_key.present?
         return cred_key
       end
 
-      if env_key.present? && Rails.env.production?
-        Rails.logger.warn(
-          message: "qdrant.env_fallback_in_production",
-          warning: "Using QDRANT_API_KEY env var in production. " \
-                   "Prefer Rails credentials (qdrant.api_key) for secret management."
-        )
-        return env_key
-      end
-
       if Rails.env.production?
         raise "QDRANT_API_KEY is required in production. " \
-              "Set it via Rails credentials (qdrant.api_key) or QDRANT_API_KEY env var."
+              "Set it via Rails credentials (qdrant.api_key)."
       end
 
-      env_key
+      ENV["QDRANT_API_KEY"]
     end
 
     def embedding_dimensions

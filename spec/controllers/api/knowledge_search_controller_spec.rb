@@ -90,5 +90,22 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
       expect(response).to have_http_status(:forbidden)
       expect(response.parsed_body["error"]).to eq("Forbidden")
     end
+
+    context "when rate limit is exceeded" do
+      it "returns 429 JSON when rate limit is exceeded" do
+        limit = described_class::RATE_LIMIT_MAX_REQUESTS
+
+        # Stub the cache store increment to simulate exceeding the rate limit.
+        # The store reference is captured at class load time (NullStore in test),
+        # so we stub the specific store instance to return a count above the limit.
+        store = described_class.cache_store
+        allow(store).to receive(:increment).and_return(limit + 1)
+
+        get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "exact" }
+
+        expect(response).to have_http_status(:too_many_requests)
+        expect(response.parsed_body["error"]).to eq("Rate limit exceeded")
+      end
+    end
   end
 end

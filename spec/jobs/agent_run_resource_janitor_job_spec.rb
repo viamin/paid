@@ -65,6 +65,37 @@ RSpec.describe AgentRunResourceJanitorJob do
       end
     end
 
+    context "when agent run has an unexpired container retention TTL" do
+      let(:agent_run) { create(:agent_run, :failed, container_retained_until: 2.hours.from_now) }
+
+      it "does not attempt any cleanup" do
+        agent_run.update_columns(container_id: "abc123")
+        allow(Docker::Container).to receive(:get)
+        allow(Docker::Volume).to receive(:get)
+
+        described_class.new.perform(agent_run.id)
+
+        expect(Docker::Container).not_to have_received(:get)
+        expect(Docker::Volume).not_to have_received(:get)
+      end
+    end
+
+    context "when agent run has an expired container retention TTL" do
+      let(:agent_run) { create(:agent_run, :failed, container_retained_until: 1.hour.ago) }
+
+      it "proceeds with cleanup" do
+        agent_run.update_columns(container_id: "abc123")
+        container = instance_double(Docker::Container, stop: true, delete: true)
+        allow(Docker::Container).to receive(:get).with("abc123").and_return(container)
+        allow(Docker::Volume).to receive(:get).and_raise(Docker::Error::NotFoundError)
+
+        described_class.new.perform(agent_run.id)
+
+        expect(container).to have_received(:delete).with(force: true, v: true)
+        expect(agent_run.reload.container_id).to be_nil
+      end
+    end
+
     context "when agent run is still active" do
       let(:agent_run) { create(:agent_run, status: "running") }
 

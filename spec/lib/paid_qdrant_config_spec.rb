@@ -35,5 +35,23 @@ RSpec.describe Paid do
 
       expect(described_class.qdrant_api_key).to be_nil
     end
+
+    it "raises in production when both credentials and ENV are blank" do
+      ENV.delete("QDRANT_API_KEY")
+      allow(Rails.application.credentials).to receive(:dig).with(:qdrant, :api_key).and_return(nil)
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+
+      expect { described_class.qdrant_api_key }
+        .to raise_error(RuntimeError, /QDRANT_API_KEY is required in production/)
+    end
+
+    it "does not allow ENV fallback in production" do
+      ENV["QDRANT_API_KEY"] = "env-key"
+      allow(Rails.application.credentials).to receive(:dig).with(:qdrant, :api_key).and_return(nil)
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+
+      expect { described_class.qdrant_api_key }
+        .to raise_error(RuntimeError, /QDRANT_API_KEY is required in production/)
+    end
   end
 end

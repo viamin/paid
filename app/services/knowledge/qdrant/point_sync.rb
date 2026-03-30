@@ -71,7 +71,7 @@ module Knowledge
 
       def validate_payload!(payload)
         forbidden = payload.keys.map(&:to_s) & FORBIDDEN_PAYLOAD_KEYS
-        raise SecurityError, "Forbidden payload keys: #{forbidden.join(', ')}" if forbidden.any?
+        raise ForbiddenPayloadError, "Forbidden payload keys: #{forbidden.join(', ')}" if forbidden.any?
       end
 
       def build_payload(chunk, artifact)
