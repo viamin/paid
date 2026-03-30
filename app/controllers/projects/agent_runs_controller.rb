@@ -165,7 +165,7 @@ module Projects
 
       @agent_run.with_lock do
         case @agent_run.diagnosis_status
-        when "in_progress"
+        when "in_progress", "processing"
           redirect_to project_agent_run_path(@project, @agent_run),
             alert: "Diagnosis is already in progress."
           return

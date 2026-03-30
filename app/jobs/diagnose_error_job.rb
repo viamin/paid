@@ -7,9 +7,12 @@ class DiagnoseErrorJob < ApplicationJob
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
 
-    # Idempotency: skip if not in_progress (e.g., duplicate enqueue or re-run)
+    # Idempotency: atomically claim the diagnosis inside the lock.
+    # Only the first worker seeing "in_progress" will transition to "processing" and proceed.
     agent_run.with_lock do
       return unless agent_run.diagnosis_status == "in_progress"
+
+      agent_run.update!(diagnosis_status: "processing")
     end
 
     begin

@@ -25,6 +25,18 @@ RSpec.describe DiagnoseErrorJob do
       end
     end
 
+    context "when diagnosis_status is already processing" do
+      let(:agent_run) { create(:agent_run, :failed, project: project, diagnosis_status: "processing") }
+
+      it "skips diagnosis to prevent duplicate work" do
+        allow(AgentRuns::DiagnoseError).to receive(:call)
+
+        described_class.new.perform(agent_run.id)
+
+        expect(AgentRuns::DiagnoseError).not_to have_received(:call)
+      end
+    end
+
     context "when diagnosis succeeds" do
       let(:result) do
         AgentRuns::DiagnoseError::Result.new(
