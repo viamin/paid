@@ -18,7 +18,9 @@
         phase_timeline: @phase_timeline,
         phase_summary: @phase_summary,
         show_retry: policy(@agent_run.project).run_agent?,
-        retry_provider_options: @retry_provider_options %>
+        retry_provider_options: @retry_provider_options,
+        final_provider_record: @final_provider_record,
+        attempted_providers_by_routing_key: @attempted_providers_by_routing_key %>
 
   <% if @logs.any? %>
     <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
