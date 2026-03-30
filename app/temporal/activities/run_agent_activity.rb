@@ -104,6 +104,7 @@ module Activities
 
         providers.each_with_index do |provider_candidate, index|
           provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
+          attempt_label = provider_attempt_label(provider_candidate, agent_run, user_settings.user)
           provider_state_name = state_key_for(provider_candidate, provider, user_settings.user)
           heartbeat("provider_attempt", provider, index)
 
@@ -112,7 +113,7 @@ module Activities
             state = provider_states[provider_state_name]
             error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
             skipped_rate_limited_count += 1 if error_type == "rate_limited"
-            agent_run.record_provider_attempt(provider, success: false, error_type: error_type)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: error_type)
             next
           end
 
@@ -129,8 +130,11 @@ module Activities
             # Success - heartbeat and record final provider
             heartbeat("provider_completed", provider)
             record_provider_success(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(provider, success: true)
-            agent_run.update!(final_provider: provider)
+            agent_run.record_provider_attempt(attempt_label, success: true)
+            # Persist the routing key so multiple entries sharing the same
+            # provider_key (e.g. several OpenCode API-key entries with
+            # different models) remain distinguishable in UI and retry logic.
+            agent_run.update!(final_provider: attempt_label)
 
             commit_uncommitted_changes(agent_run)
             has_changes = check_for_changes(agent_run, pre_agent_sha)
@@ -144,13 +148,13 @@ module Activities
               success: true,
               has_changes: has_changes,
               output_present: provider_result.fetch(:output_present),
-              final_provider: provider
+              final_provider: attempt_label
             }
           rescue ProviderRateLimitError => e
             last_error = "rate_limited"
             rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
             persist_rate_limit(user_settings, provider_state_name, provider_states, e.reset_at)
-            agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "rate_limited")
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
 
             # Rate-limit fallback execution is not yet implemented. #546
@@ -172,13 +176,13 @@ module Activities
             last_error = "timeout"
             timeout_error ||= e.message
             record_provider_failure(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(provider, success: false, error_type: "timeout")
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "timeout")
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
             break
           rescue ProviderExecutionError => e
             last_error = "error"
             record_provider_failure(user_settings, provider_state_name, provider_states)
-            agent_run.record_provider_attempt(provider, success: false, error_type: "error")
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "error")
             logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
           end
         end
@@ -559,6 +563,17 @@ module Activities
       return nil unless Provider.routing_key?(provider_candidate)
 
       Provider.for_identifier(user, provider_candidate)
+    end
+
+    # Returns a per-entry identifier suitable for persisting in
+    # providers_attempted and final_provider. Uses the routing key for
+    # API-key-backed entries so that multiple entries sharing the same
+    # provider_key remain distinguishable; falls back to the command key
+    # for subscription/legacy providers.
+    def provider_attempt_label(provider_candidate, agent_run, user)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return provider_entry.routing_key if provider_entry
+      provider_command_key(provider_candidate, agent_run, user)
     end
 
     def provider_attempt_labels(providers, agent_run, user)

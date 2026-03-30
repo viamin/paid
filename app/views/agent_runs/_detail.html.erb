@@ -5,11 +5,28 @@
         <div>
           <h1 class="text-xl font-semibold text-gray-900">Agent Run #<%= agent_run.id %></h1>
           <p class="mt-1 text-sm text-gray-500">
-            <% if agent_run.final_provider.present? && agent_run.provider.present? && !agent_run.provider.matches_identifier?(agent_run.final_provider) %>
-              <%= agent_run.final_provider.titleize %>
-            <% else %>
-              <%= agent_run.provider&.display_name || agent_run.agent_type.titleize %>
-            <% end %>
+            <%# Resolve final_provider routing key to a Provider record (if any) %>
+            <% final_provider_record = begin
+                 fid = Provider.id_from_routing_key(agent_run.final_provider)
+                 fid ? Provider.find_by(id: fid) : nil
+               end if agent_run.final_provider.present? %>
+            <% header_provider_name =
+                 if agent_run.provider.present?
+                   if final_provider_record && !agent_run.provider.matches_identifier?(agent_run.final_provider)
+                     final_provider_record.display_name
+                   elsif agent_run.final_provider.present? && !agent_run.provider.matches_identifier?(agent_run.final_provider)
+                     agent_run.final_provider.to_s.titleize
+                   else
+                     agent_run.provider.display_name
+                   end
+                 elsif final_provider_record
+                   final_provider_record.display_name
+                 elsif agent_run.final_provider.present?
+                   agent_run.final_provider.to_s.titleize
+                 else
+                   agent_run.agent_type.titleize
+                 end %>
+            <%= header_provider_name %>
             <% if agent_run.started_at.present? %>
               &middot; Started <%= time_ago_in_words(agent_run.started_at) %> ago
             <% else %>
@@ -343,6 +360,10 @@
   <% end %>
 
   <% if agent_run.provider_switches > 0 %>
+    <%# Batch-load Provider records referenced in providers_attempted to avoid N+1 queries %>
+    <% attempted_routing_ids = agent_run.providers_attempted
+         .filter_map { |a| Provider.id_from_routing_key(a["provider"]) } %>
+    <% attempted_providers_by_id = attempted_routing_ids.any? ? Provider.where(id: attempted_routing_ids).index_by { |p| p.routing_key } : {} %>
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-amber-800">Provider Fallback</h2>
@@ -357,8 +378,9 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
             </svg>
           <% end %>
+          <% attempt_provider = attempted_providers_by_id[attempt["provider"]] %>
           <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= attempt['success'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' %>">
-            <%= attempt['provider'].to_s.titleize %>
+            <%= attempt_provider&.display_name || attempt['provider'].to_s.titleize %>
             <% if attempt['error_type'].present? %>
               <span class="ml-1 text-xs opacity-75">(<%= attempt['error_type'] %>)</span>
             <% end %>
@@ -367,7 +389,8 @@
       </div>
       <% if agent_run.final_provider.present? %>
         <p class="mt-2 text-xs text-amber-700">
-          Final provider: <span class="font-medium"><%= agent_run.final_provider.titleize %></span>
+          <% final_prov = attempted_providers_by_id[agent_run.final_provider] %>
+          Final provider: <span class="font-medium"><%= final_prov&.display_name || agent_run.final_provider.titleize %></span>
         </p>
       <% end %>
     </div>
