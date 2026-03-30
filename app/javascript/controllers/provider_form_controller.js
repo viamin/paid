@@ -17,8 +17,8 @@ export default class extends Controller {
   }
 
   toggleAuthType() {
-    const radios = this.element.querySelectorAll("input[name*='auth_type']")
-    const selected = this.element.querySelector("input[name*='auth_type']:checked")
+    const radios = this.element.querySelectorAll("input[type='radio'][name*='auth_type']")
+    const selected = this.element.querySelector("input[type='radio'][name*='auth_type']:checked")
     const isApiKey = radios.length === 0 ? this.providerApiKeyMode() : selected?.value === "api_key"
 
     this.subscriptionFieldsTargets.forEach((el) => {
@@ -70,6 +70,7 @@ export default class extends Controller {
   refreshApiKeyOptions(providerKey = this.currentProviderKey()) {
     if (!this.hasApiKeySelectTarget) return
 
+    const requiredTargets = this.requiredApiKeyTargetsFor(providerKey)
     let selectedOptionVisible = false
 
     this.apiKeyOptionTargets.forEach((option) => {
@@ -79,7 +80,7 @@ export default class extends Controller {
       }
 
       const targets = (option.dataset.compatibleTargets || "").split(",").filter(Boolean)
-      const visible = providerKey ? targets.includes(providerKey) : true
+      const visible = requiredTargets.length > 0 ? requiredTargets.some((target) => targets.includes(target)) : true
       option.hidden = !visible
       if (visible && option.selected) {
         selectedOptionVisible = true
@@ -92,11 +93,19 @@ export default class extends Controller {
   }
 
   providerApiKeyMode() {
-    const selected = this.element.querySelector("input[name*='auth_type']:checked")
+    const selected = this.element.querySelector("input[type='radio'][name*='auth_type']:checked")
     if (selected) return selected.value === "api_key"
 
     const field = this.element.querySelector("input[name='provider[auth_type]']")
     return field?.value === "api_key"
+  }
+
+  requiredApiKeyTargetsFor(providerKey) {
+    if (!providerKey) return []
+    if (providerKey !== "opencode") return [providerKey]
+
+    const apiProviderField = this.element.querySelector("select[name='provider[config][opencode][api_provider]']")
+    return [apiProviderField?.value || "openrouter"]
   }
 
   currentProviderKey() {

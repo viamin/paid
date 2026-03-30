@@ -415,4 +415,24 @@ RSpec.describe UserSetting do
       expect(setting.errors[:fallback_providers]).to include("must be an array")
     end
   end
+
+  describe "provider token normalization" do
+    let(:user) { create(:user) }
+
+    before do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
+    end
+
+    it "resolves provider-key tokens without calling Provider.for_identifier per candidate" do
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      aider = user.providers.create!(provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      setting = build(:user_setting, user: user)
+
+      expect(Provider).not_to receive(:for_identifier)
+
+      result = setting.send(:identifiers_for_provider_token, "cursor", candidates: [ cursor.routing_key, aider.routing_key ])
+
+      expect(result).to eq([ cursor.routing_key ])
+    end
+  end
 end

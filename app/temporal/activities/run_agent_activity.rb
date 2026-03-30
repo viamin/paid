@@ -533,7 +533,7 @@ module Activities
     end
 
     def opencode_direct_command(command_prefix, prompt)
-      command = (command_prefix + [ "$1" ]).shelljoin
+      command = "#{command_prefix.shelljoin} \"$1\""
       script = <<~SH.squish
         mkdir -p /home/agent/.config/opencode &&
         printf '%s' "$PAID_OPENCODE_CONFIG_B64" | base64 -d > /home/agent/.config/opencode/opencode.json &&

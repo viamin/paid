@@ -332,9 +332,14 @@ class UserSetting < ApplicationRecord
     return exact if exact.any?
     return [] unless user
 
-    candidates.select do |candidate|
-      Provider.for_identifier(user, candidate)&.provider_key == token
+    routing_ids = candidates.filter_map { |candidate| Provider.id_from_routing_key(candidate) }
+    return [] if routing_ids.empty?
+
+    matching_identifiers = user.providers.where(id: routing_ids, provider_key: token).pluck(:id).map do |provider_id|
+      "#{Provider::ROUTING_KEY_PREFIX}#{provider_id}"
     end
+
+    candidates.select { |candidate| matching_identifiers.include?(candidate) }
   end
 
   def map_identifiers_to_provider_keys(identifiers)
