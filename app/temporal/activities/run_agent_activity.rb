@@ -98,6 +98,7 @@ module Activities
         pre_agent_sha = nil
         last_error = nil
         last_attempted_provider = nil
+        last_attempted_label = nil
         timeout_error = nil
         rate_limit_reset_at = nil
         skipped_rate_limited_count = 0
@@ -117,13 +118,16 @@ module Activities
             next
           end
 
-          # Log provider switch when we have a previous actually-attempted provider
-          if last_attempted_provider
-            agent_run.log_provider_switch!(last_attempted_provider, provider, last_error || "fallback")
+          # Log provider switch when we have a previous actually-attempted provider.
+          # Use attempt_label (per-entry identifier) so entries sharing the same
+          # command key (e.g. two OpenCode API-key entries) are distinguishable.
+          if last_attempted_label
+            agent_run.log_provider_switch!(last_attempted_label, attempt_label, last_error || "fallback")
           end
 
           begin
             last_attempted_provider = provider
+            last_attempted_label = attempt_label
             provider_result = run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
 

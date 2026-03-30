@@ -168,7 +168,7 @@ module Projects
       retry_provider = if params[:provider].present?
         configured_provider_for_retry(params[:provider])
       else
-        @agent_run.provider
+        @agent_run.provider || current_retry_provider_for(@agent_run)
       end
 
       new_run = AgentRun.create!(
