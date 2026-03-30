@@ -195,7 +195,7 @@ module Containers
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
       exec_options = { wait: timeout }
-      exec_options["Env"] = env.map { |key, value| "#{key}=#{value}" } if env.present?
+      exec_options[:Env] = env.map { |key, value| "#{key}=#{value}" } if env.present?
 
       log_system("container.execute.start", command: command.to_s.encode("UTF-8", invalid: :replace).truncate(200))
 

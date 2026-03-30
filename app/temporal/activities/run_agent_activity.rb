@@ -542,7 +542,8 @@ module Activities
 
     def state_key_for(provider_candidate, provider, user = nil)
       provider_entry = provider_entry_for(provider_candidate, user)
-      return provider_entry.routing_key if provider_entry
+      return provider_entry.routing_key if provider_entry&.api_key?
+      return provider_entry.provider_key if provider_entry
 
       canonical_provider(provider)
     end

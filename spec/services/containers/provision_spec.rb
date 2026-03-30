@@ -963,7 +963,7 @@ RSpec.describe Containers::Provision do
         allow(agent_run).to receive(:log!)
         expect(mock_container).to receive(:exec).with(
           [ "printenv", "SECRET_TOKEN" ],
-          hash_including(wait: anything, "Env" => [ "SECRET_TOKEN=super-secret" ])
+          hash_including(wait: anything, Env: [ "SECRET_TOKEN=super-secret" ])
         )
 
         service.execute([ "printenv", "SECRET_TOKEN" ], env: { "SECRET_TOKEN" => "super-secret" })

@@ -275,6 +275,13 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command).to eq(described_class::AGENT_COMMANDS["claude"] + [ "ping" ])
     end
 
+    it "uses canonical provider state keys for subscription entries" do
+      subscription_provider = user.providers.find_by!(provider_key: "claude")
+      state_key = activity.send(:state_key_for, subscription_provider.routing_key, "claude", user)
+
+      expect(state_key).to eq("claude")
+    end
+
     context "with a direct-outbound OpenCode provider" do
       it "passes config via exec env instead of embedding it in the command" do
         opencode_context = build_opencode_context(user)

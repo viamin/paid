@@ -169,9 +169,6 @@ class ProvidersController < ApplicationController
     @api_key_provider_options = addable_keys.select do |key|
       @available_api_keys.any? { |ak| compatible_api_key_for_provider?(api_key: ak, provider_key: key) }
     end
-    @available_api_keys_by_provider = addable_keys.index_with do |key|
-      @available_api_keys.select { |ak| compatible_api_key_for_provider?(api_key: ak, provider_key: key) }
-    end
 
     # Combined for backward compat
     @provider_options = @subscription_provider_options
