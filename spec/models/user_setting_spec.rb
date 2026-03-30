@@ -485,14 +485,14 @@ RSpec.describe UserSetting do
       new_user = build(:user)
       setting = build(:user_setting, user: new_user)
 
-      expect(setting.send(:allowed_provider_keys_for_agent_runs)).to match_array(%w[claude cursor aider])
+      expect(setting.send(:allowed_provider_identifiers_for_agent_runs)).to match_array(%w[claude cursor aider])
     end
 
     it "uses the new user when resolving fallback providers" do
       new_user = build(:user)
       setting = build(:user_setting, user: new_user)
 
-      expect(setting.send(:allowed_provider_keys_for_fallback)).to match_array(%w[claude cursor aider])
+      expect(setting.send(:allowed_provider_identifiers_for_fallback)).to match_array(%w[claude cursor aider])
     end
   end
 end

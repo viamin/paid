@@ -193,7 +193,7 @@ class UserSetting < ApplicationRecord
   end
 
   def default_provider_identifier
-    normalized_default_agent_provider || allowed_provider_keys_for_agent_runs.first
+    normalized_default_agent_provider || allowed_provider_identifiers_for_agent_runs.first
   end
 
   def sanitize_provider_tokens(tokens, candidates:)
@@ -215,8 +215,8 @@ class UserSetting < ApplicationRecord
   # @param primary_provider [String] The provider already being attempted
   # @return [Array<String>] Fallback provider keys in attempt order
   def fallback_priority_for(primary_provider:, identifiers: false)
-    primary_identifiers = identifiers_for_provider_token(primary_provider, candidates: allowed_provider_keys_for_fallback)
-    candidates = allowed_provider_keys_for_fallback.reject { |provider| primary_identifiers.include?(provider) || provider == primary_provider }
+    primary_identifiers = identifiers_for_provider_token(primary_provider, candidates: allowed_provider_identifiers_for_fallback)
+    candidates = allowed_provider_identifiers_for_fallback.reject { |provider| primary_identifiers.include?(provider) || provider == primary_provider }
     saved_order = Array(fallback_providers).flat_map do |provider|
       identifiers_for_provider_token(provider, candidates: candidates)
     end
@@ -272,11 +272,11 @@ class UserSetting < ApplicationRecord
       return
     end
 
-    self.fallback_providers = sanitize_provider_tokens(fallback_providers, candidates: allowed_provider_keys_for_fallback)
+    self.fallback_providers = sanitize_provider_tokens(fallback_providers, candidates: allowed_provider_identifiers_for_fallback)
   end
 
   def validate_default_agent_provider
-    allowed = allowed_provider_keys_for_agent_runs
+    allowed = allowed_provider_identifiers_for_agent_runs
     token = default_agent_provider.to_s
     normalized = normalized_default_agent_provider
 
@@ -298,7 +298,7 @@ class UserSetting < ApplicationRecord
     errors.add(:default_agent_provider, "is not an enabled provider")
   end
 
-  def allowed_provider_keys_for_agent_runs
+  def allowed_provider_identifiers_for_agent_runs
     return self.class.enabled_agent_providers(nil, identifiers: true) unless user
     return self.class.enabled_agent_providers(user, identifiers: true) if user.new_record?
 
@@ -309,7 +309,7 @@ class UserSetting < ApplicationRecord
     )
   end
 
-  def allowed_provider_keys_for_fallback
+  def allowed_provider_identifiers_for_fallback
     return self.class.fallback_candidate_providers(nil, identifiers: true) unless user
     return self.class.fallback_candidate_providers(user, identifiers: true) if user.new_record?
 
@@ -321,7 +321,7 @@ class UserSetting < ApplicationRecord
   end
 
   def normalized_default_agent_provider
-    identifiers_for_provider_token(default_agent_provider, candidates: allowed_provider_keys_for_agent_runs).first
+    identifiers_for_provider_token(default_agent_provider, candidates: allowed_provider_identifiers_for_agent_runs).first
   end
 
   def identifiers_for_provider_token(token, candidates:)
