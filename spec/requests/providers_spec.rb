@@ -332,6 +332,16 @@ RSpec.describe "Providers" do
       expect(response.body).to include('data-provider-form-auth-type-value="api_key"')
       expect(response.body).not_to include('name="provider[auth_type]"')
     end
+
+    it "renders OpenCode config inputs disabled for non-OpenCode providers" do
+      provider = user.providers.find_by!(provider_key: "claude")
+
+      get edit_provider_path(provider)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to match(/name="provider\[config\]\[opencode\]\[api_provider\]".*disabled/m)
+      expect(response.body).to match(/name="provider\[config\]\[opencode\]\[model\]".*disabled/m)
+    end
   end
 
   describe "POST /providers/:id/test_agent" do

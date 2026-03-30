@@ -1452,8 +1452,9 @@ RSpec.describe AgentRun do
 
   describe "#final_provider_record" do
     it "resolves a routing-key final provider to its provider record" do
-      provider = create(:provider, provider_key: "opencode")
-      agent_run = create(:agent_run, final_provider: provider.routing_key)
+      agent_run = create(:agent_run)
+      provider = create(:provider, user: agent_run.project.effective_owner, provider_key: "opencode")
+      agent_run.update!(final_provider: provider.routing_key)
 
       expect(agent_run.final_provider_record).to eq(provider)
     end
@@ -1463,18 +1464,28 @@ RSpec.describe AgentRun do
 
       expect(agent_run.final_provider_record).to be_nil
     end
+
+    it "does not resolve providers owned by another user" do
+      project_owner = create(:user)
+      project = create(:project, account: project_owner.account, created_by: project_owner)
+      other_user = create(:user)
+      provider = create(:provider, user: other_user, provider_key: "opencode")
+      agent_run = create(:agent_run, project: project, final_provider: provider.routing_key)
+
+      expect(agent_run.final_provider_record).to be_nil
+    end
   end
 
   describe "#attempted_providers_by_routing_key" do
     it "returns attempted providers indexed by routing key" do
-      provider = create(:provider, provider_key: "opencode")
-      agent_run = create(
-        :agent_run,
-        provider_switches: 1,
+      agent_run = create(:agent_run)
+      provider = create(:provider, user: agent_run.project.effective_owner, provider_key: "opencode")
+      agent_run.update!(
         providers_attempted: [
           { "provider" => provider.routing_key, "success" => false },
           { "provider" => "claude", "success" => true }
-        ]
+        ],
+        provider_switches: 1
       )
 
       expect(agent_run.attempted_providers_by_routing_key).to eq(provider.routing_key => provider)
@@ -1482,6 +1493,21 @@ RSpec.describe AgentRun do
 
     it "returns an empty hash when no provider switches were recorded" do
       agent_run = create(:agent_run, provider_switches: 0, providers_attempted: [])
+
+      expect(agent_run.attempted_providers_by_routing_key).to eq({})
+    end
+
+    it "ignores attempted providers owned by another user" do
+      project_owner = create(:user)
+      project = create(:project, account: project_owner.account, created_by: project_owner)
+      other_user = create(:user)
+      provider = create(:provider, user: other_user, provider_key: "opencode")
+      agent_run = create(
+        :agent_run,
+        project: project,
+        provider_switches: 1,
+        providers_attempted: [ { "provider" => provider.routing_key, "success" => false } ]
+      )
 
       expect(agent_run.attempted_providers_by_routing_key).to eq({})
     end
