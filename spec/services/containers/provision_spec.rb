@@ -665,9 +665,17 @@ RSpec.describe Containers::Provision do
       end
 
       it "uses the infrastructure network when kilocode is configured as a fallback" do
+        kilocode_provider = create(
+          :provider,
+          user: project.created_by,
+          provider_key: "kilocode",
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: true
+        )
+
         settings.update!(
           fallback_enabled: true,
-          fallback_providers: [ "kilocode" ]
+          fallback_providers: [ kilocode_provider.routing_key ]
         )
 
         expect(Docker::Container).to receive(:create) do |config|

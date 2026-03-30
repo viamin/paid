@@ -317,7 +317,7 @@ RSpec.describe "Providers" do
       expect(provider.reload.provider_key).to eq("claude")
     end
 
-    it "preserves auth_type in the edit form for api_key providers" do
+    it "preserves auth_type for the edit form without submitting it" do
       api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
       provider = user.providers.create!(
         provider_key: "opencode",
@@ -329,8 +329,8 @@ RSpec.describe "Providers" do
       get edit_provider_path(provider)
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include('name="provider[auth_type]"')
-      expect(response.body).to include('value="api_key"')
+      expect(response.body).to include('data-provider-form-auth-type-value="api_key"')
+      expect(response.body).not_to include('name="provider[auth_type]"')
     end
   end
 

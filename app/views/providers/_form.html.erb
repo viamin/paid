@@ -1,4 +1,9 @@
-<%= form_with model: provider, class: "space-y-6", data: { controller: "provider-form" } do |form| %>
+<%= form_with model: provider,
+    class: "space-y-6",
+    data: {
+      controller: "provider-form",
+      provider_form_auth_type_value: provider.auth_type
+    } do |form| %>
   <% is_api_key = provider.api_key? %>
   <% is_new = !provider.persisted? %>
   <% selectable_provider = provider.persisted? || @subscription_provider_options.any? || @api_key_provider_options.any? %>
@@ -44,7 +49,6 @@
     <span id="provider_key_label" class="block text-sm font-medium text-gray-900">Provider</span>
     <div class="mt-2">
       <% if provider.persisted? %>
-        <%= form.hidden_field :auth_type, value: provider.auth_type %>
         <%= form.hidden_field :provider_key, value: provider.provider_key %>
         <input type="text" value="<%= provider.display_name %>" disabled class="block w-full rounded-md border-0 bg-gray-100 px-3 py-1.5 text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
       <% else %>

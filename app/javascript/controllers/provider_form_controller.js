@@ -1,6 +1,10 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
+  static values = {
+    authType: String,
+  }
+
   static targets = [
     "subscriptionFields",
     "apiKeyFields",
@@ -96,8 +100,7 @@ export default class extends Controller {
     const selected = this.element.querySelector("input[type='radio'][name*='auth_type']:checked")
     if (selected) return selected.value === "api_key"
 
-    const field = this.element.querySelector("input[name='provider[auth_type]']")
-    return field?.value === "api_key"
+    return this.authTypeValue === "api_key"
   }
 
   requiredApiKeyTargetsFor(providerKey) {
