@@ -83,6 +83,25 @@ RSpec.describe AgentRun do
         expect(agent_run).to be_valid
       end
     end
+
+    describe "provider ownership validation" do
+      it "allows provider from the project owner" do
+        agent_run = build(:agent_run)
+        provider = create(:provider, user: agent_run.project.effective_owner, provider_key: "opencode")
+        agent_run.provider = provider
+
+        expect(agent_run).to be_valid
+      end
+
+      it "rejects provider from another user" do
+        agent_run = build(:agent_run)
+        provider = create(:provider, user: create(:user), provider_key: "opencode")
+        agent_run.provider = provider
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:provider]).to include("must belong to the same user as the project owner")
+      end
+    end
   end
 
   describe "scopes" do

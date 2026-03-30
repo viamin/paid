@@ -437,6 +437,7 @@ RSpec.describe UserSetting do
 
   describe "provider token normalization" do
     let(:user) { create(:user) }
+    let(:setting) { build(:user_setting, user: user) }
 
     before do
       allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
@@ -445,7 +446,6 @@ RSpec.describe UserSetting do
     it "resolves provider-key tokens without calling Provider.for_identifier per candidate" do
       cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
       aider = user.providers.create!(provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true)
-      setting = build(:user_setting, user: user)
 
       expect(Provider).not_to receive(:for_identifier)
 
@@ -464,7 +464,6 @@ RSpec.describe UserSetting do
         enabled_for_agent_runs: true,
         enabled_for_fallback: true
       )
-      setting = build(:user_setting, user: user)
 
       result = setting.send(
         :identifiers_for_provider_token,
@@ -473,6 +472,30 @@ RSpec.describe UserSetting do
       )
 
       expect(result).to eq([ subscription.routing_key ])
+    end
+
+    it "uses candidate order to deterministically choose among api-key entries" do
+      first_entry = create_cursor_api_entry("First Cursor")
+      second_entry = create_cursor_api_entry("Second Cursor")
+
+      result = setting.send(
+        :identifiers_for_provider_token,
+        "cursor",
+        candidates: [ second_entry.routing_key, first_entry.routing_key ]
+      )
+
+      expect(result).to eq([ second_entry.routing_key ])
+    end
+
+    def create_cursor_api_entry(name)
+      user.providers.create!(
+        provider_key: "cursor",
+        auth_type: "api_key",
+        provider_api_key: create(:provider_api_key, user: user, compatible_providers: %w[cursor]),
+        name: name,
+        enabled_for_agent_runs: true,
+        enabled_for_fallback: true
+      )
     end
   end
 

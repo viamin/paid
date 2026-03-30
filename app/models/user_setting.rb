@@ -335,14 +335,22 @@ class UserSetting < ApplicationRecord
     return exact if exact.any?
     return [] unless user
 
-    routing_ids = candidates.filter_map { |candidate| Provider.id_from_routing_key(candidate) }
+    provider_index_by_id = {}
+    routing_ids = candidates.filter_map.with_index do |candidate, index|
+      provider_id = Provider.id_from_routing_key(candidate)
+      provider_index_by_id[provider_id] ||= index if provider_id
+      provider_id
+    end
     return [] if routing_ids.empty?
 
-    matching_providers = user.providers.where(id: routing_ids, provider_key: token).to_a
+    matching_providers = user.providers.where(id: routing_ids, provider_key: token).ordered.to_a
     return [] if matching_providers.empty?
 
     preferred_provider = matching_providers.min_by do |provider|
-      provider.subscription? ? 0 : 1
+      [
+        provider.subscription? ? 0 : 1,
+        provider_index_by_id.fetch(provider.id, Float::INFINITY)
+      ]
     end
     preferred_identifier = "#{Provider::ROUTING_KEY_PREFIX}#{preferred_provider.id}"
 

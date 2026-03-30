@@ -61,6 +61,7 @@ class AgentRun < ApplicationRecord
   validates :final_provider, length: { maximum: 50 }
   validates :provider_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
+  validate :provider_belongs_to_project_owner, if: -> { provider.present? }
   validate :has_prompt_source, on: :create
 
   scope :by_status, ->(status) { where(status: status) }
@@ -212,6 +213,14 @@ class AgentRun < ApplicationRecord
     scope = queued.order(QUEUE_ORDER)
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope.first
+  end
+
+  def provider_belongs_to_project_owner
+    owner = project&.effective_owner
+    return unless owner
+    return if provider.user_id == owner.id
+
+    errors.add(:provider, "must belong to the same user as the project owner")
   end
 
   # Atomically claims a queued run by transitioning it to pending inside a

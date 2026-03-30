@@ -295,6 +295,7 @@ class ProvidersController < ApplicationController
       labels[provider.routing_key] = provider.display_name
       labels[provider.provider_key] ||= provider.display_name
     end
+    @subscription_provider_identifiers = @providers.select(&:subscription?).map(&:routing_key).to_set
     @provider_state_aliases = @providers.each_with_object({}) do |provider, aliases|
       aliases[provider.routing_key] = provider.provider_key
     end

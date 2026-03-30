@@ -66,6 +66,24 @@ RSpec.describe "Providers" do
         expect(response.body).to match(/Kimi K2\.5.*Available/m)
         expect(response.body).not_to match(/Kimi K2\.5.*Circuit Open/m)
       end
+
+      it "still shows canonical provider state for subscription fallback entries" do
+        cursor = user.providers.create!(
+          provider_key: "cursor",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true
+        )
+        user.provider_states.create!(
+          provider_name: "cursor",
+          circuit_state: "open",
+          circuit_opened_at: 1.minute.ago
+        )
+
+        get providers_path
+
+        expect(response.body).to match(/#{Regexp.escape(cursor.display_name)}.*Circuit open/m)
+      end
     end
   end
 
