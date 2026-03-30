@@ -487,6 +487,16 @@ RSpec.describe Providers::TestAgent do
           env: hash_including("PAID_OPENCODE_CONFIG_B64")
         )
       end
+
+      it "only clears the routing-key state for api-key entries" do
+        routing_state = create(:provider_state, user: user, provider_name: provider.state_key, failure_count: 2)
+        provider_key_state = create(:provider_state, user: user, provider_name: provider.provider_key, failure_count: 3)
+
+        described_class.call(provider: provider)
+
+        expect(routing_state.reload.failure_count).to eq(0)
+        expect(provider_key_state.reload.failure_count).to eq(3)
+      end
     end
 
     context "when the provider reports a rate limit message on stdout" do

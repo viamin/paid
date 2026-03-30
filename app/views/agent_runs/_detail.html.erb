@@ -356,7 +356,7 @@
   <% end %>
 
   <% if agent_run.provider_switches > 0 %>
-    <% attempted_providers_by_id = local_assigns.fetch(:attempted_providers_by_routing_key, {}) %>
+    <% attempted_providers_by_routing_key = local_assigns.fetch(:attempted_providers_by_routing_key, {}) %>
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-amber-800">Provider Fallback</h2>
@@ -371,7 +371,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
             </svg>
           <% end %>
-          <% attempt_provider = attempted_providers_by_id[attempt["provider"]] %>
+          <% attempt_provider = attempted_providers_by_routing_key[attempt["provider"]] %>
           <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= attempt['success'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' %>">
             <%= attempt_provider&.display_name || attempt['provider'].to_s.titleize %>
             <% if attempt['error_type'].present? %>
@@ -382,7 +382,7 @@
       </div>
       <% if agent_run.final_provider.present? %>
         <p class="mt-2 text-xs text-amber-700">
-          <% final_prov = attempted_providers_by_id[agent_run.final_provider] %>
+          <% final_prov = attempted_providers_by_routing_key[agent_run.final_provider] %>
           Final provider: <span class="font-medium"><%= final_prov&.display_name || agent_run.final_provider.titleize %></span>
         </p>
       <% end %>

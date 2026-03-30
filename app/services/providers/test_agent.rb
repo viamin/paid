@@ -273,7 +273,12 @@ module Providers
     end
 
     def clear_provider_state_if_healthy!
-      [ provider.state_key, provider.provider_key ].uniq.each do |provider_name|
+      provider_names = [ provider.state_key ]
+      if provider.subscription? || provider.state_key == provider.provider_key
+        provider_names << provider.provider_key
+      end
+
+      provider_names.uniq.each do |provider_name|
         provider.user.provider_states.find_by(provider_name: provider_name)&.record_success!
       end
     end

@@ -240,13 +240,13 @@ RSpec.describe Provider do
     it "uses titleized provider_key for subscription" do
       provider = build(:provider, provider_key: "claude", auth_type: "subscription")
 
-      expect(provider.display_name).to eq("Claude")
+      expect(provider.display_name).to eq(described_class.display_name_for("claude"))
     end
 
     it "appends (API Key) for api_key auth type" do
       provider = build(:provider, provider_key: "claude", auth_type: "api_key", name: nil)
 
-      expect(provider.display_name).to eq("Claude (API Key)")
+      expect(provider.display_name).to eq("#{described_class.display_name_for("claude")} (API Key)")
     end
 
     it "includes the model id for unnamed OpenCode entries" do
@@ -258,7 +258,7 @@ RSpec.describe Provider do
         config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
       )
 
-      expect(provider.display_name).to eq("Opencode moonshotai/kimi-k2-0905 (API Key)")
+      expect(provider.display_name).to eq("#{described_class.display_name_for("opencode")} moonshotai/kimi-k2-0905 (API Key)")
     end
   end
 

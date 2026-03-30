@@ -59,7 +59,7 @@ class Provider < ApplicationRecord
   def display_name
     return name if name.present?
 
-    label = provider_key.titleize
+    label = self.class.display_name_for(provider_key)
     if provider_key == "opencode" && opencode_model_id.present?
       label += " #{opencode_model_id}"
     end
