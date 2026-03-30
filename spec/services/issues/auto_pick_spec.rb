@@ -243,15 +243,15 @@ RSpec.describe Issues::AutoPick do
       end
 
       it "regression: tracker with mixed explicit deps and body refs" do
-        # Simulates #413 scenario: tracker with child issues, explicit deps,
-        # and a security issue (#269) that transitively depends on #262
+        # Simulates #413 scenario: tracker with closed explicit deps but
+        # still-open issues referenced in the body.
         tracker = create(:issue, project: project, github_number: 413,
           title: "Phase 2 remaining work tracker",
           body: "## Dependencies\nDepends on #410, #411\n\n## Supporting\n- #262\n- #269")
         dep_410 = create(:issue, :closed, project: project, github_number: 410)
         dep_411 = create(:issue, :closed, project: project, github_number: 411)
         create(:issue, project: project, github_number: 262, github_state: "open")
-        sec_269 = create(:issue, project: project, github_number: 269, github_state: "open")
+        create(:issue, project: project, github_number: 269, github_state: "open")
 
         # Even though explicit deps (410, 411) are closed, open body refs block the tracker
         create(:issue_dependency, issue: tracker, depends_on_issue: dep_410)
@@ -259,8 +259,8 @@ RSpec.describe Issues::AutoPick do
 
         result = described_class.new(project).call
 
-        # Tracker is blocked by open body refs #262 and #269;
-        # #262 is picked instead (lowest eligible number, #269 is blocked by #262)
+        # Tracker is blocked because body-referenced issues #262 and #269 are
+        # still open; one of those open issues is picked instead.
         expect(result.issue).not_to eq(tracker)
       end
     end
