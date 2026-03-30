@@ -19,7 +19,8 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
 
   describe ".call" do
     let!(:chunk) do
-      create(:knowledge_chunk, knowledge_artifact: artifact, project: project, status: "active", embedding_model: nil)
+      create(:knowledge_chunk, :redaction_scanned,
+        knowledge_artifact: artifact, project: project, status: "active", embedding_model: nil)
     end
 
     it "generates embeddings for unembedded active chunks" do
@@ -73,7 +74,7 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
       other_version = create(:project_version, project: other_project)
       other_run = create(:collector_run, project_version: other_version)
       other_artifact = create(:knowledge_artifact, collector_run: other_run, project: other_project)
-      create(:knowledge_chunk, knowledge_artifact: other_artifact, project: other_project, status: "active", embedding_model: nil)
+      create(:knowledge_chunk, :redaction_scanned, knowledge_artifact: other_artifact, project: other_project, status: "active", embedding_model: nil)
 
       allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
 

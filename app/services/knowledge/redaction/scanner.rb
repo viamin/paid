@@ -13,7 +13,7 @@ module Knowledge
         password: /(?:password|passwd|secret)\s*[:=]\s*["']([^"']+)["']/i,
         email: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/,
         connection_string: /(?:postgres|mysql|redis|mongodb):\/\/[^\s"']+/i,
-        private_key: /-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----/
+        private_key: /-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----[\r\n]+[\s\S]*?-----END (?:RSA |EC |DSA )?PRIVATE KEY-----/
       }.freeze
 
       def self.scan(text)

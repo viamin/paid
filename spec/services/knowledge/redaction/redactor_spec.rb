@@ -47,10 +47,11 @@ RSpec.describe Knowledge::Redaction::Redactor do
       expect(result.clean_text).not_to include("user:pass")
     end
 
-    it "replaces private key headers with typed placeholders" do
-      text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA..."
+    it "replaces full private key blocks with typed placeholders" do
+      text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----"
       result = described_class.call(text: text)
       expect(result.clean_text).to include("[REDACTED:private_key]")
+      expect(result.clean_text).not_to include("MIIEowIBAAKCAQEA")
     end
 
     it "replaces passwords with typed placeholders" do

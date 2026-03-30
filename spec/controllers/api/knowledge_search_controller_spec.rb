@@ -72,21 +72,40 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
       expect(response).to have_http_status(:not_found)
     end
 
-    it "requires authentication" do
+    it "returns 401 JSON for unauthenticated requests" do
       sign_out user
       get "/api/knowledge/search", params: { project_id: project.id, q: "test" }
 
-      expect(response).to redirect_to(new_user_session_path)
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.parsed_body["error"]).to eq("Unauthorized")
     end
 
-    it "does not allow access to other accounts' projects" do
+    it "returns 403 JSON for other accounts' projects" do
       other_account = create(:account)
       other_token = create(:github_token, account: other_account)
       other_project = create(:project, account: other_account, github_token: other_token)
 
       get "/api/knowledge/search", params: { project_id: other_project.id, q: "test" }
 
-      expect(response).to redirect_to(root_path)
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body["error"]).to eq("Forbidden")
+    end
+
+    context "when rate limit is exceeded" do
+      it "returns 429 JSON when rate limit is exceeded" do
+        limit = described_class::RATE_LIMIT_MAX_REQUESTS
+
+        # Stub the cache store increment to simulate exceeding the rate limit.
+        # The store reference is captured at class load time (NullStore in test),
+        # so we stub the specific store instance to return a count above the limit.
+        store = described_class.cache_store
+        allow(store).to receive(:increment).and_return(limit + 1)
+
+        get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "exact" }
+
+        expect(response).to have_http_status(:too_many_requests)
+        expect(response.parsed_body["error"]).to eq("Rate limit exceeded")
+      end
     end
   end
 end

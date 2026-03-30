@@ -113,16 +113,25 @@ RSpec.describe Knowledge::Redaction::Scanner do
     end
 
     context "with private keys" do
-      it "detects RSA private key headers" do
-        text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCA..."
+      it "detects full RSA private key blocks" do
+        text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCA...\n-----END RSA PRIVATE KEY-----"
         matches = scanner.scan(text)
         expect(matches.first.pattern).to eq(:private_key)
+        expect(matches.first.length).to eq(text.length)
       end
 
-      it "detects generic private key headers" do
-        text = "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBg..."
+      it "detects full generic private key blocks" do
+        text = "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBg...\n-----END PRIVATE KEY-----"
         matches = scanner.scan(text)
         expect(matches.first.pattern).to eq(:private_key)
+        expect(matches.first.length).to eq(text.length)
+      end
+
+      it "does not match header-only without END marker" do
+        text = "-----BEGIN RSA PRIVATE KEY-----"
+        matches = scanner.scan(text)
+        key_matches = matches.select { |m| m.pattern == :private_key }
+        expect(key_matches).to be_empty
       end
     end
 

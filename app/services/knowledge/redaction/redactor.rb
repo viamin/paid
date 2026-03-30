@@ -84,15 +84,21 @@ module Knowledge
       def merge_overlapping(matches)
         sorted = matches.sort_by(&:offset)
         merged = []
+        # Track all pattern types that contribute to each merged region
+        merged_patterns = []
 
         sorted.each do |m|
           if merged.empty? || m.offset > merged.last.offset + merged.last.length
             merged << m
+            merged_patterns << [ m.pattern ]
           else
             prev = merged.last
             new_end = [ prev.offset + prev.length, m.offset + m.length ].max
+            merged_patterns.last << m.pattern
+            # Use :mixed when multiple distinct patterns overlap
+            effective_pattern = merged_patterns.last.uniq.size == 1 ? prev.pattern : :mixed
             merged[-1] = Scanner::Match.new(
-              pattern: prev.pattern,
+              pattern: effective_pattern,
               offset: prev.offset,
               length: new_end - prev.offset
             )
