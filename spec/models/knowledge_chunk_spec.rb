@@ -108,6 +108,17 @@ RSpec.describe KnowledgeChunk do
       end
     end
 
+    describe ".needs_redaction_scan" do
+      it "returns active chunks without redaction_scanned_at" do
+        scanned = create(:knowledge_chunk, :redaction_scanned, status: "active")
+        unscanned = create(:knowledge_chunk, status: "active", redaction_scanned_at: nil)
+
+        results = described_class.needs_redaction_scan
+        expect(results).to include(unscanned)
+        expect(results).not_to include(scanned)
+      end
+    end
+
     describe ".ordered" do
       it "returns chunks ordered by sequence" do
         artifact = create(:knowledge_artifact)
@@ -115,6 +126,18 @@ RSpec.describe KnowledgeChunk do
         first = create(:knowledge_chunk, knowledge_artifact: artifact, project: artifact.project, sequence: 0)
         expect(artifact.knowledge_chunks.ordered).to eq([ first, second ])
       end
+    end
+  end
+
+  describe "#redaction_scanned?" do
+    it "returns true when redaction_scanned_at is set" do
+      chunk = build(:knowledge_chunk, redaction_scanned_at: Time.current)
+      expect(chunk.redaction_scanned?).to be true
+    end
+
+    it "returns false when redaction_scanned_at is nil" do
+      chunk = build(:knowledge_chunk, redaction_scanned_at: nil)
+      expect(chunk.redaction_scanned?).to be false
     end
   end
 end

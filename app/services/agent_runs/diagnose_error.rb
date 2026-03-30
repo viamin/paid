@@ -14,14 +14,7 @@ module AgentRuns
     MAX_LOG_INPUT = 8000
     TIMEOUT = 60
 
-    # Patterns for lightweight redaction of secrets before sending to LLM or GitHub.
-    # Mirrors StyleGuides::CollectCodeSamples::SECRET_PATTERNS.
-    SECRET_PATTERNS = [
-      /(\b[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY)\b\s*[=:]\s*).{10,}/i,
-      /\bAKIA[0-9A-Z]{16}\b/,
-      /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/,
-      /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/i
-    ].freeze
+    SECRET_PATTERNS = StyleGuides::CollectCodeSamples::SECRET_PATTERNS
 
     class << self
       def call(agent_run:)
@@ -106,8 +99,8 @@ module AgentRuns
     end
 
     def diagnosis_prompt
-      error_text = redact_secrets(@agent_run.error_message.truncate(MAX_ERROR_INPUT, omission: ""))
-      logs_text = redact_secrets(recent_logs.truncate(MAX_LOG_INPUT, omission: ""))
+      error_text = redact_secrets(@agent_run.error_message.to_s).truncate(MAX_ERROR_INPUT, omission: "")
+      logs_text = redact_secrets(recent_logs.to_s).truncate(MAX_LOG_INPUT, omission: "")
       issue_context = @agent_run.issue&.title.presence || @agent_run.custom_prompt.presence || "N/A"
 
       <<~PROMPT.strip
@@ -157,7 +150,7 @@ module AgentRuns
     end
 
     def issue_body(diagnosis)
-      redacted_error = redact_secrets(@agent_run.error_message.truncate(2000))
+      redacted_error = redact_secrets(@agent_run.error_message).truncate(2000)
 
       <<~BODY.strip
         ## Agent Run Diagnosis

@@ -36,13 +36,15 @@ class DockerOrphanCleanupJob < ApplicationJob
       volumes_found: volume_result[:found],
       volumes_removed: volume_result[:removed],
       volumes_failed: volume_result[:failed],
-      volumes_active: volume_result[:active]
+      volumes_active: volume_result[:active],
+      volumes_retained: volume_result[:retained]
     )
   end
 
   private
 
   # Phase 1: Remove agent containers whose runs are no longer active.
+  # Skips containers for runs with an unexpired retention TTL.
   def cleanup_agent_containers
     containers = list_containers_by_label("paid.agent_run_id")
     return 0 if containers.empty?
@@ -50,11 +52,15 @@ class DockerOrphanCleanupJob < ApplicationJob
     agent_run_ids = containers.filter_map { |c| c.info.dig("Labels", "paid.agent_run_id") }
     numeric_ids = agent_run_ids.select { |id| id.match?(/\A\d+\z/) }
     active_ids = AgentRun.active.where(id: numeric_ids).pluck(:id).map(&:to_s).to_set
+    retained_ids = AgentRun.where(id: numeric_ids)
+      .where("container_retained_until > ?", Time.current)
+      .pluck(:id).map(&:to_s).to_set
 
     removed = 0
     containers.each do |container|
       run_id = container.info.dig("Labels", "paid.agent_run_id")
       next if active_ids.include?(run_id)
+      next if retained_ids.include?(run_id)
 
       removed += 1 if stop_and_remove_container(container, "agent", run_id)
     end
@@ -91,6 +97,7 @@ class DockerOrphanCleanupJob < ApplicationJob
   end
 
   # Phase 3: Remove orphaned workspace volumes.
+  # Skips volumes for runs with an unexpired retention TTL.
   def cleanup_volumes
     volumes = list_paid_volumes
     return { found: 0, removed: 0, failed: 0, active: 0 } if volumes.empty?
@@ -99,14 +106,22 @@ class DockerOrphanCleanupJob < ApplicationJob
                               .map { |v| v.id.delete_prefix(VOLUME_PREFIX) }
                               .select { |id| id.match?(/\A\d+\z/) }
     active_ids = AgentRun.active.where(id: numeric_agent_run_ids).pluck(:id).map(&:to_s).to_set
+    retained_ids = AgentRun.where(id: numeric_agent_run_ids)
+      .where("container_retained_until > ?", Time.current)
+      .pluck(:id).map(&:to_s).to_set
 
     removed = 0
     failed = 0
     active = 0
+    retained = 0
     volumes.each do |volume|
       agent_run_id = volume.id.delete_prefix(VOLUME_PREFIX)
       if active_ids.include?(agent_run_id)
         active += 1
+        next
+      end
+      if retained_ids.include?(agent_run_id)
+        retained += 1
         next
       end
 
@@ -116,7 +131,7 @@ class DockerOrphanCleanupJob < ApplicationJob
         failed += 1
       end
     end
-    { found: volumes.size, removed: removed, failed: failed, active: active }
+    { found: volumes.size, removed: removed, failed: failed, active: active, retained: retained }
   end
 
   def list_containers_by_label(label)

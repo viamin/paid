@@ -163,24 +163,40 @@ module Projects
         return
       end
 
-      if @agent_run.diagnosis_status == "in_progress"
+      prior_status = nil
+      transitioned = false
+
+      @agent_run.with_lock do
+        prior_status = @agent_run.diagnosis_status
+
+        unless prior_status.in?(%w[in_progress completed])
+          @agent_run.update!(diagnosis_status: "in_progress")
+          transitioned = true
+        end
+      end
+
+      if prior_status == "in_progress"
         redirect_to project_agent_run_path(@project, @agent_run),
           alert: "Diagnosis is already in progress."
         return
       end
 
-      if @agent_run.diagnosis_status == "completed"
+      if prior_status == "completed"
         redirect_to project_agent_run_path(@project, @agent_run),
           notice: "Diagnosis has already been completed."
         return
       end
 
-      @agent_run.update!(diagnosis_status: "in_progress")
-      @agent_run.project.broadcast_agent_run_detail_update(@agent_run)
-      DiagnoseErrorJob.perform_later(@agent_run.id)
+      if transitioned
+        @agent_run.project.broadcast_agent_run_detail_update(@agent_run)
+        DiagnoseErrorJob.perform_later(@agent_run.id)
 
-      redirect_to project_agent_run_path(@project, @agent_run),
-        notice: "Error diagnosis started. You'll see the result shortly."
+        redirect_to project_agent_run_path(@project, @agent_run),
+          notice: "Error diagnosis started. You'll see the result shortly."
+      else
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Unable to start error diagnosis at this time."
+      end
     end
 
     def retry
