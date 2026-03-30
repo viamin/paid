@@ -25,6 +25,10 @@ class AgentRunPolicy < ApplicationPolicy
     run_agent?
   end
 
+  def diagnose_error?
+    run_agent?
+  end
+
   private
 
   def run_agent?
