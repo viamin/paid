@@ -153,7 +153,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
     t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
     t.datetime "review_posted_at"
-    t.string "review_url"
+    t.string "review_url", limit: 500
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
@@ -391,7 +391,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
     t.string "service_key", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "category"], name: "index_integration_credentials_on_account_id_and_category"
-    t.index ["account_id", "name"], name: "index_integration_credentials_on_account_id_and_name", unique: true
+    t.index ["account_id", "service_key", "name"], name: "idx_on_account_id_service_key_name_e4c03e1ea7", unique: true
     t.index ["account_id", "revoked_at"], name: "index_integration_credentials_on_account_id_and_revoked_at"
     t.index ["account_id", "service_key"], name: "index_integration_credentials_on_account_id_and_service_key"
     t.index ["account_id"], name: "index_integration_credentials_on_account_id"
@@ -968,7 +968,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
-  add_foreign_key "agent_runs", "providers"
+  add_foreign_key "agent_runs", "providers", on_delete: :nullify
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade

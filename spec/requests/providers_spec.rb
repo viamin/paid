@@ -52,8 +52,8 @@ RSpec.describe "Providers" do
     end
 
     it "updates provider priority settings from the providers page" do
-      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
-      user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: true)
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      aider = user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: true)
 
       patch settings_providers_path, params: {
         user_setting: {
@@ -65,9 +65,9 @@ RSpec.describe "Providers" do
 
       expect(response).to redirect_to(providers_path)
       settings = user.reload.settings
-      expect(settings.default_agent_provider).to eq("cursor")
+      expect(settings.default_agent_provider).to eq(cursor.routing_key)
       expect(settings.fallback_enabled).to be(true)
-      expect(settings.fallback_providers).to eq(%w[claude aider])
+      expect(settings.fallback_providers).to eq([ user.providers.find_by!(provider_key: "claude").routing_key, aider.routing_key ])
     end
 
     it "disables fallback for providers not in enabled_fallback_provider_keys" do

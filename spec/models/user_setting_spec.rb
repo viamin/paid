@@ -213,7 +213,7 @@ RSpec.describe UserSetting do
 
     it "sets default agent execution values" do
       expect(setting.agent_timeout_seconds).to eq(3600)
-      expect(setting.default_agent_provider).to eq("claude")
+      expect(setting.default_agent_provider).to eq(user.providers.find_by!(provider_key: "claude").routing_key)
     end
 
     it "sets default container resource values" do
@@ -390,17 +390,17 @@ RSpec.describe UserSetting do
     end
 
     it "accepts providers that are fallback-only" do
-      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
       setting = build(:user_setting, user: user, fallback_providers: %w[claude cursor])
 
       expect(setting).to be_valid
-      expect(setting.fallback_providers).to eq(%w[claude cursor])
+      expect(setting.fallback_providers).to eq([ user.providers.find_by!(provider_key: "claude").routing_key, cursor.routing_key ])
     end
 
     it "sanitizes unknown providers" do
       setting = build(:user_setting, user: user, fallback_providers: %w[claude unknown_provider])
       expect(setting).to be_valid
-      expect(setting.fallback_providers).to eq([ "claude" ])
+      expect(setting.fallback_providers).to eq([ user.providers.find_by!(provider_key: "claude").routing_key ])
     end
 
     it "is valid with empty array" do

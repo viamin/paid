@@ -2,6 +2,6 @@
 
 class AddProviderToAgentRuns < ActiveRecord::Migration[8.1]
   def change
-    add_reference :agent_runs, :provider, null: true, foreign_key: true
+    add_reference :agent_runs, :provider, null: true, foreign_key: { on_delete: :nullify }
   end
 end

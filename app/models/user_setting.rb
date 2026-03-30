@@ -196,13 +196,14 @@ class UserSetting < ApplicationRecord
   end
 
   def sanitize_provider_tokens(tokens, candidates:)
-    Array(tokens).filter_map do |token|
+    Array(tokens).flat_map do |token|
       token = token.to_s
-      next if token.blank?
+      next [] if token.blank?
       next token if candidates.include?(token)
-      next token if identifiers_for_provider_token(token, candidates: candidates).any?
+      resolved = identifiers_for_provider_token(token, candidates: candidates)
+      next resolved if resolved.any?
 
-      nil
+      []
     end.uniq
   end
 
@@ -284,12 +285,12 @@ class UserSetting < ApplicationRecord
     end
 
     if normalized.present?
-      self.default_agent_provider = token.present? && !Provider.routing_key?(token) ? token : normalized
+      self.default_agent_provider = normalized
       return
     end
 
     if allowed.any?
-      self.default_agent_provider = provider_key_for_identifier(allowed.first)
+      self.default_agent_provider = allowed.first
       return
     end
 

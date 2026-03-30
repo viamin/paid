@@ -320,22 +320,14 @@ class Provider < ApplicationRecord
     return unless api_key?
     return unless user
 
-    duplicate = user.providers.api_key.where(provider_key: provider_key, provider_api_key_id: provider_api_key_id)
-      .where.not(id: id)
-      .detect do |existing|
-        existing.name.to_s == name.to_s &&
-          existing.opencode_api_provider.to_s == opencode_api_provider.to_s &&
-          existing.opencode_model_id.to_s == opencode_model_id.to_s
-      end
+    duplicate = user.providers.api_key.where(
+      provider_key: provider_key,
+      provider_api_key_id: provider_api_key_id,
+      name: name
+    ).where.not(id: id).exists?
     return unless duplicate
 
-    message = if provider_key == "opencode"
-      "already has an entry with this API key and configuration"
-    else
-      "already has an entry with this API key"
-    end
-
-    errors.add(:provider_key, message)
+    errors.add(:provider_key, "already has an entry with this API key")
   end
 
   def opencode_api_key_config_must_be_valid
