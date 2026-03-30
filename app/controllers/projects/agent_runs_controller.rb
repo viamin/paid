@@ -424,7 +424,8 @@ module Projects
 
       if requested_agent_type.present? && AgentRun::AGENT_TYPES.include?(requested_agent_type)
         requested_provider_key = agent_type_to_provider_key(requested_agent_type)
-        provider = enabled_retry_providers.find { |entry| entry.provider_key == requested_provider_key }
+        matches = enabled_retry_providers.select { |entry| entry.provider_key == requested_provider_key }
+        provider = matches.find(&:subscription?) || matches.first
         return provider if provider
       end
 
@@ -485,13 +486,14 @@ module Projects
       return if identifier.blank?
 
       identifier = identifier.to_s
-      provider = if Provider.routing_key?(identifier)
+      if Provider.routing_key?(identifier)
         enabled_retry_providers.find { |entry| entry.routing_key == identifier }
       else
-        enabled_retry_providers.find { |entry| entry.provider_key == identifier }
+        # Prefer subscription entry when multiple providers share the same key,
+        # matching Provider.for_identifier backward-compat behavior.
+        matches = enabled_retry_providers.select { |entry| entry.provider_key == identifier }
+        matches.find(&:subscription?) || matches.first
       end
-
-      provider || nil
     end
 
     def available_run_provider_options
