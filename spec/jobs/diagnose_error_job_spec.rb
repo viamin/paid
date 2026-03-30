@@ -8,6 +8,10 @@ RSpec.describe DiagnoseErrorJob do
   let(:project) { create(:project, account: account, github_token: github_token) }
   let(:agent_run) { create(:agent_run, :failed, project: project, diagnosis_status: "in_progress") }
 
+  it "discards when agent run is not found" do
+    expect { described_class.perform_now(-1) }.not_to raise_error
+  end
+
   describe "#perform" do
     context "when diagnosis succeeds" do
       let(:result) do

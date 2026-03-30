@@ -144,6 +144,48 @@ RSpec.describe AgentRuns::DiagnoseError do
       end
     end
 
+    context "when custom_prompt contains secrets" do
+      let(:agent_run) do
+        create(:agent_run, :failed, project: project, issue: nil,
+          custom_prompt: "Deploy with TOKEN=ghp_abc123secret to staging")
+      end
+
+      it "redacts secrets in the custom_prompt before sending to the LLM" do
+        described_class.call(agent_run: agent_run)
+
+        expect(AgentHarness).to have_received(:send_message).with(
+          a_string_including("TOKEN=[REDACTED]").and(satisfy { |s| !s.include?("ghp_abc123secret") }),
+          provider: :claude,
+          model: "claude-sonnet-4-6",
+          timeout: 60
+        )
+      end
+    end
+
+    context "when LLM diagnosis echoes secrets" do
+      let(:llm_response) do
+        AgentHarness::Response.new(
+          output: "The error occurred because API_KEY=sk_live_leaked was invalid.",
+          exit_code: 0,
+          duration: 5.0,
+          provider: :claude,
+          model: "claude-sonnet-4-6",
+          tokens: { input: 500, output: 200, total: 700 }
+        )
+      end
+
+      it "redacts secrets in the diagnosis before creating GitHub issue" do
+        described_class.call(agent_run: agent_run)
+
+        expect(github_client).to have_received(:create_issue).with(
+          project.full_name,
+          title: anything,
+          body: a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_leaked") }),
+          labels: [ "diagnosis" ]
+        )
+      end
+    end
+
     context "when GitHub issue creation fails" do
       before do
         allow(github_client).to receive(:create_issue)
