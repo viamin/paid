@@ -148,6 +148,7 @@ config.status
 /pgdata/
 /.postgres/
 /.rubocop-cache/
+/.rubocop_cache/
 /.local/
 /.local-include/
 /.local-deps/

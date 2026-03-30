@@ -121,5 +121,52 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
         chunks_embedded: 1
       ))
     end
+
+    context "with redaction" do
+      let(:github_token) { "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn" }
+
+      it "marks fully-redacted chunks as redacted and skips embedding" do
+        chunk.update!(content: github_token)
+        allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+
+        result = described_class.call(generator: generator)
+
+        chunk.reload
+        expect(chunk.status).to eq("redacted")
+        expect(chunk.content).to include("[REDACTED:")
+        expect(chunk.content).not_to include("ghp_")
+        expect(chunk.content_hash).to eq(Digest::SHA256.hexdigest(chunk.content))
+        expect(result[:chunks_embedded]).to eq(0)
+        expect(Knowledge::Qdrant::PointSync).not_to have_received(:upsert_chunk!)
+      end
+
+      it "redacts partially-sensitive chunks and still embeds them" do
+        sensitive_content = "This is a long paragraph of normal text. Contact admin@example.com for help with the system."
+        chunk.update!(content: sensitive_content)
+        allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+
+        result = described_class.call(generator: generator)
+
+        chunk.reload
+        expect(chunk.content).to include("[REDACTED:email]")
+        expect(chunk.content).not_to include("admin@example.com")
+        expect(chunk.content_hash).to eq(Digest::SHA256.hexdigest(chunk.content))
+        expect(chunk.status).to eq("active")
+        expect(result[:chunks_embedded]).to eq(1)
+        expect(Knowledge::Qdrant::PointSync).to have_received(:upsert_chunk!)
+      end
+
+      it "emits audit events for redacted chunks" do
+        chunk.update!(content: github_token)
+        allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+        allow(Knowledge::Provenance::AuditLog).to receive(:record_batch)
+
+        described_class.call(generator: generator)
+
+        expect(Knowledge::Provenance::AuditLog).to have_received(:record_batch).with(
+          array_including(hash_including(event: :chunk_redacted, details: hash_including(fully_redacted: true)))
+        )
+      end
+    end
   end
 end
