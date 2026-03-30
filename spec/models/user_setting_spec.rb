@@ -122,6 +122,25 @@ RSpec.describe UserSetting do
     end
   end
 
+  describe ".rate_limit_fallback_providers" do
+    let(:user) { create(:user) }
+
+    it "returns canonical provider keys for configured rate-limit fallbacks" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude])
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      user.providers.create!(
+        provider_key: "claude",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        fallback_role: "rate_limit_fallback",
+        enabled_for_agent_runs: true,
+        enabled_for_fallback: true
+      )
+
+      expect(described_class.rate_limit_fallback_providers(user)).to eq([ "claude" ])
+    end
+  end
+
   describe "#container_memory_gb" do
     it "converts bytes to gigabytes" do
       setting = build(:user_setting, container_memory_bytes: 4 * 1024 * 1024 * 1024)
@@ -213,7 +232,7 @@ RSpec.describe UserSetting do
 
     it "sets default agent execution values" do
       expect(setting.agent_timeout_seconds).to eq(3600)
-      expect(setting.default_agent_provider).to eq("claude")
+      expect(setting.default_agent_provider).to eq(user.providers.find_by!(provider_key: "claude").routing_key)
     end
 
     it "sets default container resource values" do
@@ -390,17 +409,17 @@ RSpec.describe UserSetting do
     end
 
     it "accepts providers that are fallback-only" do
-      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
       setting = build(:user_setting, user: user, fallback_providers: %w[claude cursor])
 
       expect(setting).to be_valid
-      expect(setting.fallback_providers).to eq(%w[claude cursor])
+      expect(setting.fallback_providers).to eq([ user.providers.find_by!(provider_key: "claude").routing_key, cursor.routing_key ])
     end
 
     it "sanitizes unknown providers" do
       setting = build(:user_setting, user: user, fallback_providers: %w[claude unknown_provider])
       expect(setting).to be_valid
-      expect(setting.fallback_providers).to eq([ "claude" ])
+      expect(setting.fallback_providers).to eq([ user.providers.find_by!(provider_key: "claude").routing_key ])
     end
 
     it "is valid with empty array" do
@@ -413,6 +432,90 @@ RSpec.describe UserSetting do
       setting.fallback_providers = "not_an_array"
       expect(setting).not_to be_valid
       expect(setting.errors[:fallback_providers]).to include("must be an array")
+    end
+  end
+
+  describe "provider token normalization" do
+    let(:user) { create(:user) }
+    let(:setting) { build(:user_setting, user: user) }
+
+    before do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
+    end
+
+    it "resolves provider-key tokens without calling Provider.for_identifier per candidate" do
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      aider = user.providers.create!(provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true)
+
+      expect(Provider).not_to receive(:for_identifier)
+
+      result = setting.send(:identifiers_for_provider_token, "cursor", candidates: [ cursor.routing_key, aider.routing_key ])
+
+      expect(result).to eq([ cursor.routing_key ])
+    end
+
+    it "prefers the subscription entry when multiple entries share a provider key" do
+      subscription = user.providers.find_by!(provider_key: "claude")
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      api_entry = user.providers.create!(
+        provider_key: "claude",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        enabled_for_agent_runs: true,
+        enabled_for_fallback: true
+      )
+
+      result = setting.send(
+        :identifiers_for_provider_token,
+        "claude",
+        candidates: [ api_entry.routing_key, subscription.routing_key ]
+      )
+
+      expect(result).to eq([ subscription.routing_key ])
+    end
+
+    it "uses candidate order to deterministically choose among api-key entries" do
+      first_entry = create_cursor_api_entry("First Cursor")
+      second_entry = create_cursor_api_entry("Second Cursor")
+
+      result = setting.send(
+        :identifiers_for_provider_token,
+        "cursor",
+        candidates: [ second_entry.routing_key, first_entry.routing_key ]
+      )
+
+      expect(result).to eq([ second_entry.routing_key ])
+    end
+
+    def create_cursor_api_entry(name)
+      user.providers.create!(
+        provider_key: "cursor",
+        auth_type: "api_key",
+        provider_api_key: create(:provider_api_key, user: user, compatible_providers: %w[cursor]),
+        name: name,
+        enabled_for_agent_runs: true,
+        enabled_for_fallback: true
+      )
+    end
+  end
+
+  describe "new-record provider availability" do
+    before do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
+    end
+
+    it "uses the new user when resolving agent-run providers" do
+      new_user = build(:user)
+      setting = build(:user_setting, user: new_user)
+
+      expect(setting.send(:allowed_provider_identifiers_for_agent_runs)).to match_array(%w[claude cursor aider])
+    end
+
+    it "uses the new user when resolving fallback providers" do
+      new_user = build(:user)
+      setting = build(:user_setting, user: new_user)
+
+      expect(setting.send(:allowed_provider_identifiers_for_fallback)).to match_array(%w[claude cursor aider])
     end
   end
 end

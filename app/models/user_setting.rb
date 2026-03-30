@@ -100,27 +100,33 @@ class UserSetting < ApplicationRecord
   # Filtered to container-executable providers only, since non-executable
   # providers would cause immediate "All providers exhausted" failures
   # in RunAgentActivity.
-  def self.enabled_agent_providers(user = nil)
+  def self.enabled_agent_providers(user = nil, identifiers: false)
     executable_keys = ProviderSupport.container_executable_provider_keys
     return [ "claude" ] & executable_keys unless user
     return executable_keys if user.new_record?
 
-    user.providers.for_agent_runs.ordered.pluck(:provider_key).uniq & executable_keys
+    provider_identifiers_for(
+      user.providers.for_agent_runs.where(provider_key: executable_keys).ordered,
+      identifiers: identifiers
+    )
   end
 
   # Returns providers that can be used as fallback for a user.
   # Filtered to container-executable providers only, since non-executable
   # providers would cause immediate failures during fallback in RunAgentActivity.
-  def self.fallback_candidate_providers(user)
+  def self.fallback_candidate_providers(user, identifiers: false)
     executable_keys = ProviderSupport.container_executable_provider_keys
     return [ "claude" ] & executable_keys unless user
     return executable_keys if user.new_record?
 
-    user.providers.for_fallback.ordered.pluck(:provider_key).uniq & executable_keys
+    provider_identifiers_for(
+      user.providers.for_fallback.where(provider_key: executable_keys).ordered,
+      identifiers: identifiers
+    )
   end
 
-  # Returns provider keys that have API-key-based entries configured as
-  # rate-limit fallbacks. These are only used when the subscription entry
+  # Returns canonical provider keys that have API-key-based entries configured
+  # as rate-limit fallbacks. These are only used when the subscription entry
   # for the same provider_key is rate-limited.
   def self.rate_limit_fallback_providers(user)
     return [] unless user
@@ -128,7 +134,9 @@ class UserSetting < ApplicationRecord
 
     executable_keys = ProviderSupport.container_executable_provider_keys
     user.providers.api_key.rate_limit_fallback.for_agent_runs.for_fallback
-      .pluck(:provider_key).uniq & executable_keys
+      .where(provider_key: executable_keys)
+      .distinct
+      .pluck(:provider_key)
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string
@@ -174,9 +182,30 @@ class UserSetting < ApplicationRecord
   # Returns the ordered list of providers to try: primary first, then fallbacks.
   #
   # @return [Array<String>] Provider names in priority order
-  def provider_priority
-    default = allowed_provider_keys_for_agent_runs.include?(default_agent_provider) ? [ default_agent_provider ] : []
-    default + fallback_priority_for(primary_provider: default_agent_provider)
+  def provider_priority(identifiers: false)
+    default_identifier = default_provider_identifier
+    default = default_identifier.present? ? [ default_identifier ] : []
+    priorities = default + fallback_priority_for(primary_provider: default_identifier || default_agent_provider, identifiers: true)
+
+    return priorities if identifiers
+
+    map_identifiers_to_provider_keys(priorities)
+  end
+
+  def default_provider_identifier
+    normalized_default_agent_provider || allowed_provider_identifiers_for_agent_runs.first
+  end
+
+  def sanitize_provider_tokens(tokens, candidates:)
+    Array(tokens).flat_map do |token|
+      token = token.to_s
+      next [] if token.blank?
+      next token if candidates.include?(token)
+      resolved = identifiers_for_provider_token(token, candidates: candidates)
+      next resolved if resolved.any?
+
+      []
+    end.uniq
   end
 
   # Returns the ordered fallback providers for the given primary provider.
@@ -185,13 +214,17 @@ class UserSetting < ApplicationRecord
   #
   # @param primary_provider [String] The provider already being attempted
   # @return [Array<String>] Fallback provider keys in attempt order
-  def fallback_priority_for(primary_provider:)
-    candidates = allowed_provider_keys_for_fallback.reject { |provider| provider == primary_provider }
-    saved_order = Array(fallback_providers)
-      .reject { |provider| provider == primary_provider }
-      .select { |provider| candidates.include?(provider) }
+  def fallback_priority_for(primary_provider:, identifiers: false)
+    primary_identifiers = identifiers_for_provider_token(primary_provider, candidates: allowed_provider_identifiers_for_fallback)
+    candidates = allowed_provider_identifiers_for_fallback.reject { |provider| primary_identifiers.include?(provider) || provider == primary_provider }
+    saved_order = Array(fallback_providers).flat_map do |provider|
+      identifiers_for_provider_token(provider, candidates: candidates)
+    end
 
-    (saved_order + (candidates - saved_order)).uniq
+    priorities = (saved_order + (candidates - saved_order)).uniq
+    return priorities if identifiers
+
+    map_identifiers_to_provider_keys(priorities)
   end
 
   # Returns providers that are currently available (not rate limited, circuit not open).
@@ -199,12 +232,16 @@ class UserSetting < ApplicationRecord
   #
   # @param check_circuit_recovery [Boolean] Whether to check for circuit recovery before filtering
   # @return [Array<String>] Available provider names in priority order
-  def available_providers(check_circuit_recovery: true)
-    priorities = provider_priority
-    states_by_name = user.provider_states.where(provider_name: priorities).index_by(&:provider_name)
+  def available_providers(check_circuit_recovery: true, identifiers: false)
+    priorities = provider_priority(identifiers: true)
+    provider_keys_by_identifier = priorities.index_with do |identifier|
+      provider_key_for_identifier(identifier)
+    end
+    provider_keys = provider_keys_by_identifier.values.uniq
+    states_by_name = user.provider_states.where(provider_name: priorities + provider_keys).index_by(&:provider_name)
 
-    priorities.select do |provider|
-      state = states_by_name[provider]
+    available = priorities.select do |provider|
+      state = states_by_name[provider] || states_by_name[provider_keys_by_identifier[provider]]
       next true unless state
 
       # Check if circuit can recover before filtering
@@ -212,6 +249,10 @@ class UserSetting < ApplicationRecord
 
       !state.unavailable?
     end
+
+    return available if identifiers
+
+    map_identifiers_to_provider_keys(available)
   end
 
   # Returns the ProviderState for a given provider, creating one if it doesn't exist.
@@ -234,12 +275,23 @@ class UserSetting < ApplicationRecord
       return
     end
 
-    self.fallback_providers = fallback_providers & allowed_provider_keys_for_fallback
+    self.fallback_providers = sanitize_provider_tokens(fallback_providers, candidates: allowed_provider_identifiers_for_fallback)
   end
 
   def validate_default_agent_provider
-    allowed = allowed_provider_keys_for_agent_runs
-    return if allowed.include?(default_agent_provider)
+    allowed = allowed_provider_identifiers_for_agent_runs
+    token = default_agent_provider.to_s
+    normalized = normalized_default_agent_provider
+
+    if token.present? && allowed.include?(token)
+      self.default_agent_provider = token
+      return
+    end
+
+    if normalized.present?
+      self.default_agent_provider = normalized
+      return
+    end
 
     if allowed.any?
       self.default_agent_provider = allowed.first
@@ -249,11 +301,77 @@ class UserSetting < ApplicationRecord
     errors.add(:default_agent_provider, "is not an enabled provider")
   end
 
-  def allowed_provider_keys_for_agent_runs
-    self.class.enabled_agent_providers(user)
+  def allowed_provider_identifiers_for_agent_runs
+    return self.class.enabled_agent_providers(nil, identifiers: true) unless user
+    return self.class.enabled_agent_providers(user, identifiers: true) if user.new_record?
+
+    executable_keys = ProviderSupport.container_executable_provider_keys
+    self.class.provider_identifiers_for(
+      user.providers.for_agent_runs.where(provider_key: executable_keys).ordered,
+      identifiers: true
+    )
   end
 
-  def allowed_provider_keys_for_fallback
-    self.class.fallback_candidate_providers(user)
+  def allowed_provider_identifiers_for_fallback
+    return self.class.fallback_candidate_providers(nil, identifiers: true) unless user
+    return self.class.fallback_candidate_providers(user, identifiers: true) if user.new_record?
+
+    executable_keys = ProviderSupport.container_executable_provider_keys
+    self.class.provider_identifiers_for(
+      user.providers.for_fallback.where(provider_key: executable_keys).ordered,
+      identifiers: true
+    )
+  end
+
+  def normalized_default_agent_provider
+    identifiers_for_provider_token(default_agent_provider, candidates: allowed_provider_identifiers_for_agent_runs).first
+  end
+
+  def identifiers_for_provider_token(token, candidates:)
+    token = token.to_s
+    return [] if token.blank?
+
+    exact = candidates.select { |candidate| candidate == token }
+    return exact if exact.any?
+    return [] unless user
+
+    provider_index_by_id = {}
+    routing_ids = candidates.filter_map.with_index do |candidate, index|
+      provider_id = Provider.id_from_routing_key(candidate)
+      provider_index_by_id[provider_id] ||= index if provider_id
+      provider_id
+    end
+    return [] if routing_ids.empty?
+
+    matching_providers = user.providers.where(id: routing_ids, provider_key: token).ordered.to_a
+    return [] if matching_providers.empty?
+
+    preferred_provider = matching_providers.min_by do |provider|
+      [
+        provider.subscription? ? 0 : 1,
+        provider_index_by_id.fetch(provider.id, Float::INFINITY)
+      ]
+    end
+    preferred_identifier = "#{Provider::ROUTING_KEY_PREFIX}#{preferred_provider.id}"
+
+    candidates.include?(preferred_identifier) ? [ preferred_identifier ] : []
+  end
+
+  def map_identifiers_to_provider_keys(identifiers)
+    Array(identifiers).map do |identifier|
+      provider_key_for_identifier(identifier)
+    end.uniq
+  end
+
+  def provider_key_for_identifier(identifier)
+    Provider.for_identifier(user, identifier)&.provider_key || identifier
+  end
+
+  def self.provider_identifiers_for(providers, identifiers:)
+    if identifiers
+      providers.pluck(:id).map { |id| "#{Provider::ROUTING_KEY_PREFIX}#{id}" }
+    else
+      providers.pluck(:provider_key).uniq
+    end
   end
 end

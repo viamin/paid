@@ -12,6 +12,7 @@ class AgentRun < ApplicationRecord
   belongs_to :project
   belongs_to :issue, optional: true
   belongs_to :prompt_version, optional: true
+  belongs_to :provider, optional: true
 
   has_many :agent_run_logs, dependent: :destroy
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
@@ -60,6 +61,7 @@ class AgentRun < ApplicationRecord
   validates :final_provider, length: { maximum: 50 }
   validates :provider_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
+  validate :provider_belongs_to_project_owner, if: -> { provider.present? }
   validate :has_prompt_source, on: :create
 
   scope :by_status, ->(status) { where(status: status) }
@@ -211,6 +213,14 @@ class AgentRun < ApplicationRecord
     scope = queued.order(QUEUE_ORDER)
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope.first
+  end
+
+  def provider_belongs_to_project_owner
+    owner = project&.effective_owner
+    return unless owner
+    return if provider.user_id == owner.id
+
+    errors.add(:provider, "must belong to the same user as the project owner")
   end
 
   # Atomically claims a queued run by transitioning it to pending inside a
@@ -508,6 +518,30 @@ class AgentRun < ApplicationRecord
     final_provider.presence || agent_type
   end
 
+  def final_provider_record
+    owner = project&.effective_owner
+    return unless owner
+
+    return unless final_provider.present?
+
+    provider_id = Provider.id_from_routing_key(final_provider)
+    owner.providers.find_by(id: provider_id) if provider_id
+  end
+
+  def attempted_providers_by_routing_key
+    owner = project&.effective_owner
+    return {} unless owner
+
+    return {} unless provider_switches.positive?
+
+    routing_ids = providers_attempted.filter_map do |attempt|
+      Provider.id_from_routing_key(attempt["provider"])
+    end
+    return {} if routing_ids.empty?
+
+    owner.providers.where(id: routing_ids).index_by(&:routing_key)
+  end
+
   # Records a provider attempt in the providers_attempted array.
   #
   # @param provider [String] The provider name
@@ -565,9 +599,9 @@ class AgentRun < ApplicationRecord
   # @return [Containers::Provision::Result] Result with stdout, stderr, exit_code
   # @raise [Containers::Provision::ProvisionError] When container not provisioned
   # @raise [Containers::Provision::TimeoutError] When command times out
-  def execute_in_container(command, timeout: nil, stream: true)
+  def execute_in_container(command, timeout: nil, stream: true, env: {})
     ensure_container_service!
-    @container_service.execute(command, timeout: timeout, stream: stream)
+    @container_service.execute(command, timeout: timeout, stream: stream, env: env)
   end
 
   # Cleans up the provisioned container.
