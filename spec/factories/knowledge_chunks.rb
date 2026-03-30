@@ -10,5 +10,9 @@ FactoryBot.define do
     scope_tags { [] }
     status { "active" }
     add_attribute(:sequence) { 0 }
+
+    trait :redaction_scanned do
+      redaction_scanned_at { Time.current }
+    end
   end
 end

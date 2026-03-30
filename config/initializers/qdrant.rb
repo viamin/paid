@@ -31,6 +31,17 @@ module Paid
     end
 
     def qdrant_api_key
+      cred_key = Rails.application.credentials.dig(:qdrant, :api_key)
+
+      if cred_key.present?
+        return cred_key
+      end
+
+      if Rails.env.production?
+        raise "QDRANT_API_KEY is required in production. " \
+              "Set it via Rails credentials (qdrant.api_key)."
+      end
+
       ENV["QDRANT_API_KEY"]
     end
 
