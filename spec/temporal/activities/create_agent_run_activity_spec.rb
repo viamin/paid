@@ -80,6 +80,26 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:provider_attempt_count]).to eq(2)
     end
 
+    it "returns one attempt for an explicitly selected provider when fallback is disabled" do
+      provider = create(:provider, user: project.created_by, provider_key: "cursor")
+      project.created_by.settings.update!(fallback_enabled: false, fallback_providers: [ provider.routing_key ])
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: provider.id, agent_type: "cursor")
+
+      expect(result[:provider_attempt_count]).to eq(1)
+    end
+
+    it "counts fallbacks for an explicitly selected provider only when fallback is enabled" do
+      primary_provider = create(:provider, user: project.created_by, provider_key: "cursor")
+      fallback_provider = create(:provider, user: project.created_by, provider_key: "aider")
+      project.created_by.providers.find_by!(provider_key: "claude").update!(enabled_for_fallback: false)
+      project.created_by.settings.update!(fallback_enabled: true, fallback_providers: [ fallback_provider.routing_key ])
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: primary_provider.id, agent_type: "cursor")
+
+      expect(result[:provider_attempt_count]).to eq(2)
+    end
+
     it "updates the issue paid_state to in_progress" do
       activity.execute(project_id: project.id, issue_id: issue.id)
 

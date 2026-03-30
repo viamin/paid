@@ -178,10 +178,11 @@ module Providers
 
     def execute_container_test
       test_run = build_test_run
+      context = container_test_context
 
       begin
         test_run.with_container do |run|
-          run.execute_in_container(test_command, timeout: TIMEOUT, stream: false)
+          run.execute_in_container(context.fetch(:command), timeout: TIMEOUT, stream: false, env: context.fetch(:env))
         end
       ensure
         test_run.destroy! if test_run&.persisted?
@@ -237,6 +238,7 @@ module Providers
       result = AgentRun.insert_all!(
         [ {
           project_id: test_project.id,
+          provider_id: provider.id,
           agent_type: Provider.agent_type_for(provider.provider_key),
           status: "pending",
           goal: "create_pr",
@@ -271,7 +273,21 @@ module Providers
     end
 
     def clear_provider_state_if_healthy!
-      provider.user.provider_states.find_by(provider_name: provider.provider_key)&.record_success!
+      provider_names = [ provider.state_key ]
+      if provider.subscription? || provider.state_key == provider.provider_key
+        provider_names << provider.provider_key
+      end
+
+      provider_names.uniq.each do |provider_name|
+        provider.user.provider_states.find_by(provider_name: provider_name)&.record_success!
+      end
+    end
+
+    def container_test_context
+      {
+        command: test_command,
+        env: test_command_env
+      }
     end
 
     def test_command
@@ -281,8 +297,13 @@ module Providers
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
       return kilocode_test_command if provider.provider_key == "kilocode"
+      return provider.direct_outbound_exec_command(command_prefix: command, prompt: PROMPT) if provider.provider_key == "opencode" && provider.requires_direct_outbound?
 
       command + [ PROMPT ]
+    end
+
+    def test_command_env
+      provider.direct_outbound_exec_env
     end
 
     def classify_failed_response(error_message)

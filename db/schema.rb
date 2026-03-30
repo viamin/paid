@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_29_170336) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -147,6 +147,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_170336) do
     t.bigint "peak_memory_bytes"
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
+    t.bigint "provider_id"
     t.integer "provider_switches", default: 0, null: false
     t.jsonb "providers_attempted", default: [], null: false
     t.string "proxy_token", limit: 64
@@ -176,6 +177,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_170336) do
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
+    t.index ["provider_id"], name: "index_agent_runs_on_provider_id"
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
@@ -764,14 +766,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_170336) do
     t.boolean "enabled_for_agent_runs", default: true, null: false
     t.boolean "enabled_for_fallback", default: true, null: false
     t.string "fallback_role", limit: 30, default: "standard", null: false
-    t.string "name", limit: 100
+    t.string "name", limit: 100, default: "", null: false
     t.bigint "provider_api_key_id"
     t.string "provider_key", limit: 50, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.index ["auth_type"], name: "index_providers_on_auth_type"
     t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
-    t.index ["user_id", "provider_key", "provider_api_key_id"], name: "idx_providers_unique_api_key", unique: true, where: "((auth_type)::text = 'api_key'::text)"
+    t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "((auth_type)::text = 'api_key'::text)"
     t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "((auth_type)::text = 'subscription'::text)"
     t.index ["user_id"], name: "index_providers_on_user_id"
     t.check_constraint "auth_type::text <> 'api_key'::text OR provider_api_key_id IS NOT NULL", name: "providers_api_key_requires_key"
@@ -970,6 +972,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_170336) do
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
+  add_foreign_key "agent_runs", "providers", on_delete: :nullify
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "cost_budgets", "projects", on_delete: :cascade

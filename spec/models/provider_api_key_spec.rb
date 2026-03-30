@@ -43,6 +43,16 @@ RSpec.describe ProviderApiKey do
     end
   end
 
+  describe ".compatibility_target_labels" do
+    it "uses required API key targets rather than provider keys" do
+      labels = described_class.compatibility_target_labels
+
+      expect(labels).to include("claude" => Provider.display_name("claude"))
+      expect(labels).to include("openrouter" => "OpenRouter")
+      expect(labels).not_to have_key("opencode")
+    end
+  end
+
   describe "destroy restriction" do
     it "prevents deletion when providers are associated" do
       api_key = create(:provider_api_key)

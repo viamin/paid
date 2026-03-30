@@ -98,38 +98,55 @@ module Activities
         pre_agent_sha = nil
         last_error = nil
         last_attempted_provider = nil
+        last_attempted_label = nil
         timeout_error = nil
         rate_limit_reset_at = nil
         skipped_rate_limited_count = 0
 
-        providers.each_with_index do |provider, index|
-          heartbeat("provider_attempt", provider, index)
-
-          # Skip unavailable providers, tracking rate-limited skips separately
-          if provider_unavailable?(user_settings, provider, provider_states)
-            canonical = canonical_provider(provider)
-            state = provider_states[canonical]
-            error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
-            skipped_rate_limited_count += 1 if error_type == "rate_limited"
-            agent_run.record_provider_attempt(provider, success: false, error_type: error_type)
+        providers.each_with_index do |provider_candidate, index|
+          # Skip routing keys whose provider entry has been deleted — attempting
+          # execution would fail with "Unsupported provider" and leak internal
+          # identifiers in user-visible error messages.
+          if Provider.routing_key?(provider_candidate) && provider_entry_for(provider_candidate, user_settings.user).nil?
+            agent_run.record_provider_attempt("Deleted provider entry", success: false, error_type: "unavailable")
             next
           end
 
-          # Log provider switch when we have a previous actually-attempted provider
-          if last_attempted_provider
-            agent_run.log_provider_switch!(last_attempted_provider, provider, last_error || "fallback")
+          provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
+          attempt_label = provider_attempt_label(provider_candidate, agent_run, user_settings.user)
+          provider_state_name = state_key_for(provider_candidate, provider, user_settings.user)
+          heartbeat("provider_attempt", provider, index)
+
+          # Skip unavailable providers, tracking rate-limited skips separately
+          if provider_unavailable?(user_settings, provider_state_name, provider_states)
+            state = provider_states[provider_state_name]
+            error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
+            skipped_rate_limited_count += 1 if error_type == "rate_limited"
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: error_type)
+            next
+          end
+
+          # Log provider switch when we have a previous actually-attempted provider.
+          # Use attempt_label (per-entry identifier) so entries sharing the same
+          # command key (e.g. two OpenCode API-key entries) are distinguishable.
+          if last_attempted_label
+            agent_run.log_provider_switch!(last_attempted_label, attempt_label, last_error || "fallback")
           end
 
           begin
             last_attempted_provider = provider
-            provider_result = run_agent_with_provider(agent_run, provider, prompt, user_settings)
+            last_attempted_label = attempt_label
+            provider_result = run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
 
             # Success - heartbeat and record final provider
             heartbeat("provider_completed", provider)
-            record_provider_success(user_settings, provider, provider_states)
-            agent_run.record_provider_attempt(provider, success: true)
-            agent_run.update!(final_provider: provider)
+            record_provider_success(user_settings, provider_state_name, provider_states)
+            agent_run.record_provider_attempt(attempt_label, success: true)
+            # Persist the routing key so multiple entries sharing the same
+            # provider_key (e.g. several OpenCode API-key entries with
+            # different models) remain distinguishable in UI and retry logic.
+            agent_run.update!(final_provider: attempt_label)
 
             commit_uncommitted_changes(agent_run)
             has_changes = check_for_changes(agent_run, pre_agent_sha)
@@ -143,13 +160,13 @@ module Activities
               success: true,
               has_changes: has_changes,
               output_present: provider_result.fetch(:output_present),
-              final_provider: provider
+              final_provider: attempt_label
             }
           rescue ProviderRateLimitError => e
             last_error = "rate_limited"
             rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
-            persist_rate_limit(user_settings, provider, provider_states, e.reset_at)
-            agent_run.record_provider_attempt(provider, success: false, error_type: "rate_limited")
+            persist_rate_limit(user_settings, provider_state_name, provider_states, e.reset_at)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "rate_limited")
             logger.info(message: "agent_execution.rate_limited", provider: provider, agent_run_id: agent_run.id)
 
             # Rate-limit fallback execution is not yet implemented. #546
@@ -159,21 +176,25 @@ module Activities
             # provider order. Tracked separately — only logging availability
             # for now; no switch counters or AgentRun mutation until the
             # fallback is actually executed.
-            canonical = canonical_provider(provider)
-            if @rate_limit_fallback_keys&.include?(canonical)
-              logger.info(message: "agent_execution.rate_limit_fallback_available", provider: canonical, agent_run_id: agent_run.id)
+            canonical_provider_key = canonical_provider(provider)
+            if @rate_limit_fallback_keys&.include?(canonical_provider_key)
+              logger.info(
+                message: "agent_execution.rate_limit_fallback_available",
+                provider: canonical_provider_key,
+                agent_run_id: agent_run.id
+              )
             end
           rescue ProviderTimeoutError => e
             last_error = "timeout"
             timeout_error ||= e.message
-            record_provider_failure(user_settings, provider, provider_states)
-            agent_run.record_provider_attempt(provider, success: false, error_type: "timeout")
+            record_provider_failure(user_settings, provider_state_name, provider_states)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "timeout")
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
             break
           rescue ProviderExecutionError => e
             last_error = "error"
-            record_provider_failure(user_settings, provider, provider_states)
-            agent_run.record_provider_attempt(provider, success: false, error_type: "error")
+            record_provider_failure(user_settings, provider_state_name, provider_states)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "error")
             logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
           end
         end
@@ -183,7 +204,7 @@ module Activities
         all_skipped_rate_limited = providers.any? && skipped_rate_limited_count == providers.size
         if rate_limit_reset_at.nil? && all_skipped_rate_limited
           reset_candidates = providers.filter_map do |provider|
-            state = provider_states[canonical_provider(provider)]
+            state = provider_states[state_key_for(provider, provider_command_key(provider, agent_run, user_settings.user), user_settings.user)]
             state&.rate_limited_until
           end
           rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
@@ -196,13 +217,13 @@ module Activities
           agent_run.timeout!(error: timeout_error) unless agent_run.finished?
           ProcessRunQueueJob.perform_later
         elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
-          provider_list = providers.any? ? providers.join(", ") : "none"
+          provider_list = providers.any? ? provider_attempt_labels(providers, agent_run, user_settings.user).join(", ") : "none"
           agent_run.rate_limit!(
             error: "All providers rate limited: #{provider_list}",
             reset_at: rate_limit_reset_at
           )
         elsif !agent_run.finished?
-          provider_list = providers.any? ? providers.join(", ") : "none"
+          provider_list = providers.any? ? provider_attempt_labels(providers, agent_run, user_settings.user).join(", ") : "none"
           agent_run.fail!(error: "All providers exhausted: #{provider_list}")
         end
         raise Temporalio::Error::ApplicationError.new(
@@ -225,6 +246,7 @@ module Activities
 
     class ProviderExecutionError < StandardError; end
     class ProviderTimeoutError < StandardError; end
+    CommandContext = Struct.new(:provider_candidate, :provider, :command_prefix, :user, keyword_init: true)
 
     private
 
@@ -248,17 +270,25 @@ module Activities
     #
     # @return [Array<String>] Provider names in priority order
     def build_provider_order(agent_run, user_settings)
-      fallback_providers = user_settings.fallback_priority_for(
-        primary_provider: canonical_provider(agent_run.agent_type)
-      )
+      if agent_run.provider
+        providers = [ agent_run.provider.routing_key ]
+        if user_settings.fallback_enabled
+          providers.concat(user_settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true))
+        end
+      else
+        fallback_providers = user_settings.fallback_priority_for(
+          primary_provider: canonical_provider(agent_run.agent_type),
+          identifiers: true
+        ).map do |identifier|
+          Provider.for_identifier(user_settings.user, identifier)&.provider_key || identifier
+        end
+        providers = self.class.provider_order(
+          agent_type: agent_run.agent_type,
+          fallback_enabled: user_settings.fallback_enabled,
+          fallback_providers: fallback_providers
+        )
+      end
 
-      providers = self.class.provider_order(
-        agent_type: agent_run.agent_type,
-        fallback_enabled: user_settings.fallback_enabled,
-        fallback_providers: fallback_providers
-      )
-
-      # Cache rate-limit fallback provider keys for use during execution
       @rate_limit_fallback_keys = UserSetting.rate_limit_fallback_providers(user_settings.user).to_set
 
       providers
@@ -267,9 +297,8 @@ module Activities
     # Checks if a provider is currently unavailable (rate limited or circuit open).
     #
     # @return [Boolean] true if provider should be skipped
-    def provider_unavailable?(user_settings, provider, provider_states)
-      canonical = canonical_provider(provider)
-      state = provider_states[canonical]
+    def provider_unavailable?(user_settings, provider_state_name, provider_states)
+      state = provider_states[provider_state_name]
       return false unless state
 
       # Check for circuit recovery before deciding
@@ -279,21 +308,20 @@ module Activities
     end
 
     # Records a rate limit for a provider.
-    def persist_rate_limit(user_settings, provider, provider_states, reset_at = nil)
-      state = provider_state_for(user_settings, provider, provider_states)
+    def persist_rate_limit(user_settings, provider_state_name, provider_states, reset_at = nil)
+      state = provider_state_for(user_settings, provider_state_name, provider_states)
       state.mark_rate_limited!(reset_at: reset_at)
     end
 
     # Records a successful provider execution.
-    def record_provider_success(user_settings, provider, provider_states = nil)
-      canonical = canonical_provider(provider)
-      state = provider_states ? provider_states[canonical] : user_settings.user.provider_states.find_by(provider_name: canonical)
+    def record_provider_success(user_settings, provider_state_name, provider_states = nil)
+      state = provider_states ? provider_states[provider_state_name] : user_settings.user.provider_states.find_by(provider_name: provider_state_name)
       state&.record_success!
     end
 
     # Records a failed provider execution.
-    def record_provider_failure(user_settings, provider, provider_states)
-      state = provider_state_for(user_settings, provider, provider_states)
+    def record_provider_failure(user_settings, provider_state_name, provider_states)
+      state = provider_state_for(user_settings, provider_state_name, provider_states)
       state.record_failure!(threshold: user_settings.circuit_breaker_failure_threshold)
     end
 
@@ -302,22 +330,22 @@ module Activities
       AGENT_TYPE_TO_PROVIDER.fetch(provider, provider)
     end
 
-    def provider_state_for(user_settings, provider, provider_states)
-      canonical = canonical_provider(provider)
-      provider_states[canonical] ||= user_settings.provider_state_for(canonical)
+    def provider_state_for(user_settings, provider_state_name, provider_states)
+      provider_states[provider_state_name] ||= user_settings.provider_state_for(provider_state_name)
     end
 
     def load_provider_state_cache(user, providers)
-      canonical_providers = providers.map { |provider| canonical_provider(provider) }.uniq
-      user.provider_states.where(provider_name: canonical_providers).index_by(&:provider_name)
+      provider_state_names = providers.map { |provider| state_key_for(provider, provider_command_key(provider, nil, user), user) }.uniq
+      user.provider_states.where(provider_name: provider_state_names).index_by(&:provider_name)
     end
 
     # Runs the agent with a specific provider.
     # Raises ProviderRateLimitError, ProviderTimeoutError, or ProviderExecutionError on failure.
     #
     # @return [Hash] The pre-agent SHA and whether output was present
-    def run_agent_with_provider(agent_run, provider, prompt, user_settings)
+    def run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
       container_service = reconnect_container(agent_run)
+      provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
 
       command_prefix = AGENT_COMMANDS[provider]
       unless command_prefix
@@ -325,7 +353,14 @@ module Activities
       end
 
       prompt = augment_prompt_for_goal(agent_run, prompt)
-      command = build_command(provider, command_prefix, prompt)
+      command_context = CommandContext.new(
+        provider_candidate: provider_candidate,
+        provider: provider,
+        command_prefix: command_prefix,
+        user: user_settings.user
+      )
+      command = build_command(command_context, prompt)
+      command_env = command_env_for(command_context)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
@@ -353,7 +388,7 @@ module Activities
       # Provider calls can run for many minutes, so without periodic
       # heartbeats the 120s heartbeat_timeout would fire mid-execution.
       result = with_periodic_heartbeat("executing", provider) do
-        container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
+        container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout, env: command_env)
       end
 
       if result.success?
@@ -499,11 +534,77 @@ module Activities
       worker.value
     end
 
-    def build_command(provider, command_prefix, prompt)
-      if ProviderSupport.subscription_auth_unset_vars_for(provider).any?
-        subscription_auth_command(provider, command_prefix, prompt)
+    def build_command(command_context, prompt)
+      provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
+
+      if provider_entry&.requires_direct_outbound?
+        provider_entry.direct_outbound_exec_command(command_prefix: command_context.command_prefix, prompt: prompt)
+      elsif ProviderSupport.subscription_auth_unset_vars_for(command_context.provider).any?
+        subscription_auth_command(command_context.provider, command_context.command_prefix, prompt)
       else
-        command_prefix + [ prompt ]
+        command_context.command_prefix + [ prompt ]
+      end
+    end
+
+    def command_env_for(command_context)
+      provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
+      return {} unless provider_entry&.requires_direct_outbound?
+
+      provider_entry.direct_outbound_exec_env
+    end
+
+    def provider_command_key(provider_candidate, agent_run, user = nil)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return provider_candidate unless provider_entry
+      return "claude_code" if agent_run&.provider_id == provider_entry.id && provider_entry.provider_key == "claude" && agent_run.agent_type == "claude_code"
+
+      provider_entry.provider_key
+    end
+
+    def state_key_for(provider_candidate, provider, user = nil)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return provider_entry.routing_key if provider_entry&.api_key?
+      return provider_entry.provider_key if provider_entry
+
+      canonical_provider(provider)
+    end
+
+    def provider_entry_for(provider_candidate, user)
+      return provider_candidate if provider_candidate.is_a?(Provider)
+      return nil unless user
+      return nil unless Provider.routing_key?(provider_candidate)
+
+      @provider_entry_cache ||= {}
+      cache_key = [ user.id, provider_candidate ]
+      return @provider_entry_cache[cache_key] if @provider_entry_cache.key?(cache_key)
+
+      @provider_entry_cache[cache_key] = Provider.for_identifier(user, provider_candidate)
+    end
+
+    # Returns a per-entry identifier suitable for persisting in
+    # providers_attempted and final_provider. Uses the routing key for
+    # API-key-backed entries so that multiple entries sharing the same
+    # provider_key remain distinguishable; uses provider_key for
+    # subscription entries so the value stays compatible with
+    # matches_identifier?, effective_provider_sql, and dashboard
+    # aggregations (which group by provider key, not agent_type).
+    def provider_attempt_label(provider_candidate, agent_run, user)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return provider_entry.routing_key if provider_entry&.api_key?
+      return provider_entry.provider_key if provider_entry
+      provider_command_key(provider_candidate, agent_run, user)
+    end
+
+    def provider_attempt_labels(providers, agent_run, user)
+      providers.map do |provider_candidate|
+        provider_entry = provider_entry_for(provider_candidate, user)
+        if provider_entry&.display_name
+          provider_entry.display_name
+        elsif Provider.routing_key?(provider_candidate)
+          "Deleted provider entry"
+        else
+          provider_command_key(provider_candidate, agent_run, user)
+        end
       end
     end
 

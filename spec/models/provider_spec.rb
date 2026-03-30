@@ -94,6 +94,15 @@ RSpec.describe Provider do
       expect(duplicate.errors[:provider_key]).to include("already has an entry with this API key")
     end
 
+    it "treats blank and nil names as duplicates for api_key entries" do
+      api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[cursor])
+      create(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key)
+      duplicate = build(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key, name: "")
+
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:provider_key]).to include("already has an entry with this API key")
+    end
+
     it "rejects provider_api_key belonging to a different user" do
       other_user = create(:user)
       api_key = create(:provider_api_key, user: other_user, compatible_providers: %w[cursor])
@@ -209,6 +218,18 @@ RSpec.describe Provider do
     end
   end
 
+  describe ".for_identifier" do
+    let(:user) { create(:user) }
+
+    it "prefers the subscription entry for plain provider keys" do
+      subscription = user.providers.find_by!(provider_key: "claude")
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      user.providers.create!(provider_key: "claude", auth_type: "api_key", provider_api_key: api_key)
+
+      expect(described_class.for_identifier(user, "claude")).to eq(subscription)
+    end
+  end
+
   describe "#display_name" do
     it "uses custom name when set" do
       provider = build(:provider, name: "My Custom Provider")
@@ -219,13 +240,81 @@ RSpec.describe Provider do
     it "uses titleized provider_key for subscription" do
       provider = build(:provider, provider_key: "claude", auth_type: "subscription")
 
-      expect(provider.display_name).to eq("Claude")
+      expect(provider.display_name).to eq(described_class.display_name_for("claude"))
     end
 
     it "appends (API Key) for api_key auth type" do
       provider = build(:provider, provider_key: "claude", auth_type: "api_key", name: nil)
 
-      expect(provider.display_name).to eq("Claude (API Key)")
+      expect(provider.display_name).to eq("#{described_class.display_name_for("claude")} (API Key)")
+    end
+
+    it "includes the model id for unnamed OpenCode entries" do
+      provider = build(
+        :provider,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        name: nil,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      expect(provider.display_name).to eq("#{described_class.display_name_for("opencode")} moonshotai/kimi-k2-0905 (API Key)")
+    end
+  end
+
+  describe "direct outbound OpenCode helpers" do
+    let(:user) { create(:user) }
+    let(:api_key) { create(:provider_api_key, user: user, compatible_providers: %w[openrouter], api_key: "sk-openrouter-secret") }
+    let(:provider) do
+      create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+    end
+
+    it "builds a shared exec wrapper and env for direct-outbound runs" do
+      command = provider.direct_outbound_exec_command(command_prefix: %w[opencode run], prompt: "ping")
+      env = provider.direct_outbound_exec_env
+
+      expect(command[2]).to include('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d')
+      expect(command[2]).to include('opencode run "$1"')
+      expect(Base64.strict_decode64(env.fetch("PAID_OPENCODE_CONFIG_B64"))).to include("sk-openrouter-secret")
+    end
+
+    it "does not enable direct outbound when the OpenCode model id is missing" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter" } }
+      )
+
+      expect(provider.requires_direct_outbound?).to be(false)
+      expect(provider.direct_outbound_exec_env).to eq({})
+      expect(provider.direct_outbound_exec_command(command_prefix: %w[opencode run], prompt: "ping")).to eq(%w[opencode run ping])
+      expect { provider.opencode_config_json }.to raise_error(ArgumentError, /Missing OpenCode model id/)
+    end
+  end
+
+  describe "#state_key" do
+    it "uses the canonical provider key for subscription entries" do
+      provider = build(:provider, provider_key: "claude", auth_type: "subscription")
+
+      expect(provider.state_key).to eq("claude")
+    end
+
+    it "uses the routing key for api-key entries" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      provider = create(:provider, :api_key, user: user, provider_key: "claude", provider_api_key: api_key)
+
+      expect(provider.state_key).to eq(provider.routing_key)
     end
   end
 

@@ -64,7 +64,7 @@ RSpec.describe "UserSettings" do
 
       it "updates agent execution settings" do
         allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor])
-        user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
+        cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true)
 
         patch user_settings_path, params: {
           user_setting: {
@@ -75,7 +75,7 @@ RSpec.describe "UserSettings" do
         expect(response).to redirect_to(edit_user_settings_path)
         settings = user.reload.settings
         expect(settings.agent_timeout_seconds).to eq(7200)
-        expect(settings.default_agent_provider).to eq("cursor")
+        expect(settings.default_agent_provider).to eq(cursor.routing_key)
       end
 
       it "updates container resource settings" do
@@ -148,7 +148,7 @@ RSpec.describe "UserSettings" do
       it "renders errors for invalid agent provider" do
         patch user_settings_path, params: { user_setting: { default_agent_provider: "invalid" } }
         expect(response).to redirect_to(edit_user_settings_path)
-        expect(user.reload.settings.default_agent_provider).to eq("claude")
+        expect(user.reload.settings.default_agent_provider).to eq(user.providers.find_by!(provider_key: "claude").routing_key)
       end
 
       it "renders errors for blank default branch" do

@@ -27,7 +27,7 @@
           <div class="ml-3">
             <h3 class="text-sm font-medium text-blue-800">Multi-provider API keys</h3>
             <div class="mt-2 text-sm text-blue-700">
-              <p>Some API keys work with multiple providers (e.g., an OpenRouter key). Select all compatible providers below.</p>
+              <p>Some API keys work with multiple providers or services. For example, an OpenRouter key can be used by an OpenCode provider entry that targets OpenRouter.</p>
             </div>
           </div>
         </div>
@@ -77,8 +77,8 @@
           </div>
 
           <fieldset>
-            <legend class="block text-sm font-medium leading-6 text-gray-900">Compatible Providers</legend>
-            <p class="mt-1 text-xs text-gray-500">Select which providers this API key can be used with.</p>
+            <legend class="block text-sm font-medium leading-6 text-gray-900">Compatible Providers and Services</legend>
+            <p class="mt-1 text-xs text-gray-500">Select which providers or upstream services this API key can be used with.</p>
             <div class="mt-3 space-y-2">
               <% @compatible_provider_options.each do |label, key| %>
                 <div class="flex items-center">

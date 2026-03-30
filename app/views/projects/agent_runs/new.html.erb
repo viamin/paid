@@ -94,12 +94,12 @@
         </div>
 
         <div>
-          <h2 class="text-base font-semibold text-gray-900">Agent Type</h2>
+          <h2 class="text-base font-semibold text-gray-900">Provider</h2>
           <div class="mt-4">
-            <select name="agent_type" id="agent_type" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-              <% AgentRun::AGENT_TYPES.each do |agent_type| %>
-                <option value="<%= agent_type %>" <%= "selected" if agent_type == @default_agent_type %>>
-                  <%= agent_type.titleize %>
+            <select name="provider" id="provider" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+              <% @available_run_provider_options.each do |label, identifier| %>
+                <option value="<%= identifier %>" <%= "selected" if identifier == @default_provider_identifier %>>
+                  <%= label %>
                 </option>
               <% end %>
             </select>

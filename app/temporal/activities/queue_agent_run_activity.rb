@@ -9,6 +9,7 @@ module Activities
       issue_id = input[:issue_id]
       custom_prompt = input[:custom_prompt]
       agent_type = input.fetch(:agent_type, "claude_code")
+      provider_id = input[:provider_id]
       source_pull_request_number = input[:source_pull_request_number]
 
       project = Project.find(project_id)
@@ -26,6 +27,7 @@ module Activities
           run = AgentRun.create!(
             project: project,
             issue: issue,
+            provider_id: provider_id,
             agent_type: agent_type,
             custom_prompt: custom_prompt,
             source_pull_request_number: source_pull_request_number,

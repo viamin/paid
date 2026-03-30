@@ -233,11 +233,19 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_run_detail_update(agent_run)
+    final_provider_record = agent_run.final_provider_record
+    attempted_providers = agent_run.attempted_providers_by_routing_key
+
     broadcast_replace_to(
       agent_run, :detail,
       target: ActionView::RecordIdentifier.dom_id(agent_run, :detail),
       partial: "agent_runs/detail",
-      locals: { agent_run: agent_run, quality_metrics: agent_run.quality_metrics.with_composite_score.load }
+      locals: {
+        agent_run: agent_run,
+        quality_metrics: agent_run.quality_metrics.with_composite_score.load,
+        final_provider_record: final_provider_record,
+        attempted_providers_by_routing_key: attempted_providers
+      }
     )
   end
 

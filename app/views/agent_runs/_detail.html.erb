@@ -5,7 +5,33 @@
         <div>
           <h1 class="text-xl font-semibold text-gray-900">Agent Run #<%= agent_run.id %></h1>
           <p class="mt-1 text-sm text-gray-500">
-            <%= agent_run.agent_type.titleize %>
+            <% final_provider_record = local_assigns.fetch(:final_provider_record, nil) %>
+            <% missing_provider_entry_label = "Deleted provider entry" %>
+            <% provider_label = lambda do |identifier, resolved_provider = nil|
+                 resolved_provider&.display_name ||
+                   if Provider.routing_key?(identifier)
+                     missing_provider_entry_label
+                   else
+                     identifier.to_s.titleize
+                   end
+               end %>
+            <% header_provider_name =
+                 if agent_run.provider.present?
+                   if final_provider_record && !agent_run.provider.matches_identifier?(agent_run.final_provider)
+                     final_provider_record.display_name
+                   elsif agent_run.final_provider.present? && !agent_run.provider.matches_identifier?(agent_run.final_provider)
+                     provider_label.call(agent_run.final_provider)
+                   else
+                     agent_run.provider.display_name
+                   end
+                 elsif final_provider_record
+                   final_provider_record.display_name
+                 elsif agent_run.final_provider.present?
+                   provider_label.call(agent_run.final_provider)
+                 else
+                   agent_run.agent_type.titleize
+                 end %>
+            <%= header_provider_name %>
             <% if agent_run.started_at.present? %>
               &middot; Started <%= time_ago_in_words(agent_run.started_at) %> ago
             <% else %>
@@ -375,6 +401,7 @@
   <% end %>
 
   <% if agent_run.provider_switches > 0 %>
+    <% attempted_providers_by_routing_key = local_assigns.fetch(:attempted_providers_by_routing_key, {}) %>
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-amber-800">Provider Fallback</h2>
@@ -389,8 +416,9 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
             </svg>
           <% end %>
+          <% attempt_provider = attempted_providers_by_routing_key[attempt["provider"]] %>
           <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= attempt['success'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' %>">
-            <%= attempt['provider'].to_s.titleize %>
+            <%= provider_label.call(attempt["provider"], attempt_provider) %>
             <% if attempt['error_type'].present? %>
               <span class="ml-1 text-xs opacity-75">(<%= attempt['error_type'] %>)</span>
             <% end %>
@@ -399,7 +427,8 @@
       </div>
       <% if agent_run.final_provider.present? %>
         <p class="mt-2 text-xs text-amber-700">
-          Final provider: <span class="font-medium"><%= agent_run.final_provider.titleize %></span>
+          <% final_prov = attempted_providers_by_routing_key[agent_run.final_provider] %>
+          Final provider: <span class="font-medium"><%= provider_label.call(agent_run.final_provider, final_prov) %></span>
         </p>
       <% end %>
     </div>

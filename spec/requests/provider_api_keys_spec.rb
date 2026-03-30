@@ -94,6 +94,14 @@ RSpec.describe "ProviderApiKeys" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Add LLM API Key")
       end
+
+      it "renders compatible provider options with provider keys as checkbox values" do
+        get new_provider_api_key_path
+
+        expect(response.body).to include('value="openrouter"')
+        expect(response.body).to include(">OpenRouter<")
+        expect(response.body).not_to include('value="opencode"')
+      end
     end
   end
 
