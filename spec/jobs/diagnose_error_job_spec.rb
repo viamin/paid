@@ -13,6 +13,18 @@ RSpec.describe DiagnoseErrorJob do
   end
 
   describe "#perform" do
+    context "when diagnosis_status is not in_progress" do
+      let(:agent_run) { create(:agent_run, :failed, project: project, diagnosis_status: "completed") }
+
+      it "skips diagnosis to ensure idempotency" do
+        allow(AgentRuns::DiagnoseError).to receive(:call)
+
+        described_class.new.perform(agent_run.id)
+
+        expect(AgentRuns::DiagnoseError).not_to have_received(:call)
+      end
+    end
+
     context "when diagnosis succeeds" do
       let(:result) do
         AgentRuns::DiagnoseError::Result.new(

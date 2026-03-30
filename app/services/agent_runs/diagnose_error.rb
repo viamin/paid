@@ -83,8 +83,7 @@ module AgentRuns
       gh_issue = client.create_issue(
         @project.full_name,
         title: title,
-        body: body,
-        labels: [ "diagnosis" ]
+        body: body
       )
 
       @agent_run.log!("system", "Diagnosis issue created: #{gh_issue.html_url}")
@@ -101,7 +100,9 @@ module AgentRuns
     def diagnosis_prompt
       error_text = redact_secrets(@agent_run.error_message.to_s).truncate(MAX_ERROR_INPUT, omission: "")
       logs_text = redact_secrets(recent_logs.to_s).truncate(MAX_LOG_INPUT, omission: "")
-      issue_context = @agent_run.issue&.title.presence || redact_secrets(@agent_run.custom_prompt.to_s).presence || "N/A"
+      issue_context = redact_secrets(@agent_run.issue&.title.to_s).truncate(MAX_ERROR_INPUT, omission: "").presence ||
+                      redact_secrets(@agent_run.custom_prompt.to_s).presence ||
+                      "N/A"
 
       <<~PROMPT.strip
         You are diagnosing a failed agent run. Analyze the error and logs below, then provide:
@@ -143,7 +144,8 @@ module AgentRuns
     def issue_title
       prefix = "Diagnosis: Agent Run ##{@agent_run.id}"
       if @agent_run.issue
-        "#{prefix} — #{@agent_run.issue.title}".truncate(255)
+        redacted_issue_title = redact_secrets(@agent_run.issue.title.to_s)
+        "#{prefix} — #{redacted_issue_title}".truncate(255)
       else
         prefix
       end

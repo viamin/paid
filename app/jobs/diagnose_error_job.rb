@@ -7,6 +7,11 @@ class DiagnoseErrorJob < ApplicationJob
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
 
+    # Idempotency: skip if not in_progress (e.g., duplicate enqueue or re-run)
+    agent_run.with_lock do
+      return unless agent_run.diagnosis_status == "in_progress"
+    end
+
     begin
       result = AgentRuns::DiagnoseError.call(agent_run: agent_run)
 

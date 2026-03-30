@@ -53,8 +53,7 @@ RSpec.describe AgentRuns::DiagnoseError do
       expect(github_client).to have_received(:create_issue).with(
         project.full_name,
         title: a_string_including("Diagnosis: Agent Run ##{agent_run.id}"),
-        body: a_string_including("Agent Run Diagnosis"),
-        labels: [ "diagnosis" ]
+        body: a_string_including("Agent Run Diagnosis")
       )
     end
 
@@ -138,8 +137,33 @@ RSpec.describe AgentRuns::DiagnoseError do
         expect(github_client).to have_received(:create_issue).with(
           project.full_name,
           title: anything,
-          body: a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_abcdef1234567890") }),
-          labels: [ "diagnosis" ]
+          body: a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_abcdef1234567890") })
+        )
+      end
+    end
+
+    context "when issue title contains secrets" do
+      let(:issue) { create(:issue, project: project, title: "Fix API_KEY=sk_live_secret123 leak") }
+      let(:agent_run) { create(:agent_run, :failed, project: project, issue: issue) }
+
+      it "redacts secrets in the issue title sent to the LLM" do
+        described_class.call(agent_run: agent_run)
+
+        expect(AgentHarness).to have_received(:send_message).with(
+          a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_secret123") }),
+          provider: :claude,
+          model: "claude-sonnet-4-6",
+          timeout: 60
+        )
+      end
+
+      it "redacts secrets in the GitHub issue title" do
+        described_class.call(agent_run: agent_run)
+
+        expect(github_client).to have_received(:create_issue).with(
+          project.full_name,
+          title: a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_secret123") }),
+          body: anything
         )
       end
     end
@@ -180,8 +204,7 @@ RSpec.describe AgentRuns::DiagnoseError do
         expect(github_client).to have_received(:create_issue).with(
           project.full_name,
           title: anything,
-          body: a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_leaked") }),
-          labels: [ "diagnosis" ]
+          body: a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_leaked") })
         )
       end
     end

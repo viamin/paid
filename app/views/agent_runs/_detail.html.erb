@@ -280,11 +280,13 @@
           </svg>
           Diagnosing error&hellip;
         </span>
-      <% elsif agent_run.diagnosis_status == "completed" && safe_github_url?(agent_run.diagnosis_issue_url) %>
+      <% elsif agent_run.diagnosis_status == "completed" %>
         <div class="rounded-lg border border-green-200 bg-green-50 p-3">
           <p class="text-sm text-green-800">
             Diagnosis complete.
-            <%= link_to "View diagnosis issue", agent_run.diagnosis_issue_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-green-700 underline hover:text-green-900" %>
+            <% if safe_github_url?(agent_run.diagnosis_issue_url) %>
+              <%= link_to "View diagnosis issue", agent_run.diagnosis_issue_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-green-700 underline hover:text-green-900" %>
+            <% end %>
           </p>
         </div>
       <% elsif agent_run.diagnosis_status == "failed" %>
