@@ -100,7 +100,11 @@ module Knowledge
           result = Knowledge::Redaction::Redactor.call(text: chunk.content)
 
           if result.fully_redacted?
-            chunk.update!(status: "redacted")
+            chunk.update!(
+              status: "redacted",
+              content: result.clean_text,
+              content_hash: Digest::SHA256.hexdigest(result.clean_text)
+            )
             log_redaction(chunk, result)
             audit_events << redaction_audit_event(chunk, result, fully_redacted: true)
           elsif result.redacted?

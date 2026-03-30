@@ -9,12 +9,42 @@ module Knowledge
         def fully_redacted?
           return true if original_length.zero?
 
-          redacted_chars = redactions.sum(&:length)
+          redacted_chars = merged_redactions_length
           redacted_chars.to_f / original_length >= FULLY_REDACTED_THRESHOLD
         end
 
         def redacted?
           redactions.any?
+        end
+
+        private
+
+        # Computes the total number of characters covered by redactions,
+        # accounting for overlapping or contiguous matches so characters
+        # are not double-counted.
+        def merged_redactions_length
+          return 0 if redactions.empty?
+
+          sorted = redactions.sort_by(&:offset)
+
+          current_start = sorted.first.offset
+          current_end   = current_start + sorted.first.length
+          total         = 0
+
+          sorted.drop(1).each do |m|
+            start_pos = m.offset
+            finish = m.offset + m.length
+
+            if start_pos > current_end
+              total += current_end - current_start
+              current_start = start_pos
+              current_end   = finish
+            else
+              current_end = [ current_end, finish ].max
+            end
+          end
+
+          total + (current_end - current_start)
         end
       end
 
