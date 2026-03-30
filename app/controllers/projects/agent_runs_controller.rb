@@ -20,8 +20,8 @@ module Projects
       @logs = @agent_run.agent_run_logs.order(created_at: :asc).limit(500).load
       @phase_timeline = @agent_run.agent_run_phases.load
       @phase_summary = @agent_run.phase_summary(phases: @phase_timeline.to_a)
-      @final_provider_record = resolve_final_provider_record(@agent_run)
-      @attempted_providers_by_routing_key = resolve_attempted_providers(@agent_run)
+      @final_provider_record = @agent_run.final_provider_record
+      @attempted_providers_by_routing_key = @agent_run.attempted_providers_by_routing_key
     end
 
     def new
@@ -502,23 +502,6 @@ module Projects
       enabled_retry_provider_entries.map do |identifier, provider|
         [ provider.display_name, identifier ]
       end
-    end
-
-    def resolve_final_provider_record(agent_run)
-      return unless agent_run.final_provider.present?
-
-      fid = Provider.id_from_routing_key(agent_run.final_provider)
-      Provider.find_by(id: fid) if fid
-    end
-
-    def resolve_attempted_providers(agent_run)
-      return {} unless agent_run.provider_switches > 0
-
-      routing_ids = agent_run.providers_attempted
-        .filter_map { |a| Provider.id_from_routing_key(a["provider"]) }
-      return {} if routing_ids.empty?
-
-      Provider.where(id: routing_ids).index_by(&:routing_key)
     end
   end
 end

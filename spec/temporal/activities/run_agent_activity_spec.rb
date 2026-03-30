@@ -297,6 +297,18 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "#provider_entry_for" do
+    it "memoizes routing-key lookups per user and identifier" do
+      provider = create(:provider, user: user, provider_key: "opencode")
+
+      expect(Provider).to receive(:for_identifier).once.with(user, provider.routing_key).and_call_original
+
+      2.times do
+        expect(activity.send(:provider_entry_for, provider.routing_key, user)).to eq(provider)
+      end
+    end
+  end
+
   def build_opencode_context(user)
     api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter], api_key: "sk-openrouter-secret")
     provider = create_opencode_provider_entry(user: user, api_key: api_key, name: nil, model: "moonshotai/kimi-k2-0905")

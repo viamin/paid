@@ -507,6 +507,24 @@ class AgentRun < ApplicationRecord
     final_provider.presence || agent_type
   end
 
+  def final_provider_record
+    return unless final_provider.present?
+
+    provider_id = Provider.id_from_routing_key(final_provider)
+    Provider.find_by(id: provider_id) if provider_id
+  end
+
+  def attempted_providers_by_routing_key
+    return {} unless provider_switches.positive?
+
+    routing_ids = providers_attempted.filter_map do |attempt|
+      Provider.id_from_routing_key(attempt["provider"])
+    end
+    return {} if routing_ids.empty?
+
+    Provider.where(id: routing_ids).index_by(&:routing_key)
+  end
+
   # Records a provider attempt in the providers_attempted array.
   #
   # @param provider [String] The provider name

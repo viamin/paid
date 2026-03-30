@@ -566,7 +566,11 @@ module Activities
       return nil unless user
       return nil unless Provider.routing_key?(provider_candidate)
 
-      Provider.for_identifier(user, provider_candidate)
+      @provider_entry_cache ||= {}
+      cache_key = [ user.id, provider_candidate ]
+      return @provider_entry_cache[cache_key] if @provider_entry_cache.key?(cache_key)
+
+      @provider_entry_cache[cache_key] = Provider.for_identifier(user, provider_candidate)
     end
 
     # Returns a per-entry identifier suitable for persisting in

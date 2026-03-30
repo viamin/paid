@@ -1450,6 +1450,43 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "#final_provider_record" do
+    it "resolves a routing-key final provider to its provider record" do
+      provider = create(:provider, provider_key: "opencode")
+      agent_run = create(:agent_run, final_provider: provider.routing_key)
+
+      expect(agent_run.final_provider_record).to eq(provider)
+    end
+
+    it "returns nil for a non-routing-key final provider" do
+      agent_run = create(:agent_run, final_provider: "claude")
+
+      expect(agent_run.final_provider_record).to be_nil
+    end
+  end
+
+  describe "#attempted_providers_by_routing_key" do
+    it "returns attempted providers indexed by routing key" do
+      provider = create(:provider, provider_key: "opencode")
+      agent_run = create(
+        :agent_run,
+        provider_switches: 1,
+        providers_attempted: [
+          { "provider" => provider.routing_key, "success" => false },
+          { "provider" => "claude", "success" => true }
+        ]
+      )
+
+      expect(agent_run.attempted_providers_by_routing_key).to eq(provider.routing_key => provider)
+    end
+
+    it "returns an empty hash when no provider switches were recorded" do
+      agent_run = create(:agent_run, provider_switches: 0, providers_attempted: [])
+
+      expect(agent_run.attempted_providers_by_routing_key).to eq({})
+    end
+  end
+
   describe "#agent_summary_with_stderr_fallback" do
     let(:agent_run) { create(:agent_run) }
 
