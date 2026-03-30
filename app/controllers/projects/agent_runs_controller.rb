@@ -3,7 +3,7 @@
 module Projects
   class AgentRunsController < ApplicationController
     before_action :set_project
-    before_action :set_agent_run, only: [ :show, :retry, :refresh_auth ]
+    before_action :set_agent_run, only: [ :show, :retry, :refresh_auth, :diagnose_error ]
 
     def index
       authorize @project, :show?
@@ -146,6 +146,43 @@ module Projects
 
       action = pr.auto_continue_paused? ? "paused" : "resumed"
       redirect_to project_path(@project), notice: "Auto-continue #{action} for PR ##{pr.github_number}."
+    end
+
+    def diagnose_error
+      authorize @agent_run
+
+      unless @agent_run.finished?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Only finished runs can be diagnosed."
+        return
+      end
+
+      unless @agent_run.error_message.present?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Only runs with errors can be diagnosed."
+        return
+      end
+
+      @agent_run.with_lock do
+        case @agent_run.diagnosis_status
+        when "in_progress", "processing"
+          redirect_to project_agent_run_path(@project, @agent_run),
+            alert: "Diagnosis is already in progress."
+          return
+        when "completed"
+          redirect_to project_agent_run_path(@project, @agent_run),
+            notice: "Diagnosis has already been completed."
+          return
+        end
+
+        @agent_run.update!(diagnosis_status: "in_progress")
+      end
+
+      @agent_run.project.broadcast_agent_run_detail_update(@agent_run)
+      DiagnoseErrorJob.perform_later(@agent_run.id)
+
+      redirect_to project_agent_run_path(@project, @agent_run),
+        notice: "Error diagnosis started. You'll see the result shortly."
     end
 
     def retry
