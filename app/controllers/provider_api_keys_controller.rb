@@ -54,6 +54,6 @@ class ProviderApiKeysController < ApplicationController
   end
 
   def load_provider_options
-    @compatible_provider_options = ProviderApiKey.compatibility_target_labels.to_a
+    @compatible_provider_options = ProviderApiKey.compatibility_target_labels.to_a.map { |key, label| [ label, key ] }
   end
 end

@@ -101,6 +101,10 @@ export default class extends Controller {
 
   currentProviderKey() {
     const visibleSelect = this.providerSelectTargets.find((select) => !select.disabled)
-    return visibleSelect?.value || this.providerSelectTargets[0]?.value || ""
+    if (visibleSelect) return visibleSelect.value
+    if (this.providerSelectTargets[0]) return this.providerSelectTargets[0].value
+
+    const hiddenField = this.element.querySelector("input[name='provider[provider_key]']")
+    return hiddenField?.value || ""
   }
 }
