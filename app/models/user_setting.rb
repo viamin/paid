@@ -234,11 +234,14 @@ class UserSetting < ApplicationRecord
   # @return [Array<String>] Available provider names in priority order
   def available_providers(check_circuit_recovery: true, identifiers: false)
     priorities = provider_priority(identifiers: true)
-    provider_keys = map_identifiers_to_provider_keys(priorities)
+    provider_keys_by_identifier = priorities.index_with do |identifier|
+      provider_key_for_identifier(identifier)
+    end
+    provider_keys = provider_keys_by_identifier.values.uniq
     states_by_name = user.provider_states.where(provider_name: priorities + provider_keys).index_by(&:provider_name)
 
     available = priorities.select do |provider|
-      state = states_by_name[provider] || states_by_name[provider_key_for_identifier(provider)]
+      state = states_by_name[provider] || states_by_name[provider_keys_by_identifier[provider]]
       next true unless state
 
       # Check if circuit can recover before filtering

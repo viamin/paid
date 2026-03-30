@@ -244,7 +244,7 @@ module Containers
       begin
         watchdog = start_watchdog(watchdog_ctx)
 
-        exec_result = container.exec(cmd_array, **exec_options) do |stream_type, chunk|
+        exec_result = container.exec(cmd_array, exec_options) do |stream_type, chunk|
           watchdog_mutex.synchronize do
             output_received = true
             last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)

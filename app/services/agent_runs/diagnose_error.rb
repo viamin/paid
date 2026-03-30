@@ -1,0 +1,212 @@
+# frozen_string_literal: true
+
+module AgentRuns
+  # Diagnoses a failed agent run by analyzing its error and logs using an LLM,
+  # then creates a GitHub issue with the diagnosis and suggested fix.
+  #
+  # @example
+  #   result = AgentRuns::DiagnoseError.call(agent_run: agent_run)
+  #   result.success?    # => true
+  #   result.issue_url   # => "https://github.com/owner/repo/issues/42"
+  class DiagnoseError
+    DEFAULT_MODEL = "claude-sonnet-4-6"
+    MAX_ERROR_INPUT = 8000
+    MAX_LOG_INPUT = 8000
+    TIMEOUT = 60
+
+    # Extends base secret patterns with GitHub token formats (ghp_, github_pat_, gho_, ghs_, ghu_, ghr_)
+    # that may appear standalone in error logs without a KEY=/TOKEN= prefix.
+    GITHUB_TOKEN_IN_TEXT = /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/
+    SECRET_PATTERNS = (StyleGuides::CollectCodeSamples::SECRET_PATTERNS + [ GITHUB_TOKEN_IN_TEXT ]).freeze
+
+    class << self
+      def call(agent_run:)
+        new(agent_run: agent_run).call
+      end
+    end
+
+    def initialize(agent_run:)
+      @agent_run = agent_run
+      @project = agent_run.project
+    end
+
+    def call
+      validate!
+      diagnosis = analyze_error
+      return Result.new(success: false, message: "No diagnosis could be determined.") if diagnosis.blank?
+
+      issue_url = create_github_issue(diagnosis)
+      Result.new(success: true, issue_url: issue_url)
+    rescue AgentHarness::Error => e
+      Rails.logger.warn(
+        message: "agent_execution.diagnose_error_llm_failed",
+        agent_run_id: @agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      Result.new(success: false, message: "Error diagnosis failed: #{e.message}")
+    rescue GithubClient::Error => e
+      Rails.logger.warn(
+        message: "agent_execution.diagnose_error_github_failed",
+        agent_run_id: @agent_run.id,
+        error: e.message
+      )
+      Result.new(success: false, message: "Failed to create GitHub issue: #{e.message}")
+    end
+
+    private
+
+    def validate!
+      unless @agent_run.error_message.present?
+        raise ArgumentError, "Agent run has no error message to diagnose"
+      end
+
+      unless @project.github_token&.client
+        raise ArgumentError, "Project has no configured GitHub token"
+      end
+    end
+
+    def analyze_error
+      response = AgentHarness.send_message(
+        diagnosis_prompt,
+        provider: :claude,
+        model: DEFAULT_MODEL,
+        timeout: TIMEOUT
+      )
+      return nil unless response.success?
+
+      response.output.presence
+    end
+
+    def create_github_issue(diagnosis)
+      client = @project.github_token.client
+      title = issue_title
+      body = issue_body(diagnosis)
+
+      gh_issue = client.create_issue(
+        @project.full_name,
+        title: title,
+        body: body
+      )
+
+      @agent_run.log!("system", "Diagnosis issue created: #{gh_issue.html_url}")
+
+      Rails.logger.info(
+        message: "agent_execution.diagnosis_issue_created",
+        agent_run_id: @agent_run.id,
+        issue_url: gh_issue.html_url
+      )
+
+      gh_issue.html_url
+    end
+
+    def diagnosis_prompt
+      error_text = redact_secrets(@agent_run.error_message.to_s).truncate(MAX_ERROR_INPUT, omission: "")
+      logs_text = redact_secrets(recent_logs.to_s).truncate(MAX_LOG_INPUT, omission: "")
+      issue_context = redact_secrets(@agent_run.issue&.title.to_s).truncate(MAX_ERROR_INPUT, omission: "").presence ||
+                      redact_secrets(@agent_run.custom_prompt.to_s).presence ||
+                      "N/A"
+
+      <<~PROMPT.strip
+        You are diagnosing a failed agent run. Analyze the error and logs below, then provide:
+        1. A brief summary of what went wrong
+        2. The root cause of the failure
+        3. A suggested fix or workaround
+
+        Be concise and actionable. Format your response in Markdown.
+
+        ## Context
+        - Agent type: #{@agent_run.agent_type}
+        - Goal: #{@agent_run.goal}
+        - Task: #{issue_context}
+        - Status: #{@agent_run.status}
+        - Duration: #{@agent_run.duration_seconds || "N/A"}s
+
+        ## Error Message
+        ```
+        #{error_text}
+        ```
+
+        ## Recent Logs
+        ```
+        #{logs_text}
+        ```
+      PROMPT
+    end
+
+    def recent_logs
+      @agent_run.agent_run_logs
+        .order(created_at: :desc)
+        .limit(50)
+        .pluck(:log_type, :content)
+        .reverse
+        .map { |type, content| "[#{type}] #{content}" }
+        .join("\n")
+    end
+
+    def issue_title
+      prefix = "Diagnosis: Agent Run ##{@agent_run.id}"
+      if @agent_run.issue
+        redacted_issue_title = redact_secrets(@agent_run.issue.title.to_s)
+        "#{prefix} — #{redacted_issue_title}".truncate(255)
+      else
+        prefix
+      end
+    end
+
+    def issue_body(diagnosis)
+      redacted_error = redact_secrets(@agent_run.error_message).truncate(2000)
+
+      <<~BODY.strip
+        ## Agent Run Diagnosis
+
+        **Agent Run:** ##{@agent_run.id}
+        **Status:** #{@agent_run.status}
+        **Agent Type:** #{@agent_run.agent_type}
+        **Goal:** #{@agent_run.goal}
+        #{@agent_run.issue ? "**Original Issue:** ##{@agent_run.issue.github_number}" : ""}
+
+        ### Error
+        ```
+        #{redacted_error}
+        ```
+
+        ### Diagnosis
+        #{redact_secrets(diagnosis).truncate(10_000)}
+
+        ---
+        *This issue was automatically generated by [Paid](https://github.com/viamin/paid) error diagnosis.*
+      BODY
+    end
+
+    def redact_secrets(text)
+      SECRET_PATTERNS.reduce(text) do |result, pattern|
+        result.gsub(pattern) do
+          if Regexp.last_match.captures.any?
+            "#{Regexp.last_match[1]}[REDACTED]"
+          else
+            "[REDACTED]"
+          end
+        end
+      end
+    end
+
+    class Result
+      attr_reader :issue_url, :message
+
+      def initialize(success:, issue_url: nil, message: nil)
+        @success = success
+        @issue_url = issue_url
+        @message = message
+      end
+
+      def success?
+        @success
+      end
+
+      def failure?
+        !@success
+      end
+    end
+  end
+end

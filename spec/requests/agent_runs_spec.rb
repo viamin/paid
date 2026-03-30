@@ -1175,4 +1175,76 @@ RSpec.describe "AgentRuns" do
       **attrs
     )
   end
+
+  describe "POST /projects/:project_id/agent_runs/:id/diagnose_error" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        agent_run = create(:agent_run, :failed, project: project)
+        post diagnose_error_project_agent_run_path(project, agent_run)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "enqueues a diagnosis job for a failed run" do
+        agent_run = create(:agent_run, :failed, project: project)
+
+        expect {
+          post diagnose_error_project_agent_run_path(project, agent_run)
+        }.to have_enqueued_job(DiagnoseErrorJob).with(agent_run.id)
+
+        expect(agent_run.reload.diagnosis_status).to eq("in_progress")
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+      end
+
+      it "rejects diagnosis for a running run" do
+        agent_run = create(:agent_run, :running, project: project)
+
+        post diagnose_error_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:alert]).to include("Only finished runs")
+      end
+
+      it "rejects diagnosis for a run without errors" do
+        agent_run = create(:agent_run, :completed, project: project)
+
+        post diagnose_error_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:alert]).to include("Only runs with errors")
+      end
+
+      it "rejects diagnosis when already in progress" do
+        agent_run = create(:agent_run, :failed, project: project, diagnosis_status: "in_progress")
+
+        post diagnose_error_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:alert]).to include("already in progress")
+      end
+
+      it "rejects diagnosis when already completed" do
+        agent_run = create(:agent_run, :failed, project: project, diagnosis_status: "completed")
+
+        post diagnose_error_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:notice]).to include("already been completed")
+      end
+
+      it "does not allow diagnosing runs from other accounts" do
+        other_account = create(:account)
+        other_token = create(:github_token, account: other_account)
+        other_project = create(:project, account: other_account, github_token: other_token)
+        other_run = create(:agent_run, :failed, project: other_project)
+
+        post diagnose_error_project_agent_run_path(other_project, other_run)
+
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+  end
 end
