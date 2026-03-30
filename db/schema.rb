@@ -492,6 +492,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_170336) do
     t.string "embedding_model", limit: 100
     t.bigint "knowledge_artifact_id", null: false
     t.bigint "project_id", null: false
+    t.datetime "redaction_scanned_at"
     t.jsonb "scope_tags", default: []
     t.integer "sequence", default: 0
     t.string "status", limit: 50, default: "active", null: false
