@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.3](https://github.com/viamin/paid/compare/v0.11.2...v0.11.3) (2026-03-30)
+
+
+### Bug Fixes
+
+* 268: Trigger Knowledge Collection on Project Creation ([#603](https://github.com/viamin/paid/issues/603)) ([0efcabd](https://github.com/viamin/paid/commit/0efcabd6326c0dc998f44d713a96149e8e83fbc0))
+* 269: Knowledge Base Safe Defaults and Security Hardening ([#611](https://github.com/viamin/paid/issues/611)) ([3c46d64](https://github.com/viamin/paid/commit/3c46d64f31d6ff3b1de514f0fc931c62da64f8a2))
+* 591: Consolidate Dashboard and Live Dashboard into a single page ([#605](https://github.com/viamin/paid/issues/605)) ([11a2865](https://github.com/viamin/paid/commit/11a286594fca48a3148f5bf7a1004723950069d5))
+* 592: Add a comment when auto-merging a PR ([#606](https://github.com/viamin/paid/issues/606)) ([85436ea](https://github.com/viamin/paid/commit/85436ea9e073429ab4ea06ef92ff9698e3d6895b))
+* 593: Improve Temporal recovery for interrupted agent runs during full dev updates ([#604](https://github.com/viamin/paid/issues/604)) ([5a61264](https://github.com/viamin/paid/commit/5a612641b7e261bd5a190208d9637afa93ce2fcb))
+* 595: Track agent-harness provider audit and reduce Paid-side provider special casing ([#600](https://github.com/viamin/paid/issues/600)) ([761a8dd](https://github.com/viamin/paid/commit/761a8dd07736e97779fcd2fad4bd66104d1383f4))
+* 596: Track upstream Codex container-execution fix in agent-harness and adopt it in Paid ([#602](https://github.com/viamin/paid/issues/602)) ([ec19561](https://github.com/viamin/paid/commit/ec1956135bd2094a3178fec3efb718c98aa1744e))
+* 609: Retain unknown failed agent-run containers briefly after successful agent execution ([#612](https://github.com/viamin/paid/issues/612)) ([a999bdf](https://github.com/viamin/paid/commit/a999bdfe5d9e44a7b513e09c2dbcddcabaca9636))
+* **containers:** normalize git push error encoding ([#610](https://github.com/viamin/paid/issues/610)) ([1c7a1f6](https://github.com/viamin/paid/commit/1c7a1f6c01ea5768e2f8ee9b43d084ca49559e2f))
+* **db:** normalize schema.rb partial index formatting ([bbbe069](https://github.com/viamin/paid/commit/bbbe069a3496f44242694fde4703d570afe92a61))
+* **db:** normalize schema.rb partial index WHERE clause formatting ([a8d14ed](https://github.com/viamin/paid/commit/a8d14edea5b510463e51f5b06234bc21aa8de965))
+* **issue-monitoring:** keep Temporal poll workers within DB capacity ([#617](https://github.com/viamin/paid/issues/617)) ([ff6cf54](https://github.com/viamin/paid/commit/ff6cf54f70dafce13cac0a8ea038f2fc726bc386))
+
 ## [0.11.2](https://github.com/viamin/paid/compare/v0.11.1...v0.11.2) (2026-03-29)
 
 
