@@ -231,7 +231,11 @@ class Provider < ApplicationRecord
   def self.id_from_routing_key(identifier)
     return unless routing_key?(identifier)
 
-    identifier.to_s.delete_prefix(ROUTING_KEY_PREFIX).to_i
+    id_str = identifier.to_s.delete_prefix(ROUTING_KEY_PREFIX)
+    id = Integer(id_str, exception: false)
+    return unless id&.positive?
+
+    id
   end
 
   def self.for_identifier(user, identifier)

@@ -5,11 +5,7 @@
         <div>
           <h1 class="text-xl font-semibold text-gray-900">Agent Run #<%= agent_run.id %></h1>
           <p class="mt-1 text-sm text-gray-500">
-            <%# Resolve final_provider routing key to a Provider record (if any) %>
-            <% final_provider_record = begin
-                 fid = Provider.id_from_routing_key(agent_run.final_provider)
-                 fid ? Provider.find_by(id: fid) : nil
-               end if agent_run.final_provider.present? %>
+            <% final_provider_record = local_assigns.fetch(:final_provider_record, nil) %>
             <% header_provider_name =
                  if agent_run.provider.present?
                    if final_provider_record && !agent_run.provider.matches_identifier?(agent_run.final_provider)
@@ -360,10 +356,7 @@
   <% end %>
 
   <% if agent_run.provider_switches > 0 %>
-    <%# Batch-load Provider records referenced in providers_attempted to avoid N+1 queries %>
-    <% attempted_routing_ids = agent_run.providers_attempted
-         .filter_map { |a| Provider.id_from_routing_key(a["provider"]) } %>
-    <% attempted_providers_by_id = attempted_routing_ids.any? ? Provider.where(id: attempted_routing_ids).index_by { |p| p.routing_key } : {} %>
+    <% attempted_providers_by_id = local_assigns.fetch(:attempted_providers_by_routing_key, {}) %>
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-amber-800">Provider Fallback</h2>

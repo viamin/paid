@@ -233,11 +233,19 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_run_detail_update(agent_run)
+    final_provider_record = resolve_detail_final_provider(agent_run)
+    attempted_providers = resolve_detail_attempted_providers(agent_run)
+
     broadcast_replace_to(
       agent_run, :detail,
       target: ActionView::RecordIdentifier.dom_id(agent_run, :detail),
       partial: "agent_runs/detail",
-      locals: { agent_run: agent_run, quality_metrics: agent_run.quality_metrics.with_composite_score.load }
+      locals: {
+        agent_run: agent_run,
+        quality_metrics: agent_run.quality_metrics.with_composite_score.load,
+        final_provider_record: final_provider_record,
+        attempted_providers_by_routing_key: attempted_providers
+      }
     )
   end
 
@@ -270,6 +278,23 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def resolve_detail_final_provider(agent_run)
+    return unless agent_run.final_provider.present?
+
+    fid = Provider.id_from_routing_key(agent_run.final_provider)
+    Provider.find_by(id: fid) if fid
+  end
+
+  def resolve_detail_attempted_providers(agent_run)
+    return {} unless agent_run.provider_switches > 0
+
+    routing_ids = agent_run.providers_attempted
+      .filter_map { |a| Provider.id_from_routing_key(a["provider"]) }
+    return {} if routing_ids.empty?
+
+    Provider.where(id: routing_ids).index_by(&:routing_key)
+  end
 
   def auto_pick_just_enabled?
     saved_change_to_auto_pick_enabled? && auto_pick_enabled?
