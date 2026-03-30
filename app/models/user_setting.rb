@@ -335,11 +335,15 @@ class UserSetting < ApplicationRecord
     routing_ids = candidates.filter_map { |candidate| Provider.id_from_routing_key(candidate) }
     return [] if routing_ids.empty?
 
-    matching_identifiers = user.providers.where(id: routing_ids, provider_key: token).pluck(:id).map do |provider_id|
-      "#{Provider::ROUTING_KEY_PREFIX}#{provider_id}"
-    end
+    matching_providers = user.providers.where(id: routing_ids, provider_key: token).to_a
+    return [] if matching_providers.empty?
 
-    candidates.select { |candidate| matching_identifiers.include?(candidate) }
+    preferred_provider = matching_providers.min_by do |provider|
+      provider.subscription? ? 0 : 1
+    end
+    preferred_identifier = "#{Provider::ROUTING_KEY_PREFIX}#{preferred_provider.id}"
+
+    candidates.include?(preferred_identifier) ? [ preferred_identifier ] : []
   end
 
   def map_identifiers_to_provider_keys(identifiers)

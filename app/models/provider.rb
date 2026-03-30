@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "shellwords"
+
 class Provider < ApplicationRecord
   AUTH_TYPES = %w[subscription api_key].freeze
   FALLBACK_ROLES = %w[standard rate_limit_fallback].freeze

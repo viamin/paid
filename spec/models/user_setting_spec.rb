@@ -453,5 +453,26 @@ RSpec.describe UserSetting do
 
       expect(result).to eq([ cursor.routing_key ])
     end
+
+    it "prefers the subscription entry when multiple entries share a provider key" do
+      subscription = user.providers.find_by!(provider_key: "claude")
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      api_entry = user.providers.create!(
+        provider_key: "claude",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        enabled_for_agent_runs: true,
+        enabled_for_fallback: true
+      )
+      setting = build(:user_setting, user: user)
+
+      result = setting.send(
+        :identifiers_for_provider_token,
+        "claude",
+        candidates: [ api_entry.routing_key, subscription.routing_key ]
+      )
+
+      expect(result).to eq([ subscription.routing_key ])
+    end
   end
 end
