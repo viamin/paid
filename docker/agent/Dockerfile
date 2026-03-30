@@ -139,7 +139,7 @@ RUN npm install -g @openai/codex@0.116.0
 
 # Install Gemini CLI
 # Pin version for reproducible builds; update intentionally when upgrading Gemini.
-RUN npm install -g @google/gemini-cli@0.5.5
+RUN npm install -g @google/gemini-cli@0.35.3
 
 # Install Kilocode CLI
 # Pin version for reproducible builds; update intentionally when upgrading Kilocode.
