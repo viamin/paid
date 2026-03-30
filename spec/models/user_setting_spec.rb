@@ -122,6 +122,25 @@ RSpec.describe UserSetting do
     end
   end
 
+  describe ".rate_limit_fallback_providers" do
+    let(:user) { create(:user) }
+
+    it "returns canonical provider keys for configured rate-limit fallbacks" do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude])
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      user.providers.create!(
+        provider_key: "claude",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        fallback_role: "rate_limit_fallback",
+        enabled_for_agent_runs: true,
+        enabled_for_fallback: true
+      )
+
+      expect(described_class.rate_limit_fallback_providers(user)).to eq([ "claude" ])
+    end
+  end
+
   describe "#container_memory_gb" do
     it "converts bytes to gigabytes" do
       setting = build(:user_setting, container_memory_bytes: 4 * 1024 * 1024 * 1024)

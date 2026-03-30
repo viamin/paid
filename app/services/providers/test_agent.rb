@@ -292,15 +292,13 @@ module Providers
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
       return kilocode_test_command if provider.provider_key == "kilocode"
-      return opencode_test_command if provider.provider_key == "opencode" && provider.requires_direct_outbound?
+      return provider.direct_outbound_exec_command(command_prefix: command, prompt: PROMPT) if provider.provider_key == "opencode" && provider.requires_direct_outbound?
 
       command + [ PROMPT ]
     end
 
     def test_command_env
-      return {} unless provider.provider_key == "opencode" && provider.requires_direct_outbound?
-
-      { "PAID_OPENCODE_CONFIG_B64" => Base64.strict_encode64(provider.opencode_config_json) }
+      provider.direct_outbound_exec_env
     end
 
     def classify_failed_response(error_message)
@@ -439,15 +437,6 @@ module Providers
       <<~SH.squish
         env #{all_unset_flags}
         timeout 20s kilo run --auto --print-logs #{escaped_prompt}
-      SH
-    end
-
-    def opencode_test_command
-      escaped_prompt = Shellwords.escape(PROMPT)
-      <<~SH.squish
-        mkdir -p /home/agent/.config/opencode &&
-        printf '%s' "$PAID_OPENCODE_CONFIG_B64" | base64 -d > /home/agent/.config/opencode/opencode.json &&
-        opencode run #{escaped_prompt}
       SH
     end
 

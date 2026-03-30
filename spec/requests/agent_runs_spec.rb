@@ -282,6 +282,20 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("aria-labelledby=")
       end
 
+      it "marks only one retry option current for legacy runs without provider_id" do
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
+        api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
+        create_opencode_provider_entry(user: user, api_key: api_key, name: "Kimi K2.5", model: "moonshotai/kimi-k2-0905")
+        create_opencode_provider_entry(user: user, api_key: api_key, name: "Opus via OpenCode", model: "anthropic/claude-opus-4.1")
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "opencode", provider: nil)
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Retry with Kimi K2.5")
+        expect(response.body).to include("Retry with Opus via OpenCode")
+        expect(response.body.scan("Current").size).to eq(1)
+      end
+
       it "shows a single retry button when no alternate providers are configured" do
         agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
 
@@ -1110,5 +1124,16 @@ RSpec.describe "AgentRuns" do
         expect(response).to have_http_status(:not_found)
       end
     end
+  end
+
+  def create_opencode_provider_entry(user:, api_key:, name:, model:)
+    user.providers.create!(
+      provider_key: "opencode",
+      auth_type: "api_key",
+      provider_api_key: api_key,
+      name: name,
+      enabled_for_agent_runs: true,
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => model } }
+    )
   end
 end

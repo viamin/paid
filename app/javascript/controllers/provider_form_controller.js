@@ -4,6 +4,7 @@ export default class extends Controller {
   static targets = [
     "subscriptionFields",
     "apiKeyFields",
+    "apiKeySelectContainer",
     "apiKeySelect",
     "fallbackRoleField",
     "providerSelect",
@@ -35,7 +36,7 @@ export default class extends Controller {
       })
     })
 
-    this.apiKeySelectTargets.forEach((el) => {
+    this.apiKeySelectContainerTargets.forEach((el) => {
       el.hidden = !isApiKey
       el.querySelectorAll("select, input").forEach((control) => {
         control.disabled = !isApiKey

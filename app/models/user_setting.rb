@@ -125,8 +125,8 @@ class UserSetting < ApplicationRecord
     )
   end
 
-  # Returns provider keys that have API-key-based entries configured as
-  # rate-limit fallbacks. These are only used when the subscription entry
+  # Returns canonical provider keys that have API-key-based entries configured
+  # as rate-limit fallbacks. These are only used when the subscription entry
   # for the same provider_key is rate-limited.
   def self.rate_limit_fallback_providers(user)
     return [] unless user
@@ -135,8 +135,8 @@ class UserSetting < ApplicationRecord
     executable_keys = ProviderSupport.container_executable_provider_keys
     user.providers.api_key.rate_limit_fallback.for_agent_runs.for_fallback
       .where(provider_key: executable_keys)
-      .pluck(:id)
-      .map { |id| "#{Provider::ROUTING_KEY_PREFIX}#{id}" }
+      .distinct
+      .pluck(:provider_key)
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string

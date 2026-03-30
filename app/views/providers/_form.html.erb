@@ -91,7 +91,7 @@
   </div>
 
   <% if is_new && @available_api_keys.any? %>
-    <div data-provider-form-target="apiKeySelect" <%= "hidden" unless is_api_key %>>
+    <div data-provider-form-target="apiKeySelectContainer" <%= "hidden" unless is_api_key %>>
       <%= form.label :provider_api_key_id, "API Key", class: "block text-sm font-medium text-gray-900" %>
       <div class="mt-2">
         <select name="provider[provider_api_key_id]"

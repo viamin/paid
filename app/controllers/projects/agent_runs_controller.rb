@@ -362,11 +362,7 @@ module Projects
     end
 
     def retry_provider_options_for(agent_run)
-      current_provider_key = if agent_run.provider
-        agent_run.provider.provider_key
-      else
-        agent_type_to_provider_key(agent_run.agent_type)
-      end
+      current_provider = current_retry_provider_for(agent_run)
 
       UserSetting.enabled_agent_providers(current_user, identifiers: true).filter_map do |provider_identifier|
         provider = provider_for_identifier(provider_identifier)
@@ -379,9 +375,18 @@ module Projects
           provider_key: provider_identifier,
           agent_type: agent_type,
           label: provider.display_name,
-          current: provider.id == agent_run.provider_id || provider.provider_key == current_provider_key
+          current: current_provider.present? && provider.id == current_provider.id
         }
       end
+    end
+
+    def current_retry_provider_for(agent_run)
+      return agent_run.provider if agent_run.provider
+
+      provider_key = agent_type_to_provider_key(agent_run.agent_type)
+      return unless provider_key
+
+      Provider.for_identifier(current_user, provider_key)
     end
 
     def retry_agent_type_for(agent_run)

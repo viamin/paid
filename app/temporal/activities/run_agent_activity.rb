@@ -160,8 +160,8 @@ module Activities
             # provider order. Tracked separately — only logging availability
             # for now; no switch counters or AgentRun mutation until the
             # fallback is actually executed.
-            if @rate_limit_fallback_keys&.include?(provider_state_name)
-              logger.info(message: "agent_execution.rate_limit_fallback_available", provider: provider_state_name, agent_run_id: agent_run.id)
+            if @rate_limit_fallback_keys&.include?(provider)
+              logger.info(message: "agent_execution.rate_limit_fallback_available", provider: provider, agent_run_id: agent_run.id)
             end
           rescue ProviderTimeoutError => e
             last_error = "timeout"
@@ -517,7 +517,7 @@ module Activities
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
 
       if provider_entry&.requires_direct_outbound?
-        opencode_direct_command(command_context.command_prefix, prompt)
+        provider_entry.direct_outbound_exec_command(command_prefix: command_context.command_prefix, prompt: prompt)
       elsif ProviderSupport.subscription_auth_unset_vars_for(command_context.provider).any?
         subscription_auth_command(command_context.provider, command_context.command_prefix, prompt)
       else
@@ -529,17 +529,7 @@ module Activities
       provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
       return {} unless provider_entry&.requires_direct_outbound?
 
-      { "PAID_OPENCODE_CONFIG_B64" => Base64.strict_encode64(provider_entry.opencode_config_json) }
-    end
-
-    def opencode_direct_command(command_prefix, prompt)
-      command = "#{command_prefix.shelljoin} \"$1\""
-      script = <<~SH.squish
-        mkdir -p /home/agent/.config/opencode &&
-        printf '%s' "$PAID_OPENCODE_CONFIG_B64" | base64 -d > /home/agent/.config/opencode/opencode.json &&
-        #{command}
-      SH
-      [ "sh", "-lc", script, "--", prompt ]
+      provider_entry.direct_outbound_exec_env
     end
 
     def provider_command_key(provider_candidate, agent_run, user = nil)
@@ -566,7 +556,10 @@ module Activities
     end
 
     def provider_attempt_labels(providers, agent_run, user)
-      providers.map { |provider_candidate| provider_command_key(provider_candidate, agent_run, user) }
+      providers.map do |provider_candidate|
+        provider_entry = provider_entry_for(provider_candidate, user)
+        provider_entry&.display_name || provider_command_key(provider_candidate, agent_run, user)
+      end
     end
 
     # Wraps a provider command so that, when subscription auth is active,

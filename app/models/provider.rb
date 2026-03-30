@@ -123,6 +123,24 @@ class Provider < ApplicationRecord
     )
   end
 
+  def direct_outbound_exec_env
+    return {} unless requires_direct_outbound?
+
+    { "PAID_OPENCODE_CONFIG_B64" => Base64.strict_encode64(opencode_config_json) }
+  end
+
+  def direct_outbound_exec_command(command_prefix:, prompt:)
+    return command_prefix + [ prompt ] unless requires_direct_outbound?
+
+    command = "#{command_prefix.shelljoin} \"$1\""
+    script = <<~SH.squish
+      mkdir -p /home/agent/.config/opencode &&
+      printf '%s' "$PAID_OPENCODE_CONFIG_B64" | base64 -d > /home/agent/.config/opencode/opencode.json &&
+      #{command}
+    SH
+    [ "sh", "-lc", script, "--", prompt ]
+  end
+
   # Returns the provider key that must always exist and remain enabled for
   # agent runs. Prefers "claude" when container-executable, otherwise falls
   # back to the first available container-executable provider. Returns nil

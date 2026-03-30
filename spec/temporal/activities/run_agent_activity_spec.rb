@@ -292,20 +292,26 @@ RSpec.describe Activities::RunAgentActivity do
 
   def build_opencode_context(user)
     api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter], api_key: "sk-openrouter-secret")
-    provider = create(
-      :provider,
-      user: user,
-      provider_key: "opencode",
-      auth_type: "api_key",
-      provider_api_key: api_key,
-      config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
-    )
+    provider = create_opencode_provider_entry(user: user, api_key: api_key, name: nil, model: "moonshotai/kimi-k2-0905")
 
     described_class::CommandContext.new(
       provider_candidate: provider.routing_key,
       provider: "opencode",
       command_prefix: described_class::AGENT_COMMANDS["opencode"],
       user: user
+    )
+  end
+
+  def create_opencode_provider_entry(user:, api_key:, name:, model:)
+    create(
+      :provider,
+      user: user,
+      provider_key: "opencode",
+      auth_type: "api_key",
+      provider_api_key: api_key,
+      name: name || "",
+      enabled_for_agent_runs: true,
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => model } }
     )
   end
 
@@ -762,6 +768,16 @@ RSpec.describe Activities::RunAgentActivity do
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
         expect(agent_run.error_message).to include("rate limited")
+      end
+
+      it "uses provider display names in exhausted-provider labels" do
+        api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
+        kimi = create_opencode_provider_entry(user: user, api_key: api_key, name: "Kimi K2.5", model: "moonshotai/kimi-k2-0905")
+        opus = create_opencode_provider_entry(user: user, api_key: api_key, name: "Opus via OpenCode", model: "anthropic/claude-opus-4.1")
+
+        labels = activity.send(:provider_attempt_labels, [ kimi.routing_key, opus.routing_key ], agent_run, user)
+
+        expect(labels).to eq([ "Kimi K2.5", "Opus via OpenCode" ])
       end
 
       it "marks run as rate_limited when all providers are already rate limited in ProviderState" do

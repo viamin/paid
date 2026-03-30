@@ -481,7 +481,7 @@ RSpec.describe Providers::TestAgent do
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          a_string_including('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d').and(include("opencode run")),
+          array_including("sh", "-lc", a_string_including('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d').and(include('opencode run "$1"'))),
           timeout: 30,
           stream: false,
           env: hash_including("PAID_OPENCODE_CONFIG_B64")

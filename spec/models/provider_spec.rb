@@ -248,6 +248,42 @@ RSpec.describe Provider do
 
       expect(provider.display_name).to eq("Claude (API Key)")
     end
+
+    it "includes the model id for unnamed OpenCode entries" do
+      provider = build(
+        :provider,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        name: nil,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      expect(provider.display_name).to eq("Opencode moonshotai/kimi-k2-0905 (API Key)")
+    end
+  end
+
+  describe "direct outbound OpenCode helpers" do
+    let(:user) { create(:user) }
+    let(:api_key) { create(:provider_api_key, user: user, compatible_providers: %w[openrouter], api_key: "sk-openrouter-secret") }
+    let(:provider) do
+      create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+    end
+
+    it "builds a shared exec wrapper and env for direct-outbound runs" do
+      command = provider.direct_outbound_exec_command(command_prefix: %w[opencode run], prompt: "ping")
+      env = provider.direct_outbound_exec_env
+
+      expect(command[2]).to include('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d')
+      expect(command[2]).to include('opencode run "$1"')
+      expect(Base64.strict_decode64(env.fetch("PAID_OPENCODE_CONFIG_B64"))).to include("sk-openrouter-secret")
+    end
   end
 
   describe "agent-run provider guardrails" do
