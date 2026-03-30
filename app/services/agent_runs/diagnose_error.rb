@@ -14,7 +14,10 @@ module AgentRuns
     MAX_LOG_INPUT = 8000
     TIMEOUT = 60
 
-    SECRET_PATTERNS = StyleGuides::CollectCodeSamples::SECRET_PATTERNS
+    # Extends base secret patterns with GitHub token formats (ghp_, github_pat_, gho_, ghs_, ghu_, ghr_)
+    # that may appear standalone in error logs without a KEY=/TOKEN= prefix.
+    GITHUB_TOKEN_IN_TEXT = /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/
+    SECRET_PATTERNS = (StyleGuides::CollectCodeSamples::SECRET_PATTERNS + [ GITHUB_TOKEN_IN_TEXT ]).freeze
 
     class << self
       def call(agent_run:)

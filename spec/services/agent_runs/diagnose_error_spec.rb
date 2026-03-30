@@ -209,6 +209,34 @@ RSpec.describe AgentRuns::DiagnoseError do
       end
     end
 
+    context "when error message contains standalone GitHub tokens" do
+      let(:agent_run) do
+        create(:agent_run, :failed, project: project,
+          error_message: "Auth failed with ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789")
+      end
+
+      it "redacts standalone GitHub tokens before sending to the LLM" do
+        described_class.call(agent_run: agent_run)
+
+        expect(AgentHarness).to have_received(:send_message).with(
+          satisfy { |s| !s.include?("ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789") },
+          provider: :claude,
+          model: "claude-sonnet-4-6",
+          timeout: 60
+        )
+      end
+
+      it "redacts standalone GitHub tokens in the GitHub issue body" do
+        described_class.call(agent_run: agent_run)
+
+        expect(github_client).to have_received(:create_issue).with(
+          project.full_name,
+          title: anything,
+          body: satisfy { |s| !s.include?("ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789") }
+        )
+      end
+    end
+
     context "when GitHub issue creation fails" do
       before do
         allow(github_client).to receive(:create_issue)
