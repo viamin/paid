@@ -100,6 +100,7 @@ RSpec.describe "ProviderApiKeys" do
 
         expect(response.body).to include('value="openrouter"')
         expect(response.body).to include(">OpenRouter<")
+        expect(response.body).not_to include('value="opencode"')
       end
     end
   end

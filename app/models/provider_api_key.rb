@@ -27,9 +27,10 @@ class ProviderApiKey < ApplicationRecord
   end
 
   def self.compatibility_target_labels
-    provider_labels = Provider.addable_provider_keys.index_with do |key|
-      Provider.display_name(key)
-    end
+    provider_labels = Provider.addable_provider_keys
+      .flat_map { |provider_key| Provider.required_api_key_targets_for(provider_key: provider_key) }
+      .uniq
+      .index_with { |key| COMPATIBILITY_LABELS[key] || Provider.display_name(key) }
 
     provider_labels.merge(COMPATIBILITY_LABELS)
   end
@@ -58,7 +59,7 @@ class ProviderApiKey < ApplicationRecord
       return
     end
 
-    allowed = (ProviderSupport.addable_provider_keys + ProviderSupport.container_executable_provider_keys + COMPATIBILITY_LABELS.keys).uniq
+    allowed = self.class.compatibility_target_labels.keys
     invalid = compatible_providers - allowed
     return if invalid.empty?
 
