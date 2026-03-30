@@ -26,6 +26,10 @@ module Issues
     EXCLUDED_LABELS = %w[planning research waiting tracking epic].freeze
     PAID_READY_LABEL = "paid-ready"
 
+    # SQL-level keywords used to pre-filter potential tracker issues before
+    # applying the full Ruby-level TRACKER_PATTERN check.
+    TRACKER_SQL_KEYWORDS = [ "tracker", "remaining work", "completion criteria", "phase tracker", "meta issue" ].freeze
+
     # Returns the Set of issue IDs from +displayed_issues+ that are
     # currently eligible for auto-picking (per-issue criteria only;
     # ignores transient project-level guards like active runs or PRs
@@ -55,8 +59,41 @@ module Issues
       trusted_usernames = Array(project.allowed_github_usernames).presence
       scope = scope.where(github_creator_login: trusted_usernames) if trusted_usernames
 
-      EXCLUDED_LABELS.reduce(scope) do |s, label|
+      scope = EXCLUDED_LABELS.reduce(scope) do |s, label|
         s.where.not("labels @> ?::jsonb", [ label ].to_json)
+      end
+
+      # Exclude tracker/meta issues that still have open referenced issues.
+      # Trackers are pickable only once every issue referenced in their body
+      # is closed (per collaborator feedback).
+      blocked_ids = tracker_ids_blocked_by_open_references(project)
+      scope = scope.where.not(id: blocked_ids) if blocked_ids.present?
+
+      scope
+    end
+
+    # Identifies tracker issues whose body references other issues that are
+    # still open. Uses a SQL pre-filter (ILIKE) to narrow candidates, then
+    # applies the full Ruby-side TRACKER_PATTERN and reference parsing.
+    def self.tracker_ids_blocked_by_open_references(project)
+      open_issues = Issue.where(project: project, github_state: "open", is_pull_request: false)
+      open_numbers = open_issues.pluck(:github_number).to_set
+      return [] if open_numbers.empty?
+
+      ilike_conditions = TRACKER_SQL_KEYWORDS.flat_map.with_index do |_, i|
+        [ "title ILIKE :t#{i}", "body ILIKE :t#{i}" ]
+      end
+      params = TRACKER_SQL_KEYWORDS.each_with_index.to_h do |term, i|
+        [ :"t#{i}", "%#{term}%" ]
+      end
+
+      candidates = open_issues.where(ilike_conditions.join(" OR "), **params)
+
+      candidates.filter_map do |issue|
+        next unless issue.tracker_issue?
+
+        refs = issue.body_referenced_issue_numbers - [ issue.github_number ]
+        issue.id if refs.any? { |num| open_numbers.include?(num) }
       end
     end
 
