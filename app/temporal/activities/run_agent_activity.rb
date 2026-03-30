@@ -104,6 +104,14 @@ module Activities
         skipped_rate_limited_count = 0
 
         providers.each_with_index do |provider_candidate, index|
+          # Skip routing keys whose provider entry has been deleted — attempting
+          # execution would fail with "Unsupported provider" and leak internal
+          # identifiers in user-visible error messages.
+          if Provider.routing_key?(provider_candidate) && provider_entry_for(provider_candidate, user_settings.user).nil?
+            agent_run.record_provider_attempt("Deleted provider entry", success: false, error_type: "unavailable")
+            next
+          end
+
           provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
           attempt_label = provider_attempt_label(provider_candidate, agent_run, user_settings.user)
           provider_state_name = state_key_for(provider_candidate, provider, user_settings.user)
@@ -590,7 +598,13 @@ module Activities
     def provider_attempt_labels(providers, agent_run, user)
       providers.map do |provider_candidate|
         provider_entry = provider_entry_for(provider_candidate, user)
-        provider_entry&.display_name || provider_command_key(provider_candidate, agent_run, user)
+        if provider_entry&.display_name
+          provider_entry.display_name
+        elsif Provider.routing_key?(provider_candidate)
+          "Deleted provider entry"
+        else
+          provider_command_key(provider_candidate, agent_run, user)
+        end
       end
     end
 
