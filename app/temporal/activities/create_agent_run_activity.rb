@@ -182,6 +182,8 @@ module Activities
       return 1 unless user_settings
 
       if agent_run.provider
+        return 1 unless user_settings.fallback_enabled?
+
         return [ 1 + user_settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true).size, 1 ].max
       end
 

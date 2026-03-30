@@ -621,6 +621,50 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with fallback providers" do
+      let(:settings) { project.created_by.settings }
+      let(:api_key) { create(:provider_api_key, user: project.created_by, compatible_providers: %w[openrouter]) }
+      let!(:direct_outbound_provider) do
+        create(
+          :provider,
+          :api_key,
+          user: project.created_by,
+          provider_key: "opencode",
+          provider_api_key: api_key,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2.5" } }
+        )
+      end
+
+      before do
+        project.created_by.providers.find_by!(provider_key: "claude").update!(enabled_for_fallback: false)
+      end
+
+      it "stays on the restricted network when direct-outbound fallbacks are disabled" do
+        settings.update!(fallback_enabled: false, fallback_providers: [])
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "uses the infrastructure network when a fallback requires direct outbound" do
+        settings.update!(
+          fallback_enabled: true,
+          fallback_providers: [ direct_outbound_provider.routing_key ]
+        )
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
+    end
+
     context "with Gemini subscription auth (GEMINI_CONFIG_DIR)" do
       let(:gemini_config_dir) { Dir.mktmpdir("gemini-config") }
 

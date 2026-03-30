@@ -906,16 +906,36 @@ module Containers
     end
 
     def direct_outbound_provider?
+      return @direct_outbound_provider if instance_variable_defined?(:@direct_outbound_provider)
+
+      @direct_outbound_provider = compute_direct_outbound_provider?
+    end
+
+    def compute_direct_outbound_provider?
       return true if agent_run.agent_type.to_s == "kilocode"
       return true if agent_run.provider&.requires_direct_outbound?
 
-      settings = AgentRuns::UserSettingsResolver.call(project: agent_run.project, strict: false)
-      return false unless settings
+      settings = resolved_user_settings
+      return false unless settings&.fallback_enabled?
 
+      fallback_providers_require_direct_outbound?(settings)
+    end
+
+    def fallback_providers_require_direct_outbound?(settings)
       primary_identifier = agent_run.provider&.routing_key || settings.default_provider_identifier
-      settings.fallback_priority_for(primary_provider: primary_identifier, identifiers: true).any? do |identifier|
-        Provider.for_identifier(settings.user, identifier)&.requires_direct_outbound?
+      fallback_identifiers = settings.fallback_priority_for(primary_provider: primary_identifier, identifiers: true)
+      fallback_providers_by_id = settings.user.providers.where(
+        id: fallback_identifiers.filter_map { |identifier| Provider.id_from_routing_key(identifier) }
+      ).index_by(&:id)
+
+      fallback_identifiers.any? do |identifier|
+        provider_id = Provider.id_from_routing_key(identifier)
+        fallback_providers_by_id[provider_id]&.requires_direct_outbound?
       end
+    end
+
+    def resolved_user_settings
+      @resolved_user_settings ||= AgentRuns::UserSettingsResolver.call(project: agent_run.project, strict: false)
     end
 
     def environment_variables
