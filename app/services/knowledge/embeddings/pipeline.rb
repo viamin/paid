@@ -75,7 +75,9 @@ module Knowledge
 
         embeddable.zip(results).each do |chunk, result|
           Knowledge::Qdrant::PointSync.upsert_chunk!(chunk, vector: result.vector)
-          chunk.update!(embedding_model: generator.model)
+          attrs = { embedding_model: generator.model }
+          attrs[:redaction_scanned_at] = Time.current if chunk.redaction_scanned_at.nil?
+          chunk.update!(attrs)
           tokens += result.token_count
 
           audit_events << {
@@ -95,6 +97,7 @@ module Knowledge
       def redact_chunks(chunks)
         embeddable = []
         audit_events = []
+        now = Time.current
 
         chunks.each do |chunk|
           result = Knowledge::Redaction::Redactor.call(text: chunk.content)
@@ -104,7 +107,7 @@ module Knowledge
               status: "redacted",
               content: result.clean_text,
               content_hash: Digest::SHA256.hexdigest(result.clean_text),
-              redaction_scanned_at: Time.current
+              redaction_scanned_at: now
             )
             log_redaction(chunk, result)
             audit_events << redaction_audit_event(chunk, result, fully_redacted: true)
@@ -112,13 +115,15 @@ module Knowledge
             chunk.update!(
               content: result.clean_text,
               content_hash: Digest::SHA256.hexdigest(result.clean_text),
-              redaction_scanned_at: Time.current
+              redaction_scanned_at: now
             )
             log_redaction(chunk, result)
             audit_events << redaction_audit_event(chunk, result, fully_redacted: false)
             embeddable << chunk
           else
-            chunk.update!(redaction_scanned_at: Time.current)
+            # Skip the pre-embed write for clean chunks; redaction_scanned_at
+            # and embedding_model are set together after embedding succeeds,
+            # avoiding a redundant DB round-trip per chunk.
             embeddable << chunk
           end
         end

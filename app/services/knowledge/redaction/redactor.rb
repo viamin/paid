@@ -7,7 +7,7 @@ module Knowledge
 
       Result = Data.define(:clean_text, :redactions, :original_length) do
         def fully_redacted?
-          return true if original_length.zero?
+          return false if original_length.zero?
 
           redacted_chars = merged_redactions_length
           redacted_chars.to_f / original_length >= FULLY_REDACTED_THRESHOLD
