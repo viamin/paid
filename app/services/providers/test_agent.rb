@@ -178,10 +178,11 @@ module Providers
 
     def execute_container_test
       test_run = build_test_run
+      context = container_test_context
 
       begin
         test_run.with_container do |run|
-          run.execute_in_container(test_command, timeout: TIMEOUT, stream: false)
+          run.execute_in_container(context.fetch(:command), timeout: TIMEOUT, stream: false, env: context.fetch(:env))
         end
       ensure
         test_run.destroy! if test_run&.persisted?
@@ -277,6 +278,13 @@ module Providers
       end
     end
 
+    def container_test_context
+      {
+        command: test_command,
+        env: test_command_env
+      }
+    end
+
     def test_command
       command = CONTAINER_COMMANDS[provider.provider_key]
       raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}" unless command
@@ -287,6 +295,12 @@ module Providers
       return opencode_test_command if provider.provider_key == "opencode" && provider.requires_direct_outbound?
 
       command + [ PROMPT ]
+    end
+
+    def test_command_env
+      return {} unless provider.provider_key == "opencode" && provider.requires_direct_outbound?
+
+      { "PAID_OPENCODE_CONFIG_B64" => Base64.strict_encode64(provider.opencode_config_json) }
     end
 
     def classify_failed_response(error_message)
@@ -429,11 +443,10 @@ module Providers
     end
 
     def opencode_test_command
-      encoded_config = Shellwords.escape(Base64.strict_encode64(provider.opencode_config_json))
       escaped_prompt = Shellwords.escape(PROMPT)
       <<~SH.squish
         mkdir -p /home/agent/.config/opencode &&
-        echo #{encoded_config} | base64 -d > /home/agent/.config/opencode/opencode.json &&
+        printf '%s' "$PAID_OPENCODE_CONFIG_B64" | base64 -d > /home/agent/.config/opencode/opencode.json &&
         opencode run #{escaped_prompt}
       SH
     end

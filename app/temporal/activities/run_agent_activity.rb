@@ -225,6 +225,7 @@ module Activities
 
     class ProviderExecutionError < StandardError; end
     class ProviderTimeoutError < StandardError; end
+    CommandContext = Struct.new(:provider_candidate, :provider, :command_prefix, :user, keyword_init: true)
 
     private
 
@@ -331,7 +332,14 @@ module Activities
       end
 
       prompt = augment_prompt_for_goal(agent_run, prompt)
-      command = build_command(provider_candidate, provider, command_prefix, prompt, user_settings.user)
+      command_context = CommandContext.new(
+        provider_candidate: provider_candidate,
+        provider: provider,
+        command_prefix: command_prefix,
+        user: user_settings.user
+      )
+      command = build_command(command_context, prompt)
+      command_env = command_env_for(command_context)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
@@ -359,7 +367,7 @@ module Activities
       # Provider calls can run for many minutes, so without periodic
       # heartbeats the 120s heartbeat_timeout would fire mid-execution.
       result = with_periodic_heartbeat("executing", provider) do
-        container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout)
+        container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout, env: command_env)
       end
 
       if result.success?
@@ -505,30 +513,30 @@ module Activities
       worker.value
     end
 
-    def build_command(provider_candidate, provider = nil, command_prefix = nil, prompt = nil, user = nil)
-      if prompt.nil?
-        prompt = command_prefix
-        command_prefix = provider
-        provider = provider_command_key(provider_candidate, nil, user)
-      end
-
-      provider_entry = provider_entry_for(provider_candidate, user)
+    def build_command(command_context, prompt)
+      provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
 
       if provider_entry&.requires_direct_outbound?
-        opencode_direct_command(provider_entry, command_prefix, prompt)
-      elsif ProviderSupport.subscription_auth_unset_vars_for(provider).any?
-        subscription_auth_command(provider, command_prefix, prompt)
+        opencode_direct_command(command_context.command_prefix, prompt)
+      elsif ProviderSupport.subscription_auth_unset_vars_for(command_context.provider).any?
+        subscription_auth_command(command_context.provider, command_context.command_prefix, prompt)
       else
-        command_prefix + [ prompt ]
+        command_context.command_prefix + [ prompt ]
       end
     end
 
-    def opencode_direct_command(provider, command_prefix, prompt)
-      config = Shellwords.escape(Base64.strict_encode64(provider.opencode_config_json))
+    def command_env_for(command_context)
+      provider_entry = provider_entry_for(command_context.provider_candidate, command_context.user)
+      return {} unless provider_entry&.requires_direct_outbound?
+
+      { "PAID_OPENCODE_CONFIG_B64" => Base64.strict_encode64(provider_entry.opencode_config_json) }
+    end
+
+    def opencode_direct_command(command_prefix, prompt)
       command = (command_prefix + [ "$1" ]).shelljoin
       script = <<~SH.squish
         mkdir -p /home/agent/.config/opencode &&
-        echo #{config} | base64 -d > /home/agent/.config/opencode/opencode.json &&
+        printf '%s' "$PAID_OPENCODE_CONFIG_B64" | base64 -d > /home/agent/.config/opencode/opencode.json &&
         #{command}
       SH
       [ "sh", "-lc", script, "--", prompt ]

@@ -362,6 +362,12 @@ module Projects
     end
 
     def retry_provider_options_for(agent_run)
+      current_provider_key = if agent_run.provider
+        agent_run.provider.provider_key
+      else
+        agent_type_to_provider_key(agent_run.agent_type)
+      end
+
       UserSetting.enabled_agent_providers(current_user, identifiers: true).filter_map do |provider_identifier|
         provider = provider_for_identifier(provider_identifier)
         next unless provider
@@ -373,7 +379,7 @@ module Projects
           provider_key: provider_identifier,
           agent_type: agent_type,
           label: provider.display_name,
-          current: provider.id == agent_run.provider_id
+          current: provider.id == agent_run.provider_id || provider.provider_key == current_provider_key
         }
       end
     end

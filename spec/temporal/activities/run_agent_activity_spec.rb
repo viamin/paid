@@ -212,7 +212,13 @@ RSpec.describe Activities::RunAgentActivity do
 
   describe "#build_command" do
     it "builds a sh -c wrapper for Codex subscription auth" do
-      command = activity.send(:build_command, "codex", described_class::AGENT_COMMANDS["codex"], "say 'hi'")
+      context = described_class::CommandContext.new(
+        provider_candidate: "codex",
+        provider: "codex",
+        command_prefix: described_class::AGENT_COMMANDS["codex"],
+        user: nil
+      )
+      command = activity.send(:build_command, context, "say 'hi'")
       script = command[2]
 
       expect(command[0..1]).to eq(%w[sh -c])
@@ -225,7 +231,13 @@ RSpec.describe Activities::RunAgentActivity do
     end
 
     it "builds a sh -c wrapper for Gemini subscription auth" do
-      command = activity.send(:build_command, "gemini", described_class::AGENT_COMMANDS["gemini"], "say 'hi'")
+      context = described_class::CommandContext.new(
+        provider_candidate: "gemini",
+        provider: "gemini",
+        command_prefix: described_class::AGENT_COMMANDS["gemini"],
+        user: nil
+      )
+      command = activity.send(:build_command, context, "say 'hi'")
       script = command[2]
 
       expect(command[0..1]).to eq(%w[sh -c])
@@ -239,16 +251,53 @@ RSpec.describe Activities::RunAgentActivity do
 
     it "preserves multi-line prompts as a positional parameter" do
       multiline_prompt = "First line\nSecond line\n  indented third"
-      command = activity.send(:build_command, "codex", described_class::AGENT_COMMANDS["codex"], multiline_prompt)
+      context = described_class::CommandContext.new(
+        provider_candidate: "codex",
+        provider: "codex",
+        command_prefix: described_class::AGENT_COMMANDS["codex"],
+        user: nil
+      )
+      command = activity.send(:build_command, context, multiline_prompt)
 
       expect(command[4]).to eq(multiline_prompt)
       expect(command[2]).not_to include("\n")
     end
 
     it "keeps non-subscription providers in array form" do
-      command = activity.send(:build_command, "claude", described_class::AGENT_COMMANDS["claude"], "ping")
+      context = described_class::CommandContext.new(
+        provider_candidate: "claude",
+        provider: "claude",
+        command_prefix: described_class::AGENT_COMMANDS["claude"],
+        user: nil
+      )
+      command = activity.send(:build_command, context, "ping")
 
       expect(command).to eq(described_class::AGENT_COMMANDS["claude"] + [ "ping" ])
+    end
+
+    it "passes direct-outbound OpenCode config via exec env instead of embedding it in the command" do
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter], api_key: "sk-openrouter-secret")
+      provider = create(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+      context = described_class::CommandContext.new(
+        provider_candidate: provider.routing_key,
+        provider: "opencode",
+        command_prefix: described_class::AGENT_COMMANDS["opencode"],
+        user: user
+      )
+
+      command = activity.send(:build_command, context, "ping")
+      env = activity.send(:command_env_for, context)
+
+      expect(command[2]).to include('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d')
+      expect(command[2]).not_to include("sk-openrouter-secret")
+      expect(Base64.strict_decode64(env.fetch("PAID_OPENCODE_CONFIG_B64"))).to include("sk-openrouter-secret")
     end
   end
 
@@ -559,8 +608,11 @@ RSpec.describe Activities::RunAgentActivity do
       it "uses the shorter issue goal timeout" do
         expect(container_service).to receive(:execute).with(
           anything,
-          timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT,
-          idle_timeout: described_class::DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
+          hash_including(
+            timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT,
+            idle_timeout: described_class::DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT,
+            env: {}
+          )
         ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
@@ -585,8 +637,11 @@ RSpec.describe Activities::RunAgentActivity do
 
         expect(container_service).to receive(:execute).with(
           anything,
-          timeout: AGENT_TIMEOUT_DEFAULT,
-          idle_timeout: nil
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            idle_timeout: nil,
+            env: {}
+          )
         ).and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)

@@ -184,15 +184,18 @@ module Containers
     #   the first output has been received. Raises +IdleTimeoutError+ if output
     #   stops flowing for longer than this duration.
     # @param stream [Boolean] Whether to stream output to agent logs
+    # @param env [Hash] Environment variables for the exec invocation
     # @return [Result] Result with stdout, stderr, and exit_code
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
-    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true)
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {})
       raise ProvisionError, "Container not provisioned" unless container
 
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
+      exec_options = { wait: timeout }
+      exec_options["Env"] = env.map { |key, value| "#{key}=#{value}" } if env.present?
 
       log_system("container.execute.start", command: command.to_s.encode("UTF-8", invalid: :replace).truncate(200))
 
@@ -241,7 +244,7 @@ module Containers
       begin
         watchdog = start_watchdog(watchdog_ctx)
 
-        exec_result = container.exec(cmd_array, wait: timeout) do |stream_type, chunk|
+        exec_result = container.exec(cmd_array, **exec_options) do |stream_type, chunk|
           watchdog_mutex.synchronize do
             output_received = true
             last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)

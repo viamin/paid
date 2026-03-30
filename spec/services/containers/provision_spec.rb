@@ -958,6 +958,22 @@ RSpec.describe Containers::Provision do
 
         service.execute([ "ls", "-la" ])
       end
+
+      it "passes exec environment variables without logging them" do
+        allow(agent_run).to receive(:log!)
+        expect(mock_container).to receive(:exec).with(
+          [ "printenv", "SECRET_TOKEN" ],
+          hash_including(wait: anything, "Env" => [ "SECRET_TOKEN=super-secret" ])
+        )
+
+        service.execute([ "printenv", "SECRET_TOKEN" ], env: { "SECRET_TOKEN" => "super-secret" })
+
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.execute.start",
+          metadata: hash_including(command: satisfy { |command| !command.include?("super-secret") })
+        )
+      end
     end
 
     context "when command fails" do

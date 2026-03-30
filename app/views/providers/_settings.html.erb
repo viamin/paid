@@ -57,7 +57,7 @@
             <% saved_order = Array(@saved_fallback_provider_tokens) %>
             <% providers_in_order = (saved_order.select { |provider| all_providers.include?(provider) } + (all_providers - saved_order)).uniq %>
             <% providers_in_order.each do |provider| %>
-              <% provider_state = provider_states_by_name[provider] %>
+              <% provider_state = provider_states_by_name[provider] || provider_states_by_name[@provider_state_aliases[provider]] %>
               <% fallback_enabled = fallback_candidates.include?(provider) %>
               <div class="provider-item flex items-center justify-between rounded-md border border-gray-200 px-3 py-2 shadow-sm <%= fallback_enabled ? 'bg-white' : 'bg-gray-50 opacity-60' %>" data-provider="<%= provider %>" data-fallback-enabled="<%= fallback_enabled %>" data-sortable-target="item">
                 <div class="flex items-center">

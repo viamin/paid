@@ -72,7 +72,8 @@ RSpec.describe Providers::TestAgent do
         expect(test_run).to have_received(:execute_in_container).with(
           array_including("claude", "--print", "--output-format=text", "--dangerously-skip-permissions", "-p", "Respond with exactly: PING OK"),
           timeout: 30,
-          stream: false
+          stream: false,
+          env: {}
         )
       end
     end
@@ -161,7 +162,8 @@ RSpec.describe Providers::TestAgent do
             .and(include("-u OPENAI_API_KEY"))
             .and(include("codex exec #{codex_flags} --skip-git-repo-check --output-last-message")),
           timeout: 30,
-          stream: false
+          stream: false,
+          env: {}
         )
       end
     end
@@ -219,7 +221,8 @@ RSpec.describe Providers::TestAgent do
             .and(include('grep -q "Error when talking to Gemini API"'))
             .and(include('ruby -rjson -e')),
           timeout: 30,
-          stream: false
+          stream: false,
+          env: {}
         )
       end
     end
@@ -240,7 +243,8 @@ RSpec.describe Providers::TestAgent do
         expect(test_run).to have_received(:execute_in_container).with(
           a_string_including('env -u OPENAI_API_KEY').and(include('timeout 20s kilo run --auto --print-logs')),
           timeout: 30,
-          stream: false
+          stream: false,
+          env: {}
         )
       end
     end
@@ -445,7 +449,42 @@ RSpec.describe Providers::TestAgent do
         expect(test_run).to have_received(:execute_in_container).with(
           array_including("opencode", "run", "Respond with exactly: PING OK"),
           timeout: 30,
-          stream: false
+          stream: false,
+          env: {}
+        )
+      end
+    end
+
+    context "when direct-outbound opencode is tested" do
+      let(:api_key) { create(:provider_api_key, user: user, compatible_providers: %w[openrouter]) }
+      let(:provider_record) do
+        create(
+          :provider,
+          user: user,
+          provider_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: false,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "opencode")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "passes the OpenCode config through exec env instead of the command string" do
+        described_class.call(provider: provider)
+
+        expect(test_run).to have_received(:execute_in_container).with(
+          a_string_including('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d').and(include("opencode run")),
+          timeout: 30,
+          stream: false,
+          env: hash_including("PAID_OPENCODE_CONFIG_B64")
         )
       end
     end

@@ -298,6 +298,9 @@ class ProvidersController < ApplicationController
       labels[provider.routing_key] = provider.display_name
       labels[provider.provider_key] ||= provider.display_name
     end
+    @provider_state_aliases = @providers.each_with_object({}) do |provider, aliases|
+      aliases[provider.routing_key] = provider.provider_key
+    end
     @available_api_keys = current_user.provider_api_keys.ordered
     existing_subscription_keys = current_user.providers.subscription.pluck(:provider_key)
     addable_keys = Provider.addable_provider_keys
@@ -342,15 +345,17 @@ class ProvidersController < ApplicationController
 
   def enabled_agent_provider_identifiers
     executable_keys = ProviderSupport.container_executable_provider_keys
-    providers = current_user.providers.for_agent_runs.ordered
-      .select { |provider| executable_keys.include?(provider.provider_key) }
+    providers = current_user.providers.for_agent_runs
+      .where(provider_key: executable_keys)
+      .ordered
     UserSetting.provider_identifiers_for(providers, identifiers: true)
   end
 
   def fallback_candidate_provider_identifiers
     executable_keys = ProviderSupport.container_executable_provider_keys
-    providers = current_user.providers.for_fallback.ordered
-      .select { |provider| executable_keys.include?(provider.provider_key) }
+    providers = current_user.providers.for_fallback
+      .where(provider_key: executable_keys)
+      .ordered
     UserSetting.provider_identifiers_for(providers, identifiers: true)
   end
 end

@@ -274,8 +274,8 @@ RSpec.describe "AgentRuns" do
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include("Retry with Anthropic Claude CLI")
-        expect(response.body).to include("Retry with Cursor AI")
+        expect(response.body).to include("Retry with Claude")
+        expect(response.body).to include("Retry with Cursor")
         expect(response.body).to include("Current")
         expect(response.body).to include('aria-haspopup="menu"')
         expect(response.body).to include("aria-controls=")
@@ -351,7 +351,7 @@ RSpec.describe "AgentRuns" do
         get new_project_agent_run_path(project)
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Trigger Agent Run")
-        expect(response.body).to include("Claude Code")
+        expect(response.body).to include("Claude")
       end
 
       it "includes goal-toggle Stimulus wiring" do

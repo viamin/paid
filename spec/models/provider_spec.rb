@@ -96,7 +96,7 @@ RSpec.describe Provider do
 
     it "treats blank and nil names as duplicates for api_key entries" do
       api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[cursor])
-      create(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key, name: nil)
+      create(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key)
       duplicate = build(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key, name: "")
 
       expect(duplicate).not_to be_valid
@@ -215,6 +215,18 @@ RSpec.describe Provider do
 
     it "falls back to titleized keys for unknown providers" do
       expect(described_class.display_name("unknown_provider")).to eq("Unknown Provider")
+    end
+  end
+
+  describe ".for_identifier" do
+    let(:user) { create(:user) }
+
+    it "prefers the subscription entry for plain provider keys" do
+      subscription = user.providers.find_by!(provider_key: "claude")
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      user.providers.create!(provider_key: "claude", auth_type: "api_key", provider_api_key: api_key)
+
+      expect(described_class.for_identifier(user, "claude")).to eq(subscription)
     end
   end
 

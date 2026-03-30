@@ -217,7 +217,8 @@ class Provider < ApplicationRecord
     if routing_key?(identifier)
       user.providers.find_by(id: id_from_routing_key(identifier))
     else
-      user.providers.ordered.find_by(provider_key: identifier)
+      matching_providers = user.providers.where(provider_key: identifier).ordered
+      matching_providers.subscription.first || matching_providers.first
     end
   end
 

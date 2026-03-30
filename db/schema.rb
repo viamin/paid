@@ -764,7 +764,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
     t.boolean "enabled_for_agent_runs", default: true, null: false
     t.boolean "enabled_for_fallback", default: true, null: false
     t.string "fallback_role", limit: 30, default: "standard", null: false
-    t.string "name", limit: 100
+    t.string "name", limit: 100, default: "", null: false
     t.bigint "provider_api_key_id"
     t.string "provider_key", limit: 50, null: false
     t.datetime "updated_at", null: false
