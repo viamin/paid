@@ -914,6 +914,44 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("selected provider is not available")
       end
 
+      it "rejects retrying with a disabled explicit provider identifier" do
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
+        api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
+        disabled_provider = create_opencode_provider_entry(user: user, api_key: api_key, name: "Disabled Kimi",
+          model: "moonshotai/kimi-k2-0905", enabled_for_agent_runs: false)
+        create_opencode_provider_entry(user: user, api_key: api_key, name: "Enabled Opus", model: "anthropic/claude-opus-4.1")
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "opencode")
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run), params: { provider: disabled_provider.routing_key }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        follow_redirect!
+        expect(response.body).to include("selected provider is not available")
+      end
+
+      it "resolves plain provider keys against enabled retry providers" do
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
+        api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
+        user.providers.create!(provider_key: "opencode", enabled_for_agent_runs: false)
+        enabled_provider = create_opencode_provider_entry(
+          user: user,
+          api_key: api_key,
+          name: "Enabled Kimi",
+          model: "moonshotai/kimi-k2-0905"
+        )
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run), params: { provider: "opencode" }
+        }.to change(AgentRun, :count).by(1)
+
+        new_run = AgentRun.last
+        expect(new_run.agent_type).to eq("opencode")
+        expect(new_run.provider_id).to eq(enabled_provider.id)
+      end
+
       it "preserves custom_prompt from the original run" do
         agent_run = create(:agent_run, :failed, :with_custom_prompt, project: project)
 
@@ -1126,14 +1164,15 @@ RSpec.describe "AgentRuns" do
     end
   end
 
-  def create_opencode_provider_entry(user:, api_key:, name:, model:)
+  def create_opencode_provider_entry(user:, api_key:, name:, model:, **attrs)
     user.providers.create!(
       provider_key: "opencode",
       auth_type: "api_key",
       provider_api_key: api_key,
       name: name,
       enabled_for_agent_runs: true,
-      config: { "opencode" => { "api_provider" => "openrouter", "model" => model } }
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => model } },
+      **attrs
     )
   end
 end

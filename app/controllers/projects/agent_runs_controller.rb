@@ -166,7 +166,7 @@ module Projects
       end
 
       retry_provider = if params[:provider].present?
-        provider_for_identifier(params[:provider])
+        configured_provider_for_retry(params[:provider])
       else
         @agent_run.provider
       end
@@ -396,7 +396,7 @@ module Projects
       return agent_run.agent_type if requested_provider_identifier.blank? && requested_agent_type.blank?
 
       if requested_provider_identifier.present?
-        provider = provider_for_identifier(requested_provider_identifier)
+        provider = configured_provider_for_retry(requested_provider_identifier)
         return nil unless provider
 
         requested_agent_type = provider_key_to_agent_type(provider.provider_key)
@@ -412,10 +412,7 @@ module Projects
       provider_key = agent_type_to_provider_key(agent_type)
       return true unless managed_provider_key?(provider_key)
 
-      UserSetting.enabled_agent_providers(current_user, identifiers: true).any? do |identifier|
-        provider = provider_for_identifier(identifier)
-        provider&.provider_key == provider_key
-      end
+      enabled_retry_providers.any? { |provider| provider.provider_key == provider_key }
     end
 
     def resolve_provider_selection(requested_agent_type:, requested_provider_identifier:)
@@ -424,16 +421,13 @@ module Projects
       default_identifier = priority_identifiers.first
 
       if requested_provider_identifier.present?
-        provider = provider_for_identifier(requested_provider_identifier)
-        return provider if provider && configured_identifiers.include?(provider.routing_key)
+        provider = configured_provider_for_retry(requested_provider_identifier)
+        return provider if provider
       end
 
       if requested_agent_type.present? && AgentRun::AGENT_TYPES.include?(requested_agent_type)
         requested_provider_key = agent_type_to_provider_key(requested_agent_type)
-        provider = configured_identifiers
-          .map { |identifier| provider_for_identifier(identifier) }
-          .compact
-          .find { |entry| entry.provider_key == requested_provider_key }
+        provider = enabled_retry_providers.find { |entry| entry.provider_key == requested_provider_key }
         return provider if provider
       end
 
@@ -448,6 +442,25 @@ module Projects
 
     def provider_for_identifier(identifier)
       Provider.for_identifier(current_user, identifier)
+    end
+
+    def enabled_retry_providers
+      @enabled_retry_providers ||= UserSetting.enabled_agent_providers(current_user, identifiers: true).filter_map do |identifier|
+        provider_for_identifier(identifier)
+      end
+    end
+
+    def configured_provider_for_retry(identifier)
+      return if identifier.blank?
+
+      identifier = identifier.to_s
+      provider = if Provider.routing_key?(identifier)
+        enabled_retry_providers.find { |entry| entry.routing_key == identifier }
+      else
+        enabled_retry_providers.find { |entry| entry.provider_key == identifier }
+      end
+
+      provider || nil
     end
 
     def available_run_provider_options
