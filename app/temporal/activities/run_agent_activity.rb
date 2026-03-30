@@ -103,8 +103,8 @@ module Activities
         skipped_rate_limited_count = 0
 
         providers.each_with_index do |provider_candidate, index|
-          provider = provider_command_key(provider_candidate, agent_run)
-          provider_state_name = state_key_for(provider_candidate, provider)
+          provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
+          provider_state_name = state_key_for(provider_candidate, provider, user_settings.user)
           heartbeat("provider_attempt", provider, index)
 
           # Skip unavailable providers, tracking rate-limited skips separately
@@ -183,7 +183,7 @@ module Activities
         all_skipped_rate_limited = providers.any? && skipped_rate_limited_count == providers.size
         if rate_limit_reset_at.nil? && all_skipped_rate_limited
           reset_candidates = providers.filter_map do |provider|
-            state = provider_states[state_key_for(provider, provider_command_key(provider, agent_run))]
+            state = provider_states[state_key_for(provider, provider_command_key(provider, agent_run, user_settings.user), user_settings.user)]
             state&.rate_limited_until
           end
           rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
@@ -196,13 +196,13 @@ module Activities
           agent_run.timeout!(error: timeout_error) unless agent_run.finished?
           ProcessRunQueueJob.perform_later
         elsif !agent_run.finished? && (last_error == "rate_limited" || all_skipped_rate_limited)
-          provider_list = providers.any? ? providers.join(", ") : "none"
+          provider_list = providers.any? ? provider_attempt_labels(providers, agent_run, user_settings.user).join(", ") : "none"
           agent_run.rate_limit!(
             error: "All providers rate limited: #{provider_list}",
             reset_at: rate_limit_reset_at
           )
         elsif !agent_run.finished?
-          provider_list = providers.any? ? providers.join(", ") : "none"
+          provider_list = providers.any? ? provider_attempt_labels(providers, agent_run, user_settings.user).join(", ") : "none"
           agent_run.fail!(error: "All providers exhausted: #{provider_list}")
         end
         raise Temporalio::Error::ApplicationError.new(
@@ -249,12 +249,9 @@ module Activities
     # @return [Array<String>] Provider names in priority order
     def build_provider_order(agent_run, user_settings)
       if agent_run.provider
-        providers = [ agent_run.provider ]
+        providers = [ agent_run.provider.routing_key ]
         if user_settings.fallback_enabled
-          providers.concat(
-            user_settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true)
-              .filter_map { |identifier| Provider.for_identifier(user_settings.user, identifier) }
-          )
+          providers.concat(user_settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true))
         end
       else
         fallback_providers = user_settings.fallback_priority_for(
@@ -316,7 +313,7 @@ module Activities
     end
 
     def load_provider_state_cache(user, providers)
-      provider_state_names = providers.map { |provider| state_key_for(provider, provider.is_a?(Provider) ? provider.provider_key : provider) }.uniq
+      provider_state_names = providers.map { |provider| state_key_for(provider, provider_command_key(provider, nil, user), user) }.uniq
       user.provider_states.where(provider_name: provider_state_names).index_by(&:provider_name)
     end
 
@@ -326,7 +323,7 @@ module Activities
     # @return [Hash] The pre-agent SHA and whether output was present
     def run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
       container_service = reconnect_container(agent_run)
-      provider = provider_command_key(provider_candidate, agent_run)
+      provider = provider_command_key(provider_candidate, agent_run, user_settings.user)
 
       command_prefix = AGENT_COMMANDS[provider]
       unless command_prefix
@@ -334,7 +331,7 @@ module Activities
       end
 
       prompt = augment_prompt_for_goal(agent_run, prompt)
-      command = build_command(provider_candidate, provider, command_prefix, prompt)
+      command = build_command(provider_candidate, provider, command_prefix, prompt, user_settings.user)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
@@ -508,15 +505,17 @@ module Activities
       worker.value
     end
 
-    def build_command(provider_candidate, provider = nil, command_prefix = nil, prompt = nil)
+    def build_command(provider_candidate, provider = nil, command_prefix = nil, prompt = nil, user = nil)
       if prompt.nil?
         prompt = command_prefix
         command_prefix = provider
-        provider = provider_candidate.is_a?(Provider) ? provider_candidate.provider_key : provider_candidate
+        provider = provider_command_key(provider_candidate, nil, user)
       end
 
-      if provider_candidate.is_a?(Provider) && provider_candidate.requires_direct_outbound?
-        opencode_direct_command(provider_candidate, command_prefix, prompt)
+      provider_entry = provider_entry_for(provider_candidate, user)
+
+      if provider_entry&.requires_direct_outbound?
+        opencode_direct_command(provider_entry, command_prefix, prompt)
       elsif ProviderSupport.subscription_auth_unset_vars_for(provider).any?
         subscription_auth_command(provider, command_prefix, prompt)
       else
@@ -535,17 +534,31 @@ module Activities
       [ "sh", "-lc", script, "--", prompt ]
     end
 
-    def provider_command_key(provider_candidate, agent_run)
-      return provider_candidate unless provider_candidate.is_a?(Provider)
-      return "claude_code" if provider_candidate.id == agent_run.provider_id && provider_candidate.provider_key == "claude" && agent_run.agent_type == "claude_code"
+    def provider_command_key(provider_candidate, agent_run, user = nil)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return provider_candidate unless provider_entry
+      return "claude_code" if agent_run&.provider_id == provider_entry.id && provider_entry.provider_key == "claude" && agent_run.agent_type == "claude_code"
 
-      provider_candidate.provider_key
+      provider_entry.provider_key
     end
 
-    def state_key_for(provider_candidate, provider)
-      return provider_candidate.state_key if provider_candidate.is_a?(Provider)
+    def state_key_for(provider_candidate, provider, user = nil)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return provider_entry.routing_key if provider_entry
 
       canonical_provider(provider)
+    end
+
+    def provider_entry_for(provider_candidate, user)
+      return provider_candidate if provider_candidate.is_a?(Provider)
+      return nil unless user
+      return nil unless Provider.routing_key?(provider_candidate)
+
+      Provider.for_identifier(user, provider_candidate)
+    end
+
+    def provider_attempt_labels(providers, agent_run, user)
+      providers.map { |provider_candidate| provider_command_key(provider_candidate, agent_run, user) }
     end
 
     # Wraps a provider command so that, when subscription auth is active,

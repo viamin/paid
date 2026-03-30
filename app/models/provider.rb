@@ -320,11 +320,11 @@ class Provider < ApplicationRecord
     return unless api_key?
     return unless user
 
+    normalized_name = name.to_s
     duplicate = user.providers.api_key.where(
       provider_key: provider_key,
-      provider_api_key_id: provider_api_key_id,
-      name: name
-    ).where.not(id: id).exists?
+      provider_api_key_id: provider_api_key_id
+    ).where.not(id: id).where("COALESCE(name, '') = ?", normalized_name).exists?
     return unless duplicate
 
     errors.add(:provider_key, "already has an entry with this API key")

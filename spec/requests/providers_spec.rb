@@ -213,6 +213,31 @@ RSpec.describe "Providers" do
       expect(user.providers.find_by(provider_key: "opencode")).to be_present
     end
 
+    it "persists nested OpenCode config for API-key providers" do
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
+
+      post providers_path, params: {
+        provider: {
+          provider_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key_id: api_key.id,
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true,
+          config: {
+            opencode: {
+              api_provider: "openrouter",
+              model: "moonshotai/kimi-k2-0905"
+            }
+          }
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      provider = user.providers.find_by!(provider_key: "opencode", auth_type: "api_key")
+      expect(provider.opencode_api_provider).to eq("openrouter")
+      expect(provider.opencode_model_id).to eq("moonshotai/kimi-k2-0905")
+    end
+
     it "creates an aider provider successfully" do
       post providers_path, params: { provider: { provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
@@ -290,6 +315,22 @@ RSpec.describe "Providers" do
 
       expect(response).to redirect_to(providers_path)
       expect(provider.reload.provider_key).to eq("claude")
+    end
+
+    it "preserves auth_type in the edit form for api_key providers" do
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
+      provider = user.providers.create!(
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      get edit_provider_path(provider)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('name="provider[auth_type]"')
+      expect(response.body).to include('value="api_key"')
     end
   end
 

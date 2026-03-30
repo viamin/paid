@@ -148,7 +148,7 @@ class ProvidersController < ApplicationController
     if action_name == "create"
       permitted.push(:provider_key, :auth_type, :provider_api_key_id)
     end
-    attrs = params.require(:provider).permit(*permitted, config: [ opencode: [ :api_provider, :model ] ])
+    attrs = params.require(:provider).permit(*permitted, config: { opencode: [ :api_provider, :model ] })
     attrs[:config] = attrs[:config].to_h if attrs[:config].respond_to?(:to_h)
     attrs
   end

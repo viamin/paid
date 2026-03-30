@@ -128,6 +128,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
     t.datetime "completed_at"
     t.string "container_id", limit: 128
     t.integer "container_metrics_count", default: 0, null: false
+    t.datetime "container_retained_until"
     t.integer "cost_cents", default: 0
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
@@ -493,6 +494,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
     t.string "embedding_model", limit: 100
     t.bigint "knowledge_artifact_id", null: false
     t.bigint "project_id", null: false
+    t.datetime "redaction_scanned_at"
     t.jsonb "scope_tags", default: []
     t.integer "sequence", default: 0
     t.string "status", limit: 50, default: "active", null: false

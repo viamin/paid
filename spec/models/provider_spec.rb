@@ -94,6 +94,15 @@ RSpec.describe Provider do
       expect(duplicate.errors[:provider_key]).to include("already has an entry with this API key")
     end
 
+    it "treats blank and nil names as duplicates for api_key entries" do
+      api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[cursor])
+      create(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key, name: nil)
+      duplicate = build(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key, name: "")
+
+      expect(duplicate).not_to be_valid
+      expect(duplicate.errors[:provider_key]).to include("already has an entry with this API key")
+    end
+
     it "rejects provider_api_key belonging to a different user" do
       other_user = create(:user)
       api_key = create(:provider_api_key, user: other_user, compatible_providers: %w[cursor])

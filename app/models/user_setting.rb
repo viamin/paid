@@ -105,10 +105,10 @@ class UserSetting < ApplicationRecord
     return [ "claude" ] & executable_keys unless user
     return executable_keys if user.new_record?
 
-    providers = user.providers.for_agent_runs.ordered
-      .select { |provider| executable_keys.include?(provider.provider_key) }
-
-    provider_identifiers_for(providers, identifiers: identifiers)
+    provider_identifiers_for(
+      user.providers.for_agent_runs.where(provider_key: executable_keys).ordered,
+      identifiers: identifiers
+    )
   end
 
   # Returns providers that can be used as fallback for a user.
@@ -119,10 +119,10 @@ class UserSetting < ApplicationRecord
     return [ "claude" ] & executable_keys unless user
     return executable_keys if user.new_record?
 
-    providers = user.providers.for_fallback.ordered
-      .select { |provider| executable_keys.include?(provider.provider_key) }
-
-    provider_identifiers_for(providers, identifiers: identifiers)
+    provider_identifiers_for(
+      user.providers.for_fallback.where(provider_key: executable_keys).ordered,
+      identifiers: identifiers
+    )
   end
 
   # Returns provider keys that have API-key-based entries configured as
@@ -134,8 +134,9 @@ class UserSetting < ApplicationRecord
 
     executable_keys = ProviderSupport.container_executable_provider_keys
     user.providers.api_key.rate_limit_fallback.for_agent_runs.for_fallback
-      .select { |provider| executable_keys.include?(provider.provider_key) }
-      .map(&:routing_key)
+      .where(provider_key: executable_keys)
+      .pluck(:id)
+      .map { |id| "#{Provider::ROUTING_KEY_PREFIX}#{id}" }
   end
 
   # Returns default_allowed_github_usernames as a comma-separated string
@@ -302,9 +303,10 @@ class UserSetting < ApplicationRecord
     return self.class.enabled_agent_providers(nil, identifiers: true) if user.new_record?
 
     executable_keys = ProviderSupport.container_executable_provider_keys
-    providers = user.providers.for_agent_runs.ordered
-      .select { |provider| executable_keys.include?(provider.provider_key) }
-    self.class.provider_identifiers_for(providers, identifiers: true)
+    self.class.provider_identifiers_for(
+      user.providers.for_agent_runs.where(provider_key: executable_keys).ordered,
+      identifiers: true
+    )
   end
 
   def allowed_provider_keys_for_fallback
@@ -312,9 +314,10 @@ class UserSetting < ApplicationRecord
     return self.class.fallback_candidate_providers(nil, identifiers: true) if user.new_record?
 
     executable_keys = ProviderSupport.container_executable_provider_keys
-    providers = user.providers.for_fallback.ordered
-      .select { |provider| executable_keys.include?(provider.provider_key) }
-    self.class.provider_identifiers_for(providers, identifiers: true)
+    self.class.provider_identifiers_for(
+      user.providers.for_fallback.where(provider_key: executable_keys).ordered,
+      identifiers: true
+    )
   end
 
   def normalized_default_agent_provider
@@ -345,8 +348,10 @@ class UserSetting < ApplicationRecord
   end
 
   def self.provider_identifiers_for(providers, identifiers:)
-    return providers.map(&:routing_key) if identifiers
-
-    providers.map(&:provider_key).uniq
+    if identifiers
+      providers.pluck(:id).map { |id| "#{Provider::ROUTING_KEY_PREFIX}#{id}" }
+    else
+      providers.pluck(:provider_key).uniq
+    end
   end
 end

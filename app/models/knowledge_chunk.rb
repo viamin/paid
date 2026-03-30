@@ -21,6 +21,7 @@ class KnowledgeChunk < ApplicationRecord
   scope :active, -> { where(status: "active") }
   scope :embeddable, -> { active.where.not(embedding_model: nil) }
   scope :needs_embedding, -> { active.where(embedding_model: nil) }
+  scope :needs_redaction_scan, -> { active.where(redaction_scanned_at: nil) }
   scope :by_project, ->(project_id) { where(project_id: project_id) }
   scope :for_project, ->(project) { where(project: project) }
   scope :ordered, -> { order(:sequence) }
@@ -32,6 +33,10 @@ class KnowledgeChunk < ApplicationRecord
   }
 
   before_save :update_content_tsvector, if: :should_update_content_tsvector?
+
+  def redaction_scanned?
+    redaction_scanned_at.present?
+  end
 
   def self.content_tsvector_trigger_present?
     return @content_tsvector_trigger_present if defined?(@content_tsvector_trigger_present)
