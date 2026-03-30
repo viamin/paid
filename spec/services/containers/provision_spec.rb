@@ -663,6 +663,20 @@ RSpec.describe Containers::Provision do
 
         service.provision
       end
+
+      it "uses the infrastructure network when kilocode is configured as a fallback" do
+        settings.update!(
+          fallback_enabled: true,
+          fallback_providers: [ "kilocode" ]
+        )
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
     end
 
     context "with Gemini subscription auth (GEMINI_CONFIG_DIR)" do

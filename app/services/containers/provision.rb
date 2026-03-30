@@ -929,6 +929,8 @@ module Containers
       ).index_by(&:id)
 
       fallback_identifiers.any? do |identifier|
+        next true if identifier.to_s == "kilocode"
+
         provider_id = Provider.id_from_routing_key(identifier)
         fallback_providers_by_id[provider_id]&.requires_direct_outbound?
       end

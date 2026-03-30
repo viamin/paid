@@ -274,8 +274,8 @@ RSpec.describe "AgentRuns" do
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include("Retry with Claude")
-        expect(response.body).to include("Retry with Cursor")
+        expect(response.body).to include("Retry with Anthropic Claude CLI")
+        expect(response.body).to include("Retry with Cursor AI")
         expect(response.body).to include("Current")
         expect(response.body).to include('aria-haspopup="menu"')
         expect(response.body).to include("aria-controls=")

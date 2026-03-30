@@ -300,7 +300,7 @@ class UserSetting < ApplicationRecord
 
   def allowed_provider_keys_for_agent_runs
     return self.class.enabled_agent_providers(nil, identifiers: true) unless user
-    return self.class.enabled_agent_providers(nil, identifiers: true) if user.new_record?
+    return self.class.enabled_agent_providers(user, identifiers: true) if user.new_record?
 
     executable_keys = ProviderSupport.container_executable_provider_keys
     self.class.provider_identifiers_for(
@@ -311,7 +311,7 @@ class UserSetting < ApplicationRecord
 
   def allowed_provider_keys_for_fallback
     return self.class.fallback_candidate_providers(nil, identifiers: true) unless user
-    return self.class.fallback_candidate_providers(nil, identifiers: true) if user.new_record?
+    return self.class.fallback_candidate_providers(user, identifiers: true) if user.new_record?
 
     executable_keys = ProviderSupport.container_executable_provider_keys
     self.class.provider_identifiers_for(

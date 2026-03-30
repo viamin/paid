@@ -475,4 +475,24 @@ RSpec.describe UserSetting do
       expect(result).to eq([ subscription.routing_key ])
     end
   end
+
+  describe "new-record provider availability" do
+    before do
+      allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider])
+    end
+
+    it "uses the new user when resolving agent-run providers" do
+      new_user = build(:user)
+      setting = build(:user_setting, user: new_user)
+
+      expect(setting.send(:allowed_provider_keys_for_agent_runs)).to match_array(%w[claude cursor aider])
+    end
+
+    it "uses the new user when resolving fallback providers" do
+      new_user = build(:user)
+      setting = build(:user_setting, user: new_user)
+
+      expect(setting.send(:allowed_provider_keys_for_fallback)).to match_array(%w[claude cursor aider])
+    end
+  end
 end
