@@ -73,7 +73,7 @@ class Provider < ApplicationRecord
   end
 
   def state_key
-    routing_key
+    subscription? ? provider_key.to_s : routing_key
   end
 
   def opencode_config
@@ -93,12 +93,16 @@ class Provider < ApplicationRecord
   end
 
   def requires_direct_outbound?
-    provider_key == "opencode" && api_key? && opencode_api_provider == "openrouter"
+    provider_key == "opencode" &&
+      api_key? &&
+      opencode_api_provider == "openrouter" &&
+      opencode_model_id.present?
   end
 
   def opencode_config_json
     provider_id = "paid-provider-#{id || provider_key}"
     model_id = opencode_model_id
+    raise ArgumentError, "Missing OpenCode model id for provider #{id || provider_key}" if model_id.blank?
 
     JSON.pretty_generate(
       {

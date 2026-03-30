@@ -284,6 +284,38 @@ RSpec.describe Provider do
       expect(command[2]).to include('opencode run "$1"')
       expect(Base64.strict_decode64(env.fetch("PAID_OPENCODE_CONFIG_B64"))).to include("sk-openrouter-secret")
     end
+
+    it "does not enable direct outbound when the OpenCode model id is missing" do
+      provider = build(
+        :provider,
+        user: user,
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter" } }
+      )
+
+      expect(provider.requires_direct_outbound?).to be(false)
+      expect(provider.direct_outbound_exec_env).to eq({})
+      expect(provider.direct_outbound_exec_command(command_prefix: %w[opencode run], prompt: "ping")).to eq(%w[opencode run ping])
+      expect { provider.opencode_config_json }.to raise_error(ArgumentError, /Missing OpenCode model id/)
+    end
+  end
+
+  describe "#state_key" do
+    it "uses the canonical provider key for subscription entries" do
+      provider = build(:provider, provider_key: "claude", auth_type: "subscription")
+
+      expect(provider.state_key).to eq("claude")
+    end
+
+    it "uses the routing key for api-key entries" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      provider = create(:provider, :api_key, user: user, provider_key: "claude", provider_api_key: api_key)
+
+      expect(provider.state_key).to eq(provider.routing_key)
+    end
   end
 
   describe "agent-run provider guardrails" do
