@@ -20,7 +20,7 @@ RSpec.describe Knowledge::Redaction::Scanner do
 
     context "with API keys" do
       it "detects api_key = 'value' patterns" do
-        text = 'API_KEY = "sk_live_abcdef1234567890abcd"'
+        text = 'API_KEY = "' + "sk_" + "live_abcdef1234567890abcd" + '"'
         matches = scanner.scan(text)
         expect(matches.size).to eq(1)
         expect(matches.first.pattern).to eq(:api_key)
@@ -45,14 +45,16 @@ RSpec.describe Knowledge::Redaction::Scanner do
 
     context "with GitHub tokens" do
       it "detects ghp_ tokens" do
-        text = "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+        token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+        text = "GITHUB_TOKEN=#{token}"
         matches = scanner.scan(text)
         patterns = matches.map(&:pattern)
         expect(patterns).to include(:github_token)
       end
 
       it "detects ghs_ tokens" do
-        text = "token: ghs_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+        token = "ghs_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+        text = "token: #{token}"
         matches = scanner.scan(text)
         patterns = matches.map(&:pattern)
         expect(patterns).to include(:github_token)
@@ -157,9 +159,10 @@ RSpec.describe Knowledge::Redaction::Scanner do
 
     context "with multiple patterns" do
       it "detects all patterns in mixed content" do
+        api_key = "sk_" + "live_abcdefghijklmnopqrst"
         text = <<~TEXT
           DATABASE_URL=postgres://user:pass@host/db
-          API_KEY="sk_live_abcdefghijklmnopqrst"
+          API_KEY="#{api_key}"
           admin@example.com
         TEXT
         matches = scanner.scan(text)

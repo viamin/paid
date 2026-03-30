@@ -13,10 +13,11 @@ RSpec.describe Knowledge::Redaction::Redactor do
     end
 
     it "replaces API keys with typed placeholders" do
-      text = 'config.api_key = "sk_live_abcdefghijklmnopqrst"'
+      api_key = "sk_live" + "_abcdefghijklmnopqrst"
+      text = %(config.api_key = "#{api_key}")
       result = described_class.call(text: text)
       expect(result.clean_text).to include("[REDACTED:api_key]")
-      expect(result.clean_text).not_to include("sk_live_abcdefghijklmnopqrst")
+      expect(result.clean_text).not_to include(api_key)
       expect(result.redacted?).to be true
     end
 
@@ -28,7 +29,8 @@ RSpec.describe Knowledge::Redaction::Redactor do
     end
 
     it "replaces GitHub tokens with typed placeholders" do
-      text = "GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+      token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+      text = "GITHUB_TOKEN=#{token}"
       result = described_class.call(text: text)
       expect(result.clean_text).to include("[REDACTED:github_token]")
     end
@@ -92,7 +94,7 @@ RSpec.describe Knowledge::Redaction::Redactor do
 
     context "with fully_redacted?" do
       it "returns true when most content is sensitive" do
-        text = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
+        text = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn"
         result = described_class.call(text: text)
         expect(result.fully_redacted?).to be true
       end

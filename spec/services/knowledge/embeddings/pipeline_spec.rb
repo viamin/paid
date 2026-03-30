@@ -123,8 +123,10 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
     end
 
     context "with redaction" do
+      let(:github_token) { "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn" }
+
       it "marks fully-redacted chunks as redacted and skips embedding" do
-        chunk.update!(content: "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn")
+        chunk.update!(content: github_token)
         allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
 
         result = described_class.call(generator: generator)
@@ -155,7 +157,7 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
       end
 
       it "emits audit events for redacted chunks" do
-        chunk.update!(content: "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn")
+        chunk.update!(content: github_token)
         allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
         allow(Knowledge::Provenance::AuditLog).to receive(:record_batch)
 

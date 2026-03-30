@@ -134,8 +134,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_170336) do
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
     t.text "custom_prompt"
-    t.string "diagnosis_issue_url", limit: 500
-    t.string "diagnosis_status", limit: 50
     t.integer "duration_seconds"
     t.text "error_message"
     t.string "final_provider", limit: 50
