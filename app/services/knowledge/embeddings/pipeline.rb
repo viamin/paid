@@ -56,22 +56,28 @@ module Knowledge
       end
 
       def process_batch(chunks)
-        enforce_redaction_scan!(chunks)
+        embeddable, redaction_audit = redact_chunks(chunks)
 
-        texts = chunks.map(&:content)
+        Knowledge::Provenance::AuditLog.record_batch(redaction_audit) if redaction_audit.any?
+
+        return { embedded: 0, tokens: 0 } if embeddable.empty?
+
+        texts = embeddable.map(&:content)
         results = generator.call(texts: texts)
 
-        if results.size != chunks.size
+        if results.size != embeddable.size
           raise EmbeddingError,
-            "Embedding count mismatch: expected #{chunks.size}, got #{results.size}"
+            "Embedding count mismatch: expected #{embeddable.size}, got #{results.size}"
         end
 
         tokens = 0
         audit_events = []
 
-        chunks.zip(results).each do |chunk, result|
+        embeddable.zip(results).each do |chunk, result|
           Knowledge::Qdrant::PointSync.upsert_chunk!(chunk, vector: result.vector)
-          chunk.update!(embedding_model: generator.model)
+          attrs = { embedding_model: generator.model }
+          attrs[:redaction_scanned_at] = chunk.redaction_scanned_at if chunk.redaction_scanned_at_changed?
+          chunk.update!(attrs)
           tokens += result.token_count
 
           audit_events << {
@@ -85,33 +91,70 @@ module Knowledge
 
         Knowledge::Provenance::AuditLog.record_batch(audit_events)
 
-        { embedded: chunks.size, tokens: tokens }
+        { embedded: embeddable.size, tokens: tokens }
       end
 
-      # Enforces that all chunks have passed redaction scanning before embedding.
-      # No code path currently sets redaction_scanned_at (redaction scanner is not yet
-      # implemented), so SKIP_REDACTION_SCAN=1 allows the pipeline to proceed in
-      # non-production environments only. Once the redaction scanning service is built,
-      # remove the env var escape hatch entirely.
-      def enforce_redaction_scan!(chunks)
-        unscanned = chunks.reject(&:redaction_scanned?)
-        return if unscanned.empty?
+      def redact_chunks(chunks)
+        embeddable = []
+        audit_events = []
+        now = Time.current
 
-        ids = unscanned.map(&:id).first(5).join(", ")
+        chunks.each do |chunk|
+          result = Knowledge::Redaction::Redactor.call(text: chunk.content)
 
-        if !Rails.env.production? && ENV["SKIP_REDACTION_SCAN"] == "1"
-          Rails.logger.warn(
-            message: "knowledge.embeddings.unscanned_chunks",
-            warning: "Chunks have not been scanned for redaction; proceeding because SKIP_REDACTION_SCAN=1.",
-            unscanned_count: unscanned.size,
-            example_chunk_ids: ids
-          )
-          return
+          if result.fully_redacted?
+            chunk.update!(
+              status: "redacted",
+              content: result.clean_text,
+              content_hash: Digest::SHA256.hexdigest(result.clean_text),
+              redaction_scanned_at: now
+            )
+            log_redaction(chunk, result)
+            audit_events << redaction_audit_event(chunk, result, fully_redacted: true)
+          elsif result.redacted?
+            chunk.update!(
+              content: result.clean_text,
+              content_hash: Digest::SHA256.hexdigest(result.clean_text),
+              redaction_scanned_at: now
+            )
+            log_redaction(chunk, result)
+            audit_events << redaction_audit_event(chunk, result, fully_redacted: false)
+            embeddable << chunk
+          else
+            # Capture scan timestamp in-memory for clean chunks; persisted
+            # alongside embedding_model after embedding succeeds to avoid
+            # a redundant DB round-trip per chunk.
+            chunk.redaction_scanned_at = now
+            embeddable << chunk
+          end
         end
 
-        raise EmbeddingError,
-          "Refusing to embed #{unscanned.size} knowledge chunks that have not passed redaction scanning " \
-          "(example IDs: #{ids})."
+        [ embeddable, audit_events ]
+      end
+
+      def log_redaction(chunk, result)
+        Rails.logger.info(
+          message: "knowledge.redaction",
+          project_id: chunk.project_id,
+          chunk_id: chunk.id,
+          patterns_found: result.redactions.map(&:pattern).uniq,
+          redaction_count: result.redactions.size,
+          fully_redacted: result.fully_redacted?
+        )
+      end
+
+      def redaction_audit_event(chunk, result, fully_redacted:)
+        {
+          event: :chunk_redacted,
+          project: chunk.project,
+          actor: { type: "redaction_pipeline" },
+          target: { type: "KnowledgeChunk", id: chunk.id },
+          details: {
+            patterns_found: result.redactions.map(&:pattern).uniq.map(&:to_s),
+            redaction_count: result.redactions.size,
+            fully_redacted: fully_redacted
+          }
+        }
       end
 
       def log_completion(total_embedded, total_tokens, cost, duration)
