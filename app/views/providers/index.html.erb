@@ -52,7 +52,8 @@
               <% end %>
             </td>
             <td class="px-4 py-3 text-sm">
-              <% state = @provider_states[provider.state_key] || @provider_states[provider.provider_key] %>
+              <% state = @provider_states[provider.state_key] %>
+              <% state ||= @provider_states[provider.provider_key] if provider.subscription? %>
               <% if state&.rate_limited? %>
                 <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">
                   Rate Limited

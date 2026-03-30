@@ -306,6 +306,24 @@ RSpec.describe "AgentRuns" do
         expect(response.body).not_to include('role="menu"')
       end
 
+      it "shows a deleted provider entry label for missing routed fallback attempts" do
+        agent_run = create(
+          :agent_run,
+          :failed,
+          project: project,
+          final_provider: "provider:999999",
+          provider_switches: 1,
+          providers_attempted: [
+            { "provider" => "provider:999999", "success" => false, "error_type" => "rate_limited" }
+          ]
+        )
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Deleted provider entry")
+        expect(response.body).not_to include("Provider:999999")
+      end
+
       it "shows metrics" do
         agent_run = create(:agent_run, :completed, :with_metrics, project: project)
         get project_agent_run_path(project, agent_run)

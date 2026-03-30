@@ -16,6 +16,8 @@ RSpec.describe "Providers" do
     end
 
     context "when authenticated" do
+      let(:opencode_api_key) { create(:provider_api_key, user: user, compatible_providers: %w[openrouter]) }
+
       before { sign_in user }
 
       it "renders index" do
@@ -41,6 +43,28 @@ RSpec.describe "Providers" do
         get providers_path
 
         expect(response.body).to include("Add Provider")
+      end
+
+      it "does not reuse canonical provider state for api-key entries" do
+        provider = user.providers.create!(
+          provider_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: opencode_api_key,
+          name: "Kimi K2.5",
+          enabled_for_agent_runs: true,
+          config: {
+            "opencode" => {
+              "api_provider" => "openrouter",
+              "model" => "moonshotai/kimi-k2-0905"
+            }
+          }
+        )
+        user.provider_states.create!(provider_name: provider.provider_key, circuit_opened_at: 1.minute.ago)
+
+        get providers_path
+
+        expect(response.body).to match(/Kimi K2\.5.*Available/m)
+        expect(response.body).not_to match(/Kimi K2\.5.*Circuit Open/m)
       end
     end
   end
