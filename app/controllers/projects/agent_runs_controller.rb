@@ -364,15 +364,12 @@ module Projects
     def retry_provider_options_for(agent_run)
       current_provider = current_retry_provider_for(agent_run)
 
-      UserSetting.enabled_agent_providers(current_user, identifiers: true).filter_map do |provider_identifier|
-        provider = provider_for_identifier(provider_identifier)
-        next unless provider
-
+      enabled_retry_provider_entries.filter_map do |identifier, provider|
         agent_type = provider_key_to_agent_type(provider.provider_key)
         next unless AgentRun::AGENT_TYPES.include?(agent_type)
 
         {
-          provider_key: provider_identifier,
+          provider_key: identifier,
           agent_type: agent_type,
           label: provider.display_name,
           current: current_provider.present? && provider.id == current_provider.id
@@ -444,10 +441,44 @@ module Projects
       Provider.for_identifier(current_user, identifier)
     end
 
-    def enabled_retry_providers
-      @enabled_retry_providers ||= UserSetting.enabled_agent_providers(current_user, identifiers: true).filter_map do |identifier|
-        provider_for_identifier(identifier)
+    # Returns [identifier, provider] pairs for all enabled agent providers,
+    # bulk-loaded in two queries to avoid N+1.
+    def enabled_retry_provider_entries
+      @enabled_retry_provider_entries ||= begin
+        identifiers = UserSetting.enabled_agent_providers(current_user, identifiers: true)
+
+        routing_ids = []
+        plain_keys = []
+        identifiers.each do |id|
+          if Provider.routing_key?(id)
+            routing_ids << Provider.id_from_routing_key(id)
+          else
+            plain_keys << id
+          end
+        end
+
+        providers_by_id = current_user.providers.where(id: routing_ids).index_by(&:id)
+        providers_by_key = current_user.providers.where(provider_key: plain_keys).ordered
+          .group_by(&:provider_key)
+
+        identifiers.filter_map do |identifier|
+          provider = if Provider.routing_key?(identifier)
+            providers_by_id[Provider.id_from_routing_key(identifier)]
+          else
+            group = providers_by_key[identifier]
+            next unless group
+            # Prefer subscription entry, matching Provider.for_identifier behavior
+            group.find(&:subscription?) || group.first
+          end
+          next unless provider
+
+          [ identifier, provider ]
+        end
       end
+    end
+
+    def enabled_retry_providers
+      @enabled_retry_providers ||= enabled_retry_provider_entries.map(&:last)
     end
 
     def configured_provider_for_retry(identifier)
@@ -464,10 +495,7 @@ module Projects
     end
 
     def available_run_provider_options
-      UserSetting.enabled_agent_providers(current_user, identifiers: true).filter_map do |identifier|
-        provider = provider_for_identifier(identifier)
-        next unless provider
-
+      enabled_retry_provider_entries.map do |identifier, provider|
         [ provider.display_name, identifier ]
       end
     end

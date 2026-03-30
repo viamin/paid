@@ -363,8 +363,8 @@ class Provider < ApplicationRecord
       errors.add(:config, "must include a supported OpenCode API provider")
     end
 
-    return if opencode_model_id.present?
-
-    errors.add(:config, "must include an OpenCode model ID")
+    # Model ID is only required when direct-outbound routing is intended
+    # (i.e. a supported api_provider is configured). Providers without a
+    # model fall back to the non-direct-outbound path via the secrets proxy.
   end
 end
