@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.4](https://github.com/viamin/paid/compare/v0.11.3...v0.11.4) (2026-03-30)
+
+
+### Bug Fixes
+
+* 262: Redaction Pipeline — Sensitive Data Handling Before Embedding ([#620](https://github.com/viamin/paid/issues/620)) ([f6d20aa](https://github.com/viamin/paid/commit/f6d20aa485be3219ca77d47aeb92e0a79688e5c2))
+* 607: Add "Diagnose Error" option on agent run page when an error occurs ([#613](https://github.com/viamin/paid/issues/613)) ([9c7d270](https://github.com/viamin/paid/commit/9c7d2702d52f939d977800d9b19598477f5dc088))
+* **agent-harness:** reconcile [#595](https://github.com/viamin/paid/issues/595)/[#596](https://github.com/viamin/paid/issues/596) with released upstream changes ([#629](https://github.com/viamin/paid/issues/629)) ([e4e8ca4](https://github.com/viamin/paid/commit/e4e8ca464227364a4f40871e90837bc4f393326a)), closes [#614](https://github.com/viamin/paid/issues/614)
+
 ## [0.11.3](https://github.com/viamin/paid/compare/v0.11.2...v0.11.3) (2026-03-30)
 
 
