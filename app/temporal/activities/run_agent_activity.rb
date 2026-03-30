@@ -160,8 +160,13 @@ module Activities
             # provider order. Tracked separately — only logging availability
             # for now; no switch counters or AgentRun mutation until the
             # fallback is actually executed.
-            if @rate_limit_fallback_keys&.include?(provider)
-              logger.info(message: "agent_execution.rate_limit_fallback_available", provider: provider, agent_run_id: agent_run.id)
+            canonical_provider_key = canonical_provider(provider)
+            if @rate_limit_fallback_keys&.include?(canonical_provider_key)
+              logger.info(
+                message: "agent_execution.rate_limit_fallback_available",
+                provider: canonical_provider_key,
+                agent_run_id: agent_run.id
+              )
             end
           rescue ProviderTimeoutError => e
             last_error = "timeout"

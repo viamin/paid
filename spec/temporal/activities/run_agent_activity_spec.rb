@@ -777,6 +777,23 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.error_message).to include("rate limited")
       end
 
+      it "logs rate-limit fallback availability using the canonical provider key" do
+        logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil)
+        allow(activity).to receive(:logger).and_return(logger)
+        allow(UserSetting).to receive(:rate_limit_fallback_providers).with(user).and_return([ "claude" ])
+        allow(container_service).to receive(:execute).and_return(rate_limit_failure)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        expect(logger).to have_received(:info).with(
+          message: "agent_execution.rate_limit_fallback_available",
+          provider: "claude",
+          agent_run_id: agent_run.id
+        )
+      end
+
       it "uses provider display names in exhausted-provider labels" do
         api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
         kimi = create_opencode_provider_entry(user: user, api_key: api_key, name: "Kimi K2.5", model: "moonshotai/kimi-k2-0905")
