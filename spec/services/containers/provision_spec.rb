@@ -672,6 +672,7 @@ RSpec.describe Containers::Provision do
           enabled_for_agent_runs: false,
           enabled_for_fallback: true
         )
+        direct_outbound_provider.update!(enabled_for_fallback: false)
 
         settings.update!(
           fallback_enabled: true,
