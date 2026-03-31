@@ -13,11 +13,16 @@ module SecurityAlerts
     end
 
     def title(alert)
-      parts = [ "[Security] CodeQL:" ]
-      parts << alert[:rule_description] if alert[:rule_description]
-      parts << "(#{alert[:severity]})" if alert[:severity]
-      parts << "— #{alert_identifier(alert)}"
-      parts.join(" ")
+      base = "[Security] CodeQL:"
+      details = []
+      details << alert[:rule_description] if alert[:rule_description]
+      details << "(#{alert[:severity]})" if alert[:severity]
+
+      if details.any?
+        ([ base ] + details + [ "— #{alert_identifier(alert)}" ]).join(" ")
+      else
+        [ base, alert_identifier(alert) ].join(" ")
+      end
     end
 
     def body(alert)

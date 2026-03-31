@@ -124,7 +124,7 @@ module Activities
     def should_scan_code_scanning?(project)
       return true if project.last_code_scanning_scan_at.nil?
 
-      project.last_code_scanning_scan_at < project.code_scanning_interval_hours.hours.ago
+      project.last_code_scanning_scan_at <= project.code_scanning_interval_hours.hours.ago
     end
 
     def fetch_code_scanning_alerts(project)

@@ -15,7 +15,7 @@ module SecurityAlerts
 
     def call(filtered_alerts)
       open_alerts = filtered_alerts.select { |a| a[:state] == "open" }
-      return if open_alerts.empty?
+      return [] if open_alerts.empty?
 
       synthetic_ids = open_alerts.map { |a| synthetic_issue_id(a) }
       existing_issues = @project.issues
