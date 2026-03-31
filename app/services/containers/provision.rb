@@ -971,6 +971,7 @@ module Containers
         "GEMINI_CLI_CUSTOM_HEADERS=X-Agent-Run-Id: #{agent_run.id}, X-Proxy-Token: #{agent_run.proxy_token}",
         "GEMINI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
         "GEMINI_SANDBOX=false",
+        "GEMINI_CLI_DISABLE_RETRIES=true",
         "PAID_GEMINI_SUBSCRIPTION_AUTH=#{gemini_subscription_auth? ? 1 : 0}"
       ])
 

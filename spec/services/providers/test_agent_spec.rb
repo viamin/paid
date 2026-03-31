@@ -71,7 +71,7 @@ RSpec.describe Providers::TestAgent do
 
         expect(test_run).to have_received(:execute_in_container).with(
           array_including("claude", "--print", "--output-format=text", "--dangerously-skip-permissions", "-p", "Respond with exactly: PING OK"),
-          timeout: 30,
+          timeout: 60,
           stream: false,
           env: {}
         )
@@ -120,7 +120,7 @@ RSpec.describe Providers::TestAgent do
         result = described_class.call(provider: provider)
 
         expect(result).to be_success
-        expect(AgentHarness).to have_received(:check_provider).with(:codex, timeout: 30)
+        expect(AgentHarness).to have_received(:check_provider).with(:codex, timeout: 60)
       end
     end
 
@@ -139,7 +139,7 @@ RSpec.describe Providers::TestAgent do
         result = described_class.call(provider: provider)
 
         expect(result).to be_success
-        expect(AgentHarness).to have_received(:check_provider).with(:gemini, timeout: 30)
+        expect(AgentHarness).to have_received(:check_provider).with(:gemini, timeout: 60)
       end
     end
 
@@ -160,7 +160,7 @@ RSpec.describe Providers::TestAgent do
           a_string_including('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
             .and(include("-u OPENAI_API_KEY"))
             .and(include("codex exec --full-auto --sandbox none --skip-git-repo-check --output-last-message")),
-          timeout: 30,
+          timeout: 60,
           stream: false,
           env: {}
         )
@@ -219,7 +219,7 @@ RSpec.describe Providers::TestAgent do
             .and(include("gemini -y -p"))
             .and(include('grep -q "Error when talking to Gemini API"'))
             .and(include('ruby -rjson -e')),
-          timeout: 30,
+          timeout: 60,
           stream: false,
           env: {}
         )
@@ -241,7 +241,7 @@ RSpec.describe Providers::TestAgent do
 
         expect(test_run).to have_received(:execute_in_container).with(
           a_string_including('env -u OPENAI_API_KEY').and(include('timeout 20s kilo run --auto --print-logs')),
-          timeout: 30,
+          timeout: 60,
           stream: false,
           env: {}
         )
@@ -447,7 +447,7 @@ RSpec.describe Providers::TestAgent do
 
         expect(test_run).to have_received(:execute_in_container).with(
           array_including("opencode", "run", "Respond with exactly: PING OK"),
-          timeout: 30,
+          timeout: 60,
           stream: false,
           env: {}
         )
@@ -481,7 +481,7 @@ RSpec.describe Providers::TestAgent do
 
         expect(test_run).to have_received(:execute_in_container).with(
           array_including("sh", "-lc", a_string_including('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d').and(include('opencode run "$1"'))),
-          timeout: 30,
+          timeout: 60,
           stream: false,
           env: hash_including("PAID_OPENCODE_CONFIG_B64")
         )
