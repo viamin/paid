@@ -462,6 +462,11 @@ class Project < ApplicationRecord
 
       next unless config["enabled"] == true
 
+      # ci_action requires an action_name so the system knows which GitHub Action to invoke
+      if method_name == "ci_action" && config["action_name"].blank?
+        errors.add(:review_settings, "ci_action requires a non-blank action_name when enabled")
+      end
+
       termination = config["termination"]
       if termination.present? && !termination.is_a?(Hash)
         errors.add(:review_settings, "#{method_name} termination must be a JSON object")

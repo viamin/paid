@@ -787,6 +787,44 @@ RSpec.describe Project do
         expect(project.errors[:review_settings].join).to include("copilot termination must be a JSON object")
       end
 
+      it "rejects ci_action with blank action_name when enabled" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "ci_action" => { "enabled" => true, "action_name" => "", "termination" => { "max_review_rounds" => 1 } }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("ci_action requires a non-blank action_name")
+      end
+
+      it "rejects ci_action with nil action_name when enabled" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "ci_action" => { "enabled" => true, "termination" => { "max_review_rounds" => 1 } }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("ci_action requires a non-blank action_name")
+      end
+
+      it "accepts ci_action with action_name when enabled" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "ci_action" => { "enabled" => true, "action_name" => "my-review-action", "termination" => { "max_review_rounds" => 1 } }
+          }
+        })
+        expect(project).to be_valid
+      end
+
+      it "skips action_name validation when ci_action is disabled" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "ci_action" => { "enabled" => false, "action_name" => "" }
+          }
+        })
+        expect(project).to be_valid
+      end
+
       it "stores and retrieves review_settings via JSONB" do
         settings = {
           "enabled" => true,
