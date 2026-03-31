@@ -436,18 +436,21 @@ class Project < ApplicationRecord
       return
     end
 
-    if review_settings["enabled"] == true
-      methods = review_settings["methods"]
+    # Normalize to string keys so validation works regardless of how the hash was constructed
+    normalized = review_settings.deep_stringify_keys
+
+    if normalized["enabled"] == true
+      methods = normalized["methods"]
       unless methods.is_a?(Hash) && methods.any? { |_, c| c.is_a?(Hash) && c["enabled"] == true }
         errors.add(:review_settings, "must have at least one review method enabled when reviews are enabled")
       end
     end
 
-    validate_review_methods_config
+    validate_review_methods_config(normalized)
   end
 
-  def validate_review_methods_config
-    methods = review_settings["methods"]
+  def validate_review_methods_config(normalized)
+    methods = normalized["methods"]
     return if methods.nil?
 
     unless methods.is_a?(Hash)

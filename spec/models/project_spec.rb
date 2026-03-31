@@ -844,6 +844,27 @@ RSpec.describe Project do
         expect(project).to be_valid
       end
 
+      it "validates correctly when review_settings has symbol keys" do
+        project = build(:project, review_settings: {
+          enabled: true,
+          methods: {
+            copilot: {
+              enabled: true,
+              termination: { max_review_rounds: 2, stop_when_no_comments: true }
+            }
+          }
+        })
+        expect(project).to be_valid
+      end
+
+      it "rejects unknown methods even with symbol keys" do
+        project = build(:project, review_settings: {
+          methods: { unknown_method: { enabled: true } }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("unknown review method")
+      end
+
       it "stores and retrieves review_settings via JSONB" do
         settings = {
           "enabled" => true,
