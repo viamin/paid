@@ -246,7 +246,7 @@ class Provider < ApplicationRecord
     when "opencode"
       [ OPENCODE_DEFAULT_API_PROVIDER ]  # OpenCode uses its default provider
     else
-      []
+      raise ArgumentError, "No API service mapping exists for provider key: #{provider_key.inspect}"
     end
   end
 

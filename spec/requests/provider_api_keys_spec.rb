@@ -161,7 +161,7 @@ RSpec.describe "ProviderApiKeys" do
       end
 
       it "filters blank values from compatible_providers" do
-        post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc123", compatible_providers: [ "claude", "" ] } }
+        post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc123", compatible_providers: [ "openrouter", "" ] } }
         expect(ProviderApiKey.last.compatible_providers).to eq([ "openrouter" ])
       end
     end

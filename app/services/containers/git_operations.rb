@@ -30,7 +30,9 @@ module Containers
     # the git credential helper cannot fetch tokens. These settings control how
     # long we wait for the proxy to recover before giving up.
     PROXY_HEALTH_CHECK_INTERVAL = 15 # seconds between retry attempts
-    PROXY_HEALTH_CHECK_TIMEOUT = 300 # max seconds to wait for proxy recovery
+    # Keep below the shortest Temporal activity timeout (60s for PushBranch)
+    # so ProxyUnavailableError is raised before Temporal times out the activity.
+    PROXY_HEALTH_CHECK_TIMEOUT = 45 # max seconds to wait for proxy recovery
 
     # Marker comment used as a grep guard so Temporal retries don't
     # duplicate the exclude block.  Defined once and referenced both
@@ -702,7 +704,14 @@ module Containers
       )
 
       loop do
-        sleep(PROXY_HEALTH_CHECK_INTERVAL)
+        remaining = deadline - Time.current
+        if remaining <= 0
+          raise ProxyUnavailableError,
+            "Credential proxy unreachable after #{PROXY_HEALTH_CHECK_TIMEOUT}s — " \
+            "the Rails app may be down"
+        end
+
+        sleep([ PROXY_HEALTH_CHECK_INTERVAL, remaining ].min)
 
         if proxy_healthy?
           Rails.logger.info(
@@ -710,12 +719,6 @@ module Containers
             agent_run_id: agent_run.id
           )
           return
-        end
-
-        if Time.current >= deadline
-          raise ProxyUnavailableError,
-            "Credential proxy unreachable after #{PROXY_HEALTH_CHECK_TIMEOUT}s — " \
-            "the Rails app may be down"
         end
       end
     end

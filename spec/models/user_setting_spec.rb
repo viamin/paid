@@ -127,7 +127,7 @@ RSpec.describe UserSetting do
 
     it "returns canonical provider keys for configured rate-limit fallbacks" do
       allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude])
-      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
       user.providers.create!(
         provider_key: "claude",
         auth_type: "api_key",
@@ -456,7 +456,7 @@ RSpec.describe UserSetting do
 
     it "prefers the subscription entry when multiple entries share a provider key" do
       subscription = user.providers.find_by!(provider_key: "claude")
-      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
       api_entry = user.providers.create!(
         provider_key: "claude",
         auth_type: "api_key",
@@ -491,7 +491,7 @@ RSpec.describe UserSetting do
       user.providers.create!(
         provider_key: "cursor",
         auth_type: "api_key",
-        provider_api_key: create(:provider_api_key, user: user, compatible_providers: %w[cursor]),
+        provider_api_key: create(:provider_api_key, user: user, compatible_providers: %w[openai openrouter]),
         name: name,
         enabled_for_agent_runs: true,
         enabled_for_fallback: true
