@@ -91,8 +91,21 @@ class AgentRun < ApplicationRecord
 
   # SQL expression that normalises agent_type to its canonical provider key
   # (e.g. "claude_code" → "claude") so SQL aggregations match Ruby logic.
+  #
+  # Derived from ProviderSupport.provider_key_for_agent_type for all known
+  # AGENT_TYPES so that SQL and Ruby stay in sync if new aliases are added
+  # or existing mappings change.
   def self.normalized_agent_type_sql
-    "CASE agent_type WHEN 'claude_code' THEN 'claude' ELSE agent_type END"
+    remapped = AGENT_TYPES.filter_map do |agent_type|
+      provider_key = ProviderSupport.provider_key_for_agent_type(agent_type)
+      next if provider_key == agent_type
+
+      "WHEN #{connection.quote(agent_type)} THEN #{connection.quote(provider_key)}"
+    end
+
+    return "agent_type" if remapped.empty?
+
+    "CASE agent_type #{remapped.join(" ")} ELSE agent_type END"
   end
 
   # SQL expression for the effective provider: the provider that actually
