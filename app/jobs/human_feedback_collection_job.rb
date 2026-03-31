@@ -27,6 +27,8 @@ class HumanFeedbackCollectionJob < ApplicationJob
     when "review"
       collect_review_reaction_feedback(agent_run)
     end
+
+    stamp_last_polled_at(agent_run)
   end
 
   private
@@ -109,6 +111,37 @@ class HumanFeedbackCollectionJob < ApplicationJob
       agent_run_id: agent_run.id,
       error: e.message
     )
+  end
+
+  # Records when this polling job last ran for the given agent run.
+  # DelayedHumanFeedbackCollectionJob uses this timestamp (not updated_at)
+  # to decide whether a run needs re-polling, because webhook-driven updates
+  # also bump updated_at and would cause the sweep to skip runs prematurely.
+  def stamp_last_polled_at(agent_run)
+    timestamp = Time.current.iso8601
+
+    # Use find_or_create_by! to handle races with webhook-driven creation of
+    # the same human metric (e.g., CollectCommentFeedback / CollectHumanFeedback).
+    # If a concurrent thread inserts between find and create, rescue both
+    # RecordNotUnique (DB constraint) and RecordInvalid (model uniqueness
+    # validation) and reload the winner's record.
+    begin
+      metric = agent_run.quality_metrics.find_or_create_by!(metric_type: "human") do |m|
+        m.scores = {}
+        m.metadata = { "last_polled_at" => timestamp }
+      end
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
+      metric = agent_run.quality_metrics.find_by(metric_type: "human")
+    end
+
+    if metric
+      metric.with_lock do
+        existing = metric.metadata || {}
+        metric.update!(
+          metadata: existing.merge("last_polled_at" => timestamp)
+        )
+      end
+    end
   end
 
   def collect_issue_feedback(agent_run)

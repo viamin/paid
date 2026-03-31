@@ -2,7 +2,7 @@
 
 class QualityMetric < ApplicationRecord
   METRIC_TYPES = %w[automated human].freeze
-  FEEDBACK_SOURCES = %w[system pr_merge pr_reaction pr_review issue_reaction review_reaction webhook].freeze
+  FEEDBACK_SOURCES = %w[system pr_merge pr_reaction pr_review issue_reaction review_reaction webhook comment].freeze
 
   # Weights for composite quality score (PR creation goal).
   # Based on RDR-009 with adjustments: added pr_created, review_comment_count,

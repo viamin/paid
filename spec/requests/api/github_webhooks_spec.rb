@@ -139,6 +139,211 @@ RSpec.describe "Api::GithubWebhooks" do
       end
     end
 
+    context "with pull_request event (merge)" do
+      let(:payload) do
+        {
+          action: "closed",
+          pull_request: {
+            number: agent_run.pull_request_number,
+            merged: true
+          },
+          repository: {
+            id: project.github_id,
+            full_name: project.full_name
+          }
+        }
+      end
+
+      it "records pr_merged feedback when PR is merged" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "pull_request",
+              "X-Hub-Signature-256" => signature
+            }
+        }.to change { QualityMetric.human.count }.by(1)
+
+        expect(response).to have_http_status(:ok)
+
+        metric = agent_run.quality_metrics.human.last
+        expect(metric.scores["pr_merged"]).to eq(1.0)
+      end
+
+      it "ignores closed-but-not-merged PRs" do
+        payload[:pull_request][:merged] = false
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "pull_request",
+              "X-Hub-Signature-256" => signature
+            }
+        }.not_to change { QualityMetric.human.count }
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      it "ignores non-close actions" do
+        payload[:action] = "opened"
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "pull_request",
+              "X-Hub-Signature-256" => signature
+            }
+        }.not_to change { QualityMetric.human.count }
+
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
+    context "with issue_comment event on a PR" do
+      let(:payload) do
+        {
+          action: "created",
+          issue: {
+            number: agent_run.pull_request_number,
+            pull_request: { url: "https://api.github.com/repos/#{project.full_name}/pulls/#{agent_run.pull_request_number}" }
+          },
+          comment: {
+            id: 1001,
+            user: { login: "reviewer" },
+            body: "Nice work, but could you fix the typo on line 10?"
+          },
+          repository: {
+            id: project.github_id,
+            full_name: project.full_name
+          }
+        }
+      end
+
+      it "records comment feedback for matching agent run" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "issue_comment",
+              "X-Hub-Signature-256" => signature
+            }
+        }.to change { QualityMetric.human.count }.by(1)
+
+        expect(response).to have_http_status(:ok)
+
+        metric = agent_run.quality_metrics.human.last
+        expect(metric.metadata["webhook_comment_count"]).to eq(1)
+        expect(metric.metadata["commenters"]).to include("reviewer")
+      end
+
+      it "increments comment count on subsequent comments" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+        headers = {
+          "Content-Type" => "application/json",
+          "X-GitHub-Event" => "issue_comment",
+          "X-Hub-Signature-256" => signature
+        }
+
+        post webhook_url, params: body, headers: headers
+
+        # Second comment from a different user with a different comment id
+        payload[:comment][:id] = 1002
+        payload[:comment][:user][:login] = "another-reviewer"
+        body2, signature2 = sign_payload(payload, project.webhook_secret)
+        headers2 = headers.merge("X-Hub-Signature-256" => signature2)
+
+        post webhook_url, params: body2, headers: headers2
+
+        metric = agent_run.quality_metrics.human.last
+        expect(metric.metadata["webhook_comment_count"]).to eq(2)
+        expect(metric.metadata["commenters"]).to contain_exactly("reviewer", "another-reviewer")
+      end
+
+      it "does not double-count retried webhook deliveries" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+        headers = {
+          "Content-Type" => "application/json",
+          "X-GitHub-Event" => "issue_comment",
+          "X-Hub-Signature-256" => signature
+        }
+
+        post webhook_url, params: body, headers: headers
+        post webhook_url, params: body, headers: headers
+
+        metric = agent_run.quality_metrics.human.last
+        expect(metric.metadata["webhook_comment_count"]).to eq(1)
+      end
+
+      it "ignores edited comments" do
+        payload[:action] = "edited"
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "issue_comment",
+              "X-Hub-Signature-256" => signature
+            }
+        }.not_to change { QualityMetric.human.count }
+
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
+    context "with issue_comment event on an issue" do
+      let(:issue_agent_run) do
+        create(:agent_run, :completed, project: project, goal: "create_issue", created_issue_number: 55)
+      end
+
+      let(:payload) do
+        {
+          action: "created",
+          issue: {
+            number: issue_agent_run.created_issue_number
+          },
+          comment: {
+            id: 2001,
+            user: { login: "commenter" },
+            body: "Thanks for filing this!"
+          },
+          repository: {
+            id: project.github_id,
+            full_name: project.full_name
+          }
+        }
+      end
+
+      it "records comment feedback for agent-created issues" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect {
+          post webhook_url,
+            params: body,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "issue_comment",
+              "X-Hub-Signature-256" => signature
+            }
+        }.to change { QualityMetric.human.count }.by(1)
+
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
     context "with unsupported event" do
       it "returns ok for push events" do
         payload = { repository: { id: project.github_id, full_name: project.full_name } }

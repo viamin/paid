@@ -54,6 +54,14 @@ Rails.application.configure do
       cron: "0 3 * * *",
       class: "KnowledgeAuditRetentionJob",
       description: "Delete knowledge audit events older than 90 days"
+    },
+    delayed_human_feedback: {
+      # Runs hourly, but the job itself skips runs polled within the last 4 hours
+      # (SWEEP_INTERVAL). Hourly ticks prevent the scenario where a poll just
+      # after a 4-hour cron tick causes the next tick to defer re-polling to ~8h.
+      cron: "0 * * * *",
+      class: "DelayedHumanFeedbackCollectionJob",
+      description: "Collect delayed human feedback (reactions, reviews) for recent agent runs"
     }
   }
 end
