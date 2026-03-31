@@ -21,6 +21,7 @@ class EmbedChunksJob < ApplicationJob
     project.effective_owner
       &.provider_api_keys
       &.compatible_with("openai")
+      &.order(:created_at)
       &.first
       &.api_key
   end
