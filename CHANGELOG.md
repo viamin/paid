@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.12.0](https://github.com/viamin/paid/compare/v0.11.4...v0.12.0) (2026-03-31)
+
+
+### Features
+
+* **providers:** support per-entry OpenCode model routing ([#621](https://github.com/viamin/paid/issues/621)) ([d228cde](https://github.com/viamin/paid/commit/d228cde7dfe0ba0c7e02b7b8b69515f466bad598))
+
+
+### Bug Fixes
+
+* 413: Phase 2: Intelligence — remaining work tracker ([#608](https://github.com/viamin/paid/issues/608)) ([d6031ff](https://github.com/viamin/paid/commit/d6031ff358f355ddef24eacc73146609c984e8e6))
+* 615: Prevent auto-pick from selecting tracker issues with incomplete or transitive blockers ([#630](https://github.com/viamin/paid/issues/630)) ([d943246](https://github.com/viamin/paid/commit/d943246a7a225e2ec1e6ac241de368e5d42eba0e))
+* 618: feat: Add periodic CodeQL code scanning alert monitoring ([#633](https://github.com/viamin/paid/issues/633)) ([74748bb](https://github.com/viamin/paid/commit/74748bb726769b8cbeec3db5d9541f91d404f3c1))
+* 628: Unpausing a PR does not clear paused status pill or enqueue an agent run ([#647](https://github.com/viamin/paid/issues/647)) ([ef9ae4d](https://github.com/viamin/paid/commit/ef9ae4df833c4e6068c776bdf96424a665125755))
+* 632: fix: Retry runs copy stale auto-generated prompt, ignoring updated service containers ([#648](https://github.com/viamin/paid/issues/648)) ([9e3388d](https://github.com/viamin/paid/commit/9e3388d9873903a19c9d89c77533df994ce2609c))
+* 635: Add configurable PR review settings to projects ([#649](https://github.com/viamin/paid/issues/649)) ([8b879d7](https://github.com/viamin/paid/commit/8b879d74247286196b1e8a9bef6585db8fc7cd63))
+* 636: feat(api-keys): allow editing provider API keys after creation ([#646](https://github.com/viamin/paid/issues/646)) ([6fb9236](https://github.com/viamin/paid/commit/6fb9236d5dcc5166539f6711b3677fafaaf8c5c4))
+* 639: feat(knowledge): Wire embedding pipeline to use user's ProviderApiKey ([#645](https://github.com/viamin/paid/issues/645)) ([276f56e](https://github.com/viamin/paid/commit/276f56e1bed061f7367ebf32754cbb49d3181346))
+* **dashboard:** normalize claude_code to claude in effective provider ([#638](https://github.com/viamin/paid/issues/638)) ([f7faddd](https://github.com/viamin/paid/commit/f7faddd5ae3708512005d1f48e20cf7b5c37883e))
+* **knowledge:** remove empty Qdrant API key that blocks dev connections ([7351c19](https://github.com/viamin/paid/commit/7351c19ead8bbd4b890085be6ea87b0ea9ed9c30))
+* **providers:** make provider table horizontally scrollable on mobile ([#626](https://github.com/viamin/paid/issues/626)) ([#634](https://github.com/viamin/paid/issues/634)) ([8ad6383](https://github.com/viamin/paid/commit/8ad6383fb330471a2693b3f0a01bc0fcd262905e))
+* **providers:** resolve Gemini agent test timeouts ([#624](https://github.com/viamin/paid/issues/624)) ([3102da2](https://github.com/viamin/paid/commit/3102da2c073bac2dcc1ca32036bca46eede07ee7))
+
 ## [0.11.4](https://github.com/viamin/paid/compare/v0.11.3...v0.11.4) (2026-03-30)
 
 
