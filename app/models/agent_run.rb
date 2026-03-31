@@ -829,7 +829,27 @@ class AgentRun < ApplicationRecord
       project.broadcast_agent_runs_update
       project.broadcast_agent_runs_list_update
       project.broadcast_stats_update
-      project.broadcast_issues_update if issue_id.present?
+      # Only broadcast issues updates when they can affect auto-pick eligibility
+      # or when the associated issue/agent type changes. This avoids redundant
+      # re-renders during intermediate status transitions (e.g., queued→pending→running).
+      if issue_id.present?
+        should_broadcast_issues = false
+
+        if previous_changes.key?("issue_id") || previous_changes.key?("agent_type")
+          should_broadcast_issues = true
+        elsif previous_changes.key?("status")
+          from_status, to_status = previous_changes["status"]
+          eligible_statuses = %w[queued pending running]
+          from_eligible = eligible_statuses.include?(from_status)
+          to_eligible = eligible_statuses.include?(to_status)
+
+          if from_eligible != to_eligible || FINISHED_STATUSES.include?(to_status)
+            should_broadcast_issues = true
+          end
+        end
+
+        project.broadcast_issues_update if should_broadcast_issues
+      end
 
       # Only broadcast dashboard stats on terminal status transitions to avoid
       # a burst of expensive aggregate queries during intermediate transitions

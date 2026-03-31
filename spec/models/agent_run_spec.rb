@@ -1404,6 +1404,46 @@ RSpec.describe AgentRun do
 
       agent_run.update!(tokens_input: 1000, tokens_output: 500, cost_cents: 10)
     end
+
+    context "with issue-backed runs" do
+      let(:issue) { create(:issue, project: project) }
+
+      before do
+        allow(project).to receive(:broadcast_agent_runs_update)
+        allow(project).to receive(:broadcast_agent_runs_list_update)
+        allow(project).to receive(:broadcast_stats_update)
+        allow(project).to receive(:broadcast_agent_run_detail_update)
+        allow(project).to receive(:broadcast_issues_update)
+      end
+
+      it "broadcasts issues update when an issue-backed run transitions to a terminal status" do
+        agent_run = create(:agent_run, project: project, issue: issue, status: "running", started_at: Time.current)
+
+        expect(project).to receive(:broadcast_issues_update).once
+        agent_run.update!(status: "failed")
+      end
+
+      it "broadcasts issues update when transitioning from nil to an eligible status (create)" do
+        # Eagerly create issue so its own after_commit broadcast doesn't interfere
+        issue
+        expect(project).to receive(:broadcast_issues_update).once
+        create(:agent_run, project: project, issue: issue, status: "pending")
+      end
+
+      it "does not broadcast issues update for intermediate transitions within eligible statuses" do
+        agent_run = create(:agent_run, project: project, issue: issue, status: "pending")
+
+        expect(project).not_to receive(:broadcast_issues_update)
+        agent_run.update!(status: "running", started_at: Time.current)
+      end
+
+      it "does not broadcast issues update for non-issue runs" do
+        agent_run = create(:agent_run, :with_custom_prompt, project: project, status: "running", started_at: Time.current)
+
+        expect(project).not_to receive(:broadcast_issues_update)
+        agent_run.update!(status: "failed")
+      end
+    end
   end
 
   describe "#record_provider_attempt" do
