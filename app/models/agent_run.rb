@@ -829,6 +829,7 @@ class AgentRun < ApplicationRecord
       project.broadcast_agent_runs_update
       project.broadcast_agent_runs_list_update
       project.broadcast_stats_update
+      project.broadcast_issues_update if issue_id.present?
 
       # Only broadcast dashboard stats on terminal status transitions to avoid
       # a burst of expensive aggregate queries during intermediate transitions
