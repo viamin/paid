@@ -47,29 +47,33 @@ module Activities
       return unless project.security_alert_types.include?("code_scanning")
       return unless should_scan_code_scanning?(project)
 
-      begin
-        all_alerts = fetch_code_scanning_alerts(project)
-        return if all_alerts.nil?
+      all_alerts = fetch_code_scanning_alerts(project)
 
-        SecurityAlerts::ReconcileResolved.new(
-          project, all_alerts,
-          source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE
-        ).call
-
-        filtered = all_alerts.select { |a| severity_filter.include?(a[:severity]) }
-        SecurityAlerts::ProcessCodeScanningAlerts.new(project).call(filtered)
-
-        logger.info(
-          message: "github_sync.code_scanning_scan_complete",
-          project_id: project.id,
-          alerts_fetched: all_alerts.size,
-          alerts_actionable: filtered.count { |a| a[:state] == "open" }
-        )
-      ensure
-        # Always record the scan attempt (even on graceful 403/404 failures)
-        # to preserve interval-gating and avoid hammering the API every cycle.
+      if all_alerts.nil?
+        # Graceful 403/404 — record the scan attempt to avoid hammering the
+        # API every cycle, but there is nothing else to process.
         project.update_column(:last_code_scanning_scan_at, Time.current)
+        return
       end
+
+      SecurityAlerts::ReconcileResolved.new(
+        project, all_alerts,
+        source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE
+      ).call
+
+      filtered = all_alerts.select { |a| severity_filter.include?(a[:severity]) }
+      SecurityAlerts::ProcessCodeScanningAlerts.new(project).call(filtered)
+
+      # Record successful scan. Retryable errors (5xx) intentionally skip
+      # this so Temporal retries re-check within the same interval window.
+      project.update_column(:last_code_scanning_scan_at, Time.current)
+
+      logger.info(
+        message: "github_sync.code_scanning_scan_complete",
+        project_id: project.id,
+        alerts_fetched: all_alerts.size,
+        alerts_actionable: filtered.count { |a| a[:state] == "open" }
+      )
     end
 
     def should_scan_code_scanning?(project)

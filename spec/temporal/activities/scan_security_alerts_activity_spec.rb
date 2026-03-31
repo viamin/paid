@@ -87,11 +87,14 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(project.last_code_scanning_scan_at).to be_present
       end
 
-      it "re-raises non-403 ApiError" do
+      it "re-raises non-403 ApiError without updating last_code_scanning_scan_at" do
         allow(github_client).to receive(:code_scanning_alerts)
           .and_raise(GithubClient::ApiError.new("Server error", status: 500))
 
         expect { activity.execute(project_id: project.id) }.to raise_error(GithubClient::ApiError)
+
+        project.reload
+        expect(project.last_code_scanning_scan_at).to be_nil
       end
     end
 

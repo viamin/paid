@@ -191,7 +191,7 @@ RSpec.describe Issue do
         issue = build(:issue, project: project,
           source: Issue::DEPENDABOT_ALERT_SOURCE,
           github_issue_id: offset + 5,
-          github_number: 200_000_005)
+          github_number: 100_000_005)
 
         expect(issue.github_url).to eq("https://github.com/viamin/paid/security/dependabot/5")
       end
