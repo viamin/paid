@@ -42,6 +42,7 @@ module Activities
       /too many requests/i,
       /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
+      /exhausted.*capacity/i,
       /(?:server|system)\s+(?:at\s+)?capacity/i,
       /(?:server|api|service)\s+overloaded/i,
       /out of (?:extra )?usage/i,

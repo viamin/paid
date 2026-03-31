@@ -787,6 +787,22 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.error_message).to include("rate limited")
       end
 
+      it "classifies 'exhausted ... capacity' as a rate limit" do
+        gemini_rate_limit = Containers::Provision::Result.failure(
+          error: "exit 1", stdout: "", stderr: "You have exhausted your capacity on this model.", exit_code: 1
+        )
+        allow(container_service).to receive(:execute).and_return(gemini_rate_limit)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.rate_limited_until).to be_present
+      end
+
       it "logs rate-limit fallback availability using the canonical provider key" do
         logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil)
         allow(activity).to receive(:logger).and_return(logger)

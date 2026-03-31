@@ -16,7 +16,7 @@ module Providers
 
     PROMPT = "Respond with exactly: PING OK"
     EXPECTED_OUTPUT = "PING OK"
-    TIMEOUT = 30
+    TIMEOUT = 60
     CONTAINER_COMMANDS = Activities::RunAgentActivity::AGENT_COMMANDS.slice(
       "claude",
       "codex",
