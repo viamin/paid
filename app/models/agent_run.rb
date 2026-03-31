@@ -8,7 +8,8 @@ class AgentRun < ApplicationRecord
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
-  AUTO_PICK_BLOCKING_STATUSES = %w[queued pending running].freeze
+  UNFINISHED_STATUSES = %w[queued pending running].freeze
+  AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
 
   belongs_to :project
   belongs_to :issue, optional: true
