@@ -339,10 +339,11 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "disables Gemini CLI sandbox since the container is already isolated" do
+      it "disables Gemini CLI sandbox and retries since the container is already isolated" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
           expect(env).to include("GEMINI_SANDBOX=false")
+          expect(env).to include("GEMINI_CLI_DISABLE_RETRIES=true")
           mock_container
         end
 
