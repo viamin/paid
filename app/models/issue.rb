@@ -4,16 +4,18 @@ class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed needs_input recommend_close].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
 
-  # Constants for synthetic Dependabot alert issues. Shared with
+  # Constants for synthetic alert issues. Shared with
   # Activities::ScanSecurityAlertsActivity which creates these issues.
   GITHUB_SOURCE = "github"
   SYNTHETIC_DEPENDABOT_SOURCE = "dependabot_alert"
-  VALID_SOURCES = [ GITHUB_SOURCE, SYNTHETIC_DEPENDABOT_SOURCE ].freeze
+  SYNTHETIC_CODE_SCANNING_SOURCE = "code_scanning_alert"
+  VALID_SOURCES = [ GITHUB_SOURCE, SYNTHETIC_DEPENDABOT_SOURCE, SYNTHETIC_CODE_SCANNING_SOURCE ].freeze
   SEVERITY_ORDER = %w[critical high medium low].freeze
   TRACKER_PATTERN = /\b(?:tracker|remaining\s+work|completion\s+criteria|phase\s+tracker|meta\s+issue)\b/i
   # Large offset so synthetic github_issue_id values never collide with real
   # GitHub issue IDs (which currently range in the low billions).
   SYNTHETIC_ISSUE_ID_OFFSET = 900_000_000_000
+  SYNTHETIC_CODE_SCANNING_ID_OFFSET = 800_000_000_000
 
   belongs_to :project
   belongs_to :parent_issue, class_name: "Issue", optional: true
@@ -80,6 +82,14 @@ class Issue < ApplicationRecord
        github_issue_id >= SYNTHETIC_ISSUE_ID_OFFSET
       alert_number = github_issue_id - SYNTHETIC_ISSUE_ID_OFFSET
       return "#{project.github_url}/security/dependabot/#{alert_number}"
+    end
+
+    # Synthetic CodeQL alert issues link to the code scanning alert page.
+    if source == SYNTHETIC_CODE_SCANNING_SOURCE &&
+       github_issue_id.present? &&
+       github_issue_id >= SYNTHETIC_CODE_SCANNING_ID_OFFSET
+      alert_number = github_issue_id - SYNTHETIC_CODE_SCANNING_ID_OFFSET
+      return "#{project.github_url}/security/code-scanning/#{alert_number}"
     end
 
     path = is_pull_request? ? "pull" : "issues"

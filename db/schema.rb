@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_31_004430) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -656,6 +656,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
     t.boolean "auto_scan_security", default: false, null: false
     t.string "automation_label_name", default: "paid-automation", null: false
     t.boolean "automation_on_label_enabled", default: true, null: false
+    t.integer "code_scanning_interval_hours", default: 72, null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "default_branch", default: "main", null: false
@@ -665,6 +666,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
     t.string "knowledge_status", limit: 50, default: "pending", null: false
     t.jsonb "label_mappings", default: {}, null: false
     t.datetime "last_agent_run_at"
+    t.datetime "last_code_scanning_scan_at"
     t.datetime "last_github_activity_at"
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
@@ -678,7 +680,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_230136) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.string "repo", null: false
-    t.jsonb "security_alert_types", default: ["dependabot"], null: false
+    t.jsonb "security_alert_types", default: ["dependabot", "code_scanning"], null: false
     t.string "security_severity_threshold", default: "high", null: false
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false

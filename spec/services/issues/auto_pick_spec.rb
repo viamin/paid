@@ -673,6 +673,33 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
     end
+
+    context "with synthetic code scanning issues" do
+      it "picks code scanning issues for auto-pick" do
+        cs_issue = create(:issue, project: project,
+          source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+          github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + 1667,
+          github_number: 200_001_667)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(cs_issue)
+      end
+
+      it "picks code scanning issues alongside regular GitHub issues" do
+        github_issue = create(:issue, project: project, source: Issue::GITHUB_SOURCE, github_number: 1)
+        create(:issue, project: project,
+          source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+          github_issue_id: Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET + 1667,
+          github_number: 200_001_667)
+
+        result = described_class.new(project).call
+
+        # GitHub issue has lower github_number, so it should be picked first
+        expect(result.issue).to eq(github_issue)
+      end
+    end
   end
 
   describe ".eligible_issue_ids" do

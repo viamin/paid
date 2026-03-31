@@ -1471,4 +1471,89 @@ RSpec.describe GithubClient do
       end
     end
   end
+
+  describe "#code_scanning_alerts" do
+    let(:repo) { "owner/repo" }
+
+    context "when alerts exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts")
+          .with(query: hash_including("state" => "open"))
+          .to_return(
+            status: 200,
+            body: [
+              {
+                number: 1667,
+                state: "open",
+                html_url: "https://github.com/owner/repo/security/code-scanning/1667",
+                created_at: "2026-03-29T10:00:00Z",
+                updated_at: "2026-03-29T12:00:00Z",
+                rule: {
+                  id: "py/sensitive-get-query",
+                  description: "Sensitive data read from GET request",
+                  security_severity_level: "high"
+                },
+                tool: { name: "CodeQL" },
+                most_recent_instance: {
+                  message: { text: "Reading sensitive data from a GET request." }
+                }
+              }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns parsed alert data" do
+        result = client.code_scanning_alerts(repo)
+
+        expect(result.size).to eq(1)
+        alert = result.first
+        expect(alert[:number]).to eq(1667)
+        expect(alert[:state]).to eq("open")
+        expect(alert[:severity]).to eq("high")
+        expect(alert[:rule_id]).to eq("py/sensitive-get-query")
+        expect(alert[:rule_description]).to eq("Sensitive data read from GET request")
+        expect(alert[:tool_name]).to eq("CodeQL")
+        expect(alert[:summary]).to eq("Reading sensitive data from a GET request.")
+      end
+
+      it "returns timestamps as Time objects" do
+        alert = client.code_scanning_alerts(repo).first
+
+        expect(alert[:created_at]).to be_a(Time)
+        expect(alert[:created_at].iso8601).to eq("2026-03-29T10:00:00Z")
+        expect(alert[:updated_at]).to be_a(Time)
+      end
+    end
+
+    context "when code scanning is not enabled" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts")
+          .with(query: hash_including("state" => "open"))
+          .to_return(status: 404, body: { message: "Not Found" }.to_json)
+      end
+
+      it "raises NotFoundError" do
+        expect { client.code_scanning_alerts(repo) }.to raise_error(GithubClient::NotFoundError)
+      end
+    end
+
+    context "when no alerts exist" do
+      before do
+        stub_request(:get, "#{api_base}/repos/#{repo}/code-scanning/alerts")
+          .with(query: hash_including("state" => "open"))
+          .to_return(
+            status: 200,
+            body: [].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns an empty array" do
+        result = client.code_scanning_alerts(repo)
+
+        expect(result).to eq([])
+      end
+    end
+  end
 end
