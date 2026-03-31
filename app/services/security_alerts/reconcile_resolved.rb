@@ -15,7 +15,13 @@ module SecurityAlerts
     end
 
     def call
-      id_offset = Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
+      id_offset =
+        case @source
+        when Issue::SYNTHETIC_CODE_SCANNING_SOURCE
+          Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
+        else
+          raise ArgumentError, "Unsupported synthetic issue source for SecurityAlerts::ReconcileResolved: #{@source.inspect}"
+        end
 
       open_alert_ids = @current_open_alerts
         .select { |a| a[:state] == "open" }

@@ -17,6 +17,9 @@ class Issue < ApplicationRecord
   # Large offset so synthetic github_issue_id values never collide with real
   # GitHub issue IDs (which currently range in the low billions).
   SYNTHETIC_CODE_SCANNING_ID_OFFSET = 800_000_000_000
+  # Legacy offset for Dependabot synthetic issues. No new Dependabot issues are
+  # created, but existing rows need this to generate correct github_url links.
+  LEGACY_DEPENDABOT_ID_OFFSET = 900_000_000_000
 
   belongs_to :project
   belongs_to :parent_issue, class_name: "Issue", optional: true
@@ -77,6 +80,16 @@ class Issue < ApplicationRecord
   }
 
   def github_url
+    # Legacy Dependabot synthetic issues link to the Dependabot alert page.
+    # No new Dependabot issues are created, but existing rows use synthetic
+    # github_number values that don't correspond to real GitHub issues.
+    if source == DEPENDABOT_ALERT_SOURCE &&
+       github_issue_id.present? &&
+       github_issue_id >= LEGACY_DEPENDABOT_ID_OFFSET
+      alert_number = github_issue_id - LEGACY_DEPENDABOT_ID_OFFSET
+      return "#{project.github_url}/security/dependabot/#{alert_number}"
+    end
+
     # Synthetic CodeQL alert issues link to the code scanning alert page.
     if source == SYNTHETIC_CODE_SCANNING_SOURCE &&
        github_issue_id.present? &&

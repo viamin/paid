@@ -184,6 +184,28 @@ RSpec.describe Issue do
 
         expect(pr.github_url).to eq("https://github.com/viamin/paid/pull/43")
       end
+
+      it "returns the Dependabot alert URL for legacy Dependabot synthetic issues" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        offset = Issue::LEGACY_DEPENDABOT_ID_OFFSET
+        issue = build(:issue, project: project,
+          source: Issue::DEPENDABOT_ALERT_SOURCE,
+          github_issue_id: offset + 5,
+          github_number: 200_000_005)
+
+        expect(issue.github_url).to eq("https://github.com/viamin/paid/security/dependabot/5")
+      end
+
+      it "returns the code scanning alert URL for CodeQL synthetic issues" do
+        project = build(:project, owner: "viamin", repo: "paid")
+        offset = Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
+        issue = build(:issue, project: project,
+          source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+          github_issue_id: offset + 10,
+          github_number: 200_000_010)
+
+        expect(issue.github_url).to eq("https://github.com/viamin/paid/security/code-scanning/10")
+      end
     end
 
     describe "#has_label?" do
