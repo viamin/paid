@@ -27,6 +27,8 @@ class HumanFeedbackCollectionJob < ApplicationJob
     when "review"
       collect_review_reaction_feedback(agent_run)
     end
+
+    stamp_last_polled_at(agent_run)
   end
 
   private
@@ -108,6 +110,20 @@ class HumanFeedbackCollectionJob < ApplicationJob
       message: "human_feedback.review_comment_count_failed",
       agent_run_id: agent_run.id,
       error: e.message
+    )
+  end
+
+  # Records when this polling job last ran for the given agent run.
+  # DelayedHumanFeedbackCollectionJob uses this timestamp (not updated_at)
+  # to decide whether a run needs re-polling, because webhook-driven updates
+  # also bump updated_at and would cause the sweep to skip runs prematurely.
+  def stamp_last_polled_at(agent_run)
+    metric = agent_run.quality_metrics.find_by(metric_type: "human")
+    return unless metric
+
+    existing = metric.metadata || {}
+    metric.update_columns(
+      metadata: existing.merge("last_polled_at" => Time.current.iso8601)
     )
   end
 

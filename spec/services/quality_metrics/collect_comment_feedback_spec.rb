@@ -104,6 +104,30 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
       expect(metric.metadata["processed_comment_ids"]).to contain_exactly(42, 43)
     end
 
+    it "bounds processed_comment_ids to MAX_PROCESSED_IDS" do
+      max = QualityMetrics::CollectCommentFeedback::MAX_PROCESSED_IDS
+      existing_ids = (1..max).to_a
+      agent_run.quality_metrics.create!(
+        metric_type: "human",
+        metadata: {
+          "processed_comment_ids" => existing_ids,
+          "webhook_comment_count" => max
+        },
+        composite_score: 0.5
+      )
+
+      metric = described_class.call(
+        agent_run: agent_run,
+        commenter: "alice",
+        comment_id: max + 1
+      )
+
+      ids = metric.metadata["processed_comment_ids"]
+      expect(ids.length).to eq(max)
+      expect(ids).to include(max + 1)
+      expect(ids).not_to include(1)
+    end
+
     it "returns nil when commenter is blank" do
       result = described_class.call(
         agent_run: agent_run,

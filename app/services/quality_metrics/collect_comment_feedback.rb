@@ -30,6 +30,11 @@ module QualityMetrics
 
     MAX_RETRIES = 3
 
+    # Keep only the most recent N comment IDs for deduplication.
+    # Older IDs are evicted to prevent unbounded metadata growth — webhook
+    # retries for those comments are unlikely after this many newer comments.
+    MAX_PROCESSED_IDS = 500
+
     def call
       return nil if commenter.blank?
 
@@ -52,7 +57,7 @@ module QualityMetrics
             if processed_ids.include?(comment_id)
               return metric.persisted? ? metric : nil
             end
-            processed_ids = processed_ids + [ comment_id ]
+            processed_ids = (processed_ids + [ comment_id ]).last(MAX_PROCESSED_IDS)
           end
 
           existing_sources = Array(existing_metadata["feedback_sources"])

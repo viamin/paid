@@ -13,8 +13,13 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
   # Only process runs completed within this window.
   LOOKBACK_WINDOW = 7.days
 
-  # Skip runs whose human metric was already updated within this interval,
+  # Skip runs whose human metric was polled within this interval,
   # avoiding redundant API/DB work on every 4-hour sweep.
+  #
+  # Uses metadata->'last_polled_at' (set only by HumanFeedbackCollectionJob)
+  # rather than updated_at, because webhook-driven updates (comments, merges,
+  # reviews) also bump updated_at and would cause the sweep to skip runs that
+  # still need reaction/review polling.
   SWEEP_INTERVAL = 4.hours
 
   def perform
@@ -28,13 +33,32 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
           )
       )
       .where.not(
-        id: QualityMetric.where(metric_type: "human")
-              .where(QualityMetric.arel_table[:updated_at].gteq(SWEEP_INTERVAL.ago))
-              .select(:agent_run_id)
+        id: recently_polled_agent_run_ids
       )
 
     agent_runs.find_each do |agent_run|
       HumanFeedbackCollectionJob.perform_later(agent_run.id)
     end
+  end
+
+  private
+
+  # Returns agent_run_ids whose human metric was polled within SWEEP_INTERVAL.
+  # Falls back to updated_at for metrics that predate the last_polled_at field.
+  def recently_polled_agent_run_ids
+    polled_at_clause = Arel::Nodes::NamedFunction.new(
+      "COALESCE",
+      [
+        Arel::Nodes::SqlLiteral.new(
+          "CAST(quality_metrics.metadata->>'last_polled_at' AS TIMESTAMP)"
+        ),
+        QualityMetric.arel_table[:updated_at]
+      ]
+    )
+
+    QualityMetric
+      .where(metric_type: "human")
+      .where(polled_at_clause.gteq(SWEEP_INTERVAL.ago))
+      .select(:agent_run_id)
   end
 end
