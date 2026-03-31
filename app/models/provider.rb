@@ -221,15 +221,33 @@ class Provider < ApplicationRecord
   end
 
   def self.compatibility_label_for(target)
-    return "OpenRouter" if target.to_s == "openrouter"
-
-    target.to_s
+    ProviderApiKey::COMPATIBILITY_LABELS[target.to_s] || target.to_s.titleize
   end
 
   def self.required_api_key_targets_for(provider_key:, config: nil)
     return [ OPENCODE_DEFAULT_API_PROVIDER ] if provider_key.to_s == "opencode"
 
-    [ provider_key.to_s ]
+    # Map CLI tools to their required API services
+    case provider_key.to_s
+    when "claude"
+      [ "openrouter" ]  # Claude CLI uses OpenRouter API
+    when "cursor"
+      [ "openai", "openrouter" ]  # Cursor can use OpenAI or OpenRouter APIs
+    when "codex"
+      [ "openai" ]  # Codex CLI uses OpenAI API
+    when "copilot"
+      [ "github" ]  # GitHub Copilot uses GitHub API
+    when "gemini"
+      [ "google" ]  # Gemini CLI uses Google API
+    when "aider"
+      [ "openai", "openrouter" ]  # Aider can use OpenAI or OpenRouter APIs
+    when "kilocode"
+      [ "openrouter" ]  # Kilocode uses OpenRouter API
+    when "opencode"
+      [ OPENCODE_DEFAULT_API_PROVIDER ]  # OpenCode uses its default provider
+    else
+      []
+    end
   end
 
   def self.routing_key?(identifier)

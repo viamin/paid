@@ -277,6 +277,11 @@ RSpec.describe Containers::GitOperations do
       agent_run.update!(branch_name: "paid/test-branch")
       create(:worktree, project: project, agent_run: agent_run, branch_name: "paid/test-branch", status: "active")
 
+      # Proxy health check passes by default
+      allow(container_service).to receive(:execute)
+        .with('curl -sf --max-time 5 "${PAID_PROXY_URL}/up"', timeout: 10, stream: false)
+        .and_return(success_result)
+
       allow(container_service).to receive(:execute)
         .with([ "git", "push", "--no-verify", "origin", "paid/test-branch" ], timeout: 60, stream: false)
         .and_return(success_result)
@@ -1090,6 +1095,102 @@ RSpec.describe Containers::GitOperations do
         expect(Rails.logger).to have_received(:warn).with(
           hash_including(message: "container_git.install_hooks_failed")
         )
+      end
+    end
+  end
+
+  describe "proxy health check" do
+    let(:healthy_result) { Containers::Provision::Result.success(stdout: "OK", stderr: "", exit_code: 0) }
+    let(:unhealthy_result) { Containers::Provision::Result.failure(error: "connection refused", stdout: "", stderr: "curl: (7) Failed to connect", exit_code: 7) }
+
+    describe "#push_branch" do
+      before do
+        allow(container_service).to receive(:execute).and_return(success_result)
+        agent_run.update!(branch_name: "paid/test-branch-abc123")
+
+        sha_result = Containers::Provision::Result.success(stdout: "abc123def456789012345678901234567890abcd\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+          .and_return(sha_result)
+      end
+
+      it "proceeds immediately when proxy is healthy" do
+        expect(container_service).to receive(:execute)
+          .with('curl -sf --max-time 5 "${PAID_PROXY_URL}/up"', timeout: 10, stream: false)
+          .and_return(healthy_result)
+
+        git_ops.push_branch
+      end
+
+      it "waits and retries when proxy is initially unavailable then recovers" do
+        allow(Rails.logger).to receive(:warn)
+        allow(Rails.logger).to receive(:info)
+        allow(git_ops).to receive(:sleep)
+
+        expect(container_service).to receive(:execute)
+          .with('curl -sf --max-time 5 "${PAID_PROXY_URL}/up"', timeout: 10, stream: false)
+          .and_return(unhealthy_result, healthy_result)
+
+        git_ops.push_branch
+
+        expect(git_ops).to have_received(:sleep).with(described_class::PROXY_HEALTH_CHECK_INTERVAL).once
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(message: "container_git.proxy_unavailable")
+        )
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(message: "container_git.proxy_recovered")
+        )
+      end
+
+      it "raises ProxyUnavailableError when proxy never recovers" do
+        allow(Rails.logger).to receive(:warn)
+        allow(git_ops).to receive(:sleep)
+
+        allow(container_service).to receive(:execute)
+          .with('curl -sf --max-time 5 "${PAID_PROXY_URL}/up"', timeout: 10, stream: false)
+          .and_return(unhealthy_result)
+
+        # Simulate time passing beyond the deadline
+        allow(Time).to receive(:current).and_return(
+          Time.now,                                                      # initial check
+          Time.now,                                                      # set deadline
+          Time.now + described_class::PROXY_HEALTH_CHECK_TIMEOUT + 1     # deadline check
+        )
+
+        expect { git_ops.push_branch }
+          .to raise_error(described_class::ProxyUnavailableError, /Credential proxy unreachable/)
+      end
+    end
+
+    describe "#clone_and_setup_branch" do
+      let(:head_sha) { "abc123def456789012345678901234567890abcd" }
+      let(:not_a_repo_result) { Containers::Provision::Result.failure(error: "not a git repo", stdout: "", stderr: "fatal: not a git repository", exit_code: 128) }
+
+      before do
+        allow(container_service).to receive(:execute).and_return(success_result)
+
+        sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+          .and_return(not_a_repo_result, sha_result)
+      end
+
+      it "raises ProxyUnavailableError when proxy is down" do
+        allow(Rails.logger).to receive(:warn)
+        allow(git_ops).to receive(:sleep)
+
+        allow(container_service).to receive(:execute)
+          .with('curl -sf --max-time 5 "${PAID_PROXY_URL}/up"', timeout: 10, stream: false)
+          .and_return(unhealthy_result)
+
+        allow(Time).to receive(:current).and_return(
+          Time.now,
+          Time.now,
+          Time.now + described_class::PROXY_HEALTH_CHECK_TIMEOUT + 1
+        )
+
+        expect { git_ops.clone_and_setup_branch }
+          .to raise_error(described_class::ProxyUnavailableError)
       end
     end
   end

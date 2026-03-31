@@ -36,9 +36,9 @@ RSpec.describe "ProviderApiKeys" do
       end
 
       it "shows compatible providers" do
-        create(:provider_api_key, user: user, compatible_providers: %w[claude])
+        create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
         get provider_api_keys_path
-        expect(response.body).to include("Claude")
+        expect(response.body).to include("OpenRouter")
       end
     end
   end
@@ -108,7 +108,7 @@ RSpec.describe "ProviderApiKeys" do
   describe "POST /provider_api_keys" do
     context "when not authenticated" do
       it "redirects to sign in" do
-        post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc123", compatible_providers: [ "claude" ] } }
+        post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc123", compatible_providers: [ "openrouter" ] } }
         expect(response).to redirect_to(new_user_session_path)
       end
     end
@@ -118,7 +118,7 @@ RSpec.describe "ProviderApiKeys" do
 
       context "with valid parameters" do
         let(:valid_params) do
-          { provider_api_key: { name: "My API Key", api_key: "sk-test-abc123def456", compatible_providers: [ "claude" ] } }
+          { provider_api_key: { name: "My API Key", api_key: "sk-test-abc123def456", compatible_providers: [ "openrouter" ] } }
         end
 
         it "creates a new API key" do
@@ -134,7 +134,7 @@ RSpec.describe "ProviderApiKeys" do
 
         it "stores the compatible_providers array" do
           post provider_api_keys_path, params: valid_params
-          expect(ProviderApiKey.last.compatible_providers).to eq([ "claude" ])
+          expect(ProviderApiKey.last.compatible_providers).to eq([ "openrouter" ])
         end
 
         it "redirects to the show page" do
@@ -145,12 +145,12 @@ RSpec.describe "ProviderApiKeys" do
 
       context "with invalid parameters" do
         it "re-renders the form when name is missing" do
-          post provider_api_keys_path, params: { provider_api_key: { name: "", api_key: "sk-test-abc", compatible_providers: [ "claude" ] } }
+          post provider_api_keys_path, params: { provider_api_key: { name: "", api_key: "sk-test-abc", compatible_providers: [ "openrouter" ] } }
           expect(response).to have_http_status(:unprocessable_content)
         end
 
         it "re-renders the form when api key is missing" do
-          post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "", compatible_providers: [ "claude" ] } }
+          post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "", compatible_providers: [ "openrouter" ] } }
           expect(response).to have_http_status(:unprocessable_content)
         end
 
@@ -162,7 +162,7 @@ RSpec.describe "ProviderApiKeys" do
 
       it "filters blank values from compatible_providers" do
         post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc123", compatible_providers: [ "claude", "" ] } }
-        expect(ProviderApiKey.last.compatible_providers).to eq([ "claude" ])
+        expect(ProviderApiKey.last.compatible_providers).to eq([ "openrouter" ])
       end
     end
   end
@@ -216,7 +216,7 @@ RSpec.describe "ProviderApiKeys" do
       end
 
       it "updates compatible providers" do
-        api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+        api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
         patch provider_api_key_path(api_key), params: { provider_api_key: { name: api_key.name, compatible_providers: %w[openrouter] } }
         expect(api_key.reload.compatible_providers).to eq(%w[openrouter])
       end
@@ -240,10 +240,10 @@ RSpec.describe "ProviderApiKeys" do
       end
 
       it "rejects update when all compatible providers are unchecked" do
-        api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude openrouter])
+        api_key = create(:provider_api_key, user: user, compatible_providers: %w[openai openrouter])
         patch provider_api_key_path(api_key), params: { provider_api_key: { name: "Renamed", compatible_providers: [ "" ] } }
         expect(response).to have_http_status(:unprocessable_content)
-        expect(api_key.reload.compatible_providers).to eq(%w[claude openrouter])
+        expect(api_key.reload.compatible_providers).to eq(%w[openai openrouter])
       end
 
       it "does not allow updating API keys from other users" do
@@ -289,7 +289,7 @@ RSpec.describe "ProviderApiKeys" do
       end
 
       it "blocks deletion when providers reference the key" do
-        api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+        api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
         create(:provider, user: user, provider_key: "claude", auth_type: "api_key", provider_api_key: api_key)
         delete provider_api_key_path(api_key)
         expect(response).to redirect_to(provider_api_key_path(api_key))

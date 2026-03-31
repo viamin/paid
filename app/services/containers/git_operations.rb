@@ -18,11 +18,19 @@ module Containers
     class Error < StandardError; end
     class CloneError < Error; end
     class PushError < Error; end
+    class ProxyUnavailableError < Error; end
 
     # Default timeouts used when user settings are unavailable.
     # Runtime code resolves per-user values via UserSetting.
     DEFAULT_CLONE_TIMEOUT = 600
     DEFAULT_PUSH_TIMEOUT = 60
+
+    # Proxy health check configuration.
+    # When the Rails app (credential proxy) is down, git operations fail because
+    # the git credential helper cannot fetch tokens. These settings control how
+    # long we wait for the proxy to recover before giving up.
+    PROXY_HEALTH_CHECK_INTERVAL = 15 # seconds between retry attempts
+    PROXY_HEALTH_CHECK_TIMEOUT = 300 # max seconds to wait for proxy recovery
 
     # Marker comment used as a grep guard so Temporal retries don't
     # duplicate the exclude block.  Defined once and referenced both
@@ -83,7 +91,9 @@ module Containers
     #
     # @return [void]
     # @raise [CloneError] when the clone fails
+    # @raise [ProxyUnavailableError] when the credential proxy is unreachable
     def clone_and_setup_branch
+      wait_for_proxy!
       clone_repo
       branch_name = create_branch
       base_sha = record_base_commit
@@ -105,7 +115,9 @@ module Containers
     # @param pull_request_number [Integer, nil] PR number for fallback fetch
     # @return [void]
     # @raise [CloneError] when clone or checkout fails
+    # @raise [ProxyUnavailableError] when the credential proxy is unreachable
     def clone_and_checkout_branch(branch_name:, pull_request_number: nil)
+      wait_for_proxy!
       clone_repo
       checkout_remote_branch(branch_name, pull_request_number: pull_request_number)
       base_sha = record_merge_base
@@ -125,7 +137,9 @@ module Containers
     #
     # @return [String] the result commit SHA
     # @raise [PushError] when the push fails
+    # @raise [ProxyUnavailableError] when the credential proxy is unreachable
     def push_branch
+      wait_for_proxy!
       validate_branch_name!
 
       result =
@@ -665,6 +679,60 @@ module Containers
           echo "Warning: test tool not available, skipping test check"
         fi
       SHELL
+    end
+
+    # Waits for the credential proxy (Rails app) to become reachable from
+    # inside the container. When the proxy is down (e.g. due to a crash or
+    # pending migration), git operations fail because the credential helper
+    # cannot fetch tokens.
+    #
+    # Polls the proxy's /up health endpoint at regular intervals until it
+    # responds successfully or the timeout expires.
+    #
+    # @raise [ProxyUnavailableError] when the proxy does not recover in time
+    def wait_for_proxy!
+      return if proxy_healthy?
+
+      deadline = Time.current + PROXY_HEALTH_CHECK_TIMEOUT
+
+      Rails.logger.warn(
+        message: "container_git.proxy_unavailable",
+        agent_run_id: agent_run.id,
+        timeout: PROXY_HEALTH_CHECK_TIMEOUT
+      )
+
+      loop do
+        sleep(PROXY_HEALTH_CHECK_INTERVAL)
+
+        if proxy_healthy?
+          Rails.logger.info(
+            message: "container_git.proxy_recovered",
+            agent_run_id: agent_run.id
+          )
+          return
+        end
+
+        if Time.current >= deadline
+          raise ProxyUnavailableError,
+            "Credential proxy unreachable after #{PROXY_HEALTH_CHECK_TIMEOUT}s — " \
+            "the Rails app may be down"
+        end
+      end
+    end
+
+    # Checks whether the credential proxy is reachable from inside the container
+    # by curling the Rails /up health endpoint.
+    #
+    # @return [Boolean]
+    def proxy_healthy?
+      result = container_service.execute(
+        'curl -sf --max-time 5 "${PAID_PROXY_URL}/up"',
+        timeout: 10,
+        stream: false
+      )
+      result.success?
+    rescue StandardError
+      false
     end
 
     def execute_git(*args, timeout: nil)

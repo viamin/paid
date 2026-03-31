@@ -45,6 +45,7 @@ module Workflows
       MissingUser
       ContainerNotProvisioned
       RateLimit
+      ProxyUnavailable
     ].freeze
 
     # Non-ApplicationError exception classes that represent expected/recoverable

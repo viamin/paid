@@ -3,7 +3,9 @@
 class ProviderApiKey < ApplicationRecord
   COMPATIBILITY_LABELS = {
     "openai" => "OpenAI",
-    "openrouter" => "OpenRouter"
+    "openrouter" => "OpenRouter",
+    "google" => "Google",
+    "github" => "GitHub"
   }.freeze
 
   belongs_to :user
@@ -28,12 +30,13 @@ class ProviderApiKey < ApplicationRecord
   end
 
   def self.compatibility_target_labels
-    provider_labels = Provider.addable_provider_keys
+    # Get all possible API service targets from all providers
+    api_service_targets = Provider.addable_provider_keys
       .flat_map { |provider_key| Provider.required_api_key_targets_for(provider_key: provider_key) }
       .uniq
-      .index_with { |key| COMPATIBILITY_LABELS[key] || Provider.display_name(key) }
 
-    provider_labels.merge(COMPATIBILITY_LABELS)
+    # Create labels for API service targets
+    api_service_targets.index_with { |key| COMPATIBILITY_LABELS[key] || key.to_s.titleize }
   end
 
   def masked_api_key
@@ -60,10 +63,11 @@ class ProviderApiKey < ApplicationRecord
       return
     end
 
+    # Get all valid API service targets
     allowed = self.class.compatibility_target_labels.keys
     invalid = compatible_providers - allowed
     return if invalid.empty?
 
-    errors.add(:compatible_providers, "contains unsupported providers: #{invalid.join(', ')}")
+    errors.add(:compatible_providers, "contains unsupported API services: #{invalid.join(', ')}")
   end
 end

@@ -26,6 +26,10 @@ module Activities
 
         { commit_sha: commit_sha, agent_run_id: agent_run_id }
       end
+    rescue Containers::GitOperations::ProxyUnavailableError => e
+      raise Temporalio::Error::ApplicationError.new(
+        e.message, type: "ProxyUnavailable", non_retryable: true
+      )
     end
   end
 end

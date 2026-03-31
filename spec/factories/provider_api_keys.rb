@@ -5,6 +5,6 @@ FactoryBot.define do
     user
     sequence(:name) { |n| "API Key #{n}" }
     api_key { "sk-test-#{SecureRandom.hex(16)}" }
-    compatible_providers { %w[claude] }
+    compatible_providers { %w[openrouter] }
   end
 end
