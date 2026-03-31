@@ -568,6 +568,15 @@ RSpec.describe Project do
         expect(settings.dig("methods", "copilot", "enabled")).to be true
         expect(settings.dig("methods", "copilot", "termination", "max_review_rounds")).to eq(2)
       end
+
+      it "handles non-Hash review_settings gracefully" do
+        project = build(:project)
+        project.review_settings = "invalid"
+        settings = project.effective_review_settings
+
+        expect(settings["enabled"]).to be false
+        expect(settings.dig("methods", "copilot", "enabled")).to be false
+      end
     end
 
     describe "#review_enabled?" do
@@ -727,6 +736,16 @@ RSpec.describe Project do
                 "timeout_minutes" => nil
               }
             }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("at least one termination condition")
+      end
+
+      it "rejects enabled method with missing termination key" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "copilot" => { "enabled" => true }
           }
         })
         expect(project).not_to be_valid

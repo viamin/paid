@@ -331,7 +331,13 @@ class Project < ApplicationRecord
   end
 
   def effective_review_settings
-    @effective_review_settings ||= DEFAULT_REVIEW_SETTINGS.deep_merge(review_settings || {})
+    return @effective_review_settings if defined?(@effective_review_settings) && @effective_review_settings
+
+    rs = review_settings
+    rs = rs.is_a?(Hash) ? rs : {}
+    rs = rs.deep_stringify_keys if rs.respond_to?(:deep_stringify_keys)
+
+    @effective_review_settings = DEFAULT_REVIEW_SETTINGS.deep_merge(rs)
   end
 
   def review_enabled?
@@ -473,7 +479,9 @@ class Project < ApplicationRecord
         next
       end
 
-      validate_termination_config(method_name, termination)
+      # Enabled methods must have at least one termination condition;
+      # treat missing termination as empty so the check runs.
+      validate_termination_config(method_name, termination || {})
     end
   end
 
