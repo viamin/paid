@@ -13,6 +13,10 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
   # Only process runs completed within this window.
   LOOKBACK_WINDOW = 7.days
 
+  # Skip runs whose human metric was already updated within this interval,
+  # avoiding redundant API/DB work on every 4-hour sweep.
+  SWEEP_INTERVAL = 4.hours
+
   def perform
     agent_runs = AgentRun
       .where(status: "completed")
@@ -22,6 +26,11 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
             AgentRun.arel_table[:completed_at].eq(nil)
               .and(AgentRun.arel_table[:updated_at].gteq(LOOKBACK_WINDOW.ago))
           )
+      )
+      .where.not(
+        id: QualityMetric.where(metric_type: "human")
+              .where(QualityMetric.arel_table[:updated_at].gteq(SWEEP_INTERVAL.ago))
+              .select(:agent_run_id)
       )
 
     agent_runs.find_each do |agent_run|

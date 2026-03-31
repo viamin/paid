@@ -17,7 +17,7 @@ module QualityMetrics
   class CollectCommentFeedback
     attr_reader :agent_run, :commenter
 
-    def initialize(agent_run:, commenter:, comment_body: nil)
+    def initialize(agent_run:, commenter:)
       @agent_run = agent_run
       @commenter = commenter
     end

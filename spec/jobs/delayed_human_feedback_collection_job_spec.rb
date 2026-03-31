@@ -38,5 +38,35 @@ RSpec.describe DelayedHumanFeedbackCollectionJob do
         described_class.new.perform
       }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
     end
+
+    it "skips runs whose human metric was updated within the sweep interval" do
+      recent_run = create(:agent_run, :completed)
+      recent_run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+      recent_run.quality_metrics.create!(
+        metric_type: "human",
+        scores: { "pr_merged" => 1.0 },
+        composite_score: 1.0,
+        updated_at: 2.hours.ago
+      )
+
+      expect {
+        described_class.new.perform
+      }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
+    end
+
+    it "includes runs whose human metric is older than the sweep interval" do
+      stale_run = create(:agent_run, :completed)
+      stale_run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+      stale_run.quality_metrics.create!(
+        metric_type: "human",
+        scores: { "pr_merged" => 1.0 },
+        composite_score: 1.0,
+        updated_at: 5.hours.ago
+      )
+
+      expect {
+        described_class.new.perform
+      }.to have_enqueued_job(HumanFeedbackCollectionJob).with(stale_run.id)
+    end
   end
 end

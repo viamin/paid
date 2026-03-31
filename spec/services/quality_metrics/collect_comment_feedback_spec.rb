@@ -9,8 +9,7 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
     it "creates human quality metric with comment data" do
       metric = described_class.call(
         agent_run: agent_run,
-        commenter: "alice",
-        comment_body: "Looks good!"
+        commenter: "alice"
       )
 
       expect(metric).to be_persisted
@@ -24,14 +23,12 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
     it "increments comment count on repeated calls" do
       described_class.call(
         agent_run: agent_run,
-        commenter: "alice",
-        comment_body: "First comment"
+        commenter: "alice"
       )
 
       metric = described_class.call(
         agent_run: agent_run,
-        commenter: "bob",
-        comment_body: "Second comment"
+        commenter: "bob"
       )
 
       expect(metric.metadata["webhook_comment_count"]).to eq(2)
@@ -41,14 +38,12 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
     it "deduplicates commenter names" do
       described_class.call(
         agent_run: agent_run,
-        commenter: "alice",
-        comment_body: "First"
+        commenter: "alice"
       )
 
       metric = described_class.call(
         agent_run: agent_run,
-        commenter: "alice",
-        comment_body: "Second"
+        commenter: "alice"
       )
 
       expect(metric.metadata["commenters"]).to eq([ "alice" ])
@@ -65,8 +60,7 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
 
       metric = described_class.call(
         agent_run: agent_run,
-        commenter: "alice",
-        comment_body: "Nice!"
+        commenter: "alice"
       )
 
       expect(metric.scores).to have_key("reaction_score")
@@ -88,8 +82,7 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
       freeze_time do
         metric = described_class.call(
           agent_run: agent_run,
-          commenter: "alice",
-          comment_body: "Hello"
+          commenter: "alice"
         )
 
         expect(metric.metadata["last_comment_at"]).to eq(Time.current.iso8601)
