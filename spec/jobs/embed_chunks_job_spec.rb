@@ -32,6 +32,17 @@ RSpec.describe EmbedChunksJob do
       expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: project, api_key: key.api_key)
     end
 
+    it "prefers the most recently created API key when multiple exist" do
+      allow(Knowledge::Embeddings::Pipeline).to receive(:call)
+      owner = project.effective_owner
+      create(:provider_api_key, user: owner, compatible_providers: %w[openai])
+      newer_key = create(:provider_api_key, user: owner, compatible_providers: %w[openai])
+
+      described_class.perform_now(project.id)
+
+      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: project, api_key: newer_key.api_key)
+    end
+
     it "is enqueued to the knowledge queue" do
       expect(described_class.new.queue_name).to eq("knowledge")
     end
