@@ -88,7 +88,7 @@ module Issues
     def self.tracker_ids_blocked_by_open_references(project)
       open_issues = Issue.where(project: project, github_state: "open", is_pull_request: false)
 
-      ilike_conditions = TRACKER_SQL_PATTERNS.flat_map.with_index do |_, i|
+      ilike_conditions = TRACKER_SQL_PATTERNS.each_with_index.flat_map do |_, i|
         [ "title ILIKE :t#{i}", "body ILIKE :t#{i}" ]
       end
       params = TRACKER_SQL_PATTERNS.each_with_index.to_h do |pattern, i|

@@ -174,16 +174,18 @@ RSpec.describe Issues::AutoPick do
 
     context "with tracker/meta issues" do
       it "skips a tracker issue when its body references open issues" do
-        tracker = create(:issue, project: project, github_number: 413,
+        tracker = create(:issue, project: project, github_number: 100,
           title: "Phase 2 remaining work tracker",
           body: "## Required\n- #262 Redaction\n- #269 Security\n- #410 Search")
-        create(:issue, project: project, github_number: 262, github_state: "open")
-        create(:issue, project: project, github_number: 269, github_state: "open")
+        redaction_issue = create(:issue, project: project, github_number: 262, github_state: "open")
+        security_issue = create(:issue, project: project, github_number: 269, github_state: "open")
 
         result = described_class.new(project).call
 
-        # Tracker is not picked; one of the referenced issues is picked instead
+        # Tracker #100 would normally be picked (lowest number), but is blocked
+        # due to open body-referenced issues; one of the referenced issues is picked instead.
         expect(result.issue).not_to eq(tracker)
+        expect([ redaction_issue, security_issue ]).to include(result.issue)
       end
 
       it "picks a tracker issue when all body-referenced issues are closed" do
@@ -199,16 +201,17 @@ RSpec.describe Issues::AutoPick do
       end
 
       it "skips a tracker issue when it has no body references" do
-        tracker = create(:issue, project: project, github_number: 100,
+        tracker = create(:issue, project: project, github_number: 1,
           title: "Completion criteria tracker",
           body: "Just some text with no issue refs")
-        normal_issue = create(:issue, project: project, github_state: "open",
-          title: "Regular issue to work on")
+        normal_issue = create(:issue, project: project, github_number: 2,
+          github_state: "open", title: "Regular issue to work on")
 
         result = described_class.new(project).call
 
+        # Tracker #1 would normally be picked (lowest number), but is blocked
+        # because trackers with no body references are conservatively excluded.
         expect(result.issue).to eq(normal_issue)
-        expect(result.issue).not_to eq(tracker)
       end
 
       it "blocks a tracker when body-referenced issues are not synced locally" do
@@ -250,15 +253,16 @@ RSpec.describe Issues::AutoPick do
       end
 
       it "detects tracker by body content even without tracker in title" do
-        tracker = create(:issue, project: project, github_number: 100,
+        tracker = create(:issue, project: project, github_number: 1,
           title: "Phase 2 umbrella",
           body: "## Completion criteria\n- #10 done\n- #11 done")
-        create(:issue, project: project, github_number: 10, github_state: "open")
+        next_issue = create(:issue, project: project, github_number: 10, github_state: "open")
 
         result = described_class.new(project).call
 
-        # Issue #10 is eligible (lower number); tracker #100 is blocked
-        expect(result.issue).not_to eq(tracker)
+        # Tracker #1 would normally be picked (lowest number), but is blocked
+        # due to body-based tracker detection and open body-referenced issues.
+        expect(result.issue).to eq(next_issue)
       end
 
       it "regression: tracker with mixed explicit deps and body refs" do
