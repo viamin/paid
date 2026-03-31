@@ -3,12 +3,14 @@
 require "rails_helper"
 
 RSpec.describe StaleRunDetectorJob do
-  # agent_timeout + GRACE_PERIOD = total threshold before a run is considered stale
-  let(:stale_threshold) { AGENT_TIMEOUT_DEFAULT + described_class::GRACE_PERIOD.to_i }
+  # Running runs: agent_timeout + GRACE_PERIOD
+  let(:running_threshold) { AGENT_TIMEOUT_DEFAULT + described_class::GRACE_PERIOD.to_i }
+  # Pending runs: shorter dedicated threshold
+  let(:pending_threshold) { described_class::PENDING_TIMEOUT.to_i }
 
   describe "#perform" do
     it "times out runs stuck in running beyond the threshold" do
-      stale_run = create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago)
+      stale_run = create(:agent_run, :running, started_at: (running_threshold + 60).seconds.ago)
 
       described_class.perform_now
 
@@ -18,32 +20,12 @@ RSpec.describe StaleRunDetectorJob do
       expect(stale_run.completed_at).to be_present
     end
 
-    it "times out runs stuck in pending beyond the threshold" do
-      stale_run = create(:agent_run, status: "pending")
-      stale_run.update_columns(updated_at: (stale_threshold + 60).seconds.ago)
-
-      described_class.perform_now
-
-      stale_run.reload
-      expect(stale_run.status).to eq("timeout")
-      expect(stale_run.error_message).to include("Stale run detected")
-    end
-
     it "does not touch running runs within the threshold" do
-      recent_run = create(:agent_run, :running, started_at: (stale_threshold - 60).seconds.ago)
+      recent_run = create(:agent_run, :running, started_at: (running_threshold - 60).seconds.ago)
 
       described_class.perform_now
 
       expect(recent_run.reload.status).to eq("running")
-    end
-
-    it "does not touch pending runs within the threshold" do
-      recent_run = create(:agent_run, status: "pending")
-      recent_run.update_columns(updated_at: (stale_threshold - 60).seconds.ago)
-
-      described_class.perform_now
-
-      expect(recent_run.reload.status).to eq("pending")
     end
 
     it "does not touch completed or failed runs" do
@@ -54,7 +36,7 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "updates the issue paid_state to failed" do
-      stale_run = create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago)
+      stale_run = create(:agent_run, :running, started_at: (running_threshold + 60).seconds.ago)
       stale_run.issue.update!(paid_state: "in_progress")
 
       described_class.perform_now
@@ -63,7 +45,7 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "creates a log entry on the resolved run" do
-      stale_run = create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago)
+      stale_run = create(:agent_run, :running, started_at: (running_threshold + 60).seconds.ago)
 
       described_class.perform_now
 
@@ -72,7 +54,7 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "triggers ProcessRunQueueJob when runs are resolved" do
-      create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago)
+      create(:agent_run, :running, started_at: (running_threshold + 60).seconds.ago)
 
       expect { described_class.perform_now }.to have_enqueued_job(ProcessRunQueueJob)
     end
@@ -82,8 +64,8 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "resolves multiple stale runs in a single pass" do
-      stale_run1 = create(:agent_run, :running, started_at: (stale_threshold + 120).seconds.ago)
-      stale_run2 = create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago)
+      stale_run1 = create(:agent_run, :running, started_at: (running_threshold + 120).seconds.ago)
+      stale_run2 = create(:agent_run, :running, started_at: (running_threshold + 60).seconds.ago)
 
       described_class.perform_now
 
@@ -92,7 +74,7 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "calls cleanup_container when a run is timed out" do
-      stale_run = create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago,
+      stale_run = create(:agent_run, :running, started_at: (running_threshold + 60).seconds.ago,
         container_id: "dead-container-123")
       container_service = instance_double(Containers::Provision, cleanup: true)
       allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
@@ -106,7 +88,7 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "calls ServiceProvisioner#cleanup when a run is timed out" do
-      create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago)
+      create(:agent_run, :running, started_at: (running_threshold + 60).seconds.ago)
       provisioner = instance_double(Containers::ServiceProvisioner, cleanup: nil)
       allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
 
@@ -116,7 +98,7 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "still resolves the run when container cleanup fails" do
-      stale_run = create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago,
+      stale_run = create(:agent_run, :running, started_at: (running_threshold + 60).seconds.ago,
         container_id: "dead-container-456")
       allow(Containers::Provision).to receive(:reconnect)
         .and_raise(Containers::Provision::ProvisionError, "gone")
@@ -132,12 +114,87 @@ RSpec.describe StaleRunDetectorJob do
     end
 
     it "still resolves the run when service cleanup fails" do
-      stale_run = create(:agent_run, :running, started_at: (stale_threshold + 60).seconds.ago)
+      stale_run = create(:agent_run, :running, started_at: (running_threshold + 60).seconds.ago)
       allow(Containers::ServiceProvisioner).to receive(:new).and_raise(RuntimeError, "gone")
 
       described_class.perform_now
 
       expect(stale_run.reload.status).to eq("timeout")
+    end
+
+    context "with stale pending runs" do
+      it "requeues a stale pending run that has not exhausted requeue budget" do
+        stale_run = create(:agent_run, status: "pending")
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("queued")
+        expect(stale_run.stale_requeue_count).to eq(1)
+      end
+
+      it "creates a log entry when requeuing" do
+        stale_run = create(:agent_run, status: "pending")
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+
+        described_class.perform_now
+
+        log = stale_run.agent_run_logs.last
+        expect(log.content).to include("requeued")
+        expect(log.content).to include("attempt 1/#{described_class::MAX_STALE_REQUEUES}")
+      end
+
+      it "triggers ProcessRunQueueJob when runs are requeued" do
+        stale_run = create(:agent_run, status: "pending")
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+
+        expect { described_class.perform_now }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "times out a stale pending run that has exhausted requeue budget" do
+        stale_run = create(:agent_run, status: "pending", stale_requeue_count: described_class::MAX_STALE_REQUEUES)
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("timeout")
+        expect(stale_run.error_message).to include("Stale run detected")
+      end
+
+      it "does not touch pending runs within the threshold" do
+        recent_run = create(:agent_run, status: "pending")
+        recent_run.update_columns(updated_at: (pending_threshold - 60).seconds.ago)
+
+        described_class.perform_now
+
+        expect(recent_run.reload.status).to eq("pending")
+      end
+
+      it "cleans up docker resources when requeuing" do
+        stale_run = create(:agent_run, status: "pending", container_id: "orphaned-container")
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        container_service = instance_double(Containers::Provision, cleanup: true)
+        allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
+        allow(Containers::ServiceProvisioner).to receive(:new)
+          .and_return(instance_double(Containers::ServiceProvisioner, cleanup: nil))
+
+        described_class.perform_now
+
+        expect(container_service).to have_received(:cleanup).with(force: true)
+      end
+
+      it "increments requeue count on successive requeues" do
+        stale_run = create(:agent_run, status: "pending", stale_requeue_count: 1)
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("queued")
+        expect(stale_run.stale_requeue_count).to eq(2)
+      end
     end
   end
 end

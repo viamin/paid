@@ -1,27 +1,43 @@
 # frozen_string_literal: true
 
 # Detects agent runs stuck in "running" or "pending" status beyond
-# the configured agent timeout plus a grace period.
+# the configured timeout thresholds.
 #
-# This catches orphaned runs where the Temporal workflow died or
-# disconnected after the agent activity completed but before the
-# status could be updated. Runs are marked as "timeout" so they
-# stop blocking the run queue and show up correctly in the UI.
+# Running runs use the full agent timeout plus a grace period.
+# Pending runs use a shorter threshold since the pending→running
+# transition (container provisioning + clone) should complete in minutes.
+#
+# Stale pending runs that have not exhausted their requeue budget are
+# automatically requeued (reset to "queued") so transient failures
+# (e.g. worker restart, temporary resource exhaustion) self-heal.
+# Runs that exceed MAX_STALE_REQUEUES are timed out like stale running runs.
 #
 # Scheduled via GoodJob cron every 5 minutes.
 class StaleRunDetectorJob < ApplicationJob
   queue_as :maintenance
 
-  # Extra buffer beyond agent_timeout before declaring a run stale.
+  # Extra buffer beyond agent_timeout before declaring a running run stale.
   # Accounts for container provisioning, git clone, push, and PR creation.
   GRACE_PERIOD = 10.minutes
 
+  # Shorter threshold for pending runs. Container provisioning + clone
+  # should complete well within this window. Using the full agent timeout
+  # (70 min) for pending runs delays detection of stuck runs unnecessarily.
+  PENDING_TIMEOUT = 15.minutes
+
+  # Maximum times a stale pending run can be automatically requeued before
+  # being timed out. Prevents infinite retry loops when the underlying
+  # issue is persistent (e.g. misconfigured project, missing credentials).
+  MAX_STALE_REQUEUES = 2
+
   def perform
     job_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    timeout_threshold = agent_timeout_with_grace.ago
+    running_threshold = agent_timeout_with_grace.ago
+    pending_threshold = PENDING_TIMEOUT.ago
     resolved = 0
+    requeued = 0
 
-    stale_running_runs(timeout_threshold).find_each do |agent_run|
+    stale_running_runs(running_threshold).find_each do |agent_run|
       resolved += 1 if resolve_stale_run(agent_run)
     rescue => e
       Rails.logger.error(
@@ -31,8 +47,12 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
-    stale_pending_runs(timeout_threshold).find_each do |agent_run|
-      resolved += 1 if resolve_stale_run(agent_run)
+    stale_pending_runs(pending_threshold).find_each do |agent_run|
+      if requeue_stale_pending_run(agent_run)
+        requeued += 1
+      elsif resolve_stale_run(agent_run)
+        resolved += 1
+      end
     rescue => e
       Rails.logger.error(
         message: "stale_run_detector.resolve_failed",
@@ -45,10 +65,11 @@ class StaleRunDetectorJob < ApplicationJob
     Rails.logger.info(
       message: "stale_run_detector.completed",
       resolved: resolved,
+      requeued: requeued,
       duration_ms: duration_ms
     )
 
-    ProcessRunQueueJob.perform_later if resolved > 0
+    ProcessRunQueueJob.perform_later if resolved > 0 || requeued > 0
   end
 
   private
@@ -72,6 +93,35 @@ class StaleRunDetectorJob < ApplicationJob
   # may have spent a long time in "queued" before transitioning to "pending".
   def stale_pending_runs(threshold)
     AgentRun.pending.where("updated_at < ?", threshold)
+  end
+
+  # Attempts to requeue a stale pending run. Returns true if the run was
+  # requeued, false if it has exhausted its requeue budget and should be
+  # timed out instead.
+  def requeue_stale_pending_run(agent_run)
+    agent_run.with_lock do
+      agent_run.reload
+      return false if agent_run.finished?
+      return false unless agent_run.status == "pending"
+      return false if agent_run.stale_requeue_count >= MAX_STALE_REQUEUES
+
+      agent_run.update!(
+        status: "queued",
+        stale_requeue_count: agent_run.stale_requeue_count + 1
+      )
+      agent_run.log!("system", "Stale pending run requeued by stale run detector (attempt #{agent_run.stale_requeue_count}/#{MAX_STALE_REQUEUES})")
+
+      Rails.logger.info(
+        message: "stale_run_detector.requeued_stale_pending_run",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id,
+        stale_requeue_count: agent_run.stale_requeue_count
+      )
+    end
+
+    cleanup_docker_resources(agent_run)
+
+    true
   end
 
   def resolve_stale_run(agent_run)
