@@ -113,6 +113,29 @@
             </dd>
           </div>
         <% end %>
+
+        <%# PR Review Settings %>
+        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+          <dt class="text-sm font-medium text-gray-500">PR Reviews</dt>
+          <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.review_enabled? ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600' %>">
+              <%= @project.review_enabled? ? "Enabled" : "Disabled" %>
+            </span>
+            <% if @project.review_enabled? %>
+              <span class="ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= @project.wait_for_reviews? ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600' %>">
+                <%= @project.wait_for_reviews? ? "Waits for reviews" : "Non-blocking" %>
+              </span>
+              <% if @project.enabled_review_methods.any? %>
+                <div class="mt-2 flex flex-wrap gap-1">
+                  <% review_method_labels = { "copilot" => "GitHub Copilot", "paid_agent" => "Paid Agent", "ci_action" => "CI Action", "manual" => "Manual" } %>
+                  <% @project.enabled_review_methods.each do |method| %>
+                    <span class="inline-flex items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700"><%= review_method_labels[method] || method.humanize %></span>
+                  <% end %>
+                </div>
+              <% end %>
+            <% end %>
+          </dd>
+        </div>
       </dl>
       <% if policy(@project).update? %>
         <div class="px-4 py-3 sm:px-6">

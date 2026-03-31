@@ -123,6 +123,44 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(issue.paid_state).to eq("completed")
       end
 
+      it "skips closure when an issue has an active agent run" do
+        issue = create(:issue,
+          project: project,
+          source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+          github_issue_id: id_offset + 42,
+          github_number: number_offset + 42,
+          github_state: "open",
+          paid_state: "in_progress")
+        create(:agent_run, :running, project: project, issue: issue)
+
+        # Alert resolved upstream, but issue has an active run
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+
+        activity.execute(project_id: project.id)
+
+        issue.reload
+        expect(issue.github_state).to eq("open")
+        expect(issue.paid_state).to eq("in_progress")
+      end
+
+      it "preserves paid_state 'failed' when closing resolved alerts" do
+        issue = create(:issue,
+          project: project,
+          source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+          github_issue_id: id_offset + 42,
+          github_number: number_offset + 42,
+          github_state: "open",
+          paid_state: "failed")
+
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+
+        activity.execute(project_id: project.id)
+
+        issue.reload
+        expect(issue.github_state).to eq("closed")
+        expect(issue.paid_state).to eq("failed")
+      end
+
       it "keeps synthetic issues open when their alert is still open" do
         issue = create(:issue,
           project: project,

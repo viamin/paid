@@ -650,6 +650,31 @@ RSpec.describe Issues::AutoPick do
       end
     end
 
+    context "with legacy Dependabot synthetic issues" do
+      it "excludes legacy Dependabot issues from auto-pick" do
+        create(:issue, project: project,
+          source: Issue::DEPENDABOT_ALERT_SOURCE,
+          github_issue_id: Issue::LEGACY_DEPENDABOT_ID_OFFSET + 42,
+          github_number: 100_000_042)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "excludes legacy Dependabot issues even when other eligible issues exist" do
+        create(:issue, project: project,
+          source: Issue::DEPENDABOT_ALERT_SOURCE,
+          github_issue_id: Issue::LEGACY_DEPENDABOT_ID_OFFSET + 42,
+          github_number: 100_000_042)
+        github_issue = create(:issue, project: project, source: Issue::GITHUB_SOURCE, github_number: 1)
+
+        result = described_class.new(project).call
+
+        expect(result.issue).to eq(github_issue)
+      end
+    end
+
     context "with synthetic code scanning issues" do
       it "picks code scanning issues for auto-pick" do
         cs_issue = create(:issue, project: project,
