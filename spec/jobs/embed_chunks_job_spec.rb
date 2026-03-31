@@ -11,7 +11,7 @@ RSpec.describe EmbedChunksJob do
 
       described_class.perform_now
 
-      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: nil)
+      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: nil, api_key: nil)
     end
 
     it "calls the embedding pipeline with a project" do
@@ -19,7 +19,17 @@ RSpec.describe EmbedChunksJob do
 
       described_class.perform_now(project.id)
 
-      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: project)
+      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: project, api_key: nil)
+    end
+
+    it "resolves the API key from the project owner's provider API keys" do
+      allow(Knowledge::Embeddings::Pipeline).to receive(:call)
+      owner = project.effective_owner
+      key = create(:provider_api_key, user: owner, compatible_providers: %w[openai])
+
+      described_class.perform_now(project.id)
+
+      expect(Knowledge::Embeddings::Pipeline).to have_received(:call).with(project: project, api_key: key.api_key)
     end
 
     it "is enqueued to the knowledge queue" do

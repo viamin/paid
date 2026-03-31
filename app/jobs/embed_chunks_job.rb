@@ -8,7 +8,20 @@ class EmbedChunksJob < ApplicationJob
 
   def perform(project_id = nil)
     project = project_id ? Project.find(project_id) : nil
+    api_key = resolve_api_key(project)
 
-    Knowledge::Embeddings::Pipeline.call(project: project)
+    Knowledge::Embeddings::Pipeline.call(project: project, api_key: api_key)
+  end
+
+  private
+
+  def resolve_api_key(project)
+    return nil unless project
+
+    project.effective_owner
+      &.provider_api_keys
+      &.compatible_with("openai")
+      &.first
+      &.api_key
   end
 end
