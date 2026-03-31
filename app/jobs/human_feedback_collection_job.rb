@@ -118,13 +118,21 @@ class HumanFeedbackCollectionJob < ApplicationJob
   # to decide whether a run needs re-polling, because webhook-driven updates
   # also bump updated_at and would cause the sweep to skip runs prematurely.
   def stamp_last_polled_at(agent_run)
+    timestamp = Time.current.iso8601
     metric = agent_run.quality_metrics.find_by(metric_type: "human")
-    return unless metric
 
-    existing = metric.metadata || {}
-    metric.update_columns(
-      metadata: existing.merge("last_polled_at" => Time.current.iso8601)
-    )
+    if metric
+      existing = metric.metadata || {}
+      metric.update_columns(
+        metadata: existing.merge("last_polled_at" => timestamp)
+      )
+    else
+      agent_run.quality_metrics.create!(
+        metric_type: "human",
+        scores: {},
+        metadata: { "last_polled_at" => timestamp }
+      )
+    end
   end
 
   def collect_issue_feedback(agent_run)

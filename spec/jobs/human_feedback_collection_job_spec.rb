@@ -169,6 +169,28 @@ RSpec.describe HumanFeedbackCollectionJob do
       end
     end
 
+    it "creates a human metric with last_polled_at when no reactions or reviews are collected" do
+      agent_run = create(:agent_run, :completed)
+      create(:quality_metric, :automated, agent_run: agent_run)
+      allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+
+      allow(github_client).to receive_messages(
+        pull_request_reactions: [],
+        pull_request_reviews: [],
+        pull_request: { review_comments: 0 }
+      )
+
+      freeze_time do
+        described_class.new.perform(agent_run.id)
+
+        metric = agent_run.quality_metrics.human.first
+        expect(metric).to be_present
+        expect(metric.metadata["last_polled_at"]).to eq(Time.current.iso8601)
+        expect(metric.scores).to eq({})
+      end
+    end
+
     it "handles GitHub API errors for reviews gracefully" do
       agent_run = create(:agent_run, :completed)
       allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
