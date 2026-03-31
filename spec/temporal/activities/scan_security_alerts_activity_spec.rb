@@ -100,7 +100,7 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
     context "with reconciliation of stale synthetic issues" do
       let(:id_offset) { Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET }
-      let(:number_offset) { 200_000_000 }
+      let(:number_offset) { SecurityAlerts::ProcessCodeScanningAlerts::SYNTHETIC_NUMBER_OFFSET }
 
       before { project.update_column(:last_code_scanning_scan_at, nil) }
 

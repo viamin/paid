@@ -22,16 +22,7 @@ class RemoveDependabotAlertFieldsFromProjects < ActiveRecord::Migration[8.1]
   end
 
   def down
-    add_column :projects, :max_security_fix_runs, :integer, default: 3, null: false
-
-    change_column_default :projects, :security_alert_types, %w[dependabot code_scanning]
-
-    # Re-add "dependabot" only for rows that look like they were modified by `up`,
-    # i.e., rows whose security_alert_types is exactly ["code_scanning"] after the change.
-    execute <<~SQL.squish
-      UPDATE projects
-      SET security_alert_types = security_alert_types || '["dependabot"]'::jsonb
-      WHERE security_alert_types = '["code_scanning"]'::jsonb
-    SQL
+    raise ActiveRecord::IrreversibleMigration,
+      "Cannot reliably restore original security_alert_types after removing 'dependabot'."
   end
 end
