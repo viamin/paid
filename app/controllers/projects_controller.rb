@@ -194,6 +194,7 @@ class ProjectsController < ApplicationController
         next unless config.is_a?(Hash)
 
         config["enabled"] = ActiveModel::Type::Boolean.new.cast(config["enabled"]) if config.key?("enabled")
+        config["action_name"] = config["action_name"].presence if config.key?("action_name")
         next unless config["termination"].is_a?(Hash)
 
         term = config["termination"]

@@ -757,6 +757,18 @@ RSpec.describe Project do
         expect(project.errors[:review_settings].join).to include("must be a JSON object")
       end
 
+      it "rejects methods set to a non-Hash value" do
+        project = build(:project, review_settings: { "methods" => "copilot" })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("methods must be a JSON object")
+      end
+
+      it "rejects methods set to an array" do
+        project = build(:project, review_settings: { "methods" => [ "copilot" ] })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("methods must be a JSON object")
+      end
+
       it "rejects a method config set to a non-Hash" do
         project = build(:project, review_settings: {
           "methods" => { "copilot" => "enabled" }

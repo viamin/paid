@@ -3,6 +3,7 @@
 class Project < ApplicationRecord
   MERGE_METHODS = %w[squash merge rebase].freeze
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
+  # "none" is not a method — it is represented by enabled: false at the top level
   REVIEW_METHODS = %w[copilot paid_agent ci_action manual].freeze
 
   DEFAULT_REVIEW_SETTINGS = {
@@ -441,7 +442,12 @@ class Project < ApplicationRecord
 
   def validate_review_methods_config
     methods = review_settings["methods"]
-    return unless methods.is_a?(Hash)
+    return if methods.nil?
+
+    unless methods.is_a?(Hash)
+      errors.add(:review_settings, "methods must be a JSON object")
+      return
+    end
 
     methods.each do |method_name, config|
       unless REVIEW_METHODS.include?(method_name)
