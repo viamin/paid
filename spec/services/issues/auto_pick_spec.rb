@@ -172,6 +172,122 @@ RSpec.describe Issues::AutoPick do
       expect(result).to be_nil
     end
 
+    context "with tracker/meta issues" do
+      it "skips a tracker issue when its body references open issues" do
+        tracker = create(:issue, project: project, github_number: 100,
+          title: "Phase 2 remaining work tracker",
+          body: "## Required\n- #262 Redaction\n- #269 Security\n- #410 Search")
+        redaction_issue = create(:issue, project: project, github_number: 262, github_state: "open")
+        security_issue = create(:issue, project: project, github_number: 269, github_state: "open")
+
+        result = described_class.new(project).call
+
+        # Tracker #100 would normally be picked (lowest number), but is blocked
+        # due to open body-referenced issues; one of the referenced issues is picked instead.
+        expect(result.issue).not_to eq(tracker)
+        expect([ redaction_issue, security_issue ]).to include(result.issue)
+      end
+
+      it "picks a tracker issue when all body-referenced issues are closed" do
+        tracker = create(:issue, project: project, github_number: 413,
+          title: "Phase 2 remaining work tracker",
+          body: "## Required\n- #262 Redaction\n- #269 Security")
+        create(:issue, :closed, project: project, github_number: 262)
+        create(:issue, :closed, project: project, github_number: 269)
+
+        result = described_class.new(project).call
+
+        expect(result.issue).to eq(tracker)
+      end
+
+      it "skips a tracker issue when it has no body references" do
+        tracker = create(:issue, project: project, github_number: 1,
+          title: "Completion criteria tracker",
+          body: "Just some text with no issue refs")
+        normal_issue = create(:issue, project: project, github_number: 2,
+          github_state: "open", title: "Regular issue to work on")
+
+        result = described_class.new(project).call
+
+        # Tracker #1 would normally be picked (lowest number), but is blocked
+        # because trackers with no body references are conservatively excluded.
+        expect(result.issue).to eq(normal_issue)
+      end
+
+      it "blocks a tracker when body-referenced issues are not synced locally" do
+        tracker = create(:issue, project: project, github_number: 413,
+          title: "Phase 2 remaining work tracker",
+          body: "## Required\n- #262 Redaction\n- #269 Security")
+        # Neither #262 nor #269 exist in local DB (unsynced)
+        normal_issue = create(:issue, project: project, github_state: "open",
+          title: "Regular issue to work on")
+
+        result = described_class.new(project).call
+
+        # Tracker is blocked because unsynced references are treated as
+        # potentially open (conservative safety net for incomplete sync).
+        expect(result.issue).to eq(normal_issue)
+        expect(result.issue).not_to eq(tracker)
+      end
+
+      it "does not treat a non-tracker issue with body references as blocked" do
+        normal = create(:issue, project: project, github_number: 1,
+          title: "Fix the login bug",
+          body: "Related to #200 but not dependent")
+        create(:issue, project: project, github_number: 200, github_state: "open")
+
+        result = described_class.new(project).call
+
+        expect(result.issue).to eq(normal)
+      end
+
+      it "ignores self-references in tracker body" do
+        tracker = create(:issue, project: project, github_number: 413,
+          title: "Phase tracker",
+          body: "This is #413 tracking work for #100")
+        create(:issue, :closed, project: project, github_number: 100)
+
+        result = described_class.new(project).call
+
+        expect(result.issue).to eq(tracker)
+      end
+
+      it "detects tracker by body content even without tracker in title" do
+        tracker = create(:issue, project: project, github_number: 1,
+          title: "Phase 2 umbrella",
+          body: "## Completion criteria\n- #10 done\n- #11 done")
+        next_issue = create(:issue, project: project, github_number: 10, github_state: "open")
+
+        result = described_class.new(project).call
+
+        # Tracker #1 would normally be picked (lowest number), but is blocked
+        # due to body-based tracker detection and open body-referenced issues.
+        expect(result.issue).to eq(next_issue)
+      end
+
+      it "regression: tracker with mixed explicit deps and body refs" do
+        # Simulates #413 scenario: tracker with closed explicit deps but
+        # still-open issues referenced in the body.
+        tracker = create(:issue, project: project, github_number: 413,
+          title: "Phase 2 remaining work tracker",
+          body: "## Dependencies\nDepends on #410, #411\n\n## Supporting\n- #262\n- #269")
+        dep_410 = create(:issue, :closed, project: project, github_number: 410)
+        dep_411 = create(:issue, :closed, project: project, github_number: 411)
+        create(:issue, project: project, github_number: 262, github_state: "open")
+        create(:issue, project: project, github_number: 269, github_state: "open")
+
+        # Even though explicit deps (410, 411) are closed, open body refs block the tracker
+        create(:issue_dependency, issue: tracker, depends_on_issue: dep_410)
+        create(:issue_dependency, issue: tracker, depends_on_issue: dep_411)
+
+        result = described_class.new(project).call
+
+        # Tracker is blocked because body-referenced issues #262 and #269 are
+        # still open; one of those open issues is picked instead.
+        expect(result.issue).not_to eq(tracker)
+      end
+    end
+
     it "skips parent issues that have sub-issues" do
       parent = create(:issue, project: project, github_number: 1)
       create(:issue, project: project, github_number: 3, parent_issue: parent)
@@ -607,6 +723,20 @@ RSpec.describe Issues::AutoPick do
       result = described_class.eligible_issue_ids([])
 
       expect(result).to eq(Set.new)
+    end
+
+    it "excludes tracker issues with open body-referenced issues" do
+      tracker = create(:issue, project: project, github_number: 413,
+        title: "Remaining work tracker",
+        body: "Tracks #10 and #11")
+      create(:issue, project: project, github_number: 10, github_state: "open")
+      create(:issue, :closed, project: project, github_number: 11)
+      leaf = create(:issue, project: project, github_number: 20)
+
+      result = described_class.eligible_issue_ids([ tracker, leaf ])
+
+      expect(result).not_to include(tracker.id)
+      expect(result).to include(leaf.id)
     end
   end
 end

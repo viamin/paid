@@ -737,4 +737,58 @@ RSpec.describe Issue do
       end
     end
   end
+
+  describe "#tracker_issue?" do
+    it "returns true when title contains 'tracker'" do
+      issue = build(:issue, title: "Phase 2 remaining work tracker")
+      expect(issue.tracker_issue?).to be true
+    end
+
+    it "returns true when body contains 'completion criteria'" do
+      issue = build(:issue, title: "Phase 2 umbrella", body: "## Completion criteria\n- done")
+      expect(issue.tracker_issue?).to be true
+    end
+
+    it "returns true for 'remaining work' in title" do
+      issue = build(:issue, title: "Remaining work for phase 2")
+      expect(issue.tracker_issue?).to be true
+    end
+
+    it "returns true for 'meta issue' in body" do
+      issue = build(:issue, body: "This is a meta issue tracking all items")
+      expect(issue.tracker_issue?).to be true
+    end
+
+    it "returns false for regular issues" do
+      issue = build(:issue, title: "Fix login bug", body: "The login page crashes")
+      expect(issue.tracker_issue?).to be false
+    end
+
+    it "is case-insensitive" do
+      issue = build(:issue, title: "PHASE TRACKER for Q2")
+      expect(issue.tracker_issue?).to be true
+    end
+  end
+
+  describe "#body_referenced_issue_numbers" do
+    it "extracts issue numbers from body" do
+      issue = build(:issue, body: "Depends on #100, #200, and #300")
+      expect(issue.body_referenced_issue_numbers).to contain_exactly(100, 200, 300)
+    end
+
+    it "returns unique numbers" do
+      issue = build(:issue, body: "#100 is mentioned twice: #100")
+      expect(issue.body_referenced_issue_numbers).to eq([ 100 ])
+    end
+
+    it "returns empty array for nil body" do
+      issue = build(:issue, body: nil)
+      expect(issue.body_referenced_issue_numbers).to eq([])
+    end
+
+    it "does not match numbers without # prefix" do
+      issue = build(:issue, body: "Issue 100 is not a reference")
+      expect(issue.body_referenced_issue_numbers).to eq([])
+    end
+  end
 end
