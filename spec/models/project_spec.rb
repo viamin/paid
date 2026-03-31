@@ -545,6 +545,342 @@ RSpec.describe Project do
     end
   end
 
+  describe "review_settings" do
+    describe "#effective_review_settings" do
+      it "returns defaults when review_settings is empty" do
+        project = build(:project, review_settings: {})
+        settings = project.effective_review_settings
+
+        expect(settings["enabled"]).to be false
+        expect(settings["wait_for_reviews"]).to be true
+        expect(settings.dig("methods", "copilot", "enabled")).to be false
+        expect(settings.dig("methods", "paid_agent", "termination", "max_review_rounds")).to eq(3)
+      end
+
+      it "merges custom settings over defaults" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "copilot" => { "enabled" => true } }
+        })
+        settings = project.effective_review_settings
+
+        expect(settings["enabled"]).to be true
+        expect(settings.dig("methods", "copilot", "enabled")).to be true
+        expect(settings.dig("methods", "copilot", "termination", "max_review_rounds")).to eq(2)
+      end
+
+      it "handles non-Hash review_settings gracefully" do
+        project = build(:project)
+        project.review_settings = "invalid"
+        settings = project.effective_review_settings
+
+        expect(settings["enabled"]).to be false
+        expect(settings.dig("methods", "copilot", "enabled")).to be false
+      end
+    end
+
+    describe "#review_enabled?" do
+      it "returns false by default" do
+        project = build(:project)
+        expect(project.review_enabled?).to be false
+      end
+
+      it "returns true when enabled" do
+        project = build(:project, review_settings: { "enabled" => true })
+        expect(project.review_enabled?).to be true
+      end
+    end
+
+    describe "#wait_for_reviews?" do
+      it "returns true by default" do
+        project = build(:project)
+        expect(project.wait_for_reviews?).to be true
+      end
+
+      it "returns false when explicitly disabled" do
+        project = build(:project, review_settings: { "wait_for_reviews" => false })
+        expect(project.wait_for_reviews?).to be false
+      end
+    end
+
+    describe "#review_method_enabled?" do
+      it "returns false by default" do
+        project = build(:project)
+        expect(project.review_method_enabled?(:copilot)).to be false
+      end
+
+      it "returns true when method is enabled" do
+        project = build(:project, review_settings: {
+          "methods" => { "copilot" => { "enabled" => true } }
+        })
+        expect(project.review_method_enabled?(:copilot)).to be true
+      end
+    end
+
+    describe "#enabled_review_methods" do
+      it "returns empty array by default" do
+        project = build(:project)
+        expect(project.enabled_review_methods).to be_empty
+      end
+
+      it "returns only enabled methods" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "copilot" => { "enabled" => true },
+            "paid_agent" => { "enabled" => true },
+            "ci_action" => { "enabled" => false }
+          }
+        })
+        expect(project.enabled_review_methods).to contain_exactly("copilot", "paid_agent")
+      end
+    end
+
+    describe "#review_method_config" do
+      it "returns merged config for a method" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "termination" => { "timeout_minutes" => 60 }
+            }
+          }
+        })
+        config = project.review_method_config(:paid_agent)
+
+        expect(config["enabled"]).to be true
+        expect(config.dig("termination", "timeout_minutes")).to eq(60)
+        expect(config.dig("termination", "max_review_rounds")).to eq(3)
+      end
+    end
+
+    describe "validation" do
+      it "accepts empty review_settings" do
+        project = build(:project, review_settings: {})
+        expect(project).to be_valid
+      end
+
+      it "accepts valid review_settings" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "wait_for_reviews" => true,
+          "methods" => {
+            "copilot" => {
+              "enabled" => true,
+              "termination" => { "max_review_rounds" => 2, "stop_when_no_comments" => true }
+            }
+          }
+        })
+        expect(project).to be_valid
+      end
+
+      it "rejects unknown review methods" do
+        project = build(:project, review_settings: {
+          "methods" => { "unknown_method" => { "enabled" => true } }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("unknown review method")
+      end
+
+      it "rejects non-positive max_review_rounds" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "copilot" => {
+              "enabled" => true,
+              "termination" => { "max_review_rounds" => 0 }
+            }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("max_review_rounds must be a positive integer")
+      end
+
+      it "rejects non-positive timeout_minutes" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "paid_agent" => {
+              "enabled" => true,
+              "termination" => { "timeout_minutes" => -5 }
+            }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("timeout_minutes must be a positive integer")
+      end
+
+      it "rejects enabled reviews with no methods enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "copilot" => { "enabled" => false }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("at least one review method enabled")
+      end
+
+      it "rejects enabled reviews with no methods key" do
+        project = build(:project, review_settings: { "enabled" => true })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("at least one review method enabled")
+      end
+
+      it "rejects enabled method with no termination conditions" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "copilot" => {
+              "enabled" => true,
+              "termination" => {
+                "max_review_rounds" => nil,
+                "stop_when_no_comments" => false,
+                "quality_threshold" => nil,
+                "timeout_minutes" => nil
+              }
+            }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("at least one termination condition")
+      end
+
+      it "falls back to default termination when termination key is missing" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "copilot" => { "enabled" => true }
+          }
+        })
+        # copilot defaults include stop_when_no_comments: true, so this is valid
+        expect(project).to be_valid
+      end
+
+      it "skips termination validation for disabled methods" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "copilot" => {
+              "enabled" => false,
+              "termination" => { "max_review_rounds" => -1 }
+            }
+          }
+        })
+        expect(project).to be_valid
+      end
+
+      it "rejects review_settings set to an array" do
+        project = build(:project, review_settings: [])
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("must be a JSON object")
+      end
+
+      it "rejects review_settings set to a string" do
+        project = build(:project, review_settings: "invalid")
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("must be a JSON object")
+      end
+
+      it "rejects methods set to a non-Hash value" do
+        project = build(:project, review_settings: { "methods" => "copilot" })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("methods must be a JSON object")
+      end
+
+      it "rejects methods set to an array" do
+        project = build(:project, review_settings: { "methods" => [ "copilot" ] })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("methods must be a JSON object")
+      end
+
+      it "rejects a method config set to a non-Hash" do
+        project = build(:project, review_settings: {
+          "methods" => { "copilot" => "enabled" }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("copilot config must be a JSON object")
+      end
+
+      it "rejects termination set to a non-Hash for an enabled method" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "copilot" => { "enabled" => true, "termination" => "invalid" }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("copilot termination must be a JSON object")
+      end
+
+      it "rejects ci_action with blank action_name when enabled" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "ci_action" => { "enabled" => true, "action_name" => "", "termination" => { "max_review_rounds" => 1 } }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("ci_action requires a non-blank action_name")
+      end
+
+      it "rejects ci_action with nil action_name when enabled" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "ci_action" => { "enabled" => true, "termination" => { "max_review_rounds" => 1 } }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("ci_action requires a non-blank action_name")
+      end
+
+      it "accepts ci_action with action_name when enabled" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "ci_action" => { "enabled" => true, "action_name" => "my-review-action", "termination" => { "max_review_rounds" => 1 } }
+          }
+        })
+        expect(project).to be_valid
+      end
+
+      it "skips action_name validation when ci_action is disabled" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "ci_action" => { "enabled" => false, "action_name" => "" }
+          }
+        })
+        expect(project).to be_valid
+      end
+
+      it "validates correctly when review_settings has symbol keys" do
+        project = build(:project, review_settings: {
+          enabled: true,
+          methods: {
+            copilot: {
+              enabled: true,
+              termination: { max_review_rounds: 2, stop_when_no_comments: true }
+            }
+          }
+        })
+        expect(project).to be_valid
+      end
+
+      it "rejects unknown methods even with symbol keys" do
+        project = build(:project, review_settings: {
+          methods: { unknown_method: { enabled: true } }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("unknown review method")
+      end
+
+      it "stores and retrieves review_settings via JSONB" do
+        settings = {
+          "enabled" => true,
+          "wait_for_reviews" => true,
+          "methods" => {
+            "copilot" => { "enabled" => true, "termination" => { "max_review_rounds" => 2 } }
+          }
+        }
+        project = create(:project, review_settings: settings)
+        reloaded = described_class.find(project.id)
+
+        expect(reloaded.review_settings).to eq(settings)
+      end
+    end
+  end
+
   describe "account association" do
     it "is destroyed when account is destroyed" do
       account = create(:account)
