@@ -9,7 +9,8 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
     it "creates human quality metric with comment data" do
       metric = described_class.call(
         agent_run: agent_run,
-        commenter: "alice"
+        commenter: "alice",
+        comment_id: 100
       )
 
       expect(metric).to be_persisted
@@ -17,7 +18,8 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
       expect(metric.metadata["webhook_comment_count"]).to eq(1)
       expect(metric.metadata["commenters"]).to eq([ "alice" ])
       expect(metric.metadata["feedback_sources"]).to include("comment")
-      expect(metric.scores).to have_key("webhook_comment_count_score")
+      expect(metric.metadata["processed_comment_ids"]).to eq([ 100 ])
+      expect(metric.scores).not_to have_key("webhook_comment_count_score")
     end
 
     it "increments comment count on repeated calls" do
@@ -64,8 +66,42 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
       )
 
       expect(metric.scores).to have_key("reaction_score")
-      expect(metric.scores).to have_key("webhook_comment_count_score")
+      expect(metric.scores).not_to have_key("webhook_comment_count_score")
       expect(metric.metadata["feedback_sources"]).to include("pr_reaction", "comment")
+    end
+
+    it "deduplicates by comment_id on webhook retries" do
+      described_class.call(
+        agent_run: agent_run,
+        commenter: "alice",
+        comment_id: 42
+      )
+
+      metric = described_class.call(
+        agent_run: agent_run,
+        commenter: "alice",
+        comment_id: 42
+      )
+
+      expect(metric.metadata["webhook_comment_count"]).to eq(1)
+      expect(metric.metadata["processed_comment_ids"]).to eq([ 42 ])
+    end
+
+    it "counts distinct comments with different comment_ids" do
+      described_class.call(
+        agent_run: agent_run,
+        commenter: "alice",
+        comment_id: 42
+      )
+
+      metric = described_class.call(
+        agent_run: agent_run,
+        commenter: "bob",
+        comment_id: 43
+      )
+
+      expect(metric.metadata["webhook_comment_count"]).to eq(2)
+      expect(metric.metadata["processed_comment_ids"]).to contain_exactly(42, 43)
     end
 
     it "returns nil when commenter is blank" do

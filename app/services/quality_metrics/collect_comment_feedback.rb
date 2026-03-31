@@ -12,14 +12,16 @@ module QualityMetrics
   # @example
   #   QualityMetrics::CollectCommentFeedback.call(
   #     agent_run: agent_run,
-  #     commenter: "octocat"
+  #     commenter: "octocat",
+  #     comment_id: 12345
   #   )
   class CollectCommentFeedback
-    attr_reader :agent_run, :commenter
+    attr_reader :agent_run, :commenter, :comment_id
 
-    def initialize(agent_run:, commenter:)
+    def initialize(agent_run:, commenter:, comment_id: nil)
       @agent_run = agent_run
       @commenter = commenter
+      @comment_id = comment_id
     end
 
     def self.call(...)
@@ -42,6 +44,17 @@ module QualityMetrics
           metric.feedback_source ||= "comment"
 
           existing_metadata = metric.metadata || {}
+
+          # Deduplicate by comment_id to handle GitHub webhook retries.
+          # Without this, retried deliveries would inflate the comment count.
+          if comment_id.present?
+            processed_ids = Array(existing_metadata["processed_comment_ids"])
+            if processed_ids.include?(comment_id)
+              return metric.persisted? ? metric : nil
+            end
+            processed_ids = processed_ids + [ comment_id ]
+          end
+
           existing_sources = Array(existing_metadata["feedback_sources"])
           comment_count = (existing_metadata["webhook_comment_count"] || 0) + 1
           existing_commenters = Array(existing_metadata["commenters"]).reject(&:blank?)
@@ -49,16 +62,18 @@ module QualityMetrics
           commenters << commenter unless commenter.blank?
           commenters.uniq!
 
-          metric.metadata = existing_metadata.merge(
+          # Comment activity is tracked purely in metadata — it is not a weighted
+          # score key in SCORE_WEIGHTS/GOAL_WEIGHTS, so writing it to scores would
+          # leave composite_score unaffected while adding a dangling key.
+          updated_metadata = existing_metadata.merge(
             "feedback_sources" => (existing_sources + [ "comment" ]).uniq,
             "webhook_comment_count" => comment_count,
             "commenters" => commenters,
             "last_comment_at" => Time.current.iso8601
           )
+          updated_metadata["processed_comment_ids"] = processed_ids if comment_id.present?
+          metric.metadata = updated_metadata
 
-          metric.scores = (metric.scores || {}).merge(
-            "webhook_comment_count_score" => QualityMetric.review_comment_count_score(comment_count)
-          )
           metric.composite_score = metric.calculate_composite_score
           metric.save!
           metric

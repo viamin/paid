@@ -104,7 +104,8 @@ module Api
 
       QualityMetrics::CollectCommentFeedback.call(
         agent_run: agent_run,
-        commenter: comment.dig("user", "login")
+        commenter: comment.dig("user", "login"),
+        comment_id: comment["id"]
       )
 
       head :ok

@@ -217,6 +217,7 @@ RSpec.describe "Api::GithubWebhooks" do
             pull_request: { url: "https://api.github.com/repos/#{project.full_name}/pulls/#{agent_run.pull_request_number}" }
           },
           comment: {
+            id: 1001,
             user: { login: "reviewer" },
             body: "Nice work, but could you fix the typo on line 10?"
           },
@@ -257,7 +258,8 @@ RSpec.describe "Api::GithubWebhooks" do
 
         post webhook_url, params: body, headers: headers
 
-        # Second comment from a different user
+        # Second comment from a different user with a different comment id
+        payload[:comment][:id] = 1002
         payload[:comment][:user][:login] = "another-reviewer"
         body2, signature2 = sign_payload(payload, project.webhook_secret)
         headers2 = headers.merge("X-Hub-Signature-256" => signature2)
@@ -267,6 +269,21 @@ RSpec.describe "Api::GithubWebhooks" do
         metric = agent_run.quality_metrics.human.last
         expect(metric.metadata["webhook_comment_count"]).to eq(2)
         expect(metric.metadata["commenters"]).to contain_exactly("reviewer", "another-reviewer")
+      end
+
+      it "does not double-count retried webhook deliveries" do
+        body, signature = sign_payload(payload, project.webhook_secret)
+        headers = {
+          "Content-Type" => "application/json",
+          "X-GitHub-Event" => "issue_comment",
+          "X-Hub-Signature-256" => signature
+        }
+
+        post webhook_url, params: body, headers: headers
+        post webhook_url, params: body, headers: headers
+
+        metric = agent_run.quality_metrics.human.last
+        expect(metric.metadata["webhook_comment_count"]).to eq(1)
       end
 
       it "ignores edited comments" do
@@ -299,6 +316,7 @@ RSpec.describe "Api::GithubWebhooks" do
             number: issue_agent_run.created_issue_number
           },
           comment: {
+            id: 2001,
             user: { login: "commenter" },
             body: "Thanks for filing this!"
           },
