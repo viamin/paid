@@ -1,0 +1,77 @@
+# frozen_string_literal: true
+
+# Automatically retries issue goal agent runs that have timed out.
+#
+# When an issue goal run times out (stuck in pending/running beyond
+# the timeout threshold), this job creates a new queued run with the
+# same parameters so the issue creation is retried without manual
+# intervention. Respects a maximum retry count to avoid infinite loops.
+#
+# Enqueued from AgentRun's after_commit callback when an issue goal
+# run transitions to "timeout" status.
+class RetryTimedOutIssueGoalJob < ApplicationJob
+  queue_as :default
+
+  MAX_RETRIES = 3
+
+  def perform(agent_run_id)
+    agent_run = AgentRun.find_by(id: agent_run_id)
+    return unless agent_run
+    return unless eligible_for_retry?(agent_run)
+
+    previous_attempts = count_previous_attempts(agent_run)
+    if previous_attempts >= MAX_RETRIES
+      Rails.logger.info(
+        message: "agent_execution.issue_goal_retry_limit_reached",
+        agent_run_id: agent_run.id,
+        issue_id: agent_run.issue_id,
+        project_id: agent_run.project_id,
+        attempts: previous_attempts
+      )
+      return
+    end
+
+    new_run = AgentRun.create!(
+      project: agent_run.project,
+      issue: agent_run.issue,
+      provider: agent_run.provider,
+      agent_type: agent_run.agent_type,
+      custom_prompt: agent_run.custom_prompt,
+      source_pull_request_number: agent_run.source_pull_request_number,
+      goal: agent_run.goal,
+      trigger_type: "automatic",
+      status: "queued"
+    )
+
+    agent_run.retry!
+
+    Rails.logger.info(
+      message: "agent_execution.issue_goal_auto_retry",
+      original_agent_run_id: agent_run.id,
+      new_agent_run_id: new_run.id,
+      issue_id: agent_run.issue_id,
+      project_id: agent_run.project_id,
+      attempt: previous_attempts + 1
+    )
+
+    ProcessRunQueueJob.perform_later
+  end
+
+  private
+
+  def eligible_for_retry?(agent_run)
+    agent_run.status == "timeout" && agent_run.create_issue_goal?
+  end
+
+  # Counts how many previous issue goal runs for the same issue have
+  # already been attempted (timed out or retried), excluding the current run.
+  def count_previous_attempts(agent_run)
+    return MAX_RETRIES unless agent_run.issue_id
+
+    agent_run.issue.agent_runs
+      .where(goal: "create_issue")
+      .where(status: %w[timeout retried])
+      .where.not(id: agent_run.id)
+      .count
+  end
+end
