@@ -25,7 +25,7 @@ RSpec.describe EmbedChunksJob do
     it "resolves the API key from the project owner's provider API keys" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
       owner = project.effective_owner
-      key = create(:provider_api_key, user: owner, compatible_providers: %w[openai])
+      key = create(:provider_api_key, user: owner, api_service_type: "openai")
 
       described_class.perform_now(project.id)
 
@@ -35,8 +35,8 @@ RSpec.describe EmbedChunksJob do
     it "prefers the most recently created API key when multiple exist" do
       allow(Knowledge::Embeddings::Pipeline).to receive(:call)
       owner = project.effective_owner
-      create(:provider_api_key, user: owner, compatible_providers: %w[openai])
-      newer_key = create(:provider_api_key, user: owner, compatible_providers: %w[openai])
+      create(:provider_api_key, user: owner, api_service_type: "openai")
+      newer_key = create(:provider_api_key, user: owner, api_service_type: "openai")
 
       described_class.perform_now(project.id)
 

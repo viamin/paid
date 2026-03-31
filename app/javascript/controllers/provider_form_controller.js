@@ -1,5 +1,18 @@
 import { Controller } from "@hotwired/stimulus"
 
+// Maps provider keys to the API service type their CLI tool requires.
+// Must stay in sync with ProviderSupport::PROVIDER_API_SERVICE_TYPE.
+const PROVIDER_API_SERVICE_TYPE = {
+  claude: "anthropic",
+  cursor: "anthropic",
+  codex: "openai",
+  copilot: "anthropic",
+  aider: "anthropic",
+  gemini: "google",
+  opencode: "openrouter",
+  kilocode: "anthropic",
+}
+
 export default class extends Controller {
   static values = {
     authType: String,
@@ -74,7 +87,7 @@ export default class extends Controller {
   refreshApiKeyOptions(providerKey = this.currentProviderKey()) {
     if (!this.hasApiKeySelectTarget) return
 
-    const requiredTargets = this.requiredApiKeyTargetsFor(providerKey)
+    const requiredServiceType = this.requiredApiServiceTypeFor(providerKey)
     let selectedOptionVisible = false
 
     this.apiKeyOptionTargets.forEach((option) => {
@@ -83,8 +96,8 @@ export default class extends Controller {
         return
       }
 
-      const targets = (option.dataset.compatibleTargets || "").split(",").filter(Boolean)
-      const visible = requiredTargets.length > 0 ? requiredTargets.some((target) => targets.includes(target)) : true
+      const serviceType = option.dataset.apiServiceType || ""
+      const visible = requiredServiceType ? serviceType === requiredServiceType : true
       option.hidden = !visible
       if (visible && option.selected) {
         selectedOptionVisible = true
@@ -103,12 +116,9 @@ export default class extends Controller {
     return this.authTypeValue === "api_key"
   }
 
-  requiredApiKeyTargetsFor(providerKey) {
-    if (!providerKey) return []
-    if (providerKey !== "opencode") return [providerKey]
-
-    const apiProviderField = this.element.querySelector("select[name='provider[config][opencode][api_provider]']")
-    return [apiProviderField?.value || "openrouter"]
+  requiredApiServiceTypeFor(providerKey) {
+    if (!providerKey) return null
+    return PROVIDER_API_SERVICE_TYPE[providerKey] || null
   }
 
   currentProviderKey() {

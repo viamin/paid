@@ -108,7 +108,7 @@
             <option value="<%= ak.id %>"
                     <%= "selected" if provider.provider_api_key_id == ak.id %>
                     data-provider-form-target="apiKeyOption"
-                    data-compatible-targets="<%= ak.compatible_providers.join(",") %>">
+                    data-api-service-type="<%= ak.api_service_type %>">
               <%= ak.name %>
             </option>
           <% end %>

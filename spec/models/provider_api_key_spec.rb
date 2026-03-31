@@ -14,42 +14,39 @@ RSpec.describe ProviderApiKey do
     it { is_expected.to validate_presence_of(:name) }
     it { is_expected.to validate_uniqueness_of(:name).scoped_to(:user_id) }
     it { is_expected.to validate_presence_of(:api_key) }
-    it { is_expected.to validate_presence_of(:compatible_providers) }
+    it { is_expected.to validate_presence_of(:api_service_type) }
 
-    it "rejects unsupported provider keys in compatible_providers" do
-      api_key.compatible_providers = %w[claude unknown_provider]
+    it "rejects unsupported api_service_type values" do
+      api_key.api_service_type = "unknown_service"
 
       expect(api_key).not_to be_valid
-      expect(api_key.errors[:compatible_providers].first).to include("unsupported")
+      expect(api_key.errors[:api_service_type].first).to include("not a supported")
     end
 
-    it "accepts valid provider keys in compatible_providers" do
-      api_key.compatible_providers = %w[claude cursor]
+    it "accepts valid api_service_type values" do
+      api_key.api_service_type = "anthropic"
 
       expect(api_key).to be_valid
     end
   end
 
   describe "#compatible_with?" do
-    let(:api_key) { build(:provider_api_key, compatible_providers: %w[claude gemini]) }
+    let(:api_key) { build(:provider_api_key, api_service_type: "anthropic") }
 
-    it "returns true for compatible providers" do
+    it "returns true for providers whose API service type matches" do
       expect(api_key.compatible_with?("claude")).to be(true)
-      expect(api_key.compatible_with?("gemini")).to be(true)
     end
 
-    it "returns false for incompatible providers" do
-      expect(api_key.compatible_with?("cursor")).to be(false)
+    it "returns false for providers whose API service type differs" do
+      expect(api_key.compatible_with?("codex")).to be(false)
     end
   end
 
-  describe ".compatibility_target_labels" do
-    it "uses required API key targets rather than provider keys" do
-      labels = described_class.compatibility_target_labels
+  describe "#display_api_service_type" do
+    it "returns the human-readable label for the service type" do
+      api_key = build(:provider_api_key, api_service_type: "openrouter")
 
-      expect(labels).to include("claude" => Provider.display_name("claude"))
-      expect(labels).to include("openrouter" => "OpenRouter")
-      expect(labels).not_to have_key("opencode")
+      expect(api_key.display_api_service_type).to eq("OpenRouter")
     end
   end
 
@@ -72,13 +69,24 @@ RSpec.describe ProviderApiKey do
   describe ".compatible_with" do
     let(:user) { create(:user) }
 
-    it "returns keys compatible with a given provider" do
-      claude_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
-      create(:provider_api_key, user: user, name: "Other key", compatible_providers: %w[cursor])
+    it "returns keys with the matching api_service_type" do
+      anthropic_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      create(:provider_api_key, user: user, name: "Other key", api_service_type: "openai")
 
-      result = described_class.compatible_with("claude")
-      expect(result).to include(claude_key)
+      result = described_class.compatible_with("anthropic")
+      expect(result).to include(anthropic_key)
       expect(result.size).to eq(1)
+    end
+  end
+
+  describe ".api_service_type_options" do
+    it "returns label-value pairs for all service types" do
+      options = described_class.api_service_type_options
+
+      expect(options).to include(%w[Anthropic anthropic])
+      expect(options).to include(%w[OpenRouter openrouter])
+      expect(options).to include(%w[OpenAI openai])
+      expect(options).to include([ "Google AI", "google" ])
     end
   end
 end

@@ -308,7 +308,7 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   def build_opencode_context(user)
-    api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter], api_key: "sk-openrouter-secret")
+    api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
     provider = create_opencode_provider_entry(user: user, api_key: api_key, name: nil, model: "moonshotai/kimi-k2-0905")
 
     described_class::CommandContext.new(
@@ -821,7 +821,7 @@ RSpec.describe Activities::RunAgentActivity do
       end
 
       it "uses provider display names in exhausted-provider labels" do
-        api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
         kimi = create_opencode_provider_entry(user: user, api_key: api_key, name: "Kimi K2.5", model: "moonshotai/kimi-k2-0905")
         opus = create_opencode_provider_entry(user: user, api_key: api_key, name: "Opus via OpenCode", model: "anthropic/claude-opus-4.1")
 

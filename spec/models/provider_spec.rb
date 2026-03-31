@@ -27,7 +27,7 @@ RSpec.describe Provider do
     end
 
     it "allows api_key auth_type with a valid provider_api_key" do
-      api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[cursor])
+      api_key = create(:provider_api_key, user: provider.user, api_service_type: "anthropic")
       provider.provider_api_key = api_key
       expect(provider).to allow_value("api_key").for(:auth_type)
     end
@@ -38,7 +38,7 @@ RSpec.describe Provider do
     end
 
     it "allows rate_limit_fallback role on api_key providers" do
-      api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[cursor])
+      api_key = create(:provider_api_key, user: provider.user, api_service_type: "anthropic")
       provider.auth_type = "api_key"
       provider.provider_api_key = api_key
       expect(provider).to allow_value("rate_limit_fallback").for(:fallback_role)
@@ -86,7 +86,7 @@ RSpec.describe Provider do
     end
 
     it "prevents duplicate api_key entries for the same user, provider_key, and api key" do
-      api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[cursor])
+      api_key = create(:provider_api_key, user: provider.user, api_service_type: "anthropic")
       create(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key)
       duplicate = build(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key)
 
@@ -95,7 +95,7 @@ RSpec.describe Provider do
     end
 
     it "treats blank and nil names as duplicates for api_key entries" do
-      api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[cursor])
+      api_key = create(:provider_api_key, user: provider.user, api_service_type: "anthropic")
       create(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key)
       duplicate = build(:provider, user: provider.user, provider_key: "cursor", auth_type: "api_key", provider_api_key: api_key, name: "")
 
@@ -105,7 +105,7 @@ RSpec.describe Provider do
 
     it "rejects provider_api_key belonging to a different user" do
       other_user = create(:user)
-      api_key = create(:provider_api_key, user: other_user, compatible_providers: %w[cursor])
+      api_key = create(:provider_api_key, user: other_user, api_service_type: "anthropic")
       provider.auth_type = "api_key"
       provider.provider_api_key = api_key
       provider.provider_key = "cursor"
@@ -115,13 +115,13 @@ RSpec.describe Provider do
     end
 
     it "validates API key compatibility with provider_key" do
-      api_key = create(:provider_api_key, user: provider.user, compatible_providers: %w[gemini])
+      api_key = create(:provider_api_key, user: provider.user, api_service_type: "google")
       provider.auth_type = "api_key"
       provider.provider_api_key = api_key
       provider.provider_key = "cursor"
 
       expect(provider).not_to be_valid
-      expect(provider.errors[:provider_api_key]).to include("is not compatible with cursor")
+      expect(provider.errors[:provider_api_key]).to include("must be a Anthropic API key")
     end
   end
 
@@ -130,7 +130,7 @@ RSpec.describe Provider do
 
     it ".subscription returns only subscription providers" do
       sub = user.providers.find_by(provider_key: "claude")
-      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       api = user.providers.create!(provider_key: "claude", auth_type: "api_key", provider_api_key: api_key)
 
       expect(described_class.subscription).to include(sub)
@@ -139,7 +139,7 @@ RSpec.describe Provider do
 
     it ".api_key returns only api_key providers" do
       sub = user.providers.find_by(provider_key: "claude")
-      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       api = user.providers.create!(provider_key: "claude", auth_type: "api_key", provider_api_key: api_key)
 
       expect(described_class.api_key).to include(api)
@@ -223,7 +223,7 @@ RSpec.describe Provider do
 
     it "prefers the subscription entry for plain provider keys" do
       subscription = user.providers.find_by!(provider_key: "claude")
-      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       user.providers.create!(provider_key: "claude", auth_type: "api_key", provider_api_key: api_key)
 
       expect(described_class.for_identifier(user, "claude")).to eq(subscription)
@@ -264,7 +264,7 @@ RSpec.describe Provider do
 
   describe "direct outbound OpenCode helpers" do
     let(:user) { create(:user) }
-    let(:api_key) { create(:provider_api_key, user: user, compatible_providers: %w[openrouter], api_key: "sk-openrouter-secret") }
+    let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret") }
     let(:provider) do
       create(
         :provider,
@@ -311,7 +311,7 @@ RSpec.describe Provider do
 
     it "uses the routing key for api-key entries" do
       user = create(:user)
-      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       provider = create(:provider, :api_key, user: user, provider_key: "claude", provider_api_key: api_key)
 
       expect(provider.state_key).to eq(provider.routing_key)
@@ -350,7 +350,7 @@ RSpec.describe Provider do
     let(:user) { create(:user) }
 
     it "allows both subscription and api_key entries for the same provider_key" do
-      api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       api_provider = user.providers.new(
         provider_key: "claude",
         auth_type: "api_key",

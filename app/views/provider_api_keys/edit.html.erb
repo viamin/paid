@@ -14,7 +14,7 @@
     <div class="px-4 py-5 sm:p-6">
       <h1 class="text-xl font-semibold text-gray-900">Edit LLM API Key</h1>
       <p class="mt-1 text-sm text-gray-500">
-        Update the name, compatible providers, or rotate the API key value.
+        Update the name, API service type, or rotate the API key value.
       </p>
 
       <%= form_with model: @provider_api_key, url: provider_api_key_path(@provider_api_key), method: :patch, class: "mt-6",

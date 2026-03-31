@@ -5,6 +5,6 @@ FactoryBot.define do
     user
     sequence(:name) { |n| "API Key #{n}" }
     api_key { "sk-test-#{SecureRandom.hex(16)}" }
-    compatible_providers { %w[claude] }
+    api_service_type { "anthropic" }
   end
 end
