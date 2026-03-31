@@ -40,8 +40,6 @@ class ProviderApiKeysController < ApplicationController
     authorize @provider_api_key
     permitted = provider_api_key_params
     permitted.delete(:api_key) if permitted[:api_key].blank?
-    permitted.delete(:compatible_providers) unless params[:provider_api_key].key?(:compatible_providers)
-
     if @provider_api_key.update(permitted)
       redirect_to provider_api_key_path(@provider_api_key),
         notice: "API key updated."
