@@ -68,8 +68,9 @@ module Issues
 
       # Exclude tracker/meta issues that still have open referenced issues.
       # Trackers are pickable only once every issue referenced in their body
-      # is closed (per collaborator feedback).
-      blocked_ids = tracker_ids_blocked_by_open_references(project)
+      # is closed (per collaborator feedback). The ILIKE scan runs against
+      # +scope+ (not all open issues) to limit query cost.
+      blocked_ids = tracker_ids_blocked_by_open_references(scope, project)
       scope = scope.where.not(id: blocked_ids) if blocked_ids.present?
 
       scope
@@ -81,13 +82,24 @@ module Issues
     # Only queries open/closed state for issue numbers actually referenced
     # by tracker candidates (not all project issues).
     #
-    # Performance: the ILIKE scan runs against open, non-PR issues for a
-    # single project — typically a small set. If this becomes expensive on
-    # repos with thousands of open issues, consider a trigram GIN index on
-    # (title, body) or a persisted `tracker_issue` boolean column.
-    def self.tracker_ids_blocked_by_open_references(project)
-      open_issues = Issue.where(project: project, github_state: "open", is_pull_request: false)
-
+    # +candidate_scope+ is the already-filtered eligible-issue scope so the
+    # ILIKE scan runs only against issues that passed earlier filters (labels,
+    # paid_state, dependencies, etc.) rather than all open project issues.
+    # If this still becomes expensive on repos with thousands of eligible
+    # issues, consider a trigram GIN index on (title, body) or a persisted
+    # `tracker_issue` boolean column.
+    #
+    # Blocking policy:
+    # - Trackers with body references are blocked when ANY reference is open
+    #   or unknown (not yet synced). Only direct references are checked — not
+    #   transitive dependencies of those references. Transitive checking is
+    #   deferred because the IssueDependency graph may be incomplete for
+    #   body-referenced issues, and the direct-reference check already
+    #   catches the motivating scenario (#615).
+    # - Trackers with NO body references are conservatively blocked — they
+    #   likely track work not enumerated as #NNN references, and auto-picking
+    #   them risks premature selection (see #615).
+    def self.tracker_ids_blocked_by_open_references(candidate_scope, project)
       ilike_conditions = TRACKER_SQL_PATTERNS.each_with_index.flat_map do |_, i|
         [ "title ILIKE :t#{i}", "body ILIKE :t#{i}" ]
       end
@@ -95,14 +107,10 @@ module Issues
         [ :"t#{i}", pattern ]
       end
 
-      candidates = open_issues.where(ilike_conditions.join(" OR "), **params)
+      candidates = candidate_scope.where(ilike_conditions.join(" OR "), **params)
         .select(:id, :github_number, :title, :body)
       return [] if candidates.empty?
 
-      # Collect all referenced numbers from tracker candidates, excluding
-      # self-references. Trackers with no body references are conservatively
-      # blocked — they likely track work not enumerated as #NNN references,
-      # and auto-picking them risks premature selection (see #615).
       refs_by_issue = candidates.filter_map do |issue|
         next unless issue.tracker_issue?
 
@@ -117,10 +125,9 @@ module Issues
 
       all_referenced_numbers = with_refs.flat_map(&:last).uniq
 
-      # Fetch all referenced issues (any state) so we can distinguish between
-      # open, closed, and unknown references. Unknown (missing) references are
-      # treated as blocking to avoid auto-picking trackers when sync is
-      # incomplete.
+      # Fetch referenced issues (any state) to distinguish open, closed, and
+      # unknown. Unknown (missing) references are treated as blocking to
+      # avoid auto-picking trackers when sync is incomplete.
       referenced_states = Issue.where(
         project: project,
         is_pull_request: false,
