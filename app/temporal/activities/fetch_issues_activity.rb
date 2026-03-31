@@ -257,7 +257,7 @@ module Activities
 
       fetched_github_ids = github_issues.map(&:id).to_set
       # Only close stale issues that were directly fetched from the GitHub
-      # issues API. Synthetic issues (e.g. from Dependabot alert scanning)
+      # issues API. Synthetic issues (e.g. from code scanning alert scanning)
       # are intentionally excluded from this stale-closure pass and are
       # reconciled by ScanSecurityAlertsActivity instead.
       github_sourced = project.issues.where(github_state: "open", source: Issue::GITHUB_SOURCE)

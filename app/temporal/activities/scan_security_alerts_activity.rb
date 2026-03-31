@@ -1,19 +1,15 @@
 # frozen_string_literal: true
 
 module Activities
-  # Scans a project's GitHub repository for open security alerts (Dependabot
-  # and CodeQL code scanning) and delegates to the appropriate processors
-  # to create/reopen synthetic issues for actionable alerts.
+  # Scans a project's GitHub repository for open CodeQL code scanning alerts
+  # and delegates to the appropriate processors to create/reopen synthetic
+  # issues for actionable alerts.
   #
   # Runs after ScanPaidPrsActivity in the GitHubPollWorkflow poll cycle.
   #
-  # Dependabot alerts are processed every poll cycle and return issues
-  # for immediate agent runs. CodeQL alerts are checked on a configurable
-  # interval (default 72h ≈ 2-3x/week) and only create issues — they
-  # are picked up naturally by AutoPick.
-  #
-  # Returns a list of issues that were created or reopened to fix outstanding
-  # Dependabot alerts (CodeQL issues are NOT included in alerts_to_fix).
+  # CodeQL alerts are checked on a configurable interval (default 72h ≈
+  # 2-3x/week) and only create issues — they are picked up naturally by
+  # AutoPick.
   class ScanSecurityAlertsActivity < BaseActivity
     activity_name "ScanSecurityAlerts"
 
@@ -25,29 +21,12 @@ module Activities
       return { alerts_to_fix: [], project_missing: true } unless project
       return { alerts_to_fix: [] } unless project.auto_scan_security
 
-      # Dependabot path (every poll cycle)
-      all_dependabot_alerts = fetch_dependabot_alerts(project)
-      unless all_dependabot_alerts.nil?
-        SecurityAlerts::ReconcileResolved.new(project, all_dependabot_alerts).call
-      end
-
       severity_filter = severities_at_or_above(project.security_severity_threshold)
-      filtered_dependabot = (all_dependabot_alerts || []).select { |a| severity_filter.include?(a[:severity]) }
-      issues_created = SecurityAlerts::ProcessAlerts.new(project).call(filtered_dependabot)
 
       # CodeQL code scanning path (interval-gated)
       scan_code_scanning_alerts(project, severity_filter)
 
-      logger.info(
-        message: "github_sync.security_scan_complete",
-        project_id: project_id,
-        alerts_fetched: all_dependabot_alerts&.size,
-        alerts_fetch_skipped: all_dependabot_alerts.nil?,
-        alerts_actionable: filtered_dependabot.count { |a| a[:state] == "open" },
-        issues_created: issues_created.size
-      )
-
-      { alerts_to_fix: issues_created }
+      { alerts_to_fix: [] }
     rescue SecurityAlerts::ConfigurationError => e
       raise Temporalio::Error::ApplicationError.new(
         e.message,
@@ -63,33 +42,6 @@ module Activities
     end
 
     private
-
-    def fetch_dependabot_alerts(project)
-      return nil if project.security_alert_types.empty?
-      return nil unless project.security_alert_types.include?("dependabot")
-
-      client = project.github_token.client
-      client.dependabot_alerts(project.full_name)
-    rescue GithubClient::NotFoundError => e
-      logger.warn(
-        message: "github_sync.security_fetch_failed",
-        project_id: project.id,
-        error: e.message
-      )
-      nil
-    rescue GithubClient::ApiError => e
-      if e.status == 403
-        logger.warn(
-          message: "github_sync.security_fetch_failed",
-          project_id: project.id,
-          error: e.message,
-          status: e.status
-        )
-        nil
-      else
-        raise
-      end
-    end
 
     def scan_code_scanning_alerts(project, severity_filter)
       return unless project.security_alert_types.include?("code_scanning")

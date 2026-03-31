@@ -1,27 +1,21 @@
 # frozen_string_literal: true
 
 module SecurityAlerts
-  # Closes synthetic issues whose upstream alerts are no longer open
-  # (fixed, dismissed, or auto_dismissed upstream).
+  # Closes synthetic issues whose upstream CodeQL code scanning alerts are no
+  # longer open (fixed, dismissed, or auto_dismissed upstream).
   #
-  # Supports both Dependabot and CodeQL code scanning alert sources.
   # Skips issues with active agent runs to avoid orphaned work.
   # Sets github_state to "closed" for all resolved alerts; preserves
   # paid_state "failed" for diagnostic value while marking others "completed".
   class ReconcileResolved
-    def initialize(project, current_open_alerts, source: Issue::SYNTHETIC_DEPENDABOT_SOURCE)
+    def initialize(project, current_open_alerts, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
       @project = project
       @current_open_alerts = current_open_alerts
       @source = source
     end
 
     def call
-      id_offset = case @source
-      when Issue::SYNTHETIC_CODE_SCANNING_SOURCE
-        Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
-      else
-        Issue::SYNTHETIC_ISSUE_ID_OFFSET
-      end
+      id_offset = Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
 
       open_alert_ids = @current_open_alerts
         .select { |a| a[:state] == "open" }
