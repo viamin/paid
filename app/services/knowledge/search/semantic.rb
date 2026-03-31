@@ -150,6 +150,10 @@ module Knowledge
         }
       end
 
+      # NOTE: Query embedding still falls back to ENV["OPENAI_API_KEY"] rather than
+      # resolving the user's ProviderApiKey. Only background chunk embedding (via
+      # EmbedChunksJob) is user-billed for now. Threading the user key here requires
+      # access to the project owner's key at search time, which is a follow-up task.
       def generate_query_embedding
         results = Knowledge::Embeddings::Generate.call(texts: [ query ])
         results.first&.vector
