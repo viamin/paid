@@ -148,11 +148,14 @@ module Projects
 
         redirect_to project_path(@project), notice: "Auto-continue paused for PR ##{pr.github_number}."
       else
-        run_enqueued = enqueue_resume_run(pr)
-        notice = if run_enqueued
+        result = enqueue_resume_run(pr)
+        notice = case result
+        when :enqueued
           "Auto-continue resumed for PR ##{pr.github_number}. An agent run has been enqueued."
+        when :already_active
+          "Auto-continue resumed for PR ##{pr.github_number}. An agent run is already queued or in progress."
         else
-          "Auto-continue resumed for PR ##{pr.github_number}. A new agent run will be enqueued if possible."
+          "Auto-continue resumed for PR ##{pr.github_number}. A new agent run will be enqueued when a provider is available."
         end
         redirect_to project_path(@project), notice: notice
       end
@@ -236,7 +239,7 @@ module Projects
       redirect_to project_agent_run_path(@project, new_run),
         notice: "Agent run queued as a retry of run ##{@agent_run.id}."
     rescue ActiveRecord::RecordNotUnique => e
-      alert = if e.cause&.message&.include?("proxy_token")
+      alert = if (e.cause&.message || e.message).include?("proxy_token")
         "An unexpected error occurred. Please try again."
       else
         "An agent run is already queued or in progress for this issue."
@@ -312,7 +315,7 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run),
         alert: "Re-authentication failed: #{e.message}"
     rescue ActiveRecord::RecordNotUnique => e
-      alert = if e.cause&.message&.include?("proxy_token")
+      alert = if (e.cause&.message || e.message).include?("proxy_token")
         "An unexpected error occurred. Please try again."
       else
         "An agent run is already queued or in progress for this issue."
@@ -384,22 +387,23 @@ module Projects
         trigger_type: "automatic"
       )
       ProcessRunQueueJob.perform_later
-      true
+      :enqueued
     rescue NoRunnableProviderError => e
       Rails.logger.warn(
         message: "agent_execution.resume_run_skipped",
         reason: e.message,
         pull_request_number: pr.github_number
       )
-      false
+      :no_provider
     rescue ActiveRecord::RecordNotUnique => e
-      if e.cause&.message&.include?("idx_agent_runs_unique_active_pr")
+      constraint_message = e.cause&.message || e.message
+      if constraint_message.include?("idx_agent_runs_unique_active_pr")
         Rails.logger.warn(
           message: "agent_execution.resume_run_skipped",
           reason: "run_already_queued",
           pull_request_number: pr.github_number
         )
-        false
+        :already_active
       else
         raise
       end
@@ -420,7 +424,7 @@ module Projects
     rescue NoRunnableProviderError => e
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique => e
-      alert = if e.cause&.message&.include?("proxy_token")
+      alert = if (e.cause&.message || e.message).include?("proxy_token")
         "An unexpected error occurred. Please try again."
       else
         "An agent run is already queued or in progress."

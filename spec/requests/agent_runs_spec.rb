@@ -876,6 +876,38 @@ RSpec.describe "AgentRuns" do
         }.to have_enqueued_job(ProcessRunQueueJob)
       end
 
+      it "does not enqueue an agent run when resuming if no providers are available" do
+        pr.update!(auto_continue_paused: true)
+
+        allow(AgentRun).to receive(:create!)
+          .and_raise(Projects::AgentRunsController::NoRunnableProviderError, "No runnable provider")
+
+        expect {
+          expect {
+            post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+          }.not_to change(AgentRun, :count)
+        }.not_to have_enqueued_job(ProcessRunQueueJob)
+
+        expect(pr.reload.auto_continue_paused).to be false
+        expect(flash[:notice]).to include("provider")
+      end
+
+      it "does not enqueue an agent run when resuming if an active run already exists" do
+        pr.update!(auto_continue_paused: true)
+
+        constraint_error = ActiveRecord::RecordNotUnique.new("idx_agent_runs_unique_active_pr")
+        allow(AgentRun).to receive(:create!).and_raise(constraint_error)
+
+        expect {
+          expect {
+            post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+          }.not_to change(AgentRun, :count)
+        }.not_to have_enqueued_job(ProcessRunQueueJob)
+
+        expect(pr.reload.auto_continue_paused).to be false
+        expect(flash[:notice]).to include("already queued or in progress")
+      end
+
       it "does not enqueue an agent run when pausing" do
         expect(pr.auto_continue_paused).to be false
 
