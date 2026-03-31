@@ -3,6 +3,51 @@
 class Project < ApplicationRecord
   MERGE_METHODS = %w[squash merge rebase].freeze
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
+  REVIEW_METHODS = %w[copilot paid_agent ci_action manual none].freeze
+
+  DEFAULT_REVIEW_SETTINGS = {
+    "enabled" => false,
+    "wait_for_reviews" => true,
+    "methods" => {
+      "copilot" => {
+        "enabled" => false,
+        "termination" => {
+          "max_review_rounds" => 2,
+          "stop_when_no_comments" => true,
+          "quality_threshold" => nil,
+          "timeout_minutes" => nil
+        }
+      },
+      "paid_agent" => {
+        "enabled" => false,
+        "termination" => {
+          "max_review_rounds" => 3,
+          "stop_when_no_comments" => true,
+          "quality_threshold" => nil,
+          "timeout_minutes" => 30
+        }
+      },
+      "ci_action" => {
+        "enabled" => false,
+        "action_name" => nil,
+        "termination" => {
+          "max_review_rounds" => nil,
+          "stop_when_no_comments" => true,
+          "quality_threshold" => nil,
+          "timeout_minutes" => nil
+        }
+      },
+      "manual" => {
+        "enabled" => false,
+        "termination" => {
+          "max_review_rounds" => nil,
+          "stop_when_no_comments" => false,
+          "quality_threshold" => nil,
+          "timeout_minutes" => 1440
+        }
+      }
+    }
+  }.freeze
 
   AUTOMATION_SETTINGS = [
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
@@ -61,6 +106,7 @@ class Project < ApplicationRecord
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
   validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
+  validate :review_settings_valid
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -278,6 +324,30 @@ class Project < ApplicationRecord
     )
   end
 
+  def effective_review_settings
+    DEFAULT_REVIEW_SETTINGS.deep_merge(review_settings || {})
+  end
+
+  def review_enabled?
+    effective_review_settings["enabled"] == true
+  end
+
+  def wait_for_reviews?
+    effective_review_settings["wait_for_reviews"] != false
+  end
+
+  def review_method_enabled?(method)
+    effective_review_settings.dig("methods", method.to_s, "enabled") == true
+  end
+
+  def enabled_review_methods
+    REVIEW_METHODS.select { |m| review_method_enabled?(m) }
+  end
+
+  def review_method_config(method)
+    effective_review_settings.dig("methods", method.to_s) || {}
+  end
+
   private
 
   def auto_pick_just_enabled?
@@ -344,6 +414,47 @@ class Project < ApplicationRecord
     return if trusted_github_user?(owner_reviewer_login)
 
     errors.add(:owner_reviewer_login, "must be in trusted GitHub usernames")
+  end
+
+  def review_settings_valid
+    return if review_settings.blank?
+
+    unless review_settings.is_a?(Hash)
+      errors.add(:review_settings, "must be a JSON object")
+      return
+    end
+
+    validate_review_methods_config
+  end
+
+  def validate_review_methods_config
+    methods = review_settings["methods"]
+    return unless methods.is_a?(Hash)
+
+    methods.each do |method_name, config|
+      unless REVIEW_METHODS.include?(method_name)
+        errors.add(:review_settings, "contains unknown review method: #{method_name}")
+        next
+      end
+
+      next unless config.is_a?(Hash) && config["enabled"] == true
+
+      validate_termination_config(method_name, config["termination"])
+    end
+  end
+
+  def validate_termination_config(method_name, termination)
+    return unless termination.is_a?(Hash)
+
+    rounds = termination["max_review_rounds"]
+    if rounds.present? && (!rounds.is_a?(Integer) || rounds < 1)
+      errors.add(:review_settings, "#{method_name} max_review_rounds must be a positive integer")
+    end
+
+    timeout = termination["timeout_minutes"]
+    if timeout.present? && (!timeout.is_a?(Integer) || timeout < 1)
+      errors.add(:review_settings, "#{method_name} timeout_minutes must be a positive integer")
+    end
   end
 
   def allowed_github_usernames_not_empty

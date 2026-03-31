@@ -76,6 +76,7 @@ class ProjectsController < ApplicationController
 
     update_params = project_params
     update_params = update_params.merge(allowed_github_usernames: parse_usernames_csv) if params.dig(:project, :allowed_github_usernames_csv)
+    update_params = update_params.merge(review_settings: build_review_settings) if params.dig(:project, :review_settings)
 
     if @project.update(update_params)
       redirect_to @project, notice: "Project was successfully updated."
@@ -160,6 +161,50 @@ class ProjectsController < ApplicationController
       :auto_fix_merge_conflicts, :generated_label_name, :automation_label_name,
       :auto_add_labels_enabled, :automation_on_label_enabled,
       allowed_github_usernames: [])
+  end
+
+  TERMINATION_KEYS = %i[max_review_rounds stop_when_no_comments quality_threshold timeout_minutes].freeze
+
+  def build_review_settings
+    termination_permit = { termination: TERMINATION_KEYS }
+    rs = params.require(:project).permit(
+      review_settings: [
+        :enabled, :wait_for_reviews,
+        { methods: {
+          copilot: [ :enabled, termination_permit ],
+          paid_agent: [ :enabled, termination_permit ],
+          ci_action: [ :enabled, :action_name, termination_permit ],
+          manual: [ :enabled, termination_permit ]
+        } }
+      ]
+    ).dig(:review_settings)
+
+    return {} unless rs
+
+    settings = rs.to_h
+    cast_review_settings(settings)
+  end
+
+  def cast_review_settings(settings)
+    settings["enabled"] = ActiveModel::Type::Boolean.new.cast(settings["enabled"]) if settings.key?("enabled")
+    settings["wait_for_reviews"] = ActiveModel::Type::Boolean.new.cast(settings["wait_for_reviews"]) if settings.key?("wait_for_reviews")
+
+    if settings["methods"].is_a?(Hash)
+      settings["methods"].each_value do |config|
+        next unless config.is_a?(Hash)
+
+        config["enabled"] = ActiveModel::Type::Boolean.new.cast(config["enabled"]) if config.key?("enabled")
+        next unless config["termination"].is_a?(Hash)
+
+        term = config["termination"]
+        term["max_review_rounds"] = term["max_review_rounds"].present? ? term["max_review_rounds"].to_i : nil
+        term["timeout_minutes"] = term["timeout_minutes"].present? ? term["timeout_minutes"].to_i : nil
+        term["stop_when_no_comments"] = ActiveModel::Type::Boolean.new.cast(term["stop_when_no_comments"]) if term.key?("stop_when_no_comments")
+        term["quality_threshold"] = term["quality_threshold"].presence
+      end
+    end
+
+    settings
   end
 
   def parse_usernames_csv
