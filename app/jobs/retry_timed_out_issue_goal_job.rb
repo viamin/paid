@@ -31,17 +31,27 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
       return
     end
 
-    new_run = AgentRun.create!(
-      project: agent_run.project,
-      issue: agent_run.issue,
-      provider: agent_run.provider,
-      agent_type: agent_run.agent_type,
-      custom_prompt: agent_run.custom_prompt,
-      source_pull_request_number: agent_run.source_pull_request_number,
-      goal: agent_run.goal,
-      trigger_type: "automatic",
-      status: "queued"
-    )
+    begin
+      new_run = AgentRun.create!(
+        project: agent_run.project,
+        issue: agent_run.issue,
+        provider: agent_run.provider,
+        agent_type: agent_run.agent_type,
+        custom_prompt: agent_run.custom_prompt,
+        source_pull_request_number: agent_run.source_pull_request_number,
+        goal: agent_run.goal,
+        trigger_type: "automatic",
+        status: "queued"
+      )
+    rescue ActiveRecord::RecordNotUnique
+      Rails.logger.info(
+        message: "agent_execution.issue_goal_auto_retry_skipped_existing_run",
+        original_agent_run_id: agent_run.id,
+        issue_id: agent_run.issue_id,
+        project_id: agent_run.project_id
+      )
+      return
+    end
 
     agent_run.retry!
 
@@ -63,13 +73,26 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
     agent_run.status == "timeout" && agent_run.create_issue_goal?
   end
 
-  # Counts how many previous issue goal runs for the same issue have
-  # already been attempted (timed out or retried), excluding the current run.
+  # Counts how many previous issue goal runs for the same issue (when present)
+  # or for the same goal parameters (when issue is nil) have already been
+  # attempted (timed out or retried), excluding the current run.
   def count_previous_attempts(agent_run)
-    return MAX_RETRIES unless agent_run.issue_id
+    scope =
+      if agent_run.issue_id
+        agent_run.issue.agent_runs.where(goal: "create_issue")
+      else
+        AgentRun.where(
+          project_id: agent_run.project_id,
+          goal: agent_run.goal,
+          issue_id: nil,
+          provider: agent_run.provider,
+          agent_type: agent_run.agent_type,
+          custom_prompt: agent_run.custom_prompt,
+          source_pull_request_number: agent_run.source_pull_request_number
+        )
+      end
 
-    agent_run.issue.agent_runs
-      .where(goal: "create_issue")
+    scope
       .where(status: %w[timeout retried])
       .where.not(id: agent_run.id)
       .count

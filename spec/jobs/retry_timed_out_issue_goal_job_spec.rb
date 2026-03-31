@@ -96,5 +96,48 @@ RSpec.describe RetryTimedOutIssueGoalJob do
       expect { described_class.perform_now(agent_run.id) }
         .to change(AgentRun, :count).by(1)
     end
+
+    context "when issue is nil" do
+      it "retries a timed-out create_issue run without an issue" do
+        agent_run = create(:agent_run, :timeout, :create_issue_goal,
+          project: project)
+
+        expect { described_class.perform_now(agent_run.id) }
+          .to change(AgentRun, :count).by(1)
+
+        new_run = AgentRun.last
+        expect(new_run.status).to eq("queued")
+        expect(new_run.goal).to eq("create_issue")
+        expect(new_run.issue).to be_nil
+        expect(new_run.custom_prompt).to eq(agent_run.custom_prompt)
+      end
+
+      it "counts previous attempts by matching goal parameters" do
+        base_attrs = {
+          project: project, issue: nil, goal: "create_issue",
+          custom_prompt: "Create a GitHub issue for the requested task",
+          status: "retried"
+        }
+
+        described_class::MAX_RETRIES.times do
+          create(:agent_run, :create_issue_goal, **base_attrs)
+        end
+
+        agent_run = create(:agent_run, :timeout, :create_issue_goal,
+          project: project)
+
+        expect { described_class.perform_now(agent_run.id) }
+          .not_to change(AgentRun, :count)
+      end
+    end
+
+    it "skips retry when an active run already exists for the same issue" do
+      agent_run = create_timed_out_issue_goal_run
+      # Create an active (queued) run for the same project+issue to trigger unique index
+      create(:agent_run, :create_issue_goal, project: project, issue: issue, status: "queued")
+
+      expect { described_class.perform_now(agent_run.id) }
+        .not_to change(AgentRun, :count)
+    end
   end
 end
