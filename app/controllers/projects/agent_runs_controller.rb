@@ -225,7 +225,7 @@ module Projects
         issue: @agent_run.issue,
         provider: retry_provider,
         agent_type: agent_type,
-        custom_prompt: @agent_run.custom_prompt,
+        custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
         trigger_type: "manual",
@@ -292,7 +292,7 @@ module Projects
         issue: @agent_run.issue,
         provider: @agent_run.provider,
         agent_type: @agent_run.agent_type,
-        custom_prompt: @agent_run.custom_prompt,
+        custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
         trigger_type: "manual",
@@ -324,6 +324,17 @@ module Projects
     end
 
     private
+
+    # Clear auto-generated prompts on retry so PreparePrPromptActivity rebuilds
+    # them with current state (service containers, CI status, review threads).
+    # User-supplied prompts are preserved as-is.
+    def prompt_for_retry(agent_run)
+      if agent_run.agent_run_phases.exists?(phase_key: "prepare_pr_prompt")
+        nil
+      else
+        agent_run.custom_prompt
+      end
+    end
 
     def set_project
       @project = policy_scope(Project).find(params[:project_id])

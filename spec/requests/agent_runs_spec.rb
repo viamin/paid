@@ -1067,13 +1067,23 @@ RSpec.describe "AgentRuns" do
         expect(new_run.provider_id).to eq(enabled_provider.id)
       end
 
-      it "preserves custom_prompt from the original run" do
+      it "preserves user-supplied custom_prompt from the original run" do
         agent_run = create(:agent_run, :failed, :with_custom_prompt, project: project)
 
         post retry_project_agent_run_path(project, agent_run)
 
         new_run = AgentRun.last
         expect(new_run.custom_prompt).to eq(agent_run.custom_prompt)
+      end
+
+      it "clears auto-generated prompt so it is rebuilt on retry" do
+        agent_run = create(:agent_run, :failed, project: project, custom_prompt: "# Task\n\nAuto-generated prompt")
+        create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt")
+
+        post retry_project_agent_run_path(project, agent_run)
+
+        new_run = AgentRun.last
+        expect(new_run.custom_prompt).to be_nil
       end
 
       it "preserves source_pull_request_number from the original run" do
