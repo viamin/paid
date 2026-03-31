@@ -865,6 +865,7 @@ RSpec.describe "AgentRuns" do
         expect(run.source_pull_request_number).to eq(pr.github_number)
         expect(run.status).to eq("queued")
         expect(run.goal).to eq("create_pr")
+        expect(run.trigger_type).to eq("automatic")
       end
 
       it "enqueues ProcessRunQueueJob when resuming" do
