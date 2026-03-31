@@ -15,6 +15,7 @@ module Activities
       issue_id = input[:issue_id]
       custom_prompt = input[:custom_prompt]
       agent_type = input.fetch(:agent_type, "claude_code")
+      provider_id = input[:provider_id]
       goal = input.fetch(:goal, "create_pr")
       source_pull_request_number = input[:source_pull_request_number]
 
@@ -54,6 +55,7 @@ module Activities
       agent_run = AgentRun.create!(
         project: project,
         issue: issue,
+        provider_id: provider_id,
         agent_type: agent_type,
         goal: goal,
         custom_prompt: custom_prompt,
@@ -93,7 +95,7 @@ module Activities
 
         {
           agent_run_id: agent_run.id,
-          provider_attempt_count: provider_attempt_count_for(agent_type, user_settings),
+          provider_attempt_count: provider_attempt_count_for(agent_run, user_settings),
           agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
           issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,
           scope_analysis: scope_result ? {
@@ -136,7 +138,7 @@ module Activities
       user_settings = resolve_user_settings(agent_run.project)
       {
         agent_run_id: agent_run.id,
-        provider_attempt_count: provider_attempt_count_for(agent_run.agent_type, user_settings),
+        provider_attempt_count: provider_attempt_count_for(agent_run, user_settings),
         agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
         issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
       }
@@ -176,15 +178,24 @@ module Activities
       AgentRuns::UserSettingsResolver.call(project: project, strict: false)
     end
 
-    def provider_attempt_count_for(agent_type, user_settings)
+    def provider_attempt_count_for(agent_run, user_settings)
       return 1 unless user_settings
 
-      primary_provider = Activities::RunAgentActivity::AGENT_TYPE_TO_PROVIDER.fetch(agent_type, agent_type)
+      if agent_run.provider
+        return 1 unless user_settings.fallback_enabled?
+
+        return [ 1 + user_settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true).size, 1 ].max
+      end
+
+      primary_provider = Activities::RunAgentActivity::AGENT_TYPE_TO_PROVIDER.fetch(agent_run.agent_type, agent_run.agent_type)
+      fallback_providers = user_settings.fallback_priority_for(primary_provider: primary_provider, identifiers: true).map do |identifier|
+        Provider.for_identifier(user_settings.user, identifier)&.provider_key || identifier
+      end
 
       count = Activities::RunAgentActivity.provider_attempt_count(
-        agent_type: agent_type,
+        agent_type: agent_run.agent_type,
         fallback_enabled: user_settings.fallback_enabled,
-        fallback_providers: user_settings.fallback_priority_for(primary_provider: primary_provider)
+        fallback_providers: fallback_providers
       )
 
       [ count, 1 ].max

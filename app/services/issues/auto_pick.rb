@@ -21,6 +21,8 @@ module Issues
   #
   # Returns the created AgentRun or nil if no eligible issue is found.
   class AutoPick
+    NoRunnableProviderError = Class.new(StandardError)
+
     EXCLUDED_LABELS = %w[planning research waiting tracking epic].freeze
     PAID_READY_LABEL = "paid-ready"
 
@@ -108,6 +110,13 @@ module Issues
         )
         nil
       end
+    rescue NoRunnableProviderError => e
+      Rails.logger.warn(
+        message: "auto_pick.no_runnable_provider",
+        project_id: @project.id,
+        error: e.message
+      )
+      nil
     end
 
     private
@@ -214,22 +223,28 @@ module Issues
     end
 
     def create_agent_run(issue)
+      provider = resolve_provider
+      raise NoRunnableProviderError, "No runnable provider could be resolved for this project." unless provider
+
       AgentRun.create!(
         project: @project,
         issue: issue,
-        agent_type: resolve_agent_type,
+        provider: provider,
+        agent_type: Provider.agent_type_for(provider.provider_key),
         status: "queued",
         trigger_type: "automatic",
         auto_pick: true
       )
     end
 
-    def resolve_agent_type
-      settings = AgentRuns::UserSettingsResolver.call(project: @project, strict: false)
-      return "claude_code" unless settings
+    def resolve_provider
+      owner = @project.effective_owner
+      return unless owner
 
-      provider_key = settings.default_agent_provider
-      provider_key == "claude" ? "claude_code" : provider_key
+      settings = AgentRuns::UserSettingsResolver.call(project: @project, strict: false)
+      return Provider.ensure_default_for(owner) unless settings
+
+      Provider.for_identifier(settings.user, settings.default_provider_identifier) || Provider.ensure_default_for(settings.user)
     end
   end
 end

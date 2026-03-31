@@ -3,12 +3,6 @@
 require "agent_harness"
 require Rails.root.join("lib/provider_support").to_s
 
-# Compatibility shim: ensure AuthenticationError exists for agent-harness
-# versions older than 0.4.0 that may not define it.
-if defined?(AgentHarness::Error) && !defined?(AgentHarness::AuthenticationError)
-  AgentHarness::AuthenticationError = Class.new(AgentHarness::Error)
-end
-
 # Default agent timeout used for AgentHarness boot-time config and as a
 # fallback when per-user settings are unavailable. Runtime code should
 # prefer UserSetting#agent_timeout_seconds resolved via
@@ -45,12 +39,10 @@ AgentHarness.configure do |config|
       provider.priority = (index + 1) * 10
       provider.timeout = AGENT_TIMEOUT_DEFAULT if harness_provider_key == :claude
 
-      # Forward container execution flags (e.g. sandbox bypass) to the harness
-      # so its command builder matches the container runtime behaviour.
-      # TODO(#596): Remove once agent-harness (viamin/agent-harness#48)
-      # handles container sandbox mode natively.
-      container_flags = ProviderSupport.container_execution_flags_for(provider_key)
-      provider.default_flags = container_flags if container_flags.any?
+      # Tell the harness that container-executed providers are externally
+      # sandboxed so provider-specific nested sandbox mechanisms (e.g.
+      # Codex bubblewrap) are bypassed automatically.
+      provider.externally_sandboxed = true
     end
   end
 

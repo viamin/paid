@@ -1,15 +1,22 @@
 # frozen_string_literal: true
 
+require "base64"
+require "shellwords"
+
 class Provider < ApplicationRecord
   AUTH_TYPES = %w[subscription api_key].freeze
   FALLBACK_ROLES = %w[standard rate_limit_fallback].freeze
+  ROUTING_KEY_PREFIX = "provider:".freeze
+  OPENCODE_API_PROVIDER_KEYS = %w[openrouter].freeze
+  OPENCODE_DEFAULT_API_PROVIDER = "openrouter"
+  OPENCODE_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1".freeze
 
   belongs_to :user
   belongs_to :provider_api_key, optional: true
 
   scope :for_agent_runs, -> { where(enabled_for_agent_runs: true) }
   scope :for_fallback, -> { where(enabled_for_fallback: true) }
-  scope :ordered, -> { order(:provider_key, :auth_type) }
+  scope :ordered, -> { order(:provider_key, :auth_type, :name, :id) }
   scope :subscription, -> { where(auth_type: "subscription") }
   scope :api_key, -> { where(auth_type: "api_key") }
   scope :rate_limit_fallback, -> { where(fallback_role: "rate_limit_fallback") }
@@ -23,9 +30,6 @@ class Provider < ApplicationRecord
   validates :provider_key,
     uniqueness: { scope: [ :user_id, :auth_type ], message: "already has a subscription entry" },
     if: -> { subscription? }
-  validates :provider_key,
-    uniqueness: { scope: [ :user_id, :provider_api_key_id ], message: "already has an entry with this API key" },
-    if: -> { api_key? }
 
   validate :must_keep_at_least_one_agent_run_provider
   validate :default_provider_must_remain_enabled_for_agent_runs
@@ -34,6 +38,8 @@ class Provider < ApplicationRecord
   validate :api_key_must_be_compatible
   validate :api_key_must_belong_to_same_user
   validate :subscription_must_have_standard_fallback_role
+  validate :api_key_entry_must_be_unique
+  validate :opencode_api_key_config_must_be_valid
 
   before_destroy :prevent_destroying_last_agent_run_provider
   before_destroy :prevent_destroying_default_provider
@@ -53,9 +59,100 @@ class Provider < ApplicationRecord
   def display_name
     return name if name.present?
 
-    label = provider_key.titleize
+    label = self.class.display_name_for(provider_key)
+    if provider_key == "opencode" && opencode_model_id.present?
+      label += " #{opencode_model_id}"
+    end
     label += " (API Key)" if api_key?
     label
+  end
+
+  def routing_key
+    persisted? ? "#{ROUTING_KEY_PREFIX}#{id}" : provider_key.to_s
+  end
+
+  def matches_identifier?(identifier)
+    id_str = identifier.to_s
+    return true if id_str == routing_key || id_str == provider_key.to_s
+
+    # Also match agent_type identifiers (e.g. "claude_code") that map
+    # to this provider's key (e.g. "claude") so that legacy final_provider
+    # values are handled correctly.
+    normalized = ProviderSupport.provider_key_for_agent_type(id_str)
+    normalized != id_str && normalized == provider_key.to_s
+  end
+
+  def state_key
+    subscription? ? provider_key.to_s : routing_key
+  end
+
+  def opencode_config
+    config.is_a?(Hash) ? config.fetch("opencode", {}) : {}
+  end
+
+  def opencode_api_provider
+    return nil unless provider_key == "opencode"
+
+    opencode_config["api_provider"].presence || OPENCODE_DEFAULT_API_PROVIDER
+  end
+
+  def opencode_model_id
+    return nil unless provider_key == "opencode"
+
+    opencode_config["model"].to_s.presence
+  end
+
+  def requires_direct_outbound?
+    provider_key == "opencode" &&
+      api_key? &&
+      opencode_api_provider == "openrouter" &&
+      opencode_model_id.present?
+  end
+
+  def opencode_config_json
+    provider_id = "paid-provider-#{id || provider_key}"
+    model_id = opencode_model_id
+    raise ArgumentError, "Missing OpenCode model id for provider #{id || provider_key}" if model_id.blank?
+
+    JSON.pretty_generate(
+      {
+        "$schema" => "https://opencode.ai/config.json",
+        "provider" => {
+          provider_id => {
+            "npm" => "@ai-sdk/openai-compatible",
+            "name" => display_name,
+            "options" => {
+              "baseURL" => OPENCODE_DEFAULT_BASE_URL,
+              "apiKey" => provider_api_key&.api_key.to_s
+            },
+            "models" => {
+              model_id => {
+                "name" => model_id
+              }
+            }
+          }
+        },
+        "model" => "#{provider_id}/#{model_id}"
+      }
+    )
+  end
+
+  def direct_outbound_exec_env
+    return {} unless requires_direct_outbound?
+
+    { "PAID_OPENCODE_CONFIG_B64" => Base64.strict_encode64(opencode_config_json) }
+  end
+
+  def direct_outbound_exec_command(command_prefix:, prompt:)
+    return command_prefix + [ prompt ] unless requires_direct_outbound?
+
+    command = "#{command_prefix.shelljoin} \"$1\""
+    script = <<~SH.squish
+      mkdir -p /home/agent/.config/opencode &&
+      printf '%s' "$PAID_OPENCODE_CONFIG_B64" | base64 -d > /home/agent/.config/opencode/opencode.json &&
+      #{command}
+    SH
+    [ "sh", "-lc", script, "--", prompt ]
   end
 
   # Returns the provider key that must always exist and remain enabled for
@@ -91,7 +188,6 @@ class Provider < ApplicationRecord
     provider_key.to_s.titleize
   end
 
-  # Keep backward compatibility - class-level display_name delegates to display_name_for
   def self.display_name(provider_key)
     display_name_for(provider_key)
   end
@@ -124,17 +220,50 @@ class Provider < ApplicationRecord
     ProviderSupport.agent_type_for(provider_key)
   end
 
+  def self.compatibility_label_for(target)
+    return "OpenRouter" if target.to_s == "openrouter"
+
+    target.to_s
+  end
+
+  def self.required_api_key_targets_for(provider_key:, config: nil)
+    return [ OPENCODE_DEFAULT_API_PROVIDER ] if provider_key.to_s == "opencode"
+
+    [ provider_key.to_s ]
+  end
+
+  def self.routing_key?(identifier)
+    identifier.to_s.start_with?(ROUTING_KEY_PREFIX)
+  end
+
+  def self.id_from_routing_key(identifier)
+    return unless routing_key?(identifier)
+
+    id_str = identifier.to_s.delete_prefix(ROUTING_KEY_PREFIX)
+    id = Integer(id_str, exception: false)
+    return unless id&.positive?
+
+    id
+  end
+
+  def self.for_identifier(user, identifier)
+    return nil unless user
+    return nil if identifier.blank?
+
+    if routing_key?(identifier)
+      user.providers.find_by(id: id_from_routing_key(identifier))
+    else
+      matching_providers = user.providers.where(provider_key: identifier).ordered
+      matching_providers.subscription.first || matching_providers.first
+    end
+  end
+
   # Updates the enabled_for_fallback flag on each of the user's providers
-  # based on the given set of enabled provider keys. Wraps all updates in
-  # a transaction and skips providers whose flag already matches.
-  #
-  # @param user [User] the user whose providers to update
-  # @param enabled_keys [Array<String>] provider keys that should be enabled
-  # @return [void]
+  # based on the given set of enabled provider identifiers.
   def self.update_fallback_flags(user, enabled_keys)
     user.providers.transaction do
       user.providers.find_each do |provider|
-        new_value = enabled_keys.include?(provider.provider_key)
+        new_value = enabled_keys.any? { |identifier| provider.matches_identifier?(identifier) }
         next if provider.enabled_for_fallback? == new_value
 
         unless provider.update(enabled_for_fallback: new_value)
@@ -149,7 +278,6 @@ class Provider < ApplicationRecord
   def must_keep_at_least_one_agent_run_provider
     return unless user
     return unless will_save_change_to_enabled_for_agent_runs?(from: true, to: false)
-
     return if user.providers.where.not(id: id).for_agent_runs.exists?
 
     errors.add(:enabled_for_agent_runs, "must keep at least one provider enabled for agent runs")
@@ -203,16 +331,16 @@ class Provider < ApplicationRecord
     return if provider_api_key_id.blank?
     return unless provider_api_key
 
-    return if provider_api_key.compatible_with?(provider_key)
+    targets = self.class.required_api_key_targets_for(provider_key: provider_key, config: config)
+    return if targets.any? { |target| provider_api_key.compatible_with?(target) }
 
-    errors.add(:provider_api_key, "is not compatible with #{provider_key}")
+    errors.add(:provider_api_key, "is not compatible with #{self.class.compatibility_label_for(targets.first)}")
   end
 
   def api_key_must_belong_to_same_user
     return unless api_key?
     return if provider_api_key_id.blank?
     return unless provider_api_key
-
     return if provider_api_key.user_id == user_id
 
     errors.add(:provider_api_key, "must belong to the same user")
@@ -223,5 +351,32 @@ class Provider < ApplicationRecord
     return if fallback_role == "standard"
 
     errors.add(:fallback_role, "must be standard for subscription providers")
+  end
+
+  def api_key_entry_must_be_unique
+    return unless api_key?
+    return unless user
+
+    normalized_name = name.to_s
+    duplicate = user.providers.api_key.where(
+      provider_key: provider_key,
+      provider_api_key_id: provider_api_key_id
+    ).where.not(id: id).where("COALESCE(name, '') = ?", normalized_name).exists?
+    return unless duplicate
+
+    errors.add(:provider_key, "already has an entry with this API key")
+  end
+
+  def opencode_api_key_config_must_be_valid
+    return unless provider_key == "opencode"
+    return unless api_key?
+
+    unless OPENCODE_API_PROVIDER_KEYS.include?(opencode_api_provider)
+      errors.add(:config, "must include a supported OpenCode API provider")
+    end
+
+    # Model ID is only required when direct-outbound routing is intended
+    # (i.e. a supported api_provider is configured). Providers without a
+    # model fall back to the non-direct-outbound path via the secrets proxy.
   end
 end

@@ -52,7 +52,8 @@
               <% end %>
             </td>
             <td class="px-4 py-3 text-sm">
-              <% state = @provider_states[provider.provider_key] %>
+              <% state = @provider_states[provider.state_key] %>
+              <% state ||= @provider_states[provider.provider_key] if provider.subscription? %>
               <% if state&.rate_limited? %>
                 <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">
                   Rate Limited
@@ -104,6 +105,7 @@
         <p class="mt-1 text-xs text-gray-600">Use one of these:</p>
         <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-gray-700">
           <li>Set <code>OPENAI_API_KEY</code> on the <code>web</code> service for proxy-based auth.</li>
+          <li>OpenCode API-key entries can also talk directly to OpenRouter using a saved OpenRouter key plus a provider-level model ID.</li>
           <li>Or sign in with the Codex CLI and make <code>~/.codex/auth.json</code> visible to Paid.</li>
           <li>If Codex creds live elsewhere, set <code>CODEX_CONFIG_DIR</code> or <code>CODEX_HOME</code>. OpenCode uses the proxy path and does not currently have a separate local credential directory.</li>
         </ul>

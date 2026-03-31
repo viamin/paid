@@ -16,6 +16,8 @@ RSpec.describe "Providers" do
     end
 
     context "when authenticated" do
+      let(:opencode_api_key) { create(:provider_api_key, user: user, compatible_providers: %w[openrouter]) }
+
       before { sign_in user }
 
       it "renders index" do
@@ -42,6 +44,46 @@ RSpec.describe "Providers" do
 
         expect(response.body).to include("Add Provider")
       end
+
+      it "does not reuse canonical provider state for api-key entries" do
+        provider = user.providers.create!(
+          provider_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: opencode_api_key,
+          name: "Kimi K2.5",
+          enabled_for_agent_runs: true,
+          config: {
+            "opencode" => {
+              "api_provider" => "openrouter",
+              "model" => "moonshotai/kimi-k2-0905"
+            }
+          }
+        )
+        user.provider_states.create!(provider_name: provider.provider_key, circuit_opened_at: 1.minute.ago)
+
+        get providers_path
+
+        expect(response.body).to match(/Kimi K2\.5.*Available/m)
+        expect(response.body).not_to match(/Kimi K2\.5.*Circuit Open/m)
+      end
+
+      it "still shows canonical provider state for subscription fallback entries" do
+        cursor = user.providers.create!(
+          provider_key: "cursor",
+          auth_type: "subscription",
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true
+        )
+        user.provider_states.create!(
+          provider_name: "cursor",
+          circuit_state: "open",
+          circuit_opened_at: 1.minute.ago
+        )
+
+        get providers_path
+
+        expect(response.body).to match(/#{Regexp.escape(cursor.display_name)}.*Circuit open/m)
+      end
     end
   end
 
@@ -52,8 +94,8 @@ RSpec.describe "Providers" do
     end
 
     it "updates provider priority settings from the providers page" do
-      user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
-      user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: true)
+      cursor = user.providers.create!(provider_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      aider = user.providers.create!(provider_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: true)
 
       patch settings_providers_path, params: {
         user_setting: {
@@ -65,9 +107,9 @@ RSpec.describe "Providers" do
 
       expect(response).to redirect_to(providers_path)
       settings = user.reload.settings
-      expect(settings.default_agent_provider).to eq("cursor")
+      expect(settings.default_agent_provider).to eq(cursor.routing_key)
       expect(settings.fallback_enabled).to be(true)
-      expect(settings.fallback_providers).to eq(%w[claude aider])
+      expect(settings.fallback_providers).to eq([ user.providers.find_by!(provider_key: "claude").routing_key, aider.routing_key ])
     end
 
     it "disables fallback for providers not in enabled_fallback_provider_keys" do
@@ -213,6 +255,31 @@ RSpec.describe "Providers" do
       expect(user.providers.find_by(provider_key: "opencode")).to be_present
     end
 
+    it "persists nested OpenCode config for API-key providers" do
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
+
+      post providers_path, params: {
+        provider: {
+          provider_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key_id: api_key.id,
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true,
+          config: {
+            opencode: {
+              api_provider: "openrouter",
+              model: "moonshotai/kimi-k2-0905"
+            }
+          }
+        }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      provider = user.providers.find_by!(provider_key: "opencode", auth_type: "api_key")
+      expect(provider.opencode_api_provider).to eq("openrouter")
+      expect(provider.opencode_model_id).to eq("moonshotai/kimi-k2-0905")
+    end
+
     it "creates an aider provider successfully" do
       post providers_path, params: { provider: { provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
@@ -290,6 +357,32 @@ RSpec.describe "Providers" do
 
       expect(response).to redirect_to(providers_path)
       expect(provider.reload.provider_key).to eq("claude")
+    end
+
+    it "preserves auth_type for the edit form without submitting it" do
+      api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
+      provider = user.providers.create!(
+        provider_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      get edit_provider_path(provider)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('data-provider-form-auth-type-value="api_key"')
+      expect(response.body).not_to include('name="provider[auth_type]"')
+    end
+
+    it "renders OpenCode config inputs disabled for non-OpenCode providers" do
+      provider = user.providers.find_by!(provider_key: "claude")
+
+      get edit_provider_path(provider)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to match(/name="provider\[config\]\[opencode\]\[api_provider\]".*disabled/m)
+      expect(response.body).to match(/name="provider\[config\]\[opencode\]\[model\]".*disabled/m)
     end
   end
 

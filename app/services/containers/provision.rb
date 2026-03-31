@@ -184,15 +184,18 @@ module Containers
     #   the first output has been received. Raises +IdleTimeoutError+ if output
     #   stops flowing for longer than this duration.
     # @param stream [Boolean] Whether to stream output to agent logs
+    # @param env [Hash] Environment variables for the exec invocation
     # @return [Result] Result with stdout, stderr, and exit_code
     # @raise [StartupTimeoutError] when no output is received within +startup_timeout+ seconds
     # @raise [IdleTimeoutError] when output stops for more than +idle_timeout+ seconds
     # @raise [TimeoutError] when total wall-clock +timeout+ is exceeded
-    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true)
+    def execute(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {})
       raise ProvisionError, "Container not provisioned" unless container
 
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
+      exec_options = { wait: timeout }
+      exec_options[:Env] = env.map { |key, value| "#{key}=#{value}" } if env.present?
 
       log_system("container.execute.start", command: command.to_s.encode("UTF-8", invalid: :replace).truncate(200))
 
@@ -241,7 +244,7 @@ module Containers
       begin
         watchdog = start_watchdog(watchdog_ctx)
 
-        exec_result = container.exec(cmd_array, wait: timeout) do |stream_type, chunk|
+        exec_result = container.exec(cmd_array, exec_options) do |stream_type, chunk|
           watchdog_mutex.synchronize do
             output_received = true
             last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -903,7 +906,40 @@ module Containers
     end
 
     def direct_outbound_provider?
-      agent_run.agent_type.to_s == "kilocode"
+      return @direct_outbound_provider if instance_variable_defined?(:@direct_outbound_provider)
+
+      @direct_outbound_provider = compute_direct_outbound_provider?
+    end
+
+    def compute_direct_outbound_provider?
+      return true if agent_run.agent_type.to_s == "kilocode"
+      return true if agent_run.provider&.requires_direct_outbound?
+
+      settings = resolved_user_settings
+      return false unless settings&.fallback_enabled?
+
+      fallback_providers_require_direct_outbound?(settings)
+    end
+
+    def fallback_providers_require_direct_outbound?(settings)
+      primary_identifier = agent_run.provider&.routing_key || settings.default_provider_identifier
+      fallback_identifiers = settings.fallback_priority_for(primary_provider: primary_identifier, identifiers: true)
+      fallback_providers_by_id = settings.user.providers.where(
+        id: fallback_identifiers.filter_map { |identifier| Provider.id_from_routing_key(identifier) }
+      ).index_by(&:id)
+
+      fallback_identifiers.any? do |identifier|
+        provider_id = Provider.id_from_routing_key(identifier)
+        provider = provider_id && fallback_providers_by_id[provider_id]
+
+        next true if identifier.to_s == "kilocode" || provider&.provider_key == "kilocode"
+
+        provider&.requires_direct_outbound?
+      end
+    end
+
+    def resolved_user_settings
+      @resolved_user_settings ||= AgentRuns::UserSettingsResolver.call(project: agent_run.project, strict: false)
     end
 
     def environment_variables
