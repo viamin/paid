@@ -326,7 +326,7 @@ class Provider < ApplicationRecord
     required_service = self.class.api_service_type_for(provider_key)
     return if provider_api_key.api_service_type == required_service
 
-    errors.add(:provider_api_key, "must be a #{ProviderSupport.api_service_type_label(required_service)} API key")
+    errors.add(:provider_api_key, "must be an API key for #{ProviderSupport.api_service_type_label(required_service)}")
   end
 
   def api_key_must_belong_to_same_user

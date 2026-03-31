@@ -1,17 +1,32 @@
 import { Controller } from "@hotwired/stimulus"
 
-// Maps provider keys to the API service type their CLI tool requires.
-// Must stay in sync with ProviderSupport::PROVIDER_API_SERVICE_TYPE.
-const PROVIDER_API_SERVICE_TYPE = {
-  claude: "anthropic",
-  cursor: "anthropic",
-  codex: "openai",
-  copilot: "anthropic",
-  aider: "anthropic",
-  gemini: "google",
-  opencode: "openrouter",
-  kilocode: "anthropic",
+// Reads provider→service-type mapping from the backend-provided meta tag so that
+// ProviderSupport::PROVIDER_API_SERVICE_TYPE remains the single source of truth.
+// Falls back to a hardcoded mapping if the meta tag is missing.
+function loadProviderApiServiceType() {
+  try {
+    const meta = document.querySelector("meta[name='provider-api-service-type']")
+    if (meta && meta.content) {
+      const parsed = JSON.parse(meta.content)
+      if (parsed && typeof parsed === "object") return parsed
+    }
+  } catch {
+    // Fall back to the default mapping below.
+  }
+
+  return {
+    claude: "anthropic",
+    cursor: "anthropic",
+    codex: "openai",
+    copilot: "anthropic",
+    aider: "anthropic",
+    gemini: "google",
+    opencode: "openrouter",
+    kilocode: "anthropic",
+  }
 }
+
+const PROVIDER_API_SERVICE_TYPE = loadProviderApiServiceType()
 
 export default class extends Controller {
   static values = {

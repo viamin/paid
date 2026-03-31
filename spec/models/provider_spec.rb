@@ -121,7 +121,7 @@ RSpec.describe Provider do
       provider.provider_key = "cursor"
 
       expect(provider).not_to be_valid
-      expect(provider.errors[:provider_api_key]).to include("must be a Anthropic API key")
+      expect(provider.errors[:provider_api_key]).to include("must be an API key for Anthropic")
     end
   end
 
