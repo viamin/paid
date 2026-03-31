@@ -26,6 +26,13 @@ module Issues
     EXCLUDED_LABELS = %w[planning research waiting tracking epic].freeze
     PAID_READY_LABEL = "paid-ready"
 
+    # SQL ILIKE patterns used to pre-filter potential tracker issues before
+    # applying the full Ruby-level Issue::TRACKER_PATTERN check. Each pattern
+    # must be a *superset* of its TRACKER_PATTERN counterpart so that no
+    # tracker escapes the prefilter (e.g. "remaining%work" covers any
+    # whitespace variant that `remaining\s+work` would match).
+    TRACKER_SQL_PATTERNS = [ "%tracker%", "%remaining%work%", "%completion%criteria%", "%phase%tracker%", "%meta%issue%" ].freeze
+
     # Returns the Set of issue IDs from +displayed_issues+ that are
     # currently eligible for auto-picking (per-issue criteria only;
     # ignores transient project-level guards like active runs or PRs
@@ -55,9 +62,86 @@ module Issues
       trusted_usernames = Array(project.allowed_github_usernames).presence
       scope = scope.where(github_creator_login: trusted_usernames) if trusted_usernames
 
-      EXCLUDED_LABELS.reduce(scope) do |s, label|
+      scope = EXCLUDED_LABELS.reduce(scope) do |s, label|
         s.where.not("labels @> ?::jsonb", [ label ].to_json)
       end
+
+      # Exclude tracker/meta issues that still have open referenced issues.
+      # Trackers are pickable only once every issue referenced in their body
+      # is closed (per collaborator feedback). The ILIKE scan runs against
+      # +scope+ (not all open issues) to limit query cost.
+      blocked_ids = tracker_ids_blocked_by_open_references(scope, project)
+      scope = scope.where.not(id: blocked_ids) if blocked_ids.present?
+
+      scope
+    end
+
+    # Identifies tracker issues whose body references other issues that are
+    # still open. Uses a SQL pre-filter (ILIKE) to narrow candidates, then
+    # applies the full Ruby-side TRACKER_PATTERN and reference parsing.
+    # Only queries open/closed state for issue numbers actually referenced
+    # by tracker candidates (not all project issues).
+    #
+    # +candidate_scope+ is the already-filtered eligible-issue scope so the
+    # ILIKE scan runs only against issues that passed earlier filters (labels,
+    # paid_state, dependencies, etc.) rather than all open project issues.
+    # If this still becomes expensive on repos with thousands of eligible
+    # issues, consider a trigram GIN index on (title, body) or a persisted
+    # `tracker_issue` boolean column.
+    #
+    # Blocking policy:
+    # - Trackers with body references are blocked when ANY reference is open
+    #   or unknown (not yet synced). Only direct references are checked — not
+    #   transitive dependencies of those references. Transitive checking is
+    #   deferred because the IssueDependency graph may be incomplete for
+    #   body-referenced issues, and the direct-reference check already
+    #   catches the motivating scenario (#615).
+    # - Trackers with NO body references are conservatively blocked — they
+    #   likely track work not enumerated as #NNN references, and auto-picking
+    #   them risks premature selection (see #615).
+    def self.tracker_ids_blocked_by_open_references(candidate_scope, project)
+      ilike_conditions = TRACKER_SQL_PATTERNS.each_with_index.flat_map do |_, i|
+        [ "title ILIKE :t#{i}", "body ILIKE :t#{i}" ]
+      end
+      params = TRACKER_SQL_PATTERNS.each_with_index.to_h do |pattern, i|
+        [ :"t#{i}", pattern ]
+      end
+
+      candidates = candidate_scope.where(ilike_conditions.join(" OR "), **params)
+        .select(:id, :github_number, :title, :body)
+      return [] if candidates.empty?
+
+      refs_by_issue = candidates.filter_map do |issue|
+        next unless issue.tracker_issue?
+
+        refs = issue.body_referenced_issue_numbers - [ issue.github_number ]
+        [ issue.id, refs ]
+      end
+      return [] if refs_by_issue.empty?
+
+      no_ref_ids = refs_by_issue.filter_map { |id, refs| id if refs.empty? }
+      with_refs = refs_by_issue.select { |_, refs| refs.present? }
+      return no_ref_ids if with_refs.empty?
+
+      all_referenced_numbers = with_refs.flat_map(&:last).uniq
+
+      # Fetch referenced issues (any state) to distinguish open, closed, and
+      # unknown. Unknown (missing) references are treated as blocking to
+      # avoid auto-picking trackers when sync is incomplete.
+      referenced_states = Issue.where(
+        project: project,
+        is_pull_request: false,
+        github_number: all_referenced_numbers
+      ).pluck(:github_number, :github_state).to_h
+
+      blocked_with_refs = with_refs.filter_map do |issue_id, refs|
+        issue_id if refs.any? do |num|
+          state = referenced_states[num]
+          state.nil? || state == "open"
+        end
+      end
+
+      no_ref_ids + blocked_with_refs
     end
 
     def initialize(project)
