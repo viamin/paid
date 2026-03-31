@@ -89,7 +89,7 @@ class AgentRun < ApplicationRecord
     end
   }
 
-  # SQL expression that normalises agent_type to its canonical provider key
+  # SQL expression that normalizes agent_type to its canonical provider key
   # (e.g. "claude_code" → "claude") so SQL aggregations match Ruby logic.
   #
   # Derived from ProviderSupport.provider_key_for_agent_type for all known
