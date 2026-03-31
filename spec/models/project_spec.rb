@@ -745,6 +745,36 @@ RSpec.describe Project do
         expect(project).to be_valid
       end
 
+      it "rejects review_settings set to an array" do
+        project = build(:project, review_settings: [])
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("must be a JSON object")
+      end
+
+      it "rejects review_settings set to a string" do
+        project = build(:project, review_settings: "invalid")
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("must be a JSON object")
+      end
+
+      it "rejects a method config set to a non-Hash" do
+        project = build(:project, review_settings: {
+          "methods" => { "copilot" => "enabled" }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("copilot config must be a JSON object")
+      end
+
+      it "rejects termination set to a non-Hash for an enabled method" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "copilot" => { "enabled" => true, "termination" => "invalid" }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("copilot termination must be a JSON object")
+      end
+
       it "stores and retrieves review_settings via JSONB" do
         settings = {
           "enabled" => true,

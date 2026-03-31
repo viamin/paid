@@ -422,7 +422,7 @@ class Project < ApplicationRecord
   end
 
   def review_settings_valid
-    return if review_settings.blank?
+    return if review_settings.nil? || review_settings == {}
 
     unless review_settings.is_a?(Hash)
       errors.add(:review_settings, "must be a JSON object")
@@ -449,9 +449,20 @@ class Project < ApplicationRecord
         next
       end
 
-      next unless config.is_a?(Hash) && config["enabled"] == true
+      unless config.is_a?(Hash)
+        errors.add(:review_settings, "#{method_name} config must be a JSON object")
+        next
+      end
 
-      validate_termination_config(method_name, config["termination"])
+      next unless config["enabled"] == true
+
+      termination = config["termination"]
+      if termination.present? && !termination.is_a?(Hash)
+        errors.add(:review_settings, "#{method_name} termination must be a JSON object")
+        next
+      end
+
+      validate_termination_config(method_name, termination)
     end
   end
 
