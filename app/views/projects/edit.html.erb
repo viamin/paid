@@ -140,6 +140,203 @@
             <p class="mt-1 text-xs text-gray-500">Maximum Copilot review rounds before escalating to the owner (0 to skip draft review phase).</p>
           </div>
 
+          <%# Review Settings Section %>
+          <% rs = @project.effective_review_settings %>
+          <fieldset id="review-settings" class="space-y-4 rounded-md border border-gray-200 p-4">
+            <legend class="text-sm font-semibold leading-6 text-gray-900">PR Review Settings</legend>
+
+            <div>
+              <div class="flex items-center">
+                <input type="hidden" name="project[review_settings][enabled]" value="0" />
+                <input type="checkbox" name="project[review_settings][enabled]" value="1" id="project_review_settings_enabled"
+                  <%= "checked" if rs["enabled"] %>
+                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                <label for="project_review_settings_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Enable PR Reviews</label>
+              </div>
+              <p class="mt-1 ml-7 text-xs text-gray-500">When enabled, pull requests will be reviewed using the configured methods below.</p>
+            </div>
+
+            <div>
+              <div class="flex items-center">
+                <input type="hidden" name="project[review_settings][wait_for_reviews]" value="0" />
+                <input type="checkbox" name="project[review_settings][wait_for_reviews]" value="1" id="project_review_settings_wait_for_reviews"
+                  <%= "checked" if rs["wait_for_reviews"] %>
+                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                <label for="project_review_settings_wait_for_reviews" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Wait for Reviews</label>
+              </div>
+              <p class="mt-1 ml-7 text-xs text-gray-500">Block workflow until all configured reviews have completed before proceeding.</p>
+            </div>
+
+            <div id="review-methods" class="space-y-4 border-t border-gray-200 pt-4">
+              <p class="text-sm font-medium text-gray-700">Review Methods</p>
+
+              <%# GitHub Copilot %>
+              <% copilot = rs.dig("methods", "copilot") || {} %>
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3">
+                <div class="flex items-center">
+                  <input type="hidden" name="project[review_settings][methods][copilot][enabled]" value="0" />
+                  <input type="checkbox" name="project[review_settings][methods][copilot][enabled]" value="1" id="review_copilot_enabled"
+                    <%= "checked" if copilot["enabled"] %>
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                  <label for="review_copilot_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">GitHub Copilot</label>
+                  <span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">GitHub-hosted only</span>
+                </div>
+                <div class="ml-7 grid grid-cols-2 gap-3">
+                  <div>
+                    <label for="review_copilot_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                    <input type="number" name="project[review_settings][methods][copilot][termination][max_review_rounds]" id="review_copilot_max_rounds"
+                      value="<%= copilot.dig("termination", "max_review_rounds") %>" min="1" placeholder="e.g. 2"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div>
+                    <label for="review_copilot_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                    <input type="number" name="project[review_settings][methods][copilot][termination][timeout_minutes]" id="review_copilot_timeout"
+                      value="<%= copilot.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 30"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div>
+                    <label for="review_copilot_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                    <input type="text" name="project[review_settings][methods][copilot][termination][quality_threshold]" id="review_copilot_quality"
+                      value="<%= copilot.dig("termination", "quality_threshold") %>" placeholder="e.g. approved"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div class="flex items-center col-span-2">
+                    <input type="hidden" name="project[review_settings][methods][copilot][termination][stop_when_no_comments]" value="0" />
+                    <input type="checkbox" name="project[review_settings][methods][copilot][termination][stop_when_no_comments]" value="1" id="review_copilot_stop_no_comments"
+                      <%= "checked" if copilot.dig("termination", "stop_when_no_comments") %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                    <label for="review_copilot_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                  </div>
+                </div>
+              </div>
+
+              <%# Paid PR Code Review Agent %>
+              <% paid = rs.dig("methods", "paid_agent") || {} %>
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3">
+                <div class="flex items-center">
+                  <input type="hidden" name="project[review_settings][methods][paid_agent][enabled]" value="0" />
+                  <input type="checkbox" name="project[review_settings][methods][paid_agent][enabled]" value="1" id="review_paid_agent_enabled"
+                    <%= "checked" if paid["enabled"] %>
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                  <label for="review_paid_agent_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Paid PR Code Review Agent</label>
+                </div>
+                <div class="ml-7 grid grid-cols-2 gap-3">
+                  <div>
+                    <label for="review_paid_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                    <input type="number" name="project[review_settings][methods][paid_agent][termination][max_review_rounds]" id="review_paid_max_rounds"
+                      value="<%= paid.dig("termination", "max_review_rounds") %>" min="1" placeholder="e.g. 3"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div>
+                    <label for="review_paid_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                    <input type="number" name="project[review_settings][methods][paid_agent][termination][timeout_minutes]" id="review_paid_timeout"
+                      value="<%= paid.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 30"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div>
+                    <label for="review_paid_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                    <input type="text" name="project[review_settings][methods][paid_agent][termination][quality_threshold]" id="review_paid_quality"
+                      value="<%= paid.dig("termination", "quality_threshold") %>" placeholder="e.g. approved"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div class="flex items-center">
+                    <input type="hidden" name="project[review_settings][methods][paid_agent][termination][stop_when_no_comments]" value="0" />
+                    <input type="checkbox" name="project[review_settings][methods][paid_agent][termination][stop_when_no_comments]" value="1" id="review_paid_stop_no_comments"
+                      <%= "checked" if paid.dig("termination", "stop_when_no_comments") %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                    <label for="review_paid_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                  </div>
+                </div>
+              </div>
+
+              <%# CI Review Action %>
+              <% ci = rs.dig("methods", "ci_action") || {} %>
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3">
+                <div class="flex items-center">
+                  <input type="hidden" name="project[review_settings][methods][ci_action][enabled]" value="0" />
+                  <input type="checkbox" name="project[review_settings][methods][ci_action][enabled]" value="1" id="review_ci_action_enabled"
+                    <%= "checked" if ci["enabled"] %>
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                  <label for="review_ci_action_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">CI Review Action</label>
+                </div>
+                <div class="ml-7 space-y-3">
+                  <div>
+                    <label for="review_ci_action_name" class="block text-xs font-medium text-gray-600">Action Name</label>
+                    <input type="text" name="project[review_settings][methods][ci_action][action_name]" id="review_ci_action_name"
+                      value="<%= ci["action_name"] %>" placeholder="e.g. claude-code-review"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label for="review_ci_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                      <input type="number" name="project[review_settings][methods][ci_action][termination][max_review_rounds]" id="review_ci_max_rounds"
+                        value="<%= ci.dig("termination", "max_review_rounds") %>" min="1" placeholder="optional"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                    </div>
+                    <div>
+                      <label for="review_ci_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                      <input type="number" name="project[review_settings][methods][ci_action][termination][timeout_minutes]" id="review_ci_timeout"
+                        value="<%= ci.dig("termination", "timeout_minutes") %>" min="1" placeholder="optional"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                    </div>
+                    <div>
+                      <label for="review_ci_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                      <input type="text" name="project[review_settings][methods][ci_action][termination][quality_threshold]" id="review_ci_quality"
+                        value="<%= ci.dig("termination", "quality_threshold") %>" placeholder="e.g. approved"
+                        class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                    </div>
+                    <div class="flex items-center col-span-2">
+                      <input type="hidden" name="project[review_settings][methods][ci_action][termination][stop_when_no_comments]" value="0" />
+                      <input type="checkbox" name="project[review_settings][methods][ci_action][termination][stop_when_no_comments]" value="1" id="review_ci_stop_no_comments"
+                        <%= "checked" if ci.dig("termination", "stop_when_no_comments") %>
+                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                      <label for="review_ci_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <%# Manual Review %>
+              <% manual = rs.dig("methods", "manual") || {} %>
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3">
+                <div class="flex items-center">
+                  <input type="hidden" name="project[review_settings][methods][manual][enabled]" value="0" />
+                  <input type="checkbox" name="project[review_settings][methods][manual][enabled]" value="1" id="review_manual_enabled"
+                    <%= "checked" if manual["enabled"] %>
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                  <label for="review_manual_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Manual Review</label>
+                </div>
+                <div class="ml-7 grid grid-cols-2 gap-3">
+                  <div>
+                    <label for="review_manual_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                    <input type="number" name="project[review_settings][methods][manual][termination][max_review_rounds]" id="review_manual_max_rounds"
+                      value="<%= manual.dig("termination", "max_review_rounds") %>" min="1" placeholder="optional"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div>
+                    <label for="review_manual_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                    <input type="number" name="project[review_settings][methods][manual][termination][timeout_minutes]" id="review_manual_timeout"
+                      value="<%= manual.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 1440 (24h)"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div>
+                    <label for="review_manual_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                    <input type="text" name="project[review_settings][methods][manual][termination][quality_threshold]" id="review_manual_quality"
+                      value="<%= manual.dig("termination", "quality_threshold") %>" placeholder="e.g. approved"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div class="flex items-center">
+                    <input type="hidden" name="project[review_settings][methods][manual][termination][stop_when_no_comments]" value="0" />
+                    <input type="checkbox" name="project[review_settings][methods][manual][termination][stop_when_no_comments]" value="1" id="review_manual_stop_no_comments"
+                      <%= "checked" if manual.dig("termination", "stop_when_no_comments") %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                    <label for="review_manual_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </fieldset>
+
           <fieldset class="space-y-4">
             <legend class="text-sm font-semibold leading-6 text-gray-900">Labels</legend>
 

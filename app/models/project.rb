@@ -3,6 +3,52 @@
 class Project < ApplicationRecord
   MERGE_METHODS = %w[squash merge rebase].freeze
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
+  # "none" is not a method — it is represented by enabled: false at the top level
+  REVIEW_METHODS = %w[copilot paid_agent ci_action manual].freeze
+
+  DEFAULT_REVIEW_SETTINGS = {
+    "enabled" => false,
+    "wait_for_reviews" => true,
+    "methods" => {
+      "copilot" => {
+        "enabled" => false,
+        "termination" => {
+          "max_review_rounds" => 2,
+          "stop_when_no_comments" => true,
+          "quality_threshold" => nil,
+          "timeout_minutes" => nil
+        }
+      },
+      "paid_agent" => {
+        "enabled" => false,
+        "termination" => {
+          "max_review_rounds" => 3,
+          "stop_when_no_comments" => true,
+          "quality_threshold" => nil,
+          "timeout_minutes" => 30
+        }
+      },
+      "ci_action" => {
+        "enabled" => false,
+        "action_name" => nil,
+        "termination" => {
+          "max_review_rounds" => nil,
+          "stop_when_no_comments" => true,
+          "quality_threshold" => nil,
+          "timeout_minutes" => nil
+        }
+      },
+      "manual" => {
+        "enabled" => false,
+        "termination" => {
+          "max_review_rounds" => nil,
+          "stop_when_no_comments" => false,
+          "quality_threshold" => nil,
+          "timeout_minutes" => 1440
+        }
+      }
+    }
+  }.freeze
 
   AUTOMATION_SETTINGS = [
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
@@ -61,6 +107,7 @@ class Project < ApplicationRecord
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
   validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
+  validate :review_settings_valid
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -278,6 +325,41 @@ class Project < ApplicationRecord
     )
   end
 
+  def review_settings=(value)
+    @effective_review_settings = nil
+    super
+  end
+
+  def effective_review_settings
+    return @effective_review_settings if defined?(@effective_review_settings) && @effective_review_settings
+
+    rs = review_settings
+    rs = rs.is_a?(Hash) ? rs : {}
+    rs = rs.deep_stringify_keys if rs.respond_to?(:deep_stringify_keys)
+
+    @effective_review_settings = DEFAULT_REVIEW_SETTINGS.deep_merge(rs)
+  end
+
+  def review_enabled?
+    effective_review_settings["enabled"] == true
+  end
+
+  def wait_for_reviews?
+    effective_review_settings["wait_for_reviews"] != false
+  end
+
+  def review_method_enabled?(method)
+    effective_review_settings.dig("methods", method.to_s, "enabled") == true
+  end
+
+  def enabled_review_methods
+    REVIEW_METHODS.select { |m| review_method_enabled?(m) }
+  end
+
+  def review_method_config(method)
+    effective_review_settings.dig("methods", method.to_s) || {}
+  end
+
   private
 
   def auto_pick_just_enabled?
@@ -344,6 +426,92 @@ class Project < ApplicationRecord
     return if trusted_github_user?(owner_reviewer_login)
 
     errors.add(:owner_reviewer_login, "must be in trusted GitHub usernames")
+  end
+
+  def review_settings_valid
+    return if review_settings.nil? || review_settings == {}
+
+    unless review_settings.is_a?(Hash)
+      errors.add(:review_settings, "must be a JSON object")
+      return
+    end
+
+    # Normalize to string keys so validation works regardless of how the hash was constructed
+    normalized = review_settings.deep_stringify_keys
+
+    if normalized["enabled"] == true
+      methods = normalized["methods"]
+      unless methods.is_a?(Hash) && methods.any? { |_, c| c.is_a?(Hash) && c["enabled"] == true }
+        errors.add(:review_settings, "must have at least one review method enabled when reviews are enabled")
+      end
+    end
+
+    validate_review_methods_config(normalized)
+  end
+
+  def validate_review_methods_config(normalized)
+    methods = normalized["methods"]
+    return if methods.nil?
+
+    unless methods.is_a?(Hash)
+      errors.add(:review_settings, "methods must be a JSON object")
+      return
+    end
+
+    methods.each do |method_name, config|
+      unless REVIEW_METHODS.include?(method_name)
+        errors.add(:review_settings, "contains unknown review method: #{method_name}")
+        next
+      end
+
+      unless config.is_a?(Hash)
+        errors.add(:review_settings, "#{method_name} config must be a JSON object")
+        next
+      end
+
+      next unless config["enabled"] == true
+
+      # ci_action requires an action_name so the system knows which GitHub Action to invoke
+      if method_name == "ci_action" && config["action_name"].blank?
+        errors.add(:review_settings, "ci_action requires a non-blank action_name when enabled")
+      end
+
+      termination = config["termination"]
+      if termination.present? && !termination.is_a?(Hash)
+        errors.add(:review_settings, "#{method_name} termination must be a JSON object")
+        next
+      end
+
+      # Validate against the effective (defaults-merged) termination config so
+      # missing termination falls back to the per-method defaults.
+      effective_termination =
+        termination ||
+        DEFAULT_REVIEW_SETTINGS.dig("methods", method_name, "termination") ||
+        {}
+      validate_termination_config(method_name, effective_termination)
+    end
+  end
+
+  def validate_termination_config(method_name, termination)
+    return unless termination.is_a?(Hash)
+
+    rounds = termination["max_review_rounds"]
+    if rounds.present? && (!rounds.is_a?(Integer) || rounds < 1)
+      errors.add(:review_settings, "#{method_name} max_review_rounds must be a positive integer")
+    end
+
+    timeout = termination["timeout_minutes"]
+    if timeout.present? && (!timeout.is_a?(Integer) || timeout < 1)
+      errors.add(:review_settings, "#{method_name} timeout_minutes must be a positive integer")
+    end
+
+    has_any_condition = termination["max_review_rounds"].present? ||
+                        termination["stop_when_no_comments"] == true ||
+                        termination["quality_threshold"].present? ||
+                        termination["timeout_minutes"].present?
+    return if has_any_condition
+
+    errors.add(:review_settings, "#{method_name} must have at least one termination condition configured")
   end
 
   def allowed_github_usernames_not_empty
