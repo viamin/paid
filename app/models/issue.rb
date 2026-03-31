@@ -8,7 +8,10 @@ class Issue < ApplicationRecord
   # Activities::ScanSecurityAlertsActivity which creates these issues.
   GITHUB_SOURCE = "github"
   SYNTHETIC_CODE_SCANNING_SOURCE = "code_scanning_alert"
-  VALID_SOURCES = [ GITHUB_SOURCE, SYNTHETIC_CODE_SCANNING_SOURCE ].freeze
+  # Legacy source kept in VALID_SOURCES so existing Dependabot rows pass
+  # validation on update (e.g. from agent-run completion activities).
+  DEPENDABOT_ALERT_SOURCE = "dependabot_alert"
+  VALID_SOURCES = [ GITHUB_SOURCE, SYNTHETIC_CODE_SCANNING_SOURCE, DEPENDABOT_ALERT_SOURCE ].freeze
   SEVERITY_ORDER = %w[critical high medium low].freeze
   TRACKER_PATTERN = /\b(?:tracker|remaining\s+work|completion\s+criteria|phase\s+tracker|meta\s+issue)\b/i
   # Large offset so synthetic github_issue_id values never collide with real

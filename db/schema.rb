@@ -679,7 +679,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_085647) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.string "repo", null: false
-    t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
     t.string "security_severity_threshold", default: "high", null: false
     t.bigint "total_cost_cents", default: 0, null: false
