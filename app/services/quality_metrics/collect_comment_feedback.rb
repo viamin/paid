@@ -88,6 +88,16 @@ module QualityMetrics
         raise if retries > MAX_RETRIES
         sleep(0.05 * retries)
         retry
+      rescue ActiveRecord::RecordInvalid => e
+        # A concurrent transaction may commit the human metric between our
+        # `lock.first` and `save!`, causing the model-level uniqueness
+        # validation to fire instead of the DB constraint.  Retry so we
+        # pick up the now-existing row via `lock.first`.
+        raise unless e.record.errors.of_kind?(:metric_type, :taken)
+        retries += 1
+        raise if retries > MAX_RETRIES
+        sleep(0.05 * retries)
+        retry
       end
     end
   end

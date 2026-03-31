@@ -128,6 +128,28 @@ RSpec.describe QualityMetrics::CollectCommentFeedback do
       expect(ids).not_to include(1)
     end
 
+    it "retries on RecordInvalid from uniqueness validation race" do
+      agent_run # eagerly create before stubbing transaction
+      raised = false
+      allow(ActiveRecord::Base).to receive(:transaction).and_wrap_original do |method, **kwargs, &block|
+        method.call(**kwargs) do
+          result = block.call
+          unless raised
+            raised = true
+            record = QualityMetric.new
+            record.errors.add(:metric_type, :taken)
+            raise ActiveRecord::RecordInvalid.new(record)
+          end
+          result
+        end
+      end
+
+      metric = described_class.call(agent_run: agent_run, commenter: "alice", comment_id: 200)
+
+      expect(raised).to be true
+      expect(metric).to be_persisted
+    end
+
     it "returns nil when commenter is blank" do
       result = described_class.call(
         agent_run: agent_run,
