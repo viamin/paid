@@ -11,7 +11,7 @@ DOCKERFILE_PATH = APP_ROOT.join("docker/agent/Dockerfile")
 PACKAGE_JSON_PATH = APP_ROOT.join("package.json")
 DOCKERFILE_NPM_PACKAGES = {
   "yarn" => /^(\s*&& corepack prepare yarn@)([^\s]+)( --activate\s*)$/,
-  "@openai/codex" => /^(RUN npm install -g @openai\/codex@)([^\s]+)(\s*)$/
+  "@openai/codex" => /^(RUN npm install -g\s+(?:--ignore-scripts\s+)?@openai\/codex@)([^\s]+)(\s*)$/
 }.freeze
 
 def system!(*args)
@@ -77,6 +77,7 @@ Dir.chdir(APP_ROOT) do
 
   puts "\n== Updating JavaScript packages =="
   system! "yarn", "upgrade"
+  system! "bin/yarn-postinstall"
 
   puts "\n== Updating Dockerfile-pinned npm tools =="
   latest_versions = DOCKERFILE_NPM_PACKAGES.keys.to_h do |package_name|

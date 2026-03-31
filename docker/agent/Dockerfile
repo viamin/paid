@@ -133,26 +133,21 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
     && cp -L /root/.local/bin/claude /usr/local/bin/claude \
     && chmod +x /usr/local/bin/claude
 
-# Install OpenAI Codex CLI
-# Pin version for reproducible builds; update intentionally when upgrading Codex.
-RUN npm install -g @openai/codex@0.116.0
+# Install agent CLI tools via npm.
+# All versions are pinned for reproducible builds; update intentionally.
+# --ignore-scripts on every install: supply-chain hardening — prevents npm
+# lifecycle scripts (postinstall, preinstall) from executing arbitrary code.
+# See: https://www.elastic.co/security-labs/axios-one-rat-to-rule-them-all
+RUN npm install -g --ignore-scripts @openai/codex@0.116.0
 
-# Install Gemini CLI
-# Pin version for reproducible builds; update intentionally when upgrading Gemini.
-RUN npm install -g @google/gemini-cli@0.35.3
+RUN npm install -g --ignore-scripts @google/gemini-cli@0.35.3
 
-# Install Kilocode CLI
-# Pin version for reproducible builds; update intentionally when upgrading Kilocode.
-RUN npm install -g @kilocode/cli@7.1.3
+RUN npm install -g --ignore-scripts @kilocode/cli@7.1.3
 
-# Install OpenCode CLI
-# Pin version for reproducible builds; update intentionally when upgrading OpenCode.
 # NOTE: End-to-end execution depends on agent-harness build_command support (agent-harness#32).
-RUN npm install -g opencode-ai@1.3.2
+RUN npm install -g --ignore-scripts opencode-ai@1.3.2
 
-# Install GitHub Copilot CLI
-# Pin version for reproducible builds; update intentionally when upgrading Copilot.
-RUN npm install -g @githubnext/github-copilot-cli@0.1.0
+RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.0
 
 # Install Cursor agent CLI
 # Pin the install script checksum for reproducible builds and supply-chain security.

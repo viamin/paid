@@ -12,6 +12,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     env:
+      BUNDLE_FROZEN: "true"
       RUBOCOP_CACHE_ROOT: tmp/rubocop
     steps:
       - name: Checkout code
@@ -33,7 +34,7 @@ jobs:
         run: corepack enable
 
       - name: Install JavaScript dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Prepare RuboCop cache
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
@@ -70,6 +71,7 @@ jobs:
           - 6333:6333
 
     env:
+      BUNDLE_FROZEN: "true"
       RAILS_ENV: test
       DB_HOST: localhost
       QDRANT_URL: http://localhost:6333
@@ -94,7 +96,7 @@ jobs:
         run: corepack enable
 
       - name: Install JavaScript dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Install ast-grep
         run: bin/install-ast-grep
