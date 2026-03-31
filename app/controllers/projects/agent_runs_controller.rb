@@ -148,8 +148,13 @@ module Projects
 
         redirect_to project_path(@project), notice: "Auto-continue paused for PR ##{pr.github_number}."
       else
-        enqueue_resume_run(pr)
-        redirect_to project_path(@project), notice: "Auto-continue resumed for PR ##{pr.github_number}. An agent run has been enqueued."
+        run_enqueued = enqueue_resume_run(pr)
+        notice = if run_enqueued
+          "Auto-continue resumed for PR ##{pr.github_number}. An agent run has been enqueued."
+        else
+          "Auto-continue resumed for PR ##{pr.github_number}. A new agent run will be enqueued if possible."
+        end
+        redirect_to project_path(@project), notice: notice
       end
     end
 
@@ -344,7 +349,7 @@ module Projects
       @project.issues.pull_requests_only.find_by(id: params[:pull_request_id])
     end
 
-    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil)
+    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil, trigger_type: "manual")
       requested_agent_type = agent_type || params[:agent_type].presence
       requested_provider_identifier = provider_identifier || params[:provider].presence
       resolved_provider = resolve_provider_selection(
@@ -366,7 +371,7 @@ module Projects
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
         goal: goal,
-        trigger_type: "manual",
+        trigger_type: trigger_type,
         status: "queued"
       )
     end
@@ -375,12 +380,29 @@ module Projects
       create_agent_run(
         source_pull_request_number: pr.github_number,
         provider_identifier: settings_owner&.settings&.default_provider_identifier,
-        goal: "create_pr"
+        goal: "create_pr",
+        trigger_type: "automatic"
       )
       ProcessRunQueueJob.perform_later
-    rescue NoRunnableProviderError, ActiveRecord::RecordNotUnique
-      # Best-effort: if no provider is available or a run already exists, skip silently.
-      # The unpause itself has already been persisted.
+      true
+    rescue NoRunnableProviderError => e
+      Rails.logger.warn(
+        message: "agent_execution.resume_run_skipped",
+        reason: e.message,
+        pull_request_number: pr.github_number
+      )
+      false
+    rescue ActiveRecord::RecordNotUnique => e
+      if e.cause&.message&.include?("idx_agent_runs_unique_active_pr")
+        Rails.logger.warn(
+          message: "agent_execution.resume_run_skipped",
+          reason: "run_already_queued",
+          pull_request_number: pr.github_number
+        )
+        false
+      else
+        raise
+      end
     end
 
     def create_run_and_redirect(on_error_path:, **attrs)
