@@ -854,6 +854,35 @@ RSpec.describe "AgentRuns" do
         expect(flash[:notice]).to include("resumed")
       end
 
+      it "enqueues an agent run when resuming" do
+        pr.update!(auto_continue_paused: true)
+
+        expect {
+          post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+        }.to change(AgentRun, :count).by(1)
+
+        run = AgentRun.last
+        expect(run.source_pull_request_number).to eq(pr.github_number)
+        expect(run.status).to eq("queued")
+        expect(run.goal).to eq("create_pr")
+      end
+
+      it "enqueues ProcessRunQueueJob when resuming" do
+        pr.update!(auto_continue_paused: true)
+
+        expect {
+          post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+        }.to have_enqueued_job(ProcessRunQueueJob)
+      end
+
+      it "does not enqueue an agent run when pausing" do
+        expect(pr.auto_continue_paused).to be false
+
+        expect {
+          post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+        }.not_to change(AgentRun, :count)
+      end
+
       it "cancels queued automatic runs when pausing" do
         queued_run = create(:agent_run, :queued, :automatic, project: project,
           source_pull_request_number: 77, custom_prompt: "Fix PR")

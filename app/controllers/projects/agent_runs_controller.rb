@@ -145,12 +145,12 @@ module Projects
               run.cancel!
             end
           end
+
+        redirect_to project_path(@project), notice: "Auto-continue paused for PR ##{pr.github_number}."
+      else
+        enqueue_resume_run(pr)
+        redirect_to project_path(@project), notice: "Auto-continue resumed for PR ##{pr.github_number}. An agent run has been enqueued."
       end
-
-      @project.broadcast_pull_requests_update
-
-      action = pr.auto_continue_paused? ? "paused" : "resumed"
-      redirect_to project_path(@project), notice: "Auto-continue #{action} for PR ##{pr.github_number}."
     end
 
     def diagnose_error
@@ -369,6 +369,18 @@ module Projects
         trigger_type: "manual",
         status: "queued"
       )
+    end
+
+    def enqueue_resume_run(pr)
+      create_agent_run(
+        source_pull_request_number: pr.github_number,
+        provider_identifier: settings_owner&.settings&.default_provider_identifier,
+        goal: "create_pr"
+      )
+      ProcessRunQueueJob.perform_later
+    rescue NoRunnableProviderError, ActiveRecord::RecordNotUnique
+      # Best-effort: if no provider is available or a run already exists, skip silently.
+      # The unpause itself has already been persisted.
     end
 
     def create_run_and_redirect(on_error_path:, **attrs)
