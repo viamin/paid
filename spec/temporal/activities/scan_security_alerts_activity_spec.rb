@@ -809,6 +809,11 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
           expect(result[:alerts_to_fix]).to eq([])
         end
+
+        it "still updates last_code_scanning_scan_at to preserve interval gating" do
+          expect { activity.execute(project_id: project.id) }
+            .to change { project.reload.last_code_scanning_scan_at }.from(nil)
+        end
       end
 
       context "when code scanning API returns 404" do
@@ -821,6 +826,11 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
           result = activity.execute(project_id: project.id)
 
           expect(result[:alerts_to_fix]).to eq([])
+        end
+
+        it "still updates last_code_scanning_scan_at to preserve interval gating" do
+          expect { activity.execute(project_id: project.id) }
+            .to change { project.reload.last_code_scanning_scan_at }.from(nil)
         end
       end
     end

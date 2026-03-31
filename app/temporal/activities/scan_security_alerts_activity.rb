@@ -96,7 +96,12 @@ module Activities
       return unless should_scan_code_scanning?(project)
 
       all_alerts = fetch_code_scanning_alerts(project)
-      return if all_alerts.nil?
+      if all_alerts.nil?
+        # Record the scan attempt even on graceful failures (403/404) to
+        # preserve interval-gating and avoid hammering the API every cycle.
+        project.update_column(:last_code_scanning_scan_at, Time.current)
+        return
+      end
 
       SecurityAlerts::ReconcileResolved.new(
         project, all_alerts,
