@@ -5,6 +5,7 @@ module Dashboard
     PHASE_BREAKDOWN_WINDOW = 30.days
     PHASE_BREAKDOWN_RUN_LIMIT = 500
     EFFECTIVE_PROVIDER_SQL = AgentRun.effective_provider_sql
+    NORMALIZED_AGENT_TYPE_SQL = AgentRun.normalized_agent_type_sql
 
     attr_reader :account
 
@@ -165,7 +166,7 @@ module Dashboard
     def provider_fallback_stats
       total = agent_runs.count
       fallback_runs = agent_runs.where(
-        "provider_switches > 0 OR (final_provider IS NOT NULL AND final_provider != '' AND final_provider != agent_type)"
+        "provider_switches > 0 OR (final_provider IS NOT NULL AND final_provider != '' AND final_provider != #{NORMALIZED_AGENT_TYPE_SQL})"
       )
       fallback_count = fallback_runs.count
 

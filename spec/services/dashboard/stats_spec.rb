@@ -241,8 +241,8 @@ RSpec.describe Dashboard::Stats do
       it "groups runs_by_provider by effective provider" do
         providers = stats[:runs_by_provider]
         provider_hash = providers.to_h
-        # claude_code: 1 (no fallback), codex: 1 (fallback), cursor: 2 (1 direct + 1 fallback)
-        expect(provider_hash["claude_code"]).to eq(1)
+        # claude: 1 (no fallback, claude_code normalized), codex: 1 (fallback), cursor: 2 (1 direct + 1 fallback)
+        expect(provider_hash["claude"]).to eq(1)
         expect(provider_hash["codex"]).to eq(1)
         expect(provider_hash["cursor"]).to eq(2)
       end
@@ -292,7 +292,28 @@ RSpec.describe Dashboard::Stats do
       it "attributes the skipped-primary run to the effective provider" do
         providers = stats[:runs_by_provider].to_h
         expect(providers["cursor"]).to eq(1)
-        expect(providers["claude_code"]).to eq(1)
+        expect(providers["claude"]).to eq(1)
+      end
+    end
+
+    context "with claude_code run completed by claude provider (no fallback)" do
+      before do
+        # final_provider is the normalized provider key "claude" for agent_type "claude_code".
+        # This should NOT be counted as a fallback.
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_provider: "claude", provider_switches: 0)
+      end
+
+      it "does not count normalized provider match as a fallback" do
+        fs = stats[:provider_fallback_stats]
+        expect(fs[:fallback_count]).to eq(0)
+        expect(fs[:fallback_rate]).to eq(0.0)
+      end
+
+      it "groups under the claude provider" do
+        providers = stats[:runs_by_provider].to_h
+        expect(providers["claude"]).to eq(1)
+        expect(providers).not_to have_key("claude_code")
       end
     end
 

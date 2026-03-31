@@ -89,11 +89,17 @@ class AgentRun < ApplicationRecord
     end
   }
 
+  # SQL expression that normalises agent_type to its canonical provider key
+  # (e.g. "claude_code" → "claude") so SQL aggregations match Ruby logic.
+  def self.normalized_agent_type_sql
+    "CASE agent_type WHEN 'claude_code' THEN 'claude' ELSE agent_type END"
+  end
+
   # SQL expression for the effective provider: the provider that actually
   # produced the output. Mirrors the Ruby #effective_provider method so that
   # both SQL aggregations and Ruby code share the same logic.
   def self.effective_provider_sql
-    "COALESCE(NULLIF(final_provider, ''), agent_type)"
+    "COALESCE(NULLIF(final_provider, ''), #{normalized_agent_type_sql})"
   end
 
   ransacker :tokens_total, type: :integer do
@@ -515,7 +521,7 @@ class AgentRun < ApplicationRecord
   #
   # @return [String] The effective provider name
   def effective_provider
-    final_provider.presence || agent_type
+    final_provider.presence || ProviderSupport.provider_key_for_agent_type(agent_type)
   end
 
   def final_provider_record

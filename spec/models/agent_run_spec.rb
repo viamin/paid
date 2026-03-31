@@ -1458,14 +1458,19 @@ RSpec.describe AgentRun do
       expect(agent_run.effective_provider).to eq("codex")
     end
 
-    it "returns agent_type when final_provider is nil" do
+    it "returns normalized provider key when final_provider is nil" do
       agent_run = create(:agent_run, agent_type: "claude_code", final_provider: nil)
-      expect(agent_run.effective_provider).to eq("claude_code")
+      expect(agent_run.effective_provider).to eq("claude")
     end
 
-    it "returns agent_type when final_provider is blank" do
+    it "returns normalized provider key when final_provider is blank" do
       agent_run = create(:agent_run, agent_type: "claude_code", final_provider: "")
-      expect(agent_run.effective_provider).to eq("claude_code")
+      expect(agent_run.effective_provider).to eq("claude")
+    end
+
+    it "returns agent_type as-is for non-mapped types" do
+      agent_run = create(:agent_run, :cursor, final_provider: nil)
+      expect(agent_run.effective_provider).to eq("cursor")
     end
   end
 
