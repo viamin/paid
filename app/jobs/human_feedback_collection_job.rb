@@ -119,18 +119,25 @@ class HumanFeedbackCollectionJob < ApplicationJob
   # also bump updated_at and would cause the sweep to skip runs prematurely.
   def stamp_last_polled_at(agent_run)
     timestamp = Time.current.iso8601
-    metric = agent_run.quality_metrics.find_by(metric_type: "human")
+
+    # Use find_or_create_by! to handle races with webhook-driven creation of
+    # the same human metric (e.g., CollectCommentFeedback / CollectHumanFeedback).
+    # If a concurrent thread inserts between find and create, rescue both
+    # RecordNotUnique (DB constraint) and RecordInvalid (model uniqueness
+    # validation) and reload the winner's record.
+    begin
+      metric = agent_run.quality_metrics.find_or_create_by!(metric_type: "human") do |m|
+        m.scores = {}
+        m.metadata = { "last_polled_at" => timestamp }
+      end
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
+      metric = agent_run.quality_metrics.find_by(metric_type: "human")
+    end
 
     if metric
       existing = metric.metadata || {}
       metric.update_columns(
         metadata: existing.merge("last_polled_at" => timestamp)
-      )
-    else
-      agent_run.quality_metrics.create!(
-        metric_type: "human",
-        scores: {},
-        metadata: { "last_polled_at" => timestamp }
       )
     end
   end

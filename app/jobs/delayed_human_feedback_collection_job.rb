@@ -50,7 +50,7 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
       "COALESCE",
       [
         Arel::Nodes::SqlLiteral.new(
-          "CAST(quality_metrics.metadata->>'last_polled_at' AS TIMESTAMPTZ)"
+          "CAST(NULLIF(quality_metrics.metadata->>'last_polled_at', '') AS TIMESTAMPTZ)"
         ),
         QualityMetric.arel_table[:updated_at]
       ]
