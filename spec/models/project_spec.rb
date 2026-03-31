@@ -742,14 +742,14 @@ RSpec.describe Project do
         expect(project.errors[:review_settings].join).to include("at least one termination condition")
       end
 
-      it "rejects enabled method with missing termination key" do
+      it "falls back to default termination when termination key is missing" do
         project = build(:project, review_settings: {
           "methods" => {
             "copilot" => { "enabled" => true }
           }
         })
-        expect(project).not_to be_valid
-        expect(project.errors[:review_settings].join).to include("at least one termination condition")
+        # copilot defaults include stop_when_no_comments: true, so this is valid
+        expect(project).to be_valid
       end
 
       it "skips termination validation for disabled methods" do

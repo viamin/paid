@@ -482,9 +482,13 @@ class Project < ApplicationRecord
         next
       end
 
-      # Enabled methods must have at least one termination condition;
-      # treat missing termination as empty so the check runs.
-      validate_termination_config(method_name, termination || {})
+      # Validate against the effective (defaults-merged) termination config so
+      # missing termination falls back to the per-method defaults.
+      effective_termination =
+        termination ||
+        DEFAULT_REVIEW_SETTINGS.dig("methods", method_name, "termination") ||
+        {}
+      validate_termination_config(method_name, effective_termination)
     end
   end
 

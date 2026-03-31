@@ -699,6 +699,39 @@ RSpec.describe "Projects" do
           expect(response.body).to include("greater than or equal to 60")
         end
       end
+
+      context "with review_settings params" do
+        let(:project) { create(:project, account: account, github_token: github_token) }
+
+        let(:valid_review_params) do
+          { enabled: "1", wait_for_reviews: "1",
+            methods: { copilot: { enabled: "1",
+                                  termination: { max_review_rounds: "2", stop_when_no_comments: "1",
+                                                 quality_threshold: "", timeout_minutes: "" } } } }
+        end
+
+        it "persists review_settings with correct JSON types" do
+          patch project_path(project), params: { project: { review_settings: valid_review_params } }
+
+          expect(response).to redirect_to(project_path(project))
+          rs = project.reload.review_settings
+          expect(rs).to include("enabled" => true, "wait_for_reviews" => true)
+          term = rs.dig("methods", "copilot", "termination")
+          expect(term).to include("max_review_rounds" => 2, "stop_when_no_comments" => true)
+          expect(term.values_at("quality_threshold", "timeout_minutes")).to eq([ nil, nil ])
+        end
+
+        it "re-renders form when enabled method has invalid max_review_rounds" do
+          invalid_params = { enabled: "0",
+                             methods: { copilot: { enabled: "1",
+                                                   termination: { max_review_rounds: "0", stop_when_no_comments: "0",
+                                                                  quality_threshold: "", timeout_minutes: "" } } } }
+          patch project_path(project), params: { project: { review_settings: invalid_params } }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(project.reload.review_settings).to eq({})
+        end
+      end
     end
   end
 
