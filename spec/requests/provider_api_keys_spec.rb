@@ -167,6 +167,87 @@ RSpec.describe "ProviderApiKeys" do
     end
   end
 
+  describe "GET /provider_api_keys/:id/edit" do
+    context "when not authenticated" do
+      it "redirects to sign in" do
+        api_key = create(:provider_api_key, user: user)
+        get edit_provider_api_key_path(api_key)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "renders the edit form" do
+        api_key = create(:provider_api_key, user: user, name: "My Key")
+        get edit_provider_api_key_path(api_key)
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Edit LLM API Key")
+        expect(response.body).to include("My Key")
+      end
+
+      it "does not allow editing API keys from other users" do
+        other_user = create(:user)
+        other_key = create(:provider_api_key, user: other_user)
+        get edit_provider_api_key_path(other_key)
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+  end
+
+  describe "PATCH /provider_api_keys/:id" do
+    context "when not authenticated" do
+      it "redirects to sign in" do
+        api_key = create(:provider_api_key, user: user)
+        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "Updated" } }
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "updates the name" do
+        api_key = create(:provider_api_key, user: user, name: "Old Name")
+        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "New Name", compatible_providers: api_key.compatible_providers } }
+        expect(response).to redirect_to(provider_api_key_path(api_key))
+        expect(api_key.reload.name).to eq("New Name")
+      end
+
+      it "updates compatible providers" do
+        api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+        patch provider_api_key_path(api_key), params: { provider_api_key: { name: api_key.name, compatible_providers: %w[openrouter] } }
+        expect(api_key.reload.compatible_providers).to eq(%w[openrouter])
+      end
+
+      it "keeps existing API key when api_key param is blank" do
+        api_key = create(:provider_api_key, user: user, api_key: "sk-original-key-12345")
+        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "Updated", api_key: "", compatible_providers: api_key.compatible_providers } }
+        expect(api_key.reload.api_key).to eq("sk-original-key-12345")
+      end
+
+      it "updates the API key when a new value is provided" do
+        api_key = create(:provider_api_key, user: user, api_key: "sk-original-key-12345")
+        patch provider_api_key_path(api_key), params: { provider_api_key: { name: api_key.name, api_key: "sk-new-key-67890abcd", compatible_providers: api_key.compatible_providers } }
+        expect(api_key.reload.api_key).to eq("sk-new-key-67890abcd")
+      end
+
+      it "re-renders edit on validation failure" do
+        api_key = create(:provider_api_key, user: user)
+        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "", compatible_providers: api_key.compatible_providers } }
+        expect(response).to have_http_status(:unprocessable_content)
+      end
+
+      it "does not allow updating API keys from other users" do
+        other_user = create(:user)
+        other_key = create(:provider_api_key, user: other_user)
+        patch provider_api_key_path(other_key), params: { provider_api_key: { name: "Hacked" } }
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+  end
+
   describe "DELETE /provider_api_keys/:id" do
     context "when not authenticated" do
       it "redirects to sign in" do
