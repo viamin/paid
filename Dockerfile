@@ -57,8 +57,9 @@ RUN bundle install && \
 
 # Install node modules (scripts disabled via .yarnrc for supply-chain security)
 COPY package.json yarn.lock .yarnrc ./
+COPY bin/yarn-postinstall bin/yarn-postinstall
 RUN yarn install --frozen-lockfile \
-    && node node_modules/esbuild/install.js
+    && bin/yarn-postinstall
 
 # Copy application code
 COPY . .
