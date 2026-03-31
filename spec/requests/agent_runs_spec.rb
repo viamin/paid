@@ -1067,13 +1067,42 @@ RSpec.describe "AgentRuns" do
         expect(new_run.provider_id).to eq(enabled_provider.id)
       end
 
-      it "preserves custom_prompt from the original run" do
+      it "preserves user-supplied custom_prompt from the original run" do
         agent_run = create(:agent_run, :failed, :with_custom_prompt, project: project)
 
-        post retry_project_agent_run_path(project, agent_run)
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to change(AgentRun, :count).by(1)
 
         new_run = AgentRun.last
+        expect(new_run.id).not_to eq(agent_run.id)
         expect(new_run.custom_prompt).to eq(agent_run.custom_prompt)
+      end
+
+      it "clears auto-generated prompt so it is rebuilt on retry" do
+        agent_run = create(:agent_run, :failed, :existing_pr, project: project, custom_prompt: "# Task\n\nAuto-generated prompt")
+        create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt", phase_group: "prompt")
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to change(AgentRun, :count).by(1)
+
+        new_run = AgentRun.last
+        expect(new_run.id).not_to eq(agent_run.id)
+        expect(new_run.custom_prompt).to be_nil
+      end
+
+      it "clears auto-generated prompt even when prepare_pr_prompt phase failed" do
+        agent_run = create(:agent_run, :failed, :existing_pr, project: project, custom_prompt: "# Task\n\nStale prompt")
+        create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt", phase_group: "prompt", status: "failed")
+
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to change(AgentRun, :count).by(1)
+
+        new_run = AgentRun.last
+        expect(new_run.id).not_to eq(agent_run.id)
+        expect(new_run.custom_prompt).to be_nil
       end
 
       it "preserves source_pull_request_number from the original run" do
@@ -1264,6 +1293,22 @@ RSpec.describe "AgentRuns" do
         follow_redirect!
         expect(response.body).to include("Re-authentication failed")
         expect(response.body).to include("Provider unavailable")
+      end
+
+      it "clears auto-generated prompt on refresh_auth retry" do
+        agent_run = create(:agent_run, :auth_expired, :existing_pr, project: project, custom_prompt: "# Task\n\nStale prompt")
+        create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt", phase_group: "prompt")
+        without_partial_double_verification do
+          allow(AgentHarness).to receive(:refresh_auth)
+        end
+
+        expect {
+          post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+        }.to change(AgentRun, :count).by(1)
+
+        new_run = AgentRun.last
+        expect(new_run.id).not_to eq(agent_run.id)
+        expect(new_run.custom_prompt).to be_nil
       end
 
       it "does not allow refreshing runs from other accounts" do
