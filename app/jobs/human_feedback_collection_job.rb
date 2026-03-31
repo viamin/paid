@@ -135,10 +135,12 @@ class HumanFeedbackCollectionJob < ApplicationJob
     end
 
     if metric
-      existing = metric.metadata || {}
-      metric.update_columns(
-        metadata: existing.merge("last_polled_at" => timestamp)
-      )
+      metric.with_lock do
+        existing = metric.metadata || {}
+        metric.update!(
+          metadata: existing.merge("last_polled_at" => timestamp)
+        )
+      end
     end
   end
 

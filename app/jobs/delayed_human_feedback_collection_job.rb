@@ -4,7 +4,7 @@
 # Catches reactions and review outcomes that arrive after the initial
 # HumanFeedbackCollectionJob (enqueued 5 minutes post-completion).
 #
-# Runs every 4 hours via GoodJob cron. Only processes runs completed in
+# Runs hourly via GoodJob cron. Only processes runs completed in
 # the last 7 days to avoid unbounded growth while still capturing late
 # feedback (reviewers may not react for hours or days).
 class DelayedHumanFeedbackCollectionJob < ApplicationJob
@@ -14,7 +14,7 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
   LOOKBACK_WINDOW = 7.days
 
   # Skip runs whose human metric was polled within this interval,
-  # avoiding redundant API/DB work on every 4-hour sweep.
+  # avoiding redundant API/DB work on every hourly sweep.
   #
   # Uses metadata->'last_polled_at' (set only by HumanFeedbackCollectionJob)
   # rather than updated_at, because webhook-driven updates (comments, merges,
