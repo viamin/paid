@@ -55,9 +55,10 @@ RUN bundle install && \
     # -j 1 disable parallel compilation to avoid a QEMU bug: https://github.com/rails/bootsnap/issues/495
     bundle exec bootsnap precompile -j 1 --gemfile
 
-# Install node modules
-COPY package.json yarn.lock ./
-RUN yarn install --immutable
+# Install node modules (scripts disabled via .yarnrc for supply-chain security)
+COPY package.json yarn.lock .yarnrc ./
+RUN yarn install --frozen-lockfile \
+    && node node_modules/esbuild/install.js
 
 # Copy application code
 COPY . .
