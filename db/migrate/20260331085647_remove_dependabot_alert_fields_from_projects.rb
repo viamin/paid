@@ -26,11 +26,12 @@ class RemoveDependabotAlertFieldsFromProjects < ActiveRecord::Migration[8.1]
 
     change_column_default :projects, :security_alert_types, %w[dependabot code_scanning]
 
-    # Re-add "dependabot" to any row that doesn't already contain it
+    # Re-add "dependabot" only for rows that look like they were modified by `up`,
+    # i.e., rows whose security_alert_types is exactly ["code_scanning"] after the change.
     execute <<~SQL.squish
       UPDATE projects
       SET security_alert_types = security_alert_types || '["dependabot"]'::jsonb
-      WHERE NOT security_alert_types @> '["dependabot"]'::jsonb
+      WHERE security_alert_types = '["code_scanning"]'::jsonb
     SQL
   end
 end
