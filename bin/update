@@ -27,15 +27,24 @@ def system!(*args)
   system(*args, exception: true)
 end
 
+# Fetch the full npm registry document for a package. Returns parsed JSON.
+# Cached per package name to avoid redundant requests.
+def fetch_npm_registry(package_name)
+  @npm_registry_cache ||= {}
+  @npm_registry_cache[package_name] ||= begin
+    escaped = package_name.gsub("/", "%2F")
+    uri = URI("https://registry.npmjs.org/#{escaped}")
+    response = Net::HTTP.get_response(uri)
+    raise "Failed to fetch #{package_name}: #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+
+    JSON.parse(response.body)
+  end
+end
+
 # Fetch the latest version and its publish timestamp from the npm registry.
 # Returns [version, published_at] where published_at is a Time object.
 def fetch_npm_version_info(package_name)
-  escaped = package_name.gsub("/", "%2F")
-  uri = URI("https://registry.npmjs.org/#{escaped}")
-  response = Net::HTTP.get_response(uri)
-  raise "Failed to fetch #{package_name}: #{response.code}" unless response.is_a?(Net::HTTPSuccess)
-
-  data = JSON.parse(response.body)
+  data = fetch_npm_registry(package_name)
   latest = data.dig("dist-tags", "latest")
   published_at = Time.parse(data.dig("time", latest))
   [latest, published_at]
@@ -54,12 +63,8 @@ end
 
 # Fetch the publish timestamp for a specific npm package version.
 def fetch_npm_publish_time(package_name, version)
-  escaped = package_name.gsub("/", "%2F")
-  uri = URI("https://registry.npmjs.org/#{escaped}")
-  response = Net::HTTP.get_response(uri)
-  return nil unless response.is_a?(Net::HTTPSuccess)
-
-  time_str = JSON.parse(response.body).dig("time", version)
+  data = fetch_npm_registry(package_name)
+  time_str = data.dig("time", version)
   time_str ? Time.parse(time_str) : nil
 rescue StandardError
   nil
@@ -68,17 +73,6 @@ end
 def age_hours(published_at)
   ((Time.now - published_at) / 3600).round(1)
 end
-
-def check_age!(package_name, version, published_at)
-  hours = age_hours(published_at)
-  return if hours >= MIN_PACKAGE_AGE_HOURS
-
-  raise TooNewError, "#{package_name}@#{version} was published #{hours}h ago " \
-    "(minimum: #{MIN_PACKAGE_AGE_HOURS}h). Skipping — set MIN_PACKAGE_AGE_HOURS=0 " \
-    "or --skip-age-check to override."
-end
-
-class TooNewError < StandardError; end
 
 def replace_version(contents, pattern, new_version)
   updated = false
@@ -102,13 +96,15 @@ def usage
   puts "  MIN_PACKAGE_AGE_HOURS  Minimum hours since publish (default: 72)"
 end
 
-def update_dockerfile(latest_versions)
+def update_dockerfile(versions_to_apply)
   contents = DOCKERFILE_PATH.read
   updates = []
   failures = []
 
   DOCKERFILE_NPM_PACKAGES.each do |package_name, pattern|
-    latest_version = latest_versions.fetch(package_name)
+    next unless versions_to_apply.key?(package_name)
+
+    latest_version = versions_to_apply.fetch(package_name)
     contents, updated = replace_version(contents, pattern, latest_version)
     updates << "#{package_name} -> #{latest_version}" if updated
   rescue StandardError => error
@@ -208,23 +204,26 @@ Dir.chdir(APP_ROOT) do
 
   puts "\n== Updating Dockerfile-pinned npm tools =="
   latest_versions = {}
-  quarantined = []
+  skipped_too_new = []
 
   DOCKERFILE_NPM_PACKAGES.each do |package_name, _pattern|
     version, published_at = fetch_npm_version_info(package_name)
-    latest_versions[package_name] = version
-
-    next if skip_age_check
-
     hours = age_hours(published_at)
-    if hours < MIN_PACKAGE_AGE_HOURS
-      quarantined << "  #{package_name}@#{version} (#{hours}h old, minimum: #{MIN_PACKAGE_AGE_HOURS}h)"
+
+    if !skip_age_check && hours < MIN_PACKAGE_AGE_HOURS
+      skipped_too_new << "  #{package_name}@#{version} (#{hours}h old, minimum: #{MIN_PACKAGE_AGE_HOURS}h)"
+      latest_versions[package_name] = nil
+    else
+      latest_versions[package_name] = version
     end
   end
 
-  update_package_manager(latest_versions.fetch("yarn"))
+  # Only update versions that passed the age check (or weren't checked).
+  # nil values mean the package was quarantined — keep the existing version.
+  applicable_versions = latest_versions.compact
+  update_package_manager(applicable_versions.fetch("yarn")) if applicable_versions.key?("yarn")
 
-  updates, failures = update_dockerfile(latest_versions)
+  updates, failures = update_dockerfile(applicable_versions)
   if updates.empty?
     puts "No npm-pinned Dockerfile dependencies matched."
   else
@@ -240,22 +239,22 @@ Dir.chdir(APP_ROOT) do
     gem_quarantined, gem_checked = check_lockfile_ages(
       gem_versions_before, parse_gemfile_lock_versions
     ) { |name, version| fetch_gem_publish_time(name, version) }
-    quarantined.concat(gem_quarantined)
     puts "  Checked #{gem_checked} updated gem(s)"
 
     yarn_quarantined, yarn_checked = check_lockfile_ages(
       yarn_versions_before, parse_yarn_lock_versions
     ) { |name, version| fetch_npm_publish_time(name, version) }
-    quarantined.concat(yarn_quarantined)
     puts "  Checked #{yarn_checked} updated npm package(s)"
 
-    if quarantined.any?
-      warn "\n⚠ WARNING: #{quarantined.size} package(s) are newer than the " \
+    all_quarantined = skipped_too_new + gem_quarantined + yarn_quarantined
+
+    if all_quarantined.any?
+      warn "\n⚠ WARNING: #{all_quarantined.size} package(s) are newer than the " \
         "#{MIN_PACKAGE_AGE_HOURS}h quarantine period:"
-      quarantined.each { |q| warn q }
-      warn "\nThese updates have been applied locally but may contain unvetted code."
-      warn "Review carefully before committing, or re-run with --skip-age-check to silence."
-      warn "To revert: git checkout Gemfile.lock yarn.lock docker/agent/Dockerfile"
+      all_quarantined.each { |q| warn q }
+      warn "\nDockerfile-pinned packages were NOT updated to quarantined versions."
+      warn "Lockfile packages (gems/npm) were updated by bundle/yarn — review the diff"
+      warn "carefully before committing, or revert with: git checkout Gemfile.lock yarn.lock"
     else
       puts "  All updated packages are older than #{MIN_PACKAGE_AGE_HOURS}h ✓"
     end
