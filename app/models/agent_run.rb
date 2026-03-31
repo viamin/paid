@@ -120,7 +120,7 @@ class AgentRun < ApplicationRecord
   # produced the output. Mirrors the Ruby #effective_provider method so that
   # both SQL aggregations and Ruby code share the same logic.
   def self.effective_provider_sql
-    "COALESCE(NULLIF(final_provider, ''), #{normalized_agent_type_sql})"
+    "COALESCE(#{normalize_provider_sql("NULLIF(final_provider, '')")}, #{normalized_agent_type_sql})"
   end
 
   ransacker :tokens_total, type: :integer do
@@ -542,7 +542,7 @@ class AgentRun < ApplicationRecord
   #
   # @return [String] The effective provider name
   def effective_provider
-    final_provider.presence || ProviderSupport.provider_key_for_agent_type(agent_type)
+    ProviderSupport.provider_key_for_agent_type(final_provider.presence || agent_type)
   end
 
   def final_provider_record

@@ -1453,9 +1453,14 @@ RSpec.describe AgentRun do
   end
 
   describe "#effective_provider" do
-    it "returns final_provider when present" do
+    it "returns final_provider when present and not mapped" do
       agent_run = create(:agent_run, agent_type: "claude_code", final_provider: "codex")
       expect(agent_run.effective_provider).to eq("codex")
+    end
+
+    it "normalizes final_provider when it contains a legacy agent-type identifier" do
+      agent_run = create(:agent_run, agent_type: "cursor", final_provider: "claude_code")
+      expect(agent_run.effective_provider).to eq("claude")
     end
 
     it "returns normalized provider key when final_provider is nil" do
