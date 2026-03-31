@@ -48,6 +48,9 @@
 
 /node_modules
 
+# npm lockfile — this project uses Yarn (yarn.lock). Prevent conflicts from mixed package managers.
+package-lock.json
+
 # Ignore code coverage reports
 /coverage/
 
