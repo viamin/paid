@@ -1479,6 +1479,19 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".normalize_provider_sql" do
+    it "raises ArgumentError for untrusted column names" do
+      expect { described_class.normalize_provider_sql("'; DROP TABLE agent_runs; --") }
+        .to raise_error(ArgumentError, /untrusted column/)
+    end
+
+    it "accepts whitelisted column names" do
+      expect { described_class.normalize_provider_sql("agent_type") }.not_to raise_error
+      expect { described_class.normalize_provider_sql("final_provider") }.not_to raise_error
+      expect { described_class.normalize_provider_sql("NULLIF(final_provider, '')") }.not_to raise_error
+    end
+  end
+
   describe "#final_provider_record" do
     it "resolves a routing-key final provider to its provider record" do
       agent_run = create(:agent_run)

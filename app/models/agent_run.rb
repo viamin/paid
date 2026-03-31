@@ -89,6 +89,15 @@ class AgentRun < ApplicationRecord
     end
   }
 
+  # Trusted SQL column expressions that may be passed to
+  # normalize_provider_sql. Restricting to a whitelist prevents
+  # accidental SQL injection if a future caller passes untrusted input.
+  NORMALIZABLE_COLUMNS = [
+    "agent_type",
+    "final_provider",
+    "NULLIF(final_provider, '')"
+  ].freeze
+
   # SQL CASE expression that normalizes a column's value to its canonical
   # provider key (e.g. "claude_code" → "claude") so SQL aggregations match
   # Ruby logic.
@@ -97,9 +106,13 @@ class AgentRun < ApplicationRecord
   # AGENT_TYPES so that SQL and Ruby stay in sync if new aliases are added
   # or existing mappings change.
   #
-  # +column+ defaults to "agent_type" but can be any column (e.g.
-  # "final_provider") whose values use the same vocabulary.
+  # +column+ must be one of NORMALIZABLE_COLUMNS to guard against SQL
+  # injection. Defaults to "agent_type".
   def self.normalize_provider_sql(column = "agent_type")
+    unless NORMALIZABLE_COLUMNS.include?(column)
+      raise ArgumentError, "untrusted column #{column.inspect} — add it to NORMALIZABLE_COLUMNS if it is safe"
+    end
+
     remapped = AGENT_TYPES.filter_map do |agent_type|
       provider_key = ProviderSupport.provider_key_for_agent_type(agent_type)
       next if provider_key == agent_type
