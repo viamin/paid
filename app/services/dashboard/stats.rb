@@ -171,9 +171,12 @@ module Dashboard
 
     def provider_fallback_stats
       total = agent_runs.count
-      fallback_runs = agent_runs.where(
-        "provider_switches > 0 OR (final_provider IS NOT NULL AND final_provider != '' AND final_provider != #{normalized_agent_type_sql})"
-      )
+      table = AgentRun.arel_table
+      switches = table[:provider_switches].gt(0)
+      provider_changed = table[:final_provider].not_eq(nil)
+        .and(table[:final_provider].not_eq(""))
+        .and(table[:final_provider].not_eq(Arel.sql(normalized_agent_type_sql)))
+      fallback_runs = agent_runs.where(switches.or(provider_changed))
       fallback_count = fallback_runs.count
 
       {
