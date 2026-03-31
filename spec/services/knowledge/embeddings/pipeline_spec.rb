@@ -83,6 +83,16 @@ RSpec.describe Knowledge::Embeddings::Pipeline do
       expect(result[:chunks_embedded]).to eq(1)
     end
 
+    it "passes api_key to the default Generate instance when no generator is injected" do
+      allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
+      allow(Knowledge::Embeddings::Generate).to receive(:new)
+        .and_return(generator)
+
+      described_class.call(api_key: "sk-user-key")
+
+      expect(Knowledge::Embeddings::Generate).to have_received(:new).with(api_key: "sk-user-key")
+    end
+
     it "respects configurable batch size" do
       allow(Knowledge::Qdrant::PointSync).to receive(:upsert_chunk!)
 

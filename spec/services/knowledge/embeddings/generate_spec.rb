@@ -118,6 +118,28 @@ RSpec.describe Knowledge::Embeddings::Generate do
         .to raise_error(Knowledge::Embeddings::EmbeddingError, /Failed to parse embedding API response/)
     end
 
+    it "uses an injected api_key instead of ENV['OPENAI_API_KEY']" do
+      injected_key = "sk-injected-user-key"
+      allow(ENV).to receive(:fetch).with("OPENAI_API_KEY").and_call_original
+      original = ENV["OPENAI_API_KEY"]
+      ENV.delete("OPENAI_API_KEY")
+
+      stub_request(:post, "https://api.openai.com/v1/embeddings")
+        .with(headers: { "Authorization" => "Bearer #{injected_key}" })
+        .to_return(status: 200, body: success_response_body, headers: { "Content-Type" => "application/json" })
+
+      results = described_class.call(texts: texts, api_key: injected_key)
+
+      expect(results.size).to eq(2)
+      expect(results.first.vector).to eq(vector)
+    ensure
+      if original.nil?
+        ENV.delete("OPENAI_API_KEY")
+      else
+        ENV["OPENAI_API_KEY"] = original
+      end
+    end
+
     it "raises EmbeddingError when OPENAI_API_KEY is not set" do
       allow(ENV).to receive(:fetch).with("OPENAI_API_KEY").and_call_original
       original = ENV["OPENAI_API_KEY"]
