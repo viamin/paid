@@ -742,7 +742,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_210524) do
 
   create_table "provider_api_keys", force: :cascade do |t|
     t.text "api_key", null: false
-    t.string "api_service_type", limit: 50, null: false
+    t.jsonb "compatible_providers", default: [], null: false
     t.datetime "created_at", null: false
     t.string "name", limit: 100, null: false
     t.datetime "updated_at", null: false
