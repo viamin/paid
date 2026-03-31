@@ -1453,19 +1453,42 @@ RSpec.describe AgentRun do
   end
 
   describe "#effective_provider" do
-    it "returns final_provider when present" do
+    it "returns final_provider when present and not mapped" do
       agent_run = create(:agent_run, agent_type: "claude_code", final_provider: "codex")
       expect(agent_run.effective_provider).to eq("codex")
     end
 
-    it "returns agent_type when final_provider is nil" do
-      agent_run = create(:agent_run, agent_type: "claude_code", final_provider: nil)
-      expect(agent_run.effective_provider).to eq("claude_code")
+    it "normalizes final_provider when it contains a legacy agent-type identifier" do
+      agent_run = create(:agent_run, agent_type: "cursor", final_provider: "claude_code")
+      expect(agent_run.effective_provider).to eq("claude")
     end
 
-    it "returns agent_type when final_provider is blank" do
+    it "returns normalized provider key when final_provider is nil" do
+      agent_run = create(:agent_run, agent_type: "claude_code", final_provider: nil)
+      expect(agent_run.effective_provider).to eq("claude")
+    end
+
+    it "returns normalized provider key when final_provider is blank" do
       agent_run = create(:agent_run, agent_type: "claude_code", final_provider: "")
-      expect(agent_run.effective_provider).to eq("claude_code")
+      expect(agent_run.effective_provider).to eq("claude")
+    end
+
+    it "returns agent_type as-is for non-mapped types" do
+      agent_run = create(:agent_run, :cursor, final_provider: nil)
+      expect(agent_run.effective_provider).to eq("cursor")
+    end
+  end
+
+  describe ".normalize_provider_sql" do
+    it "raises ArgumentError for untrusted column names" do
+      expect { described_class.normalize_provider_sql("'; DROP TABLE agent_runs; --") }
+        .to raise_error(ArgumentError, /untrusted column/)
+    end
+
+    it "accepts whitelisted column names" do
+      expect { described_class.normalize_provider_sql("agent_type") }.not_to raise_error
+      expect { described_class.normalize_provider_sql("final_provider") }.not_to raise_error
+      expect { described_class.normalize_provider_sql("NULLIF(final_provider, '')") }.not_to raise_error
     end
   end
 

@@ -89,11 +89,51 @@ class AgentRun < ApplicationRecord
     end
   }
 
+  # Trusted SQL column expressions that may be passed to
+  # normalize_provider_sql. Restricting to a whitelist prevents
+  # accidental SQL injection if a future caller passes untrusted input.
+  NORMALIZABLE_COLUMNS = [
+    "agent_type",
+    "final_provider",
+    "NULLIF(final_provider, '')"
+  ].freeze
+
+  # SQL CASE expression that normalizes a column's value to its canonical
+  # provider key (e.g. "claude_code" → "claude") so SQL aggregations match
+  # Ruby logic.
+  #
+  # Derived from ProviderSupport.provider_key_for_agent_type for all known
+  # AGENT_TYPES so that SQL and Ruby stay in sync if new aliases are added
+  # or existing mappings change.
+  #
+  # +column+ must be one of NORMALIZABLE_COLUMNS to guard against SQL
+  # injection. Defaults to "agent_type".
+  def self.normalize_provider_sql(column = "agent_type")
+    unless NORMALIZABLE_COLUMNS.include?(column)
+      raise ArgumentError, "untrusted column #{column.inspect} — add it to NORMALIZABLE_COLUMNS if it is safe"
+    end
+
+    remapped = AGENT_TYPES.filter_map do |agent_type|
+      provider_key = ProviderSupport.provider_key_for_agent_type(agent_type)
+      next if provider_key == agent_type
+
+      "WHEN #{connection.quote(agent_type)} THEN #{connection.quote(provider_key)}"
+    end
+
+    return column if remapped.empty?
+
+    "CASE #{column} #{remapped.join(" ")} ELSE #{column} END"
+  end
+
+  def self.normalized_agent_type_sql
+    normalize_provider_sql("agent_type")
+  end
+
   # SQL expression for the effective provider: the provider that actually
   # produced the output. Mirrors the Ruby #effective_provider method so that
   # both SQL aggregations and Ruby code share the same logic.
   def self.effective_provider_sql
-    "COALESCE(NULLIF(final_provider, ''), agent_type)"
+    "COALESCE(#{normalize_provider_sql("NULLIF(final_provider, '')")}, #{normalized_agent_type_sql})"
   end
 
   ransacker :tokens_total, type: :integer do
@@ -515,7 +555,7 @@ class AgentRun < ApplicationRecord
   #
   # @return [String] The effective provider name
   def effective_provider
-    final_provider.presence || agent_type
+    ProviderSupport.provider_key_for_agent_type(final_provider.presence || agent_type)
   end
 
   def final_provider_record
