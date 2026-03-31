@@ -1077,8 +1077,8 @@ RSpec.describe "AgentRuns" do
       end
 
       it "clears auto-generated prompt so it is rebuilt on retry" do
-        agent_run = create(:agent_run, :failed, project: project, custom_prompt: "# Task\n\nAuto-generated prompt")
-        create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt")
+        agent_run = create(:agent_run, :failed, :existing_pr, project: project, custom_prompt: "# Task\n\nAuto-generated prompt")
+        create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt", phase_group: "prompt")
 
         post retry_project_agent_run_path(project, agent_run)
 

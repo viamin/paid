@@ -329,7 +329,7 @@ module Projects
     # them with current state (service containers, CI status, review threads).
     # User-supplied prompts are preserved as-is.
     def prompt_for_retry(agent_run)
-      if agent_run.agent_run_phases.exists?(phase_key: "prepare_pr_prompt")
+      if agent_run.agent_run_phases.exists?(phase_key: "prepare_pr_prompt", phase_group: "prompt", status: "completed")
         nil
       else
         agent_run.custom_prompt
