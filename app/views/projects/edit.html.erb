@@ -150,9 +150,7 @@
                 <input type="hidden" name="project[review_settings][enabled]" value="0" />
                 <input type="checkbox" name="project[review_settings][enabled]" value="1" id="project_review_settings_enabled"
                   <%= "checked" if rs["enabled"] %>
-                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
-                  data-controller="toggle-section" data-action="change->toggle-section#toggle"
-                  data-toggle-section-target-value="review-methods" />
+                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
                 <label for="project_review_settings_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Enable PR Reviews</label>
               </div>
               <p class="mt-1 ml-7 text-xs text-gray-500">When enabled, pull requests will be reviewed using the configured methods below.</p>

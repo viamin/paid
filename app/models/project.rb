@@ -3,7 +3,7 @@
 class Project < ApplicationRecord
   MERGE_METHODS = %w[squash merge rebase].freeze
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
-  REVIEW_METHODS = %w[copilot paid_agent ci_action manual none].freeze
+  REVIEW_METHODS = %w[copilot paid_agent ci_action manual].freeze
 
   DEFAULT_REVIEW_SETTINGS = {
     "enabled" => false,
@@ -324,8 +324,13 @@ class Project < ApplicationRecord
     )
   end
 
+  def review_settings=(value)
+    @effective_review_settings = nil
+    super
+  end
+
   def effective_review_settings
-    DEFAULT_REVIEW_SETTINGS.deep_merge(review_settings || {})
+    @effective_review_settings ||= DEFAULT_REVIEW_SETTINGS.deep_merge(review_settings || {})
   end
 
   def review_enabled?
@@ -424,6 +429,13 @@ class Project < ApplicationRecord
       return
     end
 
+    if review_settings["enabled"] == true
+      methods = review_settings["methods"]
+      unless methods.is_a?(Hash) && methods.any? { |_, c| c.is_a?(Hash) && c["enabled"] == true }
+        errors.add(:review_settings, "must have at least one review method enabled when reviews are enabled")
+      end
+    end
+
     validate_review_methods_config
   end
 
@@ -455,6 +467,14 @@ class Project < ApplicationRecord
     if timeout.present? && (!timeout.is_a?(Integer) || timeout < 1)
       errors.add(:review_settings, "#{method_name} timeout_minutes must be a positive integer")
     end
+
+    has_any_condition = termination["max_review_rounds"].present? ||
+                        termination["stop_when_no_comments"] == true ||
+                        termination["quality_threshold"].present? ||
+                        termination["timeout_minutes"].present?
+    return if has_any_condition
+
+    errors.add(:review_settings, "#{method_name} must have at least one termination condition configured")
   end
 
   def allowed_github_usernames_not_empty

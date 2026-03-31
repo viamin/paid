@@ -698,6 +698,41 @@ RSpec.describe Project do
         expect(project.errors[:review_settings].join).to include("timeout_minutes must be a positive integer")
       end
 
+      it "rejects enabled reviews with no methods enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "copilot" => { "enabled" => false }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("at least one review method enabled")
+      end
+
+      it "rejects enabled reviews with no methods key" do
+        project = build(:project, review_settings: { "enabled" => true })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("at least one review method enabled")
+      end
+
+      it "rejects enabled method with no termination conditions" do
+        project = build(:project, review_settings: {
+          "methods" => {
+            "copilot" => {
+              "enabled" => true,
+              "termination" => {
+                "max_review_rounds" => nil,
+                "stop_when_no_comments" => false,
+                "quality_threshold" => nil,
+                "timeout_minutes" => nil
+              }
+            }
+          }
+        })
+        expect(project).not_to be_valid
+        expect(project.errors[:review_settings].join).to include("at least one termination condition")
+      end
+
       it "skips termination validation for disabled methods" do
         project = build(:project, review_settings: {
           "methods" => {
