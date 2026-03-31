@@ -1423,14 +1423,14 @@ RSpec.describe AgentRun do
         agent_run.update!(status: "failed")
       end
 
-      it "broadcasts issues update when transitioning from nil to an eligible status (create)" do
+      it "broadcasts issues update when transitioning from nil to a blocking status (create)" do
         # Eagerly create issue so its own after_commit broadcast doesn't interfere
         issue
         expect(project).to receive(:broadcast_issues_update).once
         create(:agent_run, project: project, issue: issue, status: "pending")
       end
 
-      it "does not broadcast issues update for intermediate transitions within eligible statuses" do
+      it "does not broadcast issues update for intermediate transitions within blocking statuses" do
         agent_run = create(:agent_run, project: project, issue: issue, status: "pending")
 
         expect(project).not_to receive(:broadcast_issues_update)

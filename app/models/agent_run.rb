@@ -8,6 +8,7 @@ class AgentRun < ApplicationRecord
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
+  AUTO_PICK_BLOCKING_STATUSES = %w[queued pending running].freeze
 
   belongs_to :project
   belongs_to :issue, optional: true
@@ -839,11 +840,10 @@ class AgentRun < ApplicationRecord
           should_broadcast_issues = true
         elsif previous_changes.key?("status")
           from_status, to_status = previous_changes["status"]
-          eligible_statuses = %w[queued pending running]
-          from_eligible = eligible_statuses.include?(from_status)
-          to_eligible = eligible_statuses.include?(to_status)
+          from_blocking = AUTO_PICK_BLOCKING_STATUSES.include?(from_status)
+          to_blocking = AUTO_PICK_BLOCKING_STATUSES.include?(to_status)
 
-          if from_eligible != to_eligible || FINISHED_STATUSES.include?(to_status)
+          if from_blocking != to_blocking
             should_broadcast_issues = true
           end
         end
