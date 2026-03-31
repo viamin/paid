@@ -205,7 +205,8 @@ module QualityMetrics
           pr_reaction: source_tally["pr_reaction"].to_i,
           pr_review: source_tally["pr_review"].to_i,
           issue_reaction: source_tally["issue_reaction"].to_i,
-          review_reaction: source_tally["review_reaction"].to_i
+          review_reaction: source_tally["review_reaction"].to_i,
+          comment: source_tally["comment"].to_i
         }
       }
     end
@@ -216,7 +217,7 @@ module QualityMetrics
         merge_rate: nil,
         reactions: { count: 0, average_score: nil },
         reviews: { count: 0, average_score: nil },
-        by_source: { pr_merge: 0, pr_reaction: 0, pr_review: 0, issue_reaction: 0, review_reaction: 0 }
+        by_source: { pr_merge: 0, pr_reaction: 0, pr_review: 0, issue_reaction: 0, review_reaction: 0, comment: 0 }
       }
     end
   end
