@@ -10,6 +10,7 @@ class Issue < ApplicationRecord
   SYNTHETIC_DEPENDABOT_SOURCE = "dependabot_alert"
   VALID_SOURCES = [ GITHUB_SOURCE, SYNTHETIC_DEPENDABOT_SOURCE ].freeze
   SEVERITY_ORDER = %w[critical high medium low].freeze
+  TRACKER_PATTERN = /\b(?:tracker|remaining\s+work|completion\s+criteria|phase\s+tracker|meta\s+issue)\b/i
   # Large offset so synthetic github_issue_id values never collide with real
   # GitHub issue IDs (which currently range in the low billions).
   SYNTHETIC_ISSUE_ID_OFFSET = 900_000_000_000
@@ -99,6 +100,14 @@ class Issue < ApplicationRecord
 
   def sub_issue?
     parent_issue_id.present? || parent_issue.present?
+  end
+
+  def tracker_issue?
+    TRACKER_PATTERN.match?(title.to_s) || TRACKER_PATTERN.match?(body.to_s)
+  end
+
+  def body_referenced_issue_numbers
+    body.to_s.scan(/(?<!\w)#(\d+)/).flatten.map(&:to_i).uniq
   end
 
   def has_associated_pull_requests?
