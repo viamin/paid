@@ -605,12 +605,12 @@ class GithubClient
     end
   end
 
-  # Fetches open code scanning alerts for a repository.
-  # Uses auto-pagination to get an authoritative snapshot of all open alerts.
+  # Fetches code scanning alerts for a repository for the given state (default: "open").
+  # Uses auto-pagination to get an authoritative snapshot of all alerts in the requested state.
   #
   # @param repo [String] Repository in "owner/name" format
   # @param severity [String, nil] Filter by security severity: "low", "medium", "high", or "critical"
-  # @param state [String] Alert state: "open", "dismissed", "fixed"
+  # @param state [String] Alert state to filter by: "open", "dismissed", or "fixed"
   # @return [Array<Hash>] Alerts with :number, :state, :severity, :rule_id,
   #   :rule_description, :tool_name, :summary, :html_url,
   #   :created_at, :updated_at keys

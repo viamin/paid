@@ -33,6 +33,8 @@ module SecurityAlerts
           update_metadata_if_changed(existing, alert)
         end
       end
+
+      []
     end
 
     private
