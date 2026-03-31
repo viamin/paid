@@ -678,6 +678,9 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
     context "when alert types includes other types but not dependabot" do
       before do
         project.update!(security_alert_types: [ "code_scanning" ])
+        allow(github_client).to receive(:code_scanning_alerts)
+          .with(project.full_name)
+          .and_return([])
       end
 
       it "does not fetch dependabot alerts" do
@@ -698,6 +701,127 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         stale_issue.reload
         expect(stale_issue.github_state).to eq("open")
+      end
+    end
+
+    context "when code_scanning is included in alert types" do
+      let(:cs_id_offset) { Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET }
+      let(:cs_source) { Issue::SYNTHETIC_CODE_SCANNING_SOURCE }
+
+      let(:code_scanning_alerts) do
+        [
+          {
+            number: 1667,
+            state: "open",
+            severity: "high",
+            rule_id: "py/sensitive-get-query",
+            rule_description: "Sensitive data read from GET request",
+            tool_name: "CodeQL",
+            summary: "Reading sensitive data from a GET request.",
+            html_url: "https://github.com/owner/repo/security/code-scanning/1667",
+            created_at: "2026-03-29T10:00:00Z",
+            updated_at: "2026-03-29T12:00:00Z"
+          }
+        ]
+      end
+
+      before do
+        project.update!(security_alert_types: %w[dependabot code_scanning])
+        allow(github_client).to receive(:dependabot_alerts)
+          .with(project.full_name)
+          .and_return([])
+        allow(github_client).to receive(:code_scanning_alerts)
+          .with(project.full_name)
+          .and_return(code_scanning_alerts)
+      end
+
+      it "creates synthetic issues for code scanning alerts" do
+        activity.execute(project_id: project.id)
+
+        issue = project.issues.find_by(source: cs_source, github_issue_id: cs_id_offset + 1667)
+        expect(issue).to be_present
+        expect(issue.title).to include("[Security] CodeQL:")
+        expect(issue.title).to include("code-scanning-alert-1667")
+        expect(issue.labels).to eq(%w[security code-scanning])
+        expect(issue.source).to eq(cs_source)
+      end
+
+      it "does not include code scanning issues in alerts_to_fix" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:alerts_to_fix]).to eq([])
+      end
+
+      it "updates last_code_scanning_scan_at after scan" do
+        expect { activity.execute(project_id: project.id) }
+          .to change { project.reload.last_code_scanning_scan_at }.from(nil)
+      end
+
+      it "skips code scanning when interval has not elapsed" do
+        project.update_column(:last_code_scanning_scan_at, 1.hour.ago)
+
+        activity.execute(project_id: project.id)
+
+        expect(project.issues.where(source: cs_source).count).to eq(0)
+      end
+
+      it "scans code scanning when interval has elapsed" do
+        project.update_column(:last_code_scanning_scan_at, 73.hours.ago)
+
+        activity.execute(project_id: project.id)
+
+        expect(project.issues.where(source: cs_source).count).to eq(1)
+      end
+
+      it "respects severity threshold for code scanning alerts" do
+        project.update!(security_severity_threshold: "critical")
+
+        activity.execute(project_id: project.id)
+
+        # Alert is "high" but threshold is "critical" — should not create issue
+        expect(project.issues.where(source: cs_source).count).to eq(0)
+      end
+
+      it "reconciles resolved code scanning alerts" do
+        stale_issue = create(:issue,
+          project: project,
+          title: "[Security] CodeQL: Old alert — code-scanning-alert-999",
+          github_issue_id: cs_id_offset + 999,
+          github_number: 200_000_999,
+          github_state: "open",
+          source: cs_source)
+
+        activity.execute(project_id: project.id)
+
+        stale_issue.reload
+        expect(stale_issue.github_state).to eq("closed")
+        expect(stale_issue.paid_state).to eq("completed")
+      end
+
+      context "when code scanning API returns 403" do
+        before do
+          allow(github_client).to receive(:code_scanning_alerts)
+            .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
+        end
+
+        it "degrades gracefully and still returns dependabot results" do
+          result = activity.execute(project_id: project.id)
+
+          expect(result[:alerts_to_fix]).to eq([])
+        end
+      end
+
+      context "when code scanning API returns 404" do
+        before do
+          allow(github_client).to receive(:code_scanning_alerts)
+            .and_raise(GithubClient::NotFoundError)
+        end
+
+        it "degrades gracefully" do
+          result = activity.execute(project_id: project.id)
+
+          expect(result[:alerts_to_fix]).to eq([])
+        end
       end
     end
   end

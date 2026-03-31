@@ -605,6 +605,45 @@ class GithubClient
     end
   end
 
+  # Fetches open code scanning alerts for a repository.
+  # Uses auto-pagination to get an authoritative snapshot of all open alerts.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param severity [String, nil] Filter by security severity: "low", "medium", "high", or "critical"
+  # @param state [String] Alert state: "open", "dismissed", "fixed"
+  # @return [Array<Hash>] Alerts with :number, :state, :severity, :rule_id,
+  #   :rule_description, :tool_name, :summary, :html_url,
+  #   :created_at, :updated_at keys
+  def code_scanning_alerts(repo, severity: nil, state: "open", per_page: 100)
+    handle_errors do
+      params = { state: state, per_page: per_page }
+      params[:severity] = severity if severity.present?
+
+      all_alerts = client.paginate(
+        "#{Octokit::Repository.path(repo)}/code-scanning/alerts",
+        **params
+      )
+
+      Array(all_alerts).map do |alert|
+        rule = alert.rule
+        tool = alert.tool
+
+        {
+          number: alert.number,
+          state: alert.state,
+          severity: rule&.security_severity_level,
+          rule_id: rule&.id,
+          rule_description: rule&.description,
+          tool_name: tool&.name,
+          summary: alert.most_recent_instance&.message&.text,
+          html_url: alert.html_url,
+          created_at: alert.created_at,
+          updated_at: alert.updated_at || alert.created_at
+        }
+      end
+    end
+  end
+
   # Fetches reactions on a pull request (actually an issue endpoint in GitHub's API).
   #
   # @param repo [String] Repository in "owner/name" format
