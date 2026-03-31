@@ -2,6 +2,7 @@
 
 class ProviderApiKey < ApplicationRecord
   COMPATIBILITY_LABELS = {
+    "openai" => "OpenAI",
     "openrouter" => "OpenRouter"
   }.freeze
 

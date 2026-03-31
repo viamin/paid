@@ -12,13 +12,14 @@ module Knowledge
 
       attr_reader :model, :dimensions
 
-      def initialize(model: MODEL, dimensions: DIMENSIONS)
+      def initialize(model: MODEL, dimensions: DIMENSIONS, api_key: nil)
         @model = model
         @dimensions = dimensions
+        @explicit_api_key = api_key
       end
 
-      def self.call(texts:, model: MODEL, dimensions: DIMENSIONS)
-        new(model: model, dimensions: dimensions).call(texts: texts)
+      def self.call(texts:, model: MODEL, dimensions: DIMENSIONS, api_key: nil)
+        new(model: model, dimensions: dimensions, api_key: api_key).call(texts: texts)
       end
 
       # Returns an array of Result structs with :vector and :token_count
@@ -117,9 +118,10 @@ module Knowledge
       end
 
       def api_key
-        ENV.fetch("OPENAI_API_KEY") do
+        @explicit_api_key || ENV.fetch("OPENAI_API_KEY") do
           raise EmbeddingError,
-            "OPENAI_API_KEY environment variable is required for embedding generation"
+            "No OpenAI API key available. Configure a ProviderApiKey with OpenAI " \
+            "compatibility or set the OPENAI_API_KEY environment variable."
         end
       end
 
