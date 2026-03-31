@@ -4,8 +4,6 @@ module Dashboard
   class Stats
     PHASE_BREAKDOWN_WINDOW = 30.days
     PHASE_BREAKDOWN_RUN_LIMIT = 500
-    EFFECTIVE_PROVIDER_SQL = AgentRun.effective_provider_sql
-    NORMALIZED_AGENT_TYPE_SQL = AgentRun.normalized_agent_type_sql
 
     attr_reader :account
 
@@ -33,6 +31,14 @@ module Dashboard
     end
 
     private
+
+    def effective_provider_sql
+      AgentRun.effective_provider_sql
+    end
+
+    def normalized_agent_type_sql
+      AgentRun.normalized_agent_type_sql
+    end
 
     def agent_runs
       @agent_runs ||= AgentRun.joins(:project).where(projects: { account_id: account.id })
@@ -158,7 +164,7 @@ module Dashboard
 
     def runs_by_provider
       agent_runs
-        .group(Arel.sql(EFFECTIVE_PROVIDER_SQL))
+        .group(Arel.sql(effective_provider_sql))
         .count
         .sort_by { |_, v| -v }
     end
@@ -166,7 +172,7 @@ module Dashboard
     def provider_fallback_stats
       total = agent_runs.count
       fallback_runs = agent_runs.where(
-        "provider_switches > 0 OR (final_provider IS NOT NULL AND final_provider != '' AND final_provider != #{NORMALIZED_AGENT_TYPE_SQL})"
+        "provider_switches > 0 OR (final_provider IS NOT NULL AND final_provider != '' AND final_provider != #{normalized_agent_type_sql})"
       )
       fallback_count = fallback_runs.count
 
@@ -176,7 +182,7 @@ module Dashboard
         fallback_rate: total.zero? ? 0.0 : (fallback_count.to_f / total * 100).round(1),
         by_requested_provider: fallback_runs.group(:agent_type).count.sort_by { |_, v| -v },
         by_effective_provider: fallback_runs
-          .group(Arel.sql(EFFECTIVE_PROVIDER_SQL))
+          .group(Arel.sql(effective_provider_sql))
           .count
           .sort_by { |_, v| -v }
       }
