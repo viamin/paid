@@ -327,9 +327,10 @@ module Projects
 
     # Clear auto-generated prompts on retry so PreparePrPromptActivity rebuilds
     # them with current state (service containers, CI status, review threads).
-    # Any prepare_pr_prompt phase—completed or failed—means the prompt was
-    # auto-generated, so we clear it regardless of phase status.
-    # User-supplied prompts (no prepare_pr_prompt phase) are preserved as-is.
+    # Any prepare_pr_prompt phase in the "prompt" phase group—completed or
+    # failed—means the prompt was auto-generated, so we clear it regardless of
+    # phase status. User-supplied prompts (no such prepare_pr_prompt phase) are
+    # preserved as-is.
     def prompt_for_retry(agent_run)
       if agent_run.agent_run_phases.exists?(phase_key: "prepare_pr_prompt", phase_group: "prompt")
         nil

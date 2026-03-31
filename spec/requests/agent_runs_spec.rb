@@ -1070,9 +1070,12 @@ RSpec.describe "AgentRuns" do
       it "preserves user-supplied custom_prompt from the original run" do
         agent_run = create(:agent_run, :failed, :with_custom_prompt, project: project)
 
-        post retry_project_agent_run_path(project, agent_run)
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to change(AgentRun, :count).by(1)
 
         new_run = AgentRun.last
+        expect(new_run.id).not_to eq(agent_run.id)
         expect(new_run.custom_prompt).to eq(agent_run.custom_prompt)
       end
 
@@ -1080,9 +1083,12 @@ RSpec.describe "AgentRuns" do
         agent_run = create(:agent_run, :failed, :existing_pr, project: project, custom_prompt: "# Task\n\nAuto-generated prompt")
         create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt", phase_group: "prompt")
 
-        post retry_project_agent_run_path(project, agent_run)
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to change(AgentRun, :count).by(1)
 
         new_run = AgentRun.last
+        expect(new_run.id).not_to eq(agent_run.id)
         expect(new_run.custom_prompt).to be_nil
       end
 
@@ -1090,9 +1096,12 @@ RSpec.describe "AgentRuns" do
         agent_run = create(:agent_run, :failed, :existing_pr, project: project, custom_prompt: "# Task\n\nStale prompt")
         create(:agent_run_phase, agent_run: agent_run, phase_key: "prepare_pr_prompt", phase_group: "prompt", status: "failed")
 
-        post retry_project_agent_run_path(project, agent_run)
+        expect {
+          post retry_project_agent_run_path(project, agent_run)
+        }.to change(AgentRun, :count).by(1)
 
         new_run = AgentRun.last
+        expect(new_run.id).not_to eq(agent_run.id)
         expect(new_run.custom_prompt).to be_nil
       end
 
@@ -1293,9 +1302,12 @@ RSpec.describe "AgentRuns" do
           allow(AgentHarness).to receive(:refresh_auth)
         end
 
-        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+        expect {
+          post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_code: "valid-code" }
+        }.to change(AgentRun, :count).by(1)
 
         new_run = AgentRun.last
+        expect(new_run.id).not_to eq(agent_run.id)
         expect(new_run.custom_prompt).to be_nil
       end
 
