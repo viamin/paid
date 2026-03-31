@@ -87,7 +87,7 @@ RSpec.describe DelayedHumanFeedbackCollectionJob do
       }.to have_enqueued_job(HumanFeedbackCollectionJob).with(run.id)
     end
 
-    it "falls back to updated_at for metrics without last_polled_at" do
+    it "includes runs with metrics missing last_polled_at (treated as never polled)" do
       run = create(:agent_run, :completed)
       run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
       run.quality_metrics.create!(
@@ -100,7 +100,7 @@ RSpec.describe DelayedHumanFeedbackCollectionJob do
 
       expect {
         described_class.new.perform
-      }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
+      }.to have_enqueued_job(HumanFeedbackCollectionJob).with(run.id)
     end
   end
 end

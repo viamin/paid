@@ -43,22 +43,15 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
 
   private
 
-  # Returns agent_run_ids whose human metric was polled within SWEEP_INTERVAL.
-  # Falls back to updated_at for metrics that predate the last_polled_at field.
+  # Only considers metadata->>'last_polled_at'; metrics without this field are
+  # treated as never polled so they are included in the sweep.
   def recently_polled_agent_run_ids
-    polled_at_clause = Arel::Nodes::NamedFunction.new(
-      "COALESCE",
-      [
-        Arel::Nodes::SqlLiteral.new(
-          "CAST(NULLIF(quality_metrics.metadata->>'last_polled_at', '') AS TIMESTAMPTZ)"
-        ),
-        QualityMetric.arel_table[:updated_at]
-      ]
-    )
-
     QualityMetric
       .where(metric_type: "human")
-      .where(polled_at_clause.gteq(SWEEP_INTERVAL.ago))
+      .where(
+        "CAST(NULLIF(quality_metrics.metadata->>'last_polled_at', '') AS TIMESTAMPTZ) >= ?",
+        SWEEP_INTERVAL.ago
+      )
       .select(:agent_run_id)
   end
 end
