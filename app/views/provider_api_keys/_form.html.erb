@@ -1,0 +1,61 @@
+<% if @provider_api_key.errors.any? %>
+  <div class="mb-6 rounded-md bg-red-50 p-4">
+    <div class="flex">
+      <div class="flex-shrink-0">
+        <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd" />
+        </svg>
+      </div>
+      <div class="ml-3">
+        <h3 class="text-sm font-medium text-red-800">
+          <%= pluralize(@provider_api_key.errors.count, "error") %> prevented this API key from being saved:
+        </h3>
+        <div class="mt-2 text-sm text-red-700">
+          <ul class="list-disc space-y-1 pl-5">
+            <% @provider_api_key.errors.full_messages.each do |message| %>
+              <li><%= message %></li>
+            <% end %>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<div class="space-y-6">
+  <div>
+    <%= form.label :name, class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.text_field :name, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "e.g., My Anthropic API Key", required: true %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">A friendly name to identify this API key.</p>
+  </div>
+
+  <div>
+    <%= form.label :api_key, "API Key", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <div class="mt-2">
+      <%= form.password_field :api_key, class: "block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: @provider_api_key.persisted? ? "Leave blank to keep current key" : "sk-...", autocomplete: "new-password", spellcheck: false, required: @provider_api_key.new_record? %>
+    </div>
+    <% if @provider_api_key.persisted? %>
+      <p class="mt-1 text-xs text-gray-500">Leave blank to keep the current key. Current: <code class="rounded bg-gray-100 px-1 font-mono text-xs"><%= @provider_api_key.masked_api_key %></code></p>
+    <% else %>
+      <p class="mt-1 text-xs text-gray-500">Your API key is encrypted at rest and only shown in masked form after saving.</p>
+    <% end %>
+  </div>
+
+  <fieldset>
+    <legend class="block text-sm font-medium leading-6 text-gray-900">Compatible Providers and Services</legend>
+    <p class="mt-1 text-xs text-gray-500">Select which providers or upstream services this API key can be used with.</p>
+    <div class="mt-3 space-y-2">
+      <input type="hidden" name="provider_api_key[compatible_providers][]" value="">
+      <% @compatible_provider_options.each do |label, key| %>
+        <div class="flex items-center">
+          <input type="checkbox" name="provider_api_key[compatible_providers][]" value="<%= key %>" id="compatible_<%= key %>"
+            class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+            <%= "checked" if @provider_api_key.compatible_providers.include?(key) %>>
+          <label for="compatible_<%= key %>" class="ml-3 block text-sm text-gray-700"><%= label %></label>
+        </div>
+      <% end %>
+    </div>
+  </fieldset>
+</div>

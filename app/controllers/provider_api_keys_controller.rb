@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ProviderApiKeysController < ApplicationController
-  before_action :set_provider_api_key, only: [ :show, :destroy ]
+  before_action :set_provider_api_key, only: [ :show, :edit, :update, :destroy ]
   skip_after_action :verify_authorized, only: :index
 
   def index
@@ -28,6 +28,24 @@ class ProviderApiKeysController < ApplicationController
     else
       load_provider_options
       render :new, status: :unprocessable_content
+    end
+  end
+
+  def edit
+    authorize @provider_api_key
+    load_provider_options
+  end
+
+  def update
+    authorize @provider_api_key
+    permitted = provider_api_key_params
+    permitted.delete(:api_key) if permitted[:api_key].blank?
+    if @provider_api_key.update(permitted)
+      redirect_to provider_api_key_path(@provider_api_key),
+        notice: "API key updated."
+    else
+      load_provider_options
+      render :edit, status: :unprocessable_content
     end
   end
 

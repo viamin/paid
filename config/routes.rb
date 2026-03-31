@@ -34,7 +34,7 @@ Rails.application.routes.draw do
   resources :linear_tokens, only: [ :index, :new, :create, :show, :destroy ]
 
   # LLM provider API keys
-  resources :provider_api_keys, only: [ :index, :new, :create, :show, :destroy ]
+  resources :provider_api_keys, only: [ :index, :new, :create, :show, :edit, :update, :destroy ]
 
   # User settings (singleton resource — one per user)
   resource :user_settings, only: [ :edit, :update ]
