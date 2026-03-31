@@ -133,7 +133,8 @@ export default class extends Controller {
 
   requiredApiServiceTypeFor(providerKey) {
     if (!providerKey) return null
-    return PROVIDER_API_SERVICE_TYPE[providerKey] || null
+    // Mirror ProviderSupport.api_service_type_for backend default for unknown providers.
+    return PROVIDER_API_SERVICE_TYPE[providerKey] || "anthropic"
   }
 
   currentProviderKey() {
