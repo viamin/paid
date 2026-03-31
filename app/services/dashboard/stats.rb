@@ -40,6 +40,10 @@ module Dashboard
       AgentRun.normalized_agent_type_sql
     end
 
+    def normalized_final_provider_sql
+      AgentRun.normalize_provider_sql("final_provider")
+    end
+
     def agent_runs
       @agent_runs ||= AgentRun.joins(:project).where(projects: { account_id: account.id })
     end
@@ -175,7 +179,7 @@ module Dashboard
       switches = table[:provider_switches].gt(0)
       provider_changed = table[:final_provider].not_eq(nil)
         .and(table[:final_provider].not_eq(""))
-        .and(table[:final_provider].not_eq(Arel.sql(normalized_agent_type_sql)))
+        .and(Arel.sql(normalized_final_provider_sql).not_eq(Arel.sql(normalized_agent_type_sql)))
       fallback_runs = agent_runs.where(switches.or(provider_changed))
       fallback_count = fallback_runs.count
 

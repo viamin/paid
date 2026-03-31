@@ -89,13 +89,17 @@ class AgentRun < ApplicationRecord
     end
   }
 
-  # SQL expression that normalizes agent_type to its canonical provider key
-  # (e.g. "claude_code" → "claude") so SQL aggregations match Ruby logic.
+  # SQL CASE expression that normalizes a column's value to its canonical
+  # provider key (e.g. "claude_code" → "claude") so SQL aggregations match
+  # Ruby logic.
   #
   # Derived from ProviderSupport.provider_key_for_agent_type for all known
   # AGENT_TYPES so that SQL and Ruby stay in sync if new aliases are added
   # or existing mappings change.
-  def self.normalized_agent_type_sql
+  #
+  # +column+ defaults to "agent_type" but can be any column (e.g.
+  # "final_provider") whose values use the same vocabulary.
+  def self.normalize_provider_sql(column = "agent_type")
     remapped = AGENT_TYPES.filter_map do |agent_type|
       provider_key = ProviderSupport.provider_key_for_agent_type(agent_type)
       next if provider_key == agent_type
@@ -103,9 +107,13 @@ class AgentRun < ApplicationRecord
       "WHEN #{connection.quote(agent_type)} THEN #{connection.quote(provider_key)}"
     end
 
-    return "agent_type" if remapped.empty?
+    return column if remapped.empty?
 
-    "CASE agent_type #{remapped.join(" ")} ELSE agent_type END"
+    "CASE #{column} #{remapped.join(" ")} ELSE #{column} END"
+  end
+
+  def self.normalized_agent_type_sql
+    normalize_provider_sql("agent_type")
   end
 
   # SQL expression for the effective provider: the provider that actually

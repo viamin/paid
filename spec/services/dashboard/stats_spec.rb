@@ -317,6 +317,22 @@ RSpec.describe Dashboard::Stats do
       end
     end
 
+    context "with legacy final_provider matching agent_type (no fallback)" do
+      before do
+        # final_provider contains the legacy agent-type identifier "claude_code"
+        # rather than the normalized provider key "claude". Both should normalize
+        # to "claude", so this must NOT be counted as a fallback.
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_provider: "claude_code", provider_switches: 0)
+      end
+
+      it "does not count legacy final_provider as a fallback" do
+        fs = stats[:provider_fallback_stats]
+        expect(fs[:fallback_count]).to eq(0)
+        expect(fs[:fallback_rate]).to eq(0.0)
+      end
+    end
+
     context "with multiple projects" do
       let(:project2) { create(:project, account: account, name: "Active Project") }
 
