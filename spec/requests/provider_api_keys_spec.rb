@@ -239,6 +239,13 @@ RSpec.describe "ProviderApiKeys" do
         expect(response).to have_http_status(:unprocessable_content)
       end
 
+      it "preserves compatible_providers when key is absent from params" do
+        api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude openrouter])
+        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "Renamed" } }
+        expect(response).to redirect_to(provider_api_key_path(api_key))
+        expect(api_key.reload.compatible_providers).to eq(%w[claude openrouter])
+      end
+
       it "does not allow updating API keys from other users" do
         other_user = create(:user)
         other_key = create(:provider_api_key, user: other_user)
