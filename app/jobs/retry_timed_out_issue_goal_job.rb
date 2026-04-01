@@ -32,17 +32,21 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
     end
 
     begin
-      new_run = AgentRun.create!(
-        project: agent_run.project,
-        issue: agent_run.issue,
-        provider: agent_run.provider,
-        agent_type: agent_run.agent_type,
-        custom_prompt: agent_run.custom_prompt,
-        source_pull_request_number: agent_run.source_pull_request_number,
-        goal: agent_run.goal,
-        trigger_type: "automatic",
-        status: "queued"
-      )
+      new_run = AgentRun.transaction do
+        created = AgentRun.create!(
+          project: agent_run.project,
+          issue: agent_run.issue,
+          provider: agent_run.provider,
+          agent_type: agent_run.agent_type,
+          custom_prompt: agent_run.custom_prompt,
+          source_pull_request_number: agent_run.source_pull_request_number,
+          goal: agent_run.goal,
+          trigger_type: "automatic",
+          status: "queued"
+        )
+        agent_run.retry!
+        created
+      end
     rescue ActiveRecord::RecordNotUnique => e
       raise unless (e.cause&.message || e.message)&.include?("idx_agent_runs_unique_active_issue")
 
@@ -63,8 +67,6 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
       )
       return
     end
-
-    agent_run.retry!
 
     Rails.logger.info(
       message: "agent_execution.issue_goal_auto_retry",
