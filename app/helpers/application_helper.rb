@@ -72,7 +72,7 @@ module ApplicationHelper
   ISSUE_LIFECYCLE_DISPLAY = {
     blocked: { emoji: "\u{1F550}", label: "Blocked" },
     in_progress: { emoji: "\u{1F9E0}", label: "In Progress" },
-    eligible: { emoji: "\u26A1\uFE0F", label: "Auto-pick Eligible" }
+    eligible: { emoji: "\u26A1\uFE0F", label: "Unblocked" }
   }.freeze
 
   def issue_lifecycle_badge(status)
