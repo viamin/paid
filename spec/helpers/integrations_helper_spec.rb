@@ -9,7 +9,7 @@ RSpec.describe IntegrationsHelper do
     end
 
     it "shows Revoked when the token is revoked" do
-      record = build_record(revoked?: true)
+      record = build_record("revoked?": true)
       result = helper.render_integration_status(record)
 
       expect(result).to include("Revoked")
@@ -17,7 +17,7 @@ RSpec.describe IntegrationsHelper do
     end
 
     it "shows Expired when the token is expired" do
-      record = build_record(expired?: true)
+      record = build_record("expired?": true)
       result = helper.render_integration_status(record)
 
       expect(result).to include("Expired")
@@ -25,7 +25,7 @@ RSpec.describe IntegrationsHelper do
     end
 
     it "shows Validation Failed when validation failed" do
-      record = build_record(validation_failed?: true)
+      record = build_record("validation_failed?": true)
       result = helper.render_integration_status(record)
 
       expect(result).to include("Validation Failed")
@@ -33,7 +33,7 @@ RSpec.describe IntegrationsHelper do
     end
 
     it "shows Validation Stuck when validation is stale" do
-      record = build_record(validation_stale?: true)
+      record = build_record("validation_stale?": true)
       result = helper.render_integration_status(record)
 
       expect(result).to include("Validation Stuck")
@@ -41,7 +41,7 @@ RSpec.describe IntegrationsHelper do
     end
 
     it "shows Validating when actively validating" do
-      record = build_record(validating?: true)
+      record = build_record("validating?": true)
       result = helper.render_integration_status(record)
 
       expect(result).to include("Validating...")
@@ -49,7 +49,7 @@ RSpec.describe IntegrationsHelper do
     end
 
     it "shows Pending Validation when validation is pending" do
-      record = build_record(validation_pending?: true)
+      record = build_record("validation_pending?": true)
       result = helper.render_integration_status(record)
 
       expect(result).to include("Pending Validation")
@@ -81,14 +81,14 @@ RSpec.describe IntegrationsHelper do
     end
 
     it "prioritizes Revoked over Expired" do
-      record = build_record(revoked?: true, expired?: true)
+      record = build_record("revoked?": true, "expired?": true)
       result = helper.render_integration_status(record)
 
       expect(result).to include("Revoked")
     end
 
     it "prioritizes Expired over Validation Failed" do
-      record = build_record(expired?: true, validation_failed?: true)
+      record = build_record("expired?": true, "validation_failed?": true)
       result = helper.render_integration_status(record)
 
       expect(result).to include("Expired")
@@ -98,7 +98,8 @@ RSpec.describe IntegrationsHelper do
       record = Object.new
       result = helper.render_integration_status(record)
 
-      expect(result).to have_css("span.inline-flex")
+      fragment = Nokogiri::HTML.fragment(result)
+      expect(fragment.css("span.inline-flex")).not_to be_empty
     end
   end
 end
