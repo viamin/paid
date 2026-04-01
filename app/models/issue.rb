@@ -205,7 +205,7 @@ class Issue < ApplicationRecord
     blocked_ids = blocked_by_local | blocked_by_external
 
     active_run_ids = AgentRun
-      .where(issue_id: issue_ids, status: %w[queued pending running])
+      .where(issue_id: issue_ids, status: AgentRun::UNFINISHED_STATUSES)
       .pluck(:issue_id)
       .to_set
 
