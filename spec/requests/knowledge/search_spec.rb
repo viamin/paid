@@ -93,6 +93,23 @@ RSpec.describe "Knowledge::Search" do
         expect(hybrid_option["disabled"]).to be_nil
         expect(semantic_option["disabled"]).to be_nil
       end
+
+      it "shows embedding model info when mode is hybrid or semantic" do
+        owner = project.effective_owner
+        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
+        get knowledge_search_path, params: { project_id: project.id, mode: "hybrid" }
+        expect(response.body).to include("Embedding model")
+
+        get knowledge_search_path, params: { project_id: project.id, mode: "semantic" }
+        expect(response.body).to include("Embedding model")
+      end
+
+      it "hides embedding model info when mode is exact even with a key available" do
+        owner = project.effective_owner
+        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
+        get knowledge_search_path, params: { project_id: project.id, mode: "exact" }
+        expect(response.body).not_to include("Embedding model")
+      end
     end
   end
 

@@ -36,8 +36,8 @@
         </div>
       </div>
 
-      <%# Embedding Model %>
-      <% if @semantic_search_source != :none %>
+      <%# Embedding Model — only shown when semantic search is active %>
+      <% if @semantic_search_source != :none && @search_mode != "exact" %>
         <div class="flex items-center border-t border-gray-100 pt-3">
           <span class="text-sm text-gray-500">Embedding model:</span>
           <code class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-600"><%= Knowledge::Embeddings::Generate::MODEL %></code>
