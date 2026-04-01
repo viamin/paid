@@ -41,4 +41,23 @@ module DashboardHelper
   def phase_group_bar_style(phase_group)
     PHASE_GROUP_BAR_STYLES.fetch(phase_group, "bg-gray-400")
   end
+
+  GOAL_LABELS = {
+    "create_pr" => "PR Creation",
+    "create_issue" => "Issue Creation",
+    "review" => "Code Review"
+  }.freeze
+
+  OUTCOME_LABELS = {
+    "completed" => "Successful",
+    "other" => "Other (Failed/Timeout/etc.)"
+  }.freeze
+
+  def goal_label(goal)
+    GOAL_LABELS.fetch(goal, goal.to_s.titleize)
+  end
+
+  def outcome_label(outcome)
+    OUTCOME_LABELS.fetch(outcome, outcome.to_s.titleize)
+  end
 end

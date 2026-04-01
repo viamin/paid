@@ -15,6 +15,8 @@ module Projects
     def call
       {
         summary: summary,
+        cost_by_outcome: cost_by_outcome,
+        cost_by_goal: cost_by_goal,
         cost_by_model: cost_by_model,
         cost_by_request_type: cost_by_request_type,
         daily_costs: daily_costs,
@@ -45,6 +47,66 @@ module Projects
         avg_cost_per_run_cents: avg_cost,
         total_runs: run_count
       }
+    end
+
+    def cost_by_outcome
+      finished_runs = project.agent_runs.finished
+      outcome_sql = Arel.sql(<<~SQL.squish)
+        CASE WHEN status = 'completed' THEN 'completed' ELSE 'other' END
+      SQL
+
+      rows = finished_runs
+        .group(outcome_sql)
+        .pluck(
+          outcome_sql,
+          Arel.sql("COUNT(*)"),
+          Arel.sql("COALESCE(SUM(cost_cents), 0)"),
+          Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"),
+          Arel.sql("AVG(duration_seconds)")
+        )
+
+      result = %w[completed other].index_with { |_| empty_cost_summary }
+      rows.each do |outcome, count, cost, tokens, avg_dur|
+        count = count.to_i
+        result[outcome] = {
+          run_count: count,
+          total_cost_cents: cost.to_i,
+          avg_cost_cents: count.zero? ? 0 : (cost.to_f / count).round,
+          total_tokens: tokens.to_i,
+          avg_duration_seconds: avg_dur&.to_i || 0
+        }
+      end
+      result
+    end
+
+    def cost_by_goal
+      finished_runs = project.agent_runs.finished
+      rows = finished_runs
+        .group(:goal)
+        .pluck(
+          :goal,
+          Arel.sql("COUNT(*)"),
+          Arel.sql("COALESCE(SUM(cost_cents), 0)"),
+          Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"),
+          Arel.sql("AVG(duration_seconds)")
+        )
+
+      agg = rows.to_h do |goal, count, cost, tokens, avg_dur|
+        count = count.to_i
+        [ goal, {
+          run_count: count,
+          total_cost_cents: cost.to_i,
+          avg_cost_cents: count.zero? ? 0 : (cost.to_f / count).round,
+          total_tokens: tokens.to_i,
+          avg_duration_seconds: avg_dur&.to_i || 0
+        } ]
+      end
+
+      AgentRun::GOALS.index_with { |goal| agg[goal] || empty_cost_summary }
+    end
+
+    def empty_cost_summary
+      { run_count: 0, total_cost_cents: 0, avg_cost_cents: 0, total_tokens: 0, avg_duration_seconds: 0 }
     end
 
     def cost_by_model
