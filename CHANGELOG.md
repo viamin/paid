@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.13.0](https://github.com/viamin/paid/compare/v0.12.0...v0.13.0) (2026-04-01)
+
+
+### Features
+
+* **issues:** parse parent-child relationships from body/comments ([#671](https://github.com/viamin/paid/issues/671)) ([fd519f9](https://github.com/viamin/paid/commit/fd519f9bd8e3bd2d16fe00cf05fd931a4301c04a))
+* **security:** add package age quarantine to bin/update ([de87d75](https://github.com/viamin/paid/commit/de87d750422f6b45a6f492a3eec13fb3380529fc))
+
+
+### Bug Fixes
+
+* 619: chore: Remove redundant Dependabot alert scanning code ([#650](https://github.com/viamin/paid/issues/650)) ([55b2269](https://github.com/viamin/paid/commit/55b226907782bc8498640978a04de4ff8d97102e))
+* 637: fix(providers): redesign API key compatibility model to separate CLI tools from API services ([#651](https://github.com/viamin/paid/issues/651)) ([e3c5312](https://github.com/viamin/paid/commit/e3c5312a645ecfcc6a6ea9f1dc702ffa9074462d))
+* 653: fix(ui): Auto-pick lightning bolt icon not restored after failed agent run ([#658](https://github.com/viamin/paid/issues/658)) ([3ff4caa](https://github.com/viamin/paid/commit/3ff4caaacff1f4efecdee46fa5744ce4df23992f))
+* 655: Diagnosis: Agent Run [#3588](https://github.com/viamin/paid/issues/3588) ([#657](https://github.com/viamin/paid/issues/657)) ([18104d0](https://github.com/viamin/paid/commit/18104d0549c501ab38a2c4ae726634c5b3edbc43))
+* 664: Support custom pre-commit requirements (configurable at project/user/account level) ([#678](https://github.com/viamin/paid/issues/678)) ([dda2035](https://github.com/viamin/paid/commit/dda20352d0a0e74bef2d7c53dfaa489c343a981f))
+* 666: Auto-retry timed out agent runs for issue goals ([#669](https://github.com/viamin/paid/issues/669)) ([e5593b6](https://github.com/viamin/paid/commit/e5593b611b1dd75140010efc62c947cb84ab24a5))
+* 674: Break down performance metrics by outcome and goal type ([#679](https://github.com/viamin/paid/issues/679)) ([d64eef0](https://github.com/viamin/paid/commit/d64eef0273f587d92f3c247bec98fd114afd35ce))
+* **db:** restore schema.rb emptied by merge conflict misresolution ([5d2b145](https://github.com/viamin/paid/commit/5d2b145dbd9badc3b99c03cb9f5d92f4d400f556))
+* **db:** restore schema.rb emptied by merge conflict misresolution ([1679fe0](https://github.com/viamin/paid/commit/1679fe01e62d2cbecb54bad5d01443279632f9df))
+* **db:** use correct pool key and raise default connection pool to 20 ([1ee6f4d](https://github.com/viamin/paid/commit/1ee6f4dcc917fbd17ac298e18fda187d65da0614))
+* **db:** use correct pool key and raise default to 20 ([6fe40e2](https://github.com/viamin/paid/commit/6fe40e20c33b92b5ce397336663abd3a98cfda35))
+* **security:** address PR review feedback and update Cursor checksum ([47db98a](https://github.com/viamin/paid/commit/47db98ac5087ca254024abb748a9cd2d6ca2c480))
+* **security:** harden npm/bundler supply chain against dependency attacks ([2b6399a](https://github.com/viamin/paid/commit/2b6399a122a2fad0103b700830cea1be76717d22))
+* **security:** harden npm/bundler supply chain against dependency attacks ([991a478](https://github.com/viamin/paid/commit/991a478adf0d2cefbf661fd409d25d1d2b507588))
+* **security:** review fixes for package age quarantine ([0a558f6](https://github.com/viamin/paid/commit/0a558f6c59fb45b0e2cc699123120c1257c11c9c))
+
 ## [0.12.0](https://github.com/viamin/paid/compare/v0.11.4...v0.12.0) (2026-03-31)
 
 
