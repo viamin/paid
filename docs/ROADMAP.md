@@ -342,7 +342,7 @@ Tasks:
 - [x] Add Qdrant to docker-compose — `QdrantClient`, `Knowledge::Qdrant::CollectionManager`
 - [x] Create KnowledgeChunk model and Qdrant collection management — `KnowledgeArtifact`, `KnowledgeChunk`, `KnowledgeLink`
 - [x] Implement indexing pipeline — 8 collectors (symbol index, tree-sitter, language stats, routes, config keys, dependencies, churn hotspots, ADRs)
-- [x] Implement search service — `Knowledge::Search::Exact` (tsvector), `Knowledge::Search::Semantic` (Qdrant), `Knowledge::Search::Hybrid` (combined + reranking)
+- [x] Implement search service — `Knowledge::Search::Exact` (identifier/LIKE matching), `Knowledge::Search::Semantic` (Qdrant + tsvector FTS), `Knowledge::Search::Hybrid` (combined + reranking)
 - [x] Trigger deep indexing on project creation — `EnqueueKnowledgeCollectionJob`
 - [x] Incremental re-indexing — staleness detection via `Knowledge::Staleness::Detector`
 - [x] Integrate semantic context into agent prompts — `Knowledge::ContextBundle::Build` → `Prompts::BuildForIssue`
