@@ -109,6 +109,80 @@
     </div>
   </div>
 
+  <%# Performance by Outcome %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Performance by Outcome</h2>
+    <p class="mt-1 text-sm text-gray-500">Cost, tokens, and duration split by run outcome to isolate successful run performance.</p>
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <% stats[:performance_by_outcome].each do |outcome, perf| %>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <h3 class="text-sm font-semibold text-gray-900"><%= outcome_label(outcome) %></h3>
+          <p class="mt-1 text-xs text-gray-500"><%= number_with_delimiter(perf[:run_count]) %> runs</p>
+          <% if perf[:run_count] > 0 %>
+            <div class="mt-3 grid grid-cols-3 gap-4 text-sm">
+              <div>
+                <dt class="text-xs text-gray-500">Avg Cost</dt>
+                <dd class="mt-1 font-semibold text-gray-900">$<%= format("%.2f", perf[:avg_cost_cents] / 100.0) %></dd>
+              </div>
+              <div>
+                <dt class="text-xs text-gray-500">Avg Tokens</dt>
+                <dd class="mt-1 font-semibold text-gray-900"><%= number_with_delimiter(perf[:avg_tokens]) %></dd>
+              </div>
+              <div>
+                <dt class="text-xs text-gray-500">Avg Duration</dt>
+                <dd class="mt-1 font-semibold text-gray-900"><%= format_duration(perf[:avg_duration_seconds]) %></dd>
+              </div>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">
+              Total: $<%= format("%.2f", perf[:total_cost_cents] / 100.0) %> · <%= number_with_delimiter(perf[:total_tokens]) %> tokens
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <%# Performance by Goal Type %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Performance by Goal Type</h2>
+    <p class="mt-1 text-sm text-gray-500">Compare cost, tokens, and duration across different goal types.</p>
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <% stats[:performance_by_goal].each do |goal, perf| %>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <h3 class="text-sm font-semibold text-gray-900"><%= goal_label(goal) %></h3>
+          <p class="mt-1 text-xs text-gray-500"><%= number_with_delimiter(perf[:run_count]) %> runs</p>
+          <% if perf[:run_count] > 0 %>
+            <div class="mt-3 space-y-2 text-sm">
+              <div class="flex justify-between">
+                <span class="text-gray-500">Avg Cost</span>
+                <span class="font-semibold text-gray-900">$<%= format("%.2f", perf[:avg_cost_cents] / 100.0) %></span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">Avg Tokens</span>
+                <span class="font-semibold text-gray-900"><%= number_with_delimiter(perf[:avg_tokens]) %></span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">Avg Duration</span>
+                <span class="font-semibold text-gray-900"><%= format_duration(perf[:avg_duration_seconds]) %></span>
+              </div>
+            </div>
+            <%# Outcome sub-breakdown %>
+            <div class="mt-3 border-t border-gray-100 pt-3">
+              <h4 class="text-xs font-medium text-gray-500">By Outcome</h4>
+              <% perf[:by_outcome].each do |outcome, sub_perf| %>
+                <% next if sub_perf[:run_count].zero? %>
+                <div class="mt-1 flex justify-between text-xs">
+                  <span class="text-gray-500"><%= outcome_label(outcome) %> (<%= sub_perf[:run_count] %>)</span>
+                  <span class="text-gray-700">$<%= format("%.2f", sub_perf[:avg_cost_cents] / 100.0) %> · <%= format_duration(sub_perf[:avg_duration_seconds]) %></span>
+                </div>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
   <%# Duration Percentiles %>
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Duration (Completed Runs)</h2>
