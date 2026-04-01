@@ -517,7 +517,7 @@ class Project < ApplicationRecord
   def agent_co_author_trailer_is_single_line
     return if agent_co_author_trailer.blank?
 
-    if agent_co_author_trailer.include?("\n")
+    if agent_co_author_trailer.match?(/[\r\n]/)
       errors.add(:agent_co_author_trailer, "must be a single line")
     end
   end

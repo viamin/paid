@@ -182,10 +182,12 @@ module Containers
     # to every commit the agent creates. The hook is idempotent — it skips
     # messages that already contain the trailer.
     #
-    # Unlike {#install_git_hooks}, this method chains onto existing commit-msg
-    # hooks (e.g. from Husky or Lefthook) by appending the trailer logic rather
-    # than replacing the hook. This ensures the co-author trailer is applied
-    # even when the repo ships its own commit-msg hook.
+    # Unlike {#install_git_hooks}, this method attempts to chain onto existing
+    # commit-msg hooks (e.g. from Husky or Lefthook) by appending the trailer
+    # logic rather than replacing the hook. This makes it more likely that the
+    # co-author trailer is applied even when the repo ships its own commit-msg
+    # hook, assuming the existing hook does not exit before the appended logic
+    # runs.
     #
     # The fallback commit in {#commit_uncommitted_changes} uses --no-verify
     # (which skips hooks), so the trailer is also appended inline there via
@@ -378,10 +380,10 @@ module Containers
     private
 
     def commit_message
-      trailer = agent_run.project.agent_co_author_trailer.presence
-      return "Apply agent changes" unless trailer
+      sanitized_trailer = agent_run.project.agent_co_author_trailer.to_s.gsub(/[\r\n]+/, " ").strip
+      return "Apply agent changes" if sanitized_trailer.empty?
 
-      "Apply agent changes\n\n#{trailer}"
+      "Apply agent changes\n\n#{sanitized_trailer}"
     end
 
     def rebase_conflict?(result)
