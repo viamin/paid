@@ -165,10 +165,37 @@ module Dashboard
     end
 
     def performance_by_outcome
-      outcome_buckets.index_with do |outcome|
-        scope = scoped_by_outcome(outcome)
-        build_performance_summary(scope)
+      finished = agent_runs.finished
+      outcome_sql = Arel.sql(<<~SQL.squish)
+        CASE WHEN status = 'completed' THEN 'completed' ELSE 'other' END
+      SQL
+
+      rows = finished
+        .group(outcome_sql)
+        .pluck(
+          outcome_sql,
+          Arel.sql("COUNT(*)"),
+          Arel.sql("COALESCE(SUM(cost_cents), 0)"),
+          Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"),
+          Arel.sql("COALESCE(SUM(duration_seconds), 0)"),
+          Arel.sql("COUNT(duration_seconds)")
+        )
+
+      result = outcome_buckets.index_with { |_| empty_performance_summary }
+      rows.each do |outcome, count, cost, tokens, dur_sum, dur_count|
+        count = count.to_i
+        next if count.zero?
+
+        result[outcome] = {
+          run_count: count,
+          total_cost_cents: cost.to_i,
+          avg_cost_cents: (cost.to_f / count).round,
+          total_tokens: tokens.to_i,
+          avg_tokens: (tokens.to_f / count).round,
+          avg_duration_seconds: dur_count.to_i.zero? ? 0 : (dur_sum.to_f / dur_count.to_i).to_i
+        }
       end
+      result
     end
 
     def performance_by_goal
@@ -249,35 +276,6 @@ module Dashboard
 
     def outcome_buckets
       %w[completed other]
-    end
-
-    def scoped_by_outcome(outcome, base = agent_runs)
-      if outcome == "completed"
-        base.where(status: "completed")
-      else
-        base.where(status: AgentRun::FINISHED_STATUSES - [ "completed" ])
-      end
-    end
-
-    def build_performance_summary(scope)
-      finished = scope.finished
-      count = finished.count
-      return empty_performance_summary if count.zero?
-
-      totals = finished.pick(
-        Arel.sql("COALESCE(SUM(cost_cents), 0)"),
-        Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"),
-        Arel.sql("AVG(duration_seconds)")
-      )
-
-      {
-        run_count: count,
-        total_cost_cents: totals[0].to_i,
-        avg_cost_cents: (totals[0].to_f / count).round,
-        total_tokens: totals[1].to_i,
-        avg_tokens: (totals[1].to_f / count).round,
-        avg_duration_seconds: totals[2]&.to_i || 0
-      }
     end
 
     def empty_performance_summary
