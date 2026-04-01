@@ -8,11 +8,16 @@ require "timeout"
 module Knowledge
   # Runs knowledge collectors inside an isolated Docker container.
   #
-  # Clones the repo on the host, then provisions a lightweight container
-  # (paid-agent:latest) with a Docker named volume at /workspace. The repo
-  # is copied into the container via the Docker API (archive_in_stream),
-  # which works correctly in DooD environments where bind mounts from the
-  # devcontainer filesystem are invisible to the host Docker daemon.
+  # Uses a two-step workspace setup:
+  # 1. Clones the repo on the host into a tmpdir (shallow fetch of the
+  #    target commit).
+  # 2. Streams the clone as a tar archive into the container via the
+  #    Docker API (archive_in_stream), which works correctly in DooD
+  #    environments where bind-mounting host paths would fail because
+  #    the host Docker daemon cannot see devcontainer filesystem paths.
+  #
+  # The container uses a Docker named volume at /workspace (not a bind
+  # mount), matching the pattern in Containers::Provision.
   # No API keys or secrets are exposed — collectors are read-only analysis.
   #
   # @example
@@ -191,17 +196,20 @@ module Knowledge
     # Copies the host-side clone into the container via the Docker API.
     # This works in DooD because archive_in_stream sends a tar over the
     # API socket rather than relying on filesystem path visibility.
+    # The tar output is streamed directly to Docker to avoid buffering
+    # the entire archive in memory.
     def seed_workspace!
-      tar_data = create_repo_tar
-      @container.archive_in_stream(options[:workspace_mount]) { tar_data }
+      stream_repo_tar_to_container!
       @container.exec(
         [ "chown", "-R", "agent:agent", options[:workspace_mount] ],
         user: "root"
       )
     end
 
-    def create_repo_tar
-      IO.popen([ "tar", "-cf", "-", "-C", @host_repo_dir, "." ], "rb", &:read)
+    def stream_repo_tar_to_container!
+      IO.popen([ "tar", "-cf", "-", "-C", @host_repo_dir, "." ], "rb") do |tar_io|
+        @container.archive_in_stream(options[:workspace_mount]) { tar_io.read(8192) }
+      end
     end
 
     def container_config
@@ -237,7 +245,7 @@ module Knowledge
           "/home/agent/.cache" => "size=#{128 * 1024 * 1024},mode=0755"
         },
         "Binds" => [
-          "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
+          "#{@workspace_volume}:#{options[:workspace_mount]}:ro"
         ],
         "NetworkMode" => "none"
       }
@@ -332,8 +340,17 @@ module Knowledge
       return unless @workspace_volume
 
       Docker::Volume.get(@workspace_volume).remove(force: true)
-    rescue Docker::Error::DockerError
-      # Volume may already be removed
+    rescue Docker::Error::NotFoundError
+      # Volume already removed
+    rescue Docker::Error::DockerError => e
+      Rails.logger.warn(
+        message: "knowledge.containerized_runner.cleanup_workspace_volume.failed",
+        project_id: project.id,
+        commit_sha: commit_sha,
+        workspace_volume: @workspace_volume,
+        error_class: e.class.name,
+        error_message: e.message
+      )
     ensure
       @workspace_volume = nil
     end

@@ -29,8 +29,9 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
     allow(Open3).to receive(:capture3).and_return([ "", "", instance_double(Process::Status, success?: true) ])
     allow(FileUtils).to receive(:chmod)
     allow(FileUtils).to receive(:rm_rf)
-    # Stub tar creation and Docker archive_in_stream for seeding
-    allow(IO).to receive(:popen).with([ "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "." ], "rb").and_return("tar-data")
+    # Stub tar streaming and Docker archive_in_stream for seeding
+    tar_io = instance_double(IO, read: nil)
+    allow(IO).to receive(:popen).with([ "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "." ], "rb").and_yield(tar_io)
     allow(mock_container).to receive(:archive_in_stream)
   end
 
@@ -116,7 +117,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
           "HostConfig" => hash_including(
             "NetworkMode" => "none",
             "Memory" => 512 * 1024 * 1024,
-            "Binds" => [ a_string_matching(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z}) ]
+            "Binds" => [ a_string_matching(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:ro\z}) ]
           )
         )
       )
@@ -124,7 +125,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       expect(result[:results].first[:status]).to eq("completed")
     end
 
-    it "seeds the workspace by copying repo via Docker API" do
+    it "streams repo tar into the container via Docker API" do
       described_class.new(project: project, commit_sha: commit_sha).run
 
       expect(IO).to have_received(:popen).with(
@@ -168,6 +169,23 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       expect(FileUtils).to have_received(:rm_rf).with("/tmp/paid-collector-test")
     end
 
+    it "logs a warning when volume cleanup fails with a non-NotFound error" do
+      allow(mock_volume).to receive(:remove).and_raise(
+        Docker::Error::ServerError.new("volume in use")
+      )
+      allow(Rails.logger).to receive(:warn)
+
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "knowledge.containerized_runner.cleanup_workspace_volume.failed",
+          project_id: 42,
+          error_class: "Docker::Error::ServerError"
+        )
+      )
+    end
+
     it "cleans up even when CollectorRunner raises" do
       allow(Knowledge::CollectorRunner).to receive(:call).and_raise(RuntimeError, "boom")
 
@@ -208,7 +226,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       described_class.new(project: project, commit_sha: commit_sha).run
 
       binds = config.dig("HostConfig", "Binds")
-      expect(binds.first).to match(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z})
+      expect(binds.first).to match(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:ro\z})
     end
   end
 
