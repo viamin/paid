@@ -44,7 +44,7 @@ class ProviderApiKey < ApplicationRecord
   def api_service_type_must_be_valid
     return if api_service_type.blank?
 
-    normalized = api_service_type.to_s.strip
+    normalized = api_service_type.to_s.strip.downcase
     self.api_service_type = normalized
 
     return if ProviderSupport.api_service_types.key?(normalized)

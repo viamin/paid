@@ -28,6 +28,13 @@ RSpec.describe ProviderApiKey do
 
       expect(api_key).to be_valid
     end
+
+    it "normalizes api_service_type to lowercase" do
+      api_key.api_service_type = " Anthropic "
+
+      expect(api_key).to be_valid
+      expect(api_key.api_service_type).to eq("anthropic")
+    end
   end
 
   describe "#compatible_with?" do
