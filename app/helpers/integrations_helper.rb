@@ -10,6 +10,8 @@ module IntegrationsHelper
       status_badge("Validation Failed", "bg-red-100", "text-red-700")
     elsif record.respond_to?(:validating?) && record.validating?
       status_badge("Validating...", "bg-yellow-100", "text-yellow-800")
+    elsif record.respond_to?(:validation_pending?) && record.validation_pending?
+      status_badge("Pending Validation", "bg-yellow-100", "text-yellow-800")
     else
       status_badge("Active", "bg-green-100", "text-green-700")
     end

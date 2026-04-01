@@ -27,6 +27,7 @@ RSpec.describe "Integrations" do
       it "shows empty state when no integrations are configured" do
         get integrations_path
 
+        expect(response).to have_http_status(:ok)
         expect(response.body).to include("No integrations configured")
         expect(response.body).to include("Add Integration")
       end
@@ -37,6 +38,7 @@ RSpec.describe "Integrations" do
 
         get integrations_path
 
+        expect(response).to have_http_status(:ok)
         expect(response.body).to include("Repository Access")
         expect(response.body).to include("LLM Providers")
       end

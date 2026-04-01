@@ -21,13 +21,13 @@
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
-                <th class="py-3 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 sm:pl-6">Name</th>
+                <th scope="col" class="py-3 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 sm:pl-6">Name</th>
                 <% if section.key == :llm_provider %>
-                  <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Service</th>
+                  <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Service</th>
                 <% end %>
-                <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
-                <th class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Created</th>
-                <th class="relative py-3 pl-3 pr-4 sm:pr-6"><span class="sr-only">View</span></th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+                <th scope="col" class="px-3 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Created</th>
+                <th scope="col" class="relative py-3 pl-3 pr-4 sm:pr-6"><span class="sr-only">View</span></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 bg-white">
