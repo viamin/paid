@@ -1668,6 +1668,40 @@ RSpec.describe AgentRun do
   # on that behavior and work correctly with use_transactional_fixtures = true.
   # We intentionally use after_commit (not after_save) so the job only enqueues
   # after the AgentRun record is visible to other database connections.
+  describe "issue goal timeout retry callback" do
+    it "enqueues RetryTimedOutIssueGoalJob when an issue goal run transitions to timeout" do
+      agent_run = create(:agent_run, :create_issue_goal, status: "running", started_at: 1.hour.ago)
+
+      expect {
+        agent_run.update!(status: "timeout", completed_at: Time.current, duration_seconds: 3600)
+      }.to have_enqueued_job(RetryTimedOutIssueGoalJob).with(agent_run.id)
+    end
+
+    it "does not enqueue for a non-issue-goal run transitioning to timeout" do
+      agent_run = create(:agent_run, status: "running", started_at: 1.hour.ago)
+
+      expect {
+        agent_run.update!(status: "timeout", completed_at: Time.current, duration_seconds: 3600)
+      }.not_to have_enqueued_job(RetryTimedOutIssueGoalJob)
+    end
+
+    it "does not enqueue for an issue goal run transitioning to a non-timeout status" do
+      agent_run = create(:agent_run, :create_issue_goal, status: "running", started_at: 10.minutes.ago)
+
+      expect {
+        agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 600)
+      }.not_to have_enqueued_job(RetryTimedOutIssueGoalJob)
+    end
+
+    it "does not enqueue when updating an issue goal timeout run without status change" do
+      agent_run = create(:agent_run, :timeout, :create_issue_goal)
+
+      expect {
+        agent_run.update!(branch_name: "feature/test")
+      }.not_to have_enqueued_job(RetryTimedOutIssueGoalJob)
+    end
+  end
+
   describe "container metrics collection callback" do
     it "enqueues ContainerMetricsCollectionJob when transitioning to running with container_id" do
       agent_run = create(:agent_run, status: "pending", container_id: "abc123")
