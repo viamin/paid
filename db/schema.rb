@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_31_210524) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_01_124101) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -599,6 +599,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_210524) do
     t.index ["selector_type"], name: "index_model_selections_on_selector_type"
   end
 
+  create_table "pre_commit_requirements", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "check_type", limit: 50, default: "shell_command", null: false
+    t.text "command", null: false
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.string "failure_behavior", limit: 50, default: "block", null: false
+    t.text "fix_command"
+    t.string "name", limit: 255, null: false
+    t.integer "position", default: 0, null: false
+    t.bigint "project_id"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["account_id", "position"], name: "idx_pre_commit_requirements_account_position", where: "((project_id IS NULL) AND (user_id IS NULL))"
+    t.index ["account_id", "project_id", "user_id", "name"], name: "idx_pre_commit_requirements_unique_name", unique: true
+    t.index ["account_id"], name: "index_pre_commit_requirements_on_account_id"
+    t.index ["project_id", "position"], name: "idx_pre_commit_requirements_project_position", where: "(project_id IS NOT NULL)"
+    t.index ["project_id"], name: "index_pre_commit_requirements_on_project_id"
+    t.index ["user_id", "position"], name: "idx_pre_commit_requirements_user_position", where: "(user_id IS NOT NULL)"
+    t.index ["user_id"], name: "index_pre_commit_requirements_on_user_id"
+  end
+
   create_table "project_mcp_servers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "mcp_server_definition_id", null: false
@@ -648,6 +670,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_210524) do
   create_table "projects", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
+    t.string "agent_co_author_trailer"
     t.jsonb "allowed_github_usernames", default: [], null: false
     t.boolean "auto_add_labels_enabled", default: true, null: false
     t.boolean "auto_fix_merge_conflicts", default: true, null: false
@@ -1005,6 +1028,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_210524) do
   add_foreign_key "mcp_server_definitions", "accounts"
   add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
+  add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "project_mcp_servers", "mcp_server_definitions"
   add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"
