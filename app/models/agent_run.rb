@@ -63,6 +63,7 @@ class AgentRun < ApplicationRecord
   validates :diagnosis_issue_url, length: { maximum: 500 }
   validates :final_provider, length: { maximum: 50 }
   validates :provider_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :stale_requeue_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :provider_belongs_to_project_owner, if: -> { provider.present? }
   validate :has_prompt_source, on: :create
