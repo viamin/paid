@@ -291,7 +291,7 @@ Deliverables:
 
 Tasks:
 
-- [x] Create ABTest model — `AbTest`, `AbTestVariant`, `AbTestAssignment`
+- [x] Create AbTest model — `AbTest`, `AbTestVariant`, `AbTestAssignment`
 - [x] Implement test assignment logic — `AbTests::Assign`
 - [x] Track metrics per variant — `AbTests::RecordResult`
 - [x] Statistical significance calculation — `AbTests::Statistics`, `AbTests::Analyze`
@@ -355,7 +355,7 @@ Deliverables:
 - Semantic search ("how does auth work?") and exact search ("def authenticate_user") both work
 - Per-project isolation via separate Qdrant collections
 
-Related: [RDR-018](rdrs/RDR-018-semantic-code-search.md)
+Related (earlier MeiliSearch-based design): [RDR-018](rdrs/RDR-018-semantic-code-search.md)
 
 ### 2.8 Live Dashboard
 
