@@ -596,7 +596,7 @@ module Containers
     end
 
     def commit_message
-      trailer = agent_run.project.agent_co_author_trailer.to_s.gsub(/[\r\n]/, "").strip
+      trailer = agent_run.project.agent_co_author_trailer
       if trailer.present?
         "Apply agent changes\n\n#{trailer}"
       else

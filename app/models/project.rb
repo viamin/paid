@@ -89,6 +89,8 @@ class Project < ApplicationRecord
 
   encrypts :webhook_secret
 
+  before_validation :normalize_agent_co_author_trailer
+
   validates :name, presence: true
   validates :owner, presence: true
   validates :repo, presence: true
@@ -539,6 +541,11 @@ class Project < ApplicationRecord
     return if has_any_condition
 
     errors.add(:review_settings, "#{method_name} must have at least one termination condition configured")
+  end
+
+  def normalize_agent_co_author_trailer
+    stripped = agent_co_author_trailer.to_s.strip
+    self.agent_co_author_trailer = stripped.present? ? stripped : nil
   end
 
   def agent_co_author_trailer_is_single_line

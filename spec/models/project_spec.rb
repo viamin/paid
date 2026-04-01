@@ -572,6 +572,18 @@ RSpec.describe Project do
       expect(project).not_to be_valid
       expect(project.errors[:agent_co_author_trailer]).to include("must be a single line (no newlines)")
     end
+
+    it "strips leading and trailing whitespace before validation" do
+      project = build(:project, agent_co_author_trailer: "  Co-Authored-By: Claude <noreply@anthropic.com>  ")
+      project.valid?
+      expect(project.agent_co_author_trailer).to eq("Co-Authored-By: Claude <noreply@anthropic.com>")
+    end
+
+    it "normalizes whitespace-only values to nil" do
+      project = build(:project, agent_co_author_trailer: "   ")
+      project.valid?
+      expect(project.agent_co_author_trailer).to be_nil
+    end
   end
 
   describe "review_settings" do
