@@ -54,7 +54,7 @@ module Dashboard
         total: agent_runs.count,
         last_7_days: agent_runs.where(created_at: (now - 7.days)..now).count,
         last_30_days: agent_runs.where(created_at: (now - 30.days)..now).count,
-        active: agent_runs.where(status: %w[queued pending running]).count,
+        active: agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).count,
         by_status: agent_runs.group(:status).count,
         failure_rate: failure_rate
       }

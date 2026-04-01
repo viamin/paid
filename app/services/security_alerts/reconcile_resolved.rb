@@ -38,7 +38,7 @@ module SecurityAlerts
       # leave orphaned runs attached to completed/closed issues.
       active_runs = AgentRun.where(
         issue_id: scope.select(:id),
-        status: %w[queued pending running]
+        status: AgentRun::UNFINISHED_STATUSES
       )
       active_run_count = active_runs.count
       if active_run_count.positive?

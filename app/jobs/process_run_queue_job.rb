@@ -157,7 +157,7 @@ class ProcessRunQueueJob < ApplicationJob
       ).where.not(issue_id: nil)
 
       active_counts = auto_pick_scope.where(
-        status: %w[queued pending running]
+        status: AgentRun::UNFINISHED_STATUSES
       ).group(:project_id).count
 
       # Collapse the two aggregate queries (max created_at, max id)
