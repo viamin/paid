@@ -199,5 +199,27 @@ RSpec.describe Knowledge::Search do
 
       expect(result[:results].map { |r| r[:identifier] }).not_to include("POST /api/users")
     end
+
+    it "passes api_key to semantic search" do
+      allow(Knowledge::Search::Semantic).to receive(:call).and_return([])
+
+      described_class.call(project: project, query: "test", mode: "semantic", api_key: "sk-user")
+
+      expect(Knowledge::Search::Semantic).to have_received(:call).with(
+        hash_including(api_key: "sk-user")
+      )
+    end
+
+    it "passes api_key to hybrid search" do
+      allow(Knowledge::Search::Hybrid).to receive(:call).and_return(
+        { results: [], exact_count: 0, semantic_count: 0 }
+      )
+
+      described_class.call(project: project, query: "test", mode: "hybrid", api_key: "sk-user")
+
+      expect(Knowledge::Search::Hybrid).to have_received(:call).with(
+        hash_including(api_key: "sk-user")
+      )
+    end
   end
 end

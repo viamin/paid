@@ -29,6 +29,29 @@ RSpec.describe "Knowledge::Search" do
         get knowledge_search_path
         expect(response.body).to include(project.name)
       end
+
+      it "shows a warning when no OpenAI API key is configured" do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
+        get knowledge_search_path, params: { project_id: project.id }
+        expect(response.body).to include("Only exact identifier matching is available")
+      end
+
+      it "hides the warning when the user has an OpenAI API key" do
+        owner = project.effective_owner
+        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
+        get knowledge_search_path, params: { project_id: project.id }
+        expect(response.body).not_to include("Only exact identifier matching is available")
+      end
+
+      it "hides the warning when a platform OpenAI API key is set" do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return("sk-platform-key")
+        allow(ENV).to receive(:fetch).with("OPENAI_API_KEY", anything).and_return("sk-platform-key")
+        get knowledge_search_path, params: { project_id: project.id }
+        expect(response.body).not_to include("Only exact identifier matching is available")
+      end
     end
   end
 
@@ -65,6 +88,19 @@ RSpec.describe "Knowledge::Search" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("GET /api/test")
         expect(response.body).to include("route")
+      end
+
+      it "passes the project's OpenAI API key to Knowledge::Search" do
+        owner = project.effective_owner
+        api_key = create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-search")
+
+        allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "hybrid", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
+
+        get knowledge_search_results_path, params: { project_id: project.id, q: "test" }
+
+        expect(Knowledge::Search).to have_received(:call).with(
+          hash_including(api_key: api_key.api_key)
+        )
       end
     end
   end
