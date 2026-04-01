@@ -172,7 +172,7 @@
               <% perf[:by_outcome].each do |outcome, sub_perf| %>
                 <% next if sub_perf[:run_count].zero? %>
                 <div class="mt-1 flex justify-between text-xs">
-                  <span class="text-gray-500"><%= outcome == "completed" ? "Successful" : "Other" %> (<%= sub_perf[:run_count] %>)</span>
+                  <span class="text-gray-500"><%= outcome_label(outcome) %> (<%= sub_perf[:run_count] %>)</span>
                   <span class="text-gray-700">$<%= format("%.2f", sub_perf[:avg_cost_cents] / 100.0) %> · <%= format_duration(sub_perf[:avg_duration_seconds]) %></span>
                 </div>
               <% end %>
