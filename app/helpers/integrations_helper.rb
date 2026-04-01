@@ -8,10 +8,17 @@ module IntegrationsHelper
       status_badge("Expired", "bg-orange-100", "text-orange-700")
     elsif record.respond_to?(:validation_failed?) && record.validation_failed?
       status_badge("Validation Failed", "bg-red-100", "text-red-700")
+    elsif record.respond_to?(:validation_stale?) && record.validation_stale?
+      status_badge("Validation Stuck", "bg-yellow-100", "text-yellow-800")
     elsif record.respond_to?(:validating?) && record.validating?
       status_badge("Validating...", "bg-yellow-100", "text-yellow-800")
     elsif record.respond_to?(:validation_pending?) && record.validation_pending?
       status_badge("Pending Validation", "bg-yellow-100", "text-yellow-800")
+    elsif record.respond_to?(:expires_at) &&
+          record.expires_at.present? &&
+          record.expires_at > Time.current &&
+          record.expires_at <= 7.days.from_now
+      status_badge("Expiring Soon", "bg-orange-100", "text-orange-700")
     else
       status_badge("Active", "bg-green-100", "text-green-700")
     end
