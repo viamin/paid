@@ -56,6 +56,14 @@ RSpec.describe Activities::CloneRepoActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    it "installs the co-author hook after artifact excludes and git hooks" do
+      expect(git_ops).to receive(:install_artifact_excludes).ordered
+      expect(git_ops).to receive(:install_git_hooks).ordered
+      expect(git_ops).to receive(:install_co_author_hook).ordered
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     context "when project has a running database container" do
       before do
         sc = create(:service_container, :running, image: "postgres:16")
@@ -137,6 +145,14 @@ RSpec.describe Activities::CloneRepoActivity do
           lint_command: "bundle exec rubocop",
           test_command: "true"
         )
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "installs the co-author hook after artifact excludes and git hooks" do
+        expect(git_ops).to receive(:install_artifact_excludes).ordered
+        expect(git_ops).to receive(:install_git_hooks).ordered
+        expect(git_ops).to receive(:install_co_author_hook).ordered
 
         activity.execute(agent_run_id: agent_run.id)
       end
