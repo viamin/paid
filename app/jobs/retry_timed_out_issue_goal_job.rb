@@ -80,10 +80,10 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
       attempt: previous_attempts + 1
     )
 
-    # Idempotent (advisory lock + SKIP LOCKED). Temporal-origin timeouts also
-    # enqueue this in RunAgentActivity, but that fires before this job creates
-    # the new queued run. For StaleRunDetectorJob-origin timeouts, this is the
-    # only trigger.
+    # Idempotent (advisory lock + SKIP LOCKED). This job is enqueued from
+    # AgentRun's after_commit callback when a run transitions to "timeout",
+    # regardless of whether the timeout was set by Temporal activities or by
+    # StaleRunDetectorJob.
     ProcessRunQueueJob.perform_later
   end
 
