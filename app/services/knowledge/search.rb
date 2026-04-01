@@ -7,15 +7,16 @@ module Knowledge
     DEFAULT_LIMIT = 20
     MAX_LIMIT = 100
 
-    attr_reader :project, :query, :mode, :artifact_type, :version, :limit
+    attr_reader :project, :query, :mode, :artifact_type, :version, :limit, :api_key
 
-    def initialize(project:, query:, mode: DEFAULT_MODE, artifact_type: nil, version: nil, limit: DEFAULT_LIMIT)
+    def initialize(project:, query:, mode: DEFAULT_MODE, artifact_type: nil, version: nil, limit: DEFAULT_LIMIT, api_key: nil)
       @project = project
       @query = query
       @mode = MODES.include?(mode) ? mode : DEFAULT_MODE
       @artifact_type = artifact_type
       @version = version
       @limit = limit.present? ? [ limit.to_i, 1 ].max.clamp(1, MAX_LIMIT) : DEFAULT_LIMIT
+      @api_key = api_key
     end
 
     def self.call(...)
@@ -48,13 +49,13 @@ module Knowledge
       when "semantic"
         semantic_results = Search::Semantic.call(
           project: project, query: query,
-          artifact_type: artifact_type, limit: limit
+          artifact_type: artifact_type, limit: limit, api_key: api_key
         )
         { results: semantic_results, exact_count: 0, semantic_count: semantic_results.size }
       when "hybrid"
         Search::Hybrid.call(
           project: project, query: query,
-          artifact_type: artifact_type, version: version, limit: limit
+          artifact_type: artifact_type, version: version, limit: limit, api_key: api_key
         )
       end
     end

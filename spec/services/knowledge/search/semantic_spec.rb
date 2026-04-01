@@ -82,5 +82,29 @@ RSpec.describe Knowledge::Search::Semantic do
         expect(results).not_to be_empty
       end
     end
+
+    context "with api_key parameter" do
+      it "passes api_key to Generate.call for query embedding" do
+        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
+        allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([])
+
+        described_class.call(project: project, query: "test", api_key: "sk-user-key")
+
+        expect(Knowledge::Embeddings::Generate).to have_received(:call).with(
+          texts: [ "test" ], api_key: "sk-user-key"
+        )
+      end
+
+      it "passes nil api_key when none provided" do
+        allow(Paid).to receive_messages(qdrant_url: "http://localhost:6333", qdrant_client: double(healthy?: true))
+        allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([])
+
+        described_class.call(project: project, query: "test")
+
+        expect(Knowledge::Embeddings::Generate).to have_received(:call).with(
+          texts: [ "test" ], api_key: nil
+        )
+      end
+    end
   end
 end

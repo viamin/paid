@@ -3,14 +3,15 @@
 module Knowledge
   class Search
     class Hybrid
-      attr_reader :project, :query, :artifact_type, :version, :limit
+      attr_reader :project, :query, :artifact_type, :version, :limit, :api_key
 
-      def initialize(project:, query:, artifact_type: nil, version: nil, limit: 20)
+      def initialize(project:, query:, artifact_type: nil, version: nil, limit: 20, api_key: nil)
         @project = project
         @query = query
         @artifact_type = artifact_type
         @version = version
         @limit = limit
+        @api_key = api_key
       end
 
       def self.call(...)
@@ -24,7 +25,7 @@ module Knowledge
         )
         semantic_results = Semantic.call(
           project: project, query: query,
-          artifact_type: artifact_type, limit: limit
+          artifact_type: artifact_type, limit: limit, api_key: api_key
         )
 
         merged = deduplicate(exact_results, semantic_results)

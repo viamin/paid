@@ -3,13 +3,14 @@
 module Knowledge
   class Search
     class Semantic
-      attr_reader :project, :query, :artifact_type, :limit
+      attr_reader :project, :query, :artifact_type, :limit, :api_key
 
-      def initialize(project:, query:, artifact_type: nil, limit: 20)
+      def initialize(project:, query:, artifact_type: nil, limit: 20, api_key: nil)
         @project = project
         @query = query
         @artifact_type = artifact_type
         @limit = limit
+        @api_key = api_key
       end
 
       def self.call(...)
@@ -150,12 +151,8 @@ module Knowledge
         }
       end
 
-      # NOTE: Query embedding still falls back to ENV["OPENAI_API_KEY"] rather than
-      # resolving the user's ProviderApiKey. Only background chunk embedding (via
-      # EmbedChunksJob) is user-billed for now. Threading the user key here requires
-      # access to the project owner's key at search time, which is a follow-up task.
       def generate_query_embedding
-        results = Knowledge::Embeddings::Generate.call(texts: [ query ])
+        results = Knowledge::Embeddings::Generate.call(texts: [ query ], api_key: api_key)
         results.first&.vector
       rescue StandardError => e
         Rails.logger.warn(
