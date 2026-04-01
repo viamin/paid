@@ -21,6 +21,8 @@ module Dashboard
         duration_percentiles: duration_percentiles,
         phase_breakdown: phase_breakdown,
         cost_and_tokens: cost_and_tokens,
+        performance_by_outcome: performance_by_outcome,
+        performance_by_goal: performance_by_goal,
         runs_by_agent_type: runs_by_agent_type,
         runs_by_provider: runs_by_provider,
         provider_fallback_stats: provider_fallback_stats,
@@ -160,6 +162,67 @@ module Dashboard
         .where("iterations > 0")
         .pick(Arel.sql("AVG(iterations)"))
       result&.to_f&.round(1) || 0.0
+    end
+
+    def performance_by_outcome
+      outcome_buckets.index_with do |outcome|
+        scope = scoped_by_outcome(outcome)
+        build_performance_summary(scope)
+      end
+    end
+
+    def performance_by_goal
+      AgentRun::GOALS.index_with do |goal|
+        scope = agent_runs.where(goal: goal)
+        summary = build_performance_summary(scope)
+        summary.merge(by_outcome: outcome_buckets.index_with do |outcome|
+          build_performance_summary(scoped_by_outcome(outcome, scope))
+        end)
+      end
+    end
+
+    def outcome_buckets
+      %w[completed other]
+    end
+
+    def scoped_by_outcome(outcome, base = agent_runs)
+      if outcome == "completed"
+        base.where(status: "completed")
+      else
+        base.where(status: AgentRun::FINISHED_STATUSES - [ "completed" ])
+      end
+    end
+
+    def build_performance_summary(scope)
+      finished = scope.where(status: AgentRun::FINISHED_STATUSES)
+      count = finished.count
+      return empty_performance_summary if count.zero?
+
+      totals = finished.pick(
+        Arel.sql("COALESCE(SUM(cost_cents), 0)"),
+        Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"),
+        Arel.sql("AVG(duration_seconds)")
+      )
+
+      {
+        run_count: count,
+        total_cost_cents: totals[0].to_i,
+        avg_cost_cents: (totals[0].to_f / count).round,
+        total_tokens: totals[1].to_i,
+        avg_tokens: (totals[1].to_f / count).round,
+        avg_duration_seconds: totals[2]&.to_i || 0
+      }
+    end
+
+    def empty_performance_summary
+      {
+        run_count: 0,
+        total_cost_cents: 0,
+        avg_cost_cents: 0,
+        total_tokens: 0,
+        avg_tokens: 0,
+        avg_duration_seconds: 0
+      }
     end
 
     def runs_by_agent_type

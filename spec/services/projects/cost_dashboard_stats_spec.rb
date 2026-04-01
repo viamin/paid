@@ -73,6 +73,50 @@ RSpec.describe Projects::CostDashboardStats do
       expect(budget[:remaining_cents]).to eq(500)
     end
 
+    it "breaks down cost by outcome" do
+      create(:agent_run, project: project, status: "completed", cost_cents: 400,
+        tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
+      create(:agent_run, project: project, status: "failed", cost_cents: 200,
+        tokens_input: 500, tokens_output: 250, duration_seconds: 30)
+
+      result = described_class.call(project: project)
+      completed = result[:cost_by_outcome]["completed"]
+      other = result[:cost_by_outcome]["other"]
+
+      expect(completed[:run_count]).to eq(1)
+      expect(completed[:total_cost_cents]).to eq(400)
+      expect(completed[:avg_cost_cents]).to eq(400)
+
+      expect(other[:run_count]).to eq(1)
+      expect(other[:total_cost_cents]).to eq(200)
+    end
+
+    it "breaks down cost by goal type" do
+      create(:agent_run, project: project, status: "completed", goal: "create_pr",
+        cost_cents: 500, tokens_input: 2000, tokens_output: 1000, duration_seconds: 120)
+      create(:agent_run, project: project, status: "completed", goal: "create_issue",
+        cost_cents: 100, tokens_input: 400, tokens_output: 200, duration_seconds: 20)
+
+      result = described_class.call(project: project)
+      pr = result[:cost_by_goal]["create_pr"]
+      issue = result[:cost_by_goal]["create_issue"]
+
+      expect(pr[:run_count]).to eq(1)
+      expect(pr[:total_cost_cents]).to eq(500)
+      expect(pr[:avg_cost_cents]).to eq(500)
+
+      expect(issue[:run_count]).to eq(1)
+      expect(issue[:total_cost_cents]).to eq(100)
+    end
+
+    it "returns zeros for goal types with no runs" do
+      result = described_class.call(project: project)
+      review = result[:cost_by_goal]["review"]
+
+      expect(review[:run_count]).to eq(0)
+      expect(review[:total_cost_cents]).to eq(0)
+    end
+
     it "omits period-based usage fields for per_run budgets" do
       create(:cost_budget, project: project, budget_type: "per_run", limit_cents: 2000)
 

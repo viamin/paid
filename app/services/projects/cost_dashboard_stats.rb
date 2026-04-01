@@ -15,6 +15,8 @@ module Projects
     def call
       {
         summary: summary,
+        cost_by_outcome: cost_by_outcome,
+        cost_by_goal: cost_by_goal,
         cost_by_model: cost_by_model,
         cost_by_request_type: cost_by_request_type,
         daily_costs: daily_costs,
@@ -45,6 +47,50 @@ module Projects
         avg_cost_per_run_cents: avg_cost,
         total_runs: run_count
       }
+    end
+
+    def cost_by_outcome
+      finished_runs = project.agent_runs.where(status: AgentRun::FINISHED_STATUSES)
+      %w[completed other].to_h do |outcome|
+        scope = if outcome == "completed"
+          finished_runs.where(status: "completed")
+        else
+          finished_runs.where(status: AgentRun::FINISHED_STATUSES - [ "completed" ])
+        end
+        count = scope.count
+        totals = scope.pick(
+          Arel.sql("COALESCE(SUM(cost_cents), 0)"),
+          Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"),
+          Arel.sql("AVG(duration_seconds)")
+        )
+        [ outcome, {
+          run_count: count,
+          total_cost_cents: totals&.dig(0).to_i,
+          avg_cost_cents: count.zero? ? 0 : (totals[0].to_f / count).round,
+          total_tokens: totals&.dig(1).to_i,
+          avg_duration_seconds: totals&.dig(2)&.to_i || 0
+        } ]
+      end
+    end
+
+    def cost_by_goal
+      finished_runs = project.agent_runs.where(status: AgentRun::FINISHED_STATUSES)
+      AgentRun::GOALS.to_h do |goal|
+        scope = finished_runs.where(goal: goal)
+        count = scope.count
+        totals = scope.pick(
+          Arel.sql("COALESCE(SUM(cost_cents), 0)"),
+          Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"),
+          Arel.sql("AVG(duration_seconds)")
+        )
+        [ goal, {
+          run_count: count,
+          total_cost_cents: totals&.dig(0).to_i,
+          avg_cost_cents: count.zero? ? 0 : (totals[0].to_f / count).round,
+          total_tokens: totals&.dig(1).to_i,
+          avg_duration_seconds: totals&.dig(2)&.to_i || 0
+        } ]
+      end
     end
 
     def cost_by_model
