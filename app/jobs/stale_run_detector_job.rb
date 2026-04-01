@@ -1,27 +1,43 @@
 # frozen_string_literal: true
 
 # Detects agent runs stuck in "running" or "pending" status beyond
-# the configured agent timeout plus a grace period.
+# the configured timeout thresholds.
 #
-# This catches orphaned runs where the Temporal workflow died or
-# disconnected after the agent activity completed but before the
-# status could be updated. Runs are marked as "timeout" so they
-# stop blocking the run queue and show up correctly in the UI.
+# Running runs use the full agent timeout plus a grace period.
+# Pending runs use a shorter threshold since the pending→running
+# transition (container provisioning + clone) should complete in minutes.
+#
+# Stale pending runs that have not exhausted their requeue budget are
+# automatically requeued (reset to "queued") so transient failures
+# (e.g. worker restart, temporary resource exhaustion) self-heal.
+# Runs that exceed MAX_STALE_REQUEUES are timed out like stale running runs.
 #
 # Scheduled via GoodJob cron every 5 minutes.
 class StaleRunDetectorJob < ApplicationJob
   queue_as :maintenance
 
-  # Extra buffer beyond agent_timeout before declaring a run stale.
+  # Extra buffer beyond agent_timeout before declaring a running run stale.
   # Accounts for container provisioning, git clone, push, and PR creation.
   GRACE_PERIOD = 10.minutes
 
+  # Shorter threshold for pending runs. Container provisioning + clone
+  # should complete well within this window. Using the full agent timeout
+  # (70 min) for pending runs delays detection of stuck runs unnecessarily.
+  PENDING_TIMEOUT = 15.minutes
+
+  # Maximum times a stale pending run can be automatically requeued before
+  # being timed out. Prevents infinite retry loops when the underlying
+  # issue is persistent (e.g. misconfigured project, missing credentials).
+  MAX_STALE_REQUEUES = 2
+
   def perform
     job_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    timeout_threshold = agent_timeout_with_grace.ago
+    running_threshold = agent_timeout_with_grace.ago
+    pending_threshold = PENDING_TIMEOUT.ago
     resolved = 0
+    requeued = 0
 
-    stale_running_runs(timeout_threshold).find_each do |agent_run|
+    stale_running_runs(running_threshold).find_each do |agent_run|
       resolved += 1 if resolve_stale_run(agent_run)
     rescue => e
       Rails.logger.error(
@@ -31,8 +47,13 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
-    stale_pending_runs(timeout_threshold).find_each do |agent_run|
-      resolved += 1 if resolve_stale_run(agent_run)
+    stale_pending_runs(pending_threshold).find_each do |agent_run|
+      case requeue_stale_pending_run(agent_run)
+      when :requeued
+        requeued += 1
+      when :exhausted
+        resolved += 1 if resolve_stale_run(agent_run)
+      end
     rescue => e
       Rails.logger.error(
         message: "stale_run_detector.resolve_failed",
@@ -45,10 +66,11 @@ class StaleRunDetectorJob < ApplicationJob
     Rails.logger.info(
       message: "stale_run_detector.completed",
       resolved: resolved,
+      requeued: requeued,
       duration_ms: duration_ms
     )
 
-    ProcessRunQueueJob.perform_later if resolved > 0
+    ProcessRunQueueJob.perform_later if resolved > 0 || requeued > 0
   end
 
   private
@@ -74,10 +96,78 @@ class StaleRunDetectorJob < ApplicationJob
     AgentRun.pending.where("updated_at < ?", threshold)
   end
 
+  # Attempts to requeue a stale pending run.
+  # Returns :requeued if successfully requeued, :exhausted if requeue budget
+  # is spent (caller should time out), or :skip if the run is no longer
+  # stale/pending (e.g. it finished, transitioned to running, or was recently updated).
+  #
+  # If a Temporal workflow was already started for this run (temporal_workflow_id
+  # is present), we cancel it *before* requeuing so ProcessRunQueueJob can start
+  # a fresh workflow without racing the old one. If cancellation fails with a
+  # non-NOT_FOUND error, we skip the requeue to avoid duplicate workflows — the
+  # next detector cycle will retry.
+  def requeue_stale_pending_run(agent_run)
+    pending_threshold = PENDING_TIMEOUT.ago
+    old_container_id = nil
+    old_service_container_ids = nil
+    old_workflow_id = nil
+
+    agent_run.with_lock do
+      agent_run.reload
+      return :skip if agent_run.finished?
+      return :skip unless agent_run.status == "pending"
+      return :skip unless agent_run.updated_at < pending_threshold
+      return :exhausted if agent_run.stale_requeue_count >= MAX_STALE_REQUEUES
+
+      old_container_id = agent_run.container_id
+      old_service_container_ids = agent_run.service_container_ids.dup
+      old_workflow_id = agent_run.temporal_workflow_id
+
+      # Cancel the old Temporal workflow before requeuing. If cancellation
+      # fails (non-NOT_FOUND), skip this requeue to prevent duplicate workflows.
+      #
+      # NOTE: This network call is intentionally inside with_lock. Releasing
+      # the lock first would create a window where the run is still "pending"
+      # and another detector cycle could double-requeue it. The Temporal cancel
+      # RPC is fast (sub-second) so the lock duration is bounded in practice.
+      unless cancel_temporal_workflow(agent_run, old_workflow_id)
+        return :skip
+      end
+
+      agent_run.update!(
+        status: "queued",
+        stale_requeue_count: agent_run.stale_requeue_count + 1,
+        temporal_workflow_id: nil,
+        temporal_run_id: nil,
+        service_environment: nil,
+        container_id: nil,
+        service_container_ids: []
+      )
+      agent_run.log!("system", "Stale pending run requeued by stale run detector (attempt #{agent_run.stale_requeue_count}/#{MAX_STALE_REQUEUES})")
+
+      Rails.logger.info(
+        message: "stale_run_detector.requeued_stale_pending_run",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id,
+        stale_requeue_count: agent_run.stale_requeue_count
+      )
+    end
+
+    cleanup_docker_resources_by_id(agent_run, old_container_id, old_service_container_ids)
+
+    :requeued
+  end
+
   def resolve_stale_run(agent_run)
+    old_container_id = nil
+    old_service_container_ids = nil
+
     agent_run.with_lock do
       agent_run.reload
       return false if agent_run.finished?
+
+      old_container_id = agent_run.container_id
+      old_service_container_ids = agent_run.service_container_ids.dup
 
       agent_run.timeout!(error: "Stale run detected: stuck in '#{agent_run.status}' beyond timeout threshold")
       agent_run.log!("system", "Run marked as timed out by stale run detector")
@@ -96,24 +186,85 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
-    cleanup_docker_resources(agent_run)
+    cleanup_docker_resources_by_id(agent_run, old_container_id, old_service_container_ids)
 
     true
   end
 
-  def cleanup_docker_resources(agent_run)
-    begin
-      agent_run.cleanup_container(force: true)
-    rescue => e
-      Rails.logger.warn(
-        message: "stale_run_detector.container_cleanup_failed",
-        agent_run_id: agent_run.id,
-        error_class: e.class.name,
-        error: e.message
-      )
+  # Cancels a Temporal workflow by its captured workflow_id. Returns true if
+  # the workflow was successfully cancelled or was not found (already completed).
+  # Returns false if cancellation failed for another reason, signaling that
+  # the caller should not proceed with requeuing to avoid duplicate workflows.
+  def cancel_temporal_workflow(agent_run, workflow_id)
+    return true if workflow_id.blank?
+
+    handle = Paid.temporal_client.workflow_handle(workflow_id)
+    handle.cancel
+    true
+  rescue Temporalio::Error::RPCError => e
+    raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+
+    Rails.logger.info(
+      message: "stale_run_detector.cancel_workflow_not_found",
+      agent_run_id: agent_run.id,
+      temporal_workflow_id: workflow_id
+    )
+    true
+  rescue => e
+    Rails.logger.warn(
+      message: "stale_run_detector.cancel_workflow_failed",
+      agent_run_id: agent_run.id,
+      temporal_workflow_id: workflow_id,
+      error_class: e.class.name,
+      error: e.message
+    )
+    false
+  end
+
+  # Cleans up docker resources using IDs captured under the row lock.
+  # Reconnects to the container by old_container_id directly (rather
+  # than going through agent_run.cleanup_container) so we never read a
+  # potentially-changed container_id from the DB. Uses a conditional update
+  # (WHERE container_id = old_id) to avoid clobbering a new container_id
+  # if the run was re-provisioned after the lock was released.
+  #
+  # Service containers are cleaned up using the captured old_service_container_ids
+  # rather than reading from agent_run, which may have been cleared under the lock.
+  def cleanup_docker_resources_by_id(agent_run, old_container_id, old_service_container_ids = nil)
+    if old_container_id.present?
+      begin
+        service = Containers::Provision.reconnect(
+          agent_run: agent_run,
+          container_id: old_container_id,
+          worktree_path: agent_run.worktree_path
+        )
+        service.cleanup(force: true)
+      rescue => e
+        Rails.logger.warn(
+          message: "stale_run_detector.container_cleanup_failed",
+          agent_run_id: agent_run.id,
+          error_class: e.class.name,
+          error: e.message
+        )
+      end
+      # Only clear container_id if it hasn't changed since we captured it
+      AgentRun.where(id: agent_run.id, container_id: old_container_id)
+              .update_all(container_id: nil)
     end
 
+    cleanup_service_containers(agent_run, old_service_container_ids)
+  end
+
+  # Cleans up service containers using IDs captured under the row lock.
+  # Assigns the captured IDs back onto the in-memory agent_run so
+  # ServiceProvisioner#cleanup can read them (the DB record was already
+  # cleared inside the lock). The provisioner's final update! to clear
+  # service_container_ids is harmless since they're already empty in the DB.
+  def cleanup_service_containers(agent_run, old_service_container_ids)
     begin
+      # Restore captured IDs in memory so the provisioner can read them;
+      # the DB record was already cleared inside the lock.
+      agent_run.service_container_ids = old_service_container_ids if old_service_container_ids.present?
       Containers::ServiceProvisioner.new.cleanup(agent_run)
     rescue => e
       Rails.logger.warn(
