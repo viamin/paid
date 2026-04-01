@@ -67,18 +67,26 @@ module PreCommitRequirements
     def run_check(requirement)
       return { passed: false, output: "No container available" } unless agent_run.container_id.present?
 
-      output = agent_run.execute_in_container(requirement.command)
-      { passed: true, output: output.to_s.truncate(10_000) }
-    rescue AgentHarness::Error, RuntimeError => e
+      result = agent_run.execute_in_container(requirement.command)
+      passed = container_result_success?(result)
+      output = container_result_output(result)
+
+      { passed: passed, output: output.to_s.truncate(10_000) }
+    rescue Containers::Provision::Error => e
       { passed: false, output: e.message.to_s.truncate(10_000) }
     end
 
     def attempt_auto_fix(requirement)
+      unless agent_run.container_id.present?
+        return { passed: false, output: "No container available for auto-fix", auto_fixed: false }
+      end
+
       MAX_AUTO_FIX_ATTEMPTS.times do |attempt|
-        begin
-          agent_run.execute_in_container(requirement.fix_command)
-        rescue AgentHarness::Error, RuntimeError => e
-          return { passed: false, output: "Auto-fix failed: #{e.message}".truncate(10_000), auto_fixed: false }
+        fix_result = agent_run.execute_in_container(requirement.fix_command)
+
+        unless container_result_success?(fix_result)
+          fix_output = container_result_output(fix_result).to_s.truncate(10_000)
+          return { passed: false, output: "Auto-fix failed: #{fix_output}".truncate(10_000), auto_fixed: false }
         end
 
         result = run_check(requirement)
@@ -87,17 +95,35 @@ module PreCommitRequirements
         end
 
         log_auto_fix_attempt(requirement, attempt + 1, result)
+      rescue Containers::Provision::Error => e
+        return { passed: false, output: "Auto-fix failed: #{e.message}".truncate(10_000), auto_fixed: false }
       end
 
       { passed: false, output: "Auto-fix exhausted after #{MAX_AUTO_FIX_ATTEMPTS} attempts", auto_fixed: false }
     end
 
+    def container_result_success?(result)
+      result.success?
+    end
+
+    def container_result_output(result)
+      stdout = result[:stdout].to_s
+      stderr = result[:stderr].to_s
+
+      combined = [ stdout, stderr ].reject(&:blank?).join("\n")
+      return combined if combined.present?
+
+      exit_code = result[:exit_code]
+      exit_code ? "Command exited with code #{exit_code}" : ""
+    end
+
     def log_result(requirement, result)
       status = result[:passed] ? "passed" : "failed"
       agent_run.log!(
-        "pre_commit_check",
+        "system",
         "Pre-commit check '#{requirement.name}' #{status}",
         metadata: {
+          event: "pre_commit_check",
           requirement_id: requirement.id,
           check_type: requirement.check_type,
           passed: result[:passed],
@@ -109,9 +135,10 @@ module PreCommitRequirements
 
     def log_auto_fix_attempt(requirement, attempt, result)
       agent_run.log!(
-        "pre_commit_check",
+        "system",
         "Auto-fix attempt #{attempt}/#{MAX_AUTO_FIX_ATTEMPTS} for '#{requirement.name}' did not resolve the issue",
         metadata: {
+          event: "pre_commit_check",
           requirement_id: requirement.id,
           attempt: attempt,
           output_preview: result[:output].to_s.truncate(500)

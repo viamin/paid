@@ -612,11 +612,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_124101) do
     t.bigint "project_id"
     t.datetime "updated_at", null: false
     t.bigint "user_id"
+    t.index ["account_id", "name"], name: "idx_pre_commit_requirements_account_name_unique", unique: true, where: "((project_id IS NULL) AND (user_id IS NULL))"
     t.index ["account_id", "position"], name: "idx_pre_commit_requirements_account_position", where: "((project_id IS NULL) AND (user_id IS NULL))"
-    t.index ["account_id", "project_id", "user_id", "name"], name: "idx_pre_commit_requirements_unique_name", unique: true
     t.index ["account_id"], name: "index_pre_commit_requirements_on_account_id"
+    t.index ["project_id", "name"], name: "idx_pre_commit_requirements_project_name_unique", unique: true, where: "(project_id IS NOT NULL)"
     t.index ["project_id", "position"], name: "idx_pre_commit_requirements_project_position", where: "(project_id IS NOT NULL)"
     t.index ["project_id"], name: "index_pre_commit_requirements_on_project_id"
+    t.index ["user_id", "name"], name: "idx_pre_commit_requirements_user_name_unique", unique: true, where: "((user_id IS NOT NULL) AND (project_id IS NULL))"
     t.index ["user_id", "position"], name: "idx_pre_commit_requirements_user_position", where: "(user_id IS NOT NULL)"
     t.index ["user_id"], name: "index_pre_commit_requirements_on_user_id"
   end
@@ -670,7 +672,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_124101) do
   create_table "projects", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
-    t.string "agent_co_author_trailer"
     t.jsonb "allowed_github_usernames", default: [], null: false
     t.boolean "auto_add_labels_enabled", default: true, null: false
     t.boolean "auto_fix_merge_conflicts", default: true, null: false

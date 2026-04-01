@@ -17,8 +17,18 @@ class CreatePreCommitRequirements < ActiveRecord::Migration[8.1]
       t.timestamps null: false
     end
 
-    add_index :pre_commit_requirements, [ :account_id, :project_id, :user_id, :name ],
-      unique: true, name: "idx_pre_commit_requirements_unique_name"
+    add_index :pre_commit_requirements, [ :account_id, :name ],
+      unique: true,
+      where: "project_id IS NULL AND user_id IS NULL",
+      name: "idx_pre_commit_requirements_account_name_unique"
+    add_index :pre_commit_requirements, [ :project_id, :name ],
+      unique: true,
+      where: "project_id IS NOT NULL",
+      name: "idx_pre_commit_requirements_project_name_unique"
+    add_index :pre_commit_requirements, [ :user_id, :name ],
+      unique: true,
+      where: "user_id IS NOT NULL AND project_id IS NULL",
+      name: "idx_pre_commit_requirements_user_name_unique"
     add_index :pre_commit_requirements, [ :project_id, :position ],
       where: "project_id IS NOT NULL", name: "idx_pre_commit_requirements_project_position"
     add_index :pre_commit_requirements, [ :user_id, :position ],

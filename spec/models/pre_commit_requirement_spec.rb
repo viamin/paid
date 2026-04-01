@@ -255,6 +255,17 @@ RSpec.describe PreCommitRequirement do
 
       expect(result.map(&:id)).to eq([ req.id ])
     end
+
+    it "ignores user from a different account" do
+      other_account = create(:account)
+      other_user = create(:user, account: other_account)
+      create(:pre_commit_requirement, account: other_account, user: other_user, name: "lint", command: "other-lint")
+      account_req = create(:pre_commit_requirement, account: account, name: "lint")
+
+      result = described_class.resolve(project: project, user: other_user)
+
+      expect(result.map(&:id)).to eq([ account_req.id ])
+    end
   end
 
   describe "callbacks" do

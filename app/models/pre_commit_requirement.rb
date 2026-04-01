@@ -53,12 +53,16 @@ class PreCommitRequirement < ApplicationRecord
   #
   # @param project [Project] The project context
   # @param user [User, nil] The user context (optional)
-  # @return [ActiveRecord::Relation] Ordered list of effective requirements
+  # @return [Array<PreCommitRequirement>] Ordered list of effective requirements
   def self.resolve(project:, user: nil)
     account = project.account
 
     account_reqs = for_account(account).enabled.ordered
-    user_reqs = user ? for_user(user).enabled.ordered : self.none
+    user_reqs = if user && user.account_id == account.id
+      for_user(user).enabled.ordered
+    else
+      self.none
+    end
     project_reqs = for_project(project).enabled.ordered
 
     # Merge: project overrides user overrides account (by name)
