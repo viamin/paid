@@ -1,12 +1,19 @@
 <%# Action buttons for the agent run detail page.
     Rendered only from the show template — NOT from Turbo broadcasts —
-    so that user-specific, policy-gated controls persist across live updates. %>
+    so that user-specific, policy-gated controls persist across live updates.
+
+    All sections are rendered when the user is authorized and visibility is
+    managed client-side by the agent-run-actions Stimulus controller, which
+    reads data-agent-run-status (and data-agent-run-has-error) from the
+    Turbo-broadcasted detail partial and toggles hidden on data-when-*
+    elements accordingly. This ensures controls become available without a
+    full page reload when a run transitions state via broadcast. %>
 <% show_cancel = local_assigns.fetch(:show_cancel, false) %>
 <% show_retry  = local_assigns.fetch(:show_retry, false) %>
 <% retry_provider_options = local_assigns.fetch(:retry_provider_options, []) %>
 
-<% if agent_run.active? && show_cancel %>
-  <div class="mt-3 flex justify-end" data-when-active>
+<% if show_cancel %>
+  <div class="mt-3 flex justify-end" data-when-active <%= "hidden" unless agent_run.active? %>>
     <%= button_to "Cancel",
           cancel_project_agent_run_path(agent_run.project, agent_run),
           method: :post,
@@ -15,9 +22,9 @@
   </div>
 <% end %>
 
-<% if agent_run.finished? && show_retry %>
+<% if show_retry %>
   <% show_retry_menu = retry_provider_options.any? { |option| !option[:current] } %>
-  <div class="mt-3 flex justify-end" data-when-finished>
+  <div class="mt-3 flex justify-end" data-when-finished <%= "hidden" unless agent_run.finished? %>>
     <% if show_retry_menu %>
       <% retry_menu_button_id = dom_id(agent_run, :retry_menu_button) %>
       <% retry_menu_id = dom_id(agent_run, :retry_menu) %>
@@ -66,25 +73,35 @@
   </div>
 <% end %>
 
-<% if agent_run.auth_expired? && show_retry && agent_run.auth_provider.present? && AgentHarness.respond_to?(:refresh_auth) && AgentHarness.respond_to?(:auth_url) %>
-  <% auth_url = AgentHarness.auth_url(agent_run.auth_provider.to_sym) %>
-  <% if auth_url.present? %>
-    <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-      <p class="text-sm text-amber-700">
-        1. Visit the login URL to re-authenticate:
-        <%= link_to auth_url, auth_url, target: "_blank", rel: "noopener noreferrer", class: "text-amber-800 underline hover:text-amber-900 break-all" %>
-      </p>
-      <p class="mt-2 text-sm text-amber-700">2. Paste the auth code below:</p>
-      <%= form_with url: refresh_auth_project_agent_run_path(agent_run.project, agent_run), method: :post, class: "mt-2 flex items-center space-x-2" do |f| %>
-        <%= f.text_field :auth_code, placeholder: "Paste auth code here", class: "block w-full rounded-md border-amber-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-amber-500 focus:ring-amber-500", aria: { label: "Authentication code" } %>
-        <%= f.submit "Re-authenticate", class: "inline-flex items-center rounded-md bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 cursor-pointer" %>
-      <% end %>
+<%# Auth refresh form — the full form requires auth_provider (set by auth_expire!),
+    so it cannot be pre-rendered for active runs. When the run is already
+    auth_expired we render the complete form; otherwise we render a fallback
+    message that the Stimulus controller reveals on status transition. %>
+<% if show_retry %>
+  <% if agent_run.auth_expired? && agent_run.auth_provider.present? && AgentHarness.respond_to?(:refresh_auth) && AgentHarness.respond_to?(:auth_url) %>
+    <% auth_url = AgentHarness.auth_url(agent_run.auth_provider.to_sym) %>
+    <% if auth_url.present? %>
+      <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4" data-when-auth-expired>
+        <p class="text-sm text-amber-700">
+          1. Visit the login URL to re-authenticate:
+          <%= link_to auth_url, auth_url, target: "_blank", rel: "noopener noreferrer", class: "text-amber-800 underline hover:text-amber-900 break-all" %>
+        </p>
+        <p class="mt-2 text-sm text-amber-700">2. Paste the auth code below:</p>
+        <%= form_with url: refresh_auth_project_agent_run_path(agent_run.project, agent_run), method: :post, class: "mt-2 flex items-center space-x-2" do |f| %>
+          <%= f.text_field :auth_code, placeholder: "Paste auth code here", class: "block w-full rounded-md border-amber-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-amber-500 focus:ring-amber-500", aria: { label: "Authentication code" } %>
+          <%= f.submit "Re-authenticate", class: "inline-flex items-center rounded-md bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 cursor-pointer" %>
+        <% end %>
+      </div>
+    <% end %>
+  <% else %>
+    <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4" data-when-auth-expired hidden>
+      <p class="text-sm text-amber-700">Authentication has expired. Refresh the page to re-authenticate.</p>
     </div>
   <% end %>
 <% end %>
 
-<% if agent_run.error_message.present? && show_retry %>
-  <div class="mt-3">
+<% if show_retry %>
+  <div class="mt-3" data-when-error <%= "hidden" unless agent_run.error_message.present? %>>
     <% if %w[in_progress processing].include?(agent_run.diagnosis_status) %>
       <span class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-500">
         <svg class="mr-1.5 h-4 w-4 animate-spin text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
