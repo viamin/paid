@@ -52,6 +52,9 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
     end
 
     it "supports mode parameter" do
+      owner = project.effective_owner
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-mode")
+
       get "/api/knowledge/search", params: { project_id: project.id, q: "users", mode: "semantic" }
 
       body = response.parsed_body
@@ -89,6 +92,32 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
 
       expect(response).to have_http_status(:forbidden)
       expect(response.parsed_body["error"]).to eq("Forbidden")
+    end
+
+    it "passes the project's OpenAI API key to Knowledge::Search for non-exact modes" do
+      owner = project.effective_owner
+      api_key = create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-api")
+
+      allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "hybrid", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
+
+      get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "hybrid" }
+
+      expect(Knowledge::Search).to have_received(:call).with(
+        hash_including(api_key: api_key.api_key)
+      )
+    end
+
+    it "skips OpenAI API key resolution for exact mode" do
+      owner = project.effective_owner
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-api")
+
+      allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "exact", total: 0, took_ms: 0, exact_count: 0, semantic_count: 0 } })
+
+      get "/api/knowledge/search", params: { project_id: project.id, q: "test", mode: "exact" }
+
+      expect(Knowledge::Search).to have_received(:call).with(
+        hash_including(api_key: nil)
+      )
     end
 
     context "when rate limit is exceeded" do

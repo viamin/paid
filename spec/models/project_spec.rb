@@ -1008,4 +1008,71 @@ RSpec.describe Project do
       end
     end
   end
+
+  describe "#openai_api_key" do
+    it "returns the most recent OpenAI API key from the project owner" do
+      project = create(:project)
+      owner = project.effective_owner
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-old", created_at: 2.minutes.ago)
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-new", created_at: 1.minute.ago)
+
+      expect(project.openai_api_key).to eq("sk-new")
+    end
+
+    it "returns nil when no OpenAI key exists" do
+      project = create(:project)
+
+      expect(project.openai_api_key).to be_nil
+    end
+
+    it "ignores non-OpenAI keys" do
+      project = create(:project)
+      owner = project.effective_owner
+      create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-anthropic")
+
+      expect(project.openai_api_key).to be_nil
+    end
+  end
+
+  describe "#openai_api_key_configured?" do
+    it "returns true when an OpenAI key exists" do
+      project = create(:project)
+      owner = project.effective_owner
+      create(:provider_api_key, user: owner, api_service_type: "openai")
+
+      expect(project.openai_api_key_configured?).to be true
+    end
+
+    it "returns false when no OpenAI key exists" do
+      project = create(:project)
+
+      expect(project.openai_api_key_configured?).to be false
+    end
+  end
+
+  describe "#semantic_search_available?" do
+    it "returns true when an OpenAI key exists for the owner" do
+      project = create(:project)
+      owner = project.effective_owner
+      create(:provider_api_key, user: owner, api_service_type: "openai")
+
+      expect(project.semantic_search_available?).to be true
+    end
+
+    it "returns true when a platform OpenAI key is set" do
+      project = create(:project)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return("sk-platform")
+
+      expect(project.semantic_search_available?).to be true
+    end
+
+    it "returns false when no OpenAI key exists from any source" do
+      project = create(:project)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
+
+      expect(project.semantic_search_available?).to be false
+    end
+  end
 end
