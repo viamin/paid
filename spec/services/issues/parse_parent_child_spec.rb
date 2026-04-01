@@ -190,6 +190,20 @@ RSpec.describe Issues::ParseParentChild do
         expect(child.reload.parent_issue_id).to eq(parent.id)
       end
 
+      it "clears children when section heading remains but all refs are removed" do
+        child = create(:issue, project: project, github_number: 8091)
+        parent = create(:issue, project: project, body: "## Child Issues\n- #8091\n")
+
+        described_class.call(issue: parent)
+        expect(child.reload.parent_issue_id).to eq(parent.id)
+
+        # Keep the section heading but remove all issue refs
+        parent.update!(body: "## Child Issues\nNothing here yet.\n")
+        described_class.call(issue: parent)
+
+        expect(child.reload.parent_issue_id).to be_nil
+      end
+
       it "does not clear PR parent_issue_id when clearing stale children" do
         pr = create(:issue, :pull_request, project: project, github_number: 8095,
                     parent_issue_id: nil)
