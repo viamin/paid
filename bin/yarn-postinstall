@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run allowlisted postinstall scripts after `yarn install --ignore-scripts`.
+# Only packages listed here are permitted to execute install-time code.
+# See .yarnrc for rationale.
+
+ALLOWED_SCRIPTS=(
+  "esbuild:node node_modules/esbuild/install.js"
+  "@parcel/watcher:node node_modules/@parcel/watcher/scripts/build-from-source.js"
+)
+
+for entry in "${ALLOWED_SCRIPTS[@]}"; do
+  pkg="${entry%%:*}"
+  cmd="${entry#*:}"
+  if [ -d "node_modules/$pkg" ]; then
+    echo "  Running install script for $pkg"
+    $cmd
+  fi
+done
