@@ -12,6 +12,15 @@ import { Controller } from "@hotwired/stimulus"
 //   data-when-auth-expired — visible when the run's status is auth_expired
 //   data-when-error        — visible when the run has an error message
 const ACTIVE_STATUSES = ["pending", "running"]
+const FINISHED_STATUSES = [
+  "completed",
+  "failed",
+  "cancelled",
+  "timeout",
+  "retried",
+  "auth_expired",
+  "rate_limited",
+]
 
 export default class extends Controller {
   static targets = ["actions"]
@@ -51,8 +60,9 @@ export default class extends Controller {
     this.actionsTarget.querySelectorAll("[data-when-active]").forEach((el) => {
       el.hidden = !active
     })
+    const finished = FINISHED_STATUSES.includes(status)
     this.actionsTarget.querySelectorAll("[data-when-finished]").forEach((el) => {
-      el.hidden = active
+      el.hidden = !finished
     })
     this.actionsTarget
       .querySelectorAll("[data-when-auth-expired]")
