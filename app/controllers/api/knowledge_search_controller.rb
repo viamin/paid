@@ -29,7 +29,8 @@ module Api
         mode: params[:mode],
         artifact_type: params[:type],
         version: params[:version],
-        limit: params[:limit]
+        limit: params[:limit],
+        api_key: @project.openai_api_key
       )
 
       render json: result

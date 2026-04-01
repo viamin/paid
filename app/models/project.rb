@@ -201,6 +201,24 @@ class Project < ApplicationRecord
     created_by || account.fallback_owner
   end
 
+  # Resolves the project owner's OpenAI API key for embeddings and semantic search.
+  # Returns nil when no user key exists (callers fall back to ENV["OPENAI_API_KEY"]).
+  def openai_api_key
+    effective_owner
+      &.provider_api_keys
+      &.for_api_service_type("openai")
+      &.order(created_at: :desc)
+      &.first
+      &.api_key
+  end
+
+  def openai_api_key_configured?
+    effective_owner
+      &.provider_api_keys
+      &.for_api_service_type("openai")
+      &.exists? || false
+  end
+
   def trusted_github_user?(login)
     return false if login.blank?
 

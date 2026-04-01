@@ -34,7 +34,8 @@ module Knowledge
         query: @query,
         mode: params[:mode].presence || "hybrid",
         artifact_type: params[:type].presence,
-        limit: 20
+        limit: 20,
+        api_key: @project.openai_api_key
       )
 
       @results = result[:results]
