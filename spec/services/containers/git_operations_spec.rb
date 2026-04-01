@@ -1164,32 +1164,36 @@ RSpec.describe Containers::GitOperations do
     end
 
     context "when a commit-msg hook already exists" do
-      before { project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
-      it "appends trailer logic to the existing hook" do
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
           .and_return(marker_missing_result)
-
         allow(container_service).to receive(:execute)
           .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(hook_exists_result)
-
-        appended_script = nil
         allow(container_service).to receive(:execute)
-          .with(a_string_matching(/cat >> \.git\/hooks\/commit-msg/), timeout: nil, stream: false) { |script, **|
-            appended_script = script
-            success_result
-          }
-
+          .with("mv .git/hooks/commit-msg .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(success_result)
         allow(container_service).to receive(:execute)
           .with("chmod +x .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(success_result)
+      end
+
+      it "renames the existing hook and installs a wrapper" do
+        captured_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg/), timeout: nil, stream: false) { |script, **|
+            captured_script = script
+            success_result
+          }
 
         git_ops.install_co_author_hook
 
-        expect(appended_script).to include("Co-Authored-By: Claude <noreply@anthropic.com>")
-        expect(appended_script).not_to include("#!/bin/sh")
+        expect(captured_script).to include(".git/hooks/commit-msg.original")
+        expect(captured_script).to include("Co-Authored-By: Claude <noreply@anthropic.com>")
+        expect(captured_script).to include("#!/bin/sh")
       end
     end
 

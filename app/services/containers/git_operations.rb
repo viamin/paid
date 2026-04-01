@@ -185,9 +185,11 @@ module Containers
     #
     # Skipped when the project has no trailer configured.
     # When an existing commit-msg hook is present (e.g. from Husky or Lefthook),
-    # the trailer logic is appended to the existing hook rather than skipping
-    # installation, so that agent-created commits still receive the trailer.
-    # A "Installed by Paid" marker prevents duplicate appends on retries.
+    # the original hook is renamed and a shell wrapper is installed that
+    # delegates to the original hook first, then appends the trailer. This
+    # preserves non-shell hooks (node, python, ruby) that would break if
+    # shell code were appended directly.
+    # A "Installed by Paid" marker prevents duplicate installs on retries.
     #
     # @return [void]
     def install_co_author_hook
@@ -662,11 +664,17 @@ module Containers
       raise Error, "Failed to chmod #{hook_name} hook: #{chmod_result.error}" if chmod_result.failure?
     end
 
-    # Installs the co-author trailer hook, chaining with an existing commit-msg
-    # hook if one is present. Uses the "Installed by Paid" marker for idempotency.
+    # Installs the co-author trailer hook, safely wrapping any existing
+    # commit-msg hook. Uses the "Installed by Paid" marker for idempotency.
+    #
+    # When an existing hook is present (e.g. Husky, Lefthook, or a
+    # node/python/ruby hook), it is renamed to commit-msg.original and a
+    # new shell wrapper is installed that executes the original hook first
+    # (preserving its interpreter via its shebang) and then appends the
+    # trailer. This avoids breaking non-shell hooks by appending shell code.
     def install_or_chain_co_author_hook(trailer)
       hook_path = ".git/hooks/commit-msg"
-      script = commit_msg_hook_script(trailer)
+      original_path = "#{hook_path}.original"
 
       # Check for existing marker to prevent duplicate appends on retries
       marker_check = container_service.execute(
@@ -684,28 +692,23 @@ module Containers
       # Check if a hook file already exists
       check = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
       if check.success?
-        # Append trailer logic (without shebang) to the existing hook
-        trailer_block = script.sub(%r{^#!/bin/sh\n}, "")
-        append_result = container_service.execute(
-          "cat >> #{hook_path} << 'HOOKEOF'\n\n#{trailer_block}\nHOOKEOF",
-          timeout: nil, stream: false
-        )
-        raise Error, "Failed to append co-author hook: #{append_result.error}" if append_result.failure?
+        # Rename existing hook so the wrapper can delegate to it
+        mv_result = container_service.execute("mv #{hook_path} #{original_path}", timeout: nil, stream: false)
+        raise Error, "Failed to rename existing hook: #{mv_result.error}" if mv_result.failure?
 
-        # Ensure the hook is executable — an existing file may lack +x
-        chmod_result = container_service.execute("chmod +x #{hook_path}", timeout: nil, stream: false)
-        raise Error, "Failed to chmod co-author hook: #{chmod_result.error}" if chmod_result.failure?
+        script = commit_msg_wrapper_script(trailer, original_path)
       else
-        # No existing hook — create a new one
-        write_result = container_service.execute(
-          "cat > #{hook_path} << 'HOOKEOF'\n#{script}\nHOOKEOF",
-          timeout: nil, stream: false
-        )
-        raise Error, "Failed to write co-author hook: #{write_result.error}" if write_result.failure?
-
-        chmod_result = container_service.execute("chmod +x #{hook_path}", timeout: nil, stream: false)
-        raise Error, "Failed to chmod co-author hook: #{chmod_result.error}" if chmod_result.failure?
+        script = commit_msg_hook_script(trailer)
       end
+
+      write_result = container_service.execute(
+        "cat > #{hook_path} << 'HOOKEOF'\n#{script}\nHOOKEOF",
+        timeout: nil, stream: false
+      )
+      raise Error, "Failed to write co-author hook: #{write_result.error}" if write_result.failure?
+
+      chmod_result = container_service.execute("chmod +x #{hook_path}", timeout: nil, stream: false)
+      raise Error, "Failed to chmod co-author hook: #{chmod_result.error}" if chmod_result.failure?
     end
 
     # Validates that a shell command is a simple executable with arguments.
@@ -766,6 +769,23 @@ module Containers
       <<~SHELL
         #!/bin/sh
         # Installed by Paid — append co-author trailer to commits
+        if ! grep -qF -- '#{escaped}' "$1"; then
+          printf '\\n\\n%s' '#{escaped}' >> "$1"
+        fi
+      SHELL
+    end
+
+    # Generates a wrapper hook that delegates to the original hook (which
+    # may use any interpreter — node, python, ruby, etc.) and then appends
+    # the co-author trailer. The original hook is executed via its own
+    # shebang, so non-shell hooks are preserved correctly.
+    def commit_msg_wrapper_script(trailer, original_path)
+      escaped = trailer.gsub("'", "'\\\\''")
+
+      <<~SHELL
+        #!/bin/sh
+        # Installed by Paid — wrapper that chains original hook + co-author trailer
+        #{original_path} "$@" || exit $?
         if ! grep -qF -- '#{escaped}' "$1"; then
           printf '\\n\\n%s' '#{escaped}' >> "$1"
         fi
