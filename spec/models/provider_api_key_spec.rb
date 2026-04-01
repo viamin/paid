@@ -40,6 +40,11 @@ RSpec.describe ProviderApiKey do
     it "returns false for providers whose API service type differs" do
       expect(api_key.compatible_with?("codex")).to be(false)
     end
+
+    it "returns false for providers with no API service type mapping" do
+      expect(api_key.compatible_with?("copilot")).to be(false)
+      expect(api_key.compatible_with?("unknown")).to be(false)
+    end
   end
 
   describe "#display_api_service_type" do

@@ -18,7 +18,6 @@ function loadProviderApiServiceType() {
     claude: "anthropic",
     cursor: "anthropic",
     codex: "openai",
-    copilot: "anthropic",
     aider: "anthropic",
     gemini: "google",
     opencode: "openrouter",
@@ -112,7 +111,9 @@ export default class extends Controller {
       }
 
       const serviceType = option.dataset.apiServiceType || ""
-      const visible = requiredServiceType ? serviceType === requiredServiceType : true
+      // When requiredServiceType is null (unknown/unmapped provider), hide all
+      // API key options — the provider has no compatible API key type.
+      const visible = requiredServiceType !== null && serviceType === requiredServiceType
       option.hidden = !visible
       if (visible && option.selected) {
         selectedOptionVisible = true
@@ -133,8 +134,10 @@ export default class extends Controller {
 
   requiredApiServiceTypeFor(providerKey) {
     if (!providerKey) return null
-    // Mirror ProviderSupport.api_service_type_for backend default for unknown providers.
-    return PROVIDER_API_SERVICE_TYPE[providerKey] || "anthropic"
+    // Returns null for unknown/unmapped providers (e.g. copilot), which causes
+    // refreshApiKeyOptions to hide all API key options — the correct behavior
+    // since those providers have no compatible API key type.
+    return PROVIDER_API_SERVICE_TYPE[providerKey] || null
   }
 
   currentProviderKey() {

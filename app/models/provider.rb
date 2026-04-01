@@ -324,6 +324,12 @@ class Provider < ApplicationRecord
     return unless provider_api_key
 
     required_service = self.class.api_service_type_for(provider_key)
+
+    if required_service.nil?
+      errors.add(:provider_api_key, "is not supported for this provider; use subscription authentication instead")
+      return
+    end
+
     return if provider_api_key.api_service_type == required_service
 
     errors.add(:provider_api_key, "must be an API key for #{ProviderSupport.api_service_type_label(required_service)}")

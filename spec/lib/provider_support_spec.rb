@@ -137,8 +137,12 @@ RSpec.describe ProviderSupport do
       expect(described_class.api_service_type_for("gemini")).to eq("google")
     end
 
-    it "defaults to anthropic for unknown providers" do
-      expect(described_class.api_service_type_for("unknown")).to eq("anthropic")
+    it "returns nil for unknown providers" do
+      expect(described_class.api_service_type_for("unknown")).to be_nil
+    end
+
+    it "returns nil for copilot (no compatible API key type)" do
+      expect(described_class.api_service_type_for("copilot")).to be_nil
     end
   end
 

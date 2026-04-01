@@ -95,7 +95,7 @@ module ProviderSupport
   end
 
   def api_service_type_for(provider_key)
-    PROVIDER_API_SERVICE_TYPE.fetch(provider_key.to_s, "anthropic")
+    PROVIDER_API_SERVICE_TYPE[provider_key.to_s]
   end
 
   def api_service_type_label(service_type)
@@ -148,11 +148,14 @@ module ProviderSupport
   # Maps each provider key to the upstream API service type its CLI tool
   # communicates with. Used to determine which ProviderApiKey records are
   # compatible with a given provider.
+  #
+  # Providers NOT listed here (e.g. copilot) have no compatible API key type,
+  # meaning they can only be used with subscription auth. Copilot CLI uses
+  # GitHub's own authentication, not a third-party API key.
   PROVIDER_API_SERVICE_TYPE = {
     "claude" => "anthropic",
     "cursor" => "anthropic",
     "codex" => "openai",
-    "copilot" => "anthropic",
     "aider" => "anthropic",
     "gemini" => "google",
     "opencode" => "openrouter",
