@@ -24,8 +24,8 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
         # Lock the original run to prevent concurrent retry jobs from both
         # creating a new queued run. Re-check eligibility under the lock
         # since the status may have changed since the initial check.
-        locked_run = AgentRun.lock.find(agent_run.id)
-        next unless eligible_for_retry?(locked_run)
+        locked_run = AgentRun.lock.find_by(id: agent_run.id)
+        next unless locked_run && eligible_for_retry?(locked_run)
 
         previous_retries = count_previous_retries(locked_run)
         if previous_retries >= MAX_RETRIES
@@ -54,7 +54,6 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
           status: "queued"
         )
         locked_run.retry!
-        agent_run.reload
         created
       end
     rescue ActiveRecord::RecordNotUnique => e
