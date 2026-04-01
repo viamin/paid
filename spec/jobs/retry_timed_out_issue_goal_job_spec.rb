@@ -131,13 +131,15 @@ RSpec.describe RetryTimedOutIssueGoalJob do
       end
     end
 
-    it "skips retry when an active run already exists for the same issue" do
+    it "skips retry but marks original as retried when an active run already exists" do
       agent_run = create_timed_out_issue_goal_run
       # Create an active (queued) run for the same project+issue to trigger unique index
       create(:agent_run, :create_issue_goal, project: project, issue: issue, status: "queued")
 
       expect { described_class.perform_now(agent_run.id) }
         .not_to change(AgentRun, :count)
+
+      expect(agent_run.reload.status).to eq("retried")
     end
   end
 end

@@ -46,9 +46,18 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
     rescue ActiveRecord::RecordNotUnique => e
       raise unless (e.cause&.message || e.message)&.include?("idx_agent_runs_unique_active_issue")
 
+      existing_run = AgentRun.where(
+        project_id: agent_run.project_id,
+        issue_id: agent_run.issue_id,
+        status: %w[queued running pending]
+      ).where.not(id: agent_run.id).first
+
+      agent_run.retry!
+
       Rails.logger.info(
         message: "agent_execution.issue_goal_auto_retry_skipped_existing_run",
         original_agent_run_id: agent_run.id,
+        existing_agent_run_id: existing_run&.id,
         issue_id: agent_run.issue_id,
         project_id: agent_run.project_id
       )
