@@ -96,6 +96,10 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
         issue_id: agent_run.issue_id,
         project_id: agent_run.project_id
       )
+
+      # Ensure the run queue is processed even when we skip creating a new run
+      # due to an existing active run. This job is idempotent.
+      ProcessRunQueueJob.perform_later
       return
     end
 
