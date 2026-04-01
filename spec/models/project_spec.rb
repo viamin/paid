@@ -1049,4 +1049,30 @@ RSpec.describe Project do
       expect(project.openai_api_key_configured?).to be false
     end
   end
+
+  describe "#semantic_search_available?" do
+    it "returns true when an OpenAI key exists for the owner" do
+      project = create(:project)
+      owner = project.effective_owner
+      create(:provider_api_key, user: owner, api_service_type: "openai")
+
+      expect(project.semantic_search_available?).to be true
+    end
+
+    it "returns true when a platform OpenAI key is set" do
+      project = create(:project)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return("sk-platform")
+
+      expect(project.semantic_search_available?).to be true
+    end
+
+    it "returns false when no OpenAI key exists from any source" do
+      project = create(:project)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
+
+      expect(project.semantic_search_available?).to be false
+    end
+  end
 end

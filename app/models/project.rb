@@ -219,6 +219,14 @@ class Project < ApplicationRecord
       &.exists? || false
   end
 
+  # Returns true when an OpenAI API key is available from any source
+  # (user-configured or platform-level ENV). Use this to determine whether
+  # embedding/semantic search capabilities are available without leaking
+  # which source provides the key.
+  def semantic_search_available?
+    openai_api_key_configured? || ENV["OPENAI_API_KEY"].present?
+  end
+
   def trusted_github_user?(login)
     return false if login.blank?
 
