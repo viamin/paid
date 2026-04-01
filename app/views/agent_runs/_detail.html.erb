@@ -41,6 +41,13 @@
         </div>
         <div class="flex items-center space-x-3">
           <%= agent_run_status_badge(agent_run.status) %>
+          <% if agent_run.active? && local_assigns.fetch(:show_cancel, false) %>
+            <%= button_to "Cancel",
+                  cancel_project_agent_run_path(agent_run.project, agent_run),
+                  method: :post,
+                  form: { data: { turbo_confirm: "Are you sure you want to cancel this agent run?" } },
+                  class: "inline-flex items-center rounded-md bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600" %>
+          <% end %>
           <% if agent_run.finished? && local_assigns.fetch(:show_retry, false) %>
             <% retry_provider_options = local_assigns.fetch(:retry_provider_options, []) %>
             <% show_retry_menu = retry_provider_options.any? { |option| !option[:current] } %>

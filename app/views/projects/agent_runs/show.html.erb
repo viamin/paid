@@ -17,6 +17,7 @@
         quality_metrics: @quality_metrics,
         phase_timeline: @phase_timeline,
         phase_summary: @phase_summary,
+        show_cancel: policy(@agent_run).cancel?,
         show_retry: policy(@agent_run.project).run_agent?,
         retry_provider_options: @retry_provider_options,
         final_provider_record: @final_provider_record,
