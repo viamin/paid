@@ -1146,9 +1146,15 @@ RSpec.describe Containers::GitOperations do
         allow(Rails.logger).to receive(:warn)
         allow(git_ops).to receive(:sleep)
 
+        proxy_url_result = Containers::Provision::Result.success(stdout: "http://proxy:3000", stderr: "", exit_code: 0)
+
         allow(container_service).to receive(:execute)
           .with('curl -sf --max-time 5 "${PAID_PROXY_URL}/up"', timeout: 10, stream: false)
           .and_return(unhealthy_result)
+
+        allow(container_service).to receive(:execute)
+          .with('echo "${PAID_PROXY_URL}"', timeout: 5, stream: false)
+          .and_return(proxy_url_result)
 
         # Simulate time passing beyond the deadline
         allow(Time).to receive(:current).and_return(
@@ -1158,7 +1164,7 @@ RSpec.describe Containers::GitOperations do
         )
 
         expect { git_ops.push_branch }
-          .to raise_error(described_class::ProxyUnavailableError, /Credential proxy unreachable/)
+          .to raise_error(described_class::ProxyUnavailableError, /Credential proxy at http:\/\/proxy:3000 unreachable/)
       end
     end
 

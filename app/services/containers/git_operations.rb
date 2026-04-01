@@ -30,9 +30,10 @@ module Containers
     # the git credential helper cannot fetch tokens. These settings control how
     # long we wait for the proxy to recover before giving up.
     PROXY_HEALTH_CHECK_INTERVAL = 15 # seconds between retry attempts
-    # Keep below the shortest Temporal activity timeout (60s for PushBranch)
-    # so ProxyUnavailableError is raised before Temporal times out the activity.
-    PROXY_HEALTH_CHECK_TIMEOUT = 45 # max seconds to wait for proxy recovery
+    # Keep combined proxy wait + git push under the shortest Temporal activity
+    # timeout (60s for PushBranch) so ProxyUnavailableError is raised before
+    # Temporal times out the activity.
+    PROXY_HEALTH_CHECK_TIMEOUT = 25 # max seconds to wait for proxy recovery
 
     # Marker comment used as a grep guard so Temporal retries don't
     # duplicate the exclude block.  Defined once and referenced both
@@ -707,8 +708,8 @@ module Containers
         remaining = deadline - Time.current
         if remaining <= 0
           raise ProxyUnavailableError,
-            "Credential proxy unreachable after #{PROXY_HEALTH_CHECK_TIMEOUT}s — " \
-            "the Rails app may be down"
+            "Credential proxy at #{proxy_url_label} unreachable after " \
+            "#{PROXY_HEALTH_CHECK_TIMEOUT}s — the Rails app may be down"
         end
 
         sleep([ PROXY_HEALTH_CHECK_INTERVAL, remaining ].min)
@@ -736,6 +737,22 @@ module Containers
       result.success?
     rescue StandardError
       false
+    end
+
+    # Returns a human-readable label for the proxy URL by resolving
+    # PAID_PROXY_URL from the container environment. Falls back to
+    # "<PAID_PROXY_URL unset>" when the variable is missing or the
+    # container is unreachable.
+    def proxy_url_label
+      result = container_service.execute(
+        'echo "${PAID_PROXY_URL}"',
+        timeout: 5,
+        stream: false
+      )
+      url = result.success? ? result[:stdout].to_s.strip : nil
+      url.present? ? url : "<PAID_PROXY_URL unset>"
+    rescue StandardError
+      "<PAID_PROXY_URL unresolvable>"
     end
 
     def execute_git(*args, timeout: nil)

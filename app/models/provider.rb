@@ -225,26 +225,24 @@ class Provider < ApplicationRecord
   end
 
   def self.required_api_key_targets_for(provider_key:, config: nil)
-    return [ OPENCODE_DEFAULT_API_PROVIDER ] if provider_key.to_s == "opencode"
-
-    # Map CLI tools to their required API services
+    # Map CLI tools to the API services whose keys they require.
     case provider_key.to_s
     when "claude"
-      [ "openrouter" ]  # Claude CLI uses OpenRouter API
+      [ "openrouter" ]
     when "cursor"
-      [ "openai", "openrouter" ]  # Cursor can use OpenAI or OpenRouter APIs
+      [ "openai", "openrouter" ]
     when "codex"
-      [ "openai" ]  # Codex CLI uses OpenAI API
+      [ "openai" ]
     when "copilot"
-      [ "github" ]  # GitHub Copilot uses GitHub API
+      [ "github" ]
     when "gemini"
-      [ "google" ]  # Gemini CLI uses Google API
+      [ "google" ]
     when "aider"
-      [ "openai", "openrouter" ]  # Aider can use OpenAI or OpenRouter APIs
+      [ "openai", "openrouter" ]
     when "kilocode"
-      [ "openrouter" ]  # Kilocode uses OpenRouter API
+      [ "openrouter" ]
     when "opencode"
-      [ OPENCODE_DEFAULT_API_PROVIDER ]  # OpenCode uses its default provider
+      [ OPENCODE_DEFAULT_API_PROVIDER ]
     else
       raise ArgumentError, "No API service mapping exists for provider key: #{provider_key.inspect}"
     end
