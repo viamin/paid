@@ -704,6 +704,18 @@ module Containers
       end
 
       if hook_exists.success?
+        # If a backup already exists, avoid overwriting it and skip installation.
+        # This can happen if a repo or tool (e.g. Husky) already created
+        # commit-msg.original, or if a prior partial installation left it behind
+        # alongside a restored commit-msg hook.
+        if original_exists.success?
+          Rails.logger.warn(
+            message: "container_git.co_author_hook_backup_already_exists",
+            agent_run_id: agent_run.id
+          )
+          return
+        end
+
         # Rename existing hook so the wrapper can delegate to it
         mv_result = container_service.execute("mv #{hook_path} #{original_path}", timeout: nil, stream: false)
         raise Error, "Failed to rename existing hook: #{mv_result.error}" if mv_result.failure?

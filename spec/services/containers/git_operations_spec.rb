@@ -1268,6 +1268,32 @@ RSpec.describe Containers::GitOperations do
       end
     end
 
+    context "when commit-msg.original already exists alongside commit-msg" do
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        # Both commit-msg.original and commit-msg exist
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+      end
+
+      it "skips installation to avoid overwriting the existing backup" do
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/mv .git\/hooks\/commit-msg /), timeout: nil, stream: false)
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/cat > /), timeout: nil, stream: false)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
     it "does not raise when installation fails" do
       project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
       allow(container_service).to receive(:execute).and_raise(StandardError, "container error")
