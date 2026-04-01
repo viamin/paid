@@ -59,17 +59,28 @@ RSpec.describe "Knowledge::Search" do
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
         get knowledge_search_path, params: { project_id: project.id }
-        expect(response.body).to include('disabled="disabled" value="hybrid"')
-        expect(response.body).to include('disabled="disabled" value="semantic"')
-        expect(response.body).not_to include('disabled="disabled" value="exact"')
+
+        doc = Nokogiri::HTML(response.body)
+        hybrid_option = doc.at_css('option[value="hybrid"]')
+        semantic_option = doc.at_css('option[value="semantic"]')
+        exact_option = doc.at_css('option[value="exact"]')
+
+        expect(hybrid_option["disabled"]).to eq("disabled")
+        expect(semantic_option["disabled"]).to eq("disabled")
+        expect(exact_option["disabled"]).to be_nil
       end
 
       it "enables all mode options when an API key is available" do
         owner = project.effective_owner
         create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
         get knowledge_search_path, params: { project_id: project.id }
-        expect(response.body).not_to include('disabled="disabled" value="hybrid"')
-        expect(response.body).not_to include('disabled="disabled" value="semantic"')
+
+        doc = Nokogiri::HTML(response.body)
+        hybrid_option = doc.at_css('option[value="hybrid"]')
+        semantic_option = doc.at_css('option[value="semantic"]')
+
+        expect(hybrid_option["disabled"]).to be_nil
+        expect(semantic_option["disabled"]).to be_nil
       end
     end
   end
@@ -130,23 +141,17 @@ RSpec.describe "Knowledge::Search" do
       end
 
       it "coerces mode=hybrid to exact when no API key is available" do
-        allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "exact", total: 0, took_ms: 0, exact_count: 0 } })
-
         get knowledge_search_results_path, params: { project_id: project.id, q: "test", mode: "hybrid" }
 
-        expect(Knowledge::Search).to have_received(:call).with(
-          hash_including(mode: "exact", api_key: nil)
-        )
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("(mode: exact)")
       end
 
       it "coerces mode=semantic to exact when no API key is available" do
-        allow(Knowledge::Search).to receive(:call).and_return({ results: [], meta: { mode: "exact", total: 0, took_ms: 0, exact_count: 0 } })
-
         get knowledge_search_results_path, params: { project_id: project.id, q: "test", mode: "semantic" }
 
-        expect(Knowledge::Search).to have_received(:call).with(
-          hash_including(mode: "exact", api_key: nil)
-        )
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("(mode: exact)")
       end
     end
   end
