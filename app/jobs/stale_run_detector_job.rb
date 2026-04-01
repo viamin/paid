@@ -99,13 +99,19 @@ class StaleRunDetectorJob < ApplicationJob
   # Attempts to requeue a stale pending run.
   # Returns :requeued if successfully requeued, :exhausted if requeue budget
   # is spent (caller should time out), or :skip if the run is no longer
-  # stale/pending (e.g. it transitioned to running).
+  # stale/pending (e.g. it finished, transitioned to running, or was recently updated).
   def requeue_stale_pending_run(agent_run)
+    pending_threshold = PENDING_TIMEOUT.ago
+    old_container_id = nil
+
     agent_run.with_lock do
       agent_run.reload
       return :skip if agent_run.finished?
       return :skip unless agent_run.status == "pending"
+      return :skip unless agent_run.updated_at < pending_threshold
       return :exhausted if agent_run.stale_requeue_count >= MAX_STALE_REQUEUES
+
+      old_container_id = agent_run.container_id
 
       agent_run.update!(
         status: "queued",
@@ -121,15 +127,19 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
-    cleanup_docker_resources(agent_run)
+    cleanup_docker_resources_by_id(agent_run, old_container_id)
 
     :requeued
   end
 
   def resolve_stale_run(agent_run)
+    old_container_id = nil
+
     agent_run.with_lock do
       agent_run.reload
       return false if agent_run.finished?
+
+      old_container_id = agent_run.container_id
 
       agent_run.timeout!(error: "Stale run detected: stuck in '#{agent_run.status}' beyond timeout threshold")
       agent_run.log!("system", "Run marked as timed out by stale run detector")
@@ -148,21 +158,37 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
-    cleanup_docker_resources(agent_run)
+    cleanup_docker_resources_by_id(agent_run, old_container_id)
 
     true
   end
 
-  def cleanup_docker_resources(agent_run)
-    begin
-      agent_run.cleanup_container(force: true)
-    rescue => e
-      Rails.logger.warn(
-        message: "stale_run_detector.container_cleanup_failed",
-        agent_run_id: agent_run.id,
-        error_class: e.class.name,
-        error: e.message
-      )
+  # Cleans up docker resources using the container_id captured under the row
+  # lock. Reconnects to the container by old_container_id directly (rather
+  # than going through agent_run.cleanup_container) so we never read a
+  # potentially-changed container_id from the DB. Uses a conditional update
+  # (WHERE container_id = old_id) to avoid clobbering a new container_id
+  # if the run was re-provisioned after the lock was released.
+  def cleanup_docker_resources_by_id(agent_run, old_container_id)
+    if old_container_id.present?
+      begin
+        service = Containers::Provision.reconnect(
+          agent_run: agent_run,
+          container_id: old_container_id,
+          worktree_path: agent_run.worktree_path
+        )
+        service.cleanup(force: true)
+      rescue => e
+        Rails.logger.warn(
+          message: "stale_run_detector.container_cleanup_failed",
+          agent_run_id: agent_run.id,
+          error_class: e.class.name,
+          error: e.message
+        )
+      end
+      # Only clear container_id if it hasn't changed since we captured it
+      AgentRun.where(id: agent_run.id, container_id: old_container_id)
+              .update_all(container_id: nil)
     end
 
     begin

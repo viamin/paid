@@ -188,13 +188,38 @@ RSpec.describe StaleRunDetectorJob do
       it "skips a run that transitioned out of pending before requeue" do
         # Simulate the race: run was pending at query time but transitions
         # to running before the lock is acquired inside requeue_stale_pending_run.
-        run = create(:agent_run, status: "running", started_at: Time.current)
+        run = create(:agent_run, status: "pending")
+        run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        # Transition to running before requeue_stale_pending_run acquires the lock
+        run.update_columns(status: "running", started_at: Time.current, updated_at: Time.current)
 
         job = described_class.new
         result = job.send(:requeue_stale_pending_run, run)
 
         expect(result).to eq(:skip)
         expect(run.reload.status).to eq("running")
+      end
+
+      it "skips a pending run that was recently updated (no longer stale)" do
+        # Run is still pending but was updated after the staleness query
+        run = create(:agent_run, status: "pending")
+        run.update_columns(updated_at: 1.minute.ago)
+
+        job = described_class.new
+        result = job.send(:requeue_stale_pending_run, run)
+
+        expect(result).to eq(:skip)
+        expect(run.reload.status).to eq("pending")
+      end
+
+      it "does not requeue a pending run just inside the threshold boundary" do
+        # A run updated slightly less than PENDING_TIMEOUT ago is not stale
+        boundary_run = create(:agent_run, status: "pending")
+        boundary_run.update_columns(updated_at: (pending_threshold - 5).seconds.ago)
+
+        described_class.perform_now
+
+        expect(boundary_run.reload.status).to eq("pending")
       end
 
       it "increments requeue count on successive requeues" do
