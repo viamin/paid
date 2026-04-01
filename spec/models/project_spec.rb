@@ -81,35 +81,6 @@ RSpec.describe Project do
         expect(project).to be_valid
       end
     end
-
-    describe "agent_co_author_trailer validation" do
-      it "accepts a normal single-line trailer" do
-        project = build(:project, agent_co_author_trailer: "Co-Authored-By: Bot <bot@example.com>")
-        expect(project).to be_valid
-      end
-
-      it "accepts a blank trailer" do
-        project = build(:project, agent_co_author_trailer: "")
-        expect(project).to be_valid
-      end
-
-      it "accepts a nil trailer" do
-        project = build(:project, agent_co_author_trailer: nil)
-        expect(project).to be_valid
-      end
-
-      it "rejects a trailer containing a newline" do
-        project = build(:project, agent_co_author_trailer: "Co-Authored-By: Bot <bot@example.com>\ninjection")
-        expect(project).not_to be_valid
-        expect(project.errors[:agent_co_author_trailer]).to include("must be a single line")
-      end
-
-      it "rejects a trailer containing a carriage return" do
-        project = build(:project, agent_co_author_trailer: "Co-Authored-By: Bot <bot@example.com>\rinjection")
-        expect(project).not_to be_valid
-        expect(project.errors[:agent_co_author_trailer]).to include("must be a single line")
-      end
-    end
   end
 
   describe "scopes" do

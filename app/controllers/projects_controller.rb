@@ -160,7 +160,6 @@ class ProjectsController < ApplicationController
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_enabled,
       :auto_fix_merge_conflicts, :generated_label_name, :automation_label_name,
       :auto_add_labels_enabled, :automation_on_label_enabled,
-      :agent_co_author_trailer,
       allowed_github_usernames: [])
   end
 

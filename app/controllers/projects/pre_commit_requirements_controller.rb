@@ -7,7 +7,7 @@ module Projects
 
     def index
       authorize @project, :show?
-      @pre_commit_requirements = @project.pre_commit_requirements.ordered
+      @pre_commit_requirements = policy_scope(PreCommitRequirement).where(project: @project).ordered
       render json: @pre_commit_requirements
     end
 

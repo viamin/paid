@@ -133,14 +133,6 @@
           </div>
 
           <div>
-            <%= form.label :agent_co_author_trailer, "Agent Co-Author Trailer", class: "block text-sm font-medium leading-6 text-gray-900" %>
-            <div class="mt-2">
-              <%= form.text_field :agent_co_author_trailer, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>" %>
-            </div>
-            <p class="mt-1 text-xs text-gray-500">When set, this trailer is appended to commits made during agent runs via a <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">commit-msg</code> hook (e.g. <code class="rounded bg-gray-100 px-1 py-0.5 text-xs">Co-Authored-By: Claude Opus 4.6 &lt;noreply@anthropic.com&gt;</code>).</p>
-          </div>
-
-          <div>
             <%= form.label :max_draft_review_rounds, "Max Draft Review Rounds", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
               <%= form.number_field :max_draft_review_rounds, min: 0, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>

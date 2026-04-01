@@ -178,42 +178,6 @@ module Containers
       )
     end
 
-    # Installs a commit-msg hook that appends the project's co-author trailer
-    # to every commit the agent creates. The hook is idempotent — it skips
-    # messages that already contain the trailer.
-    #
-    # Unlike {#install_git_hooks}, this method attempts to chain onto existing
-    # commit-msg hooks (e.g. from Husky or Lefthook) by appending the trailer
-    # logic rather than replacing the hook. This makes it more likely that the
-    # co-author trailer is applied even when the repo ships its own commit-msg
-    # hook, assuming the existing hook does not exit before the appended logic
-    # runs.
-    #
-    # The fallback commit in {#commit_uncommitted_changes} uses --no-verify
-    # (which skips hooks), so the trailer is also appended inline there via
-    # {#commit_message} for complete coverage.
-    #
-    # @return [void]
-    def install_co_author_hook
-      trailer = agent_run.project.agent_co_author_trailer.presence
-      return unless trailer
-
-      install_or_append_hook("commit-msg", commit_msg_script(trailer))
-    rescue Error => e
-      Rails.logger.warn(
-        message: "container_git.install_co_author_hook_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
-    rescue StandardError => e
-      Rails.logger.error(
-        message: "container_git.install_co_author_hook_unexpected_error",
-        agent_run_id: agent_run.id,
-        error_class: e.class.name,
-        error: e.message
-      )
-    end
-
     # Installs local git exclude patterns for common build artifacts.
     #
     # Writes to .git/info/exclude, which acts like .gitignore but is local
@@ -267,7 +231,7 @@ module Containers
       add_result = execute_git("add", "-A")
       raise Error, "Failed to stage changes: #{error_with_stderr(add_result)}" if add_result.failure?
 
-      commit_result = execute_git("commit", "--no-verify", "-m", commit_message)
+      commit_result = execute_git("commit", "--no-verify", "-m", "Apply agent changes")
       raise Error, "Failed to commit changes: #{error_with_stderr(commit_result)}" if commit_result.failure?
 
       true
@@ -378,13 +342,6 @@ module Containers
     end
 
     private
-
-    def commit_message
-      sanitized_trailer = agent_run.project.agent_co_author_trailer.to_s.gsub(/[\r\n]+/, " ").strip
-      return "Apply agent changes" if sanitized_trailer.empty?
-
-      "Apply agent changes\n\n#{sanitized_trailer}"
-    end
 
     def rebase_conflict?(result)
       result.failure? &&
@@ -656,90 +613,14 @@ module Containers
         return
       end
 
-      write_hook_file(hook_path, script)
-    end
-
-    # Like install_hook, but appends to an existing hook instead of skipping.
-    # Used for the co-author commit-msg hook so the trailer is applied even
-    # when the repo already ships a commit-msg hook (e.g. Husky, Lefthook).
-    #
-    # Only appends when the existing hook uses a sh-compatible interpreter
-    # (sh, bash, dash, zsh). Non-shell hooks (e.g. #!/usr/bin/env node) are
-    # left untouched — appending shell code would corrupt them. The inline
-    # fallback in #commit_message still applies the trailer in that case.
-    def install_or_append_hook(hook_name, script)
-      hook_path = ".git/hooks/#{hook_name}"
-
-      check = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
-      if check.success?
-        # Avoid appending the same Paid co-author block multiple times when
-        # this activity is retried by Temporal. We detect prior installation
-        # by checking for a stable marker string that is part of the script.
-        marker = "Installed by Paid"
-        existing = container_service.execute("cat #{hook_path}", timeout: nil, stream: false)
-
-        if existing.success? && existing[:stdout].to_s.include?(marker)
-          Rails.logger.info(
-            message: "container_git.hook_already_patched",
-            agent_run_id: agent_run.id,
-            hook: hook_name
-          )
-          return
-        end
-
-        if sh_compatible_hook?(hook_path)
-          append_to_hook(hook_path, script)
-        else
-          Rails.logger.warn(
-            message: "container_git.non_shell_hook_skipped",
-            agent_run_id: agent_run.id,
-            hook: hook_name
-          )
-        end
-      else
-        write_hook_file(hook_path, script)
-      end
-    end
-
-    # Returns true when the hook's shebang references a sh-compatible shell.
-    def sh_compatible_hook?(hook_path)
-      result = container_service.execute("head -1 #{hook_path}", timeout: nil, stream: false)
-      return false if result.failure?
-
-      shebang = result[:stdout].to_s.strip
-      shebang.match?(%r{\A#!.*\b(?:ba|da|z)?sh\b})
-    end
-
-    def write_hook_file(hook_path, script)
       write_result = container_service.execute(
         "cat > #{hook_path} << 'HOOKEOF'\n#{script}\nHOOKEOF",
         timeout: nil, stream: false
       )
-      raise Error, "Failed to write #{hook_name_from(hook_path)} hook: #{write_result.error}" if write_result.failure?
+      raise Error, "Failed to write #{hook_name} hook: #{write_result.error}" if write_result.failure?
 
       chmod_result = container_service.execute("chmod +x #{hook_path}", timeout: nil, stream: false)
-      raise Error, "Failed to chmod #{hook_name_from(hook_path)} hook: #{chmod_result.error}" if chmod_result.failure?
-    end
-
-    def append_to_hook(hook_path, script)
-      # Strip the shebang — the existing hook already has one.
-      body = script.sub(/\A#!\/bin\/sh\n/, "")
-      # Prefix with a newline to avoid concatenation with the last line of
-      # the existing hook if it doesn't end with a trailing newline.
-      append_result = container_service.execute(
-        "cat >> #{hook_path} << 'HOOKEOF'\n\n#{body}\nHOOKEOF",
-        timeout: nil, stream: false
-      )
-      raise Error, "Failed to append to #{hook_name_from(hook_path)} hook: #{append_result.error}" if append_result.failure?
-
-      # Ensure the hook is executable — a non-executable existing hook would
-      # be silently skipped by git even after appending our content.
-      chmod_result = container_service.execute("chmod +x #{hook_path}", timeout: nil, stream: false)
-      raise Error, "Failed to chmod #{hook_name_from(hook_path)} hook: #{chmod_result.error}" if chmod_result.failure?
-    end
-
-    def hook_name_from(hook_path)
-      File.basename(hook_path)
+      raise Error, "Failed to chmod #{hook_name} hook: #{chmod_result.error}" if chmod_result.failure?
     end
 
     # Validates that a shell command is a simple executable with arguments.
@@ -782,30 +663,6 @@ module Containers
           #{test_command} || exit 1
         else
           echo "Warning: test tool not available, skipping test check"
-        fi
-      SHELL
-    end
-
-    def commit_msg_script(trailer)
-      # Defense-in-depth: strip newlines to prevent heredoc delimiter
-      # injection when the script is written via write_hook_file/append_to_hook.
-      # Model validation also enforces single-line, but we sanitize here as well.
-      sanitized = trailer.gsub(/[\r\n]/, " ").strip
-      # The trailer is embedded inside single quotes in the shell script.
-      # To safely embed a single quote we use the standard POSIX pattern:
-      #   '...' ⟶ '\'' (end quote, backslash-escaped quote, start quote)
-      # In the gsub below, the Ruby replacement string "'\\\\''" passes
-      # through two escaping layers:
-      #   Ruby string:  ' \\ ' '   (5 chars: tick, backslash, backslash, tick, tick)
-      #   gsub interp:  ' \  ' '   (4 chars: tick, backslash, tick, tick — i.e. '\'')
-      # grep -qF performs a fixed-string (not regex) search, so no
-      # additional escaping of special characters is needed.
-      <<~SHELL
-        #!/bin/sh
-        # Installed by Paid — append co-author trailer to commit messages
-        TRAILER='#{sanitized.gsub("'", "'\\\\''")}'
-        if ! grep -qF -- "$TRAILER" "$1"; then
-          printf '\\n\\n%s\\n' "$TRAILER" >> "$1"
         fi
       SHELL
     end
