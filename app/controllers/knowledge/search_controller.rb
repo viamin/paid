@@ -30,7 +30,14 @@ module Knowledge
       end
 
       mode = params[:mode].presence || "hybrid"
-      api_key = @project.openai_api_key unless mode == "exact"
+
+      unless @project.semantic_search_available?
+        # When no API key is configured, only exact search is available.
+        mode = "exact"
+        api_key = nil
+      else
+        api_key = @project.openai_api_key unless mode == "exact"
+      end
 
       result = ::Knowledge::Search.call(
         project: @project,

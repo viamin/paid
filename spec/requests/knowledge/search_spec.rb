@@ -34,14 +34,14 @@ RSpec.describe "Knowledge::Search" do
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
         get knowledge_search_path, params: { project_id: project.id }
-        expect(response.body).to include("Only exact search is available")
+        expect(response.body).to include("Only exact identifier matching is available")
       end
 
       it "hides the warning when the user has an OpenAI API key" do
         owner = project.effective_owner
         create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
         get knowledge_search_path, params: { project_id: project.id }
-        expect(response.body).not_to include("Only exact search is available")
+        expect(response.body).not_to include("Only exact identifier matching is available")
       end
 
       it "hides the warning when a platform OpenAI API key is set" do
@@ -50,7 +50,7 @@ RSpec.describe "Knowledge::Search" do
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return("sk-platform-key")
         allow(ENV).to receive(:fetch).with("OPENAI_API_KEY", anything).and_return("sk-platform-key")
         get knowledge_search_path, params: { project_id: project.id }
-        expect(response.body).not_to include("Only exact search is available")
+        expect(response.body).not_to include("Only exact identifier matching is available")
       end
     end
   end

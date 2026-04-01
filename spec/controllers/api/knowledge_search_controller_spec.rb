@@ -52,6 +52,9 @@ RSpec.describe Api::KnowledgeSearchController, type: :request do
     end
 
     it "supports mode parameter" do
+      owner = project.effective_owner
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-mode")
+
       get "/api/knowledge/search", params: { project_id: project.id, q: "users", mode: "semantic" }
 
       body = response.parsed_body
