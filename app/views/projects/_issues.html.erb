@@ -7,7 +7,7 @@
       <div class="max-h-96 overflow-y-auto">
         <ul role="list" class="divide-y divide-gray-200">
           <% issues.each do |issue| %>
-            <%= render "projects/issue", issue: issue, project: project, lifecycle_status: issue_lifecycle_statuses[issue.id] %>
+            <%= render "projects/issue", issue: issue, project: project, lifecycle_status: local_assigns.fetch(:issue_lifecycle_statuses, {})[issue.id] %>
           <% end %>
         </ul>
       </div>

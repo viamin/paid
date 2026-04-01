@@ -868,6 +868,16 @@ RSpec.describe Issue do
       expect(result[issue.id]).to eq(:in_progress)
     end
 
+    it "returns :eligible for an issue with only closed PRs" do
+      issue = create(:issue, project: project, github_state: "open")
+      create(:issue, project: project, github_state: "closed",
+             is_pull_request: true, parent_issue: issue)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
     it "returns :eligible for an issue with only completed agent runs" do
       issue = create(:issue, project: project, github_state: "open")
       create(:agent_run, issue: issue, project: project, status: "completed")

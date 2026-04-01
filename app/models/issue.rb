@@ -209,12 +209,13 @@ class Issue < ApplicationRecord
       .pluck(:issue_id)
       .to_set
 
-    has_pr_ids = issues
-      .select(&:has_associated_pull_requests?)
-      .map(&:id)
+    has_open_pr_ids = Issue
+      .where(parent_issue_id: issue_ids, is_pull_request: true, github_state: "open")
+      .distinct
+      .pluck(:parent_issue_id)
       .to_set
 
-    in_progress_ids = active_run_ids | has_pr_ids
+    in_progress_ids = active_run_ids | has_open_pr_ids
 
     issues.each_with_object({}) do |issue, hash|
       hash[issue.id] = if blocked_ids.include?(issue.id)
