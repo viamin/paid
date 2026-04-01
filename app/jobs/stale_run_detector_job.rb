@@ -132,7 +132,9 @@ class StaleRunDetectorJob < ApplicationJob
         stale_requeue_count: agent_run.stale_requeue_count + 1,
         temporal_workflow_id: nil,
         temporal_run_id: nil,
-        service_environment: nil
+        service_environment: nil,
+        container_id: nil,
+        service_container_ids: []
       )
       agent_run.log!("system", "Stale pending run requeued by stale run detector (attempt #{agent_run.stale_requeue_count}/#{MAX_STALE_REQUEUES})")
 

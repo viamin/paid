@@ -185,6 +185,24 @@ RSpec.describe StaleRunDetectorJob do
         expect(container_service).to have_received(:cleanup).with(force: true)
       end
 
+      it "clears container_id and service_container_ids inside the lock on requeue" do
+        stale_run = create(:agent_run, status: "pending",
+          container_id: "orphaned-container",
+          service_container_ids: [ 1, 2, 3 ])
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+        container_service = instance_double(Containers::Provision, cleanup: true)
+        allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
+        allow(Containers::ServiceProvisioner).to receive(:new)
+          .and_return(instance_double(Containers::ServiceProvisioner, cleanup: nil))
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("queued")
+        expect(stale_run.container_id).to be_nil
+        expect(stale_run.service_container_ids).to eq([])
+      end
+
       it "skips a run that transitioned out of pending before requeue" do
         # Simulate the race: run was pending at query time but transitions
         # to running before the lock is acquired inside requeue_stale_pending_run.
