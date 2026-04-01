@@ -1172,6 +1172,25 @@ RSpec.describe Containers::GitOperations do
         expect(hook_script).to include(trailer)
         expect(hook_script).to include("grep -qF")
       end
+
+      it "appends to an existing commit-msg hook instead of skipping" do
+        hook_exists_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+
+        appended_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat >> \.git\/hooks\/commit-msg/), timeout: nil, stream: false) { |cmd, **|
+            appended_script = cmd
+            success_result
+          }
+
+        git_ops.install_co_author_hook
+
+        expect(appended_script).to include(trailer)
+        expect(appended_script).not_to include("#!/bin/sh")
+      end
     end
 
     context "when project has blank agent_co_author_trailer" do

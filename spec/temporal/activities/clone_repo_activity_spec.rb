@@ -88,7 +88,8 @@ RSpec.describe Activities::CloneRepoActivity do
     end
 
     it "installs the co-author hook after quality hooks" do
-      expect(git_ops).to receive(:install_co_author_hook)
+      expect(git_ops).to receive(:install_git_hooks).ordered
+      expect(git_ops).to receive(:install_co_author_hook).ordered
 
       activity.execute(agent_run_id: agent_run.id)
     end
@@ -112,7 +113,7 @@ RSpec.describe Activities::CloneRepoActivity do
         allow(git_ops).to receive(:clone_and_checkout_branch)
         allow(git_ops).to receive(:install_artifact_excludes)
         allow(git_ops).to receive(:install_git_hooks)
-      allow(git_ops).to receive(:install_co_author_hook)
+        allow(git_ops).to receive(:install_co_author_hook)
 
         agent_run.update!(
           branch_name: "existing-feature-branch",

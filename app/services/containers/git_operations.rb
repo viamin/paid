@@ -182,6 +182,11 @@ module Containers
     # to every commit the agent creates. The hook is idempotent — it skips
     # messages that already contain the trailer.
     #
+    # Unlike {#install_git_hooks}, this method chains onto existing commit-msg
+    # hooks (e.g. from Husky or Lefthook) by appending the trailer logic rather
+    # than replacing the hook. This ensures the co-author trailer is applied
+    # even when the repo ships its own commit-msg hook.
+    #
     # The fallback commit in {#commit_uncommitted_changes} uses --no-verify
     # (which skips hooks), so the trailer is also appended inline there via
     # {#commit_message} for complete coverage.
@@ -191,7 +196,7 @@ module Containers
       trailer = agent_run.project.agent_co_author_trailer.presence
       return unless trailer
 
-      install_hook("commit-msg", commit_msg_script(trailer))
+      install_or_append_hook("commit-msg", commit_msg_script(trailer))
     rescue Error => e
       Rails.logger.warn(
         message: "container_git.install_co_author_hook_failed",
@@ -649,14 +654,46 @@ module Containers
         return
       end
 
+      write_hook_file(hook_path, script)
+    end
+
+    # Like install_hook, but appends to an existing hook instead of skipping.
+    # Used for the co-author commit-msg hook so the trailer is applied even
+    # when the repo already ships a commit-msg hook (e.g. Husky, Lefthook).
+    def install_or_append_hook(hook_name, script)
+      hook_path = ".git/hooks/#{hook_name}"
+
+      check = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
+      if check.success?
+        append_to_hook(hook_path, script)
+      else
+        write_hook_file(hook_path, script)
+      end
+    end
+
+    def write_hook_file(hook_path, script)
       write_result = container_service.execute(
         "cat > #{hook_path} << 'HOOKEOF'\n#{script}\nHOOKEOF",
         timeout: nil, stream: false
       )
-      raise Error, "Failed to write #{hook_name} hook: #{write_result.error}" if write_result.failure?
+      raise Error, "Failed to write #{hook_name_from(hook_path)} hook: #{write_result.error}" if write_result.failure?
 
       chmod_result = container_service.execute("chmod +x #{hook_path}", timeout: nil, stream: false)
-      raise Error, "Failed to chmod #{hook_name} hook: #{chmod_result.error}" if chmod_result.failure?
+      raise Error, "Failed to chmod #{hook_name_from(hook_path)} hook: #{chmod_result.error}" if chmod_result.failure?
+    end
+
+    def append_to_hook(hook_path, script)
+      # Strip the shebang — the existing hook already has one.
+      body = script.sub(/\A#!\/bin\/sh\n/, "")
+      append_result = container_service.execute(
+        "cat >> #{hook_path} << 'HOOKEOF'\n#{body}\nHOOKEOF",
+        timeout: nil, stream: false
+      )
+      raise Error, "Failed to append to #{hook_name_from(hook_path)} hook: #{append_result.error}" if append_result.failure?
+    end
+
+    def hook_name_from(hook_path)
+      File.basename(hook_path)
     end
 
     # Validates that a shell command is a simple executable with arguments.
