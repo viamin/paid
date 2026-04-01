@@ -27,9 +27,12 @@
         <div class="flex-shrink-0">
           <% if @semantic_search_source == :none %>
             <%= link_to "Add an API key", provider_api_keys_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
-          <% else %>
-            <%= link_to "Manage API keys", provider_api_keys_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+          <% elsif @semantic_search_source == :user_key && @openai_key_record&.user_id == current_user.id %>
+            <%= link_to "Manage your API keys", provider_api_keys_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+          <% elsif @semantic_search_source == :user_key %>
+            <%= link_to "View your API keys", provider_api_keys_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
           <% end %>
+          <%# Platform-provided keys have no user-facing management link %>
         </div>
       </div>
 

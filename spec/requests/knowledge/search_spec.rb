@@ -37,15 +37,24 @@ RSpec.describe "Knowledge::Search" do
         expect(response.body).to include("No OpenAI API key configured")
       end
 
-      it "shows the user key name when an OpenAI API key is configured" do
-        owner = project.effective_owner
-        create(:provider_api_key, user: owner, name: "My OpenAI Key", api_service_type: "openai", api_key: "sk-test-key")
+      it "shows the user key name and manage link when the current user owns the API key" do
+        create(:provider_api_key, user: user, name: "My OpenAI Key", api_service_type: "openai", api_key: "sk-test-key")
+        project.update!(created_by: user)
         get knowledge_search_path, params: { project_id: project.id }
         expect(response.body).not_to include("No OpenAI API key configured")
         expect(response.body).to include("My OpenAI Key")
+        expect(response.body).to include("Manage your API keys")
       end
 
-      it "shows platform key status when a platform OpenAI API key is set" do
+      it "shows view link when the API key belongs to another user" do
+        other_user = create(:user, account: account)
+        create(:provider_api_key, user: other_user, name: "Other Key", api_service_type: "openai", api_key: "sk-other")
+        project.update!(created_by: other_user)
+        get knowledge_search_path, params: { project_id: project.id }
+        expect(response.body).to include("View your API keys")
+      end
+
+      it "shows platform key status with no manage link when a platform OpenAI API key is set" do
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return("sk-platform-key")
@@ -53,6 +62,8 @@ RSpec.describe "Knowledge::Search" do
         get knowledge_search_path, params: { project_id: project.id }
         expect(response.body).not_to include("No OpenAI API key configured")
         expect(response.body).to include("platform-provided")
+        expect(response.body).not_to include("Manage your API keys")
+        expect(response.body).not_to include("View your API keys")
       end
 
       it "disables Hybrid and Semantic mode options when no API key is available" do
