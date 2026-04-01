@@ -252,6 +252,33 @@ RSpec.describe StaleRunDetectorJob do
         expect(handle).to have_received(:cancel)
       end
 
+      it "clears service_environment when requeuing" do
+        stale_run = create(:agent_run, status: "pending", service_environment: { "DATABASE_URL" => "postgres://old" })
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("queued")
+        expect(stale_run.service_environment).to be_nil
+      end
+
+      it "skips requeue when Temporal workflow cancel fails with non-NOT_FOUND error" do
+        stale_run = create(:agent_run, status: "pending", temporal_workflow_id: "queued-1-2-123456")
+        stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)
+
+        handle = double # rubocop:disable RSpec/VerifiedDoubles
+        allow(handle).to receive(:cancel).and_raise(RuntimeError, "connection refused")
+        temporal_client = double(workflow_handle: handle) # rubocop:disable RSpec/VerifiedDoubles
+        allow(Paid).to receive(:temporal_client).and_return(temporal_client)
+
+        described_class.perform_now
+
+        stale_run.reload
+        expect(stale_run.status).to eq("pending")
+        expect(stale_run.stale_requeue_count).to eq(0)
+      end
+
       it "still requeues when Temporal workflow cancel fails with not-found" do
         stale_run = create(:agent_run, status: "pending", temporal_workflow_id: "queued-1-2-123456")
         stale_run.update_columns(updated_at: (pending_threshold + 60).seconds.ago)

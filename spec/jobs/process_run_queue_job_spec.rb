@@ -125,6 +125,7 @@ RSpec.describe ProcessRunQueueJob do
 
       expect(failing_run.reload.status).to eq("failed")
       expect(failing_run.reload.error_message).to include("Connection refused")
+      expect(failing_run.reload.temporal_workflow_id).to be_nil
       expect(good_run.reload.status).to eq("pending")
     end
 

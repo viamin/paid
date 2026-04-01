@@ -672,7 +672,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_210524) do
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_pr_followup_runs", default: 8, null: false
-    t.integer "max_security_fix_runs", default: 3, null: false
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
@@ -682,7 +681,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_210524) do
     t.jsonb "pr_action_labels", default: [], null: false
     t.string "repo", null: false
     t.jsonb "review_settings", default: {}, null: false
-    t.jsonb "security_alert_types", default: ["dependabot", "code_scanning"], null: false
+    t.jsonb "security_alert_types", default: ["code_scanning"], null: false
     t.string "security_severity_threshold", default: "high", null: false
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false

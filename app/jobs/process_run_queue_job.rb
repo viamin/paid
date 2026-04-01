@@ -211,14 +211,22 @@ class ProcessRunQueueJob < ApplicationJob
 
     workflow_id = "queued-#{agent_run.project_id}-#{agent_run.id}-#{Time.current.to_i}"
 
-    Paid.temporal_client.start_workflow(
-      Workflows::AgentExecutionWorkflow,
-      workflow_input,
-      id: workflow_id,
-      task_queue: Paid.task_queue
-    )
-
+    # Write the planned workflow_id before starting the workflow so
+    # StaleRunDetectorJob can cancel an orphaned workflow even if the
+    # process crashes between start_workflow and the DB write.
     agent_run.update_columns(temporal_workflow_id: workflow_id)
+
+    begin
+      Paid.temporal_client.start_workflow(
+        Workflows::AgentExecutionWorkflow,
+        workflow_input,
+        id: workflow_id,
+        task_queue: Paid.task_queue
+      )
+    rescue => e
+      agent_run.update_columns(temporal_workflow_id: nil)
+      raise
+    end
 
     Rails.logger.info(
       message: "process_run_queue.started_queued_run",
