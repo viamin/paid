@@ -1196,6 +1196,35 @@ RSpec.describe Containers::GitOperations do
       end
     end
 
+    context "when trailer contains an apostrophe" do
+      let(:trailer) { "Co-Authored-By: O'Brien <obrien@example.com>" }
+
+      before do
+        project.update_column(:agent_co_author_trailer, trailer)
+      end
+
+      it "correctly escapes the single quote for POSIX sh" do
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+
+        hook_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg/), timeout: nil, stream: false) { |cmd, **|
+            hook_script = cmd
+            success_result
+          }
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.install_co_author_hook
+
+        # The trailer should use the POSIX '\'' escape pattern for the apostrophe
+        expect(hook_script).to include("O'\\''Brien")
+      end
+    end
+
     context "when project has blank agent_co_author_trailer" do
       before do
         project.update_column(:agent_co_author_trailer, "")

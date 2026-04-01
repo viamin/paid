@@ -754,9 +754,15 @@ module Containers
       # injection when the script is written via write_hook_file/append_to_hook.
       # Model validation also enforces single-line, but we sanitize here as well.
       sanitized = trailer.gsub(/[\r\n]/, " ").strip
-      # The trailer is embedded as a literal string in the heredoc.
+      # The trailer is embedded inside single quotes in the shell script.
+      # To safely embed a single quote we use the standard POSIX pattern:
+      #   '...' ⟶ '\'' (end quote, backslash-escaped quote, start quote)
+      # In the gsub below, the Ruby replacement string "'\\\\''" passes
+      # through two escaping layers:
+      #   Ruby string:  ' \\ ' '   (5 chars: tick, backslash, backslash, tick, tick)
+      #   gsub interp:  ' \  ' '   (4 chars: tick, backslash, tick, tick — i.e. '\'')
       # grep -qF performs a fixed-string (not regex) search, so no
-      # escaping of special characters is needed.
+      # additional escaping of special characters is needed.
       <<~SHELL
         #!/bin/sh
         # Installed by Paid — append co-author trailer to commit messages
