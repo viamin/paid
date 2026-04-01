@@ -11,7 +11,7 @@
   <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
     <div class="px-4 py-5 sm:p-6">
       <%= form_with url: knowledge_search_results_path, method: :get, data: { turbo_frame: "search-results" } do |f| %>
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-5">
           <div class="sm:col-span-1">
             <%= f.label :project_id, "Project", class: "block text-sm font-medium text-gray-700" %>
             <%= f.select :project_id, options_from_collection_for_select(@projects, :id, :name, @project&.id),
@@ -23,6 +23,13 @@
             <%= f.text_field :q, value: @query, placeholder: "Search artifacts...",
                   class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
           </div>
+          <div class="sm:col-span-1">
+            <%= f.label :mode, "Mode", class: "block text-sm font-medium text-gray-700" %>
+            <% disabled_modes = @semantic_search_source == :none ? %w[hybrid semantic] : [] %>
+            <%= f.select :mode, options_for_select([["Hybrid", "hybrid"], ["Semantic", "semantic"], ["Exact", "exact"]], selected: @search_mode, disabled: disabled_modes),
+                  {},
+                  class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+          </div>
           <div class="sm:col-span-1 flex items-end">
             <%= f.submit "Search", class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
           </div>
@@ -31,18 +38,8 @@
     </div>
   </div>
 
-  <% if @project && !@project.semantic_search_available? %>
-    <div class="mt-4 flex items-start rounded-md bg-yellow-50 px-4 py-3">
-      <svg class="h-5 w-5 flex-shrink-0 text-yellow-500 mt-0.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-        <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-      </svg>
-      <div class="ml-3">
-        <p class="text-sm text-yellow-700">
-          Semantic and hybrid search modes require an OpenAI API key. Only exact identifier matching is available until a key is configured.
-          <%= link_to "Add an API key", provider_api_keys_path, class: "font-medium underline hover:text-yellow-600" %>
-        </p>
-      </div>
-    </div>
+  <% if @project %>
+    <%= render "knowledge/search/semantic_search_settings" %>
   <% end %>
 
   <%= turbo_frame_tag "search-results" do %>
