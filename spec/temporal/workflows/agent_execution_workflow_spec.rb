@@ -544,6 +544,217 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "PROXY_HEALTH_RETRY_POLICY" do
+    it "uses CheckProxyHealthActivity constants for backoff" do
+      policy = described_class::PROXY_HEALTH_RETRY_POLICY
+      expect(policy).to be_a(Temporalio::RetryPolicy)
+      expect(policy.initial_interval).to eq(Activities::CheckProxyHealthActivity::INITIAL_POLL_INTERVAL)
+      expect(policy.max_interval).to eq(Activities::CheckProxyHealthActivity::MAX_POLL_INTERVAL)
+      expect(policy.backoff_coefficient).to eq(Activities::CheckProxyHealthActivity::BACKOFF_MULTIPLIER)
+      expect(policy.max_attempts).to eq(0)
+    end
+  end
+
+  describe "PROXY_HEALTH_TIMEOUT" do
+    it "equals CheckProxyHealthActivity::MAX_WAIT_SECONDS" do
+      expect(described_class::PROXY_HEALTH_TIMEOUT).to eq(
+        Activities::CheckProxyHealthActivity::MAX_WAIT_SECONDS
+      )
+    end
+  end
+
+  describe "proxy health check before clone" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
+
+    before do
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+      allow(Temporalio::Workflow).to receive(:patched).and_yield
+    end
+
+    it "invokes CheckProxyHealthActivity before CloneRepoActivity" do
+      call_order = []
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        call_order << activity_class.name
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      health_idx = call_order.index("Activities::CheckProxyHealthActivity")
+      clone_idx = call_order.index("Activities::CloneRepoActivity")
+      expect(health_idx).not_to be_nil
+      expect(clone_idx).not_to be_nil
+      expect(health_idx).to be < clone_idx
+    end
+
+    it "passes expected timeout and retry options to CheckProxyHealthActivity" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::CheckProxyHealthActivity"
+          expect(opts[:start_to_close_timeout]).to eq(30)
+          expect(opts[:schedule_to_close_timeout]).to eq(described_class::PROXY_HEALTH_TIMEOUT)
+          expect(opts[:retry_policy]).to eq(described_class::PROXY_HEALTH_RETRY_POLICY)
+          { healthy: true }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CheckProxyHealthActivity, { agent_run_id: 42 },
+              start_to_close_timeout: 30,
+              schedule_to_close_timeout: described_class::PROXY_HEALTH_TIMEOUT,
+              retry_policy: described_class::PROXY_HEALTH_RETRY_POLICY)
+    end
+
+    it "skips health check for create_issue goal without source PR" do
+      issue_input = { project_id: 1, issue_id: 1, goal: "create_issue" }
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true }
+        when "Activities::CompleteIssueGoalActivity" then { issue_created: true }
+        else {}
+        end
+      end
+
+      workflow.execute(issue_input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckProxyHealthActivity, anything, any_args)
+    end
+  end
+
+  describe "proxy health check before push" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
+
+    before do
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+      allow(Temporalio::Workflow).to receive(:patched).and_yield
+    end
+
+    it "invokes CheckProxyHealthActivity before PushBranchActivity" do
+      call_order = []
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        call_order << activity_class.name
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::CreatePullRequestActivity"
+          { pull_request_url: "https://github.com/o/r/pull/1", pull_request_number: 1 }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      # There should be two health checks — one before clone, one before push
+      health_indices = call_order.each_index.select { |i| call_order[i] == "Activities::CheckProxyHealthActivity" }
+      push_idx = call_order.index("Activities::PushBranchActivity")
+      expect(health_indices.length).to eq(2)
+      expect(push_idx).not_to be_nil
+      expect(health_indices.last).to be < push_idx
+    end
+  end
+
+  describe "#ensure_proxy_healthy timeout conversion" do
+    let(:workflow) { described_class.new }
+
+    before do
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    def timeout_activity_error
+      timeout_error = Temporalio::Error::TimeoutError.new(
+        "schedule to close timeout",
+        type: Temporalio::Error::TimeoutError::TimeoutType::SCHEDULE_TO_CLOSE,
+        last_heartbeat_details: []
+      )
+      activity_error_wrapping(timeout_error, retry_state: Temporalio::Error::RetryState::TIMEOUT)
+    end
+
+    def config_activity_error
+      app_error = Temporalio::Error::ApplicationError.new(
+        "config error", type: "ProxyConfigurationError", non_retryable: true
+      )
+      activity_error_wrapping(app_error)
+    end
+
+    def activity_error_wrapping(cause, retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE)
+      begin
+        begin
+          raise cause
+        rescue
+          raise Temporalio::Error::ActivityError.new(
+            "activity failed",
+            scheduled_event_id: 1, started_event_id: 2, identity: "",
+            activity_type: "CheckProxyHealth", activity_id: "1",
+            retry_state: retry_state
+          )
+        end
+      rescue => e
+        e
+      end
+    end
+
+    it "converts Temporal TimeoutError to non-retryable ProxyUnavailable" do
+      allow(workflow).to receive(:run_activity).and_raise(timeout_activity_error)
+
+      expect {
+        workflow.send(:ensure_proxy_healthy, 42)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("ProxyUnavailable")
+        expect(error.non_retryable).to be true
+        expect(error.message).to include(described_class::PROXY_HEALTH_TIMEOUT.to_s)
+      }
+    end
+
+    it "re-raises non-timeout ActivityErrors" do
+      allow(workflow).to receive(:run_activity).and_raise(config_activity_error)
+
+      expect {
+        workflow.send(:ensure_proxy_healthy, 42)
+      }.to raise_error(Temporalio::Error::ActivityError)
+    end
+  end
+
+  describe "ProxyUnavailable as known failure" do
+    it "includes ProxyUnavailable in KNOWN_FAILURE_TYPES" do
+      expect(described_class::KNOWN_FAILURE_TYPES).to include("ProxyUnavailable")
+    end
+
+    it "does not retain container for ProxyUnavailable failure" do
+      cause = Temporalio::Error::ApplicationError.new(
+        "proxy unavailable", type: "ProxyUnavailable", non_retryable: true
+      )
+      error = begin
+        begin
+          raise cause
+        rescue
+          raise Temporalio::Error::ActivityError.new(
+            "activity failed",
+            scheduled_event_id: 1, started_event_id: 2, identity: "",
+            activity_type: "CheckProxyHealth", activity_id: "1",
+            retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
+          )
+        end
+      rescue => e
+        e
+      end
+
+      expect(workflow.send(:should_retain_container?, true, error)).to be false
+    end
+  end
+
   describe "#should_retain_container?" do
     let(:workflow) { described_class.new }
 

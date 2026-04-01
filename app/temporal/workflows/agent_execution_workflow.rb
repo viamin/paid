@@ -470,6 +470,12 @@ module Workflows
       true
     end
 
+    # Design: The activity performs a single health check per invocation and
+    # raises a retryable ProxyUnhealthy error when the proxy is down. Temporal
+    # manages backoff/retry via PROXY_HEALTH_RETRY_POLICY (5s → 30s cap),
+    # keeping the activity worker thread free between attempts. When the
+    # schedule_to_close_timeout expires, Temporal surfaces a TimeoutError
+    # which this method converts to a non-retryable ProxyUnavailable.
     def ensure_proxy_healthy(agent_run_id)
       run_activity(Activities::CheckProxyHealthActivity,
         { agent_run_id: agent_run_id },
@@ -477,9 +483,6 @@ module Workflows
         schedule_to_close_timeout: PROXY_HEALTH_TIMEOUT,
         retry_policy: PROXY_HEALTH_RETRY_POLICY)
     rescue Temporalio::Error::ActivityError => e
-      # When the schedule_to_close_timeout expires after repeated unhealthy
-      # checks, Temporal raises a timeout error. Convert it to ProxyUnavailable
-      # so the workflow treats it as a known infrastructure failure.
       raise unless e.cause.is_a?(Temporalio::Error::TimeoutError)
 
       raise Temporalio::Error::ApplicationError.new(
