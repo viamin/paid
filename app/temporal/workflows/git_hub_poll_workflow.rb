@@ -39,7 +39,7 @@ module Workflows
         end
 
         maybe_scan_paid_prs(project_id)
-        maybe_scan_security_alerts(project_id)
+        maybe_scan_code_scanning_alerts(project_id)
         maybe_check_knowledge_staleness(project_id)
 
         poll_config = run_activity(Activities::GetPollIntervalActivity,
@@ -81,21 +81,15 @@ module Workflows
       handle_pr_scan_results(scan_result, project_id)
     end
 
-    # Scan for security alerts (Dependabot) and create issues for new alerts.
-    # Synthetic issues are created with a trusted login (from allowed_github_usernames)
-    # so the standard prompt-building pipeline trusts them — no custom_prompt needed.
+    # Scan for CodeQL code scanning alerts and create synthetic issues.
+    # Code scanning issues are picked up naturally by AutoPick — no immediate
+    # agent runs are triggered here.
     # TODO(#220): Remove patch guard after all pre-v220 workflows have continued-as-new
-    def maybe_scan_security_alerts(project_id)
+    def maybe_scan_code_scanning_alerts(project_id)
       return unless Temporalio::Workflow.patched("add-scan-security-alerts-v1")
 
-      scan_result = run_activity(Activities::ScanSecurityAlertsActivity,
+      run_activity(Activities::ScanSecurityAlertsActivity,
         { project_id: project_id }, timeout: 120)
-
-      return if scan_result[:alerts_to_fix].blank?
-
-      scan_result[:alerts_to_fix].each do |alert_data|
-        start_agent_workflow(project_id, alert_data[:issue_id])
-      end
     end
 
     # Check if the project's knowledge base needs refreshing after HEAD advances.

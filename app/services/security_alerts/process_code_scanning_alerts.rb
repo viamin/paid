@@ -2,8 +2,7 @@
 
 module SecurityAlerts
   # Creates or reopens synthetic issues for open CodeQL code scanning alerts.
-  # Unlike ProcessAlerts (Dependabot), this service does NOT return
-  # alerts_to_fix — code scanning issues are picked up naturally by AutoPick.
+  # Code scanning issues are picked up naturally by AutoPick.
   class ProcessCodeScanningAlerts
     SYNTHETIC_SOURCE = Issue::SYNTHETIC_CODE_SCANNING_SOURCE
     SYNTHETIC_ID_OFFSET = Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET
