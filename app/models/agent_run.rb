@@ -8,6 +8,8 @@ class AgentRun < ApplicationRecord
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
+  UNFINISHED_STATUSES = %w[queued pending running].freeze
+  AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
 
   belongs_to :project
   belongs_to :issue, optional: true
@@ -829,6 +831,26 @@ class AgentRun < ApplicationRecord
       project.broadcast_agent_runs_update
       project.broadcast_agent_runs_list_update
       project.broadcast_stats_update
+      # Only broadcast issues updates when they can affect auto-pick eligibility
+      # or when the associated issue/agent type changes. This avoids redundant
+      # re-renders during intermediate status transitions (e.g., queued→pending→running).
+      if issue_id.present?
+        should_broadcast_issues = false
+
+        if previous_changes.key?("issue_id") || previous_changes.key?("agent_type")
+          should_broadcast_issues = true
+        elsif previous_changes.key?("status")
+          from_status, to_status = previous_changes["status"]
+          from_blocking = AUTO_PICK_BLOCKING_STATUSES.include?(from_status)
+          to_blocking = AUTO_PICK_BLOCKING_STATUSES.include?(to_status)
+
+          if from_blocking != to_blocking
+            should_broadcast_issues = true
+          end
+        end
+
+        project.broadcast_issues_update if should_broadcast_issues
+      end
 
       # Only broadcast dashboard stats on terminal status transitions to avoid
       # a burst of expensive aggregate queries during intermediate transitions

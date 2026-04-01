@@ -55,7 +55,7 @@ module Issues
     def self.build_eligible_scope(project)
       scope = Issue.ready_for_work(project)
         .where(paid_state: %w[new planning failed])
-        .where.not(id: AgentRun.where(project: project, status: %w[queued pending running]).where.not(issue_id: nil).select(:issue_id))
+        .where.not(id: AgentRun.where(project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).where.not(issue_id: nil).select(:issue_id))
         .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
         .where.not(id: Issue.where(project: project).where.not(parent_issue_id: nil).distinct.select(:parent_issue_id))
 
@@ -175,7 +175,7 @@ module Issues
       existing_run = AgentRun.find_by(
         project: @project,
         issue: issue,
-        status: %w[queued pending running]
+        status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
       )
 
       if existing_run
