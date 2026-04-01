@@ -23,14 +23,17 @@ module Api
       @project = Project.find(params[:project_id])
       authorize @project, :search?, policy_class: KnowledgeSearchPolicy
 
+      mode = params[:mode]
+      api_key = @project.openai_api_key unless mode == "exact"
+
       result = Knowledge::Search.call(
         project: @project,
         query: params[:q].to_s,
-        mode: params[:mode],
+        mode: mode,
         artifact_type: params[:type],
         version: params[:version],
         limit: params[:limit],
-        api_key: @project.openai_api_key
+        api_key: api_key
       )
 
       render json: result

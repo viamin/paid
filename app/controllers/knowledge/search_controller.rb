@@ -29,13 +29,16 @@ module Knowledge
         return render :index
       end
 
+      mode = params[:mode].presence || "hybrid"
+      api_key = @project.openai_api_key unless mode == "exact"
+
       result = ::Knowledge::Search.call(
         project: @project,
         query: @query,
-        mode: params[:mode].presence || "hybrid",
+        mode: mode,
         artifact_type: params[:type].presence,
         limit: 20,
-        api_key: @project.openai_api_key
+        api_key: api_key
       )
 
       @results = result[:results]
