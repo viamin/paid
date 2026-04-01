@@ -73,8 +73,9 @@ module Issues
     private
 
     # Resolves the set of child issue numbers declared by this issue's
-    # body section and comments. Body provides the baseline; comments
-    # can add or remove children via inline patterns.
+    # body and comments. Both body and comments are scanned for
+    # child-listing sections (e.g. "## Child Issues"); all matching
+    # sections are merged into a single set.
     def resolve_child_numbers
       children = Set.new
 
@@ -145,7 +146,7 @@ module Issues
         # Stop at the next heading of same or higher level.
         # A heading of level N has exactly N '#' characters followed by
         # a space, NOT followed by another '#'.
-        stop_pattern = /^\#{1,#{heading_level}}(?!\#)\s/m
+        stop_pattern = /^\#{1,#{heading_level}}(?!\#)\s*/m
         next_heading = rest.match(stop_pattern)
         section = next_heading ? rest[0...next_heading.begin(0)] : rest
 
@@ -159,14 +160,15 @@ module Issues
     # Updates parent_issue_id on child issues. Clears stale children
     # that were previously parented to this issue but are no longer
     # in the list. Only affects non-PR issues to avoid interfering
-    # with PR-to-issue linking.
+    # with PR-to-issue linking. Broadcasts a UI update when any rows
+    # change (update_all bypasses ActiveRecord callbacks).
     def sync_children(child_numbers)
       project = issue.project
+      existing_children = project.issues.where(parent_issue_id: issue.id, is_pull_request: false)
 
       if child_numbers.empty?
-        project.issues
-          .where(parent_issue_id: issue.id, is_pull_request: false)
-          .update_all(parent_issue_id: nil, updated_at: Time.current)
+        changed = existing_children.update_all(parent_issue_id: nil, updated_at: Time.current)
+        project.broadcast_issues_update if changed > 0
         return
       end
 
@@ -176,16 +178,20 @@ module Issues
       )
 
       new_child_ids = child_issues.pluck(:id).to_set
+      changed = 0
 
-      # Set parent on children (idempotent — re-setting the same value is
-      # harmless and avoids NULL-handling complexity with where.not).
-      child_issues.update_all(parent_issue_id: issue.id, updated_at: Time.current)
+      # Set parent only on children that don't already have the correct value.
+      # where.not excludes NULLs in Rails 8, so explicitly include them.
+      changed += child_issues
+        .where(parent_issue_id: [ nil ]).or(child_issues.where.not(parent_issue_id: issue.id))
+        .update_all(parent_issue_id: issue.id, updated_at: Time.current)
 
       # Clear parent on issues removed from the list
-      project.issues
-        .where(parent_issue_id: issue.id, is_pull_request: false)
+      changed += existing_children
         .where.not(id: new_child_ids)
         .update_all(parent_issue_id: nil, updated_at: Time.current)
+
+      project.broadcast_issues_update if changed > 0
     end
 
     # Sets or clears parent_issue_id on this issue based on inline
