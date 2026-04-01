@@ -36,6 +36,11 @@ class ReplaceCompatibleProvidersWithApiServiceType < ActiveRecord::Migration[8.1
     end
 
     change_column_null :provider_api_keys, :api_service_type, false
+    # A concurrent index would require disable_ddl_transaction!, but this
+    # migration must run transactionally so the column add, data backfill,
+    # NOT NULL constraint, and column removal are atomic. The provider_api_keys
+    # table is small (one row per user per API key) so the brief exclusive
+    # lock from a regular add_index is acceptable.
     add_index :provider_api_keys, %i[user_id api_service_type], name: "index_provider_api_keys_on_user_id_and_api_service_type"
     remove_column :provider_api_keys, :compatible_providers
   end
