@@ -6,7 +6,7 @@
 <% retry_provider_options = local_assigns.fetch(:retry_provider_options, []) %>
 
 <% if agent_run.active? && show_cancel %>
-  <div class="mt-3 flex justify-end">
+  <div class="mt-3 flex justify-end" data-when-active>
     <%= button_to "Cancel",
           cancel_project_agent_run_path(agent_run.project, agent_run),
           method: :post,
@@ -17,7 +17,7 @@
 
 <% if agent_run.finished? && show_retry %>
   <% show_retry_menu = retry_provider_options.any? { |option| !option[:current] } %>
-  <div class="mt-3 flex justify-end">
+  <div class="mt-3 flex justify-end" data-when-finished>
     <% if show_retry_menu %>
       <% retry_menu_button_id = dom_id(agent_run, :retry_menu_button) %>
       <% retry_menu_id = dom_id(agent_run, :retry_menu) %>

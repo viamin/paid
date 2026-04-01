@@ -12,22 +12,29 @@
     <% end %>
   </div>
 
-  <%= render "agent_runs/detail",
-        agent_run: @agent_run,
-        quality_metrics: @quality_metrics,
-        phase_timeline: @phase_timeline,
-        phase_summary: @phase_summary,
-        final_provider_record: @final_provider_record,
-        attempted_providers_by_routing_key: @attempted_providers_by_routing_key %>
+  <div data-controller="agent-run-actions"
+       data-agent-run-actions-detail-id-value="<%= dom_id(@agent_run, :detail) %>">
+    <%= render "agent_runs/detail",
+          agent_run: @agent_run,
+          quality_metrics: @quality_metrics,
+          phase_timeline: @phase_timeline,
+          phase_summary: @phase_summary,
+          final_provider_record: @final_provider_record,
+          attempted_providers_by_routing_key: @attempted_providers_by_routing_key %>
 
-  <%# Action buttons are rendered outside the Turbo broadcast target so that
-      live updates (which re-render _detail without user-specific locals)
-      do not wipe policy-gated controls like Cancel and Retry. %>
-  <%= render "agent_runs/detail_actions",
-        agent_run: @agent_run,
-        show_cancel: policy(@agent_run).cancel?,
-        show_retry: policy(@agent_run.project).run_agent?,
-        retry_provider_options: @retry_provider_options %>
+    <%# Action buttons are rendered outside the Turbo broadcast target so that
+        live updates (which re-render _detail without user-specific locals)
+        do not wipe policy-gated controls like Cancel and Retry.
+        The agent-run-actions Stimulus controller observes the detail target
+        for status changes and hides/shows buttons client-side. %>
+    <div data-agent-run-actions-target="actions">
+      <%= render "agent_runs/detail_actions",
+            agent_run: @agent_run,
+            show_cancel: policy(@agent_run).cancel?,
+            show_retry: policy(@agent_run.project).run_agent?,
+            retry_provider_options: @retry_provider_options %>
+    </div>
+  </div>
 
   <% if @logs.any? %>
     <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">

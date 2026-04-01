@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Shared cancellation logic for controllers that cancel agent runs.
-# Handles external cleanup, optimistic locking to prevent race conditions,
+# Handles external cleanup, row-level pessimistic locking to prevent race conditions,
 # and redirect with appropriate flash messaging.
 #
 # Used by Projects::AgentRunsController and DashboardController.
