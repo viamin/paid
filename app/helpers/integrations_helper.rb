@@ -24,13 +24,8 @@ module IntegrationsHelper
     end
   end
 
-  def integration_show_path(record, section_key)
-    case section_key
-    when :repository then github_token_path(record)
-    when :issue_tracking then linear_token_path(record)
-    when :llm_provider then provider_api_key_path(record)
-    else raise ArgumentError, "Unknown integration section: #{section_key.inspect}"
-    end
+  def integration_show_path(record)
+    polymorphic_path(record)
   end
 
   private

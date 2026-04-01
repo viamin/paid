@@ -33,14 +33,17 @@ RSpec.describe "Integrations" do
       end
 
       it "shows configured integrations grouped by type" do
-        create(:github_token, account: user.account)
-        create(:provider_api_key, user: user)
+        github_token = create(:github_token, account: user.account)
+        provider_key = create(:provider_api_key, user: user)
 
         get integrations_path
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Repository Access")
+        expect(response.body).to include(github_token.name)
         expect(response.body).to include("LLM Providers")
+        expect(response.body).to include(provider_key.name)
+        expect(response.body).not_to include("Issue Tracking")
       end
     end
   end
