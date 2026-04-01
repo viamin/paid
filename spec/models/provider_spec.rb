@@ -123,6 +123,16 @@ RSpec.describe Provider do
       expect(provider).not_to be_valid
       expect(provider.errors[:provider_api_key]).to include("must be an API key for Anthropic")
     end
+
+    it "rejects api_key auth for providers with no API service type (e.g. copilot)" do
+      api_key = create(:provider_api_key, user: provider.user, api_service_type: "anthropic")
+      provider.auth_type = "api_key"
+      provider.provider_api_key = api_key
+      provider.provider_key = "copilot"
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:provider_api_key]).to include("is not supported for this provider; use subscription authentication instead")
+    end
   end
 
   describe "scopes" do

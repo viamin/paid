@@ -22,9 +22,13 @@ class ReplaceCompatibleProvidersWithApiServiceType < ActiveRecord::Migration[8.1
         WHEN compatible_providers ? 'gemini' THEN 'google'
         WHEN compatible_providers ? 'claude' THEN 'anthropic'
         WHEN compatible_providers ? 'cursor' THEN 'anthropic'
-        WHEN compatible_providers ? 'copilot' THEN 'anthropic'
         WHEN compatible_providers ? 'aider' THEN 'anthropic'
         WHEN compatible_providers ? 'kilocode' THEN 'anthropic'
+        /* copilot is intentionally excluded: it uses GitHub subscription auth,
+           not a third-party API key (see ProviderSupport::PROVIDER_API_SERVICE_TYPE).
+           Copilot-only API key records should not exist in practice. Any that do
+           fall through to the default below and remain inert because
+           api_service_type_for('copilot') returns nil, preventing selection. */
         ELSE 'anthropic'
       END
       WHERE api_service_type IS NULL
