@@ -19,34 +19,42 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
     return unless agent_run
     return unless eligible_for_retry?(agent_run)
 
-    previous_attempts = count_previous_attempts(agent_run)
-    if previous_attempts >= MAX_RETRIES
-      agent_run.update!(error_message: "Auto-retry limit reached (#{MAX_RETRIES} attempts)")
-
-      Rails.logger.info(
-        message: "agent_execution.issue_goal_retry_limit_reached",
-        agent_run_id: agent_run.id,
-        issue_id: agent_run.issue_id,
-        project_id: agent_run.project_id,
-        attempts: previous_attempts
-      )
-      return
-    end
-
     begin
       new_run = AgentRun.transaction do
+        # Lock the original run to prevent concurrent retry jobs from both
+        # creating a new queued run. Re-check eligibility under the lock
+        # since the status may have changed since the initial check.
+        locked_run = AgentRun.lock.find(agent_run.id)
+        next unless eligible_for_retry?(locked_run)
+
+        previous_retries = count_previous_retries(locked_run)
+        if previous_retries >= MAX_RETRIES
+          locked_run.update!(error_message: "Auto-retry limit reached (#{MAX_RETRIES} retries)")
+
+          Rails.logger.info(
+            message: "agent_execution.issue_goal_retry_limit_reached",
+            agent_run_id: locked_run.id,
+            issue_id: locked_run.issue_id,
+            project_id: locked_run.project_id,
+            previous_retries: previous_retries,
+            max_retries: MAX_RETRIES
+          )
+          next
+        end
+
         created = AgentRun.create!(
-          project: agent_run.project,
-          issue: agent_run.issue,
-          provider: agent_run.provider,
-          agent_type: agent_run.agent_type,
-          custom_prompt: agent_run.custom_prompt,
-          source_pull_request_number: agent_run.source_pull_request_number,
-          goal: agent_run.goal,
+          project: locked_run.project,
+          issue: locked_run.issue,
+          provider: locked_run.provider,
+          agent_type: locked_run.agent_type,
+          custom_prompt: locked_run.custom_prompt,
+          source_pull_request_number: locked_run.source_pull_request_number,
+          goal: locked_run.goal,
           trigger_type: "automatic",
           status: "queued"
         )
-        agent_run.retry!
+        locked_run.retry!
+        agent_run.reload
         created
       end
     rescue ActiveRecord::RecordNotUnique => e
@@ -87,13 +95,14 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
       return
     end
 
+    return unless new_run
+
     Rails.logger.info(
       message: "agent_execution.issue_goal_auto_retry",
       original_agent_run_id: agent_run.id,
       new_agent_run_id: new_run.id,
       issue_id: agent_run.issue_id,
-      project_id: agent_run.project_id,
-      attempt: previous_attempts + 1
+      project_id: agent_run.project_id
     )
 
     # Idempotent (advisory lock + SKIP LOCKED). This job is enqueued from
@@ -111,8 +120,9 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
 
   # Counts how many previous issue goal runs for the same issue (when present)
   # or for the same goal parameters (when issue is nil) have already been
-  # attempted (timed out or retried), excluding the current run.
-  def count_previous_attempts(agent_run)
+  # retried (timed out or marked as retried), excluding the current run.
+  # This counts retries, not total attempts — the original run is not included.
+  def count_previous_retries(agent_run)
     scope =
       if agent_run.issue_id
         agent_run.issue.agent_runs.where(goal: "create_issue")

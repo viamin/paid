@@ -54,7 +54,7 @@ RSpec.describe RetryTimedOutIssueGoalJob do
       expect { described_class.perform_now(agent_run.id) }
         .not_to change(AgentRun, :count)
 
-      expect(agent_run.reload.error_message).to eq("Auto-retry limit reached (3 attempts)")
+      expect(agent_run.reload.error_message).to eq("Auto-retry limit reached (3 retries)")
     end
 
     it "does not retry a non-issue-goal run" do
