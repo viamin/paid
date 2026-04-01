@@ -1182,6 +1182,10 @@ RSpec.describe Containers::GitOperations do
             success_result
           }
 
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+
         git_ops.install_co_author_hook
 
         expect(appended_script).to include("Co-Authored-By: Claude <noreply@anthropic.com>")

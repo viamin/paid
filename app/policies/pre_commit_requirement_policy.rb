@@ -24,8 +24,6 @@ class PreCommitRequirementPolicy < ApplicationPolicy
   private
 
   def owns_user_level_record?
-    return false unless user.present?
-
     record.user_level? && record.user_id == user.id
   end
 

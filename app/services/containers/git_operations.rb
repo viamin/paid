@@ -691,6 +691,10 @@ module Containers
           timeout: nil, stream: false
         )
         raise Error, "Failed to append co-author hook: #{append_result.error}" if append_result.failure?
+
+        # Ensure the hook is executable — an existing file may lack +x
+        chmod_result = container_service.execute("chmod +x #{hook_path}", timeout: nil, stream: false)
+        raise Error, "Failed to chmod co-author hook: #{chmod_result.error}" if chmod_result.failure?
       else
         # No existing hook — create a new one
         write_result = container_service.execute(

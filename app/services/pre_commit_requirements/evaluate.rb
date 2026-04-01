@@ -5,27 +5,13 @@ module PreCommitRequirements
   # checks and collecting results. Supports auto-fix mode where a failing check
   # can be retried after running its fix command.
   #
-  # Called from RunAgentActivity after the agent run has finished (the agent may
-  # already have created commits) and before the system auto-commits remaining
-  # changes and pushes the branch. Blocking failures prevent the PR from being
-  # created.
+  # Called from RunAgentActivity after the agent commits changes and before
+  # the branch is pushed. Blocking failures prevent the PR from being created.
   #
   # @example
   #   result = PreCommitRequirements::Evaluate.call(agent_run: agent_run)
   #   result[:passed]     # => true/false
-  #   result[:results]    # => [
-  #   #   {
-  #   #     requirement_id: 1,
-  #   #     name: "Lint",
-  #   #     check_type: "command",
-  #   #     passed: true/false,
-  #   #     output: "...",
-  #   #     blocking: true/false,
-  #   #     failure_behavior: "block" or "warn",
-  #   #     auto_fixed: true/false
-  #   #   },
-  #   #   ...
-  #   # ]
+  #   result[:results]    # => [{ requirement: ..., passed: true/false, output: "..." }, ...]
   #   result[:blocking]   # => true if any blocking check failed
   class Evaluate
     MAX_AUTO_FIX_ATTEMPTS = 3
