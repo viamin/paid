@@ -182,6 +182,51 @@ class Issue < ApplicationRecord
     dependents
   end
 
+  # Compute lifecycle statuses for a collection of issues.
+  # Returns a Hash of issue_id => :blocked | :in_progress | :eligible
+  def self.lifecycle_statuses(issues)
+    return {} if issues.empty?
+
+    issue_ids = issues.map(&:id)
+
+    blocked_by_local = IssueDependency
+      .joins(:depends_on_issue)
+      .where(issue_id: issue_ids, depends_on_issue: { github_state: "open" })
+      .where.not(depends_on_issue: { paid_state: "recommend_close" })
+      .pluck(:issue_id)
+      .to_set
+
+    blocked_by_external = IssueDependency
+      .where(issue_id: issue_ids)
+      .where.not(depends_on_owner: nil)
+      .pluck(:issue_id)
+      .to_set
+
+    blocked_ids = blocked_by_local | blocked_by_external
+
+    active_run_ids = AgentRun
+      .where(issue_id: issue_ids, status: %w[queued pending running])
+      .pluck(:issue_id)
+      .to_set
+
+    has_pr_ids = issues
+      .select(&:has_associated_pull_requests?)
+      .map(&:id)
+      .to_set
+
+    in_progress_ids = active_run_ids | has_pr_ids
+
+    issues.each_with_object({}) do |issue, hash|
+      hash[issue.id] = if blocked_ids.include?(issue.id)
+        :blocked
+      elsif in_progress_ids.include?(issue.id)
+        :in_progress
+      else
+        :eligible
+      end
+    end
+  end
+
   private
 
   def parent_issue_belongs_to_same_project

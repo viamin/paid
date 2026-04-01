@@ -802,4 +802,102 @@ RSpec.describe Issue do
       expect(issue.body_referenced_issue_numbers).to eq([])
     end
   end
+
+  describe ".lifecycle_statuses" do
+    let(:project) { create(:project) }
+
+    it "returns :eligible for an issue with no dependencies or active runs" do
+      issue = create(:issue, project: project, github_state: "open")
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :blocked for an issue with an open local dependency" do
+      issue = create(:issue, project: project, github_state: "open")
+      dep = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:blocked)
+    end
+
+    it "returns :blocked for an issue with an external dependency" do
+      issue = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: nil,
+             depends_on_owner: "other-org", depends_on_repo: "other-repo",
+             depends_on_number: 42)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:blocked)
+    end
+
+    it "returns :eligible when local dependency is closed" do
+      issue = create(:issue, project: project, github_state: "open")
+      dep = create(:issue, project: project, github_state: "closed")
+      create(:issue_dependency, issue: issue, depends_on_issue: dep)
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns :in_progress for an issue with an active agent run" do
+      issue = create(:issue, project: project, github_state: "open")
+      create(:agent_run, issue: issue, project: project, status: "running")
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:in_progress)
+    end
+
+    it "returns :in_progress for an issue with an associated open PR" do
+      issue = create(:issue, project: project, github_state: "open")
+      create(:issue, project: project, github_state: "open",
+             is_pull_request: true, parent_issue: issue, pr_review_phase: "draft")
+
+      # Reload to pick up the sub_issues association
+      issue.reload
+      issues = described_class.where(id: issue.id).includes(:sub_issues).to_a
+
+      result = described_class.lifecycle_statuses(issues)
+
+      expect(result[issue.id]).to eq(:in_progress)
+    end
+
+    it "returns :eligible for an issue with only completed agent runs" do
+      issue = create(:issue, project: project, github_state: "open")
+      create(:agent_run, issue: issue, project: project, status: "completed")
+
+      result = described_class.lifecycle_statuses([ issue ])
+
+      expect(result[issue.id]).to eq(:eligible)
+    end
+
+    it "returns correct statuses for multiple issues" do
+      blocked = create(:issue, project: project, github_state: "open")
+      dep = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: blocked, depends_on_issue: dep)
+
+      in_progress = create(:issue, project: project, github_state: "open")
+      create(:agent_run, issue: in_progress, project: project, status: "running")
+
+      eligible = create(:issue, project: project, github_state: "open")
+
+      result = described_class.lifecycle_statuses([ blocked, in_progress, eligible ])
+
+      expect(result[blocked.id]).to eq(:blocked)
+      expect(result[in_progress.id]).to eq(:in_progress)
+      expect(result[eligible.id]).to eq(:eligible)
+    end
+
+    it "returns an empty hash for an empty collection" do
+      result = described_class.lifecycle_statuses([])
+
+      expect(result).to eq({})
+    end
+  end
 end

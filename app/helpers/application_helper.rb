@@ -69,6 +69,21 @@ module ApplicationHelper
     )
   end
 
+  ISSUE_LIFECYCLE_DISPLAY = {
+    blocked: { emoji: "\u{1F550}", label: "Blocked" },
+    in_progress: { emoji: "\u{1F9E0}", label: "In Progress" },
+    eligible: { emoji: "\u26A1\uFE0F", label: "Auto-pick Eligible" }
+  }.freeze
+
+  def issue_lifecycle_badge(status)
+    display = ISSUE_LIFECYCLE_DISPLAY[status] || ISSUE_LIFECYCLE_DISPLAY[:eligible]
+    tag.span(
+      "#{display[:emoji]} #{display[:label]}",
+      title: display[:label],
+      class: "inline-flex items-center text-sm"
+    )
+  end
+
   SERVICE_CONTAINER_STATUS_STYLES = {
     "stopped" => { bg: "bg-gray-100", text: "text-gray-700", label: "Stopped" },
     "starting" => { bg: "bg-yellow-100", text: "text-yellow-800", label: "Starting" },
