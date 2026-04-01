@@ -303,6 +303,20 @@ RSpec.describe Issues::ParseParentChild do
         expect(child.reload.parent_issue_id).to eq(parent.id)
       end
 
+      it "does not overwrite an unrelated parent when removing a different one" do
+        parent_a = create(:issue, project: project, github_number: 8211)
+        create(:issue, project: project, github_number: 8212)
+        child = create(:issue, project: project, body: "Part of #8211")
+
+        # "No longer part of #8212" should not affect the existing parent (#8211)
+        described_class.call(
+          issue: child,
+          comments: [ "No longer part of #8212" ]
+        )
+
+        expect(child.reload.parent_issue_id).to eq(parent_a.id)
+      end
+
       it "handles nil comments gracefully" do
         parent = create(:issue, project: project, body: "## Child Issues\n- #8230")
 

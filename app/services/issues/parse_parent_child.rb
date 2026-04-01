@@ -62,12 +62,15 @@ module Issues
       new(...).call
     end
 
+    # Returns true if any parent-child relationships changed.
+    # Callers can use this to batch broadcasts.
     def call
       child_numbers = resolve_child_numbers
       parent_number, parent_declared = resolve_parent_number
 
-      sync_children(child_numbers)
-      sync_parent(parent_number, parent_declared)
+      changed = sync_children(child_numbers)
+      changed |= sync_parent(parent_number, parent_declared)
+      changed
     end
 
     private
@@ -113,15 +116,18 @@ module Issues
       comments.each do |comment_body|
         next if comment_body.blank?
 
-        # Within a single comment, removals take precedence over additions
-        # (same semantics as ParseDependencies).
-        if (addition = comment_body.match(PARENT_DECLARATION_PATTERN))
-          parent = addition[1].to_i
+        # Process removals first so "No longer part of #N" doesn't also
+        # match the addition pattern and overwrite an unrelated parent.
+        if (removal = comment_body.match(PARENT_REMOVAL_PATTERN))
+          parent = nil if parent == removal[1].to_i
           declared = true
         end
 
-        if (removal = comment_body.match(PARENT_REMOVAL_PATTERN))
-          parent = nil if parent == removal[1].to_i
+        # Strip removal phrases before checking for additions, since
+        # "No longer part of #123" contains "part of #123".
+        stripped = comment_body.gsub(PARENT_REMOVAL_PATTERN, "")
+        if (addition = stripped.match(PARENT_DECLARATION_PATTERN))
+          parent = addition[1].to_i
           declared = true
         end
       end
@@ -145,8 +151,9 @@ module Issues
 
         # Stop at the next heading of same or higher level.
         # A heading of level N has exactly N '#' characters followed by
-        # a space, NOT followed by another '#'.
-        stop_pattern = /^\#{1,#{heading_level}}(?!\#)\s*/m
+        # whitespace, NOT followed by another '#'. Require \s+ (not \s*)
+        # so bare issue refs like "#123" on their own line don't match.
+        stop_pattern = /^\#{1,#{heading_level}}(?!\#)\s+/m
         next_heading = rest.match(stop_pattern)
         section = next_heading ? rest[0...next_heading.begin(0)] : rest
 
@@ -160,16 +167,13 @@ module Issues
     # Updates parent_issue_id on child issues. Clears stale children
     # that were previously parented to this issue but are no longer
     # in the list. Only affects non-PR issues to avoid interfering
-    # with PR-to-issue linking. Broadcasts a UI update when any rows
-    # change (update_all bypasses ActiveRecord callbacks).
+    # with PR-to-issue linking. Returns true if any rows changed.
     def sync_children(child_numbers)
       project = issue.project
       existing_children = project.issues.where(parent_issue_id: issue.id, is_pull_request: false)
 
       if child_numbers.empty?
-        changed = existing_children.update_all(parent_issue_id: nil, updated_at: Time.current)
-        project.broadcast_issues_update if changed > 0
-        return
+        return existing_children.update_all(parent_issue_id: nil, updated_at: Time.current) > 0
       end
 
       child_issues = project.issues.where(
@@ -191,28 +195,32 @@ module Issues
         .where.not(id: new_child_ids)
         .update_all(parent_issue_id: nil, updated_at: Time.current)
 
-      project.broadcast_issues_update if changed > 0
+      changed > 0
     end
 
     # Sets or clears parent_issue_id on this issue based on inline
     # declarations. Only acts when a parent declaration was found in the
     # body or comments (+declared+ is true) to avoid clearing parent_issue_id
-    # that was set by other mechanisms (e.g. PR linking).
+    # that was set by other mechanisms (e.g. PR linking). Returns true if
+    # a change was persisted.
     def sync_parent(parent_number, declared)
-      return unless declared
+      return false unless declared
 
       if parent_number.nil?
-        issue.update!(parent_issue_id: nil) if issue.parent_issue_id.present?
-        return
+        return false unless issue.parent_issue_id.present?
+        issue.update!(parent_issue_id: nil)
+        return true
       end
 
       parent = issue.project.issues.find_by(
         github_number: parent_number,
         is_pull_request: false
       )
-      return unless parent
+      return false unless parent
+      return false if issue.parent_issue_id == parent.id
 
-      issue.update!(parent_issue_id: parent.id) if issue.parent_issue_id != parent.id
+      issue.update!(parent_issue_id: parent.id)
+      true
     end
   end
 end
