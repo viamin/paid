@@ -1,5 +1,32 @@
 import { Controller } from "@hotwired/stimulus"
 
+// Reads provider→service-type mapping from the backend-provided meta tag so that
+// ProviderSupport::PROVIDER_API_SERVICE_TYPE remains the single source of truth.
+// Falls back to a hardcoded mapping if the meta tag is missing.
+function loadProviderApiServiceType() {
+  try {
+    const meta = document.querySelector("meta[name='provider-api-service-type']")
+    if (meta && meta.content) {
+      const parsed = JSON.parse(meta.content)
+      if (parsed && typeof parsed === "object") return parsed
+    }
+  } catch {
+    // Fall back to the default mapping below.
+  }
+
+  return {
+    claude: "anthropic",
+    cursor: "anthropic",
+    codex: "openai",
+    aider: "anthropic",
+    gemini: "google",
+    opencode: "openrouter",
+    kilocode: "anthropic",
+  }
+}
+
+const PROVIDER_API_SERVICE_TYPE = loadProviderApiServiceType()
+
 export default class extends Controller {
   static values = {
     authType: String,
@@ -74,7 +101,7 @@ export default class extends Controller {
   refreshApiKeyOptions(providerKey = this.currentProviderKey()) {
     if (!this.hasApiKeySelectTarget) return
 
-    const requiredTargets = this.requiredApiKeyTargetsFor(providerKey)
+    const requiredServiceType = this.requiredApiServiceTypeFor(providerKey)
     let selectedOptionVisible = false
 
     this.apiKeyOptionTargets.forEach((option) => {
@@ -83,8 +110,10 @@ export default class extends Controller {
         return
       }
 
-      const targets = (option.dataset.compatibleTargets || "").split(",").filter(Boolean)
-      const visible = requiredTargets.length > 0 ? requiredTargets.some((target) => targets.includes(target)) : true
+      const serviceType = option.dataset.apiServiceType || ""
+      // When requiredServiceType is null (unknown/unmapped provider), hide all
+      // API key options — the provider has no compatible API key type.
+      const visible = requiredServiceType !== null && serviceType === requiredServiceType
       option.hidden = !visible
       if (visible && option.selected) {
         selectedOptionVisible = true
@@ -103,12 +132,12 @@ export default class extends Controller {
     return this.authTypeValue === "api_key"
   }
 
-  requiredApiKeyTargetsFor(providerKey) {
-    if (!providerKey) return []
-    if (providerKey !== "opencode") return [providerKey]
-
-    const apiProviderField = this.element.querySelector("select[name='provider[config][opencode][api_provider]']")
-    return [apiProviderField?.value || "openrouter"]
+  requiredApiServiceTypeFor(providerKey) {
+    if (!providerKey) return null
+    // Returns null for unknown/unmapped providers (e.g. copilot), which causes
+    // refreshApiKeyOptions to hide all API key options — the correct behavior
+    // since those providers have no compatible API key type.
+    return PROVIDER_API_SERVICE_TYPE[providerKey] || null
   }
 
   currentProviderKey() {

@@ -9,6 +9,7 @@
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
     <%= action_cable_meta_tag %>
+    <%= tag.meta name: "provider-api-service-type", content: ProviderSupport::PROVIDER_API_SERVICE_TYPE.to_json %>
     <%= turbo_refreshes_with method: :morph, scroll: :preserve %>
 
     <%= yield :head %>

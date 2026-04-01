@@ -90,6 +90,18 @@ module ProviderSupport
     provider_key.to_s
   end
 
+  def api_service_types
+    API_SERVICE_TYPES
+  end
+
+  def api_service_type_for(provider_key)
+    PROVIDER_API_SERVICE_TYPE[provider_key.to_s]
+  end
+
+  def api_service_type_label(service_type)
+    API_SERVICE_TYPES.fetch(service_type.to_s, service_type.to_s.titleize)
+  end
+
   def subscription_auth_unset_vars_for(provider_key)
     SUBSCRIPTION_AUTH_UNSET_VARS.fetch(provider_key.to_s, [])
   end
@@ -123,6 +135,32 @@ module ProviderSupport
 
     usernames.include?(login.downcase)
   end
+
+  # Valid API service types that ProviderApiKey records can declare.
+  # Each entry maps a service identifier to its human-readable label.
+  API_SERVICE_TYPES = {
+    "anthropic" => "Anthropic",
+    "openai" => "OpenAI",
+    "openrouter" => "OpenRouter",
+    "google" => "Google AI"
+  }.freeze
+
+  # Maps each provider key to the upstream API service type its CLI tool
+  # communicates with. Used to determine which ProviderApiKey records are
+  # compatible with a given provider.
+  #
+  # Providers NOT listed here (e.g. copilot) have no compatible API key type,
+  # meaning they can only be used with subscription auth. Copilot CLI uses
+  # GitHub's own authentication, not a third-party API key.
+  PROVIDER_API_SERVICE_TYPE = {
+    "claude" => "anthropic",
+    "cursor" => "anthropic",
+    "codex" => "openai",
+    "aider" => "anthropic",
+    "gemini" => "google",
+    "opencode" => "openrouter",
+    "kilocode" => "anthropic"
+  }.freeze
 
   # Maps provider keys to their upstream proxy API key name (used by
   # harness-based health checks). Providers listed here can be health-checked

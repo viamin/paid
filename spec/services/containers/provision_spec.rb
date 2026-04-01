@@ -624,7 +624,7 @@ RSpec.describe Containers::Provision do
 
     context "with fallback providers" do
       let(:settings) { project.created_by.settings }
-      let(:api_key) { create(:provider_api_key, user: project.created_by, compatible_providers: %w[openrouter]) }
+      let(:api_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
       let!(:direct_outbound_provider) do
         create(
           :provider,
