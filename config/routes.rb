@@ -20,7 +20,7 @@ Rails.application.routes.draw do
   post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
 
   # Integrations hub
-  resources :integrations, only: [ :index ]
+  resources :integrations, only: [ :index, :new ]
   resources :integration_credentials, only: [ :index, :new, :create, :show, :destroy ]
 
   # GitHub tokens management
@@ -88,6 +88,7 @@ Rails.application.routes.draw do
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
     resources :cost_budgets, only: [ :create, :update, :destroy ], controller: "projects/cost_budgets"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
+      post :cancel, on: :member
       post :retry, on: :member
       post :refresh_auth, on: :member
       post :diagnose_error, on: :member

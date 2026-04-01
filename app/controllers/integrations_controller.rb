@@ -5,6 +5,9 @@ class IntegrationsController < ApplicationController
   skip_after_action :verify_policy_scoped
 
   def index
-    @integration_sections = Integrations::Hub.sections_for(current_account)
+    @sections = Integrations::Hub.sections_for(current_account, current_user)
+  end
+
+  def new
   end
 end
