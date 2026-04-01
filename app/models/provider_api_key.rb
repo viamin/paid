@@ -44,7 +44,10 @@ class ProviderApiKey < ApplicationRecord
   def api_service_type_must_be_valid
     return if api_service_type.blank?
 
-    return if ProviderSupport.api_service_types.key?(api_service_type)
+    normalized = api_service_type.to_s.strip
+    self.api_service_type = normalized
+
+    return if ProviderSupport.api_service_types.key?(normalized)
 
     errors.add(:api_service_type, "is not a supported API service type")
   end

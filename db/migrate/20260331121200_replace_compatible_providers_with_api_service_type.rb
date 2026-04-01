@@ -58,7 +58,7 @@ class ReplaceCompatibleProvidersWithApiServiceType < ActiveRecord::Migration[8.1
         WHEN 'openai' THEN '["codex","openai"]'::jsonb
         WHEN 'openrouter' THEN '["opencode","openrouter"]'::jsonb
         WHEN 'google' THEN '["gemini"]'::jsonb
-        ELSE '["claude","cursor","aider","kilocode"]'::jsonb
+        ELSE '[]'::jsonb
       END
     SQL
 
