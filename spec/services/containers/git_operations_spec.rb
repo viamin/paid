@@ -1124,27 +1124,33 @@ RSpec.describe Containers::GitOperations do
     let(:marker_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
 
     context "when project has a trailer configured" do
-      before { project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
-      it "installs a commit-msg hook that appends the trailer" do
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
           .and_return(marker_missing_result)
-
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
         allow(container_service).to receive(:execute)
           .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+      end
 
+      it "installs a commit-msg hook that appends the trailer" do
         hook_script = nil
         allow(container_service).to receive(:execute)
-          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg/), timeout: nil, stream: false) { |script, **|
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false) { |script, **|
             hook_script = script
             success_result
           }
-
-        allow(container_service).to receive(:execute)
-          .with("chmod +x .git/hooks/commit-msg", timeout: nil, stream: false)
-          .and_return(success_result)
 
         git_ops.install_co_author_hook
 
@@ -1171,20 +1177,26 @@ RSpec.describe Containers::GitOperations do
           .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
           .and_return(marker_missing_result)
         allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
           .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(hook_exists_result)
         allow(container_service).to receive(:execute)
           .with("mv .git/hooks/commit-msg .git/hooks/commit-msg.original", timeout: nil, stream: false)
           .and_return(success_result)
         allow(container_service).to receive(:execute)
-          .with("chmod +x .git/hooks/commit-msg", timeout: nil, stream: false)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(success_result)
       end
 
       it "renames the existing hook and installs a wrapper" do
         captured_script = nil
         allow(container_service).to receive(:execute)
-          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg/), timeout: nil, stream: false) { |script, **|
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false) { |script, **|
             captured_script = script
             success_result
           }
@@ -1194,6 +1206,48 @@ RSpec.describe Containers::GitOperations do
         expect(captured_script).to include(".git/hooks/commit-msg.original")
         expect(captured_script).to include("Co-Authored-By: Claude <noreply@anthropic.com>")
         expect(captured_script).to include("#!/bin/sh")
+      end
+    end
+
+    context "when a prior failed installation left commit-msg.original orphaned" do
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        # commit-msg.original exists but commit-msg does not
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result, hook_exists_result)
+        # Restores original hook
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+        # Then proceeds with normal wrapper flow
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "restores the original hook before retrying installation" do
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.install_co_author_hook
+
+        expect(container_service).to have_received(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
       end
     end
 

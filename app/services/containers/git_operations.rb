@@ -675,6 +675,7 @@ module Containers
     def install_or_chain_co_author_hook(trailer)
       hook_path = ".git/hooks/commit-msg"
       original_path = "#{hook_path}.original"
+      tmp_path = "#{hook_path}.tmp"
 
       # Check for existing marker to prevent duplicate appends on retries
       marker_check = container_service.execute(
@@ -689,9 +690,20 @@ module Containers
         return
       end
 
-      # Check if a hook file already exists
-      check = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
-      if check.success?
+      # Also detect a prior failed installation: commit-msg.original exists
+      # but commit-msg does not (the mv succeeded but write/chmod failed).
+      # Restore the original hook before retrying.
+      original_exists = container_service.execute("test -f #{original_path}", timeout: nil, stream: false)
+      hook_exists = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
+
+      if original_exists.success? && hook_exists.failure?
+        restore = container_service.execute("mv #{original_path} #{hook_path}", timeout: nil, stream: false)
+        raise Error, "Failed to restore original hook: #{restore.error}" if restore.failure?
+        # Refresh hook_exists after restore
+        hook_exists = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
+      end
+
+      if hook_exists.success?
         # Rename existing hook so the wrapper can delegate to it
         mv_result = container_service.execute("mv #{hook_path} #{original_path}", timeout: nil, stream: false)
         raise Error, "Failed to rename existing hook: #{mv_result.error}" if mv_result.failure?
@@ -701,14 +713,48 @@ module Containers
         script = commit_msg_hook_script(trailer)
       end
 
+      # Write to a temp file first, then atomically move into place.
+      # If the write or chmod fails after we renamed the original, we
+      # restore it so the repo is never left without a commit-msg hook.
       write_result = container_service.execute(
-        "cat > #{hook_path} << 'HOOKEOF'\n#{script}\nHOOKEOF",
+        "cat > #{tmp_path} << 'HOOKEOF'\n#{script}\nHOOKEOF",
         timeout: nil, stream: false
       )
-      raise Error, "Failed to write co-author hook: #{write_result.error}" if write_result.failure?
+      if write_result.failure?
+        rollback_original_hook(original_path, hook_path)
+        raise Error, "Failed to write co-author hook: #{write_result.error}"
+      end
 
-      chmod_result = container_service.execute("chmod +x #{hook_path}", timeout: nil, stream: false)
-      raise Error, "Failed to chmod co-author hook: #{chmod_result.error}" if chmod_result.failure?
+      chmod_result = container_service.execute("chmod +x #{tmp_path}", timeout: nil, stream: false)
+      if chmod_result.failure?
+        container_service.execute("rm -f #{tmp_path}", timeout: nil, stream: false)
+        rollback_original_hook(original_path, hook_path)
+        raise Error, "Failed to chmod co-author hook: #{chmod_result.error}"
+      end
+
+      # Atomic move into place
+      mv_result = container_service.execute("mv #{tmp_path} #{hook_path}", timeout: nil, stream: false)
+      if mv_result.failure?
+        container_service.execute("rm -f #{tmp_path}", timeout: nil, stream: false)
+        rollback_original_hook(original_path, hook_path)
+        raise Error, "Failed to install co-author hook: #{mv_result.error}"
+      end
+    end
+
+    # Restores the original hook if it was renamed during a failed
+    # installation attempt. Best-effort — logs but does not raise on failure.
+    def rollback_original_hook(original_path, hook_path)
+      check = container_service.execute("test -f #{original_path}", timeout: nil, stream: false)
+      return unless check.success?
+
+      result = container_service.execute("mv #{original_path} #{hook_path}", timeout: nil, stream: false)
+      if result.failure?
+        Rails.logger.error(
+          message: "container_git.co_author_hook_rollback_failed",
+          agent_run_id: agent_run.id,
+          error: result.error
+        )
+      end
     end
 
     # Validates that a shell command is a simple executable with arguments.
