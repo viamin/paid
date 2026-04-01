@@ -43,14 +43,16 @@ class ReplaceCompatibleProvidersWithApiServiceType < ActiveRecord::Migration[8.1
     remove_index :provider_api_keys, name: "index_provider_api_keys_on_user_id_and_api_service_type", if_exists: true
     add_column :provider_api_keys, :compatible_providers, :jsonb, default: [], null: false
 
+    # Restore compatible_providers with all provider keys that map to each
+    # service type, so rollback preserves pre-migration compatibility behavior.
     execute <<~SQL.squish
       UPDATE provider_api_keys
       SET compatible_providers = CASE api_service_type
-        WHEN 'anthropic' THEN '["claude"]'::jsonb
-        WHEN 'openai' THEN '["openai"]'::jsonb
-        WHEN 'openrouter' THEN '["openrouter"]'::jsonb
+        WHEN 'anthropic' THEN '["claude","cursor","aider","kilocode"]'::jsonb
+        WHEN 'openai' THEN '["codex","openai"]'::jsonb
+        WHEN 'openrouter' THEN '["opencode","openrouter"]'::jsonb
         WHEN 'google' THEN '["gemini"]'::jsonb
-        ELSE '["claude"]'::jsonb
+        ELSE '["claude","cursor","aider","kilocode"]'::jsonb
       END
     SQL
 
