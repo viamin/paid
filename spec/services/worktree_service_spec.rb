@@ -136,10 +136,6 @@ RSpec.describe WorktreeService do
           .and_return("+refs/heads/*:refs/remotes/origin/*\n")
 
         service.ensure_cloned
-
-        # Reset FETCH_HEAD mtime so the second ensure_cloned triggers fetch_latest
-        FileUtils.touch(File.join(repo_path, "FETCH_HEAD"), mtime: 1.hour.ago.to_time)
-
         service.ensure_cloned
 
         expect(service).to have_received(:run_git)
