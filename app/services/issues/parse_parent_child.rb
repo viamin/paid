@@ -66,10 +66,10 @@ module Issues
     # bypasses callbacks and needs a manual broadcast). sync_parent uses
     # update! which triggers after_update_commit broadcasts on its own.
     def call
-      child_numbers, child_section_present = resolve_child_numbers
+      child_numbers = resolve_child_numbers
       parent_number, parent_declared = resolve_parent_number
 
-      children_changed = sync_children(child_numbers, child_section_present: child_section_present)
+      children_changed = sync_children(child_numbers)
       sync_parent(parent_number, parent_declared)
       children_changed
     end
@@ -80,27 +80,18 @@ module Issues
     # body and comments. Both body and comments are scanned for
     # child-listing sections (e.g. "## Child Issues"); all matching
     # sections are merged into a single set.
-    #
-    # Returns [child_numbers, child_section_present] where
-    # +child_section_present+ indicates whether any recognized
-    # child-listing heading was found in the body or comments.
     def resolve_child_numbers
       children = Set.new
-      section_present = false
 
-      if issue.body.present?
-        section_present = true if issue.body.match?(CHILD_SECTION_HEADING)
-        children.merge(extract_child_section_refs(issue.body))
-      end
+      children.merge(extract_child_section_refs(issue.body)) if issue.body.present?
 
       comments.each do |comment_body|
         next if comment_body.blank?
-        section_present = true if comment_body.match?(CHILD_SECTION_HEADING)
         children.merge(extract_child_section_refs(comment_body))
       end
 
       children.delete(issue.github_number)
-      [ children, section_present ]
+      children
     end
 
     # Resolves the parent issue number for this issue from inline
@@ -186,26 +177,16 @@ module Issues
     #
     # @param child_numbers [Enumerable<Integer>] github_numbers of issues that
     #   should be children of this issue.
-    # @param child_section_present [Boolean] whether a recognized child-listing
-    #   heading was present in the body or comments. When true and
-    #   +child_numbers+ is empty, existing children of this issue will be
-    #   cleared. When false and +child_numbers+ is empty, existing children
-    #   are left untouched to avoid clobbering relationships created via
-    #   other mechanisms (e.g. child-declares-parent).
-    def sync_children(child_numbers, child_section_present: false)
+    def sync_children(child_numbers)
       project = issue.project
       existing_children = project.issues.where(parent_issue_id: issue.id, is_pull_request: false)
 
       if child_numbers.empty?
-        # When no child-listing heading was found, leave existing children
-        # untouched — we can't distinguish parent-listed children from
-        # child-declared parents, so clearing could clobber valid links.
-        return false unless child_section_present
-
-        # A child section exists but contains zero refs: clear all existing
-        # children for this parent issue.
-        changed = existing_children.update_all(parent_issue_id: nil, updated_at: Time.current)
-        return changed > 0
+        # When no refs are present under a child-list heading, leave existing
+        # children untouched — we can't distinguish parent-listed children
+        # from child-declared parents, and clearing could clobber valid links
+        # (especially when parsing runs with truncated GitHub results).
+        return false
       end
 
       child_issues = project.issues.where(
