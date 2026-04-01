@@ -42,7 +42,7 @@ RSpec.describe RetryTimedOutIssueGoalJob do
         .to have_enqueued_job(ProcessRunQueueJob)
     end
 
-    it "does not retry when max retries reached" do
+    it "does not retry when max retries reached and sets error_message" do
       # Create MAX_RETRIES previous timed-out runs
       described_class::MAX_RETRIES.times do
         create(:agent_run, :timeout, :create_issue_goal,
@@ -53,6 +53,8 @@ RSpec.describe RetryTimedOutIssueGoalJob do
 
       expect { described_class.perform_now(agent_run.id) }
         .not_to change(AgentRun, :count)
+
+      expect(agent_run.reload.error_message).to eq("Auto-retry limit reached (3 attempts)")
     end
 
     it "does not retry a non-issue-goal run" do

@@ -21,6 +21,8 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
 
     previous_attempts = count_previous_attempts(agent_run)
     if previous_attempts >= MAX_RETRIES
+      agent_run.update!(error_message: "Auto-retry limit reached (#{MAX_RETRIES} attempts)")
+
       Rails.logger.info(
         message: "agent_execution.issue_goal_retry_limit_reached",
         agent_run_id: agent_run.id,
@@ -47,16 +49,30 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
         agent_run.retry!
         created
       end
-    rescue ActiveRecord::RecordNotUnique
-      # Another active run exists for this project+issue (enforced by
-      # idx_agent_runs_unique_active_issue). Query for it to confirm
-      # this is the expected constraint rather than an unrelated violation.
-      existing_run = AgentRun.where(
-        project_id: agent_run.project_id,
-        issue_id: agent_run.issue_id,
-        status: %w[queued running pending]
-      ).where.not(id: agent_run.id).first
+    rescue ActiveRecord::RecordNotUnique => e
+      # Another active run exists for this project+issue or project+PR
+      # (enforced by idx_agent_runs_unique_active_issue or
+      # idx_agent_runs_unique_active_pr). Inspect the violated constraint
+      # so we can reliably find the conflicting run.
+      constraint_message = e.cause&.message || e.message
 
+      existing_run =
+        if constraint_message.include?("idx_agent_runs_unique_active_issue")
+          AgentRun.where(
+            project_id: agent_run.project_id,
+            issue_id: agent_run.issue_id,
+            status: AgentRun::UNFINISHED_STATUSES
+          ).where.not(id: agent_run.id).first
+        elsif constraint_message.include?("idx_agent_runs_unique_active_pr")
+          AgentRun.where(
+            project_id: agent_run.project_id,
+            source_pull_request_number: agent_run.source_pull_request_number,
+            status: AgentRun::UNFINISHED_STATUSES
+          ).where.not(id: agent_run.id).first
+        end
+
+      # If we couldn't positively identify the conflicting run, bubble up
+      # the exception so unexpected unique violations aren't silently hidden.
       raise unless existing_run
 
       agent_run.retry!
