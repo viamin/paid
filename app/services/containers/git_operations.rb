@@ -672,6 +672,21 @@ module Containers
 
       check = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
       if check.success?
+        # Avoid appending the same Paid co-author block multiple times when
+        # this activity is retried by Temporal. We detect prior installation
+        # by checking for a stable marker string that is part of the script.
+        marker = "Installed by Paid"
+        existing = container_service.execute("cat #{hook_path}", timeout: nil, stream: false)
+
+        if existing.success? && existing[:stdout].to_s.include?(marker)
+          Rails.logger.info(
+            message: "container_git.hook_already_patched",
+            agent_run_id: agent_run.id,
+            hook: hook_name
+          )
+          return
+        end
+
         if sh_compatible_hook?(hook_path)
           append_to_hook(hook_path, script)
         else

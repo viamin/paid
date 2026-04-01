@@ -1173,16 +1173,18 @@ RSpec.describe Containers::GitOperations do
         expect(hook_script).to include("grep -qF --")
       end
 
-      it "appends to an existing commit-msg hook instead of skipping" do
-        hook_exists_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+      it "appends to an existing sh-compatible hook instead of skipping" do
+        exists = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
         allow(container_service).to receive(:execute)
-          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
-          .and_return(hook_exists_result)
-
-        head_result = Containers::Provision::Result.success(stdout: "#!/bin/sh\n", stderr: "", exit_code: 0)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false).and_return(exists)
+        allow(container_service).to receive(:execute)
+          .with("cat .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(Containers::Provision::Result.success(stdout: "#!/bin/sh\necho existing\n", stderr: "", exit_code: 0))
         allow(container_service).to receive(:execute)
           .with("head -1 .git/hooks/commit-msg", timeout: nil, stream: false)
-          .and_return(head_result)
+          .and_return(Containers::Provision::Result.success(stdout: "#!/bin/sh\n", stderr: "", exit_code: 0))
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg", timeout: nil, stream: false).and_return(success_result)
 
         appended_script = nil
         allow(container_service).to receive(:execute)
@@ -1190,9 +1192,6 @@ RSpec.describe Containers::GitOperations do
             appended_script = cmd
             success_result
           }
-        allow(container_service).to receive(:execute)
-          .with("chmod +x .git/hooks/commit-msg", timeout: nil, stream: false)
-          .and_return(success_result)
 
         git_ops.install_co_author_hook
 
@@ -1212,6 +1211,12 @@ RSpec.describe Containers::GitOperations do
           .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(hook_exists_result)
 
+        # The hook file exists but does not contain the Paid marker
+        cat_result = Containers::Provision::Result.success(stdout: "#!/usr/bin/env node\nconsole.log('hi')\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with("cat .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(cat_result)
+
         head_result = Containers::Provision::Result.success(stdout: "#!/usr/bin/env node\n", stderr: "", exit_code: 0)
         allow(container_service).to receive(:execute)
           .with("head -1 .git/hooks/commit-msg", timeout: nil, stream: false)
@@ -1225,7 +1230,39 @@ RSpec.describe Containers::GitOperations do
           hash_including(message: "container_git.non_shell_hook_skipped")
         )
         expect(container_service).not_to have_received(:execute)
-          .with(a_string_matching(/cat >>/), anything, anything)
+          .with(a_string_matching(/cat >>/), timeout: nil, stream: false)
+      end
+    end
+
+    context "when hook was already patched by a previous run" do
+      before do
+        project.update_column(:agent_co_author_trailer, trailer)
+      end
+
+      it "skips installation and logs info" do
+        hook_exists_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+
+        # The hook already contains the Paid marker from a prior run
+        cat_result = Containers::Provision::Result.success(
+          stdout: "#!/bin/sh\n# Installed by Paid — append co-author trailer\nTRAILER='#{trailer}'\n",
+          stderr: "", exit_code: 0
+        )
+        allow(container_service).to receive(:execute)
+          .with("cat .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(cat_result)
+
+        allow(Rails.logger).to receive(:info)
+
+        git_ops.install_co_author_hook
+
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(message: "container_git.hook_already_patched")
+        )
+        expect(container_service).not_to have_received(:execute)
+          .with(a_string_matching(/cat >>/), timeout: nil, stream: false)
       end
     end
 
