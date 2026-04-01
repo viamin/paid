@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.14.0](https://github.com/viamin/paid/compare/v0.13.0...v0.14.0) (2026-04-01)
+
+
+### Features
+
+* **knowledge:** add semantic search settings UI to knowledge base page ([#687](https://github.com/viamin/paid/issues/687)) ([7a9b25d](https://github.com/viamin/paid/commit/7a9b25d6bf506feef17438d70f1b79b8b8447bdb))
+
+
+### Bug Fixes
+
+* 652: Diagnosis: Agent Run [#3576](https://github.com/viamin/paid/issues/3576) — Fix [#637](https://github.com/viamin/paid/issues/637): fix(providers): redesign API key compatibility model to separate CLI tools from API services ([#676](https://github.com/viamin/paid/issues/676)) ([770da28](https://github.com/viamin/paid/commit/770da28c81a48123162efa0f04f7bfc02686d707))
+* 672: Add ability to cancel in-progress agent runs ([#677](https://github.com/viamin/paid/issues/677)) ([25ba7ea](https://github.com/viamin/paid/commit/25ba7ea39209382f3cdeb691196eda70a25911a4))
+* 680: feat(knowledge): wire user OpenAI API key into search embeddings and surface key status in knowledge base UI ([#682](https://github.com/viamin/paid/issues/682)) ([c0f6c1a](https://github.com/viamin/paid/commit/c0f6c1a975a01e27f767dc6ae6382b0680f6cfc6))
+
 ## [0.13.0](https://github.com/viamin/paid/compare/v0.12.0...v0.13.0) (2026-04-01)
 
 
