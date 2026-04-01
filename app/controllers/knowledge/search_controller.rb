@@ -58,15 +58,13 @@ module Knowledge
 
     private
 
-    VALID_SEARCH_MODES = %w[exact semantic hybrid].freeze
-
     def resolve_semantic_search_info
-      normalized_mode = VALID_SEARCH_MODES.include?(params[:mode]) ? params[:mode] : nil
+      normalized_mode = Knowledge::Search::MODES.include?(params[:mode]) ? params[:mode] : nil
 
       if @project.nil?
         @semantic_search_source = :unknown
         @openai_key_record = nil
-        @search_mode = normalized_mode || "hybrid"
+        @search_mode = normalized_mode || Knowledge::Search::DEFAULT_MODE
         return
       end
 
@@ -85,7 +83,7 @@ module Knowledge
       if @semantic_search_source == :none
         @search_mode = "exact"
       else
-        @search_mode = normalized_mode || "hybrid"
+        @search_mode = normalized_mode || Knowledge::Search::DEFAULT_MODE
       end
     end
   end
