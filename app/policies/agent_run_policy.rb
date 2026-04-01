@@ -17,6 +17,10 @@ class AgentRunPolicy < ApplicationPolicy
     run_agent?
   end
 
+  def cancel?
+    run_agent?
+  end
+
   def retry?
     run_agent?
   end

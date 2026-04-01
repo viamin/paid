@@ -88,6 +88,7 @@ Rails.application.routes.draw do
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
     resources :cost_budgets, only: [ :create, :update, :destroy ], controller: "projects/cost_budgets"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
+      post :cancel, on: :member
       post :retry, on: :member
       post :refresh_auth, on: :member
       post :diagnose_error, on: :member

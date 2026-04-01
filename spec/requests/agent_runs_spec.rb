@@ -958,6 +958,75 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/:id/cancel" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        agent_run = create(:agent_run, :running, project: project)
+        post cancel_project_agent_run_path(project, agent_run)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "cancels an active run" do
+        agent_run = create(:agent_run, :running, project: project)
+        allow(AgentRuns::Cancel).to receive(:call)
+
+        post cancel_project_agent_run_path(project, agent_run)
+
+        expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
+        expect(agent_run.reload.status).to eq("cancelled")
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:notice]).to eq("Agent run cancelled.")
+      end
+
+      it "redirects with notice when run is no longer active" do
+        agent_run = create(:agent_run, :failed, project: project)
+
+        post cancel_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:notice]).to eq("Agent run is no longer active.")
+      end
+
+      it "redirects with alert when external cancellation fails" do
+        agent_run = create(:agent_run, :running, project: project)
+        allow(AgentRuns::Cancel).to receive(:call).and_raise(StandardError, "Temporal unavailable")
+
+        post cancel_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:alert]).to eq("Unable to cancel agent run. Please try again.")
+      end
+
+      it "shows finished message when run completes during cancellation" do
+        agent_run = create(:agent_run, :running, project: project)
+        allow(AgentRuns::Cancel).to receive(:call) do
+          # Simulate the run finishing between the external cancel and the lock
+          agent_run.update_columns(status: "completed", completed_at: Time.current)
+        end
+
+        post cancel_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:notice]).to eq("Agent run finished before it could be cancelled.")
+      end
+
+      it "does not allow cancelling runs from other accounts" do
+        other_account = create(:account)
+        other_token = create(:github_token, account: other_account)
+        other_project = create(:project, account: other_account, github_token: other_token)
+        other_run = create(:agent_run, :running, project: other_project)
+
+        post cancel_project_agent_run_path(other_project, other_run)
+
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/:id/retry" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

@@ -45,3 +45,6 @@ application.register("provider-form", ProviderFormController)
 
 import ConfirmDeleteController from "./confirm_delete_controller"
 application.register("confirm-delete", ConfirmDeleteController)
+
+import AgentRunActionsController from "./agent_run_actions_controller"
+application.register("agent-run-actions", AgentRunActionsController)
