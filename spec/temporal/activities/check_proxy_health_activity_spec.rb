@@ -37,7 +37,7 @@ RSpec.describe Activities::CheckProxyHealthActivity do
 
   describe "#execute" do
     context "when proxy is healthy" do
-      it "returns healthy: true immediately" do
+      it "returns healthy: true" do
         stub_health_check(200)
 
         result = activity.execute(agent_run_id: agent_run.id)
@@ -46,34 +46,15 @@ RSpec.describe Activities::CheckProxyHealthActivity do
       end
     end
 
-    context "when proxy is initially unhealthy then recovers" do
-      it "waits and retries until healthy" do
-        allow(activity).to receive(:sleep)
-        allow(activity).to receive(:heartbeat)
-
-        stub_health_check_sequence([ 503, 503, 200 ])
-
-        result = activity.execute(agent_run_id: agent_run.id)
-
-        expect(result[:healthy]).to be true
-        expect(result[:waited_seconds]).to be >= 0
-      end
-    end
-
-    context "when proxy never recovers" do
-      it "raises ProxyUnavailable after MAX_WAIT_SECONDS" do
-        allow(activity).to receive(:sleep)
-        allow(activity).to receive(:heartbeat)
+    context "when proxy is unhealthy" do
+      it "raises a retryable ApplicationError" do
         stub_health_check(503)
-
-        # Stub MAX_WAIT_SECONDS to a small value for test speed
-        stub_const("Activities::CheckProxyHealthActivity::MAX_WAIT_SECONDS", 10)
-        stub_const("Activities::CheckProxyHealthActivity::INITIAL_POLL_INTERVAL", 5)
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError) { |error|
-          expect(error.type).to eq("ProxyUnavailable")
+          expect(error.type).to eq("ProxyUnhealthy")
+          expect(error.non_retryable).to be false
         }
       end
     end
@@ -92,18 +73,14 @@ RSpec.describe Activities::CheckProxyHealthActivity do
     end
 
     context "when connection is refused" do
-      it "treats connection errors as unhealthy" do
-        allow(activity).to receive(:sleep)
-        allow(activity).to receive(:heartbeat)
+      it "raises a retryable ApplicationError" do
         allow(Net::HTTP).to receive(:new).and_raise(Errno::ECONNREFUSED)
-
-        stub_const("Activities::CheckProxyHealthActivity::MAX_WAIT_SECONDS", 5)
-        stub_const("Activities::CheckProxyHealthActivity::INITIAL_POLL_INTERVAL", 5)
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError) { |error|
-          expect(error.type).to eq("ProxyUnavailable")
+          expect(error.type).to eq("ProxyUnhealthy")
+          expect(error.non_retryable).to be false
         }
       end
     end
@@ -113,6 +90,36 @@ RSpec.describe Activities::CheckProxyHealthActivity do
         expect {
           activity.execute(agent_run_id: -1)
         }.to raise_error(ActiveRecord::RecordNotFound)
+      end
+    end
+
+    context "when proxy URL is invalid" do
+      before do
+        stub_const("ENV", ENV.to_h.merge("PAID_PROXY_URL" => "not a valid url"))
+      end
+
+      it "raises a non-retryable ProxyConfigurationError" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("ProxyConfigurationError")
+          expect(error.non_retryable).to be true
+        }
+      end
+    end
+
+    context "when proxy URL has an unsupported scheme" do
+      before do
+        stub_const("ENV", ENV.to_h.merge("PAID_PROXY_URL" => "ftp://localhost:3000"))
+      end
+
+      it "raises a non-retryable ProxyConfigurationError" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("ProxyConfigurationError")
+          expect(error.non_retryable).to be true
+        }
       end
     end
   end
@@ -127,15 +134,5 @@ RSpec.describe Activities::CheckProxyHealthActivity do
     allow(http).to receive(:read_timeout=)
     allow(http).to receive(:use_ssl=)
     allow(http).to receive(:get).and_return(response)
-  end
-
-  def stub_health_check_sequence(status_codes)
-    responses = status_codes.map { |code| instance_double(Net::HTTPResponse, code: code.to_s) }
-    http = instance_double(Net::HTTP)
-    allow(Net::HTTP).to receive(:new).and_return(http)
-    allow(http).to receive(:open_timeout=)
-    allow(http).to receive(:read_timeout=)
-    allow(http).to receive(:use_ssl=)
-    allow(http).to receive(:get).and_return(*responses)
   end
 end
