@@ -9,7 +9,7 @@ This file provides guidance to AI coding assistants when working with code in th
 
 Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI agents to build software. It watches GitHub repos for labeled issues, plans implementations via LLM, and runs agents in isolated Docker containers to create pull requests.
 
-**Status**: Phase 1 (Foundation) complete. The MVP is working end-to-end: users can add GitHub projects, label issues, and agents create PRs in isolated Docker containers. Phase 2 (Intelligence) is next.
+**Status**: Phase 2 (Intelligence) complete. The system has prompt versioning, A/B testing, model meta-agent, cost tracking, quality metrics, semantic code search, and live dashboards. Phase 3 (Scale) is next.
 
 ## Git Workflow
 

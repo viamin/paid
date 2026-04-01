@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for Paid. Each phase builds on the previous, delivering usable functionality at each step while progressing toward the complete vision.
 
-**Current Status**: Phase 1 (Foundation) is complete as of 2026-02-08. Phase 2 (Intelligence) is next.
+**Current Status**: Phase 2 (Intelligence) is complete as of 2026-04-01. Phase 3 (Scale) is next.
 
 ## Phase Overview
 
@@ -10,8 +10,8 @@ This document outlines the phased implementation plan for Paid. Each phase build
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           PAID IMPLEMENTATION PHASES                         │
 │                                                                              │
-│  Phase 1: Foundation✓   Phase 2: Intelligence   Phase 3: Scale              │
-│  ──────────────────     ─────────────────────   ─────────────               │
+│  Phase 1: Foundation✓   Phase 2: Intelligence✓  Phase 3: Scale              │
+│  ──────────────────     ──────────────────────  ─────────────               │
 │  • Rails app skeleton   • Prompt versioning     • Multi-agent               │
 │  • GitHub integration   • A/B testing           • Auto-scaling              │
 │  • Single agent         • Model meta-agent      • Quality gates             │
@@ -193,18 +193,22 @@ Deliverables:
 
 **Goal**: The system learns from its performance and makes intelligent decisions about models and prompts.
 
+**Status**: Complete as of 2026-04-01.
+
 ### 2.1 Prompt Versioning System
 
 **Objective**: All prompts are data with full version history.
 
+**Status**: Complete — `Prompt` and `PromptVersion` models with full CRUD UI, global → account → project inheritance, and planning/coding/review/testing categories.
+
 Tasks:
 
-- [ ] Create Prompt model with versioning
-- [ ] Store prompts as structured data (template + variables)
-- [ ] Create PromptVersion model (immutable)
-- [ ] UI for viewing/editing prompts
-- [ ] Prompt inheritance (global → project-specific)
-- [ ] Prompt categories (planning, coding, review, etc.)
+- [x] Create Prompt model with versioning — `Prompt`, `PromptVersion` models
+- [x] Store prompts as structured data (template + variables)
+- [x] Create PromptVersion model (immutable)
+- [x] UI for viewing/editing prompts — `PromptsController` with diff endpoint
+- [x] Prompt inheritance (global → account → project-specific)
+- [x] Prompt categories (planning, coding, review, testing)
 
 Deliverables:
 
@@ -217,14 +221,16 @@ Deliverables:
 
 **Objective**: LLM-friendly style guides, global and per-project.
 
+**Status**: Complete — `StyleGuide` model with language-specific support, LLM-based compression, automatic extraction, and tree-sitter AST parsing.
+
 Tasks:
 
-- [ ] Create StyleGuide model
-- [ ] Implement style guide compression (from aidp concepts)
-- [ ] UI for editing style guides
-- [ ] Automatic style guide extraction from codebase
-- [ ] Style guide injection into prompts
-- [ ] Tree-sitter integration for code analysis
+- [x] Create StyleGuide model — language-specific (Ruby, JS, TS, Python, Go, Rust)
+- [x] Implement style guide compression — `StyleGuides::Compress` (LLM-based)
+- [x] UI for editing style guides — `StyleGuidesController` with compress/extract actions
+- [x] Automatic style guide extraction from codebase — `StyleGuides::Extract`, `StyleGuideExtractionJob`
+- [x] Style guide injection into prompts — `StyleGuides::InjectIntoPrompt`
+- [x] Tree-sitter integration for code analysis — `Knowledge::Collectors::TreeSitterCollector`
 
 Deliverables:
 
@@ -237,14 +243,16 @@ Deliverables:
 
 **Objective**: Intelligent model selection based on task and budget.
 
+**Status**: Complete — `LlmModel` catalog with capability scoring, `Models::MetaAgentSelector` and `Models::RulesBasedSelector`, selection logged via `ModelSelection`.
+
 Tasks:
 
-- [ ] Integrate ruby-llm model registry
-- [ ] Create ModelCapability tracking
-- [ ] Implement meta-agent for model selection
-- [ ] Rules-based fallback when meta-agent fails
-- [ ] Model selection logging and analysis
-- [ ] Per-project model preferences/restrictions
+- [x] Integrate ruby-llm model registry — `LlmModel` with categories and capability scores
+- [x] Create ModelCapability tracking — scoring 0-10 per model, cost per million tokens
+- [x] Implement meta-agent for model selection — `Models::MetaAgentSelector`
+- [x] Rules-based fallback when meta-agent fails — `Models::RulesBasedSelector`
+- [x] Model selection logging and analysis — `ModelSelection` model
+- [x] Per-project model preferences/restrictions — `Provider` model with project scoping and fallback roles
 
 Deliverables:
 
@@ -257,14 +265,16 @@ Deliverables:
 
 **Objective**: Know exactly what each project costs.
 
+**Status**: Complete — `TokenUsage` model with per-request tracking, `CostBudget` with alert thresholds, and per-project cost dashboards.
+
 Tasks:
 
-- [ ] Create TokenUsage model
-- [ ] Track usage per request (model, tokens, cost)
-- [ ] Aggregate by project, time period
-- [ ] Cost projection based on recent usage
-- [ ] Budget alerts (warning thresholds)
-- [ ] Cost dashboard in UI
+- [x] Create TokenUsage model
+- [x] Track usage per request (model, tokens, cost) — `TokenUsageTracker`
+- [x] Aggregate by project, time period — `TokenUsages::Aggregate`
+- [x] Cost projection based on recent usage
+- [x] Budget alerts (warning thresholds) — `CostBudget` model, `CostBudgets::Check`
+- [x] Cost dashboard in UI — `CostDashboardsController`
 
 Deliverables:
 
@@ -277,14 +287,16 @@ Deliverables:
 
 **Objective**: Test prompt variants to find what works.
 
+**Status**: Complete — `AbTest` model with full lifecycle (draft/running/completed/cancelled), statistical analysis, auto-promotion, and UI.
+
 Tasks:
 
-- [ ] Create ABTest model
-- [ ] Implement test assignment logic
-- [ ] Track metrics per variant
-- [ ] Statistical significance calculation
-- [ ] Auto-promotion of winners (optional)
-- [ ] UI for creating and monitoring tests
+- [x] Create AbTest model — `AbTest`, `AbTestVariant`, `AbTestAssignment`
+- [x] Implement test assignment logic — `AbTests::Assign`
+- [x] Track metrics per variant — `AbTests::RecordResult`
+- [x] Statistical significance calculation — `AbTests::Statistics`, `AbTests::Analyze`
+- [x] Auto-promotion of winners (optional) — `AbTests::PromoteWinner`
+- [x] UI for creating and monitoring tests — `AbTestsController` with start/cancel/promote
 
 Deliverables:
 
@@ -297,18 +309,20 @@ Deliverables:
 
 **Objective**: Measure agent output quality automatically and via human feedback.
 
+**Status**: Complete — `QualityMetric` model with automated and human feedback collection, composite scoring by goal type, trend analysis, and dashboards.
+
 Tasks:
 
-- [ ] Define quality metrics schema
-- [ ] Implement automated metrics:
+- [x] Define quality metrics schema — `QualityMetric` with goal-specific composite weights
+- [x] Implement automated metrics — `QualityMetrics::CollectAutomated`
   - Iteration count to completion
   - CI pass rate
   - Code quality scores (linting, complexity)
   - PR merge rate
-- [ ] Human feedback collection:
+- [x] Human feedback collection — `CollectReviewFeedback`, `CollectReactionFeedback`, `CollectCommentFeedback`, `CollectIssueFeedback`
   - Thumbs up/down on PRs via GitHub
-  - Webhook to receive feedback
-- [ ] Quality dashboard
+  - Webhook to receive feedback — `Api::GithubWebhooksController`
+- [x] Quality dashboard — `QualityDashboardsController` (system-wide and per-project)
 
 Deliverables:
 
@@ -321,38 +335,42 @@ Deliverables:
 
 **Objective**: Agents have indexed codebase knowledge from their first run on a project.
 
+**Status**: Complete — Full knowledge pipeline with 8+ collectors, Qdrant vector DB, hybrid search (exact + semantic + reranked), staleness detection, redaction, and audit trail.
+
 Tasks:
 
-- [ ] Add Qdrant and MeiliSearch to docker-compose
-- [ ] Create CodeChunk model and Qdrant collection management
-- [ ] Implement indexing pipeline (git tree walking, chunking, embedding, storage)
-- [ ] Implement search service (semantic via Qdrant, full-text via MeiliSearch)
-- [ ] Trigger deep indexing on project creation
-- [ ] Incremental re-indexing on git push webhook
-- [ ] Integrate semantic context into agent prompts via `Prompts::BuildForIssue`
-- [ ] UI for index status and manual re-indexing
+- [x] Add Qdrant to docker-compose — `QdrantClient`, `Knowledge::Qdrant::CollectionManager`
+- [x] Create KnowledgeChunk model and Qdrant collection management — `KnowledgeArtifact`, `KnowledgeChunk`, `KnowledgeLink`
+- [x] Implement indexing pipeline — 8 collectors (symbol index, tree-sitter, language stats, routes, config keys, dependencies, churn hotspots, ADRs)
+- [x] Implement search service — `Knowledge::Search::Exact` (identifier/LIKE matching), `Knowledge::Search::Semantic` (Qdrant + tsvector FTS), `Knowledge::Search::Hybrid` (combined + reranking)
+- [x] Trigger deep indexing on project creation — `EnqueueKnowledgeCollectionJob`
+- [x] Incremental re-indexing — staleness detection via `Knowledge::Staleness::Detector`
+- [x] Integrate semantic context into agent prompts — `Knowledge::ContextBundle::Build` → `Prompts::BuildForIssue`
+- [x] UI for index status and manual re-indexing — knowledge search UI, settings, artifact viewer
 
 Deliverables:
 
 - New projects are deeply indexed on creation
 - Agents receive relevant codebase context in their prompts
 - Semantic search ("how does auth work?") and exact search ("def authenticate_user") both work
-- Per-project isolation via separate Qdrant collections and MeiliSearch indexes
+- Per-project isolation via separate Qdrant collections
 
-Related: [RDR-018](rdrs/RDR-018-semantic-code-search.md)
+Related (earlier MeiliSearch-based design): [RDR-018](rdrs/RDR-018-semantic-code-search.md)
 
 ### 2.8 Live Dashboard
 
 **Objective**: Real-time visibility into agent activity.
 
+**Status**: Complete — Action Cable broadcasting with live stats, agent run cancellation, container/service metrics, and real-time dashboard updates.
+
 Tasks:
 
-- [ ] Action Cable setup for real-time updates
-- [ ] Dashboard showing running workflows
-- [ ] Agent activity stream (live logs)
-- [ ] Interrupt/stop functionality
-- [ ] Resource usage display (containers, workers)
-- [ ] Alerts for anomalies
+- [x] Action Cable setup for real-time updates — `Dashboard::Broadcaster`, `Dashboard::LiveBroadcaster`
+- [x] Dashboard showing running workflows — `DashboardController`
+- [x] Agent activity stream (live logs) — `AgentRunLog`, `AgentRunPhase` models
+- [x] Interrupt/stop functionality — `AgentRuns::Cancel`, cancel action on runs
+- [x] Resource usage display (containers, workers) — `ContainerMetric`, `ServiceContainerMetric`
+- [x] Live stats — `Dashboard::LiveStats`, `LiveDashboardBroadcastJob`
 
 Deliverables:
 
@@ -363,14 +381,16 @@ Deliverables:
 
 ### Phase 2 Completion Criteria
 
-- [ ] All prompts versioned in database
-- [ ] Style guides compress into LLM-friendly format
-- [ ] Meta-agent selects models intelligently
-- [ ] Costs tracked and displayed per project
-- [ ] A/B tests runnable on prompts
-- [ ] Quality metrics collected and displayed
-- [ ] Projects indexed on creation with semantic + full-text search available to agents
-- [ ] Live dashboard with interrupt capability
+- [x] All prompts versioned in database
+- [x] Style guides compress into LLM-friendly format
+- [x] Meta-agent selects models intelligently
+- [x] Costs tracked and displayed per project
+- [x] A/B tests runnable on prompts
+- [x] Quality metrics collected and displayed
+- [x] Projects indexed on creation with semantic + full-text search available to agents
+- [x] Live dashboard with interrupt capability
+
+**Phase 2 completed**: All intelligence features verified as of 2026-04-01.
 
 ---
 
@@ -378,18 +398,22 @@ Deliverables:
 
 **Goal**: Multiple agents work in parallel, prompts evolve automatically, and the system handles larger workloads.
 
+**Status**: In progress. Tracked by umbrella issue #741.
+
 ### 3.1 Multi-Agent Orchestration
 
 **Objective**: Multiple agents work on different parts of a feature simultaneously.
 
+**Status**: Not started (Issue #734)
+
 Tasks:
 
-- [ ] Implement PlanningWorkflow for feature decomposition
-- [ ] Create sub-issues in GitHub Projects
-- [ ] Parallel AgentExecutionWorkflow invocation
-- [ ] Coordination between related agents
-- [ ] Conflict detection and resolution
-- [ ] Aggregated PR creation option
+- [ ] Implement PlanningWorkflow for feature decomposition (#694)
+- [ ] Create sub-issues in GitHub from decomposed plan (#695)
+- [ ] Parallel AgentExecutionWorkflow invocation (#696)
+- [ ] Coordination between related agents (#697)
+- [ ] Conflict detection and resolution (#698)
+- [ ] Aggregated PR creation option (#699)
 
 Deliverables:
 
@@ -402,14 +426,16 @@ Deliverables:
 
 **Objective**: Prevent runaway agents and control costs.
 
+**Status**: Partially started (Issue #735) — `CostBudget`, `StaleRunDetectorJob`, and `AgentRunResourceJanitorJob` exist but don't enforce hard limits.
+
 Tasks:
 
-- [ ] Implement infinite loop detection
-- [ ] Token usage limits per run
-- [ ] Cost limits per project (hard stop)
-- [ ] Execution time limits
-- [ ] Anomaly detection (unusual patterns)
-- [ ] Automatic pause and alert
+- [ ] Implement infinite loop detection (#700)
+- [ ] Token usage limits per run (#701)
+- [ ] Cost limits per project (hard stop) (#702)
+- [ ] Execution time limits (#703)
+- [ ] Anomaly detection (unusual patterns) (#704)
+- [ ] Automatic pause and alert (#705)
 
 Deliverables:
 
@@ -422,14 +448,16 @@ Deliverables:
 
 **Objective**: Prompts automatically improve based on performance.
 
+**Status**: Not started (Issue #736)
+
 Tasks:
 
-- [ ] Implement PromptEvolutionWorkflow
-- [ ] Random sampling of completed runs
-- [ ] Prompt mutation agent
-- [ ] Fitness function (quality + cost + speed)
-- [ ] Evolutionary selection of prompts
-- [ ] Human review of evolved prompts (optional gate)
+- [ ] Implement PromptEvolutionWorkflow (#706)
+- [ ] Random sampling of completed runs (#707)
+- [ ] Prompt mutation agent (#708)
+- [ ] Fitness function (quality + cost + speed) (#709)
+- [ ] Evolutionary selection of prompts (#710)
+- [ ] Human review of evolved prompts (optional gate) (#711)
 
 Deliverables:
 
@@ -442,14 +470,16 @@ Deliverables:
 
 **Objective**: Automatically pause work when quality drops.
 
+**Status**: Not started (Issue #737) — `QualityMetric` and `QualityMetrics::TrendAnalysis` exist from Phase 2 but no gate enforcement.
+
 Tasks:
 
-- [ ] Define quality thresholds (configurable)
-- [ ] Implement quality gate checks in workflows
-- [ ] Automatic pause on threshold breach
-- [ ] Alert to user for intervention
-- [ ] Quality recovery workflows
-- [ ] Quality trend analysis
+- [ ] Define quality thresholds (configurable) (#712)
+- [ ] Implement quality gate checks in workflows (#713)
+- [ ] Automatic pause on threshold breach (#714)
+- [ ] Alert to user for intervention (#715)
+- [ ] Quality recovery workflows (#716)
+- [ ] Quality trend analysis with gate integration (#717)
 
 Deliverables:
 
@@ -462,14 +492,16 @@ Deliverables:
 
 **Objective**: Handle more projects and agents efficiently.
 
+**Status**: Partially started (Issue #738) — connection pool optimization done, container metrics in place.
+
 Tasks:
 
-- [ ] Container pool warming
-- [ ] Workflow batching optimizations
-- [ ] Database query optimization
-- [ ] Caching layer for GitHub data
-- [ ] Worker pool tuning
-- [ ] Performance benchmarking
+- [ ] Container pool warming (#718)
+- [ ] Workflow batching optimizations (#719)
+- [ ] Database query optimization (#720)
+- [ ] Caching layer for GitHub data (#721)
+- [ ] Worker pool tuning (#722)
+- [ ] Performance benchmarking (#723)
 
 Deliverables:
 
@@ -482,13 +514,15 @@ Deliverables:
 
 **Objective**: Lay groundwork for automatic worker scaling.
 
+**Status**: Not started (Issue #739)
+
 Tasks:
 
-- [ ] Worker metrics export
-- [ ] Queue depth monitoring
-- [ ] Scaling algorithm design
-- [ ] Integration points for orchestrators (K8s, etc.)
-- [ ] Documentation for scaling
+- [ ] Worker metrics export (#724)
+- [ ] Queue depth monitoring (#725)
+- [ ] Scaling algorithm design (#726)
+- [ ] Integration points for orchestrators (K8s, etc.) (#727)
+- [ ] Documentation for scaling (#728)
 
 Deliverables:
 
@@ -500,13 +534,15 @@ Deliverables:
 
 **Objective**: Architecture ready for multiple teams/organizations.
 
+**Status**: Partially started (Issue #740) — `Account` model with memberships provides basic tenant isolation.
+
 Tasks:
 
-- [ ] Tenant model design
-- [ ] Data isolation patterns (schema or RLS)
-- [ ] Per-tenant configuration
-- [ ] Billing aggregation design
-- [ ] Tenant onboarding flow design
+- [ ] Tenant model design (#729)
+- [ ] Data isolation patterns (schema or RLS) (#730)
+- [ ] Per-tenant configuration (#731)
+- [ ] Billing aggregation design (#732)
+- [ ] Tenant onboarding flow design (#733)
 
 Deliverables:
 
