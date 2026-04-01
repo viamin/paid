@@ -20,6 +20,7 @@ class WorktreeService
   class WorktreeError < Error; end
 
   DEFAULT_WORKSPACE_ROOT = "/var/paid/workspaces"
+  FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
 
   def self.workspace_root
     Rails.application.config.x.workspace_root || DEFAULT_WORKSPACE_ROOT
@@ -255,7 +256,7 @@ class WorktreeService
 
     # Bare clones don't configure a fetch refspec, so `git fetch` won't
     # create origin/* refs. Add it so fetch_latest and current_commit_sha work.
-    run_git("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*", chdir: project_repo_path)
+    run_git("config", "remote.origin.fetch", FETCH_REFSPEC, chdir: project_repo_path)
 
     project.github_token.touch_last_used!
   rescue Error
@@ -279,7 +280,7 @@ class WorktreeService
   def ensure_fetch_refspec
     return if @fetch_refspec_verified
 
-    desired_refspec = "+refs/heads/*:refs/remotes/origin/*"
+    desired_refspec = FETCH_REFSPEC
     raw_output = run_git("config", "--get-all", "remote.origin.fetch", chdir: project_repo_path, raise_on_error: false)
     existing = raw_output.lines.map(&:strip).reject(&:empty?)
 
