@@ -685,11 +685,18 @@ module Containers
     def append_to_hook(hook_path, script)
       # Strip the shebang — the existing hook already has one.
       body = script.sub(/\A#!\/bin\/sh\n/, "")
+      # Prefix with a newline to avoid concatenation with the last line of
+      # the existing hook if it doesn't end with a trailing newline.
       append_result = container_service.execute(
-        "cat >> #{hook_path} << 'HOOKEOF'\n#{body}\nHOOKEOF",
+        "cat >> #{hook_path} << 'HOOKEOF'\n\n#{body}\nHOOKEOF",
         timeout: nil, stream: false
       )
       raise Error, "Failed to append to #{hook_name_from(hook_path)} hook: #{append_result.error}" if append_result.failure?
+
+      # Ensure the hook is executable — a non-executable existing hook would
+      # be silently skipped by git even after appending our content.
+      chmod_result = container_service.execute("chmod +x #{hook_path}", timeout: nil, stream: false)
+      raise Error, "Failed to chmod #{hook_name_from(hook_path)} hook: #{chmod_result.error}" if chmod_result.failure?
     end
 
     def hook_name_from(hook_path)
@@ -741,13 +748,17 @@ module Containers
     end
 
     def commit_msg_script(trailer)
+      # Defense-in-depth: strip newlines to prevent heredoc delimiter
+      # injection when the script is written via write_hook_file/append_to_hook.
+      # Model validation also enforces single-line, but we sanitize here as well.
+      sanitized = trailer.gsub(/[\r\n]/, " ").strip
       # The trailer is embedded as a literal string in the heredoc.
       # grep -qF performs a fixed-string (not regex) search, so no
       # escaping of special characters is needed.
       <<~SHELL
         #!/bin/sh
         # Installed by Paid — append co-author trailer to commit messages
-        TRAILER='#{trailer.gsub("'", "'\\\\''")}'
+        TRAILER='#{sanitized.gsub("'", "'\\\\''")}'
         if ! grep -qF "$TRAILER" "$1"; then
           printf '\\n\\n%s\\n' "$TRAILER" >> "$1"
         fi

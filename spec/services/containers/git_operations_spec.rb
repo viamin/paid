@@ -1185,6 +1185,9 @@ RSpec.describe Containers::GitOperations do
             appended_script = cmd
             success_result
           }
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
 
         git_ops.install_co_author_hook
 
@@ -1200,7 +1203,6 @@ RSpec.describe Containers::GitOperations do
 
       it "does not install a commit-msg hook" do
         expect(container_service).not_to receive(:execute)
-          .with(a_string_matching(/commit-msg/), anything)
 
         git_ops.install_co_author_hook
       end
@@ -1209,7 +1211,6 @@ RSpec.describe Containers::GitOperations do
     context "when project has nil agent_co_author_trailer" do
       it "does not install a commit-msg hook" do
         expect(container_service).not_to receive(:execute)
-          .with(a_string_matching(/commit-msg/), anything)
 
         git_ops.install_co_author_hook
       end

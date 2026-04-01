@@ -101,6 +101,7 @@ class Project < ApplicationRecord
   validates :security_severity_threshold, inclusion: { in: Issue::SEVERITY_ORDER }
   validates :code_scanning_interval_hours, numericality: { greater_than_or_equal_to: 24 }
   validates :knowledge_status, inclusion: { in: KNOWLEDGE_STATUSES }
+  validate :agent_co_author_trailer_is_single_line
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
@@ -511,6 +512,14 @@ class Project < ApplicationRecord
     return if has_any_condition
 
     errors.add(:review_settings, "#{method_name} must have at least one termination condition configured")
+  end
+
+  def agent_co_author_trailer_is_single_line
+    return if agent_co_author_trailer.blank?
+
+    if agent_co_author_trailer.include?("\n")
+      errors.add(:agent_co_author_trailer, "must be a single line")
+    end
   end
 
   def allowed_github_usernames_not_empty
