@@ -89,6 +89,8 @@ Rails.application.routes.draw do
       post :bump_priority, on: :collection
       post :toggle_auto_continue_pause, on: :collection
     end
+    # TODO(#664): Add account-level and user-level pre_commit_requirements routes
+    # once corresponding controllers are implemented.
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"

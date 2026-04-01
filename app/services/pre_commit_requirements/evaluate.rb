@@ -5,6 +5,9 @@ module PreCommitRequirements
   # checks and collecting results. Supports auto-fix mode where a failing check
   # can be retried after running its fix command.
   #
+  # TODO(#664): Wire this into the agent run workflow so requirements are
+  # enforced before commits/PRs are created.
+  #
   # @example
   #   result = PreCommitRequirements::Evaluate.call(agent_run: agent_run)
   #   result[:passed]     # => true/false
@@ -24,6 +27,9 @@ module PreCommitRequirements
     end
 
     def call
+      # TODO(#664): Pass the initiating user explicitly once AgentRun tracks
+      # who triggered the run. Currently falls back to project.effective_owner,
+      # which means user-level requirements bind to the project owner.
       requirements = PreCommitRequirement.resolve(
         project: agent_run.project,
         user: agent_run.project.effective_owner

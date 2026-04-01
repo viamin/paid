@@ -74,6 +74,17 @@ RSpec.describe PreCommitRequirement do
       req = build(:pre_commit_requirement, :with_auto_fix)
       expect(req).to be_valid
     end
+
+    it "rejects both project and user being set" do
+      account = create(:account)
+      project = create(:project, account: account)
+      user = create(:user, account: account)
+
+      req = build(:pre_commit_requirement, account: account, project: project, user: user)
+      req.valid?
+
+      expect(req.errors[:base]).to include("cannot be scoped to both a project and a user")
+    end
   end
 
   describe "scopes" do
@@ -172,6 +183,11 @@ RSpec.describe PreCommitRequirement do
   describe "#blocking?" do
     it "returns true for block failure behavior" do
       req = build(:pre_commit_requirement, failure_behavior: "block")
+      expect(req).to be_blocking
+    end
+
+    it "returns true for auto_fix failure behavior" do
+      req = build(:pre_commit_requirement, :with_auto_fix)
       expect(req).to be_blocking
     end
 

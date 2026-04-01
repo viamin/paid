@@ -11,11 +11,17 @@ class PreCommitRequirement < ApplicationRecord
   before_validation :set_account_from_project, if: -> { project.present? && account.nil? }
 
   validates :name, presence: true, length: { maximum: 255 }
-  validates :name, uniqueness: { scope: [ :account_id, :project_id, :user_id ] }
+  validates :name, uniqueness: { scope: [ :account_id ] },
+    if: -> { project_id.nil? && user_id.nil? }
+  validates :name, uniqueness: { scope: [ :project_id ] },
+    if: -> { project_id.present? }
+  validates :name, uniqueness: { scope: [ :user_id ] },
+    if: -> { user_id.present? && project_id.nil? }
   validates :command, presence: true
   validates :check_type, presence: true, inclusion: { in: CHECK_TYPES }
   validates :failure_behavior, presence: true, inclusion: { in: FAILURE_BEHAVIORS }
   validates :position, presence: true, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validate :mutually_exclusive_scope
   validate :project_belongs_to_account, if: -> { project.present? && account.present? }
   validate :user_belongs_to_account, if: -> { user.present? && account.present? }
   validate :fix_command_requires_auto_fix
@@ -43,7 +49,7 @@ class PreCommitRequirement < ApplicationRecord
   end
 
   def blocking?
-    failure_behavior == "block"
+    failure_behavior != "warn"
   end
 
   # Resolves the effective pre-commit requirements for a given project and user,
@@ -90,6 +96,12 @@ class PreCommitRequirement < ApplicationRecord
     return if user.account_id == account_id
 
     errors.add(:user, "must belong to the same account")
+  end
+
+  def mutually_exclusive_scope
+    return unless project_id.present? && user_id.present?
+
+    errors.add(:base, "cannot be scoped to both a project and a user")
   end
 
   def fix_command_requires_auto_fix

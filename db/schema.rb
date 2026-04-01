@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_01_124101) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_01_135652) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -621,6 +621,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_124101) do
     t.index ["user_id", "name"], name: "idx_pre_commit_requirements_user_name_unique", unique: true, where: "((user_id IS NOT NULL) AND (project_id IS NULL))"
     t.index ["user_id", "position"], name: "idx_pre_commit_requirements_user_position", where: "(user_id IS NOT NULL)"
     t.index ["user_id"], name: "index_pre_commit_requirements_on_user_id"
+    t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
   end
 
   create_table "project_mcp_servers", force: :cascade do |t|

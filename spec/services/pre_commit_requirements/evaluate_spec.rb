@@ -162,6 +162,13 @@ RSpec.describe PreCommitRequirements::Evaluate do
         expect(check[:output]).to include("exhausted")
         expect(check[:auto_fixed]).to be false
       end
+
+      it "blocks the overall evaluation" do
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:passed]).to be false
+        expect(result[:blocking]).to be true
+      end
     end
 
     context "with auto-fix and no container" do
