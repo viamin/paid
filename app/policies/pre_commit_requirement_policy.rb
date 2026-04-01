@@ -10,18 +10,22 @@ class PreCommitRequirementPolicy < ApplicationPolicy
   end
 
   def create?
-    has_any_account_role?(:owner, :admin)
+    owns_user_level_record? || has_any_account_role?(:owner, :admin)
   end
 
   def update?
-    has_any_account_role?(:owner, :admin)
+    owns_user_level_record? || has_any_account_role?(:owner, :admin)
   end
 
   def destroy?
-    has_any_account_role?(:owner, :admin)
+    owns_user_level_record? || has_any_account_role?(:owner, :admin)
   end
 
   private
+
+  def owns_user_level_record?
+    record.user_level? && record.user_id == user.id
+  end
 
   def account_for_record
     record.account

@@ -5,8 +5,8 @@ module PreCommitRequirements
   # checks and collecting results. Supports auto-fix mode where a failing check
   # can be retried after running its fix command.
   #
-  # TODO(#664): Wire this into the agent run workflow so requirements are
-  # enforced before commits/PRs are created.
+  # Called from RunAgentActivity after the agent commits changes and before
+  # the branch is pushed. Blocking failures prevent the PR from being created.
   #
   # @example
   #   result = PreCommitRequirements::Evaluate.call(agent_run: agent_run)

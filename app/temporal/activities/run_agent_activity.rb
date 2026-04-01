@@ -152,6 +152,21 @@ module Activities
             commit_uncommitted_changes(agent_run)
             has_changes = check_for_changes(agent_run, pre_agent_sha)
 
+            if has_changes
+              pre_commit_result = evaluate_pre_commit_requirements(agent_run)
+              if pre_commit_result[:blocking]
+                agent_run.log!("system", "Blocked by failing pre-commit requirements")
+                return {
+                  agent_run_id: agent_run_id,
+                  success: false,
+                  has_changes: has_changes,
+                  output_present: provider_result.fetch(:output_present),
+                  final_provider: attempt_label,
+                  error: "pre_commit_requirements_failed"
+                }
+              end
+            end
+
             if !has_changes && !provider_result.fetch(:output_present)
               agent_run.log!("system", "Provider completed with no output and no changes")
             end
@@ -666,6 +681,19 @@ module Activities
         agent_run_id: agent_run.id,
         error: e.message
       )
+    end
+
+    # Evaluates pre-commit requirements for the agent run.
+    # Returns a hash with :passed, :results, and :blocking keys.
+    def evaluate_pre_commit_requirements(agent_run)
+      PreCommitRequirements::Evaluate.call(agent_run: agent_run)
+    rescue => e
+      logger.warn(
+        message: "agent_execution.pre_commit_evaluation_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+      { passed: true, results: [], blocking: false }
     end
 
     def check_for_changes(agent_run, pre_agent_sha)

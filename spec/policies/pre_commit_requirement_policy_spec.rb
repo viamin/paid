@@ -55,6 +55,33 @@ RSpec.describe PreCommitRequirementPolicy do
     it { is_expected.not_to be_destroy }
   end
 
+  context "when user is a member with a user-level requirement they own" do
+    before { create(:user, account: account) } # absorb owner role
+
+    let(:user) { create(:user, :member, account: account) }
+    let(:pre_commit_requirement) { create(:pre_commit_requirement, account: account, user: user) }
+
+    it { is_expected.to be_index }
+    it { is_expected.to be_show }
+    it { is_expected.to be_create }
+    it { is_expected.to be_update }
+    it { is_expected.to be_destroy }
+  end
+
+  context "when user is a member with a user-level requirement owned by another user" do
+    before { create(:user, account: account) } # absorb owner role
+
+    let(:user) { create(:user, :member, account: account) }
+    let(:other_user) { create(:user, :member, account: account) }
+    let(:pre_commit_requirement) { create(:pre_commit_requirement, account: account, user: other_user) }
+
+    it { is_expected.to be_index }
+    it { is_expected.to be_show }
+    it { is_expected.not_to be_create }
+    it { is_expected.not_to be_update }
+    it { is_expected.not_to be_destroy }
+  end
+
   context "when user belongs to a different account" do
     let(:other_account) { create(:account) }
     let(:user) { create(:user, :owner, account: other_account) }

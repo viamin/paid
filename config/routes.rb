@@ -38,6 +38,12 @@ Rails.application.routes.draw do
 
   # User settings (singleton resource — one per user)
   resource :user_settings, only: [ :edit, :update ]
+
+  # Account-level pre-commit requirements (defaults inherited by all projects)
+  resources :account_pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ]
+
+  # User-level pre-commit requirements (per-user overrides)
+  resources :user_pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ]
   resources :providers, except: :show do
     patch :settings, on: :collection
     post :test_agent, on: :member
@@ -89,8 +95,6 @@ Rails.application.routes.draw do
       post :bump_priority, on: :collection
       post :toggle_auto_continue_pause, on: :collection
     end
-    # TODO(#664): Add account-level and user-level pre_commit_requirements routes
-    # once corresponding controllers are implemented.
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
