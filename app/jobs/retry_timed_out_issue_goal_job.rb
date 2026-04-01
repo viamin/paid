@@ -50,7 +50,12 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
           custom_prompt: locked_run.custom_prompt,
           source_pull_request_number: locked_run.source_pull_request_number,
           goal: locked_run.goal,
-          trigger_type: "automatic",
+          # Use "manual" trigger_type so retries get the same scheduling
+          # priority as user-initiated runs. "automatic" with no source PR
+          # is treated as auto-pick by ProcessRunQueueJob, which subjects
+          # the run to reserved-slot throttling and lowest queue priority —
+          # inappropriate for retrying already-approved work.
+          trigger_type: "manual",
           status: "queued"
         )
         locked_run.retry!
