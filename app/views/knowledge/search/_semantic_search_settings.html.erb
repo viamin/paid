@@ -10,8 +10,10 @@
           <% when :user_key %>
             <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-green-500"></span>
             <span class="ml-2 text-sm text-gray-700">
-              Using your API key: <span class="font-medium"><%= @openai_key_record.name %></span>
-              <code class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-500"><%= @openai_key_record.masked_api_key %></code>
+              Using an API key: <span class="font-medium"><%= @openai_key_record.name %></span>
+              <% if @openai_key_record.user_id == current_user.id %>
+                <code class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-500"><%= @openai_key_record.masked_api_key %></code>
+              <% end %>
             </span>
           <% when :platform_env %>
             <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-blue-500"></span>
