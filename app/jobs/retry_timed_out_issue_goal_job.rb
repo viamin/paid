@@ -43,7 +43,9 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
         trigger_type: "automatic",
         status: "queued"
       )
-    rescue ActiveRecord::RecordNotUnique
+    rescue ActiveRecord::RecordNotUnique => e
+      raise unless (e.cause&.message || e.message)&.include?("idx_agent_runs_unique_active_issue")
+
       Rails.logger.info(
         message: "agent_execution.issue_goal_auto_retry_skipped_existing_run",
         original_agent_run_id: agent_run.id,
