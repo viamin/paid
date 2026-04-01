@@ -53,6 +53,9 @@ module Projects
 
       cancelled = false
 
+      # with_lock calls reload(lock: true), so @agent_run is freshly
+      # loaded inside the block — safe against races where the run
+      # finishes between the external cancellation and this status update.
       @agent_run.with_lock do
         if @agent_run.active?
           @agent_run.cancel!
