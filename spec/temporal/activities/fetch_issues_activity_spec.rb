@@ -589,6 +589,79 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when parent-child relationships exist in issue bodies" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: [ "viamin" ]) }
+
+      let(:parent_issue) do
+        OpenStruct.new(
+          id: 6001,
+          number: 60,
+          title: "Parent issue",
+          body: "## Child Issues\n- #61\n",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago,
+          updated_at: 1.day.ago
+        )
+      end
+
+      let(:child_issue) do
+        OpenStruct.new(
+          id: 6002,
+          number: 61,
+          title: "Child issue",
+          body: "Part of #60",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago,
+          updated_at: 1.day.ago
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ parent_issue, child_issue ])
+      end
+
+      it "sets parent_issue_id via parent child-listing section" do
+        activity.execute(project_id: project.id)
+
+        parent = project.issues.find_by!(github_number: 60)
+        child = project.issues.find_by!(github_number: 61)
+        expect(child.parent_issue_id).to eq(parent.id)
+      end
+
+      it "sets parent_issue_id via child inline declaration" do
+        # Remove the child-listing from parent so only inline declaration applies
+        parent_issue.body = "Just a regular body"
+
+        activity.execute(project_id: project.id)
+
+        parent = project.issues.find_by!(github_number: 60)
+        child = project.issues.find_by!(github_number: 61)
+        expect(child.parent_issue_id).to eq(parent.id)
+      end
+
+      it "sets parent_issue_id via comment declaration" do
+        # Remove inline declarations from bodies
+        parent_issue.body = "Just a regular body"
+        child_issue.body = "Just a regular body"
+
+        allow(github_client).to receive(:issue_comments).with(project.full_name, 61).and_return([
+          OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Part of #60", created_at: 1.hour.ago)
+        ])
+
+        activity.execute(project_id: project.id)
+
+        parent = project.issues.find_by!(github_number: 60)
+        child = project.issues.find_by!(github_number: 61)
+        expect(child.parent_issue_id).to eq(parent.id)
+      end
+    end
+
     context "when paid-generated PRs exist on GitHub" do
       let(:project) { create(:project, label_mappings: { "build" => "paid-build" }) }
       let(:paid_pr) do
