@@ -1013,8 +1013,8 @@ RSpec.describe Project do
     it "returns the most recent OpenAI API key from the project owner" do
       project = create(:project)
       owner = project.effective_owner
-      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-old")
-      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-new")
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-old", created_at: 2.minutes.ago)
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-new", created_at: 1.minute.ago)
 
       expect(project.openai_api_key).to eq("sk-new")
     end

@@ -207,7 +207,7 @@ class Project < ApplicationRecord
     effective_owner
       &.provider_api_keys
       &.for_api_service_type("openai")
-      &.order(created_at: :desc)
+      &.order(created_at: :desc, id: :desc)
       &.first
       &.api_key
   end
