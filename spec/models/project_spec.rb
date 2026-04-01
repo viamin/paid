@@ -545,6 +545,35 @@ RSpec.describe Project do
     end
   end
 
+  describe "agent_co_author_trailer validation" do
+    it "allows a normal single-line trailer" do
+      project = build(:project, agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      expect(project).to be_valid
+    end
+
+    it "allows blank trailer" do
+      project = build(:project, agent_co_author_trailer: "")
+      expect(project).to be_valid
+    end
+
+    it "allows nil trailer" do
+      project = build(:project, agent_co_author_trailer: nil)
+      expect(project).to be_valid
+    end
+
+    it "rejects trailer containing newline" do
+      project = build(:project, agent_co_author_trailer: "Co-Authored-By: A\nCo-Authored-By: B")
+      expect(project).not_to be_valid
+      expect(project.errors[:agent_co_author_trailer]).to include("must be a single line (no newlines)")
+    end
+
+    it "rejects trailer containing carriage return" do
+      project = build(:project, agent_co_author_trailer: "Co-Authored-By: A\rB")
+      expect(project).not_to be_valid
+      expect(project.errors[:agent_co_author_trailer]).to include("must be a single line (no newlines)")
+    end
+  end
+
   describe "review_settings" do
     describe "#effective_review_settings" do
       it "returns defaults when review_settings is empty" do

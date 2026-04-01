@@ -231,7 +231,7 @@ module Containers
       add_result = execute_git("add", "-A")
       raise Error, "Failed to stage changes: #{error_with_stderr(add_result)}" if add_result.failure?
 
-      commit_result = execute_git("commit", "--no-verify", "-m", "Apply agent changes")
+      commit_result = execute_git("commit", "--no-verify", "-m", commit_message)
       raise Error, "Failed to commit changes: #{error_with_stderr(commit_result)}" if commit_result.failure?
 
       true
@@ -593,6 +593,15 @@ module Containers
 
     def record_base_commit
       head_sha
+    end
+
+    def commit_message
+      trailer = agent_run.project.agent_co_author_trailer.to_s.gsub(/[\r\n]/, "").strip
+      if trailer.present?
+        "Apply agent changes\n\n#{trailer}"
+      else
+        "Apply agent changes"
+      end
     end
 
     def validate_branch_name!

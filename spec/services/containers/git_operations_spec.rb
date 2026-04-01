@@ -594,6 +594,49 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.commit_uncommitted_changes).to be true
     end
 
+    context "when project has agent_co_author_trailer configured" do
+      before { project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
+
+      it "appends the trailer to the commit message" do
+        status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+          .and_return(status_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        expected_message = "Apply agent changes\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+        expect(container_service).to receive(:execute)
+          .with([ "git", "commit", "--no-verify", "-m", expected_message ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        expect(git_ops.commit_uncommitted_changes).to be true
+      end
+    end
+
+    context "when project has blank agent_co_author_trailer" do
+      before { project.update!(agent_co_author_trailer: "  ") }
+
+      it "uses the default commit message without a trailer" do
+        status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+          .and_return(status_result)
+
+        allow(container_service).to receive(:execute)
+          .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        expect(container_service).to receive(:execute)
+          .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        expect(git_ops.commit_uncommitted_changes).to be true
+      end
+    end
+
     it "raises Error when staging fails" do
       status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
