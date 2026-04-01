@@ -178,6 +178,34 @@ module Containers
       )
     end
 
+    # Installs a commit-msg hook that appends the project's co-author trailer
+    # to every commit made inside the container — both agent-created commits
+    # and the auto-commit from commit_uncommitted_changes.
+    #
+    # Skipped when the project has no trailer configured.
+    # Existing commit-msg hooks (from Husky, Lefthook, etc.) are never overwritten.
+    #
+    # @return [void]
+    def install_co_author_hook
+      trailer = agent_run.project.agent_co_author_trailer
+      return if trailer.blank?
+
+      install_hook("commit-msg", commit_msg_hook_script(trailer))
+    rescue Error => e
+      Rails.logger.warn(
+        message: "container_git.install_co_author_hook_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+    rescue StandardError => e
+      Rails.logger.error(
+        message: "container_git.install_co_author_hook_unexpected_error",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
     # Installs local git exclude patterns for common build artifacts.
     #
     # Writes to .git/info/exclude, which acts like .gitignore but is local
@@ -596,12 +624,7 @@ module Containers
     end
 
     def commit_message
-      trailer = agent_run.project.agent_co_author_trailer
-      if trailer.present?
-        "Apply agent changes\n\n#{trailer}"
-      else
-        "Apply agent changes"
-      end
+      "Apply agent changes"
     end
 
     def validate_branch_name!
@@ -672,6 +695,26 @@ module Containers
           #{test_command} || exit 1
         else
           echo "Warning: test tool not available, skipping test check"
+        fi
+      SHELL
+    end
+
+    # Generates a commit-msg hook script that appends the co-author trailer
+    # to commit messages that don't already contain it.
+    #
+    # Uses POSIX shell escaping for the trailer value: each single quote in
+    # the trailer is replaced with the standard '\'' break-and-rejoin pattern.
+    # Ruby's gsub replacement interprets \\ as a literal backslash, so the
+    # replacement string "'\\\\''") produces the four-character sequence '\''
+    # in the output.
+    def commit_msg_hook_script(trailer)
+      escaped = trailer.gsub("'", "'\\\\''")
+
+      <<~SHELL
+        #!/bin/sh
+        # Installed by Paid — append co-author trailer to commits
+        if ! grep -qF '#{escaped}' "$1"; then
+          printf '\\n\\n#{escaped}' >> "$1"
         fi
       SHELL
     end

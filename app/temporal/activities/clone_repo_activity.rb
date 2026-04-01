@@ -68,6 +68,7 @@ module Activities
         lint_command: lint_cmd || "true",
         test_command: test_cmd || "true"
       )
+      git_ops.install_co_author_hook
     end
 
     def detect_language(project)

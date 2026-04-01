@@ -594,47 +594,23 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.commit_uncommitted_changes).to be true
     end
 
-    context "when project has agent_co_author_trailer configured" do
-      before { project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
+    it "always uses the plain commit message (trailer is handled by commit-msg hook)" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
 
-      it "appends the trailer to the commit message" do
-        status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
-        allow(container_service).to receive(:execute)
-          .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
-          .and_return(status_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
 
-        allow(container_service).to receive(:execute)
-          .with([ "git", "add", "-A" ], timeout: nil, stream: false)
-          .and_return(success_result)
+      project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
-        expected_message = "Apply agent changes\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
-        expect(container_service).to receive(:execute)
-          .with([ "git", "commit", "--no-verify", "-m", expected_message ], timeout: nil, stream: false)
-          .and_return(success_result)
+      expect(container_service).to receive(:execute)
+        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .and_return(success_result)
 
-        expect(git_ops.commit_uncommitted_changes).to be true
-      end
-    end
-
-    context "when project has blank agent_co_author_trailer" do
-      before { project.update!(agent_co_author_trailer: "  ") }
-
-      it "uses the default commit message without a trailer" do
-        status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
-        allow(container_service).to receive(:execute)
-          .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
-          .and_return(status_result)
-
-        allow(container_service).to receive(:execute)
-          .with([ "git", "add", "-A" ], timeout: nil, stream: false)
-          .and_return(success_result)
-
-        expect(container_service).to receive(:execute)
-          .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
-          .and_return(success_result)
-
-        expect(git_ops.commit_uncommitted_changes).to be true
-      end
+      expect(git_ops.commit_uncommitted_changes).to be true
     end
 
     it "raises Error when staging fails" do
@@ -1134,6 +1110,69 @@ RSpec.describe Containers::GitOperations do
           hash_including(message: "container_git.install_hooks_failed")
         )
       end
+    end
+  end
+
+  describe "#install_co_author_hook" do
+    let(:hook_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
+    let(:hook_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+
+    context "when project has a trailer configured" do
+      before { project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
+
+      it "installs a commit-msg hook that appends the trailer" do
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+
+        hook_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg/), timeout: nil, stream: false) { |script, **|
+            hook_script = script
+            success_result
+          }
+
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.install_co_author_hook
+
+        expect(hook_script).to include("Co-Authored-By: Claude <noreply@anthropic.com>")
+        expect(hook_script).to include("grep -qF")
+      end
+    end
+
+    context "when project has no trailer configured" do
+      before { project.update!(agent_co_author_trailer: nil) }
+
+      it "does not install a hook" do
+        expect(container_service).not_to receive(:execute)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
+    context "when a commit-msg hook already exists" do
+      before { project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
+
+      it "skips installation to avoid overwriting existing hooks" do
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg/), timeout: nil, stream: false)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
+    it "does not raise when installation fails" do
+      project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      allow(container_service).to receive(:execute).and_raise(StandardError, "container error")
+
+      expect { git_ops.install_co_author_hook }.not_to raise_error
     end
   end
 end

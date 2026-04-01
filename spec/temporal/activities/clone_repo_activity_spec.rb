@@ -20,6 +20,7 @@ RSpec.describe Activities::CloneRepoActivity do
       allow(git_ops).to receive(:clone_and_setup_branch)
       allow(git_ops).to receive(:install_artifact_excludes)
       allow(git_ops).to receive(:install_git_hooks)
+      allow(git_ops).to receive(:install_co_author_hook)
 
       # Simulate what clone_and_setup_branch does to agent_run
       agent_run.update!(
@@ -105,6 +106,7 @@ RSpec.describe Activities::CloneRepoActivity do
         allow(git_ops).to receive(:clone_and_checkout_branch)
         allow(git_ops).to receive(:install_artifact_excludes)
         allow(git_ops).to receive(:install_git_hooks)
+        allow(git_ops).to receive(:install_co_author_hook)
 
         agent_run.update!(
           branch_name: "existing-feature-branch",
