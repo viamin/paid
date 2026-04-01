@@ -1120,11 +1120,17 @@ RSpec.describe Containers::GitOperations do
   describe "#install_co_author_hook" do
     let(:hook_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
     let(:hook_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+    let(:marker_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
+    let(:marker_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
 
     context "when project has a trailer configured" do
       before { project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
 
       it "installs a commit-msg hook that appends the trailer" do
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+
         allow(container_service).to receive(:execute)
           .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(hook_missing_result)
@@ -1143,7 +1149,7 @@ RSpec.describe Containers::GitOperations do
         git_ops.install_co_author_hook
 
         expect(hook_script).to include("Co-Authored-By: Claude <noreply@anthropic.com>")
-        expect(hook_script).to include("grep -qF")
+        expect(hook_script).to include("grep -qF --")
       end
     end
 
@@ -1160,13 +1166,41 @@ RSpec.describe Containers::GitOperations do
     context "when a commit-msg hook already exists" do
       before { project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
 
-      it "skips installation to avoid overwriting existing hooks" do
+      it "appends trailer logic to the existing hook" do
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+
         allow(container_service).to receive(:execute)
           .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(hook_exists_result)
 
+        appended_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat >> \.git\/hooks\/commit-msg/), timeout: nil, stream: false) { |script, **|
+            appended_script = script
+            success_result
+          }
+
+        git_ops.install_co_author_hook
+
+        expect(appended_script).to include("Co-Authored-By: Claude <noreply@anthropic.com>")
+        expect(appended_script).not_to include("#!/bin/sh")
+      end
+    end
+
+    context "when the hook marker is already present (idempotency)" do
+      before { project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
+
+      it "skips installation to avoid duplicate appends" do
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_exists_result)
+
         expect(container_service).not_to receive(:execute)
-          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg/), timeout: nil, stream: false)
+          .with(a_string_matching(/cat >>/), timeout: nil, stream: false)
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/cat > /), timeout: nil, stream: false)
 
         git_ops.install_co_author_hook
       end
