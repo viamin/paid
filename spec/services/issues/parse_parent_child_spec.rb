@@ -348,6 +348,39 @@ RSpec.describe Issues::ParseParentChild do
       end
     end
 
+    describe "cross-repo references" do
+      it "ignores cross-repo refs in parent declaration (Part of owner/repo#NNN)" do
+        create(:issue, project: project, github_number: 8400)
+        child = create(:issue, project: project, body: "Part of owner/repo#8400")
+
+        described_class.call(issue: child)
+
+        expect(child.reload.parent_issue_id).to be_nil
+      end
+
+      it "ignores cross-repo refs in child-issues section" do
+        create(:issue, project: project, github_number: 8410)
+        parent = create(:issue, project: project, body: "## Child Issues\n- owner/repo#8410\n")
+
+        described_class.call(issue: parent)
+
+        child = Issue.find_by(github_number: 8410)
+        expect(child.parent_issue_id).to be_nil
+      end
+
+      it "ignores cross-repo refs in removal pattern" do
+        parent = create(:issue, project: project, github_number: 8420)
+        child = create(:issue, project: project, body: "Part of #8420")
+
+        described_class.call(
+          issue: child,
+          comments: [ "No longer part of owner/repo#8420" ]
+        )
+
+        expect(child.reload.parent_issue_id).to eq(parent.id)
+      end
+    end
+
     describe "interaction between child listing and parent declaration" do
       it "handles both directions independently" do
         grandparent = create(:issue, project: project, github_number: 8300)

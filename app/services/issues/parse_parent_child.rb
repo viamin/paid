@@ -39,17 +39,17 @@ module Issues
     PARENT_DECLARATION_PATTERN = /
       \b(?:part|child|sub[- ]?issue|sub[- ]?task)\s+of\b
       :?\s*
-      \#(\d+)
+      (?<!\w)\#(\d+)
     /xi
 
     # Comment pattern to remove a parent declaration.
     PARENT_REMOVAL_PATTERN = /
       \bno\s+longer\s+(?:part|child|sub[- ]?issue|sub[- ]?task)\s+of\b
       :?\s*
-      \#(\d+)
+      (?<!\w)\#(\d+)
     /xi
 
-    ISSUE_REF_PATTERN = /#(\d+)/
+    ISSUE_REF_PATTERN = /(?<![\w\/])#(\d+)/
 
     attr_reader :issue, :comments
 
