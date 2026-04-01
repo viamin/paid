@@ -255,6 +255,24 @@ RSpec.describe PreCommitRequirement do
       expect(result.map(&:id)).to eq([ enabled_req.id ])
     end
 
+    it "allows a disabled project override to suppress an account-level requirement" do
+      create(:pre_commit_requirement, account: account, name: "lint", enabled: true)
+      create(:pre_commit_requirement, account: account, project: project, name: "lint", enabled: false)
+
+      result = described_class.resolve(project: project, user: user)
+
+      expect(result.map(&:name)).not_to include("lint")
+    end
+
+    it "allows a disabled user override to suppress an account-level requirement" do
+      create(:pre_commit_requirement, account: account, name: "lint", enabled: true)
+      create(:pre_commit_requirement, account: account, user: user, name: "lint", enabled: false)
+
+      result = described_class.resolve(project: project, user: user)
+
+      expect(result.map(&:name)).not_to include("lint")
+    end
+
     it "sorts by position then name" do
       req_b = create(:pre_commit_requirement, account: account, name: "b-check", position: 0)
       req_a = create(:pre_commit_requirement, account: account, name: "a-check", position: 1)
@@ -292,6 +310,15 @@ RSpec.describe PreCommitRequirement do
       req.valid?
 
       expect(req.account).to eq(project.account)
+    end
+
+    it "sets account from user on validation" do
+      user = create(:user)
+      req = build(:pre_commit_requirement, user: user, project: nil, account: nil, name: "lint")
+
+      req.valid?
+
+      expect(req.account).to eq(user.account)
     end
   end
 end

@@ -9,6 +9,7 @@ class PreCommitRequirement < ApplicationRecord
   belongs_to :user, optional: true
 
   before_validation :set_account_from_project, if: -> { project.present? && account.nil? }
+  before_validation :set_account_from_user, if: -> { user.present? && project.nil? && account.nil? }
 
   validates :name, presence: true, length: { maximum: 255 }
   validates :name, uniqueness: { scope: [ :account_id ] },
@@ -63,27 +64,33 @@ class PreCommitRequirement < ApplicationRecord
   def self.resolve(project:, user: nil)
     account = project.account
 
-    account_reqs = for_account(account).enabled.ordered
+    account_reqs = for_account(account).ordered
     user_reqs = if user && user.account_id == account.id
-      for_user(user).enabled.ordered
+      for_user(user).ordered
     else
       self.none
     end
-    project_reqs = for_project(project).enabled.ordered
+    project_reqs = for_project(project).ordered
 
-    # Merge: project overrides user overrides account (by name)
+    # Merge: project overrides user overrides account (by name).
+    # Disabled records act as tombstones — a disabled override suppresses
+    # the inherited requirement. Filter out disabled after merging.
     by_name = {}
     account_reqs.each { |r| by_name[r.name] = r }
     user_reqs.each { |r| by_name[r.name] = r }
     project_reqs.each { |r| by_name[r.name] = r }
 
-    by_name.values.sort_by { |r| [ r.position, r.name ] }
+    by_name.values.select(&:enabled?).sort_by { |r| [ r.position, r.name ] }
   end
 
   private
 
   def set_account_from_project
     self.account = project.account
+  end
+
+  def set_account_from_user
+    self.account = user.account
   end
 
   def project_belongs_to_account

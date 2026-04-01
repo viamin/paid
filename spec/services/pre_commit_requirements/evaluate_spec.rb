@@ -32,7 +32,7 @@ RSpec.describe PreCommitRequirements::Evaluate do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
         # success_result has exit_code: 0 but is a Result.success — make it truly pass
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint").and_return(success_result)
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(success_result)
       end
 
       it "returns passed" do
@@ -56,7 +56,7 @@ RSpec.describe PreCommitRequirements::Evaluate do
     context "with a failing blocking check" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint", failure_behavior: "block")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint").and_return(failure_result)
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
       end
 
       it "returns not passed and blocking" do
@@ -71,7 +71,7 @@ RSpec.describe PreCommitRequirements::Evaluate do
     context "with a failing warn-only check" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint", failure_behavior: "warn")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint").and_return(failure_result)
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
       end
 
       it "returns passed overall but individual check failed" do
@@ -132,11 +132,11 @@ RSpec.describe PreCommitRequirements::Evaluate do
       before do
         create(:pre_commit_requirement, :with_auto_fix, account: account, name: "lint", command: "bin/lint")
         call_count = 0
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint") do
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false) do
           call_count += 1
           call_count == 1 ? failure_result : success_result
         end
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint -a").and_return(success_result)
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint -a", stream: false).and_return(success_result)
       end
 
       it "retries after fix and marks as auto-fixed" do
@@ -150,8 +150,8 @@ RSpec.describe PreCommitRequirements::Evaluate do
     context "with auto-fix that exhausts retries" do
       before do
         create(:pre_commit_requirement, :with_auto_fix, account: account, name: "lint", command: "bin/lint")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint").and_return(failure_result)
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint -a").and_return(success_result)
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint -a", stream: false).and_return(success_result)
       end
 
       it "returns failed check after max attempts" do
@@ -188,8 +188,8 @@ RSpec.describe PreCommitRequirements::Evaluate do
     context "with auto-fix that raises an error" do
       before do
         create(:pre_commit_requirement, :with_auto_fix, account: account, name: "lint", command: "bin/lint")
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint").and_return(failure_result)
-        allow(agent_run).to receive(:execute_in_container).with("bin/lint -a")
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint -a", stream: false)
           .and_raise(Containers::Provision::ExecutionError.new("fix crashed", exit_code: 1))
       end
 
