@@ -1,0 +1,44 @@
+<div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+  <div class="px-4 py-4 sm:px-6">
+    <h3 class="text-sm font-medium text-gray-900">Semantic Search Settings</h3>
+
+    <div class="mt-3 space-y-3">
+      <%# API Key Status %>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center">
+          <% case @semantic_search_source %>
+          <% when :user_key %>
+            <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-green-500"></span>
+            <span class="ml-2 text-sm text-gray-700">
+              Using your API key: <span class="font-medium"><%= @openai_key_record.name %></span>
+              <code class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-500"><%= @openai_key_record.masked_api_key %></code>
+            </span>
+          <% when :platform_env %>
+            <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-blue-500"></span>
+            <span class="ml-2 text-sm text-gray-700">Using platform-provided OpenAI key</span>
+          <% when :none %>
+            <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-yellow-500"></span>
+            <span class="ml-2 text-sm text-yellow-700">No OpenAI API key configured. Only exact search is available.</span>
+          <% end %>
+        </div>
+
+        <div class="flex-shrink-0">
+          <% if @semantic_search_source == :none %>
+            <%= link_to "Add an API key", provider_api_keys_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+          <% else %>
+            <%= link_to "Manage API keys", provider_api_keys_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+          <% end %>
+        </div>
+      </div>
+
+      <%# Embedding Model %>
+      <% if @semantic_search_source != :none %>
+        <div class="flex items-center border-t border-gray-100 pt-3">
+          <span class="text-sm text-gray-500">Embedding model:</span>
+          <code class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-600"><%= Knowledge::Embeddings::Generate::MODEL %></code>
+          <span class="ml-2 text-xs text-gray-400">(<%= Knowledge::Embeddings::Generate::DIMENSIONS.to_fs(:delimited) %> dimensions)</span>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

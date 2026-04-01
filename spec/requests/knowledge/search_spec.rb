@@ -34,23 +34,25 @@ RSpec.describe "Knowledge::Search" do
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
         get knowledge_search_path, params: { project_id: project.id }
-        expect(response.body).to include("Only exact identifier matching is available")
+        expect(response.body).to include("No OpenAI API key configured")
       end
 
-      it "hides the warning when the user has an OpenAI API key" do
+      it "shows the user key name when an OpenAI API key is configured" do
         owner = project.effective_owner
-        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
+        create(:provider_api_key, user: owner, name: "My OpenAI Key", api_service_type: "openai", api_key: "sk-test-key")
         get knowledge_search_path, params: { project_id: project.id }
-        expect(response.body).not_to include("Only exact identifier matching is available")
+        expect(response.body).not_to include("No OpenAI API key configured")
+        expect(response.body).to include("My OpenAI Key")
       end
 
-      it "hides the warning when a platform OpenAI API key is set" do
+      it "shows platform key status when a platform OpenAI API key is set" do
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return("sk-platform-key")
         allow(ENV).to receive(:fetch).with("OPENAI_API_KEY", anything).and_return("sk-platform-key")
         get knowledge_search_path, params: { project_id: project.id }
-        expect(response.body).not_to include("Only exact identifier matching is available")
+        expect(response.body).not_to include("No OpenAI API key configured")
+        expect(response.body).to include("platform-provided")
       end
     end
   end
