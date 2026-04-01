@@ -741,12 +741,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_210524) do
 
   create_table "provider_api_keys", force: :cascade do |t|
     t.text "api_key", null: false
-    t.string "api_service_type", limit: 50, null: false
+    t.jsonb "compatible_providers", default: [], null: false
     t.datetime "created_at", null: false
     t.string "name", limit: 100, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
-    t.index ["user_id", "api_service_type"], name: "index_provider_api_keys_on_user_id_and_api_service_type"
     t.index ["user_id", "name"], name: "index_provider_api_keys_on_user_id_and_name", unique: true
     t.index ["user_id"], name: "index_provider_api_keys_on_user_id"
   end

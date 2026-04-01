@@ -125,7 +125,11 @@ RSpec.describe ProcessRunQueueJob do
 
       expect(failing_run.reload.status).to eq("failed")
       expect(failing_run.reload.error_message).to include("Connection refused")
-      expect(failing_run.reload.temporal_workflow_id).to be_nil
+      # temporal_workflow_id is intentionally kept on failure so
+      # StaleRunDetectorJob can cancel a potentially-orphaned workflow
+      # (e.g. when start_workflow raises due to a network timeout but
+      # the workflow actually started server-side).
+      expect(failing_run.reload.temporal_workflow_id).to be_present
       expect(good_run.reload.status).to eq("pending")
     end
 

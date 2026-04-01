@@ -216,17 +216,16 @@ class ProcessRunQueueJob < ApplicationJob
     # process crashes between start_workflow and the DB write.
     agent_run.update_columns(temporal_workflow_id: workflow_id)
 
-    begin
-      Paid.temporal_client.start_workflow(
-        Workflows::AgentExecutionWorkflow,
-        workflow_input,
-        id: workflow_id,
-        task_queue: Paid.task_queue
-      )
-    rescue => e
-      agent_run.update_columns(temporal_workflow_id: nil)
-      raise
-    end
+    # Keep temporal_workflow_id set on failure — if start_workflow raises
+    # due to a network timeout, the workflow may have started server-side.
+    # Leaving the ID allows StaleRunDetectorJob to find and cancel the
+    # potentially-orphaned workflow rather than losing track of it.
+    Paid.temporal_client.start_workflow(
+      Workflows::AgentExecutionWorkflow,
+      workflow_input,
+      id: workflow_id,
+      task_queue: Paid.task_queue
+    )
 
     Rails.logger.info(
       message: "process_run_queue.started_queued_run",
