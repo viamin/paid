@@ -14,7 +14,7 @@ class ProviderApiKey < ApplicationRecord
   validate :api_service_type_must_be_valid
 
   scope :ordered, -> { order(:name) }
-  scope :compatible_with, ->(service_type) {
+  scope :for_api_service_type, ->(service_type) {
     where(api_service_type: service_type)
   }
 

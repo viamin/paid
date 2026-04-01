@@ -66,14 +66,14 @@ RSpec.describe ProviderApiKey do
     end
   end
 
-  describe ".compatible_with" do
+  describe ".for_api_service_type" do
     let(:user) { create(:user) }
 
     it "returns keys with the matching api_service_type" do
       anthropic_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       create(:provider_api_key, user: user, name: "Other key", api_service_type: "openai")
 
-      result = described_class.compatible_with("anthropic")
+      result = described_class.for_api_service_type("anthropic")
       expect(result).to include(anthropic_key)
       expect(result.size).to eq(1)
     end
