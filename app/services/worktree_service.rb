@@ -253,6 +253,10 @@ class WorktreeService
     clone_url = authenticated_clone_url
     run_git("clone", "--bare", clone_url, project_repo_path)
 
+    # Bare clones don't configure a fetch refspec, so `git fetch` won't
+    # create origin/* refs. Add it so fetch_latest and current_commit_sha work.
+    run_git("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*", chdir: project_repo_path)
+
     project.github_token.touch_last_used!
   rescue Error
     raise
@@ -263,9 +267,26 @@ class WorktreeService
   def fetch_latest
     remote_url = authenticated_clone_url
     run_git("remote", "set-url", "origin", remote_url, chdir: project_repo_path, raise_on_error: false)
+    ensure_fetch_refspec
     run_git("fetch", "--all", "--prune", chdir: project_repo_path)
 
     project.github_token.touch_last_used!
+  end
+
+  # Bare repos cloned before the refspec fix lack remote.origin.fetch,
+  # so `git fetch` silently skips creating origin/* refs. Idempotently
+  # add the refspec so existing repos self-heal on next fetch.
+  def ensure_fetch_refspec
+    return if @fetch_refspec_verified
+
+    existing = run_git("config", "--get", "remote.origin.fetch", chdir: project_repo_path, raise_on_error: false).strip
+    if existing.present?
+      @fetch_refspec_verified = true
+      return
+    end
+
+    run_git("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*", chdir: project_repo_path)
+    @fetch_refspec_verified = true
   end
 
   def authenticated_clone_url
