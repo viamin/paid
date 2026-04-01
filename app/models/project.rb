@@ -204,15 +204,20 @@ class Project < ApplicationRecord
     created_by || account.fallback_owner
   end
 
+  # Returns the ProviderApiKey record used for OpenAI embeddings, or nil.
+  def openai_provider_api_key_record
+    @openai_provider_api_key_record ||=
+      effective_owner
+        &.provider_api_keys
+        &.for_api_service_type("openai")
+        &.order(created_at: :desc, id: :desc)
+        &.first
+  end
+
   # Resolves the project owner's OpenAI API key for embeddings and semantic search.
   # Returns nil when no user key exists (callers fall back to ENV["OPENAI_API_KEY"]).
   def openai_api_key
-    effective_owner
-      &.provider_api_keys
-      &.for_api_service_type("openai")
-      &.order(created_at: :desc, id: :desc)
-      &.first
-      &.api_key
+    openai_provider_api_key_record&.api_key
   end
 
   def openai_api_key_configured?
