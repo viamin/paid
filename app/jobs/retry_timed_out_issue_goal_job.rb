@@ -47,21 +47,24 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
         agent_run.retry!
         created
       end
-    rescue ActiveRecord::RecordNotUnique => e
-      raise unless (e.cause&.message || e.message)&.include?("idx_agent_runs_unique_active_issue")
-
+    rescue ActiveRecord::RecordNotUnique
+      # Another active run exists for this project+issue (enforced by
+      # idx_agent_runs_unique_active_issue). Query for it to confirm
+      # this is the expected constraint rather than an unrelated violation.
       existing_run = AgentRun.where(
         project_id: agent_run.project_id,
         issue_id: agent_run.issue_id,
         status: %w[queued running pending]
       ).where.not(id: agent_run.id).first
 
+      raise unless existing_run
+
       agent_run.retry!
 
       Rails.logger.info(
         message: "agent_execution.issue_goal_auto_retry_skipped_existing_run",
         original_agent_run_id: agent_run.id,
-        existing_agent_run_id: existing_run&.id,
+        existing_agent_run_id: existing_run.id,
         issue_id: agent_run.issue_id,
         project_id: agent_run.project_id
       )
@@ -77,6 +80,10 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
       attempt: previous_attempts + 1
     )
 
+    # Idempotent (advisory lock + SKIP LOCKED). Temporal-origin timeouts also
+    # enqueue this in RunAgentActivity, but that fires before this job creates
+    # the new queued run. For StaleRunDetectorJob-origin timeouts, this is the
+    # only trigger.
     ProcessRunQueueJob.perform_later
   end
 
