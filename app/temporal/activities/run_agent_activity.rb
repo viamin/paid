@@ -149,6 +149,22 @@ module Activities
             # different models) remain distinguishable in UI and retry logic.
             agent_run.update!(final_provider: attempt_label)
 
+            # Evaluate pre-commit requirements against the working directory
+            # before committing, so blocking failures prevent commits.
+            pre_commit_result = evaluate_pre_commit_requirements(agent_run)
+            if pre_commit_result[:blocking]
+              agent_run.log!("system", "Blocked by failing pre-commit requirements",
+                metadata: { pre_commit_results: pre_commit_result[:results] })
+              return {
+                agent_run_id: agent_run_id,
+                success: false,
+                has_changes: check_for_changes(agent_run, pre_agent_sha),
+                output_present: provider_result.fetch(:output_present),
+                final_provider: attempt_label,
+                error: "pre_commit_requirements_failed"
+              }
+            end
+
             commit_uncommitted_changes(agent_run)
             has_changes = check_for_changes(agent_run, pre_agent_sha)
 
@@ -666,6 +682,25 @@ module Activities
         agent_run_id: agent_run.id,
         error: e.message
       )
+    end
+
+    # Evaluates pre-commit requirements for the agent run.
+    # Returns a hash with :passed, :results, and :blocking keys.
+    def evaluate_pre_commit_requirements(agent_run)
+      PreCommitRequirements::Evaluate.call(agent_run: agent_run)
+    rescue => e
+      logger.warn(
+        message: "agent_execution.pre_commit_evaluation_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+      # Fail closed: treat evaluation crashes as blocking so configured
+      # enforcement is never silently bypassed.
+      {
+        passed: false,
+        results: [ { type: "error", message: "Pre-commit evaluation failed: #{e.message}" } ],
+        blocking: true
+      }
     end
 
     def check_for_changes(agent_run, pre_agent_sha)
