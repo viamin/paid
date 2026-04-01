@@ -78,6 +78,9 @@ module PreCommitRequirements
       output = container_result_output(result)
 
       { passed: passed, output: output.to_s.truncate(10_000) }
+    rescue Containers::Provision::ExecutionError => e
+      error_output = execution_error_output(e)
+      { passed: false, output: error_output.truncate(10_000) }
     rescue Containers::Provision::Error => e
       { passed: false, output: e.message.to_s.truncate(10_000) }
     end
@@ -101,6 +104,9 @@ module PreCommitRequirements
         end
 
         log_auto_fix_attempt(requirement, attempt + 1, result)
+      rescue Containers::Provision::ExecutionError => e
+        error_output = execution_error_output(e)
+        return { passed: false, output: "Auto-fix failed: #{error_output}".truncate(10_000), auto_fixed: false }
       rescue Containers::Provision::Error => e
         return { passed: false, output: "Auto-fix failed: #{e.message}".truncate(10_000), auto_fixed: false }
       end
@@ -110,6 +116,16 @@ module PreCommitRequirements
 
     def container_result_success?(result)
       result.success?
+    end
+
+    # Extracts stdout, stderr, and exit_code from an ExecutionError for
+    # richer diagnostic output than e.message alone.
+    def execution_error_output(error)
+      parts = [ error.stdout.to_s, error.stderr.to_s ].reject(&:blank?)
+      output = parts.join("\n")
+      return output if output.present?
+
+      error.exit_code ? "Command exited with code #{error.exit_code}" : error.message.to_s
     end
 
     def container_result_output(result)

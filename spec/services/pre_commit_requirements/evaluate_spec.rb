@@ -87,14 +87,31 @@ RSpec.describe PreCommitRequirements::Evaluate do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
         allow(agent_run).to receive(:execute_in_container)
-          .and_raise(Containers::Provision::ExecutionError.new("command failed", exit_code: 1))
+          .and_raise(Containers::Provision::ExecutionError.new(
+            "command failed", exit_code: 1, stdout: "output", stderr: "lint error on line 5"
+          ))
       end
 
-      it "catches the error and marks check as failed" do
+      it "catches the error and includes stdout/stderr in output" do
         result = described_class.call(agent_run: agent_run)
 
         expect(result[:passed]).to be false
-        expect(result[:results].first[:output]).to include("command failed")
+        expect(result[:results].first[:output]).to include("lint error on line 5")
+      end
+    end
+
+    context "with a container execution error without stdout/stderr" do
+      before do
+        create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
+        allow(agent_run).to receive(:execute_in_container)
+          .and_raise(Containers::Provision::ExecutionError.new("command failed", exit_code: 1))
+      end
+
+      it "falls back to exit code" do
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:passed]).to be false
+        expect(result[:results].first[:output]).to include("exited with code 1")
       end
     end
 
@@ -190,15 +207,18 @@ RSpec.describe PreCommitRequirements::Evaluate do
         create(:pre_commit_requirement, :with_auto_fix, account: account, name: "lint", command: "bin/lint")
         allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
         allow(agent_run).to receive(:execute_in_container).with("bin/lint -a", stream: false)
-          .and_raise(Containers::Provision::ExecutionError.new("fix crashed", exit_code: 1))
+          .and_raise(Containers::Provision::ExecutionError.new(
+            "fix crashed", exit_code: 1, stderr: "fix error detail"
+          ))
       end
 
-      it "catches the error and marks auto-fix as failed" do
+      it "catches the error and includes stderr in auto-fix failed output" do
         result = described_class.call(agent_run: agent_run)
 
         check = result[:results].first
         expect(check[:passed]).to be false
         expect(check[:output]).to include("Auto-fix failed")
+        expect(check[:output]).to include("fix error detail")
       end
     end
   end

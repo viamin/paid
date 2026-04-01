@@ -149,23 +149,23 @@ module Activities
             # different models) remain distinguishable in UI and retry logic.
             agent_run.update!(final_provider: attempt_label)
 
+            # Evaluate pre-commit requirements against the working directory
+            # before committing, so blocking failures prevent commits.
+            pre_commit_result = evaluate_pre_commit_requirements(agent_run)
+            if pre_commit_result[:blocking]
+              agent_run.log!("system", "Blocked by failing pre-commit requirements")
+              return {
+                agent_run_id: agent_run_id,
+                success: false,
+                has_changes: true,
+                output_present: provider_result.fetch(:output_present),
+                final_provider: attempt_label,
+                error: "pre_commit_requirements_failed"
+              }
+            end
+
             commit_uncommitted_changes(agent_run)
             has_changes = check_for_changes(agent_run, pre_agent_sha)
-
-            if has_changes
-              pre_commit_result = evaluate_pre_commit_requirements(agent_run)
-              if pre_commit_result[:blocking]
-                agent_run.log!("system", "Blocked by failing pre-commit requirements")
-                return {
-                  agent_run_id: agent_run_id,
-                  success: false,
-                  has_changes: has_changes,
-                  output_present: provider_result.fetch(:output_present),
-                  final_provider: attempt_label,
-                  error: "pre_commit_requirements_failed"
-                }
-              end
-            end
 
             if !has_changes && !provider_result.fetch(:output_present)
               agent_run.log!("system", "Provider completed with no output and no changes")
@@ -693,7 +693,13 @@ module Activities
         agent_run_id: agent_run.id,
         error: e.message
       )
-      { passed: true, results: [], blocking: false }
+      # Fail closed: treat evaluation crashes as blocking so configured
+      # enforcement is never silently bypassed.
+      {
+        passed: false,
+        results: [ { type: "error", message: "Pre-commit evaluation failed: #{e.message}" } ],
+        blocking: true
+      }
     end
 
     def check_for_changes(agent_run, pre_agent_sha)
