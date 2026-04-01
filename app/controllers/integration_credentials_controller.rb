@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+# TODO: The integration credentials UI is hidden from the integrations hub until RBAC is
+# implemented. Once an account admin role exists, restore the hub links so account admins
+# can manage account-scoped credentials (GitLab, Jira, signing, per-provider LLM tokens).
+# The routes, controller, and views remain intact for direct access.
 class IntegrationCredentialsController < ApplicationController
   before_action :set_filter_context, only: [ :index, :new, :create ]
   before_action :set_integration_credential, only: [ :show, :destroy ]
