@@ -10,8 +10,10 @@
           <% when :user_key %>
             <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-green-500"></span>
             <span class="ml-2 text-sm text-gray-700">
-              Using your API key: <span class="font-medium"><%= @openai_key_record.name %></span>
-              <code class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-500"><%= @openai_key_record.masked_api_key %></code>
+              Using an API key: <span class="font-medium"><%= @openai_key_record.name %></span>
+              <% if @openai_key_record.user_id == current_user.id %>
+                <code class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-500"><%= @openai_key_record.masked_api_key %></code>
+              <% end %>
             </span>
           <% when :platform_env %>
             <span class="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-blue-500"></span>
@@ -25,14 +27,17 @@
         <div class="flex-shrink-0">
           <% if @semantic_search_source == :none %>
             <%= link_to "Add an API key", provider_api_keys_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
-          <% else %>
-            <%= link_to "Manage API keys", provider_api_keys_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+          <% elsif @semantic_search_source == :user_key && @openai_key_record&.user_id == current_user.id %>
+            <%= link_to "Manage your API keys", provider_api_keys_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+          <% elsif @semantic_search_source == :user_key %>
+            <%= link_to "View your API keys", provider_api_keys_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
           <% end %>
+          <%# Platform-provided keys have no user-facing management link %>
         </div>
       </div>
 
-      <%# Embedding Model %>
-      <% if @semantic_search_source != :none %>
+      <%# Embedding Model — only shown when semantic search is active %>
+      <% if @semantic_search_source != :none && @search_mode != "exact" %>
         <div class="flex items-center border-t border-gray-100 pt-3">
           <span class="text-sm text-gray-500">Embedding model:</span>
           <code class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-600"><%= Knowledge::Embeddings::Generate::MODEL %></code>

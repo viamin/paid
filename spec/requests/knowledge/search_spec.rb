@@ -37,15 +37,24 @@ RSpec.describe "Knowledge::Search" do
         expect(response.body).to include("No OpenAI API key configured")
       end
 
-      it "shows the user key name when an OpenAI API key is configured" do
-        owner = project.effective_owner
-        create(:provider_api_key, user: owner, name: "My OpenAI Key", api_service_type: "openai", api_key: "sk-test-key")
+      it "shows the user key name and manage link when the current user owns the API key" do
+        create(:provider_api_key, user: user, name: "My OpenAI Key", api_service_type: "openai", api_key: "sk-test-key")
+        project.update!(created_by: user)
         get knowledge_search_path, params: { project_id: project.id }
         expect(response.body).not_to include("No OpenAI API key configured")
         expect(response.body).to include("My OpenAI Key")
+        expect(response.body).to include("Manage your API keys")
       end
 
-      it "shows platform key status when a platform OpenAI API key is set" do
+      it "shows view link when the API key belongs to another user" do
+        other_user = create(:user, account: account)
+        create(:provider_api_key, user: other_user, name: "Other Key", api_service_type: "openai", api_key: "sk-other")
+        project.update!(created_by: other_user)
+        get knowledge_search_path, params: { project_id: project.id }
+        expect(response.body).to include("View your API keys")
+      end
+
+      it "shows platform key status with no manage link when a platform OpenAI API key is set" do
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
         allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return("sk-platform-key")
@@ -53,6 +62,53 @@ RSpec.describe "Knowledge::Search" do
         get knowledge_search_path, params: { project_id: project.id }
         expect(response.body).not_to include("No OpenAI API key configured")
         expect(response.body).to include("platform-provided")
+        expect(response.body).not_to include("Manage your API keys")
+        expect(response.body).not_to include("View your API keys")
+      end
+
+      it "disables Hybrid and Semantic mode options when no API key is available" do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
+        get knowledge_search_path, params: { project_id: project.id }
+
+        doc = Nokogiri::HTML(response.body)
+        hybrid_option = doc.at_css('option[value="hybrid"]')
+        semantic_option = doc.at_css('option[value="semantic"]')
+        exact_option = doc.at_css('option[value="exact"]')
+
+        expect(hybrid_option["disabled"]).to eq("disabled")
+        expect(semantic_option["disabled"]).to eq("disabled")
+        expect(exact_option["disabled"]).to be_nil
+      end
+
+      it "enables all mode options when an API key is available" do
+        owner = project.effective_owner
+        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
+        get knowledge_search_path, params: { project_id: project.id }
+
+        doc = Nokogiri::HTML(response.body)
+        hybrid_option = doc.at_css('option[value="hybrid"]')
+        semantic_option = doc.at_css('option[value="semantic"]')
+
+        expect(hybrid_option["disabled"]).to be_nil
+        expect(semantic_option["disabled"]).to be_nil
+      end
+
+      it "shows embedding model info when mode is hybrid or semantic" do
+        owner = project.effective_owner
+        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
+        get knowledge_search_path, params: { project_id: project.id, mode: "hybrid" }
+        expect(response.body).to include("Embedding model")
+
+        get knowledge_search_path, params: { project_id: project.id, mode: "semantic" }
+        expect(response.body).to include("Embedding model")
+      end
+
+      it "hides embedding model info when mode is exact even with a key available" do
+        owner = project.effective_owner
+        create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-test-key")
+        get knowledge_search_path, params: { project_id: project.id, mode: "exact" }
+        expect(response.body).not_to include("Embedding model")
       end
     end
   end
@@ -103,6 +159,27 @@ RSpec.describe "Knowledge::Search" do
         expect(Knowledge::Search).to have_received(:call).with(
           hash_including(api_key: api_key.api_key)
         )
+      end
+    end
+
+    context "when no API key is available" do
+      before do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("OPENAI_API_KEY").and_return(nil)
+      end
+
+      it "coerces mode=hybrid to exact when no API key is available" do
+        get knowledge_search_results_path, params: { project_id: project.id, q: "test", mode: "hybrid" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("(mode: exact)")
+      end
+
+      it "coerces mode=semantic to exact when no API key is available" do
+        get knowledge_search_results_path, params: { project_id: project.id, q: "test", mode: "semantic" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("(mode: exact)")
       end
     end
   end

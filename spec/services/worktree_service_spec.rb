@@ -83,6 +83,72 @@ RSpec.describe WorktreeService do
     end
   end
 
+  describe "fetch refspec for bare clones" do
+    describe "#clone_repository (private)" do
+      it "configures fetch refspec after bare clone" do
+        allow(service).to receive(:run_git)
+
+        expect(service).to receive(:run_git).with(
+          "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*",
+          chdir: repo_path
+        )
+
+        service.ensure_cloned
+      end
+    end
+
+    describe "#ensure_fetch_refspec via fetch_latest" do
+      before do
+        FileUtils.mkdir_p(repo_path)
+        FileUtils.touch(File.join(repo_path, "HEAD"))
+        allow(service).to receive(:run_git)
+      end
+
+      it "adds refspec when bare repo lacks remote.origin.fetch" do
+        allow(service).to receive(:run_git)
+          .with("config", "--get", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("")
+
+        expect(service).to receive(:run_git).with(
+          "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*",
+          chdir: repo_path
+        )
+
+        service.ensure_cloned
+      end
+
+      it "skips adding refspec when already configured" do
+        allow(service).to receive(:run_git)
+          .with("config", "--get", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("+refs/heads/*:refs/remotes/origin/*\n")
+
+        expect(service).not_to receive(:run_git).with(
+          "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*",
+          chdir: repo_path
+        )
+
+        service.ensure_cloned
+      end
+
+      it "caches the refspec check so subsequent fetches skip git config" do
+        allow(service).to receive(:run_git)
+          .with("config", "--get", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("+refs/heads/*:refs/remotes/origin/*\n")
+
+        service.ensure_cloned
+
+        # Reset FETCH_HEAD mtime so the second ensure_cloned triggers fetch_latest
+        FileUtils.touch(File.join(repo_path, "FETCH_HEAD"), mtime: 1.hour.ago.to_time)
+
+        service.ensure_cloned
+
+        expect(service).to have_received(:run_git)
+          .with("config", "--get", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .once
+      end
+    end
+  end
+
   describe "#create_worktree" do
     before do
       allow(service).to receive(:ensure_cloned)
