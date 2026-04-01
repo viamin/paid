@@ -179,8 +179,9 @@ module Containers
     end
 
     # Installs a commit-msg hook that appends the project's co-author trailer
-    # to every commit made inside the container — both agent-created commits
-    # and the auto-commit from commit_uncommitted_changes.
+    # to agent-created commits. The auto-commit from commit_uncommitted_changes
+    # uses --no-verify (skipping hooks), so its trailer is appended directly
+    # by the commit_message method instead.
     #
     # Skipped when the project has no trailer configured.
     # Existing commit-msg hooks (from Husky, Lefthook, etc.) are never overwritten.
@@ -624,7 +625,10 @@ module Containers
     end
 
     def commit_message
-      "Apply agent changes"
+      trailer = agent_run.project.agent_co_author_trailer.presence
+      return "Apply agent changes" unless trailer
+
+      "Apply agent changes\n\n#{trailer}"
     end
 
     def validate_branch_name!
@@ -705,7 +709,7 @@ module Containers
     # Uses POSIX shell escaping for the trailer value: each single quote in
     # the trailer is replaced with the standard '\'' break-and-rejoin pattern.
     # Ruby's gsub replacement interprets \\ as a literal backslash, so the
-    # replacement string "'\\\\''") produces the four-character sequence '\''
+    # replacement string "'\\\\''" produces the four-character sequence '\''
     # in the output.
     def commit_msg_hook_script(trailer)
       escaped = trailer.gsub("'", "'\\\\''")
@@ -714,7 +718,7 @@ module Containers
         #!/bin/sh
         # Installed by Paid — append co-author trailer to commits
         if ! grep -qF '#{escaped}' "$1"; then
-          printf '\\n\\n#{escaped}' >> "$1"
+          printf '\\n\\n%s' '#{escaped}' >> "$1"
         fi
       SHELL
     end

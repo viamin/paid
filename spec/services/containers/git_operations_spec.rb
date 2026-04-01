@@ -594,7 +594,7 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.commit_uncommitted_changes).to be true
     end
 
-    it "always uses the plain commit message (trailer is handled by commit-msg hook)" do
+    it "appends the co-author trailer to the commit message when configured" do
       status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
         .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
@@ -607,7 +607,11 @@ RSpec.describe Containers::GitOperations do
       project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
       expect(container_service).to receive(:execute)
-        .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+        .with(
+          [ "git", "commit", "--no-verify", "-m",
+            "Apply agent changes\n\nCo-Authored-By: Claude <noreply@anthropic.com>" ],
+          timeout: nil, stream: false
+        )
         .and_return(success_result)
 
       expect(git_ops.commit_uncommitted_changes).to be true
