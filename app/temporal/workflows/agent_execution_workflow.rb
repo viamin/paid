@@ -36,8 +36,11 @@ module Workflows
     )
 
     # The proxy health check activity handles its own polling/backoff internally,
-    # so we use a generous timeout and no retries at the Temporal level.
-    PROXY_HEALTH_TIMEOUT = Activities::CheckProxyHealthActivity::MAX_WAIT_SECONDS + 60
+    # so we use a generous timeout (including HTTP overhead) and let Temporal
+    # handle retries for infrastructure failures (worker crash, host restart).
+    # The activity raises non-retryable ProxyUnavailable when it decides to give
+    # up, so Temporal retries only apply to transient infrastructure failures.
+    PROXY_HEALTH_TIMEOUT = (Activities::CheckProxyHealthActivity::MAX_WAIT_SECONDS * 2) + 60
 
     # Error types from activities where the agent never produced useful work
     # or the outcome is expected/recoverable — containers are cleaned up
@@ -459,8 +462,7 @@ module Workflows
     def ensure_proxy_healthy(agent_run_id)
       run_activity(Activities::CheckProxyHealthActivity,
         { agent_run_id: agent_run_id },
-        timeout: PROXY_HEALTH_TIMEOUT,
-        retry_policy: NO_RETRY)
+        timeout: PROXY_HEALTH_TIMEOUT)
     end
 
     def request_project_resync(project_id)

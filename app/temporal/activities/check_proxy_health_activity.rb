@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "uri"
+require "net/http"
+
 module Activities
   # Checks whether the Rails credential proxy is healthy and reachable.
   #
@@ -29,13 +32,14 @@ module Activities
       return { healthy: true } if proxy_url.blank?
 
       health_url = "#{proxy_url}/up"
-      waited = 0
+      start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       interval = INITIAL_POLL_INTERVAL
 
       until healthy?(health_url)
-        if waited >= MAX_WAIT_SECONDS
+        elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
+        if elapsed >= MAX_WAIT_SECONDS
           raise Temporalio::Error::ApplicationError.new(
-            "Credential proxy unavailable after #{MAX_WAIT_SECONDS}s",
+            "Credential proxy unavailable after #{elapsed.round}s",
             type: "ProxyUnavailable",
             non_retryable: true
           )
@@ -45,29 +49,30 @@ module Activities
           message: "agent_execution.proxy_health_check_waiting",
           agent_run_id: agent_run_id,
           proxy_url: proxy_url,
-          waited_seconds: waited
+          waited_seconds: elapsed.round
         )
 
-        heartbeat("waiting_for_proxy", waited)
+        heartbeat("waiting_for_proxy", elapsed.round)
         sleep(interval)
-        waited += interval
         interval = [ interval * BACKOFF_MULTIPLIER, MAX_POLL_INTERVAL ].min
       end
 
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
       logger.info(
         message: "agent_execution.proxy_health_check_passed",
         agent_run_id: agent_run_id,
-        waited_seconds: waited
+        waited_seconds: elapsed.round
       )
 
-      { healthy: true, waited_seconds: waited }
+      { healthy: true, waited_seconds: elapsed.round }
     end
 
     private
 
     def proxy_base_url(agent_run_id)
-      agent_run = AgentRun.find_by(id: agent_run_id)
-      return nil unless agent_run
+      # Fail fast if the agent run doesn't exist — proceeding with a missing
+      # run would incorrectly treat the proxy as healthy.
+      AgentRun.find(agent_run_id)
 
       # The proxy URL is configured on the container; fall back to the
       # Rails app URL used by the container credential helper.

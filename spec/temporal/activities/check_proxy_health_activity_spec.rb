@@ -56,7 +56,7 @@ RSpec.describe Activities::CheckProxyHealthActivity do
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(result[:healthy]).to be true
-        expect(result[:waited_seconds]).to be > 0
+        expect(result[:waited_seconds]).to be >= 0
       end
     end
 
@@ -105,6 +105,14 @@ RSpec.describe Activities::CheckProxyHealthActivity do
         }.to raise_error(Temporalio::Error::ApplicationError) { |error|
           expect(error.type).to eq("ProxyUnavailable")
         }
+      end
+    end
+
+    context "when agent run does not exist" do
+      it "raises ActiveRecord::RecordNotFound" do
+        expect {
+          activity.execute(agent_run_id: -1)
+        }.to raise_error(ActiveRecord::RecordNotFound)
       end
     end
   end
