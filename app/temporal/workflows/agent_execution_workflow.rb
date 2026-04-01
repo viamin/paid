@@ -35,12 +35,12 @@ module Workflows
       max_attempts: 5
     )
 
-    # The proxy health check activity performs a single check and raises a
-    # retryable error when unhealthy, letting Temporal manage backoff/retry.
-    # This avoids tying up an activity worker thread during long waits.
-    # The retry policy mirrors the old internal polling: 5s initial → 30s cap,
-    # up to MAX_WAIT_SECONDS total. ProxyUnavailable is raised non-retryable
-    # after retries are exhausted.
+    # The proxy health check activity performs a single HTTP check per
+    # invocation and raises a retryable error when unhealthy. Temporal
+    # manages backoff/retry via this policy (5s initial → 30s cap), freeing
+    # the activity worker thread between attempts. When schedule_to_close
+    # expires (MAX_WAIT_SECONDS), the workflow converts the timeout to a
+    # non-retryable ProxyUnavailable error.
     PROXY_HEALTH_RETRY_POLICY = Temporalio::RetryPolicy.new(
       initial_interval: Activities::CheckProxyHealthActivity::INITIAL_POLL_INTERVAL,
       max_interval: Activities::CheckProxyHealthActivity::MAX_POLL_INTERVAL,
