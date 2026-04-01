@@ -9,8 +9,10 @@ module Knowledge
   # Runs knowledge collectors inside an isolated Docker container.
   #
   # Clones the repo on the host, then provisions a lightweight container
-  # (paid-agent:latest) with the repo bind-mounted read-only. Runs each
-  # registered collector inside the container and extracts results.
+  # (paid-agent:latest) with a Docker named volume at /workspace. The repo
+  # is copied into the container via the Docker API (archive_in_stream),
+  # which works correctly in DooD environments where bind mounts from the
+  # devcontainer filesystem are invisible to the host Docker daemon.
   # No API keys or secrets are exposed — collectors are read-only analysis.
   #
   # @example
@@ -66,6 +68,7 @@ module Knowledge
     def run
       clone_repo_on_host!
       provision_container!
+      seed_workspace!
 
       Knowledge::CollectorRunner.call(
         project: project,
@@ -160,6 +163,7 @@ module Knowledge
     def provision_container!
       log("containerized_runner.provision.start")
 
+      create_workspace_volume!
       @container = Docker::Container.create(container_config)
       @container.start
 
@@ -167,6 +171,37 @@ module Knowledge
     rescue Docker::Error::DockerError => e
       cleanup!
       raise ContainerError, "Failed to provision collector container: #{e.message}"
+    end
+
+    # Creates a Docker named volume for the workspace. Named volumes are
+    # managed by the Docker daemon and work correctly in DooD environments
+    # where bind-mounting host paths would fail.
+    def create_workspace_volume!
+      @workspace_volume = "paid-collector-#{project.id}-#{SecureRandom.hex(4)}"
+      Docker::Volume.create(
+        @workspace_volume,
+        "Labels" => {
+          "paid.managed" => "true",
+          "paid.resource" => "collector_volume",
+          "paid.project_id" => project.id.to_s
+        }
+      )
+    end
+
+    # Copies the host-side clone into the container via the Docker API.
+    # This works in DooD because archive_in_stream sends a tar over the
+    # API socket rather than relying on filesystem path visibility.
+    def seed_workspace!
+      tar_data = create_repo_tar
+      @container.archive_in_stream(options[:workspace_mount]) { tar_data }
+      @container.exec(
+        [ "chown", "-R", "agent:agent", options[:workspace_mount] ],
+        user: "root"
+      )
+    end
+
+    def create_repo_tar
+      IO.popen([ "tar", "-cf", "-", "-C", @host_repo_dir, "." ], "rb", &:read)
     end
 
     def container_config
@@ -202,7 +237,7 @@ module Knowledge
           "/home/agent/.cache" => "size=#{128 * 1024 * 1024},mode=0755"
         },
         "Binds" => [
-          "#{@host_repo_dir}:#{options[:workspace_mount]}:ro"
+          "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
         ],
         "NetworkMode" => "none"
       }
@@ -271,6 +306,7 @@ module Knowledge
 
     def cleanup!
       cleanup_container!
+      cleanup_workspace_volume!
       cleanup_host_repo!
     end
 
@@ -290,6 +326,16 @@ module Knowledge
       end
       @container = nil
       log("containerized_runner.cleanup.success")
+    end
+
+    def cleanup_workspace_volume!
+      return unless @workspace_volume
+
+      Docker::Volume.get(@workspace_volume).remove(force: true)
+    rescue Docker::Error::DockerError
+      # Volume may already be removed
+    ensure
+      @workspace_volume = nil
     end
 
     def cleanup_host_repo!

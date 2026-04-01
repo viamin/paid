@@ -6,6 +6,10 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
   let(:project) { Struct.new(:id, :full_name).new(42, "owner/repo") }
   let(:commit_sha) { "a" * 40 }
 
+  let(:mock_volume) do
+    instance_double(Docker::Volume, remove: true)
+  end
+
   let(:mock_container) do
     instance_double(
       Docker::Container,
@@ -19,11 +23,15 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
 
   before do
     allow(Docker::Container).to receive(:create).and_return(mock_container)
+    allow(Docker::Volume).to receive_messages(create: mock_volume, get: mock_volume)
     # Stub host-side git clone
     allow(Dir).to receive(:mktmpdir).and_return("/tmp/paid-collector-test")
     allow(Open3).to receive(:capture3).and_return([ "", "", instance_double(Process::Status, success?: true) ])
     allow(FileUtils).to receive(:chmod)
     allow(FileUtils).to receive(:rm_rf)
+    # Stub tar creation and Docker archive_in_stream for seeding
+    allow(IO).to receive(:popen).with([ "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "." ], "rb").and_return("tar-data")
+    allow(mock_container).to receive(:archive_in_stream)
   end
 
   describe ".available?" do
@@ -84,7 +92,22 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       )
     end
 
-    it "provisions a container with the host repo bind-mounted and runs collectors" do
+    it "creates a named volume instead of bind-mounting host paths" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Docker::Volume).to have_received(:create).with(
+        a_string_matching(/\Apaid-collector-42-[a-f0-9]{8}\z/),
+        hash_including(
+          "Labels" => hash_including(
+            "paid.managed" => "true",
+            "paid.resource" => "collector_volume",
+            "paid.project_id" => "42"
+          )
+        )
+      )
+    end
+
+    it "provisions a container with the named volume and runs collectors" do
       result = described_class.new(project: project, commit_sha: commit_sha).run
 
       expect(Docker::Container).to have_received(:create).with(
@@ -93,12 +116,25 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
           "HostConfig" => hash_including(
             "NetworkMode" => "none",
             "Memory" => 512 * 1024 * 1024,
-            "Binds" => [ "/tmp/paid-collector-test:/workspace:ro" ]
+            "Binds" => [ a_string_matching(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z}) ]
           )
         )
       )
       expect(mock_container).to have_received(:start)
       expect(result[:results].first[:status]).to eq("completed")
+    end
+
+    it "seeds the workspace by copying repo via Docker API" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(IO).to have_received(:popen).with(
+        [ "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "." ], "rb"
+      )
+      expect(mock_container).to have_received(:archive_in_stream).with("/workspace")
+      expect(mock_container).to have_received(:exec).with(
+        [ "chown", "-R", "agent:agent", "/workspace" ],
+        user: "root"
+      )
     end
 
     it "passes container_runner in options to CollectorRunner" do
@@ -123,11 +159,12 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       runner.run
     end
 
-    it "cleans up the container and host repo after execution" do
+    it "cleans up the container, volume, and host repo after execution" do
       described_class.new(project: project, commit_sha: commit_sha).run
 
       expect(mock_container).to have_received(:stop)
       expect(mock_container).to have_received(:delete)
+      expect(mock_volume).to have_received(:remove).with(force: true)
       expect(FileUtils).to have_received(:rm_rf).with("/tmp/paid-collector-test")
     end
 
@@ -139,6 +176,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       }.to raise_error(RuntimeError, "boom")
 
       expect(mock_container).to have_received(:delete)
+      expect(mock_volume).to have_received(:remove).with(force: true)
       expect(FileUtils).to have_received(:rm_rf).with("/tmp/paid-collector-test")
     end
 
@@ -164,13 +202,13 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       expect(config.dig("HostConfig", "NetworkMode")).to eq("none")
     end
 
-    it "bind-mounts host repo read-only instead of using a volume" do
+    it "uses a named volume instead of a host bind mount" do
       config = nil
       allow(Docker::Container).to receive(:create) { |cfg| config = cfg; mock_container }
       described_class.new(project: project, commit_sha: commit_sha).run
 
       binds = config.dig("HostConfig", "Binds")
-      expect(binds).to eq([ "/tmp/paid-collector-test:/workspace:ro" ])
+      expect(binds.first).to match(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z})
     end
   end
 
