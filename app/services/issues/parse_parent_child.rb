@@ -178,9 +178,12 @@ module Issues
       project = issue.project
       existing_children = project.issues.where(parent_issue_id: issue.id, is_pull_request: false)
 
-      if child_numbers.empty?
-        return existing_children.update_all(parent_issue_id: nil, updated_at: Time.current) > 0
-      end
+      # When no child numbers were parsed, do not clear existing children.
+      # We can't reliably distinguish relationships established via this
+      # parent's child-listing sections from those created by other
+      # mechanisms (e.g., child-declares-parent), so blindly clearing here
+      # could remove valid links and make results order-dependent.
+      return false if child_numbers.empty?
 
       child_issues = project.issues.where(
         github_number: child_numbers.to_a,

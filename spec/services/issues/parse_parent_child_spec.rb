@@ -174,17 +174,20 @@ RSpec.describe Issues::ParseParentChild do
         expect(child2.reload.parent_issue_id).to be_nil
       end
 
-      it "clears all children when section is removed" do
+      it "preserves children when section is removed to avoid clearing child-declares-parent links" do
         child = create(:issue, project: project, github_number: 8090)
         parent = create(:issue, project: project, body: "## Child Issues\n- #8090\n")
 
         described_class.call(issue: parent)
         expect(child.reload.parent_issue_id).to eq(parent.id)
 
+        # Removing the section entirely yields an empty child_numbers set.
+        # We intentionally do NOT clear children here because we can't
+        # distinguish parent-listed children from child-declared parents.
         parent.update!(body: "No more child issues here.")
         described_class.call(issue: parent)
 
-        expect(child.reload.parent_issue_id).to be_nil
+        expect(child.reload.parent_issue_id).to eq(parent.id)
       end
 
       it "does not clear PR parent_issue_id when clearing stale children" do
