@@ -2,6 +2,6 @@
 
 class AddAgentCoAuthorTrailerToProjects < ActiveRecord::Migration[8.1]
   def change
-    add_column :projects, :agent_co_author_trailer, :string
+    add_column :projects, :agent_co_author_trailer, :text
   end
 end

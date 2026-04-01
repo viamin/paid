@@ -178,6 +178,35 @@ module Containers
       )
     end
 
+    # Installs a commit-msg hook that appends the project's co-author trailer
+    # to every commit the agent creates. The hook is idempotent — it skips
+    # messages that already contain the trailer.
+    #
+    # The fallback commit in {#commit_uncommitted_changes} uses --no-verify
+    # (which skips hooks), so the trailer is also appended inline there via
+    # {#commit_message} for complete coverage.
+    #
+    # @return [void]
+    def install_co_author_hook
+      trailer = agent_run.project.agent_co_author_trailer.presence
+      return unless trailer
+
+      install_hook("commit-msg", commit_msg_script(trailer))
+    rescue Error => e
+      Rails.logger.warn(
+        message: "container_git.install_co_author_hook_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+    rescue StandardError => e
+      Rails.logger.error(
+        message: "container_git.install_co_author_hook_unexpected_error",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
     # Installs local git exclude patterns for common build artifacts.
     #
     # Writes to .git/info/exclude, which acts like .gitignore but is local
@@ -670,6 +699,20 @@ module Containers
           #{test_command} || exit 1
         else
           echo "Warning: test tool not available, skipping test check"
+        fi
+      SHELL
+    end
+
+    def commit_msg_script(trailer)
+      # The trailer is embedded as a literal string in the heredoc.
+      # grep -qF performs a fixed-string (not regex) search, so no
+      # escaping of special characters is needed.
+      <<~SHELL
+        #!/bin/sh
+        # Installed by Paid — append co-author trailer to commit messages
+        TRAILER='#{trailer.gsub("'", "'\\\\''")}'
+        if ! grep -qF "$TRAILER" "$1"; then
+          printf '\\n\\n%s\\n' "$TRAILER" >> "$1"
         fi
       SHELL
     end

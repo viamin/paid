@@ -648,7 +648,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_121911) do
   create_table "projects", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
-    t.string "agent_co_author_trailer"
+    t.text "agent_co_author_trailer"
     t.jsonb "allowed_github_usernames", default: [], null: false
     t.boolean "auto_add_labels_enabled", default: true, null: false
     t.boolean "auto_fix_merge_conflicts", default: true, null: false

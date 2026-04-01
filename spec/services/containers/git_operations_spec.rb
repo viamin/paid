@@ -1142,4 +1142,65 @@ RSpec.describe Containers::GitOperations do
       end
     end
   end
+
+  describe "#install_co_author_hook" do
+    let(:hook_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
+    let(:trailer) { "Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>" }
+
+    context "when project has agent_co_author_trailer configured" do
+      before do
+        project.update_column(:agent_co_author_trailer, trailer)
+      end
+
+      it "installs a commit-msg hook containing the trailer" do
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+
+        hook_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg/), timeout: nil, stream: false) { |cmd, **|
+            hook_script = cmd
+            success_result
+          }
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.install_co_author_hook
+
+        expect(hook_script).to include(trailer)
+        expect(hook_script).to include("grep -qF")
+      end
+    end
+
+    context "when project has blank agent_co_author_trailer" do
+      before do
+        project.update_column(:agent_co_author_trailer, "")
+      end
+
+      it "does not install a commit-msg hook" do
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/commit-msg/), anything)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
+    context "when project has nil agent_co_author_trailer" do
+      it "does not install a commit-msg hook" do
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/commit-msg/), anything)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
+    it "does not raise when hook installation fails" do
+      project.update_column(:agent_co_author_trailer, trailer)
+      allow(container_service).to receive(:execute).and_raise(StandardError, "container error")
+
+      expect { git_ops.install_co_author_hook }.not_to raise_error
+    end
+  end
 end
