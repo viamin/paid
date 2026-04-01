@@ -200,17 +200,16 @@ module Knowledge
     # the entire archive in memory.
     def seed_workspace!
       stream_repo_tar_to_container!
-      @container.exec(
-        [ "chown", "-R", "agent:agent", options[:workspace_mount] ],
+      # Keep workspace owned by root so the agent user cannot restore
+      # write permissions (they don't own the files). Set read + execute
+      # (for directories) for all users so the agent can read the
+      # codebase for analysis. Collectors should write only to the
+      # size-limited tmpfs locations (/tmp, /home/agent/.cache).
+      _stdout, _stderr, status = @container.exec(
+        [ "chmod", "-R", "a=rX", options[:workspace_mount] ],
         user: "root"
       )
-      # Make workspace read-only for collectors after seeding. Collectors
-      # are read-only analysis and should write to the size-limited tmpfs
-      # locations (/tmp, /home/agent/.cache) instead.
-      @container.exec(
-        [ "chmod", "-R", "a-w", options[:workspace_mount] ],
-        user: "root"
-      )
+      raise ContainerError, "Failed to set workspace permissions (exit #{status})" unless status.to_i.zero?
     end
 
     def stream_repo_tar_to_container!

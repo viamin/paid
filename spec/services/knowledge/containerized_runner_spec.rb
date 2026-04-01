@@ -136,18 +136,33 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
         "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "."
       )
       expect(mock_container).to have_received(:archive_in_stream).with("/workspace")
+    end
+
+    it "sets workspace read-only with root ownership after seeding" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
       expect(mock_container).to have_received(:exec).with(
+        [ "chmod", "-R", "a=rX", "/workspace" ],
+        user: "root"
+      )
+      # No chown to agent — files stay root-owned so the agent user
+      # cannot restore write permissions.
+      expect(mock_container).not_to have_received(:exec).with(
         [ "chown", "-R", "agent:agent", "/workspace" ],
         user: "root"
       )
     end
 
-    it "makes workspace read-only after seeding" do
-      described_class.new(project: project, commit_sha: commit_sha).run
+    it "raises ContainerError when chmod fails during seeding" do
+      allow(mock_container).to receive(:exec)
+        .with([ "chmod", "-R", "a=rX", "/workspace" ], user: "root")
+        .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
 
-      expect(mock_container).to have_received(:exec).with(
-        [ "chmod", "-R", "a-w", "/workspace" ],
-        user: "root"
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to set workspace permissions/
       )
     end
 
