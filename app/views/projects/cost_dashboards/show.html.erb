@@ -48,6 +48,73 @@
     </div>
   </div>
 
+  <%# Cost by Outcome %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Cost by Outcome</h2>
+    <p class="mt-1 text-sm text-gray-500">Separate successful run costs from failed/timed-out runs.</p>
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <% @stats[:cost_by_outcome].each do |outcome, perf| %>
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+          <dt class="text-sm font-semibold text-gray-900"><%= outcome_label(outcome) %></dt>
+          <dd class="mt-1 text-xs text-gray-500"><%= number_with_delimiter(perf[:run_count]) %> runs</dd>
+          <% if perf[:run_count] > 0 %>
+            <div class="mt-3 grid grid-cols-3 gap-3 text-sm">
+              <div>
+                <dt class="text-xs text-gray-500">Total Cost</dt>
+                <dd class="mt-1 font-semibold text-gray-900"><%= format_cost_cents(perf[:total_cost_cents]) %></dd>
+              </div>
+              <div>
+                <dt class="text-xs text-gray-500">Avg Cost</dt>
+                <dd class="mt-1 font-semibold text-gray-900"><%= format_cost_cents(perf[:avg_cost_cents]) %></dd>
+              </div>
+              <div>
+                <dt class="text-xs text-gray-500">Avg Duration</dt>
+                <dd class="mt-1 font-semibold text-gray-900"><%= format_duration(perf[:avg_duration_seconds]) %></dd>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <%# Cost by Goal Type %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Cost by Goal Type</h2>
+    <p class="mt-1 text-sm text-gray-500">Compare costs across different types of agent work.</p>
+    <% goals_with_runs = @stats[:cost_by_goal].select { |_, v| v[:run_count] > 0 } %>
+    <% if goals_with_runs.any? %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Goal Type</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Runs</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Total Cost</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Cost</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Avg Duration</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% goals_with_runs.each do |goal, perf| %>
+              <tr>
+                <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= goal_label(goal) %></td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= perf[:run_count] %></td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= format_cost_cents(perf[:total_cost_cents]) %></td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= format_cost_cents(perf[:avg_cost_cents]) %></td>
+                <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= format_duration(perf[:avg_duration_seconds]) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 text-sm text-gray-500">No finished runs to break down by goal type.</div>
+      </div>
+    <% end %>
+  </div>
+
   <%# Cost Trend Chart (30 days) %>
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Cost Trend (Last 30 Days)</h2>

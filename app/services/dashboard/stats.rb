@@ -21,6 +21,8 @@ module Dashboard
         duration_percentiles: duration_percentiles,
         phase_breakdown: phase_breakdown,
         cost_and_tokens: cost_and_tokens,
+        performance_by_outcome: performance_by_outcome,
+        performance_by_goal: performance_by_goal,
         runs_by_agent_type: runs_by_agent_type,
         runs_by_provider: runs_by_provider,
         provider_fallback_stats: provider_fallback_stats,
@@ -160,6 +162,131 @@ module Dashboard
         .where("iterations > 0")
         .pick(Arel.sql("AVG(iterations)"))
       result&.to_f&.round(1) || 0.0
+    end
+
+    def performance_by_outcome
+      finished = agent_runs.finished
+      outcome_sql = Arel.sql(<<~SQL.squish)
+        CASE WHEN status = 'completed' THEN 'completed' ELSE 'other' END
+      SQL
+
+      rows = finished
+        .group(outcome_sql)
+        .pluck(
+          outcome_sql,
+          Arel.sql("COUNT(*)"),
+          Arel.sql("COALESCE(SUM(cost_cents), 0)"),
+          Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"),
+          Arel.sql("COALESCE(SUM(duration_seconds), 0)"),
+          Arel.sql("COUNT(duration_seconds)")
+        )
+
+      result = outcome_buckets.index_with { |_| empty_performance_summary }
+      rows.each do |outcome, count, cost, tokens, dur_sum, dur_count|
+        count = count.to_i
+        next if count.zero?
+
+        result[outcome] = {
+          run_count: count,
+          total_cost_cents: cost.to_i,
+          avg_cost_cents: (cost.to_f / count).round,
+          total_tokens: tokens.to_i,
+          avg_tokens: (tokens.to_f / count).round,
+          avg_duration_seconds: dur_count.to_i.zero? ? 0 : (dur_sum.to_f / dur_count.to_i).to_i
+        }
+      end
+      result
+    end
+
+    def performance_by_goal
+      # Pre-aggregate per (goal, outcome) to avoid N+1 queries.
+      finished = agent_runs.finished
+      outcome_case = Arel.sql(<<~SQL.squish)
+        CASE WHEN status = 'completed' THEN 'completed' ELSE 'other' END
+      SQL
+
+      rows = finished
+        .group(:goal, outcome_case)
+        .pluck(
+          :goal,
+          outcome_case,
+          Arel.sql("COUNT(*)"),
+          Arel.sql("COALESCE(SUM(cost_cents), 0)"),
+          Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"),
+          Arel.sql("COALESCE(SUM(duration_seconds), 0)"),
+          Arel.sql("COUNT(duration_seconds)")
+        )
+
+      # Index aggregates by [goal, outcome]
+      agg = {}
+      rows.each do |goal, outcome, count, cost, tokens, dur_sum, dur_count|
+        agg[[ goal, outcome ]] = {
+          run_count: count.to_i,
+          total_cost_cents: cost.to_i,
+          total_tokens: tokens.to_i,
+          total_duration_seconds: dur_sum.to_i,
+          duration_count: dur_count.to_i
+        }
+      end
+
+      AgentRun::GOALS.index_with do |goal|
+        # Combine outcome buckets for the overall goal summary
+        empty_agg = { run_count: 0, total_cost_cents: 0, total_tokens: 0, total_duration_seconds: 0, duration_count: 0 }
+        goal_buckets = outcome_buckets.map { |o| agg[[ goal, o ]] || empty_agg }
+        total_count = goal_buckets.sum { |b| b[:run_count] }
+        total_cost = goal_buckets.sum { |b| b[:total_cost_cents] }
+        total_tokens = goal_buckets.sum { |b| b[:total_tokens] }
+        total_dur = goal_buckets.sum { |b| b[:total_duration_seconds] }
+        total_dur_count = goal_buckets.sum { |b| b[:duration_count] }
+
+        overall = if total_count.zero?
+          empty_performance_summary
+        else
+          {
+            run_count: total_count,
+            total_cost_cents: total_cost,
+            avg_cost_cents: (total_cost.to_f / total_count).round,
+            total_tokens: total_tokens,
+            avg_tokens: (total_tokens.to_f / total_count).round,
+            avg_duration_seconds: total_dur_count.zero? ? 0 : (total_dur.to_f / total_dur_count).to_i
+          }
+        end
+
+        by_outcome = outcome_buckets.index_with do |outcome|
+          bucket = agg[[ goal, outcome ]]
+          if bucket.nil? || bucket[:run_count].zero?
+            empty_performance_summary
+          else
+            c = bucket[:run_count]
+            dc = bucket[:duration_count]
+            {
+              run_count: c,
+              total_cost_cents: bucket[:total_cost_cents],
+              avg_cost_cents: (bucket[:total_cost_cents].to_f / c).round,
+              total_tokens: bucket[:total_tokens],
+              avg_tokens: (bucket[:total_tokens].to_f / c).round,
+              avg_duration_seconds: dc.zero? ? 0 : (bucket[:total_duration_seconds].to_f / dc).to_i
+            }
+          end
+        end
+
+        overall.merge(by_outcome: by_outcome)
+      end
+    end
+
+    def outcome_buckets
+      %w[completed other]
+    end
+
+    def empty_performance_summary
+      {
+        run_count: 0,
+        total_cost_cents: 0,
+        avg_cost_cents: 0,
+        total_tokens: 0,
+        avg_tokens: 0,
+        avg_duration_seconds: 0
+      }
     end
 
     def runs_by_agent_type

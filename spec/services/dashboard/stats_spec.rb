@@ -172,6 +172,67 @@ RSpec.describe Dashboard::Stats do
       end
     end
 
+    context "with performance_by_outcome" do
+      before do
+        create(:agent_run, :completed, project: project, cost_cents: 100,
+          tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
+        create(:agent_run, :completed, project: project, cost_cents: 200,
+          tokens_input: 2000, tokens_output: 1000, duration_seconds: 120)
+        create(:agent_run, project: project, status: "failed", cost_cents: 50,
+          tokens_input: 500, tokens_output: 250, duration_seconds: 30)
+        create(:agent_run, project: project, status: "timeout", cost_cents: 300,
+          tokens_input: 3000, tokens_output: 1500, duration_seconds: 600)
+      end
+
+      it "separates completed from other outcomes" do
+        completed = stats[:performance_by_outcome]["completed"]
+        other = stats[:performance_by_outcome]["other"]
+
+        expect(completed[:run_count]).to eq(2)
+        expect(completed[:total_cost_cents]).to eq(300)
+        expect(completed[:avg_cost_cents]).to eq(150)
+
+        expect(other[:run_count]).to eq(2)
+        expect(other[:total_cost_cents]).to eq(350)
+        expect(other[:avg_cost_cents]).to eq(175)
+      end
+    end
+
+    context "with performance_by_goal" do
+      before do
+        create(:agent_run, :completed, project: project, goal: "create_pr",
+          cost_cents: 200, tokens_input: 2000, tokens_output: 1000, duration_seconds: 120)
+        create(:agent_run, :completed, project: project, goal: "create_issue",
+          cost_cents: 50, tokens_input: 500, tokens_output: 250, duration_seconds: 30)
+        create(:agent_run, project: project, goal: "create_pr", status: "failed",
+          cost_cents: 100, tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
+      end
+
+      it "breaks down by goal type" do
+        pr = stats[:performance_by_goal]["create_pr"]
+        issue = stats[:performance_by_goal]["create_issue"]
+
+        expect(pr[:run_count]).to eq(2)
+        expect(pr[:total_cost_cents]).to eq(300)
+        expect(issue[:run_count]).to eq(1)
+        expect(issue[:total_cost_cents]).to eq(50)
+      end
+
+      it "includes outcome sub-breakdown per goal" do
+        pr = stats[:performance_by_goal]["create_pr"]
+        expect(pr[:by_outcome]["completed"][:run_count]).to eq(1)
+        expect(pr[:by_outcome]["completed"][:avg_cost_cents]).to eq(200)
+        expect(pr[:by_outcome]["other"][:run_count]).to eq(1)
+        expect(pr[:by_outcome]["other"][:avg_cost_cents]).to eq(100)
+      end
+
+      it "returns zeros for goal types with no runs" do
+        review = stats[:performance_by_goal]["review"]
+        expect(review[:run_count]).to eq(0)
+        expect(review[:total_cost_cents]).to eq(0)
+      end
+    end
+
     context "with runs from another account" do
       let(:other_account) { create(:account) }
       let(:other_project) { create(:project, account: other_account) }
