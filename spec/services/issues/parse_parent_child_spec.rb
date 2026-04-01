@@ -317,6 +317,21 @@ RSpec.describe Issues::ParseParentChild do
         expect(child.reload.parent_issue_id).to eq(parent_a.id)
       end
 
+      it "does not clear parent set by another mechanism when removal has no prior inline declaration" do
+        parent = create(:issue, project: project, github_number: 8213)
+        # Parent was set externally (e.g. parent-listing), not via inline declaration
+        child = create(:issue, project: project, body: "Some body text", parent_issue_id: parent.id)
+
+        # A removal comment for the stored parent should not clear it because
+        # there was no inline parent declaration — the declared flag stays false.
+        described_class.call(
+          issue: child,
+          comments: [ "No longer part of #8213" ]
+        )
+
+        expect(child.reload.parent_issue_id).to eq(parent.id)
+      end
+
       it "handles nil comments gracefully" do
         parent = create(:issue, project: project, body: "## Child Issues\n- #8230")
 

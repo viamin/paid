@@ -62,15 +62,16 @@ module Issues
       new(...).call
     end
 
-    # Returns true if any parent-child relationships changed.
-    # Callers can use this to batch broadcasts.
+    # Returns true if sync_children made changes via update_all (which
+    # bypasses callbacks and needs a manual broadcast). sync_parent uses
+    # update! which triggers after_update_commit broadcasts on its own.
     def call
       child_numbers = resolve_child_numbers
       parent_number, parent_declared = resolve_parent_number
 
-      changed = sync_children(child_numbers)
-      changed |= sync_parent(parent_number, parent_declared)
-      changed
+      children_changed = sync_children(child_numbers)
+      sync_parent(parent_number, parent_declared)
+      children_changed
     end
 
     private
@@ -118,9 +119,14 @@ module Issues
 
         # Process removals first so "No longer part of #N" doesn't also
         # match the addition pattern and overwrite an unrelated parent.
+        # Only mark declared when the removal targets the currently tracked
+        # parent — a removal for a *different* number shouldn't clear a
+        # parent set by another mechanism (e.g. parent-listing).
         if (removal = comment_body.match(PARENT_REMOVAL_PATTERN))
-          parent = nil if parent == removal[1].to_i
-          declared = true
+          if parent == removal[1].to_i
+            parent = nil
+            declared = true
+          end
         end
 
         # Strip removal phrases before checking for additions, since

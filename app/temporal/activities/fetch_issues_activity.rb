@@ -161,8 +161,10 @@ module Activities
         )
       end
 
-      # Broadcast once after the loop rather than per-issue, since
-      # update_all in ParseParentChild bypasses ActiveRecord callbacks.
+      # ParseParentChild returns true only when sync_children changed rows
+      # via update_all (which bypasses callbacks). sync_parent uses update!
+      # and triggers its own after_update_commit broadcasts, so we only need
+      # a manual broadcast for the update_all path.
       project.broadcast_issues_update if parent_child_changed
 
       synced_numbers = synced_issues.filter_map { |si| si[:github_number] }
