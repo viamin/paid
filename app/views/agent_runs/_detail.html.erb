@@ -39,12 +39,12 @@
             <% end %>
           </p>
         </div>
-        <%# Default show_cancel/show_retry to true so Turbo broadcasts
-            (which re-render this partial without those locals) keep the
-            buttons visible on the show page. Callers that embed this
-            partial elsewhere (e.g. index) pass false explicitly. %>
-        <% show_cancel = local_assigns.key?(:show_cancel) ? local_assigns[:show_cancel] : true %>
-        <% show_retry  = local_assigns.key?(:show_retry)  ? local_assigns[:show_retry]  : true %>
+        <%# Default show_cancel/show_retry to false so Turbo broadcasts
+            (which re-render this partial without those locals) do not
+            accidentally show action buttons. Callers that embed this
+            partial and want these actions visible must pass true explicitly. %>
+        <% show_cancel = local_assigns.key?(:show_cancel) ? local_assigns[:show_cancel] : false %>
+        <% show_retry  = local_assigns.key?(:show_retry)  ? local_assigns[:show_retry]  : false %>
         <% retry_provider_options = local_assigns.fetch(:retry_provider_options, []) %>
         <div class="flex items-center space-x-3">
           <%= agent_run_status_badge(agent_run.status) %>

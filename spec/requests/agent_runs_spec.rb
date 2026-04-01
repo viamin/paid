@@ -1001,6 +1001,19 @@ RSpec.describe "AgentRuns" do
         expect(flash[:alert]).to eq("Unable to cancel agent run. Please try again.")
       end
 
+      it "shows finished message when run completes during cancellation" do
+        agent_run = create(:agent_run, :running, project: project)
+        allow(AgentRuns::Cancel).to receive(:call) do
+          # Simulate the run finishing between the external cancel and the lock
+          agent_run.update_columns(status: "completed", completed_at: Time.current)
+        end
+
+        post cancel_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:notice]).to eq("Agent run finished before it could be cancelled.")
+      end
+
       it "does not allow cancelling runs from other accounts" do
         other_account = create(:account)
         other_token = create(:github_token, account: other_account)
