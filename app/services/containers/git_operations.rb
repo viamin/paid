@@ -662,15 +662,37 @@ module Containers
     # Like install_hook, but appends to an existing hook instead of skipping.
     # Used for the co-author commit-msg hook so the trailer is applied even
     # when the repo already ships a commit-msg hook (e.g. Husky, Lefthook).
+    #
+    # Only appends when the existing hook uses a sh-compatible interpreter
+    # (sh, bash, dash, zsh). Non-shell hooks (e.g. #!/usr/bin/env node) are
+    # left untouched — appending shell code would corrupt them. The inline
+    # fallback in #commit_message still applies the trailer in that case.
     def install_or_append_hook(hook_name, script)
       hook_path = ".git/hooks/#{hook_name}"
 
       check = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
       if check.success?
-        append_to_hook(hook_path, script)
+        if sh_compatible_hook?(hook_path)
+          append_to_hook(hook_path, script)
+        else
+          Rails.logger.warn(
+            message: "container_git.non_shell_hook_skipped",
+            agent_run_id: agent_run.id,
+            hook: hook_name
+          )
+        end
       else
         write_hook_file(hook_path, script)
       end
+    end
+
+    # Returns true when the hook's shebang references a sh-compatible shell.
+    def sh_compatible_hook?(hook_path)
+      result = container_service.execute("head -1 #{hook_path}", timeout: nil, stream: false)
+      return false if result.failure?
+
+      shebang = result[:stdout].to_s.strip
+      shebang.match?(%r{\A#!.*\b(?:ba|da|z)?sh\b})
     end
 
     def write_hook_file(hook_path, script)
@@ -767,7 +789,7 @@ module Containers
         #!/bin/sh
         # Installed by Paid — append co-author trailer to commit messages
         TRAILER='#{sanitized.gsub("'", "'\\\\''")}'
-        if ! grep -qF "$TRAILER" "$1"; then
+        if ! grep -qF -- "$TRAILER" "$1"; then
           printf '\\n\\n%s\\n' "$TRAILER" >> "$1"
         fi
       SHELL

@@ -1170,7 +1170,7 @@ RSpec.describe Containers::GitOperations do
         git_ops.install_co_author_hook
 
         expect(hook_script).to include(trailer)
-        expect(hook_script).to include("grep -qF")
+        expect(hook_script).to include("grep -qF --")
       end
 
       it "appends to an existing commit-msg hook instead of skipping" do
@@ -1178,6 +1178,11 @@ RSpec.describe Containers::GitOperations do
         allow(container_service).to receive(:execute)
           .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(hook_exists_result)
+
+        head_result = Containers::Provision::Result.success(stdout: "#!/bin/sh\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with("head -1 .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(head_result)
 
         appended_script = nil
         allow(container_service).to receive(:execute)
@@ -1193,6 +1198,34 @@ RSpec.describe Containers::GitOperations do
 
         expect(appended_script).to include(trailer)
         expect(appended_script).not_to include("#!/bin/sh")
+      end
+    end
+
+    context "when existing hook is not sh-compatible" do
+      before do
+        project.update_column(:agent_co_author_trailer, trailer)
+      end
+
+      it "skips appending and logs a warning" do
+        hook_exists_result = Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+
+        head_result = Containers::Provision::Result.success(stdout: "#!/usr/bin/env node\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with("head -1 .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(head_result)
+
+        allow(Rails.logger).to receive(:warn)
+
+        git_ops.install_co_author_hook
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(message: "container_git.non_shell_hook_skipped")
+        )
+        expect(container_service).not_to have_received(:execute)
+          .with(a_string_matching(/cat >>/), anything, anything)
       end
     end
 
