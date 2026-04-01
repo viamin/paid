@@ -18,7 +18,7 @@ module Activities
       github_issues, truncated = fetch_all_issues(client, project.full_name)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
-      parse_dependencies(project, synced_issues) if synced_issues.any?
+      parse_issue_relationships(project, synced_issues) if synced_issues.any?
       closed_count = close_stale_issues(project, github_issues, truncated: truncated)
 
       logger.info(
@@ -123,7 +123,7 @@ module Activities
     # TODO(#430): Fetching comments per issue is an N+1 API call pattern that
     # increases sync time and rate-limit pressure. Consider skipping unchanged
     # issues (via github_updated_at) or batching comment fetches.
-    def parse_dependencies(project, synced_issues)
+    def parse_issue_relationships(project, synced_issues)
       synced_issue_ids = synced_issues.filter_map { |si| si[:id] }
       issues_relation = project.issues.where(
         id: synced_issue_ids,
@@ -137,6 +137,7 @@ module Activities
       # sync batch, deps created by earlier iterations won't be visible for cycle
       # detection until the next full sync — an acceptable trade-off vs N×DB reads.
       adjacency = IssueDependency.account_adjacency(project.account)
+      parent_child_changed = false
 
       issues_relation.find_each do |issue|
         comment_bodies = fetch_trusted_comment_bodies(client, project, issue)
@@ -146,11 +147,12 @@ module Activities
         next if comment_bodies.nil?
 
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
+        parent_child_changed |= Issues::ParseParentChild.call(issue: issue, comments: comment_bodies)
       rescue GithubClient::RateLimitError
         raise
       rescue => e
         logger.warn(
-          message: "github_sync.parse_dependencies_failed",
+          message: "github_sync.parse_issue_relationships_failed",
           project_id: project.id,
           issue_id: issue.id,
           github_number: issue.github_number,
@@ -158,6 +160,12 @@ module Activities
           error: e.message
         )
       end
+
+      # ParseParentChild returns true only when sync_children changed rows
+      # via update_all (which bypasses callbacks). sync_parent uses update!
+      # and triggers its own after_update_commit broadcasts, so we only need
+      # a manual broadcast for the update_all path.
+      project.broadcast_issues_update if parent_child_changed
 
       synced_numbers = synced_issues.filter_map { |si| si[:github_number] }
       resolve_external_dependencies(project, synced_numbers)
