@@ -45,8 +45,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
     before do
       allow(Rails.application.config.x).to receive(:agent_timeout).and_return(600)
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
-      allow(Temporalio::Workflow).to receive(:patched).and_yield
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
     def stub_issue_activities(issue_created:)
@@ -90,8 +89,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     let(:input) { { project_id: 1, issue_id: 1, goal: "create_issue" } }
 
     before do
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
-      allow(Temporalio::Workflow).to receive(:patched).and_yield
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
     it "uses shorter start_to_close_timeout for create_issue goals" do
@@ -134,8 +132,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
     before do
       allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
-      allow(Temporalio::Workflow).to receive(:patched).and_yield
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
     def stub_review_activities
@@ -202,8 +199,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
 
     before do
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
-      allow(Temporalio::Workflow).to receive(:patched).and_yield
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
     it "configures heartbeat_timeout and RUN_AGENT_RETRY_POLICY on RunAgentActivity" do
@@ -228,8 +224,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
     before do
       allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
-      allow(Temporalio::Workflow).to receive(:patched).and_yield
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
     it "uses default agent_timeout for create_pr goals" do
@@ -253,8 +248,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
     before do
       allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
-      allow(Temporalio::Workflow).to receive(:patched).and_yield
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
     def stub_existing_pr_followup(pr_review_phase:)
@@ -306,8 +300,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
     before do
       allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
-      allow(Temporalio::Workflow).to receive(:patched).and_yield
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
     def stub_no_changes_followup
@@ -348,8 +341,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
     before do
       allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
-      allow(Temporalio::Workflow).to receive(:patched).and_yield
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
     def stub_successful_run
@@ -441,8 +433,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
     before do
       allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
-      allow(Temporalio::Workflow).to receive(:patched).and_yield
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
     def stub_post_agent_failure(called_activities, retain_error: nil, retain_result: { agent_run_id: 42, retained: true })
@@ -567,8 +558,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
 
     before do
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
-      allow(Temporalio::Workflow).to receive(:patched).and_yield
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
     it "invokes CheckProxyHealthActivity before CloneRepoActivity" do
@@ -638,8 +628,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
 
     before do
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
-      allow(Temporalio::Workflow).to receive(:patched).and_yield
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
     it "invokes CheckProxyHealthActivity before PushBranchActivity" do

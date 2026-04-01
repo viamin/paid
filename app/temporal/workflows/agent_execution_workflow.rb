@@ -119,7 +119,7 @@ module Workflows
         # effectively pausing the workflow until credentials are available.
         skip_clone = goal == "create_issue" && source_pull_request_number.blank?
         unless skip_clone
-          Temporalio::Workflow.patched("check_proxy_health_before_clone") do
+          if Temporalio::Workflow.patched("check_proxy_health_before_clone")
             ensure_proxy_healthy(agent_run_id)
           end
         end
@@ -194,7 +194,7 @@ module Workflows
           # Step 5: Push branch (inside container)
           # Re-check proxy health before push — the agent may have run for
           # a long time and the proxy could have gone down in the meantime.
-          Temporalio::Workflow.patched("check_proxy_health_before_push") do
+          if Temporalio::Workflow.patched("check_proxy_health_before_push")
             ensure_proxy_healthy(agent_run_id)
           end
 
