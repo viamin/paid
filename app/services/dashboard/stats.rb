@@ -196,7 +196,8 @@ module Dashboard
           run_count: count.to_i,
           total_cost_cents: cost.to_i,
           total_tokens: tokens.to_i,
-          avg_duration_seconds: avg_dur&.to_i || 0
+          # Keep as float for accurate weighted-average computation; truncate only at display time.
+          avg_duration_seconds: avg_dur&.to_f || 0.0
         }
       end
 
@@ -229,7 +230,8 @@ module Dashboard
             c = bucket[:run_count]
             bucket.merge(
               avg_cost_cents: (bucket[:total_cost_cents].to_f / c).round,
-              avg_tokens: (bucket[:total_tokens].to_f / c).round
+              avg_tokens: (bucket[:total_tokens].to_f / c).round,
+              avg_duration_seconds: bucket[:avg_duration_seconds].to_i
             )
           end
         end
