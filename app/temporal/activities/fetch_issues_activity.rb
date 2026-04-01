@@ -146,6 +146,7 @@ module Activities
         next if comment_bodies.nil?
 
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
+        Issues::ParseParentChild.call(issue: issue, comments: comment_bodies)
       rescue GithubClient::RateLimitError
         raise
       rescue => e
