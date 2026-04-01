@@ -48,10 +48,11 @@ class StaleRunDetectorJob < ApplicationJob
     end
 
     stale_pending_runs(pending_threshold).find_each do |agent_run|
-      if requeue_stale_pending_run(agent_run)
+      case requeue_stale_pending_run(agent_run)
+      when :requeued
         requeued += 1
-      elsif resolve_stale_run(agent_run)
-        resolved += 1
+      when :exhausted
+        resolved += 1 if resolve_stale_run(agent_run)
       end
     rescue => e
       Rails.logger.error(
@@ -95,15 +96,16 @@ class StaleRunDetectorJob < ApplicationJob
     AgentRun.pending.where("updated_at < ?", threshold)
   end
 
-  # Attempts to requeue a stale pending run. Returns true if the run was
-  # requeued, false if it has exhausted its requeue budget and should be
-  # timed out instead.
+  # Attempts to requeue a stale pending run.
+  # Returns :requeued if successfully requeued, :exhausted if requeue budget
+  # is spent (caller should time out), or :skip if the run is no longer
+  # stale/pending (e.g. it transitioned to running).
   def requeue_stale_pending_run(agent_run)
     agent_run.with_lock do
       agent_run.reload
-      return false if agent_run.finished?
-      return false unless agent_run.status == "pending"
-      return false if agent_run.stale_requeue_count >= MAX_STALE_REQUEUES
+      return :skip if agent_run.finished?
+      return :skip unless agent_run.status == "pending"
+      return :exhausted if agent_run.stale_requeue_count >= MAX_STALE_REQUEUES
 
       agent_run.update!(
         status: "queued",
@@ -121,7 +123,7 @@ class StaleRunDetectorJob < ApplicationJob
 
     cleanup_docker_resources(agent_run)
 
-    true
+    :requeued
   end
 
   def resolve_stale_run(agent_run)
