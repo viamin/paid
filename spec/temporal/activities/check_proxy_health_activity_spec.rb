@@ -48,7 +48,6 @@ RSpec.describe Activities::CheckProxyHealthActivity do
 
     context "when proxy is initially unhealthy then recovers" do
       it "waits and retries until healthy" do
-        call_count = 0
         allow(activity).to receive(:sleep)
         allow(activity).to receive(:heartbeat)
 
