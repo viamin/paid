@@ -35,6 +35,20 @@ module Workflows
       max_attempts: 5
     )
 
+    # The proxy health check activity performs a single HTTP check per
+    # invocation and raises a retryable error when unhealthy. Temporal
+    # manages backoff/retry via this policy (5s initial → 30s cap), freeing
+    # the activity worker thread between attempts. When schedule_to_close
+    # expires (MAX_WAIT_SECONDS), the workflow converts the timeout to a
+    # non-retryable ProxyUnavailable error.
+    PROXY_HEALTH_RETRY_POLICY = Temporalio::RetryPolicy.new(
+      initial_interval: Activities::CheckProxyHealthActivity::INITIAL_POLL_INTERVAL,
+      max_interval: Activities::CheckProxyHealthActivity::MAX_POLL_INTERVAL,
+      backoff_coefficient: Activities::CheckProxyHealthActivity::BACKOFF_MULTIPLIER,
+      max_attempts: 0 # unlimited — schedule_to_close_timeout is the deadline
+    )
+    PROXY_HEALTH_TIMEOUT = Activities::CheckProxyHealthActivity::MAX_WAIT_SECONDS
+
     # Error types from activities where the agent never produced useful work
     # or the outcome is expected/recoverable — containers are cleaned up
     # immediately for these rather than retained for diagnostics.
@@ -44,6 +58,7 @@ module Workflows
       MissingPrompt
       MissingUser
       ContainerNotProvisioned
+      ProxyUnavailable
       RateLimit
     ].freeze
 
@@ -97,11 +112,22 @@ module Workflows
         run_activity(Activities::ProvisionContainerActivity,
           { agent_run_id: agent_run_id }, timeout: 60)
 
+        # Step 2b: Verify the credential proxy is healthy before git operations.
+        # Clone and push depend on the proxy for git authentication. When the
+        # Rails app is down (e.g. PendingMigration), the proxy is unreachable
+        # and git operations fail. This check polls until the proxy recovers,
+        # effectively pausing the workflow until credentials are available.
+        skip_clone = goal == "create_issue" && source_pull_request_number.blank?
+        unless skip_clone
+          if Temporalio::Workflow.patched("check_proxy_health_before_clone")
+            ensure_proxy_healthy(agent_run_id)
+          end
+        end
+
         # Step 3: Clone repo and create branch inside the container.
         # Skip clone for create_issue goals without a source PR — the agent
         # only needs the GitHub API proxy, not repository code.
         # Review goals always need the repo to examine code.
-        skip_clone = goal == "create_issue" && source_pull_request_number.blank?
         unless skip_clone
           run_activity(Activities::CloneRepoActivity,
             { agent_run_id: agent_run_id }, timeout: 180)
@@ -166,6 +192,12 @@ module Workflows
             { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
         elsif agent_result[:has_changes]
           # Step 5: Push branch (inside container)
+          # Re-check proxy health before push — the agent may have run for
+          # a long time and the proxy could have gone down in the meantime.
+          if Temporalio::Workflow.patched("check_proxy_health_before_push")
+            ensure_proxy_healthy(agent_run_id)
+          end
+
           run_activity(Activities::PushBranchActivity,
             { agent_run_id: agent_run_id }, timeout: 60)
 
@@ -436,6 +468,28 @@ module Workflows
       end
 
       true
+    end
+
+    # Design: The activity performs a single health check per invocation and
+    # raises a retryable ProxyUnhealthy error when the proxy is down. Temporal
+    # manages backoff/retry via PROXY_HEALTH_RETRY_POLICY (5s → 30s cap),
+    # keeping the activity worker thread free between attempts. When the
+    # schedule_to_close_timeout expires, Temporal surfaces a TimeoutError
+    # which this method converts to a non-retryable ProxyUnavailable.
+    def ensure_proxy_healthy(agent_run_id)
+      run_activity(Activities::CheckProxyHealthActivity,
+        { agent_run_id: agent_run_id },
+        start_to_close_timeout: 30,
+        schedule_to_close_timeout: PROXY_HEALTH_TIMEOUT,
+        retry_policy: PROXY_HEALTH_RETRY_POLICY)
+    rescue Temporalio::Error::ActivityError => e
+      raise unless e.cause.is_a?(Temporalio::Error::TimeoutError)
+
+      raise Temporalio::Error::ApplicationError.new(
+        "Credential proxy unavailable after #{PROXY_HEALTH_TIMEOUT}s",
+        type: "ProxyUnavailable",
+        non_retryable: true
+      )
     end
 
     def request_project_resync(project_id)
