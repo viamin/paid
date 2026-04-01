@@ -279,13 +279,16 @@ class WorktreeService
   def ensure_fetch_refspec
     return if @fetch_refspec_verified
 
-    existing = run_git("config", "--get", "remote.origin.fetch", chdir: project_repo_path, raise_on_error: false).strip
-    if existing.present?
+    desired_refspec = "+refs/heads/*:refs/remotes/origin/*"
+    raw_output = run_git("config", "--get-all", "remote.origin.fetch", chdir: project_repo_path, raise_on_error: false)
+    existing = raw_output.lines.map(&:strip).reject(&:empty?)
+
+    if existing.include?(desired_refspec)
       @fetch_refspec_verified = true
       return
     end
 
-    run_git("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*", chdir: project_repo_path)
+    run_git("config", "--add", "remote.origin.fetch", desired_refspec, chdir: project_repo_path)
     @fetch_refspec_verified = true
   end
 
