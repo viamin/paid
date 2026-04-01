@@ -38,6 +38,10 @@ class LinearToken < ApplicationRecord
     validation_status == "pending"
   end
 
+  def validating?
+    validation_status == "validating"
+  end
+
   def validated?
     validation_status == "validated"
   end

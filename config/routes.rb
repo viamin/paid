@@ -20,7 +20,7 @@ Rails.application.routes.draw do
   post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
 
   # Integrations hub
-  resources :integrations, only: [ :index ]
+  resources :integrations, only: [ :index, :new ]
   resources :integration_credentials, only: [ :index, :new, :create, :show, :destroy ]
 
   # GitHub tokens management
