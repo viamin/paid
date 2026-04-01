@@ -17,11 +17,17 @@
         quality_metrics: @quality_metrics,
         phase_timeline: @phase_timeline,
         phase_summary: @phase_summary,
-        show_cancel: policy(@agent_run).cancel?,
-        show_retry: policy(@agent_run.project).run_agent?,
-        retry_provider_options: @retry_provider_options,
         final_provider_record: @final_provider_record,
         attempted_providers_by_routing_key: @attempted_providers_by_routing_key %>
+
+  <%# Action buttons are rendered outside the Turbo broadcast target so that
+      live updates (which re-render _detail without user-specific locals)
+      do not wipe policy-gated controls like Cancel and Retry. %>
+  <%= render "agent_runs/detail_actions",
+        agent_run: @agent_run,
+        show_cancel: policy(@agent_run).cancel?,
+        show_retry: policy(@agent_run.project).run_agent?,
+        retry_provider_options: @retry_provider_options %>
 
   <% if @logs.any? %>
     <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
