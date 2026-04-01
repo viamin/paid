@@ -875,7 +875,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_121200) do
 
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 3600, null: false
-    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"], null: false
+    t.jsonb "allowed_service_images", default: ["postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false

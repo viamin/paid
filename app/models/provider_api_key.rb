@@ -9,7 +9,7 @@ class ProviderApiKey < ApplicationRecord
   validates :name, presence: true, length: { maximum: 100 }
   validates :name, uniqueness: { scope: :user_id }
   validates :api_key, presence: true
-  validates :api_service_type, presence: true
+  validates :api_service_type, presence: true, length: { maximum: 50 }
 
   validate :api_service_type_must_be_valid
 
