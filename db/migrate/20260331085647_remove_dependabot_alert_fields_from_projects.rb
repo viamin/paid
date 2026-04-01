@@ -8,15 +8,23 @@ class RemoveDependabotAlertFieldsFromProjects < ActiveRecord::Migration[8.1]
     change_column_default :projects, :security_alert_types, [ "code_scanning" ]
 
     # Backfill existing projects: remove "dependabot" from their security_alert_types.
-    # The jsonb `-` operator with a text operand removes a key from an object, not
-    # an element from an array. Use array filtering via subquery instead.
+    # If removing "dependabot" would leave the array empty (i.e., it was the only
+    # element), default to ["code_scanning"] so scanning remains enabled.
     execute <<~SQL.squish
       UPDATE projects
-      SET security_alert_types = (
-        SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
-        FROM jsonb_array_elements(security_alert_types) AS elem
-        WHERE elem != '"dependabot"'::jsonb
-      )
+      SET security_alert_types = CASE
+        WHEN (
+          SELECT COUNT(*)
+          FROM jsonb_array_elements(security_alert_types) AS elem
+          WHERE elem != '"dependabot"'::jsonb
+        ) = 0
+        THEN '["code_scanning"]'::jsonb
+        ELSE (
+          SELECT jsonb_agg(elem)
+          FROM jsonb_array_elements(security_alert_types) AS elem
+          WHERE elem != '"dependabot"'::jsonb
+        )
+      END
       WHERE security_alert_types @> '["dependabot"]'::jsonb
     SQL
   end
