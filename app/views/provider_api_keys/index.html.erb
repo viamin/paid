@@ -28,7 +28,7 @@
               <thead class="bg-gray-50">
                 <tr>
                   <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Name</th>
-                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Compatible Providers</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">API Service</th>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Provider Entries</th>
                   <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Created</th>
                   <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
@@ -43,7 +43,7 @@
                       <%= link_to api_key.name, provider_api_key_path(api_key), class: "hover:text-indigo-600" %>
                     </td>
                     <td class="px-3 py-4 text-sm text-gray-500">
-                      <%= api_key.display_compatible_providers %>
+                      <%= api_key.display_api_service_type %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <%= api_key.providers.size %>

@@ -16,7 +16,7 @@ RSpec.describe "Providers" do
     end
 
     context "when authenticated" do
-      let(:opencode_api_key) { create(:provider_api_key, user: user, compatible_providers: %w[openrouter]) }
+      let(:opencode_api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
 
       before { sign_in user }
 
@@ -256,7 +256,7 @@ RSpec.describe "Providers" do
     end
 
     it "persists nested OpenCode config for API-key providers" do
-      api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
 
       post providers_path, params: {
         provider: {
@@ -360,7 +360,7 @@ RSpec.describe "Providers" do
     end
 
     it "preserves auth_type for the edit form without submitting it" do
-      api_key = create(:provider_api_key, user: user, compatible_providers: %w[openrouter])
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
       provider = user.providers.create!(
         provider_key: "opencode",
         auth_type: "api_key",

@@ -35,10 +35,10 @@ RSpec.describe "ProviderApiKeys" do
         expect(response.body).not_to include("Other Key")
       end
 
-      it "shows compatible providers" do
-        create(:provider_api_key, user: user, compatible_providers: %w[claude])
+      it "shows the API service type" do
+        create(:provider_api_key, user: user, api_service_type: "anthropic")
         get provider_api_keys_path
-        expect(response.body).to include("Claude")
+        expect(response.body).to include("Anthropic")
       end
     end
   end
@@ -95,12 +95,13 @@ RSpec.describe "ProviderApiKeys" do
         expect(response.body).to include("Add LLM API Key")
       end
 
-      it "renders compatible provider options with provider keys as checkbox values" do
+      it "renders API service type options as a select" do
         get new_provider_api_key_path
 
         expect(response.body).to include('value="openrouter"')
-        expect(response.body).to include(">OpenRouter<")
-        expect(response.body).not_to include('value="opencode"')
+        expect(response.body).to include("OpenRouter")
+        expect(response.body).to include('value="anthropic"')
+        expect(response.body).to include("Anthropic")
       end
     end
   end
@@ -108,7 +109,7 @@ RSpec.describe "ProviderApiKeys" do
   describe "POST /provider_api_keys" do
     context "when not authenticated" do
       it "redirects to sign in" do
-        post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc123", compatible_providers: [ "claude" ] } }
+        post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc123", api_service_type: "anthropic" } }
         expect(response).to redirect_to(new_user_session_path)
       end
     end
@@ -118,7 +119,7 @@ RSpec.describe "ProviderApiKeys" do
 
       context "with valid parameters" do
         let(:valid_params) do
-          { provider_api_key: { name: "My API Key", api_key: "sk-test-abc123def456", compatible_providers: [ "claude" ] } }
+          { provider_api_key: { name: "My API Key", api_key: "sk-test-abc123def456", api_service_type: "anthropic" } }
         end
 
         it "creates a new API key" do
@@ -132,9 +133,9 @@ RSpec.describe "ProviderApiKeys" do
           expect(ProviderApiKey.last.user).to eq(user)
         end
 
-        it "stores the compatible_providers array" do
+        it "stores the api_service_type" do
           post provider_api_keys_path, params: valid_params
-          expect(ProviderApiKey.last.compatible_providers).to eq([ "claude" ])
+          expect(ProviderApiKey.last.api_service_type).to eq("anthropic")
         end
 
         it "redirects to the show page" do
@@ -145,24 +146,19 @@ RSpec.describe "ProviderApiKeys" do
 
       context "with invalid parameters" do
         it "re-renders the form when name is missing" do
-          post provider_api_keys_path, params: { provider_api_key: { name: "", api_key: "sk-test-abc", compatible_providers: [ "claude" ] } }
+          post provider_api_keys_path, params: { provider_api_key: { name: "", api_key: "sk-test-abc", api_service_type: "anthropic" } }
           expect(response).to have_http_status(:unprocessable_content)
         end
 
         it "re-renders the form when api key is missing" do
-          post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "", compatible_providers: [ "claude" ] } }
+          post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "", api_service_type: "anthropic" } }
           expect(response).to have_http_status(:unprocessable_content)
         end
 
-        it "re-renders the form when compatible providers is empty" do
-          post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc", compatible_providers: [] } }
+        it "re-renders the form when api_service_type is missing" do
+          post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc", api_service_type: "" } }
           expect(response).to have_http_status(:unprocessable_content)
         end
-      end
-
-      it "filters blank values from compatible_providers" do
-        post provider_api_keys_path, params: { provider_api_key: { name: "Test", api_key: "sk-test-abc123", compatible_providers: [ "claude", "" ] } }
-        expect(ProviderApiKey.last.compatible_providers).to eq([ "claude" ])
       end
     end
   end
@@ -210,40 +206,40 @@ RSpec.describe "ProviderApiKeys" do
 
       it "updates the name" do
         api_key = create(:provider_api_key, user: user, name: "Old Name")
-        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "New Name", compatible_providers: api_key.compatible_providers } }
+        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "New Name" } }
         expect(response).to redirect_to(provider_api_key_path(api_key))
         expect(api_key.reload.name).to eq("New Name")
       end
 
-      it "updates compatible providers" do
-        api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
-        patch provider_api_key_path(api_key), params: { provider_api_key: { name: api_key.name, compatible_providers: %w[openrouter] } }
-        expect(api_key.reload.compatible_providers).to eq(%w[openrouter])
+      it "updates api_service_type" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+        patch provider_api_key_path(api_key), params: { provider_api_key: { api_service_type: "openrouter" } }
+        expect(api_key.reload.api_service_type).to eq("openrouter")
       end
 
       it "keeps existing API key when api_key param is blank" do
         api_key = create(:provider_api_key, user: user, api_key: "sk-original-key-12345")
-        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "Updated", api_key: "", compatible_providers: api_key.compatible_providers } }
+        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "Updated", api_key: "" } }
         expect(api_key.reload.api_key).to eq("sk-original-key-12345")
       end
 
       it "updates the API key when a new value is provided" do
         api_key = create(:provider_api_key, user: user, api_key: "sk-original-key-12345")
-        patch provider_api_key_path(api_key), params: { provider_api_key: { name: api_key.name, api_key: "sk-new-key-67890abcd", compatible_providers: api_key.compatible_providers } }
+        patch provider_api_key_path(api_key), params: { provider_api_key: { api_key: "sk-new-key-67890abcd" } }
         expect(api_key.reload.api_key).to eq("sk-new-key-67890abcd")
       end
 
       it "re-renders edit on validation failure" do
         api_key = create(:provider_api_key, user: user)
-        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "", compatible_providers: api_key.compatible_providers } }
+        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "" } }
         expect(response).to have_http_status(:unprocessable_content)
       end
 
-      it "rejects update when all compatible providers are unchecked" do
-        api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude openrouter])
-        patch provider_api_key_path(api_key), params: { provider_api_key: { name: "Renamed", compatible_providers: [ "" ] } }
+      it "rejects invalid api_service_type" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+        patch provider_api_key_path(api_key), params: { provider_api_key: { api_service_type: "invalid" } }
         expect(response).to have_http_status(:unprocessable_content)
-        expect(api_key.reload.compatible_providers).to eq(%w[claude openrouter])
+        expect(api_key.reload.api_service_type).to eq("anthropic")
       end
 
       it "does not allow updating API keys from other users" do
@@ -289,7 +285,7 @@ RSpec.describe "ProviderApiKeys" do
       end
 
       it "blocks deletion when providers reference the key" do
-        api_key = create(:provider_api_key, user: user, compatible_providers: %w[claude])
+        api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
         create(:provider, user: user, provider_key: "claude", auth_type: "api_key", provider_api_key: api_key)
         delete provider_api_key_path(api_key)
         expect(response).to redirect_to(provider_api_key_path(api_key))
