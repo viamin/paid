@@ -210,6 +210,8 @@ module Knowledge
       IO.popen([ "tar", "-cf", "-", "-C", @host_repo_dir, "." ], "rb") do |tar_io|
         @container.archive_in_stream(options[:workspace_mount]) { tar_io.read(8192) }
       end
+
+      raise ContainerError, "tar failed (exit #{$CHILD_STATUS&.exitstatus})" unless $CHILD_STATUS&.success?
     end
 
     def container_config
@@ -245,7 +247,7 @@ module Knowledge
           "/home/agent/.cache" => "size=#{128 * 1024 * 1024},mode=0755"
         },
         "Binds" => [
-          "#{@workspace_volume}:#{options[:workspace_mount]}:ro"
+          "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
         ],
         "NetworkMode" => "none"
       }

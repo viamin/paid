@@ -33,6 +33,8 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
     tar_io = instance_double(IO, read: nil)
     allow(IO).to receive(:popen).with([ "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "." ], "rb").and_yield(tar_io)
     allow(mock_container).to receive(:archive_in_stream)
+    # Set $CHILD_STATUS to success so the tar exit status check passes
+    system("true")
   end
 
   describe ".available?" do
@@ -117,7 +119,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
           "HostConfig" => hash_including(
             "NetworkMode" => "none",
             "Memory" => 512 * 1024 * 1024,
-            "Binds" => [ a_string_matching(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:ro\z}) ]
+            "Binds" => [ a_string_matching(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z}) ]
           )
         )
       )
@@ -136,6 +138,18 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
         [ "chown", "-R", "agent:agent", "/workspace" ],
         user: "root"
       )
+    end
+
+    it "raises ContainerError when tar fails" do
+      allow(IO).to receive(:popen)
+        .with([ "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "." ], "rb")
+        .and_wrap_original do |_method, *_args|
+          system("false") # Sets $CHILD_STATUS to failure
+        end
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(Knowledge::ContainerizedRunner::ContainerError, /tar failed/)
     end
 
     it "passes container_runner in options to CollectorRunner" do
@@ -226,7 +240,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       described_class.new(project: project, commit_sha: commit_sha).run
 
       binds = config.dig("HostConfig", "Binds")
-      expect(binds.first).to match(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:ro\z})
+      expect(binds.first).to match(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z})
     end
   end
 
