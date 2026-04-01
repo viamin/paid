@@ -16,8 +16,8 @@ class ReplaceCompatibleProvidersWithApiServiceType < ActiveRecord::Migration[8.1
       UPDATE provider_api_keys
       SET api_service_type = CASE
         WHEN compatible_providers ? 'openrouter' THEN 'openrouter'
-        WHEN compatible_providers ? 'openai' THEN 'openai'
         WHEN compatible_providers ? 'opencode' THEN 'openrouter'
+        WHEN compatible_providers ? 'openai' THEN 'openai'
         WHEN compatible_providers ? 'codex' THEN 'openai'
         WHEN compatible_providers ? 'gemini' THEN 'google'
         WHEN compatible_providers ? 'claude' THEN 'anthropic'
