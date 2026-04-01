@@ -11,7 +11,7 @@ class ReplaceCompatibleProvidersWithApiServiceType < ActiveRecord::Migration[8.1
     # over direct-provider entries (openai), then direct providers, then
     # anthropic as the default. In practice, keys were created via a UI that
     # grouped providers by service type, so mixed-service arrays should not
-    # exist; this ordering is a defensive safeguard, not a lossy collapse.
+    # exist; this precedence is a defensive fallback when they do.
     execute <<~SQL.squish
       UPDATE provider_api_keys
       SET api_service_type = CASE
