@@ -66,7 +66,7 @@ module Activities
     # Returns nil for custom-prompt-only runs (no issue or PR) intentionally:
     # custom prompts are unique by definition and cannot be meaningfully deduplicated.
     def find_existing_run(project, issue, source_pull_request_number)
-      scope = project.agent_runs.where(status: %w[queued pending running]).lock("FOR UPDATE")
+      scope = project.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).lock("FOR UPDATE")
       if issue
         scope.where(issue: issue).first
       elsif source_pull_request_number

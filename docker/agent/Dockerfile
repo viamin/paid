@@ -133,33 +133,28 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
     && cp -L /root/.local/bin/claude /usr/local/bin/claude \
     && chmod +x /usr/local/bin/claude
 
-# Install OpenAI Codex CLI
-# Pin version for reproducible builds; update intentionally when upgrading Codex.
-RUN npm install -g @openai/codex@0.116.0
+# Install agent CLI tools via npm.
+# All versions are pinned for reproducible builds; update intentionally.
+# --ignore-scripts on every install: supply-chain hardening — prevents npm
+# lifecycle scripts (postinstall, preinstall) from executing arbitrary code.
+# See: https://www.elastic.co/security-labs/axios-one-rat-to-rule-them-all
+RUN npm install -g --ignore-scripts @openai/codex@0.116.0
 
-# Install Gemini CLI
-# Pin version for reproducible builds; update intentionally when upgrading Gemini.
-RUN npm install -g @google/gemini-cli@0.35.3
+RUN npm install -g --ignore-scripts @google/gemini-cli@0.35.3
 
-# Install Kilocode CLI
-# Pin version for reproducible builds; update intentionally when upgrading Kilocode.
-RUN npm install -g @kilocode/cli@7.1.3
+RUN npm install -g --ignore-scripts @kilocode/cli@7.1.3
 
-# Install OpenCode CLI
-# Pin version for reproducible builds; update intentionally when upgrading OpenCode.
 # NOTE: End-to-end execution depends on agent-harness build_command support (agent-harness#32).
-RUN npm install -g opencode-ai@1.3.2
+RUN npm install -g --ignore-scripts opencode-ai@1.3.2
 
-# Install GitHub Copilot CLI
-# Pin version for reproducible builds; update intentionally when upgrading Copilot.
-RUN npm install -g @githubnext/github-copilot-cli@0.1.0
+RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.0
 
 # Install Cursor agent CLI
 # Pin the install script checksum for reproducible builds and supply-chain security.
 # The installer places the binary under /root/.local/ which is inaccessible to the
 # non-root "agent" user. Copy the resolved binary to a system-wide path instead.
 # To update: curl -fsSL https://cursor.com/install | sha256sum
-ARG CURSOR_AGENT_INSTALL_SHA256=ea67e726a29c229e4fed799b55fde7884efafdd45ccba6666b1ff68cacd2e9e1
+ARG CURSOR_AGENT_INSTALL_SHA256=8371988b483abec13c07c10e95cccc839da81ebf9596e430d3c90835a227cbad
 RUN curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh \
     && echo "${CURSOR_AGENT_INSTALL_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
     && bash /tmp/cursor-install.sh \

@@ -181,7 +181,7 @@ class Project < ApplicationRecord
   # used to suppress "Quick Run" when a run is already in progress (unique index would reject it).
   def pr_numbers_with_active_runs
     agent_runs
-      .where(status: %w[queued pending running])
+      .where(status: AgentRun::UNFINISHED_STATUSES)
       .where.not(source_pull_request_number: nil)
       .distinct
       .pluck(:source_pull_request_number)
