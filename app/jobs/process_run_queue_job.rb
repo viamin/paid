@@ -211,6 +211,15 @@ class ProcessRunQueueJob < ApplicationJob
 
     workflow_id = "queued-#{agent_run.project_id}-#{agent_run.id}-#{Time.current.to_i}"
 
+    # Write the planned workflow_id before starting the workflow so
+    # StaleRunDetectorJob can cancel an orphaned workflow even if the
+    # process crashes between start_workflow and the DB write.
+    agent_run.update_columns(temporal_workflow_id: workflow_id)
+
+    # Keep temporal_workflow_id set on failure — if start_workflow raises
+    # due to a network timeout, the workflow may have started server-side.
+    # Leaving the ID allows StaleRunDetectorJob to find and cancel the
+    # potentially-orphaned workflow rather than losing track of it.
     Paid.temporal_client.start_workflow(
       Workflows::AgentExecutionWorkflow,
       workflow_input,
