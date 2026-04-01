@@ -623,6 +623,55 @@ RSpec.describe Containers::GitOperations do
 
       expect { git_ops.commit_uncommitted_changes }.to raise_error(described_class::Error, /Failed to commit/)
     end
+
+    context "when project has agent_co_author_trailer configured" do
+      let(:trailer) { "Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>" }
+
+      before do
+        project.update_column(:agent_co_author_trailer, trailer)
+      end
+
+      it "includes the trailer in the commit message" do
+        status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+          .and_return(status_result)
+
+        expect(container_service).to receive(:execute)
+          .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        expected_message = "Apply agent changes\n\n#{trailer}"
+        expect(container_service).to receive(:execute)
+          .with([ "git", "commit", "--no-verify", "-m", expected_message ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        expect(git_ops.commit_uncommitted_changes).to be true
+      end
+    end
+
+    context "when project has blank agent_co_author_trailer" do
+      before do
+        project.update_column(:agent_co_author_trailer, "")
+      end
+
+      it "uses the default commit message without trailer" do
+        status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+          .and_return(status_result)
+
+        expect(container_service).to receive(:execute)
+          .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        expect(container_service).to receive(:execute)
+          .with([ "git", "commit", "--no-verify", "-m", "Apply agent changes" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        expect(git_ops.commit_uncommitted_changes).to be true
+      end
+    end
   end
 
   describe "#has_changes_since?" do

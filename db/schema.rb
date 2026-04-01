@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_31_210524) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_01_121911) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -648,6 +648,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_210524) do
   create_table "projects", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
+    t.string "agent_co_author_trailer"
     t.jsonb "allowed_github_usernames", default: [], null: false
     t.boolean "auto_add_labels_enabled", default: true, null: false
     t.boolean "auto_fix_merge_conflicts", default: true, null: false

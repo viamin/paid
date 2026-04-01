@@ -231,7 +231,7 @@ module Containers
       add_result = execute_git("add", "-A")
       raise Error, "Failed to stage changes: #{error_with_stderr(add_result)}" if add_result.failure?
 
-      commit_result = execute_git("commit", "--no-verify", "-m", "Apply agent changes")
+      commit_result = execute_git("commit", "--no-verify", "-m", commit_message)
       raise Error, "Failed to commit changes: #{error_with_stderr(commit_result)}" if commit_result.failure?
 
       true
@@ -342,6 +342,13 @@ module Containers
     end
 
     private
+
+    def commit_message
+      trailer = agent_run.project.agent_co_author_trailer.presence
+      return "Apply agent changes" unless trailer
+
+      "Apply agent changes\n\n#{trailer}"
+    end
 
     def rebase_conflict?(result)
       result.failure? &&
