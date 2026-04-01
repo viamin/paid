@@ -35,6 +35,7 @@ class AgentRun < ApplicationRecord
   after_commit :update_project_last_agent_run_at, on: :create
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_finished?
   after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
+  after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -820,6 +821,14 @@ class AgentRun < ApplicationRecord
 
   def just_started_running?
     previous_changes.key?("status") && status == "running"
+  end
+
+  def just_timed_out_issue_goal?
+    previous_changes.key?("status") && status == "timeout" && create_issue_goal?
+  end
+
+  def enqueue_issue_goal_timeout_retry
+    RetryTimedOutIssueGoalJob.perform_later(id)
   end
 
   def enqueue_container_metrics_collection
