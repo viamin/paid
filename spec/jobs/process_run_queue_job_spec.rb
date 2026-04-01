@@ -32,7 +32,9 @@ RSpec.describe ProcessRunQueueJob do
 
       described_class.new.perform
 
-      expect(queued_run.reload.status).to eq("pending")
+      queued_run.reload
+      expect(queued_run.status).to eq("pending")
+      expect(queued_run.temporal_workflow_id).to be_present
     end
 
     it "starts multiple queued runs up to user capacity" do

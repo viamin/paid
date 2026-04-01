@@ -100,9 +100,15 @@ class StaleRunDetectorJob < ApplicationJob
   # Returns :requeued if successfully requeued, :exhausted if requeue budget
   # is spent (caller should time out), or :skip if the run is no longer
   # stale/pending (e.g. it finished, transitioned to running, or was recently updated).
+  #
+  # If a Temporal workflow was already started for this run (temporal_workflow_id
+  # is present), we cancel it before requeuing so ProcessRunQueueJob can start
+  # a fresh workflow without racing the old one. The old workflow_id is cleared
+  # to avoid stale references.
   def requeue_stale_pending_run(agent_run)
     pending_threshold = PENDING_TIMEOUT.ago
     old_container_id = nil
+    old_workflow_id = nil
 
     agent_run.with_lock do
       agent_run.reload
@@ -112,10 +118,13 @@ class StaleRunDetectorJob < ApplicationJob
       return :exhausted if agent_run.stale_requeue_count >= MAX_STALE_REQUEUES
 
       old_container_id = agent_run.container_id
+      old_workflow_id = agent_run.temporal_workflow_id
 
       agent_run.update!(
         status: "queued",
-        stale_requeue_count: agent_run.stale_requeue_count + 1
+        stale_requeue_count: agent_run.stale_requeue_count + 1,
+        temporal_workflow_id: nil,
+        temporal_run_id: nil
       )
       agent_run.log!("system", "Stale pending run requeued by stale run detector (attempt #{agent_run.stale_requeue_count}/#{MAX_STALE_REQUEUES})")
 
@@ -127,6 +136,7 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
+    cancel_temporal_workflow(agent_run, old_workflow_id)
     cleanup_docker_resources_by_id(agent_run, old_container_id)
 
     :requeued
@@ -161,6 +171,31 @@ class StaleRunDetectorJob < ApplicationJob
     cleanup_docker_resources_by_id(agent_run, old_container_id)
 
     true
+  end
+
+  # Cancels a Temporal workflow by its captured workflow_id. Silently ignores
+  # NOT_FOUND errors (workflow already completed or was never started).
+  def cancel_temporal_workflow(agent_run, workflow_id)
+    return if workflow_id.blank?
+
+    handle = Paid.temporal_client.workflow_handle(workflow_id)
+    handle.cancel
+  rescue Temporalio::Error::RPCError => e
+    raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+
+    Rails.logger.info(
+      message: "stale_run_detector.cancel_workflow_not_found",
+      agent_run_id: agent_run.id,
+      temporal_workflow_id: workflow_id
+    )
+  rescue => e
+    Rails.logger.warn(
+      message: "stale_run_detector.cancel_workflow_failed",
+      agent_run_id: agent_run.id,
+      temporal_workflow_id: workflow_id,
+      error_class: e.class.name,
+      error: e.message
+    )
   end
 
   # Cleans up docker resources using the container_id captured under the row

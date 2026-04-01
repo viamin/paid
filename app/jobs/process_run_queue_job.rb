@@ -218,6 +218,8 @@ class ProcessRunQueueJob < ApplicationJob
       task_queue: Paid.task_queue
     )
 
+    agent_run.update_columns(temporal_workflow_id: workflow_id)
+
     Rails.logger.info(
       message: "process_run_queue.started_queued_run",
       agent_run_id: agent_run.id,
