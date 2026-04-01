@@ -2,10 +2,12 @@
 
 module Projects
   class AgentRunsController < ApplicationController
+    include AgentRunCancellable
+
     NoRunnableProviderError = Class.new(StandardError)
 
     before_action :set_project
-    before_action :set_agent_run, only: [ :show, :retry, :refresh_auth, :diagnose_error ]
+    before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error ]
 
     def index
       authorize @project, :show?
@@ -24,6 +26,11 @@ module Projects
       @phase_summary = @agent_run.phase_summary(phases: @phase_timeline.to_a)
       @final_provider_record = @agent_run.final_provider_record
       @attempted_providers_by_routing_key = @agent_run.attempted_providers_by_routing_key
+    end
+
+    def cancel
+      authorize @agent_run
+      cancel_agent_run(@agent_run, redirect_path: project_agent_run_path(@project, @agent_run))
     end
 
     def new
