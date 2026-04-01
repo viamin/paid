@@ -1,0 +1,36 @@
+<% content_for(:title) { "Add Integration - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to integrations_path, class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to Integrations
+    <% end %>
+  </div>
+
+  <div class="overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-6 py-5">
+      <h1 class="text-xl font-semibold text-gray-900">Add Integration</h1>
+      <p class="mt-1 text-sm text-gray-500">Choose the type of integration you want to add.</p>
+
+      <div class="mt-6 divide-y divide-gray-200">
+        <%= link_to new_github_token_path, class: "block py-4 hover:bg-gray-50 -mx-6 px-6 transition-colors" do %>
+          <h3 class="text-sm font-semibold text-gray-900">Source code access token</h3>
+          <p class="mt-1 text-sm text-gray-500">Add a GitHub Personal Access Token for repository access, issue tracking, and pull request creation.</p>
+        <% end %>
+
+        <%= link_to new_linear_token_path, class: "block py-4 hover:bg-gray-50 -mx-6 px-6 transition-colors" do %>
+          <h3 class="text-sm font-semibold text-gray-900">Issue tracker API key</h3>
+          <p class="mt-1 text-sm text-gray-500">Add a Linear API key for issue tracking and project planning integration.</p>
+        <% end %>
+
+        <%= link_to new_provider_api_key_path, class: "block py-4 hover:bg-gray-50 -mx-6 px-6 transition-colors" do %>
+          <h3 class="text-sm font-semibold text-gray-900">LLM provider API key</h3>
+          <p class="mt-1 text-sm text-gray-500">Add an API key for an AI provider such as Anthropic, OpenAI, OpenRouter, or Google.</p>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>
