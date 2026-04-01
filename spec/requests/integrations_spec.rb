@@ -17,41 +17,57 @@ RSpec.describe "Integrations" do
     context "when authenticated" do
       before { sign_in user }
 
-      it "renders the integration cards for current and planned credentials" do
+      it "renders the integrations page" do
         get integrations_path
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Integrations")
-        expect(response.body).to include("GitHub")
-        expect(response.body).to include("Linear")
-        expect(response.body).to include("Provider Credentials")
-        expect(response.body).to include("GitHub Signing")
-        expect(response.body).to include("GitLab")
-        expect(response.body).to include("Jira")
       end
 
-      it "shows configured counts per card from both legacy and generic credentials" do
-        create(:github_token, account: user.account)
-        create(:linear_token, account: user.account)
-        create(:integration_credential, account: user.account, created_by: user)
+      it "shows empty state when no integrations are configured" do
+        get integrations_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("No integrations configured")
+        expect(response.body).to include("Add Integration")
+      end
+
+      it "shows configured integrations grouped by type" do
+        github_token = create(:github_token, account: user.account)
+        provider_key = create(:provider_api_key, user: user)
 
         get integrations_path
 
-        document = Nokogiri::HTML(response.body)
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Repository Access")
+        expect(response.body).to include(github_token.name)
+        expect(response.body).to include("LLM Providers")
+        expect(response.body).to include(provider_key.name)
+        expect(response.body).not_to include("Issue Tracking")
+      end
+    end
+  end
 
-        cards = document.css('[data-testid="integration-card"]')
+  describe "GET /integrations/new" do
+    context "when not authenticated" do
+      it "redirects to sign in" do
+        get new_integration_path
 
-        github_card = cards.detect { |c| c.css("h3").any? { |h| h.text.strip == "GitHub" } }
-        expect(github_card).to be_present
-        expect(github_card.text).to include("1 connection configured")
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
 
-        linear_card = cards.detect { |c| c.css("h3").any? { |h| h.text.strip == "Linear" } }
-        expect(linear_card).to be_present
-        expect(linear_card.text).to include("1 connection configured")
+    context "when authenticated" do
+      before { sign_in user }
 
-        provider_card = cards.detect { |c| c.css("h3").any? { |h| h.text.strip == "Provider Credentials" } }
-        expect(provider_card).to be_present
-        expect(provider_card.text).to include("1 connection configured")
+      it "renders the type chooser page" do
+        get new_integration_path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Add Integration")
+        expect(response.body).to include("Source code access token")
+        expect(response.body).to include("Issue tracker API key")
+        expect(response.body).to include("LLM provider API key")
       end
     end
   end
