@@ -186,28 +186,31 @@ module Dashboard
           Arel.sql("COUNT(*)"),
           Arel.sql("COALESCE(SUM(cost_cents), 0)"),
           Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)"),
-          Arel.sql("AVG(duration_seconds)")
+          Arel.sql("COALESCE(SUM(duration_seconds), 0)"),
+          Arel.sql("COUNT(duration_seconds)")
         )
 
       # Index aggregates by [goal, outcome]
       agg = {}
-      rows.each do |goal, outcome, count, cost, tokens, avg_dur|
+      rows.each do |goal, outcome, count, cost, tokens, dur_sum, dur_count|
         agg[[ goal, outcome ]] = {
           run_count: count.to_i,
           total_cost_cents: cost.to_i,
           total_tokens: tokens.to_i,
-          # Keep as float for accurate weighted-average computation; truncate only at display time.
-          avg_duration_seconds: avg_dur&.to_f || 0.0
+          total_duration_seconds: dur_sum.to_i,
+          duration_count: dur_count.to_i
         }
       end
 
       AgentRun::GOALS.index_with do |goal|
         # Combine outcome buckets for the overall goal summary
-        goal_buckets = outcome_buckets.map { |o| agg[[ goal, o ]] || empty_performance_summary }
+        empty_agg = { run_count: 0, total_cost_cents: 0, total_tokens: 0, total_duration_seconds: 0, duration_count: 0 }
+        goal_buckets = outcome_buckets.map { |o| agg[[ goal, o ]] || empty_agg }
         total_count = goal_buckets.sum { |b| b[:run_count] }
         total_cost = goal_buckets.sum { |b| b[:total_cost_cents] }
         total_tokens = goal_buckets.sum { |b| b[:total_tokens] }
-        weighted_dur = goal_buckets.sum { |b| b[:avg_duration_seconds] * b[:run_count] }
+        total_dur = goal_buckets.sum { |b| b[:total_duration_seconds] }
+        total_dur_count = goal_buckets.sum { |b| b[:duration_count] }
 
         overall = if total_count.zero?
           empty_performance_summary
@@ -218,7 +221,7 @@ module Dashboard
             avg_cost_cents: (total_cost.to_f / total_count).round,
             total_tokens: total_tokens,
             avg_tokens: (total_tokens.to_f / total_count).round,
-            avg_duration_seconds: (weighted_dur.to_f / total_count).to_i
+            avg_duration_seconds: total_dur_count.zero? ? 0 : (total_dur.to_f / total_dur_count).to_i
           }
         end
 
@@ -228,11 +231,15 @@ module Dashboard
             empty_performance_summary
           else
             c = bucket[:run_count]
-            bucket.merge(
+            dc = bucket[:duration_count]
+            {
+              run_count: c,
+              total_cost_cents: bucket[:total_cost_cents],
               avg_cost_cents: (bucket[:total_cost_cents].to_f / c).round,
+              total_tokens: bucket[:total_tokens],
               avg_tokens: (bucket[:total_tokens].to_f / c).round,
-              avg_duration_seconds: bucket[:avg_duration_seconds].to_i
-            )
+              avg_duration_seconds: dc.zero? ? 0 : (bucket[:total_duration_seconds].to_f / dc).to_i
+            }
           end
         end
 
