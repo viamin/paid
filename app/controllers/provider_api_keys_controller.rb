@@ -66,12 +66,10 @@ class ProviderApiKeysController < ApplicationController
   end
 
   def provider_api_key_params
-    permitted = params.require(:provider_api_key).permit(:name, :api_key, compatible_providers: [])
-    permitted[:compatible_providers] = Array(permitted[:compatible_providers]).reject(&:blank?)
-    permitted
+    params.require(:provider_api_key).permit(:name, :api_key, :api_service_type)
   end
 
   def load_provider_options
-    @compatible_provider_options = ProviderApiKey.compatibility_target_labels.to_a.map { |key, label| [ label, key ] }
+    @api_service_type_options = ProviderApiKey.api_service_type_options
   end
 end

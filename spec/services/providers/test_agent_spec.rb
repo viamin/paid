@@ -455,7 +455,7 @@ RSpec.describe Providers::TestAgent do
     end
 
     context "when direct-outbound opencode is tested" do
-      let(:api_key) { create(:provider_api_key, user: user, compatible_providers: %w[openrouter]) }
+      let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
       let(:provider_record) do
         create(
           :provider,

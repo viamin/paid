@@ -1,11 +1,6 @@
 # frozen_string_literal: true
 
 class ProviderApiKey < ApplicationRecord
-  COMPATIBILITY_LABELS = {
-    "openai" => "OpenAI",
-    "openrouter" => "OpenRouter"
-  }.freeze
-
   belongs_to :user
   has_many :providers, dependent: :restrict_with_error
 
@@ -14,26 +9,25 @@ class ProviderApiKey < ApplicationRecord
   validates :name, presence: true, length: { maximum: 100 }
   validates :name, uniqueness: { scope: :user_id }
   validates :api_key, presence: true
-  validates :compatible_providers, presence: true
+  validates :api_service_type, presence: true, length: { maximum: 50 }
 
-  validate :compatible_providers_must_be_valid
+  validate :api_service_type_must_be_valid
 
   scope :ordered, -> { order(:name) }
-  scope :compatible_with, ->(provider_key) {
-    where("compatible_providers @> ?", [ provider_key ].to_json)
+  scope :for_api_service_type, ->(service_type) {
+    where(api_service_type: service_type)
   }
 
   def compatible_with?(provider_key)
-    compatible_providers.include?(provider_key.to_s)
+    api_service_type == ProviderSupport.api_service_type_for(provider_key)
   end
 
-  def self.compatibility_target_labels
-    provider_labels = Provider.addable_provider_keys
-      .flat_map { |provider_key| Provider.required_api_key_targets_for(provider_key: provider_key) }
-      .uniq
-      .index_with { |key| COMPATIBILITY_LABELS[key] || Provider.display_name(key) }
+  def self.api_service_type_options
+    ProviderSupport.api_service_types.map { |key, label| [ label, key ] }
+  end
 
-    provider_labels.merge(COMPATIBILITY_LABELS)
+  def display_api_service_type
+    ProviderSupport.api_service_type_label(api_service_type)
   end
 
   def masked_api_key
@@ -45,25 +39,16 @@ class ProviderApiKey < ApplicationRecord
     end
   end
 
-  def display_compatible_providers
-    labels = self.class.compatibility_target_labels
-    compatible_providers.map { |key| labels[key] || key.to_s.titleize }.join(", ")
-  end
-
   private
 
-  def compatible_providers_must_be_valid
-    return if compatible_providers.blank?
+  def api_service_type_must_be_valid
+    return if api_service_type.blank?
 
-    unless compatible_providers.is_a?(Array)
-      errors.add(:compatible_providers, "must be an array")
-      return
-    end
+    normalized = api_service_type.to_s.strip.downcase
+    self.api_service_type = normalized
 
-    allowed = self.class.compatibility_target_labels.keys
-    invalid = compatible_providers - allowed
-    return if invalid.empty?
+    return if ProviderSupport.api_service_types.key?(normalized)
 
-    errors.add(:compatible_providers, "contains unsupported providers: #{invalid.join(', ')}")
+    errors.add(:api_service_type, "is not a supported API service type")
   end
 end

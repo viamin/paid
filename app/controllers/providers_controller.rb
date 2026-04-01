@@ -337,8 +337,7 @@ class ProvidersController < ApplicationController
   end
 
   def compatible_api_key_for_provider?(api_key:, provider_key:)
-    Provider.required_api_key_targets_for(provider_key: provider_key)
-      .any? { |target| api_key.compatible_with?(target) }
+    api_key.api_service_type == Provider.api_service_type_for(provider_key)
   end
 
   def enabled_agent_provider_identifiers

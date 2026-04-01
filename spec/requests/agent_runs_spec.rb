@@ -285,7 +285,7 @@ RSpec.describe "AgentRuns" do
       it "marks only one retry option current for legacy runs without provider_id" do
         allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
         owner = project.effective_owner
-        api_key = create(:provider_api_key, user: owner, compatible_providers: %w[openrouter])
+        api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
         create_opencode_provider_entry(user: owner, api_key: api_key, name: "Kimi K2.5", model: "moonshotai/kimi-k2-0905")
         create_opencode_provider_entry(user: owner, api_key: api_key, name: "Opus via OpenCode", model: "anthropic/claude-opus-4.1")
         agent_run = create(:agent_run, :failed, project: project, agent_type: "opencode", provider: nil)
@@ -1030,7 +1030,7 @@ RSpec.describe "AgentRuns" do
       it "rejects retrying with a disabled explicit provider identifier" do
         allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
         owner = project.effective_owner
-        api_key = create(:provider_api_key, user: owner, compatible_providers: %w[openrouter])
+        api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
         disabled_provider = create_opencode_provider_entry(user: owner, api_key: api_key, name: "Disabled Kimi",
           model: "moonshotai/kimi-k2-0905", enabled_for_agent_runs: false)
         create_opencode_provider_entry(user: owner, api_key: api_key, name: "Enabled Opus", model: "anthropic/claude-opus-4.1")
@@ -1048,7 +1048,7 @@ RSpec.describe "AgentRuns" do
       it "resolves plain provider keys against enabled retry providers" do
         allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude opencode])
         owner = project.effective_owner
-        api_key = create(:provider_api_key, user: owner, compatible_providers: %w[openrouter])
+        api_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
         owner.providers.create!(provider_key: "opencode", enabled_for_agent_runs: false)
         enabled_provider = create_opencode_provider_entry(
           user: owner,

@@ -220,16 +220,8 @@ class Provider < ApplicationRecord
     ProviderSupport.agent_type_for(provider_key)
   end
 
-  def self.compatibility_label_for(target)
-    return "OpenRouter" if target.to_s == "openrouter"
-
-    target.to_s
-  end
-
-  def self.required_api_key_targets_for(provider_key:, config: nil)
-    return [ OPENCODE_DEFAULT_API_PROVIDER ] if provider_key.to_s == "opencode"
-
-    [ provider_key.to_s ]
+  def self.api_service_type_for(provider_key)
+    ProviderSupport.api_service_type_for(provider_key)
   end
 
   def self.routing_key?(identifier)
@@ -331,10 +323,16 @@ class Provider < ApplicationRecord
     return if provider_api_key_id.blank?
     return unless provider_api_key
 
-    targets = self.class.required_api_key_targets_for(provider_key: provider_key, config: config)
-    return if targets.any? { |target| provider_api_key.compatible_with?(target) }
+    required_service = self.class.api_service_type_for(provider_key)
 
-    errors.add(:provider_api_key, "is not compatible with #{self.class.compatibility_label_for(targets.first)}")
+    if required_service.nil?
+      errors.add(:provider_api_key, "is not supported for this provider; use subscription authentication instead")
+      return
+    end
+
+    return if provider_api_key.api_service_type == required_service
+
+    errors.add(:provider_api_key, "must be an API key for #{ProviderSupport.api_service_type_label(required_service)}")
   end
 
   def api_key_must_belong_to_same_user

@@ -43,19 +43,15 @@
     <% end %>
   </div>
 
-  <fieldset>
-    <legend class="block text-sm font-medium leading-6 text-gray-900">Compatible Providers and Services</legend>
-    <p class="mt-1 text-xs text-gray-500">Select which providers or upstream services this API key can be used with.</p>
-    <div class="mt-3 space-y-2">
-      <input type="hidden" name="provider_api_key[compatible_providers][]" value="">
-      <% @compatible_provider_options.each do |label, key| %>
-        <div class="flex items-center">
-          <input type="checkbox" name="provider_api_key[compatible_providers][]" value="<%= key %>" id="compatible_<%= key %>"
-            class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
-            <%= "checked" if @provider_api_key.compatible_providers.include?(key) %>>
-          <label for="compatible_<%= key %>" class="ml-3 block text-sm text-gray-700"><%= label %></label>
-        </div>
-      <% end %>
+  <div>
+    <%= form.label :api_service_type, "API Service", class: "block text-sm font-medium leading-6 text-gray-900" %>
+    <p class="mt-1 text-xs text-gray-500">Select the upstream API service this key authenticates against.</p>
+    <div class="mt-2">
+      <%= form.select :api_service_type,
+          @api_service_type_options,
+          { include_blank: "Select an API service" },
+          class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+          required: true %>
     </div>
-  </fieldset>
+  </div>
 </div>

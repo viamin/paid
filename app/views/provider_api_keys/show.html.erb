@@ -40,15 +40,11 @@
         </div>
 
         <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-          <dt class="text-sm font-medium text-gray-500">Compatible Providers</dt>
+          <dt class="text-sm font-medium text-gray-500">API Service</dt>
           <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-            <div class="flex flex-wrap gap-2">
-              <% @provider_api_key.compatible_providers.each do |provider_key| %>
-                <span class="inline-flex items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
-                  <%= provider_key.titleize %>
-                </span>
-              <% end %>
-            </div>
+            <span class="inline-flex items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+              <%= @provider_api_key.display_api_service_type %>
+            </span>
           </dd>
         </div>
 

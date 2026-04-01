@@ -109,6 +109,54 @@ RSpec.describe ProviderSupport do
     end
   end
 
+  describe "API_SERVICE_TYPES" do
+    it "includes the expected service types" do
+      expect(described_class::API_SERVICE_TYPES).to include(
+        "anthropic" => "Anthropic",
+        "openai" => "OpenAI",
+        "openrouter" => "OpenRouter",
+        "google" => "Google AI"
+      )
+    end
+  end
+
+  describe ".api_service_type_for" do
+    it "returns anthropic for claude" do
+      expect(described_class.api_service_type_for("claude")).to eq("anthropic")
+    end
+
+    it "returns openrouter for opencode" do
+      expect(described_class.api_service_type_for("opencode")).to eq("openrouter")
+    end
+
+    it "returns openai for codex" do
+      expect(described_class.api_service_type_for("codex")).to eq("openai")
+    end
+
+    it "returns google for gemini" do
+      expect(described_class.api_service_type_for("gemini")).to eq("google")
+    end
+
+    it "returns nil for unknown providers" do
+      expect(described_class.api_service_type_for("unknown")).to be_nil
+    end
+
+    it "returns nil for copilot (no compatible API key type)" do
+      expect(described_class.api_service_type_for("copilot")).to be_nil
+    end
+  end
+
+  describe ".api_service_type_label" do
+    it "returns the human-readable label for known types" do
+      expect(described_class.api_service_type_label("openrouter")).to eq("OpenRouter")
+      expect(described_class.api_service_type_label("anthropic")).to eq("Anthropic")
+    end
+
+    it "titleizes unknown types" do
+      expect(described_class.api_service_type_label("unknown")).to eq("Unknown")
+    end
+  end
+
   describe ".subscription_auth_unset_vars_for" do
     it "returns the codex unset vars" do
       expect(described_class.subscription_auth_unset_vars_for("codex")).to include("OPENAI_API_KEY")
