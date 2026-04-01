@@ -7,8 +7,12 @@ RSpec.describe Activities::CheckProxyHealthActivity do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project) }
 
-  before do
-    stub_const("ENV", ENV.to_h.merge("PAID_PROXY_URL" => "http://localhost:3000"))
+  around do |example|
+    original_paid_proxy_url = ENV["PAID_PROXY_URL"]
+    ENV["PAID_PROXY_URL"] = "http://localhost:3000"
+    example.run
+  ensure
+    ENV["PAID_PROXY_URL"] = original_paid_proxy_url
   end
 
   describe "class" do
@@ -60,8 +64,15 @@ RSpec.describe Activities::CheckProxyHealthActivity do
     end
 
     context "when PAID_PROXY_URL is not set" do
+      around do |example|
+        original_paid_proxy_url = ENV["PAID_PROXY_URL"]
+        ENV.delete("PAID_PROXY_URL")
+        example.run
+      ensure
+        ENV["PAID_PROXY_URL"] = original_paid_proxy_url
+      end
+
       before do
-        stub_const("ENV", ENV.to_h.except("PAID_PROXY_URL"))
         allow(Rails.application.config.x).to receive(:proxy_url).and_return(nil)
       end
 
@@ -94,8 +105,12 @@ RSpec.describe Activities::CheckProxyHealthActivity do
     end
 
     context "when proxy URL is invalid" do
-      before do
-        stub_const("ENV", ENV.to_h.merge("PAID_PROXY_URL" => "not a valid url"))
+      around do |example|
+        original_paid_proxy_url = ENV["PAID_PROXY_URL"]
+        ENV["PAID_PROXY_URL"] = "not a valid url"
+        example.run
+      ensure
+        ENV["PAID_PROXY_URL"] = original_paid_proxy_url
       end
 
       it "raises a non-retryable ProxyConfigurationError" do
@@ -109,8 +124,12 @@ RSpec.describe Activities::CheckProxyHealthActivity do
     end
 
     context "when proxy URL has an unsupported scheme" do
-      before do
-        stub_const("ENV", ENV.to_h.merge("PAID_PROXY_URL" => "ftp://localhost:3000"))
+      around do |example|
+        original_paid_proxy_url = ENV["PAID_PROXY_URL"]
+        ENV["PAID_PROXY_URL"] = "ftp://localhost:3000"
+        example.run
+      ensure
+        ENV["PAID_PROXY_URL"] = original_paid_proxy_url
       end
 
       it "raises a non-retryable ProxyConfigurationError" do
