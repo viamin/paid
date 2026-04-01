@@ -30,11 +30,13 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
     allow(FileUtils).to receive(:chmod)
     allow(FileUtils).to receive(:rm_rf)
     # Stub tar streaming and Docker archive_in_stream for seeding
-    tar_io = instance_double(IO, read: nil)
-    allow(IO).to receive(:popen).with([ "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "." ], "rb").and_yield(tar_io)
+    tar_stdout = instance_double(IO, read: nil, binmode: nil)
+    tar_status = instance_double(Process::Status, success?: true, exitstatus: 0)
+    tar_wait_thr = instance_double(Thread, value: tar_status)
+    allow(Open3).to receive(:popen2)
+      .with("tar", "-cf", "-", "-C", "/tmp/paid-collector-test", ".")
+      .and_yield(instance_double(IO), tar_stdout, tar_wait_thr)
     allow(mock_container).to receive(:archive_in_stream)
-    # Set $CHILD_STATUS to success so the tar exit status check passes
-    system("true")
   end
 
   describe ".available?" do
@@ -130,8 +132,8 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
     it "streams repo tar into the container via Docker API" do
       described_class.new(project: project, commit_sha: commit_sha).run
 
-      expect(IO).to have_received(:popen).with(
-        [ "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "." ], "rb"
+      expect(Open3).to have_received(:popen2).with(
+        "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "."
       )
       expect(mock_container).to have_received(:archive_in_stream).with("/workspace")
       expect(mock_container).to have_received(:exec).with(
@@ -140,12 +142,22 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       )
     end
 
+    it "makes workspace read-only after seeding" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "chmod", "-R", "a-w", "/workspace" ],
+        user: "root"
+      )
+    end
+
     it "raises ContainerError when tar fails" do
-      allow(IO).to receive(:popen)
-        .with([ "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "." ], "rb")
-        .and_wrap_original do |_method, *_args|
-          system("false") # Sets $CHILD_STATUS to failure
-        end
+      failed_status = instance_double(Process::Status, success?: false, exitstatus: 1)
+      failed_wait_thr = instance_double(Thread, value: failed_status)
+      tar_stdout = instance_double(IO, read: nil, binmode: nil)
+      allow(Open3).to receive(:popen2)
+        .with("tar", "-cf", "-", "-C", "/tmp/paid-collector-test", ".")
+        .and_yield(instance_double(IO), tar_stdout, failed_wait_thr)
 
       expect {
         described_class.new(project: project, commit_sha: commit_sha).run

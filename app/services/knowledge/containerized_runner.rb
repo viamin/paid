@@ -204,14 +204,22 @@ module Knowledge
         [ "chown", "-R", "agent:agent", options[:workspace_mount] ],
         user: "root"
       )
+      # Make workspace read-only for collectors after seeding. Collectors
+      # are read-only analysis and should write to the size-limited tmpfs
+      # locations (/tmp, /home/agent/.cache) instead.
+      @container.exec(
+        [ "chmod", "-R", "a-w", options[:workspace_mount] ],
+        user: "root"
+      )
     end
 
     def stream_repo_tar_to_container!
-      IO.popen([ "tar", "-cf", "-", "-C", @host_repo_dir, "." ], "rb") do |tar_io|
-        @container.archive_in_stream(options[:workspace_mount]) { tar_io.read(8192) }
+      Open3.popen2("tar", "-cf", "-", "-C", @host_repo_dir, ".") do |_stdin, stdout, wait_thr|
+        stdout.binmode
+        @container.archive_in_stream(options[:workspace_mount]) { stdout.read(8192) }
+        status = wait_thr.value
+        raise ContainerError, "tar failed (exit #{status.exitstatus})" unless status.success?
       end
-
-      raise ContainerError, "tar failed (exit #{$CHILD_STATUS&.exitstatus})" unless $CHILD_STATUS&.success?
     end
 
     def container_config
