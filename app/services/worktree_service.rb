@@ -57,8 +57,8 @@ class WorktreeService
 
     @mutex.synchronize do
       if File.exist?(File.join(repo_path, "HEAD"))
-        ensure_fetch_refspec
-        fetch_latest unless max_fetch_age && recently_fetched?(repo_path, max_fetch_age)
+        refspec_added = ensure_fetch_refspec
+        fetch_latest unless !refspec_added && max_fetch_age && recently_fetched?(repo_path, max_fetch_age)
       else
         clone_repository
       end
@@ -278,8 +278,10 @@ class WorktreeService
   # Bare repos cloned before the refspec fix lack remote.origin.fetch,
   # so `git fetch` silently skips creating origin/* refs. Idempotently
   # add the refspec so existing repos self-heal on next fetch.
+  #
+  # @return [Boolean] true if the config was modified (callers may need to force a fetch)
   def ensure_fetch_refspec
-    return if @fetch_refspec_verified
+    return false if @fetch_refspec_verified
 
     desired_refspec = FETCH_REFSPEC
     raw_output = run_git("config", "--get-all", "remote.origin.fetch", chdir: project_repo_path, raise_on_error: false)
@@ -287,11 +289,12 @@ class WorktreeService
 
     if existing.include?(desired_refspec)
       @fetch_refspec_verified = true
-      return
+      return false
     end
 
     run_git("config", "--add", "remote.origin.fetch", desired_refspec, chdir: project_repo_path)
     @fetch_refspec_verified = true
+    true
   end
 
   def authenticated_clone_url

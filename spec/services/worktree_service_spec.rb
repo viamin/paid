@@ -65,6 +65,20 @@ RSpec.describe WorktreeService do
         service.ensure_cloned(max_fetch_age: 2.minutes)
       end
 
+      it "forces a fetch when ensure_fetch_refspec adds the missing refspec" do
+        FileUtils.touch(File.join(repo_path, "FETCH_HEAD"))
+
+        allow(service).to receive(:run_git)
+          .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("")
+        allow(service).to receive(:run_git)
+          .with("config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC, chdir: repo_path)
+
+        expect(service).to receive(:fetch_latest)
+
+        service.ensure_cloned(max_fetch_age: 2.minutes)
+      end
+
       context "with max_fetch_age and a recent FETCH_HEAD" do
         before do
           FileUtils.touch(File.join(repo_path, "FETCH_HEAD"))
