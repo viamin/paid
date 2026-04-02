@@ -104,6 +104,7 @@ class Project < ApplicationRecord
   validates :security_severity_threshold, inclusion: { in: Issue::SEVERITY_ORDER }
   validates :code_scanning_interval_hours, numericality: { greater_than_or_equal_to: 24 }
   validates :knowledge_status, inclusion: { in: KNOWLEDGE_STATUSES }
+  validates :max_execution_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 }
   validate :allowed_github_usernames_not_empty
   validate :agent_co_author_trailer_is_single_line
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }

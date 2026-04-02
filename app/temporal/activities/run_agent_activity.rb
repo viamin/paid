@@ -104,7 +104,15 @@ module Activities
         rate_limit_reset_at = nil
         skipped_rate_limited_count = 0
 
+        max_execution_seconds = agent_run.project.max_execution_seconds
+
         providers.each_with_index do |provider_candidate, index|
+          # Check if the project's execution time limit has been exceeded
+          if max_execution_seconds && agent_run.started_at && (Time.current - agent_run.started_at).to_i >= max_execution_seconds
+            timeout_error = "Execution time limit of #{max_execution_seconds}s exceeded"
+            break
+          end
+
           # Skip routing keys whose provider entry has been deleted — attempting
           # execution would fail with "Unsupported provider" and leak internal
           # identifiers in user-visible error messages.
@@ -394,6 +402,16 @@ module Activities
       else
         user_settings&.agent_timeout_seconds || agent_timeout
       end
+
+      # Cap timeout by the project's max execution time limit.
+      # Uses started_at to compute remaining budget so the limit covers
+      # the full run, not just a single provider attempt.
+      max_exec = agent_run.project.max_execution_seconds
+      if max_exec && agent_run.started_at
+        remaining = (max_exec - (Time.current - agent_run.started_at).to_i).clamp(1, max_exec)
+        effective_timeout = [ effective_timeout, remaining ].min
+      end
+
       effective_idle_timeout = if agent_run.create_issue_goal?
         user_settings&.issue_goal_idle_timeout_seconds || DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
       elsif agent_run.review_goal?

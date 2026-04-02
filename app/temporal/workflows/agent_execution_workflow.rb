@@ -99,6 +99,7 @@ module Workflows
         :issue_goal_timeout_seconds,
         Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
       )
+      max_execution_seconds = agent_run_result[:max_execution_seconds]
 
       agent_step_succeeded = false
       workflow_error = nil
@@ -160,6 +161,14 @@ module Workflows
           agent_timeout_seconds
         end
         activity_timeout = (per_provider_timeout * provider_attempt_count) + 300
+
+        # Cap the activity timeout by the project's max execution time limit
+        # (plus a buffer for Temporal overhead). This ensures runs are terminated
+        # even when the per-provider timeout budget is larger.
+        if max_execution_seconds
+          execution_limit = max_execution_seconds + 300
+          activity_timeout = [ activity_timeout, execution_limit ].min
+        end
         agent_result = run_activity(Activities::RunAgentActivity,
           { agent_run_id: agent_run_id },
           start_to_close_timeout: activity_timeout,

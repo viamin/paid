@@ -23,6 +23,12 @@ RSpec.describe Project do
     it { is_expected.to validate_presence_of(:github_id) }
     it { is_expected.to validate_uniqueness_of(:github_id).scoped_to(:account_id) }
     it { is_expected.to validate_numericality_of(:poll_interval_seconds).is_greater_than_or_equal_to(60) }
+    it { is_expected.to validate_numericality_of(:max_execution_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(86_400) }
+
+    it "defaults max_execution_seconds to 1800" do
+      project = build(:project)
+      expect(project.max_execution_seconds).to eq(1800)
+    end
 
     it "validates knowledge_status inclusion" do
       project = build(:project)
