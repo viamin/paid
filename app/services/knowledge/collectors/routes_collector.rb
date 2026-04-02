@@ -7,7 +7,7 @@ module Knowledge
 
       def collect
         output = read_routes_output
-        return [] if output.blank?
+        skip!(skip_reason) if output.blank?
 
         parse_expanded_output(output).map do |route|
           build_artifact(route)
@@ -19,6 +19,14 @@ module Knowledge
       end
 
       private
+
+      def skip_reason
+        unless repo_file_exists?("config/routes.rb")
+          return "not a Rails project (no config/routes.rb)"
+        end
+
+        "routes file not generated (tmp/routes_expanded.txt not found)"
+      end
 
       def read_routes_output
         # Check for an explicit routes file path (e.g. passed via options).

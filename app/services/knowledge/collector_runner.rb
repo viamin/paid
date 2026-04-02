@@ -72,7 +72,7 @@ module Knowledge
       )
 
       collector_run.with_lock do
-        if collector_run.status == "completed"
+        if collector_run.status.in?(%w[completed skipped])
           return { collector_type: collector_type, status: "skipped" }
         end
 
@@ -98,6 +98,15 @@ module Knowledge
       collector_run.mark_completed!(count: count)
 
       { collector_type: collector_type, status: "completed", artifacts_count: count }
+    rescue SkipCollector => e
+      collector_run&.mark_skipped!(reason: e.reason) if collector_run&.persisted?
+      Rails.logger.info(
+        message: "knowledge.collector_skipped",
+        collector_type: collector_type,
+        project_id: project.id,
+        reason: e.reason
+      )
+      { collector_type: collector_type, status: "skipped", reason: e.reason }
     rescue => e
       collector_run&.mark_failed!(error: e.message) if collector_run&.persisted?
       Rails.logger.error(

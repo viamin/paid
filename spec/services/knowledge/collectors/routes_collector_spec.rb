@@ -112,8 +112,8 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
       end
 
-      it "returns empty array" do
-        expect(missing_collector.collect).to eq([])
+      it "raises SkipCollector" do
+        expect { missing_collector.collect }.to raise_error(Knowledge::SkipCollector)
       end
     end
 
@@ -125,8 +125,8 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         allow(File).to receive(:read).with(fixture_file).and_return("")
       end
 
-      it "returns empty array" do
-        expect(collector.collect).to eq([])
+      it "raises SkipCollector" do
+        expect { collector.collect }.to raise_error(Knowledge::SkipCollector)
       end
     end
 

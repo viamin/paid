@@ -151,6 +151,62 @@ RSpec.describe Knowledge::CollectorRunner do
       end
     end
 
+    context "when a collector raises SkipCollector" do
+      let(:skipping_collector_class) do
+        Class.new(Knowledge::BaseCollector) do
+          def collect
+            skip!("maat binary not found")
+          end
+
+          def collector_type
+            "skipping_collector"
+          end
+        end
+      end
+
+      before do
+        described_class.reset_registry!
+        described_class.register("skipping_collector", skipping_collector_class)
+        described_class.register("test_collector", test_collector_class)
+      end
+
+      it "marks the collector run as skipped with a reason" do
+        result = described_class.call(project: project, commit_sha: commit_sha)
+
+        skipped_result = result[:results].find { |r| r[:collector_type] == "skipping_collector" }
+        expect(skipped_result[:status]).to eq("skipped")
+        expect(skipped_result[:reason]).to eq("maat binary not found")
+
+        skipped_run = CollectorRun.find_by(collector_type: "skipping_collector")
+        expect(skipped_run.status).to eq("skipped")
+        expect(skipped_run.error_message).to eq("maat binary not found")
+        expect(skipped_run.artifacts_count).to eq(0)
+      end
+
+      it "does not block other collectors" do
+        result = described_class.call(project: project, commit_sha: commit_sha)
+
+        statuses = result[:results].map { |r| r[:status] }
+        expect(statuses).to contain_exactly("skipped", "completed")
+      end
+
+      it "treats skipped as success for stale marking" do
+        old_sha = "e" * 40
+        described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)
+
+        old_run = CollectorRun.find_by(collector_type: "test_collector", project_version: ProjectVersion.find_by(commit_sha: old_sha))
+        extra = create(:knowledge_artifact,
+          collector_run: old_run, project: project,
+          collector_type: old_run.collector_type, artifact_type: "orphaned_type",
+          identifier: "OrphanedThing", content: "old", content_hash: Digest::SHA256.hexdigest("old"))
+
+        new_sha = "f" * 40
+        described_class.call(project: project, commit_sha: new_sha, committed_at: 1.hour.ago)
+
+        expect(extra.reload.status).to eq("stale")
+      end
+    end
+
     context "when a collector fails" do
       let(:failing_collector_class) do
         Class.new(Knowledge::BaseCollector) do

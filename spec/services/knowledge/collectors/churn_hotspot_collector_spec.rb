@@ -49,6 +49,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
   describe "#collect" do
     context "when maat produces valid output" do
       before do
+        stub_popen3(%w[which maat], stdout: "/usr/local/bin/maat\n")
         stub_popen3(%w[maat -c git2 -l /tmp/test-repo -a revisions], stdout: revisions_csv)
         stub_popen3(%w[maat -c git2 -l /tmp/test-repo -a hotspots], stdout: hotspots_csv)
       end
@@ -123,17 +124,30 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
       let(:worktree_entry) { nil }
 
       before do
+        stub_popen3(%w[which maat], stdout: "/usr/local/bin/maat\n")
         allow(Rails.root).to receive(:join).and_return(Pathname.new("/nonexistent/path"))
       end
 
-      it "returns empty array" do
-        expect(collector.collect).to eq([])
+      it "raises SkipCollector" do
+        expect { collector.collect }.to raise_error(Knowledge::SkipCollector, "repository path not available")
       end
     end
 
-    context "when maat fails" do
+    context "when maat is not installed" do
       before do
-        stub_popen3(/maat/, stdout: "", stderr: "error", success: false, exit_code: 1)
+        stub_popen3(%w[which maat], stdout: "", stderr: "", success: false, exit_code: 1)
+      end
+
+      it "raises SkipCollector" do
+        expect { collector.collect }.to raise_error(Knowledge::SkipCollector, "maat binary not found")
+      end
+    end
+
+    context "when maat is installed but fails at runtime" do
+      before do
+        stub_popen3(%w[which maat], stdout: "/usr/local/bin/maat\n")
+        stub_popen3(%w[maat -c git2 -l /tmp/test-repo -a revisions], stdout: "", stderr: "error", success: false, exit_code: 1)
+        stub_popen3(%w[maat -c git2 -l /tmp/test-repo -a hotspots], stdout: "", stderr: "error", success: false, exit_code: 1)
       end
 
       it "returns empty array" do
@@ -143,7 +157,9 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
 
     context "when maat produces empty output" do
       before do
-        stub_popen3(/maat/, stdout: "")
+        stub_popen3(%w[which maat], stdout: "/usr/local/bin/maat\n")
+        stub_popen3(%w[maat -c git2 -l /tmp/test-repo -a revisions], stdout: "")
+        stub_popen3(%w[maat -c git2 -l /tmp/test-repo -a hotspots], stdout: "")
       end
 
       it "returns empty array" do
@@ -153,7 +169,9 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
 
     context "when maat produces header-only output" do
       before do
-        stub_popen3(/maat/, stdout: "entity,n-revs\n") # header-only CSV
+        stub_popen3(%w[which maat], stdout: "/usr/local/bin/maat\n")
+        stub_popen3(%w[maat -c git2 -l /tmp/test-repo -a revisions], stdout: "entity,n-revs\n")
+        stub_popen3(%w[maat -c git2 -l /tmp/test-repo -a hotspots], stdout: "entity,n-revs\n")
       end
 
       it "returns empty array" do

@@ -8,8 +8,10 @@ module Knowledge
       MAAT_TIMEOUT = 120 # seconds
 
       def collect
+        skip!("maat binary not found") unless maat_available?
+
         repo_path = resolve_repo_path
-        return [] unless repo_path
+        skip!("repository path not available") unless repo_path
 
         revisions = run_maat(repo_path, "revisions")
         hotspots = run_maat(repo_path, "hotspots")
@@ -31,6 +33,13 @@ module Knowledge
       end
 
       private
+
+      def maat_available?
+        run_command("which", "maat")
+        true
+      rescue StandardError
+        false
+      end
 
       def run_maat(repo_path, analysis)
         output = run_command(

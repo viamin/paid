@@ -31,6 +31,10 @@ module Knowledge
 
     private
 
+    def skip!(reason)
+      raise SkipCollector, reason
+    end
+
     def container_runner
       options[:container_runner]
     end
