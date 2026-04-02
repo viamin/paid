@@ -40,7 +40,6 @@ module Projects
       @issues = @project.issues
         .issues_only
         .where(github_state: "open")
-        .where(paid_state: %w[new planning failed])
         .order(github_number: :desc)
       @pull_requests = @project.issues
         .pull_requests_only
