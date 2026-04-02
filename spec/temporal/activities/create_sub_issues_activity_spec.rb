@@ -230,6 +230,24 @@ RSpec.describe Activities::CreateSubIssuesActivity do
       end
     end
 
+    context "when a CanceledError is raised after partial success" do
+      it "propagates the cancellation instead of wrapping it" do
+        call_count = 0
+        allow(github_client).to receive(:create_issue) do |*_args|
+          call_count += 1
+          if call_count == 1
+            gh_issue_response(number: 101, id: 200_001, title: "Implement authentication", body: "body1")
+          else
+            raise Temporalio::Error::CanceledError, "activity canceled"
+          end
+        end
+
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+        }.to raise_error(Temporalio::Error::CanceledError)
+      end
+    end
+
     context "when sync_issue_record fails" do
       it "continues creating remaining issues and returns nil issue_id" do
         parent_issue # ensure created before stubbing

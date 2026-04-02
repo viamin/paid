@@ -75,6 +75,8 @@ module Activities
           sub_issue_number: gh_issue.number
         )
       end
+    rescue Temporalio::Error::CanceledError
+      raise
     rescue StandardError => e
       raise e if created_issues.empty?
 
