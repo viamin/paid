@@ -53,6 +53,29 @@ RSpec.describe PromptEvolution::SampleRuns do
       expect(result.samples).to be_empty
     end
 
+    it "excludes runs with only human metrics" do
+      run = create(:agent_run, :completed, project: project, prompt_version: prompt_version,
+        completed_at: 1.day.ago)
+      create(:quality_metric, :human, agent_run: run, prompt_version: prompt_version)
+
+      result = described_class.call(sample_size: 10, days: 7)
+
+      expect(result.samples.map { |sample| sample[:agent_run].id }).not_to include(run.id)
+      expect(result.prompt_stats).to be_empty
+    end
+
+    it "excludes runs with nil automated composite scores" do
+      run = create(:agent_run, :completed, project: project, prompt_version: prompt_version,
+        completed_at: 1.day.ago)
+      create(:quality_metric, :automated, agent_run: run, prompt_version: prompt_version,
+        composite_score: nil)
+
+      result = described_class.call(sample_size: 10, days: 7)
+
+      expect(result.samples.map { |sample| sample[:agent_run].id }).not_to include(run.id)
+      expect(result.prompt_stats).to be_empty
+    end
+
     it "excludes runs outside the time window" do
       run = create(:agent_run, :completed, project: project, prompt_version: prompt_version,
         completed_at: 30.days.ago)
@@ -91,6 +114,30 @@ RSpec.describe PromptEvolution::SampleRuns do
 
       goals = result.samples.map { |s| s[:goal] }
       expect(goals).to include("create_pr", "create_issue", "review")
+    end
+
+    it "does not bias selection toward the first strata when strata exceed sample size" do
+      strata_projects = Array.new(5) { create(:project) }
+
+      strata_projects.each_with_index do |strata_project, index|
+        %w[create_pr create_issue].each do |goal|
+          create_completed_run(
+            project: strata_project,
+            goal: goal,
+            completed_at: (index + 1).days.ago
+          )
+        end
+      end
+
+      # Run multiple times to verify later strata can be selected
+      all_selected_project_ids = Set.new
+      5.times do
+        result = described_class.call(sample_size: 5, days: 14)
+        result.samples.each { |s| all_selected_project_ids << s[:project].id }
+      end
+
+      # With shuffling, we expect more than just the first few projects to appear
+      expect(all_selected_project_ids.size).to be > 2
     end
 
     it "respects sample_size limit" do

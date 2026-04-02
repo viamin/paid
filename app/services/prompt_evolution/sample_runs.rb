@@ -4,9 +4,9 @@ module PromptEvolution
   # Samples recently completed agent runs with quality metrics to evaluate
   # current prompt effectiveness and identify improvement opportunities.
   #
-  # Stratifies samples by project, goal type, and quality outcome to ensure
-  # representative coverage. Calculates aggregate performance statistics per
-  # prompt version and flags underperforming prompts for evolution.
+  # Stratifies samples by project and goal type to ensure representative
+  # coverage. Calculates aggregate performance statistics from quality metrics
+  # per prompt version and flags underperforming prompts for evolution.
   #
   # @example
   #   result = PromptEvolution::SampleRuns.call(sample_size: 50, days: 14)
@@ -51,6 +51,7 @@ module PromptEvolution
         .where(completed_at: days.days.ago..)
         .where.not(prompt_version_id: nil)
         .joins(:quality_metrics)
+        .merge(QualityMetric.automated.with_composite_score)
         .distinct
 
       scope = scope.where(project_id: project_id) if project_id
@@ -58,15 +59,16 @@ module PromptEvolution
     end
 
     def stratified_sample(runs)
-      grouped = runs.group_by { |r| [ r.project_id, r.goal ] }
+      run_rows = runs.pluck(:id, :project_id, :goal)
+      grouped = run_rows.group_by { |_id, project_id, goal| [ project_id, goal ] }
       return AgentRun.none if grouped.empty?
 
       per_stratum = [ sample_size / grouped.size, 1 ].max
       sampled_ids = grouped.flat_map do |_key, stratum_runs|
-        stratum_runs.sample(per_stratum).map(&:id)
+        stratum_runs.sample(per_stratum).map(&:first)
       end
 
-      AgentRun.where(id: sampled_ids.first(sample_size))
+      AgentRun.where(id: sampled_ids.shuffle.first(sample_size))
     end
 
     def collect_sample_data(runs)
