@@ -101,7 +101,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       expect(first_run).to eq(second_run)
     end
 
-    context "when routes file does not exist and command fails" do
+    context "when routes file does not exist and not containerized" do
       let(:failing_collector) do
         described_class.new(
           project: project,
@@ -112,9 +112,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       end
 
       before do
-        allow(failing_collector).to receive(:run_command)
-          .and_raise(RuntimeError, "Command failed")
-        allow(Rails.logger).to receive(:info)
+        allow(Rails.logger).to receive(:warn)
       end
 
       it "returns empty array" do
@@ -135,13 +133,14 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       end
     end
 
-    context "when generating routes via command" do
+    context "when generating routes via command in container" do
+      let(:container_runner) { instance_double(Knowledge::ContainerizedRunner, host_repo_dir: "/tmp/repo") }
       let(:command_collector) do
         described_class.new(
           project: project,
           project_version: project_version,
           collector_run: collector_run,
-          options: {}
+          options: { container_runner: container_runner }
         )
       end
 
@@ -158,9 +157,34 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       it "returns empty array when command fails" do
         allow(command_collector).to receive(:run_command)
           .and_raise(RuntimeError, "Command failed")
-        allow(Rails.logger).to receive(:info)
+        allow(Rails.logger).to receive(:warn)
 
         expect(command_collector.collect).to eq([])
+      end
+    end
+
+    context "when not containerized and no routes file" do
+      let(:non_container_collector) do
+        described_class.new(
+          project: project,
+          project_version: project_version,
+          collector_run: collector_run,
+          options: {}
+        )
+      end
+
+      before { allow(Rails.logger).to receive(:warn) }
+
+      it "skips route generation for security" do
+        expect(non_container_collector.collect).to eq([])
+      end
+
+      it "logs a warning" do
+        non_container_collector.collect
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(message: "knowledge.routes_collector.skipped_non_containerized")
+        )
       end
     end
   end

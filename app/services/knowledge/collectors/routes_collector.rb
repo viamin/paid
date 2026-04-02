@@ -33,11 +33,25 @@ module Knowledge
       end
 
       def generate_routes_output
+        # Running `bin/rails routes` executes arbitrary Ruby from the target
+        # repo (initializers, config, etc.). Only allow this inside a
+        # sandboxed container to avoid executing untrusted code on the host.
+        unless containerized?
+          Rails.logger.warn(
+            message: "knowledge.routes_collector.skipped_non_containerized",
+            project_id: project.id
+          )
+          return nil
+        end
+
         run_command("bin/rails", "routes", "--expanded", timeout: 60)
-      rescue => e
-        Rails.logger.info(
-          message: "routes_collector.generate_routes_failed",
-          error: e.message
+      rescue StandardError => e
+        Rails.logger.warn(
+          message: "knowledge.routes_collector.generate_routes_failed",
+          project_id: project.id,
+          collector_type: collector_type,
+          error_class: e.class.name,
+          error_message: e.message
         )
         nil
       end
