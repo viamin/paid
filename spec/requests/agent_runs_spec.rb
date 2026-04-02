@@ -396,7 +396,7 @@ RSpec.describe "AgentRuns" do
         expect(body).to include('data-goal-toggle-target="prSection"')
       end
 
-      it "shows open actionable issues in dropdown" do
+      it "shows all open issues in dropdown regardless of paid_state" do
         create(:issue, project: project, github_number: 10, title: "Open issue", github_state: "open", paid_state: "new")
         create(:issue, project: project, github_number: 11, title: "Closed issue", github_state: "closed", paid_state: "new")
         create(:issue, project: project, github_number: 12, title: "In progress issue", github_state: "open", paid_state: "in_progress")
