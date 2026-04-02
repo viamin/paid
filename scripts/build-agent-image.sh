@@ -15,13 +15,24 @@ IMAGE_NAME="${IMAGE_NAME:-paid-agent}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 
+# Extract ruby-maat version from Gemfile.lock (single source of truth).
+# Restrict the match to the GEM section and take only the first hit to avoid
+# matching the CHECKSUMS section (which includes a sha256 suffix).
+RUBY_MAAT_VERSION=$(sed -n '/^GEM$/,/^$/s/^  *ruby-maat (\(.*\))/\1/p' "${PROJECT_ROOT}/Gemfile.lock" | head -n 1)
+if [ -z "${RUBY_MAAT_VERSION}" ]; then
+    echo "ERROR: Could not extract ruby-maat version from Gemfile.lock" >&2
+    exit 1
+fi
+
 echo "Building agent container image..."
 echo "  Image: ${FULL_IMAGE}"
 echo "  Context: ${PROJECT_ROOT}/docker/agent"
+echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
 
 docker build \
     -t "${FULL_IMAGE}" \
     -f "${PROJECT_ROOT}/docker/agent/Dockerfile" \
+    --build-arg "RUBY_MAAT_VERSION=${RUBY_MAAT_VERSION}" \
     "${PROJECT_ROOT}/docker/agent/"
 
 echo ""
