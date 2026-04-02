@@ -248,6 +248,8 @@ module Workflows
         resolution: resolution,
         requires_manual_review: resolution[:requires_manual_review] || detection[:requires_manual_review]
       )
+    rescue Temporalio::Error::CanceledError
+      raise
     rescue => e
       Temporalio::Workflow.logger.warn(
         message: "parallel_execution.conflict_detection_failed",
@@ -258,7 +260,7 @@ module Workflows
       {
         has_conflicts: true,
         conflicting_pairs: [],
-        files_by_run: {},
+        files_by_run: [],
         total_runs_checked: 0,
         project_id: project_id,
         detection_failed: true,
@@ -272,7 +274,7 @@ module Workflows
       {
         has_conflicts: false,
         conflicting_pairs: [],
-        files_by_run: {},
+        files_by_run: [],
         total_runs_checked: 0,
         project_id: project_id,
         detection_failed: false,

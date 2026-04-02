@@ -117,7 +117,7 @@ RSpec.describe Conflicts::Detect do
 
         result = described_class.call(agent_run_ids: [ run_a.id ])
 
-        expect(result[:files_by_run]).to be_a(Hash)
+        expect(result[:files_by_run]).to be_an(Array)
       end
 
       it "reports detection_failed when all diff sources return empty for runs with different commits" do
@@ -182,7 +182,7 @@ RSpec.describe Conflicts::Detect do
 
         result = described_class.call(agent_run_ids: [ run.id ], project_id: project.id)
 
-        expect(result[:files_by_run]).to be_a(Hash)
+        expect(result[:files_by_run]).to be_an(Array)
       end
 
       def create_bare_repo_runs(files_a:, files_b:)

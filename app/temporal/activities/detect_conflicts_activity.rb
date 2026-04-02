@@ -14,7 +14,7 @@ module Activities
   # Output:
   #   has_conflicts: Boolean indicating whether conflicts were detected
   #   conflicting_pairs: Array of { runs: [id, id], files: [path, ...] }
-  #   files_by_run: Hash mapping run ID to list of changed files
+  #   files_by_run: Array of { agent_run_id:, files: } entries
   #   total_runs_checked: Number of runs analyzed
   class DetectConflictsActivity < BaseActivity
     activity_name "DetectConflicts"

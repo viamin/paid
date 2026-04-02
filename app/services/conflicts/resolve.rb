@@ -98,7 +98,7 @@ module Conflicts
       # Scope to project_id to prevent cross-project operations.
       scope = AgentRun.where(id: run_ids)
       scope = scope.where(project_id: @project_id) if @project_id
-      runs = scope.order(:completed_at)
+      runs = scope.order(:completed_at, :id)
       base_run = runs.first
       rebase_run = runs.last
 
@@ -180,7 +180,7 @@ module Conflicts
       target_run_id = begin
         scope = AgentRun.where(id: run_ids)
         scope = scope.where(project_id: @project_id) if @project_id
-        runs = scope.order(:completed_at)
+        runs = scope.order(:completed_at, :id)
         runs.last&.id || run_ids.last
       rescue StandardError
         run_ids.last

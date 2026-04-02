@@ -44,7 +44,7 @@ module Conflicts
       {
         has_conflicts: conflicts.any? || @diff_failures.any?,
         conflicting_pairs: conflicts,
-        files_by_run: files_by_run.transform_values { |set| set.to_a.sort },
+        files_by_run: files_by_run.map { |agent_run_id, set| { agent_run_id: agent_run_id, files: set.to_a.sort } },
         total_runs_checked: runs.size,
         project_id: @project_id,
         detection_failed: @diff_failures.any?,
@@ -201,7 +201,7 @@ module Conflicts
       {
         has_conflicts: false,
         conflicting_pairs: [],
-        files_by_run: {},
+        files_by_run: [],
         total_runs_checked: runs_checked,
         project_id: @project_id,
         detection_failed: false,
@@ -214,7 +214,7 @@ module Conflicts
       {
         has_conflicts: true,
         conflicting_pairs: [],
-        files_by_run: {},
+        files_by_run: [],
         total_runs_checked: runs_checked,
         project_id: @project_id,
         detection_failed: true,
