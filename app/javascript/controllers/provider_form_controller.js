@@ -20,12 +20,26 @@ function loadProviderApiServiceType() {
     codex: "openai",
     aider: "anthropic",
     gemini: "google",
-    opencode: "openrouter",
-    kilocode: "anthropic",
   }
 }
 
 const PROVIDER_API_SERVICE_TYPE = loadProviderApiServiceType()
+
+// OpenCode and KiloCode support multiple upstream API providers, each with its
+// own API key type. This maps the api_provider dropdown value to the required
+// ProviderApiKey.api_service_type.
+const DIRECT_OUTBOUND_API_PROVIDER_SERVICE_TYPES = {
+  openrouter: "openrouter",
+  anthropic: "anthropic",
+  openai: "openai",
+  inception: "inception",
+  deepseek: "deepseek",
+  mistral: "mistral",
+  xai: "xai",
+}
+
+// Provider keys that use dynamic api_provider selection.
+const DYNAMIC_API_PROVIDER_KEYS = new Set(["opencode", "kilocode"])
 
 export default class extends Controller {
   static values = {
@@ -41,6 +55,8 @@ export default class extends Controller {
     "providerSelect",
     "apiKeyOption",
     "opencodeSettings",
+    "kilocodeSettings",
+    "directOutboundApiProviderSelect",
   ]
 
   connect() {
@@ -87,11 +103,19 @@ export default class extends Controller {
     const providerKey = this.currentProviderKey()
     const isApiKey = this.providerApiKeyMode()
     const showOpenCodeSettings = isApiKey && providerKey === "opencode"
+    const showKiloCodeSettings = isApiKey && providerKey === "kilocode"
 
     this.opencodeSettingsTargets.forEach((el) => {
       el.hidden = !showOpenCodeSettings
       el.querySelectorAll("select, input").forEach((control) => {
         control.disabled = !showOpenCodeSettings
+      })
+    })
+
+    this.kilocodeSettingsTargets.forEach((el) => {
+      el.hidden = !showKiloCodeSettings
+      el.querySelectorAll("select, input").forEach((control) => {
+        control.disabled = !showKiloCodeSettings
       })
     })
 
@@ -134,10 +158,25 @@ export default class extends Controller {
 
   requiredApiServiceTypeFor(providerKey) {
     if (!providerKey) return null
+
+    // OpenCode and KiloCode determine their required API key type from
+    // the selected api_provider dropdown.
+    if (DYNAMIC_API_PROVIDER_KEYS.has(providerKey)) {
+      const apiProvider = this.currentDirectOutboundApiProvider(providerKey)
+      return DIRECT_OUTBOUND_API_PROVIDER_SERVICE_TYPES[apiProvider] || null
+    }
+
     // Returns null for unknown/unmapped providers (e.g. copilot), which causes
     // refreshApiKeyOptions to hide all API key options — the correct behavior
     // since those providers have no compatible API key type.
     return PROVIDER_API_SERVICE_TYPE[providerKey] || null
+  }
+
+  currentDirectOutboundApiProvider(providerKey) {
+    const select = this.directOutboundApiProviderSelectTargets.find(
+      (el) => el.dataset.providerKey === providerKey
+    )
+    return select?.value || "openrouter"
   }
 
   currentProviderKey() {

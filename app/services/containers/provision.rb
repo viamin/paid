@@ -147,6 +147,8 @@ module Containers
       seed_gemini_credentials!
       fix_cursor_tmpfs_ownership!
       fix_kilocode_tmpfs_ownership!
+      fix_kilocode_config_tmpfs_ownership!
+      fix_kilocode_data_tmpfs_ownership!
       fix_opencode_config_tmpfs_ownership!
       fix_opencode_data_tmpfs_ownership!
       fix_copilot_tmpfs_ownership!
@@ -664,6 +666,18 @@ module Containers
       fix_tmpfs_ownership!(".kilocode")
     end
 
+    # Fixes ownership of the ~/.config/kilo tmpfs so the non-root agent user
+    # can write to it. Tmpfs mounts are created as root-owned.
+    def fix_kilocode_config_tmpfs_ownership!
+      fix_tmpfs_ownership!(".config/kilo")
+    end
+
+    # Fixes ownership of the ~/.local/share/kilo tmpfs so the non-root agent
+    # user can write to it. Tmpfs mounts are created as root-owned.
+    def fix_kilocode_data_tmpfs_ownership!
+      fix_tmpfs_ownership!(".local/share/kilo")
+    end
+
     # Fixes ownership of the ~/.config/opencode tmpfs so the non-root agent user
     # can write to it. Tmpfs mounts are created as root-owned.
     def fix_opencode_config_tmpfs_ownership!
@@ -864,9 +878,16 @@ module Containers
       # Ownership is fixed by fix_cursor_tmpfs_ownership! after container start.
       tmpfs["/home/agent/.cursor-agent"] = "size=#{64 * 1024 * 1024},mode=0700"
 
-      # Kilocode CLI stores config and session data under ~/.kilocode.
+      # Kilocode CLI stores plugin data under ~/.kilocode.
       # Ownership is fixed by fix_kilocode_tmpfs_ownership! after container start.
       tmpfs["/home/agent/.kilocode"] = "size=#{64 * 1024 * 1024},mode=0700"
+
+      # Kilocode CLI stores config under ~/.config/kilo (config.json) and data
+      # under ~/.local/share/kilo (auth.json, kilo.db). Ownership is fixed by
+      # fix_kilocode_config_tmpfs_ownership! and fix_kilocode_data_tmpfs_ownership!
+      # after container start.
+      tmpfs["/home/agent/.config/kilo"] = "size=#{64 * 1024 * 1024},mode=0700"
+      tmpfs["/home/agent/.local/share/kilo"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       # OpenCode CLI stores config under ~/.config/opencode and data under
       # ~/.local/share/opencode. Ownership is fixed by

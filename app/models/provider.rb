@@ -7,9 +7,26 @@ class Provider < ApplicationRecord
   AUTH_TYPES = %w[subscription api_key].freeze
   FALLBACK_ROLES = %w[standard rate_limit_fallback].freeze
   ROUTING_KEY_PREFIX = "provider:".freeze
-  OPENCODE_API_PROVIDER_KEYS = %w[openrouter].freeze
+  # Upstream API providers supported by direct-outbound CLI tools (OpenCode,
+  # KiloCode). Each entry maps a slug to its base URL and the ProviderApiKey
+  # service type required for authentication.
+  DIRECT_OUTBOUND_API_PROVIDERS = {
+    "openrouter" => { label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", service_type: "openrouter" },
+    "anthropic" => { label: "Anthropic", base_url: "https://api.anthropic.com/v1", service_type: "anthropic" },
+    "openai" => { label: "OpenAI", base_url: "https://api.openai.com/v1", service_type: "openai" },
+    "inception" => { label: "InceptionLabs", base_url: "https://api.inceptionlabs.ai/v1", service_type: "inception" },
+    "deepseek" => { label: "DeepSeek", base_url: "https://api.deepseek.com/v1", service_type: "deepseek" },
+    "mistral" => { label: "Mistral", base_url: "https://api.mistral.ai/v1", service_type: "mistral" },
+    "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai" }
+  }.freeze
+
+  DIRECT_OUTBOUND_SERVICE_TYPES = DIRECT_OUTBOUND_API_PROVIDERS.values.map { |c| c[:service_type] }.to_set.freeze
+
+  OPENCODE_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
   OPENCODE_DEFAULT_API_PROVIDER = "openrouter"
-  OPENCODE_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1".freeze
+
+  KILOCODE_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
+  KILOCODE_DEFAULT_API_PROVIDER = "openrouter"
 
   belongs_to :user
   belongs_to :provider_api_key, optional: true
@@ -40,6 +57,7 @@ class Provider < ApplicationRecord
   validate :subscription_must_have_standard_fallback_role
   validate :api_key_entry_must_be_unique
   validate :opencode_api_key_config_must_be_valid
+  validate :kilocode_api_key_config_must_be_valid
 
   before_destroy :prevent_destroying_last_agent_run_provider
   before_destroy :prevent_destroying_default_provider
@@ -60,9 +78,11 @@ class Provider < ApplicationRecord
     return name if name.present?
 
     label = self.class.display_name_for(provider_key)
-    if provider_key == "opencode" && opencode_model_id.present?
-      label += " #{opencode_model_id}"
+    model_id = case provider_key
+    when "opencode" then opencode_model_id
+    when "kilocode" then kilocode_model_id
     end
+    label += " #{model_id}" if model_id.present?
     label += " (API Key)" if api_key?
     label
   end
@@ -102,17 +122,47 @@ class Provider < ApplicationRecord
     opencode_config["model"].to_s.presence
   end
 
+  def kilocode_config
+    config.is_a?(Hash) ? config.fetch("kilocode", {}) : {}
+  end
+
+  def kilocode_api_provider
+    return nil unless provider_key == "kilocode"
+
+    kilocode_config["api_provider"].presence || KILOCODE_DEFAULT_API_PROVIDER
+  end
+
+  def kilocode_model_id
+    return nil unless provider_key == "kilocode"
+
+    kilocode_config["model"].to_s.presence
+  end
+
+  def kilocode_required_api_service_type
+    return nil unless provider_key == "kilocode"
+
+    DIRECT_OUTBOUND_API_PROVIDERS.dig(kilocode_api_provider, :service_type)
+  end
+
   def requires_direct_outbound?
-    provider_key == "opencode" &&
-      api_key? &&
-      opencode_api_provider == "openrouter" &&
-      opencode_model_id.present?
+    return true if opencode_direct_outbound?
+    return true if kilocode_direct_outbound?
+
+    false
+  end
+
+  def opencode_required_api_service_type
+    return nil unless provider_key == "opencode"
+
+    DIRECT_OUTBOUND_API_PROVIDERS.dig(opencode_api_provider, :service_type)
   end
 
   def opencode_config_json
     provider_id = "paid-provider-#{id || provider_key}"
     model_id = opencode_model_id
     raise ArgumentError, "Missing OpenCode model id for provider #{id || provider_key}" if model_id.blank?
+
+    api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
 
     JSON.pretty_generate(
       {
@@ -122,7 +172,37 @@ class Provider < ApplicationRecord
             "npm" => "@ai-sdk/openai-compatible",
             "name" => display_name,
             "options" => {
-              "baseURL" => OPENCODE_DEFAULT_BASE_URL,
+              "baseURL" => api_config[:base_url],
+              "apiKey" => provider_api_key&.api_key.to_s
+            },
+            "models" => {
+              model_id => {
+                "name" => model_id
+              }
+            }
+          }
+        },
+        "model" => "#{provider_id}/#{model_id}"
+      }
+    )
+  end
+
+  def kilocode_config_json
+    provider_id = "paid-provider-#{id || provider_key}"
+    model_id = kilocode_model_id
+    raise ArgumentError, "Missing KiloCode model id for provider #{id || provider_key}" if model_id.blank?
+
+    api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(kilocode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
+    base_url = api_config[:base_url]
+
+    JSON.pretty_generate(
+      {
+        "provider" => {
+          provider_id => {
+            "api" => "openai-compatible",
+            "name" => display_name,
+            "options" => {
+              "baseURL" => base_url,
               "apiKey" => provider_api_key&.api_key.to_s
             },
             "models" => {
@@ -138,20 +218,34 @@ class Provider < ApplicationRecord
   end
 
   def direct_outbound_exec_env
-    return {} unless requires_direct_outbound?
-
-    { "PAID_OPENCODE_CONFIG_B64" => Base64.strict_encode64(opencode_config_json) }
+    if opencode_direct_outbound?
+      { "PAID_OPENCODE_CONFIG_B64" => Base64.strict_encode64(opencode_config_json) }
+    elsif kilocode_direct_outbound?
+      { "PAID_KILOCODE_CONFIG_B64" => Base64.strict_encode64(kilocode_config_json) }
+    else
+      {}
+    end
   end
 
   def direct_outbound_exec_command(command_prefix:, prompt:)
     return command_prefix + [ prompt ] unless requires_direct_outbound?
 
     command = "#{command_prefix.shelljoin} \"$1\""
-    script = <<~SH.squish
-      mkdir -p /home/agent/.config/opencode &&
-      printf '%s' "$PAID_OPENCODE_CONFIG_B64" | base64 -d > /home/agent/.config/opencode/opencode.json &&
-      #{command}
-    SH
+
+    if opencode_direct_outbound?
+      script = <<~SH.squish
+        mkdir -p /home/agent/.config/opencode &&
+        printf '%s' "$PAID_OPENCODE_CONFIG_B64" | base64 -d > /home/agent/.config/opencode/opencode.json &&
+        #{command}
+      SH
+    elsif kilocode_direct_outbound?
+      script = <<~SH.squish
+        mkdir -p /home/agent/.config/kilo &&
+        printf '%s' "$PAID_KILOCODE_CONFIG_B64" | base64 -d > /home/agent/.config/kilo/config.json &&
+        #{command}
+      SH
+    end
+
     [ "sh", "-lc", script, "--", prompt ]
   end
 
@@ -323,7 +417,7 @@ class Provider < ApplicationRecord
     return if provider_api_key_id.blank?
     return unless provider_api_key
 
-    required_service = self.class.api_service_type_for(provider_key)
+    required_service = required_api_service_type
 
     if required_service.nil?
       errors.add(:provider_api_key, "is not supported for this provider; use subscription authentication instead")
@@ -376,5 +470,39 @@ class Provider < ApplicationRecord
     # Model ID is only required when direct-outbound routing is intended
     # (i.e. a supported api_provider is configured). Providers without a
     # model fall back to the non-direct-outbound path via the secrets proxy.
+  end
+
+  def kilocode_api_key_config_must_be_valid
+    return unless provider_key == "kilocode"
+    return unless api_key?
+
+    unless KILOCODE_API_PROVIDER_KEYS.include?(kilocode_api_provider)
+      errors.add(:config, "must include a supported KiloCode API provider")
+    end
+
+    # Model ID is only required when direct-outbound routing is intended
+    # (i.e. a supported api_provider is configured). Providers without a
+    # model fall back to the non-direct-outbound path via Kilo's own gateway.
+  end
+
+  def required_api_service_type
+    return opencode_required_api_service_type if provider_key == "opencode"
+    return kilocode_required_api_service_type if provider_key == "kilocode"
+
+    self.class.api_service_type_for(provider_key)
+  end
+
+  def opencode_direct_outbound?
+    provider_key == "opencode" &&
+      api_key? &&
+      OPENCODE_API_PROVIDER_KEYS.include?(opencode_api_provider) &&
+      opencode_model_id.present?
+  end
+
+  def kilocode_direct_outbound?
+    provider_key == "kilocode" &&
+      api_key? &&
+      KILOCODE_API_PROVIDER_KEYS.include?(kilocode_api_provider) &&
+      kilocode_model_id.present?
   end
 end
