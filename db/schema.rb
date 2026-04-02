@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_01_135652) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_02_050141) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -143,6 +143,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_135652) do
     t.bigint "issue_id"
     t.integer "iterations", default: 0
     t.jsonb "mcp_server_snapshot", default: [], null: false
+    t.string "parent_workflow_id", limit: 255
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
     t.bigint "project_id", null: false
@@ -172,6 +173,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_135652) do
     t.string "worktree_path", limit: 500
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
+    t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
     t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
     t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
@@ -922,6 +924,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_01_135652) do
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
     t.integer "max_comment_length", default: 2000, null: false
     t.integer "max_concurrent_runs", default: 2, null: false
+    t.integer "max_parallel_agents_per_project", default: 3, null: false
     t.integer "max_prompt_comments", default: 20, null: false
     t.integer "max_tokens_per_run", default: 10000000, null: false
     t.float "retry_base_delay", default: 1.0, null: false

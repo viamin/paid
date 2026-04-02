@@ -1137,6 +1137,27 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".active_count_for_project" do
+    it "counts only active runs for the given project" do
+      project = create(:project)
+      other_project = create(:project)
+
+      create(:agent_run, :running, project: project)
+      create(:agent_run, project: project) # pending (default status)
+      create(:agent_run, :completed, project: project)
+      create(:agent_run, :running, project: other_project)
+
+      expect(described_class.active_count_for_project(project)).to eq(2)
+    end
+
+    it "returns zero when no active runs exist" do
+      project = create(:project)
+      create(:agent_run, :completed, project: project)
+
+      expect(described_class.active_count_for_project(project)).to eq(0)
+    end
+  end
+
   describe ".next_queued_run" do
     it "returns the oldest queued run when all have the same priority" do
       older = create(:agent_run, :queued, created_at: 2.minutes.ago)

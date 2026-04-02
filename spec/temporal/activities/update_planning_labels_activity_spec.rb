@@ -70,7 +70,7 @@ RSpec.describe Activities::UpdatePlanningLabelsActivity do
 
     context "when label operations fail" do
       before do
-        allow(github_client).to receive(:remove_label_from_issue).and_raise(StandardError.new("API error"))
+        allow(github_client).to receive(:remove_label_from_issue).and_raise(GithubClient::Error.new("API error"))
       end
 
       it "does not raise (best-effort)" do

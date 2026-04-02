@@ -115,6 +115,14 @@ module Activities
       task_count = truncated_tasks.length
 
       truncated_tasks.map.with_index do |task, index|
+        unless task.is_a?(Hash)
+          raise Temporalio::Error::ApplicationError.new(
+            "LLM returned non-Hash element at index #{index}: #{task.class}",
+            type: "DecompositionFailed",
+            non_retryable: true
+          )
+        end
+
         {
           index: index,
           title: task[:title].to_s.truncate(255),

@@ -45,7 +45,7 @@ RSpec.describe Workflows::PlanningWorkflow do
           when "Activities::DecomposeFeatureActivity"
             { tasks: tasks }
           when "Activities::CreateSubIssuesActivity"
-            { sub_issue_ids: [ 10, 11, 12 ] }
+            { created_issues: [ { issue_id: 10 }, { issue_id: 11 }, { issue_id: 12 } ] }
           when "Activities::UpdatePlanningLabelsActivity"
             { success: true }
           else
@@ -54,12 +54,12 @@ RSpec.describe Workflows::PlanningWorkflow do
         end
       end
 
-      it "returns success with sub-issue IDs" do
+      it "returns success with created issues" do
         result = workflow.execute(input)
 
         expect(result[:success]).to be true
         expect(result[:task_count]).to eq(3)
-        expect(result[:sub_issue_ids]).to eq([ 10, 11, 12 ])
+        expect(result[:created_issues]).to eq([ { issue_id: 10 }, { issue_id: 11 }, { issue_id: 12 } ])
       end
 
       it "calls all four activities in sequence" do
@@ -69,8 +69,10 @@ RSpec.describe Workflows::PlanningWorkflow do
           .with(Activities::FetchPlanningContextActivity, hash_including(project_id: 1, issue_id: 2), timeout: 60)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::DecomposeFeatureActivity, hash_including(project_id: 1, issue_id: 2), timeout: 120)
+        expected_sub_tasks = tasks.map { |t| { title: t[:title], body: t[:description] } }
         expect(workflow).to have_received(:run_activity)
-          .with(Activities::CreateSubIssuesActivity, hash_including(project_id: 1, parent_issue_id: 2, tasks: tasks),
+          .with(Activities::CreateSubIssuesActivity,
+            hash_including(project_id: 1, parent_issue_id: 2, sub_tasks: expected_sub_tasks),
             timeout: 120, retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::UpdatePlanningLabelsActivity, hash_including(project_id: 1, issue_id: 2, task_count: 3), timeout: 30)
@@ -102,7 +104,7 @@ RSpec.describe Workflows::PlanningWorkflow do
 
         expect(result[:success]).to be true
         expect(result[:task_count]).to eq(1)
-        expect(result[:sub_issue_ids]).to eq([])
+        expect(result[:created_issues]).to eq([])
         expect(workflow).not_to have_received(:run_activity)
           .with(Activities::CreateSubIssuesActivity, anything, any_args)
       end
@@ -129,7 +131,7 @@ RSpec.describe Workflows::PlanningWorkflow do
 
         expect(result[:success]).to be true
         expect(result[:task_count]).to eq(0)
-        expect(result[:sub_issue_ids]).to eq([])
+        expect(result[:created_issues]).to eq([])
       end
     end
 

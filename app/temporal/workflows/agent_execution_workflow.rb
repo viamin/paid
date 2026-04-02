@@ -82,11 +82,14 @@ module Workflows
         "AgentExecutionWorkflow started for project=#{project_id} issue=#{issue_id}"
       )
 
+      parent_workflow_id = input[:parent_workflow_id]
+
       # Step 1: Create agent run record (or resume a queued one)
       create_input = { project_id: project_id, issue_id: issue_id, agent_type: agent_type,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
-        agent_run_id: agent_run_id, goal: goal }.compact
+        agent_run_id: agent_run_id, goal: goal,
+        parent_workflow_id: parent_workflow_id }.compact
       agent_run_result = run_activity(Activities::CreateAgentRunActivity,
         create_input, timeout: 30)
       agent_run_id = agent_run_result[:agent_run_id]

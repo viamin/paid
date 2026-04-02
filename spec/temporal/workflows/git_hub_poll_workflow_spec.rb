@@ -137,6 +137,24 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         )
       )
     end
+
+    it "queues planning run when at capacity" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
+        .and_return({ has_capacity: false })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({})
+
+      detection = { action: "start_planning", issue_id: 20 }
+      workflow.send(:handle_detection, detection, project_id)
+
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+        .with(Workflows::PlanningWorkflow, anything, anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 20 }, timeout: 30)
+    end
   end
 
   describe "#handle_pr_trigger" do

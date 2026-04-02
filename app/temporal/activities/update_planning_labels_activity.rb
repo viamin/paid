@@ -52,9 +52,7 @@ module Activities
 
     def add_label(client, project, issue, label)
       client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
-    rescue Temporalio::Error::CanceledError
-      raise
-    rescue => e
+    rescue GithubClient::Error => e
       logger.warn(
         message: "planning.add_label_failed",
         project_id: project.id,
@@ -66,9 +64,7 @@ module Activities
 
     def remove_label(client, project, issue, label)
       client.remove_label_from_issue(project.full_name, issue.github_number, label)
-    rescue Temporalio::Error::CanceledError
-      raise
-    rescue => e
+    rescue GithubClient::Error => e
       logger.warn(
         message: "planning.remove_label_failed",
         project_id: project.id,

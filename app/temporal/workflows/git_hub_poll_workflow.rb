@@ -121,6 +121,14 @@ module Workflows
     end
 
     def start_planning_workflow(project_id, issue_id)
+      capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
+
+      unless capacity[:has_capacity]
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: issue_id }, timeout: 30)
+        return
+      end
+
       workflow_id = "plan-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
 
       Temporalio::Workflow.start_child_workflow(

@@ -167,6 +167,22 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       end
     end
 
+    context "when LLM returns array with non-Hash elements" do
+      before do
+        allow(llm_response).to receive(:output).and_return('["not a hash", null, 42]')
+      end
+
+      it "raises a non-retryable ApplicationError" do
+        expect {
+          activity.execute(
+            project_id: project.id,
+            issue_id: issue.id,
+            knowledge_context: knowledge_context
+          )
+        }.to raise_error(Temporalio::Error::ApplicationError, /non-Hash element/)
+      end
+    end
+
     it "truncates tasks to MAX_TASKS" do
       many_tasks = (0..25).map do |i|
         { title: "Task #{i}", description: "Desc #{i}", dependencies: [], parallel_group: i }

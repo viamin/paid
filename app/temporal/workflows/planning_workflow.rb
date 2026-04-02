@@ -49,20 +49,22 @@ module Workflows
 
       # Step 3: Create sub-issues from the plan (skip if single-task or empty)
       if tasks.present? && tasks.size > 1
+        sub_tasks = tasks.map { |t| { title: t[:title], body: t[:description] } }
+
         create_result = run_activity(
           Activities::CreateSubIssuesActivity,
           {
             project_id: project_id,
             parent_issue_id: issue_id,
-            tasks: tasks
+            sub_tasks: sub_tasks
           },
           timeout: 120,
           retry_policy: NO_RETRY
         )
 
-        sub_issue_ids = create_result[:sub_issue_ids]
+        created_issues = create_result[:created_issues]
       else
-        sub_issue_ids = []
+        created_issues = []
       end
 
       # Step 4: Update labels on the parent issue
@@ -81,7 +83,7 @@ module Workflows
         project_id: project_id,
         issue_id: issue_id,
         task_count: tasks.size,
-        sub_issue_ids: sub_issue_ids
+        created_issues: created_issues
       }
 
     rescue => e
