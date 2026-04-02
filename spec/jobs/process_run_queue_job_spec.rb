@@ -310,6 +310,28 @@ RSpec.describe ProcessRunQueueJob do
       end
     end
 
+    it "fails a budget-blocked run without consuming capacity or counting as a failure" do
+      blocked_project = create(:project)
+      user = blocked_project.created_by
+      user.settings.update!(max_concurrent_runs: 2)
+      create(:cost_budget, :hard_stop, :daily, project: blocked_project,
+        limit_cents: 100, current_usage_cents: 200,
+        period_started_at: Time.current.beginning_of_day)
+
+      unblocked_project = create(:project, account: blocked_project.account, created_by: user)
+
+      blocked_run = create(:agent_run, :queued, project: blocked_project, created_at: 2.minutes.ago)
+      normal_run = create(:agent_run, :queued, project: unblocked_project, created_at: 1.minute.ago)
+
+      expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+      described_class.new.perform
+
+      expect(blocked_run.reload.status).to eq("failed")
+      expect(blocked_run.error_message).to include("Budget enforcement")
+      expect(normal_run.reload.status).to eq("pending")
+    end
+
     it "includes workflow input fields from the agent run" do
       issue = create(:issue)
       queued_run = create(:agent_run, :queued,
