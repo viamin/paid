@@ -204,6 +204,9 @@ module Activities
           rescue InfiniteLoopError => e
             agent_run.log!("system", "Infinite loop detected: #{e.message}",
               metadata: { detection_reason: e.message })
+            record_provider_failure(user_settings, provider_state_name, provider_states)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop")
+            last_error = "infinite_loop"
             agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
             logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message)
             raise Temporalio::Error::ApplicationError.new(
@@ -568,10 +571,23 @@ module Activities
           end
         elsif interrupted
           # Worker is still running — send Interrupt so the container
-          # stops, then wait briefly for cleanup. Avoid worker.join and
-          # worker.value which would re-raise the worker's Interrupt
-          # and mask the InfiniteLoopError already propagating.
+          # stops, then wait briefly for cleanup.
+          #
+          # NOTE: Thread.raise(Interrupt) is a best-effort signal here.
+          # Containers::Provision#execute uses a watchdog that stops the
+          # container to unblock blocking I/O (Thread.raise is unreliable
+          # with Excon's blocking reads). For infinite-loop termination
+          # the container exec has typically already produced output and
+          # returned, so the Interrupt suffices. If the exec is mid-stream,
+          # the container's own wall-clock timeout will eventually stop it.
+          # A more robust approach would accept a cancellation proc to
+          # directly stop the container; tracked for future improvement.
           worker.raise(Interrupt) if worker.alive?
+          # Poll instead of worker.join — Interrupt inherits from
+          # SignalException (not StandardError), so Thread#join can
+          # propagate it to the calling thread and mask the
+          # InfiniteLoopError already in flight. Thread#value has the
+          # same issue. Polling with alive? avoids both problems.
           deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
           sleep(0.05) while worker.alive? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
           worker.kill if worker.alive?
