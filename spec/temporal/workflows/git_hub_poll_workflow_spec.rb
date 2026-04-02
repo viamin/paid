@@ -123,19 +123,38 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       )
     end
 
-    it "starts start_planning child workflow with ABANDON parent close policy" do
+    it "starts PlanningWorkflow for start_planning action" do
       detection = { action: "start_planning", issue_id: 20 }
 
       workflow.send(:handle_detection, detection, project_id)
 
       expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
-        Workflows::AgentExecutionWorkflow,
-        hash_including(project_id: project_id, issue_id: 20),
+        Workflows::PlanningWorkflow,
+        { project_id: project_id, issue_id: 20 },
         hash_including(
           id: /\Aplan-#{project_id}-20-/,
           parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
         )
       )
+    end
+
+    it "defers planning to future poll cycle when at capacity" do
+      logger = instance_double(Logger, info: nil)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
+        .and_return({ has_capacity: false })
+
+      detection = { action: "start_planning", issue_id: 20 }
+      workflow.send(:handle_detection, detection, project_id)
+
+      expect(logger).to have_received(:info).with(hash_including(
+        message: "planning.deferred_due_to_capacity",
+        project_id: project_id,
+        issue_id: 20
+      ))
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
   end
 
