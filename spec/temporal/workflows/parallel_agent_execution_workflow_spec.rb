@@ -132,6 +132,44 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(successful).to eq(1)
       expect(queued).to eq(1)
     end
+
+    it "respects shrinking available_slots between batches" do
+      # First capacity check returns 2 slots, subsequent checks return 1.
+      # With 3 tasks: batch 0 gets 2 tasks, batch 1 re-checks and gets 1 slot,
+      # so batch 1 should only launch 1 task.
+      stub_shrinking_capacity
+      stub_successful_futures(count: 3)
+
+      result = workflow.execute(three_task_input)
+
+      expect(result[:success]).to be true
+      expect(result[:total]).to eq(3)
+      expect(result[:completed]).to eq(3)
+    end
+
+    it "marks remaining tasks as deadline_exceeded when overall timeout expires" do
+      # Capacity returns 1 slot so tasks are batched one at a time
+      stub_incremental_capacity
+      stub_successful_futures(count: 3)
+
+      # Simulate time passing beyond the deadline after first batch completes
+      now = Time.now
+      call_count = 0
+      allow(Temporalio::Workflow).to receive(:now) do
+        call_count += 1
+        # After several calls (first batch done), jump past the deadline
+        call_count > 5 ? now + 100 : now
+      end
+
+      result = workflow.execute(
+        project_id: 1,
+        sub_tasks: [ { issue_id: 10 }, { issue_id: 20 }, { issue_id: 30 } ],
+        timeout_seconds: 50
+      )
+
+      deadline_exceeded = result[:results].select { |r| r[:error] == "deadline_exceeded" }
+      expect(deadline_exceeded).not_to be_empty
+    end
   end
 
   private
@@ -198,6 +236,21 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       end
 
     -> { call_count }
+  end
+
+  def stub_shrinking_capacity
+    call_count = 0
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::CheckProjectRunCapacityActivity, anything, timeout: 30) do
+        call_count += 1
+        if call_count == 1
+          full_capacity_result.merge(available_slots: 2)
+        else
+          { has_capacity: true, available_slots: 1,
+            project_active_count: 2, max_parallel_per_project: 3,
+            user_active_count: 2, max_concurrent_runs: 10 }
+        end
+      end
   end
 
   def stub_capacity_then_exhausted

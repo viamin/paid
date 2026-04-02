@@ -123,13 +123,30 @@ module Workflows
     end
 
     # Launches child workflows in batches respecting concurrency limits,
-    # then waits for all to complete.
+    # then waits for all to complete. Recomputes batch size from the latest
+    # capacity check before each batch, and enforces an overall deadline
+    # derived from timeout_seconds.
     def launch_and_monitor_children(project_id:, sub_tasks:, max_concurrent:, parent_wf_id:, timeout_seconds:)
-      batch_size = [ max_concurrent, sub_tasks.size ].min
-      batches = sub_tasks.each_slice(batch_size).to_a
+      deadline = Temporalio::Workflow.now + timeout_seconds
+      remaining_tasks = sub_tasks.dup
       all_results = []
+      batch_index = 0
+      current_slots = max_concurrent
 
-      batches.each_with_index do |batch, batch_index|
+      while remaining_tasks.any?
+        remaining_seconds = deadline - Temporalio::Workflow.now
+        if remaining_seconds <= 0
+          remaining_tasks.each do |task|
+            all_results << {
+              issue_id: task[:issue_id],
+              success: false,
+              error: "deadline_exceeded",
+              queued: true
+            }
+          end
+          break
+        end
+
         # Re-check capacity before each batch (except the first, already checked)
         if batch_index > 0
           capacity = run_activity(
@@ -139,8 +156,7 @@ module Workflows
           )
 
           unless capacity[:has_capacity]
-            # Queue remaining tasks and break
-            batch.each do |task|
+            remaining_tasks.each do |task|
               all_results << {
                 issue_id: task[:issue_id],
                 success: false,
@@ -148,27 +164,36 @@ module Workflows
                 queued: true
               }
             end
-            next
+            break
           end
+
+          current_slots = capacity[:available_slots]
         end
+
+        batch_size = [ current_slots, remaining_tasks.size ].min
+        batch = remaining_tasks.shift(batch_size)
 
         batch_results = execute_batch(
           project_id: project_id,
           batch: batch,
           batch_index: batch_index,
           parent_wf_id: parent_wf_id,
-          timeout_seconds: timeout_seconds
+          deadline: deadline
         )
 
         all_results.concat(batch_results)
+        batch_index += 1
       end
 
       all_results
     end
 
     # Launches a batch of child workflows in parallel and waits for all to complete.
-    def execute_batch(project_id:, batch:, batch_index:, parent_wf_id:, timeout_seconds:)
+    # Each child receives the remaining time until the workflow-level deadline,
+    # ensuring the overall timeout_seconds cap is respected across all batches.
+    def execute_batch(project_id:, batch:, batch_index:, parent_wf_id:, deadline:)
       timestamp = Temporalio::Workflow.now.to_i
+      child_timeout = [ (deadline - Temporalio::Workflow.now).to_i, 1 ].max
 
       # Start all child workflows in this batch
       child_futures = batch.map.with_index do |task, task_index|
@@ -199,7 +224,7 @@ module Workflows
             Workflows::AgentExecutionWorkflow,
             child_input,
             id: workflow_id,
-            execution_timeout: timeout_seconds,
+            execution_timeout: child_timeout,
             cancellation_type: Temporalio::Workflow::ChildWorkflowCancellationType::WAIT_CANCELLATION_COMPLETED
           )
         end

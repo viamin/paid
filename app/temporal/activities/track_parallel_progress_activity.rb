@@ -12,13 +12,19 @@ module Activities
       agent_run_ids = input[:agent_run_ids] || []
 
       runs = AgentRun.where(id: agent_run_ids)
+      counts_by_status = runs.group(:status).count
 
-      completed = runs.where(status: "completed").count
-      failed = runs.where(status: AgentRun::FAILURE_STATUSES).count
-      cancelled = runs.where(status: "cancelled").count
-      active = runs.where(status: AgentRun::ACTIVE_STATUSES).count
-      queued = runs.where(status: "queued").count
-      total = agent_run_ids.size
+      completed = counts_by_status["completed"].to_i
+      failed = AgentRun::FAILURE_STATUSES.sum { |status| counts_by_status[status].to_i }
+      cancelled = counts_by_status["cancelled"].to_i
+      active = AgentRun::ACTIVE_STATUSES.sum { |status| counts_by_status[status].to_i }
+      queued = counts_by_status["queued"].to_i
+
+      # Use the count of actually-found runs as total so missing IDs
+      # (deleted or invalid) don't prevent all_finished from becoming true.
+      found_count = counts_by_status.values.sum
+      missing = agent_run_ids.size - found_count
+      total = found_count
 
       all_finished = (completed + failed + cancelled) == total && total > 0
 
@@ -31,6 +37,7 @@ module Activities
         cancelled: cancelled,
         active: active,
         queued: queued,
+        missing: missing,
         all_finished: all_finished
       )
 
@@ -41,6 +48,7 @@ module Activities
         cancelled: cancelled,
         active: active,
         queued: queued,
+        missing: missing,
         all_finished: all_finished
       }
     end

@@ -10,6 +10,7 @@ RSpec.describe Activities::TrackParallelProgressActivity do
       result = activity.execute({ parent_workflow_id: "test-wf", agent_run_ids: [] })
 
       expect(result[:total]).to eq(0)
+      expect(result[:missing]).to eq(0)
       expect(result[:completed]).to eq(0)
       expect(result[:failed]).to eq(0)
       expect(result[:active]).to eq(0)
@@ -61,6 +62,22 @@ RSpec.describe Activities::TrackParallelProgressActivity do
 
       expect(result[:total]).to eq(1)
       expect(result[:cancelled]).to eq(1)
+      expect(result[:all_finished]).to be true
+    end
+
+    it "handles missing agent run IDs without blocking all_finished" do
+      project = create(:project)
+      completed_run = create(:agent_run, :completed, project: project)
+      missing_id = -999
+
+      result = activity.execute({
+        parent_workflow_id: "test-wf",
+        agent_run_ids: [ completed_run.id, missing_id ]
+      })
+
+      expect(result[:total]).to eq(1)
+      expect(result[:missing]).to eq(1)
+      expect(result[:completed]).to eq(1)
       expect(result[:all_finished]).to be true
     end
   end
