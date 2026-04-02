@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_02_072439) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_02_081327) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -228,6 +228,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_072439) do
     t.string "budget_type", limit: 50, null: false
     t.datetime "created_at", null: false
     t.integer "current_usage_cents", default: 0, null: false
+    t.string "enforcement_mode", limit: 20, default: "alert", null: false
+    t.integer "grace_buffer_percent", default: 0, null: false
     t.integer "limit_cents", null: false
     t.datetime "period_started_at"
     t.bigint "project_id", null: false
