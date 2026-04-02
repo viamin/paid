@@ -336,10 +336,11 @@ module Dashboard
     end
 
     def runs_by_provider
-      time_filtered_runs
-        .group(Arel.sql(effective_provider_sql))
-        .count
-        .sort_by { |_, v| -v }
+      counts_by_provider_label(
+        time_filtered_runs
+          .group(Arel.sql(effective_provider_sql))
+          .count
+      )
     end
 
     def provider_fallback_stats
@@ -357,10 +358,11 @@ module Dashboard
         fallback_count: fallback_count,
         fallback_rate: total.zero? ? 0.0 : (fallback_count.to_f / total * 100).round(1),
         by_requested_provider: fallback_runs.group(:agent_type).count.sort_by { |_, v| -v },
-        by_effective_provider: fallback_runs
-          .group(Arel.sql(effective_provider_sql))
-          .count
-          .sort_by { |_, v| -v }
+        by_effective_provider: counts_by_provider_label(
+          fallback_runs
+            .group(Arel.sql(effective_provider_sql))
+            .count
+        )
       }
     end
 
@@ -491,6 +493,30 @@ module Dashboard
       SQL
 
       ActiveRecord::Base.connection.select_one(sql)
+    end
+
+    def counts_by_provider_label(counts_by_identifier)
+      providers_by_routing_key = provider_records_by_routing_key(counts_by_identifier.keys)
+
+      counts_by_identifier
+        .each_with_object(Hash.new(0)) do |(identifier, count), totals|
+          totals[provider_label(identifier, providers_by_routing_key[identifier])] += count
+        end
+        .sort_by { |_, v| -v }
+    end
+
+    def provider_records_by_routing_key(identifiers)
+      routing_ids = identifiers.filter_map { |identifier| Provider.id_from_routing_key(identifier) }.uniq
+      return {} if routing_ids.empty?
+
+      Provider.where(id: routing_ids).index_by(&:routing_key)
+    end
+
+    def provider_label(identifier, provider_record)
+      return provider_record.display_name if provider_record
+      return "Deleted provider entry" if Provider.routing_key?(identifier)
+
+      Provider.display_name(ProviderSupport.provider_key_for_agent_type(identifier))
     end
   end
 end

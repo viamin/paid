@@ -390,10 +390,9 @@ RSpec.describe Dashboard::Stats do
       it "groups runs_by_provider by effective provider" do
         providers = stats[:runs_by_provider]
         provider_hash = providers.to_h
-        # claude: 1 (no fallback, claude_code normalized), codex: 1 (fallback), cursor: 2 (1 direct + 1 fallback)
-        expect(provider_hash["claude"]).to eq(1)
-        expect(provider_hash["codex"]).to eq(1)
-        expect(provider_hash["cursor"]).to eq(2)
+        expect(provider_hash[Provider.display_name("claude")]).to eq(1)
+        expect(provider_hash[Provider.display_name("codex")]).to eq(1)
+        expect(provider_hash[Provider.display_name("cursor")]).to eq(2)
       end
 
       it "still groups runs_by_agent_type by requested provider" do
@@ -416,8 +415,72 @@ RSpec.describe Dashboard::Stats do
 
       it "breaks down fallbacks by effective provider" do
         by_effective = stats[:provider_fallback_stats][:by_effective_provider].to_h
-        expect(by_effective["codex"]).to eq(1)
-        expect(by_effective["cursor"]).to eq(1)
+        expect(by_effective[Provider.display_name("codex")]).to eq(1)
+        expect(by_effective[Provider.display_name("cursor")]).to eq(1)
+      end
+    end
+
+    context "with routed provider entries" do
+      let(:owner) { project.effective_owner }
+      let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
+      let(:provider_entry) do
+        create(:provider, :api_key, user: owner, provider_key: "opencode",
+          provider_api_key: api_key, name: "Opencode Kimi K2")
+      end
+
+      before do
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_provider: provider_entry.routing_key, provider_switches: 1)
+      end
+
+      it "uses the provider entry display name for runs_by_provider" do
+        providers = stats[:runs_by_provider].to_h
+        expect(providers["Opencode Kimi K2"]).to eq(1)
+      end
+
+      it "uses the provider entry display name for fallback breakdowns" do
+        by_effective = stats[:provider_fallback_stats][:by_effective_provider].to_h
+        expect(by_effective["Opencode Kimi K2"]).to eq(1)
+      end
+    end
+
+    context "with deleted routed provider entries" do
+      before do
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_provider: "provider:999999", provider_switches: 1)
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_provider: "provider:888888", provider_switches: 1)
+      end
+
+      it "shows a deleted provider entry label in runs_by_provider" do
+        providers = stats[:runs_by_provider].to_h
+        expect(providers["Deleted provider entry"]).to eq(2)
+      end
+    end
+
+    context "with multiple provider entries sharing a display name" do
+      let(:owner) { project.effective_owner }
+      let(:first_api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
+      let(:second_api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
+      let!(:first_provider_entry) do
+        create(:provider, :api_key, user: owner, provider_key: "opencode",
+          provider_api_key: first_api_key, name: "Shared Label")
+      end
+      let!(:second_provider_entry) do
+        create(:provider, :api_key, user: owner, provider_key: "opencode",
+          provider_api_key: second_api_key, name: "Shared Label", fallback_role: "rate_limit_fallback")
+      end
+
+      before do
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_provider: first_provider_entry.routing_key, provider_switches: 1)
+        create(:agent_run, :completed, project: project, agent_type: "claude_code",
+          final_provider: second_provider_entry.routing_key, provider_switches: 1)
+      end
+
+      it "sums counts across identifiers that resolve to the same label" do
+        providers = stats[:runs_by_provider].to_h
+        expect(providers["Shared Label"]).to eq(2)
       end
     end
 
@@ -440,8 +503,8 @@ RSpec.describe Dashboard::Stats do
 
       it "attributes the skipped-primary run to the effective provider" do
         providers = stats[:runs_by_provider].to_h
-        expect(providers["cursor"]).to eq(1)
-        expect(providers["claude"]).to eq(1)
+        expect(providers[Provider.display_name("cursor")]).to eq(1)
+        expect(providers[Provider.display_name("claude")]).to eq(1)
       end
     end
 
@@ -461,7 +524,7 @@ RSpec.describe Dashboard::Stats do
 
       it "groups under the claude provider" do
         providers = stats[:runs_by_provider].to_h
-        expect(providers["claude"]).to eq(1)
+        expect(providers[Provider.display_name("claude")]).to eq(1)
         expect(providers).not_to have_key("claude_code")
       end
     end
