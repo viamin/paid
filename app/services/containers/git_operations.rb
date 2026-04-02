@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "shellwords"
+
 module Containers
   # Runs git operations inside an agent container via container exec.
   #
@@ -23,6 +25,10 @@ module Containers
     # Runtime code resolves per-user values via UserSetting.
     DEFAULT_CLONE_TIMEOUT = 600
     DEFAULT_PUSH_TIMEOUT = 60
+
+    # Marker comment embedded in all Paid-installed git hooks. Used as a
+    # grep guard so Temporal retries don't install duplicate hooks.
+    HOOK_INSTALLED_MARKER = "Installed by Paid"
 
     # Marker comment used as a grep guard so Temporal retries don't
     # duplicate the exclude block.  Defined once and referenced both
@@ -178,6 +184,40 @@ module Containers
       )
     end
 
+    # Installs a commit-msg hook that appends the project's co-author trailer
+    # to agent-created commits. The auto-commit from commit_uncommitted_changes
+    # uses --no-verify (skipping hooks), so its trailer is appended directly
+    # by the commit_message method instead.
+    #
+    # Skipped when the project has no trailer configured.
+    # When an existing commit-msg hook is present (e.g. from Husky or Lefthook),
+    # the original hook is renamed and a shell wrapper is installed that
+    # delegates to the original hook first, then appends the trailer. This
+    # preserves non-shell hooks (node, python, ruby) that would break if
+    # shell code were appended directly.
+    # The HOOK_INSTALLED_MARKER prevents duplicate installs on retries.
+    #
+    # @return [void]
+    def install_co_author_hook
+      trailer = agent_run.project.agent_co_author_trailer
+      return if trailer.blank?
+
+      install_or_chain_co_author_hook(trailer)
+    rescue Error => e
+      Rails.logger.warn(
+        message: "container_git.install_co_author_hook_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+    rescue StandardError => e
+      Rails.logger.error(
+        message: "container_git.install_co_author_hook_unexpected_error",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
     # Installs local git exclude patterns for common build artifacts.
     #
     # Writes to .git/info/exclude, which acts like .gitignore but is local
@@ -231,7 +271,7 @@ module Containers
       add_result = execute_git("add", "-A")
       raise Error, "Failed to stage changes: #{error_with_stderr(add_result)}" if add_result.failure?
 
-      commit_result = execute_git("commit", "--no-verify", "-m", "Apply agent changes")
+      commit_result = execute_git("commit", "--no-verify", "-m", commit_message)
       raise Error, "Failed to commit changes: #{error_with_stderr(commit_result)}" if commit_result.failure?
 
       true
@@ -595,6 +635,13 @@ module Containers
       head_sha
     end
 
+    def commit_message
+      trailer = agent_run.project.agent_co_author_trailer.presence
+      return "Apply agent changes" unless trailer
+
+      "Apply agent changes\n\n#{trailer}"
+    end
+
     def validate_branch_name!
       raise PushError, "branch_name is blank" if agent_run.branch_name.blank?
     end
@@ -623,6 +670,114 @@ module Containers
       raise Error, "Failed to chmod #{hook_name} hook: #{chmod_result.error}" if chmod_result.failure?
     end
 
+    # Installs the co-author trailer hook, safely wrapping any existing
+    # commit-msg hook. Uses HOOK_INSTALLED_MARKER for idempotency.
+    #
+    # When an existing hook is present (e.g. Husky, Lefthook, or a
+    # node/python/ruby hook), it is renamed to commit-msg.original and a
+    # new shell wrapper is installed that executes the original hook first
+    # (preserving its interpreter via its shebang) and then appends the
+    # trailer. This avoids breaking non-shell hooks by appending shell code.
+    def install_or_chain_co_author_hook(trailer)
+      hook_path = ".git/hooks/commit-msg"
+      original_path = "#{hook_path}.original"
+      tmp_path = "#{hook_path}.tmp"
+
+      # Check for existing marker to prevent duplicate appends on retries
+      marker_check = container_service.execute(
+        "grep -qF '#{HOOK_INSTALLED_MARKER}' #{hook_path} 2>/dev/null",
+        timeout: nil, stream: false
+      )
+      if marker_check.success?
+        Rails.logger.info(
+          message: "container_git.co_author_hook_already_installed",
+          agent_run_id: agent_run.id
+        )
+        return
+      end
+
+      # Also detect a prior failed installation: commit-msg.original exists
+      # but commit-msg does not (the mv succeeded but write/chmod failed).
+      # Restore the original hook before retrying.
+      original_exists = container_service.execute("test -f #{original_path}", timeout: nil, stream: false)
+      hook_exists = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
+
+      if original_exists.success? && hook_exists.failure?
+        restore = container_service.execute("mv #{original_path} #{hook_path}", timeout: nil, stream: false)
+        raise Error, "Failed to restore original hook: #{restore.error}" if restore.failure?
+        # Refresh both checks after restore: commit-msg now exists,
+        # commit-msg.original no longer does (it was moved, not copied).
+        hook_exists = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
+        original_exists = container_service.execute("test -f #{original_path}", timeout: nil, stream: false)
+      end
+
+      renamed_original = false
+
+      if hook_exists.success?
+        # If a backup already exists, avoid overwriting it and skip installation.
+        # This can happen if a repo or tool (e.g. Husky) already created
+        # commit-msg.original, or if a prior partial installation left it behind
+        # alongside a restored commit-msg hook.
+        if original_exists.success?
+          Rails.logger.warn(
+            message: "container_git.co_author_hook_backup_already_exists",
+            agent_run_id: agent_run.id
+          )
+          return
+        end
+
+        # Rename existing hook so the wrapper can delegate to it
+        mv_result = container_service.execute("mv #{hook_path} #{original_path}", timeout: nil, stream: false)
+        raise Error, "Failed to rename existing hook: #{mv_result.error}" if mv_result.failure?
+
+        renamed_original = true
+        script = commit_msg_wrapper_script(trailer, original_path)
+      else
+        script = commit_msg_hook_script(trailer)
+      end
+
+      # Write to a temp file first, then atomically move into place.
+      # If the write or chmod fails after we renamed the original, we
+      # restore it so the repo is never left without a commit-msg hook.
+      # The rescue ensures rollback even if container_service.execute
+      # raises an exception (e.g. network error) rather than returning
+      # a failure Result.
+      begin
+        write_result = container_service.execute(
+          "cat > #{tmp_path} << 'HOOKEOF'\n#{script}\nHOOKEOF",
+          timeout: nil, stream: false
+        )
+        raise Error, "Failed to write co-author hook: #{write_result.error}" if write_result.failure?
+
+        chmod_result = container_service.execute("chmod +x #{tmp_path}", timeout: nil, stream: false)
+        raise Error, "Failed to chmod co-author hook: #{chmod_result.error}" if chmod_result.failure?
+
+        # Atomic move into place
+        mv_result = container_service.execute("mv #{tmp_path} #{hook_path}", timeout: nil, stream: false)
+        raise Error, "Failed to install co-author hook: #{mv_result.error}" if mv_result.failure?
+      rescue
+        container_service.execute("rm -f #{tmp_path}", timeout: nil, stream: false) rescue nil
+        rollback_original_hook(original_path, hook_path) if renamed_original
+        raise
+      end
+    end
+
+    # Restores the original hook if it was renamed during a failed
+    # installation attempt. Best-effort — logs but does not raise on failure.
+    def rollback_original_hook(original_path, hook_path)
+      check = container_service.execute("test -f #{original_path}", timeout: nil, stream: false)
+      return unless check.success?
+
+      result = container_service.execute("mv #{original_path} #{hook_path}", timeout: nil, stream: false)
+      if result.failure?
+        Rails.logger.error(
+          message: "container_git.co_author_hook_rollback_failed",
+          agent_run_id: agent_run.id,
+          error: result.error
+        )
+      end
+    end
+
     # Validates that a shell command is a simple executable with arguments.
     # Each word must be an alphanumeric token, path, or flag — no shell
     # operators (||, &&, ;, |, $, `, etc.) can appear.
@@ -644,7 +799,7 @@ module Containers
 
       <<~SHELL
         #!/bin/sh
-        # Installed by Paid — enforce lint + tests before commit
+        # #{HOOK_INSTALLED_MARKER} — enforce lint + tests before commit
         # All quality checks run here so the agent gets immediate feedback
         # and can fix issues before the commit succeeds.
 
@@ -663,6 +818,39 @@ module Containers
           #{test_command} || exit 1
         else
           echo "Warning: test tool not available, skipping test check"
+        fi
+      SHELL
+    end
+
+    # Generates a commit-msg hook script that appends the co-author trailer
+    # to commit messages that don't already contain it.
+    def commit_msg_hook_script(trailer)
+      escaped = Shellwords.shellescape(trailer)
+
+      <<~SHELL
+        #!/bin/sh
+        # #{HOOK_INSTALLED_MARKER} — append co-author trailer to commits
+        if ! grep -qF -- #{escaped} "$1"; then
+          printf '\\n\\n%s' #{escaped} >> "$1"
+        fi
+      SHELL
+    end
+
+    # Generates a wrapper hook that delegates to the original hook (which
+    # may use any interpreter — node, python, ruby, etc.) and then appends
+    # the co-author trailer. The original hook is executed via its own
+    # shebang, so non-shell hooks are preserved correctly.
+    def commit_msg_wrapper_script(trailer, original_path)
+      escaped = Shellwords.shellescape(trailer)
+
+      <<~SHELL
+        #!/bin/sh
+        # #{HOOK_INSTALLED_MARKER} — wrapper that chains original hook + co-author trailer
+        if [ -x "#{original_path}" ]; then
+          "#{original_path}" "$@" || exit $?
+        fi
+        if ! grep -qF -- #{escaped} "$1"; then
+          printf '\\n\\n%s' #{escaped} >> "$1"
         fi
       SHELL
     end
