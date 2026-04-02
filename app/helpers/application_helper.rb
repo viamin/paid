@@ -72,14 +72,14 @@ module ApplicationHelper
   ISSUE_LIFECYCLE_DISPLAY = {
     blocked: { emoji: "\u{1F550}", label: "Blocked" },
     in_progress: { emoji: "\u{1F9E0}", label: "In Progress" },
-    eligible: { emoji: "\u26A1\uFE0F", label: "Unblocked" }
+    eligible: { emoji: "\u26A1\uFE0F", label: "Unblocked", title: "Unblocked — eligible for auto-pick" }
   }.freeze
 
   def issue_lifecycle_badge(status)
     display = ISSUE_LIFECYCLE_DISPLAY[status] || ISSUE_LIFECYCLE_DISPLAY[:eligible]
     tag.span(
       "#{display[:emoji]} #{display[:label]}",
-      title: display[:label],
+      title: display[:title] || display[:label],
       class: "inline-flex items-center text-sm"
     )
   end

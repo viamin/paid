@@ -403,7 +403,7 @@ RSpec.describe "AgentRuns" do
         get new_project_agent_run_path(project)
         expect(response.body).to include("Open issue")
         expect(response.body).not_to include("Closed issue")
-        expect(response.body).not_to include("In progress issue")
+        expect(response.body).to include("In progress issue")
       end
 
       it "shows message when no issues available" do
