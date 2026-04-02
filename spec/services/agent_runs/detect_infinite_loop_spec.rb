@@ -142,5 +142,17 @@ RSpec.describe AgentRuns::DetectInfiniteLoop do
         expect(result.loop_detected?).to be false
       end
     end
+
+    context "with invalid window_size" do
+      it "raises ArgumentError for zero" do
+        expect { described_class.call(agent_run: agent_run, window_size: 0) }
+          .to raise_error(ArgumentError, "window_size must be a positive integer")
+      end
+
+      it "raises ArgumentError for negative values" do
+        expect { described_class.call(agent_run: agent_run, window_size: -1) }
+          .to raise_error(ArgumentError, "window_size must be a positive integer")
+      end
+    end
   end
 end

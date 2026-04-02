@@ -91,7 +91,7 @@ RSpec.describe Activities::RunAgentActivity do
       }.to raise_error(Temporalio::Error::CanceledError)
     end
 
-    it "raises InfiniteLoopError and terminates the worker when a loop is detected" do
+    it "raises InfiniteLoopError when a loop is detected" do
       allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
 
       loop_result = AgentRuns::DetectInfiniteLoop::Result.new(detected: true, reason: "test loop")

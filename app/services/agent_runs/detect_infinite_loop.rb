@@ -28,6 +28,8 @@ module AgentRuns
     end
 
     def initialize(agent_run:, window_size: DEFAULT_WINDOW_SIZE)
+      raise ArgumentError, "window_size must be a positive integer" unless window_size.is_a?(Integer) && window_size.positive?
+
       @agent_run = agent_run
       @window_size = window_size
     end
@@ -50,10 +52,9 @@ module AgentRuns
       agent_run
         .agent_run_logs
         .stdout
-        .recent
-        .limit(LOG_FETCH_LIMIT)
-        .pluck(:content)
-        .reverse
+        .chronological
+        .last(LOG_FETCH_LIMIT)
+        .map(&:content)
         .select { |c| c.length >= MIN_CONTENT_LENGTH }
     end
 
