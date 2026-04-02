@@ -116,7 +116,7 @@
                   <%= run.status&.capitalize || "Unknown" %>
                   <% if run.status == "skipped" && run.error_message.present? %>
                     <span class="ml-1 text-xs font-normal text-orange-800">
-                      (Reason: <%= run.error_message %>)
+                      (Reason: <%= truncate(run.error_message, length: 120) %>)
                     </span>
                   <% end %>
                 </span>

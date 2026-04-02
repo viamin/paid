@@ -28,7 +28,8 @@ module Knowledge
       def tool_version
         version_output = run_command("maat", "--version")
         version_output.strip.presence
-      rescue StandardError
+      rescue Errno::ENOENT, RuntimeError, Knowledge::ContainerizedRunner::ContainerError => e
+        raise if e.is_a?(Timeout::Error) || e.is_a?(Knowledge::ContainerizedRunner::TimeoutError)
         nil
       end
 
@@ -37,7 +38,9 @@ module Knowledge
       def maat_available?
         run_command("which", "maat")
         true
-      rescue StandardError
+      rescue Errno::ENOENT, RuntimeError, Knowledge::ContainerizedRunner::ContainerError => e
+        # Re-raise timeouts — only treat "command not found" (non-zero exit) as unavailable
+        raise if e.is_a?(Timeout::Error) || e.is_a?(Knowledge::ContainerizedRunner::TimeoutError)
         false
       end
 
