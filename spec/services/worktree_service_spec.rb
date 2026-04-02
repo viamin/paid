@@ -45,12 +45,37 @@ RSpec.describe WorktreeService do
         FileUtils.mkdir_p(repo_path)
         FileUtils.touch(File.join(repo_path, "HEAD"))
         allow(service).to receive(:run_git)
+          .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("#{described_class::FETCH_REFSPEC}\n")
       end
 
       it "fetches latest changes" do
         expect(service).to receive(:fetch_latest)
 
         service.ensure_cloned
+      end
+
+      it "calls ensure_fetch_refspec even when fetch is skipped" do
+        FileUtils.touch(File.join(repo_path, "FETCH_HEAD"))
+
+        expect(service).to receive(:ensure_fetch_refspec).and_call_original
+        expect(service).not_to receive(:fetch_latest)
+
+        service.ensure_cloned(max_fetch_age: 2.minutes)
+      end
+
+      it "forces a fetch when ensure_fetch_refspec adds the missing refspec" do
+        FileUtils.touch(File.join(repo_path, "FETCH_HEAD"))
+
+        allow(service).to receive(:run_git)
+          .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("")
+        allow(service).to receive(:run_git)
+          .with("config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC, chdir: repo_path)
+
+        expect(service).to receive(:fetch_latest)
+
+        service.ensure_cloned(max_fetch_age: 2.minutes)
       end
 
       context "with max_fetch_age and a recent FETCH_HEAD" do
@@ -80,6 +105,97 @@ RSpec.describe WorktreeService do
 
       result = service.ensure_cloned
       expect(result).to eq(repo_path)
+    end
+  end
+
+  describe "fetch refspec for bare clones" do
+    describe "#clone_repository (private)" do
+      it "configures fetch refspec after bare clone" do
+        allow(service).to receive(:run_git)
+        allow(service).to receive(:run_git)
+          .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("")
+
+        expect(service).to receive(:run_git).with(
+          "config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC,
+          chdir: repo_path
+        )
+
+        service.ensure_cloned
+      end
+    end
+
+    describe "#ensure_cloned configures fetch refspec" do
+      before do
+        FileUtils.mkdir_p(repo_path)
+        FileUtils.touch(File.join(repo_path, "HEAD"))
+        allow(service).to receive(:run_git)
+      end
+
+      it "adds refspec when bare repo lacks remote.origin.fetch" do
+        allow(service).to receive(:run_git)
+          .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("")
+
+        expect(service).to receive(:run_git).with(
+          "config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC,
+          chdir: repo_path
+        )
+
+        service.ensure_cloned
+      end
+
+      it "adds refspec when repo has a different refspec but not the desired one" do
+        allow(service).to receive(:run_git)
+          .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("+refs/tags/*:refs/tags/*\n")
+
+        expect(service).to receive(:run_git).with(
+          "config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC,
+          chdir: repo_path
+        )
+
+        service.ensure_cloned
+      end
+
+      it "skips adding refspec when already configured" do
+        allow(service).to receive(:run_git)
+          .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("#{described_class::FETCH_REFSPEC}\n")
+
+        expect(service).not_to receive(:run_git).with(
+          "config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC,
+          chdir: repo_path
+        )
+
+        service.ensure_cloned
+      end
+
+      it "skips adding refspec when desired refspec exists among multiple" do
+        allow(service).to receive(:run_git)
+          .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("+refs/tags/*:refs/tags/*\n#{described_class::FETCH_REFSPEC}\n")
+
+        expect(service).not_to receive(:run_git).with(
+          "config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC,
+          chdir: repo_path
+        )
+
+        service.ensure_cloned
+      end
+
+      it "caches the refspec check so subsequent fetches skip git config" do
+        allow(service).to receive(:run_git)
+          .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("#{described_class::FETCH_REFSPEC}\n")
+
+        service.ensure_cloned
+        service.ensure_cloned
+
+        expect(service).to have_received(:run_git)
+          .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .once
+      end
     end
   end
 
