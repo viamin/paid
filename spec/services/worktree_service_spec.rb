@@ -45,7 +45,6 @@ RSpec.describe WorktreeService do
         FileUtils.mkdir_p(repo_path)
         FileUtils.touch(File.join(repo_path, "HEAD"))
         allow(service).to receive(:run_git)
-        allow(service).to receive(:run_git)
           .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
           .and_return("#{described_class::FETCH_REFSPEC}\n")
       end
