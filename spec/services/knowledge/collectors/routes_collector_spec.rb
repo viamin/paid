@@ -130,7 +130,13 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
     end
 
     context "when generating routes via command in container" do
-      let(:container_runner) { instance_double(Knowledge::ContainerizedRunner, host_repo_dir: "/tmp/repo") }
+      let(:container_runner) do
+        instance_double(
+          Knowledge::ContainerizedRunner,
+          host_repo_dir: "/tmp/repo",
+          options: { workspace_mount: "/workspace" }
+        )
+      end
       let(:command_collector) do
         described_class.new(
           project: project,
@@ -182,7 +188,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .with("bin/rails").and_return(false)
 
         expect { command_collector.collect }.to raise_error(
-          Knowledge::SkipCollector, /routes file not generated/
+          Knowledge::SkipCollector, /bin\/rails binstub not found/
         )
       end
     end
@@ -212,7 +218,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           .with("bin/rails").and_return(false)
 
         expect { non_container_collector.collect }.to raise_error(
-          Knowledge::SkipCollector, /routes file not generated/
+          Knowledge::SkipCollector, /bin\/rails binstub not found/
         )
       end
 
