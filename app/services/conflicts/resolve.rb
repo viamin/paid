@@ -52,7 +52,8 @@ module Conflicts
           resolved: true,
           strategy: @strategy,
           resolutions: [],
-          project_id: @project_id
+          project_id: @project_id,
+          requires_manual_review: false
         }
       end
 

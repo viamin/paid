@@ -228,7 +228,13 @@ module Workflows
         timeout: 120
       )
 
-      return detection unless detection[:has_conflicts]
+      unless detection[:has_conflicts]
+        return detection.merge(
+          detection_failed: false,
+          requires_manual_review: false,
+          resolution: nil
+        )
+      end
 
       resolution = run_activity(
         Activities::ResolveConflictsActivity,
@@ -252,6 +258,7 @@ module Workflows
         project_id: project_id,
         detection_failed: true,
         requires_manual_review: true,
+        resolution: nil,
         error: e.message
       }
     end
@@ -264,7 +271,8 @@ module Workflows
         total_runs_checked: 0,
         project_id: nil,
         detection_failed: false,
-        requires_manual_review: false
+        requires_manual_review: false,
+        resolution: nil
       }
     end
 
