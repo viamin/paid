@@ -138,28 +138,23 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       )
     end
 
-    it "polls for capacity when at capacity before starting planning workflow" do
+    it "defers planning to future poll cycle when at capacity" do
       logger = instance_double(Logger, info: nil)
       allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
-      allow(Temporalio::Workflow).to receive(:sleep)
 
-      call_count = 0
       allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything) do
-          call_count += 1
-          { has_capacity: call_count > 2 }
-        end
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
+        .and_return({ has_capacity: false })
 
       detection = { action: "start_planning", issue_id: 20 }
       workflow.send(:handle_detection, detection, project_id)
 
-      expect(Temporalio::Workflow).to have_received(:sleep).with(30).twice
-      expect(logger).to have_received(:info).twice
-      expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
-        Workflows::PlanningWorkflow,
-        { project_id: project_id, issue_id: 20 },
-        hash_including(parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON)
-      )
+      expect(logger).to have_received(:info).with(hash_including(
+        message: "planning.deferred_due_to_capacity",
+        project_id: project_id,
+        issue_id: 20
+      ))
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
   end
 
