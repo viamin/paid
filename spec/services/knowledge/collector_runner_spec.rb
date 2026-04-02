@@ -190,6 +190,18 @@ RSpec.describe Knowledge::CollectorRunner do
         expect(statuses).to contain_exactly("skipped", "completed")
       end
 
+      it "allows retrying a previously skipped collector on the same version" do
+        result1 = described_class.call(project: project, commit_sha: commit_sha)
+        skipped = result1[:results].find { |r| r[:collector_type] == "skipping_collector" }
+        expect(skipped[:status]).to eq("skipped")
+
+        # Re-running the same commit retries the skipped collector (does not short-circuit)
+        result2 = described_class.call(project: project, commit_sha: commit_sha)
+        retried = result2[:results].find { |r| r[:collector_type] == "skipping_collector" }
+        expect(retried[:status]).to eq("skipped")
+        expect(retried[:reason]).to eq("maat binary not found")
+      end
+
       it "treats skipped as success for stale marking" do
         old_sha = "e" * 40
         described_class.call(project: project, commit_sha: old_sha, committed_at: 2.hours.ago)

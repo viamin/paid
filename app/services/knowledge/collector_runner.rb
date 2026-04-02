@@ -72,7 +72,7 @@ module Knowledge
       )
 
       collector_run.with_lock do
-        if collector_run.status.in?(%w[completed skipped])
+        if collector_run.status == "completed"
           return { collector_type: collector_type, status: "skipped" }
         end
 

@@ -54,6 +54,32 @@
     </div>
   <% end %>
 
+  <% if status == "failed" %>
+    <% latest_version = collector_runs.first&.project_version %>
+    <% failed_runs = latest_version ? collector_runs.select { |r| r.project_version_id == latest_version.id && r.status == "failed" } : [] %>
+    <div class="mt-4 rounded-md bg-red-50 p-4">
+      <div class="flex">
+        <svg class="h-5 w-5 flex-shrink-0 text-red-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+        </svg>
+        <div class="ml-3">
+          <h3 class="text-sm font-medium text-red-800">Knowledge collection failed</h3>
+          <% if failed_runs.any? %>
+            <div class="mt-2 text-sm text-red-700">
+              <ul class="list-disc space-y-1 pl-5">
+                <% failed_runs.each do |run| %>
+                  <li><strong><%= run.collector_type %></strong>: <%= truncate(run.error_message.to_s, length: 200) %></li>
+                <% end %>
+              </ul>
+            </div>
+          <% else %>
+            <p class="mt-2 text-sm text-red-700">The collection job failed before any individual collectors ran. Check application logs for details.</p>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
   <% if collector_runs.any? %>
     <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
       <table class="min-w-full divide-y divide-gray-200">
@@ -86,11 +112,13 @@
                       when 'stale' then 'bg-yellow-100 text-yellow-700'
                       when 'skipped' then 'bg-orange-100 text-orange-700'
                       else 'bg-gray-100 text-gray-500'
-                      end %>"
-                  <% if run.status == "skipped" && run.error_message.present? %>
-                    title="<%= run.error_message %>"
-                  <% end %>>
+                      end %>">
                   <%= run.status&.capitalize || "Unknown" %>
+                  <% if run.status == "skipped" && run.error_message.present? %>
+                    <span class="ml-1 text-xs font-normal text-orange-800">
+                      (Reason: <%= run.error_message %>)
+                    </span>
+                  <% end %>
                 </span>
               </td>
               <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">
@@ -111,6 +139,13 @@
                 <% end %>
               </td>
             </tr>
+            <% if run.status == "failed" && run.error_message.present? %>
+              <tr class="bg-red-50">
+                <td colspan="6" class="px-4 py-2 text-sm text-red-700">
+                  <strong>Error:</strong> <%= truncate(run.error_message, length: 300) %>
+                </td>
+              </tr>
+            <% end %>
           <% end %>
         </tbody>
       </table>

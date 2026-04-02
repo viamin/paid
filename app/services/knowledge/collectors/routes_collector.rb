@@ -21,6 +21,8 @@ module Knowledge
       private
 
       def skip_reason
+        return "repository path not available" if resolve_repo_path.nil?
+
         unless repo_file_exists?("config/routes.rb")
           return "not a Rails project (no config/routes.rb)"
         end
