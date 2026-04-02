@@ -1216,10 +1216,12 @@ RSpec.describe Containers::GitOperations do
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
           .and_return(marker_missing_result)
-        # commit-msg.original exists but commit-msg does not
+        # commit-msg.original exists initially, but is gone after the restore mv
         allow(container_service).to receive(:execute)
           .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
-          .and_return(hook_exists_result)
+          .and_return(hook_exists_result, hook_missing_result)
+        # commit-msg is missing initially, exists after restore, then exists
+        # again after the wrapper renames it back to .original
         allow(container_service).to receive(:execute)
           .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(hook_missing_result, hook_exists_result)
@@ -1227,7 +1229,7 @@ RSpec.describe Containers::GitOperations do
         allow(container_service).to receive(:execute)
           .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(success_result)
-        # Then proceeds with normal wrapper flow
+        # Then proceeds with normal wrapper flow: rename restored hook back
         allow(container_service).to receive(:execute)
           .with("mv .git/hooks/commit-msg .git/hooks/commit-msg.original", timeout: nil, stream: false)
           .and_return(success_result)
@@ -1239,15 +1241,26 @@ RSpec.describe Containers::GitOperations do
           .and_return(success_result)
       end
 
-      it "restores the original hook before retrying installation" do
+      it "restores the original hook and then installs the wrapper with the trailer" do
         allow(container_service).to receive(:execute)
           .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
           .and_return(success_result)
 
         git_ops.install_co_author_hook
 
+        # Verify the restore step happened
         expect(container_service).to have_received(:execute)
           .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+        # Verify the hook script was actually written with the marker and trailer
+        expect(container_service).to have_received(:execute)
+          .with(
+            a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/).and(
+              a_string_matching(/Installed by Paid/)
+            ).and(
+              a_string_matching(/Co-Authored-By: Claude <noreply@anthropic\.com>/)
+            ),
+            timeout: nil, stream: false
+          )
       end
     end
 

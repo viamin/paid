@@ -699,8 +699,10 @@ module Containers
       if original_exists.success? && hook_exists.failure?
         restore = container_service.execute("mv #{original_path} #{hook_path}", timeout: nil, stream: false)
         raise Error, "Failed to restore original hook: #{restore.error}" if restore.failure?
-        # Refresh hook_exists after restore
+        # Refresh both checks after restore: commit-msg now exists,
+        # commit-msg.original no longer does (it was moved, not copied).
         hook_exists = container_service.execute("test -f #{hook_path}", timeout: nil, stream: false)
+        original_exists = container_service.execute("test -f #{original_path}", timeout: nil, stream: false)
       end
 
       if hook_exists.success?
