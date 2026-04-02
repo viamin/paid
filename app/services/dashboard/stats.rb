@@ -86,8 +86,9 @@ module Dashboard
       now = Time.current
       {
         total: scope.count,
-        last_7_days: scope.where(created_at: (now - 7.days)..now).count,
-        last_30_days: scope.where(created_at: (now - 30.days)..now).count,
+        # Trailing windows always use unfiltered runs so labels stay accurate
+        last_7_days: agent_runs.where(created_at: (now - 7.days)..now).count,
+        last_30_days: agent_runs.where(created_at: (now - 30.days)..now).count,
         active: scope.where(status: AgentRun::UNFINISHED_STATUSES).count,
         by_status: scope.group(:status).count,
         failure_rate: failure_rate

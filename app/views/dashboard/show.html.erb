@@ -52,9 +52,7 @@
       Cumulative / Periodic Metrics
     </summary>
     <div class="mt-4">
-      <%= turbo_frame_tag "dashboard-metrics" do %>
-        <%= render "dashboard/metrics", stats: @stats, account: current_account, time_range: @time_range %>
-      <% end %>
+      <%= render "dashboard/metrics", stats: @stats, account: current_account, time_range: @time_range %>
       <%= render "dashboard/knowledge_widget", knowledge_stats: @knowledge_stats %>
     </div>
   </details>
@@ -65,9 +63,7 @@
       Performance
     </summary>
     <div class="mt-4">
-      <%= turbo_frame_tag "dashboard-performance" do %>
-        <%= render "dashboard/performance", stats: @stats, time_range: @time_range, status_filter: @status_filter, goal_filter: @goal_filter %>
-      <% end %>
+      <%= render "dashboard/performance", stats: @stats, time_range: @time_range, status_filter: @status_filter, goal_filter: @goal_filter %>
     </div>
   </details>
 
