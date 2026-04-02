@@ -52,7 +52,7 @@ module Activities
 
       scope_result = analyze_scope(issue)
 
-      agent_run = AgentRun.create!(
+      attrs = {
         project: project,
         issue: issue,
         provider_id: provider_id,
@@ -62,7 +62,10 @@ module Activities
         source_pull_request_number: source_pull_request_number,
         prompt_version: prompt_version,
         status: "pending"
-      )
+      }
+      attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
+
+      agent_run = AgentRun.create!(**attrs)
 
       track_phase(
         agent_run_id: agent_run.id,
