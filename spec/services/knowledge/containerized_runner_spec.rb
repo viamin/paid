@@ -6,6 +6,10 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
   let(:project) { Struct.new(:id, :full_name).new(42, "owner/repo") }
   let(:commit_sha) { "a" * 40 }
 
+  let(:mock_volume) do
+    instance_double(Docker::Volume, remove: true)
+  end
+
   let(:mock_container) do
     instance_double(
       Docker::Container,
@@ -19,11 +23,21 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
 
   before do
     allow(Docker::Container).to receive(:create).and_return(mock_container)
+    allow(Docker::Volume).to receive_messages(create: mock_volume, get: mock_volume)
     # Stub host-side git clone
     allow(Dir).to receive(:mktmpdir).and_return("/tmp/paid-collector-test")
     allow(Open3).to receive(:capture3).and_return([ "", "", instance_double(Process::Status, success?: true) ])
     allow(FileUtils).to receive(:chmod)
     allow(FileUtils).to receive(:rm_rf)
+    # Stub tar streaming and Docker archive_in_stream for seeding
+    tar_stdout = instance_double(IO, read: nil, binmode: nil)
+    tar_stderr = instance_double(IO, read: "")
+    tar_status = instance_double(Process::Status, success?: true, exitstatus: 0)
+    tar_wait_thr = instance_double(Thread, value: tar_status)
+    allow(Open3).to receive(:popen3)
+      .with("tar", "-cf", "-", "-C", "/tmp/paid-collector-test", ".")
+      .and_yield(instance_double(IO), tar_stdout, tar_stderr, tar_wait_thr)
+    allow(mock_container).to receive(:archive_in_stream)
   end
 
   describe ".available?" do
@@ -84,7 +98,22 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       )
     end
 
-    it "provisions a container with the host repo bind-mounted and runs collectors" do
+    it "creates a named volume instead of bind-mounting host paths" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Docker::Volume).to have_received(:create).with(
+        a_string_matching(/\Apaid-collector-42-[a-f0-9]{8}\z/),
+        hash_including(
+          "Labels" => hash_including(
+            "paid.managed" => "true",
+            "paid.resource" => "collector_volume",
+            "paid.project_id" => "42"
+          )
+        )
+      )
+    end
+
+    it "provisions a container with the named volume and runs collectors" do
       result = described_class.new(project: project, commit_sha: commit_sha).run
 
       expect(Docker::Container).to have_received(:create).with(
@@ -93,12 +122,90 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
           "HostConfig" => hash_including(
             "NetworkMode" => "none",
             "Memory" => 512 * 1024 * 1024,
-            "Binds" => [ "/tmp/paid-collector-test:/workspace:ro" ]
+            "Binds" => [ a_string_matching(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z}) ]
           )
         )
       )
       expect(mock_container).to have_received(:start)
       expect(result[:results].first[:status]).to eq("completed")
+    end
+
+    it "streams repo tar into the container via Docker API" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Open3).to have_received(:popen3).with(
+        "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "."
+      )
+      expect(mock_container).to have_received(:archive_in_stream).with("/workspace")
+    end
+
+    it "enforces root ownership and read-only permissions after seeding" do
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      # chown to root so the agent user cannot restore write permissions
+      expect(mock_container).to have_received(:exec).with(
+        [ "chown", "-R", "root:root", "/workspace" ],
+        user: "root"
+      )
+      expect(mock_container).to have_received(:exec).with(
+        [ "chmod", "-R", "a=rX", "/workspace" ],
+        user: "root"
+      )
+    end
+
+    it "raises ContainerError when chown fails during seeding" do
+      allow(mock_container).to receive(:exec)
+        .with([ "chown", "-R", "root:root", "/workspace" ], user: "root")
+        .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to set workspace ownership/
+      )
+    end
+
+    it "raises ContainerError when chmod fails during seeding" do
+      allow(mock_container).to receive(:exec)
+        .with([ "chmod", "-R", "a=rX", "/workspace" ], user: "root")
+        .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to set workspace permissions/
+      )
+    end
+
+    it "wraps Docker errors from seed_workspace! as ContainerError" do
+      allow(mock_container).to receive(:archive_in_stream)
+        .and_raise(Docker::Error::ServerError.new("daemon error"))
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to seed workspace.*daemon error/
+      )
+    end
+
+    it "raises ContainerError when tar fails" do
+      failed_status = instance_double(Process::Status, success?: false, exitstatus: 1)
+      failed_wait_thr = instance_double(Thread, value: failed_status)
+      tar_stdout = instance_double(IO, read: nil, binmode: nil)
+      tar_stderr = instance_double(IO, read: "tar: /nonexistent: No such file or directory")
+      allow(Open3).to receive(:popen3)
+        .with("tar", "-cf", "-", "-C", "/tmp/paid-collector-test", ".")
+        .and_yield(instance_double(IO), tar_stdout, tar_stderr, failed_wait_thr)
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /tar failed \(exit 1\) stderr: tar: \/nonexistent/
+      )
     end
 
     it "passes container_runner in options to CollectorRunner" do
@@ -123,12 +230,30 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       runner.run
     end
 
-    it "cleans up the container and host repo after execution" do
+    it "cleans up the container, volume, and host repo after execution" do
       described_class.new(project: project, commit_sha: commit_sha).run
 
       expect(mock_container).to have_received(:stop)
       expect(mock_container).to have_received(:delete)
+      expect(mock_volume).to have_received(:remove).with(force: true)
       expect(FileUtils).to have_received(:rm_rf).with("/tmp/paid-collector-test")
+    end
+
+    it "logs a warning when volume cleanup fails with a non-NotFound error" do
+      allow(mock_volume).to receive(:remove).and_raise(
+        Docker::Error::ServerError.new("volume in use")
+      )
+      allow(Rails.logger).to receive(:warn)
+
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "knowledge.containerized_runner.cleanup_workspace_volume.failed",
+          project_id: 42,
+          error_class: "Docker::Error::ServerError"
+        )
+      )
     end
 
     it "cleans up even when CollectorRunner raises" do
@@ -139,6 +264,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       }.to raise_error(RuntimeError, "boom")
 
       expect(mock_container).to have_received(:delete)
+      expect(mock_volume).to have_received(:remove).with(force: true)
       expect(FileUtils).to have_received(:rm_rf).with("/tmp/paid-collector-test")
     end
 
@@ -164,13 +290,13 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       expect(config.dig("HostConfig", "NetworkMode")).to eq("none")
     end
 
-    it "bind-mounts host repo read-only instead of using a volume" do
+    it "uses a named volume instead of a host bind mount" do
       config = nil
       allow(Docker::Container).to receive(:create) { |cfg| config = cfg; mock_container }
       described_class.new(project: project, commit_sha: commit_sha).run
 
       binds = config.dig("HostConfig", "Binds")
-      expect(binds).to eq([ "/tmp/paid-collector-test:/workspace:ro" ])
+      expect(binds.first).to match(%r{\Apaid-collector-42-[a-f0-9]{8}:/workspace:rw\z})
     end
   end
 
