@@ -136,6 +136,7 @@ RSpec.describe Conflicts::Resolve do
     mock_git_ops = instance_double(Containers::GitOperations)
     allow(Containers::GitOperations).to receive(:new).and_return(mock_git_ops)
     allow(mock_git_ops).to receive(:rebase_onto).with(branch_name).and_return(true)
+    allow(mock_git_ops).to receive(:push_branch).and_return("abc123")
   end
 
   def stub_failed_rebase(branch_name)

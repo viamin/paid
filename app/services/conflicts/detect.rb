@@ -29,17 +29,17 @@ module Conflicts
 
     def call
       runs = load_completed_runs
-      return no_conflicts_result if runs.size < 2
+      return no_conflicts_result(runs_checked: runs.size) if runs.size < 2
 
       files_by_run = collect_changed_files(runs)
-      return no_conflicts_result if files_by_run.empty?
+      return no_conflicts_result(runs_checked: runs.size) if files_by_run.empty?
 
       conflicts = find_overlapping_files(files_by_run)
 
       {
         has_conflicts: conflicts.any?,
         conflicting_pairs: conflicts,
-        files_by_run: files_by_run.transform_values(&:to_a),
+        files_by_run: files_by_run.transform_values { |set| set.to_a.sort },
         total_runs_checked: runs.size,
         project_id: @project_id
       }
@@ -48,11 +48,16 @@ module Conflicts
     private
 
     def load_completed_runs
-      AgentRun
+      scope = AgentRun
+        .completed
         .where(id: @agent_run_ids)
         .where.not(branch_name: nil)
         .where.not(base_commit_sha: nil)
         .where.not(result_commit_sha: nil)
+
+      scope = scope.where(project_id: @project_id) if @project_id
+
+      scope
     end
 
     def collect_changed_files(runs)
@@ -131,12 +136,12 @@ module Conflicts
       conflicts
     end
 
-    def no_conflicts_result
+    def no_conflicts_result(runs_checked: 0)
       {
         has_conflicts: false,
         conflicting_pairs: [],
         files_by_run: {},
-        total_runs_checked: 0,
+        total_runs_checked: runs_checked,
         project_id: @project_id
       }
     end

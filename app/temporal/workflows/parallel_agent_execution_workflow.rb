@@ -244,11 +244,28 @@ module Workflows
         error_class: e.class.name,
         error: e.message
       )
-      no_conflicts_result.merge(error: e.message)
+      {
+        has_conflicts: true,
+        conflicting_pairs: [],
+        files_by_run: {},
+        total_runs_checked: 0,
+        project_id: project_id,
+        detection_failed: true,
+        requires_manual_review: true,
+        error: e.message
+      }
     end
 
     def no_conflicts_result
-      { has_conflicts: false, conflicting_pairs: [], files_by_run: {} }
+      {
+        has_conflicts: false,
+        conflicting_pairs: [],
+        files_by_run: {},
+        total_runs_checked: 0,
+        project_id: nil,
+        detection_failed: false,
+        requires_manual_review: false
+      }
     end
 
     # Launches a batch of child workflows in parallel and waits for all to complete.

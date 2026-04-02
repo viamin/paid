@@ -252,12 +252,12 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
   def stub_conflict_detected_and_unresolved
     detection = {
       has_conflicts: true,
-      conflicting_pairs: [ { runs: [ 42, 42 ], files: [ "src/app.rb" ] } ],
-      files_by_run: { 42 => [ "src/app.rb" ] }, total_runs_checked: 2
+      conflicting_pairs: [ { runs: [ 42, 43 ], files: [ "src/app.rb" ] } ],
+      files_by_run: { 42 => [ "src/app.rb" ], 43 => [ "src/app.rb" ] }, total_runs_checked: 2
     }
     resolution = {
       resolved: false, strategy: :auto_rebase,
-      resolutions: [ { runs: [ 42, 42 ], files: [ "src/app.rb" ], resolved: false, action: :manual } ],
+      resolutions: [ { runs: [ 42, 43 ], files: [ "src/app.rb" ], resolved: false, action: :manual } ],
       requires_manual_review: true
     }
     allow(workflow).to receive(:run_activity)

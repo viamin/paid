@@ -4,13 +4,14 @@ module Conflicts
   # Attempts to resolve detected conflicts between parallel agent branches.
   #
   # Supports three resolution strategies:
-  #   - :auto_rebase  - Rebase conflicting branches sequentially onto each other
+  #   - :auto_rebase  - Rebase conflicting branches sequentially onto each other,
+  #                     falling back to manual review when rebase is not possible
   #   - :re_run       - Mark conflicting runs for re-execution against updated base
   #   - :manual       - Flag conflicts for human review
   #
-  # The resolver processes conflicting pairs and attempts automatic rebase first.
-  # When rebase fails (true semantic conflicts), it falls back to the configured
-  # strategy.
+  # The resolver processes conflicting pairs. With :auto_rebase it will attempt
+  # an automatic rebase first; if that fails (for example due to true semantic
+  # conflicts or missing runs/containers), it flags the pair for manual review.
   #
   # @example
   #   result = Conflicts::Resolve.call(
@@ -92,12 +93,15 @@ module Conflicts
       run_ids = pair[:runs]
       files = pair[:files]
 
-      # Load runs ordered by completion time — the earlier run becomes the base
-      runs = AgentRun.where(id: run_ids).order(:completed_at)
+      # Load runs ordered by completion time — the earlier run becomes the base.
+      # Scope to project_id to prevent cross-project operations.
+      scope = AgentRun.where(id: run_ids)
+      scope = scope.where(project_id: @project_id) if @project_id
+      runs = scope.order(:completed_at)
       base_run = runs.first
       rebase_run = runs.last
 
-      return manual_fallback(pair, "runs_not_found") unless base_run && rebase_run
+      return manual_fallback(pair, "runs_not_found") unless base_run && rebase_run && base_run.id != rebase_run.id
 
       # Attempt rebase via the container if still available
       if rebase_run.container_id.present?
@@ -128,7 +132,13 @@ module Conflicts
       )
 
       success = git_ops.rebase_onto(base_run.branch_name)
-      { success: success, error: success ? nil : "conflicts" }
+
+      unless success
+        return { success: false, error: "conflicts" }
+      end
+
+      push_success = push_rebased_branch(git_ops, rebase_run, base_run)
+      { success: push_success, error: push_success ? nil : "push_failed" }
     rescue StandardError => e
       Rails.logger.warn(
         message: "conflicts.resolve.rebase_failed",
@@ -147,13 +157,37 @@ module Conflicts
       )
     end
 
+    def push_rebased_branch(git_ops, rebase_run, base_run)
+      git_ops.push_branch
+      true
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "conflicts.resolve.push_failed_after_rebase",
+        agent_run_id: rebase_run.id,
+        base_run_id: base_run.id,
+        error: e.message
+      )
+      false
+    end
+
     def mark_for_rerun(pair)
+      run_ids = pair[:runs]
+      files = pair[:files]
+
+      # Select rerun target by completion time to avoid relying on detection order
+      target_run_id = begin
+        runs = AgentRun.where(id: run_ids).order(:completed_at)
+        runs.last&.id || run_ids.last
+      rescue StandardError
+        run_ids.last
+      end
+
       {
-        runs: pair[:runs],
-        files: pair[:files],
+        runs: run_ids,
+        files: files,
         resolved: true,
         action: :re_run,
-        re_run_ids: [ pair[:runs].last ]
+        re_run_ids: [ target_run_id ]
       }
     end
 
