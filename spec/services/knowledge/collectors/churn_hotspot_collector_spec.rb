@@ -28,34 +28,41 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
   end
 
   # Helper to stub all three shell commands used by the collector:
-  # git log, ruby-maat, and scc.
+  # git log, ruby-maat, and scc. Raises on unrecognized commands to prevent
+  # tests from silently passing when the collector shells out unexpectedly.
   def stub_collector_commands(git_log: git_log_data, revisions: revisions_csv, scc: scc_by_file_json)
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
       status = instance_double(Process::Status, success?: true, exitstatus: 0)
       wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
       stdin_io = Popen3Stub::FakeIO.new
 
-      stdout_content = if args.first == "ruby-maat"
-        revisions
-      elsif args.first == "scc"
-        scc
-      elsif args.first == "git"
-        git_log
-      else
-        ""
+      stdout_content = case args.first
+      when "ruby-maat" then revisions
+      when "scc" then scc
+      when "git" then git_log
+      else raise "Unexpected command in test: #{args.inspect}"
       end
 
       block.call(stdin_io, Popen3Stub::FakeIO.new(stdout_content), Popen3Stub::FakeIO.new(""), wait_thr)
     end
   end
 
-  def stub_failing_commands
-    status = instance_double(Process::Status, success?: false, exitstatus: 1)
-    wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
-    stdin_io = Popen3Stub::FakeIO.new
+  def stub_failing_git_command(scc: scc_by_file_json)
+    allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
+      stdin_io = Popen3Stub::FakeIO.new
 
-    allow(Open3).to receive(:popen3) do |*, &block|
-      block.call(stdin_io, Popen3Stub::FakeIO.new(""), Popen3Stub::FakeIO.new("error"), wait_thr)
+      case args.first
+      when "git"
+        status = instance_double(Process::Status, success?: false, exitstatus: 1)
+        wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
+        block.call(stdin_io, Popen3Stub::FakeIO.new(""), Popen3Stub::FakeIO.new("error"), wait_thr)
+      when "scc"
+        status = instance_double(Process::Status, success?: true, exitstatus: 0)
+        wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
+        block.call(stdin_io, Popen3Stub::FakeIO.new(scc), Popen3Stub::FakeIO.new(""), wait_thr)
+      else
+        raise "Unexpected command in test: #{args.inspect}"
+      end
     end
   end
 
@@ -96,7 +103,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
         expect(artifact[:artifact_type]).to eq("churn_hotspot")
         expect(artifact[:scope_path]).to eq("app/models/agent_run.rb")
         expect(artifact[:content]).to include("47 revisions")
-        expect(artifact[:content]).to include("complexity score 23")
+        expect(artifact[:content]).to include("complexity score 5")
         expect(artifact[:content]).to start_with("Churn hotspot: app/models/agent_run.rb")
       end
 
@@ -104,7 +111,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
         artifact = collector.collect.find { |a| a[:identifier] == "app/models/agent_run.rb" }
 
         expect(artifact[:metadata][:revisions]).to eq(47)
-        expect(artifact[:metadata][:complexity]).to eq(23)
+        expect(artifact[:metadata][:complexity]).to eq(5)
         expect(artifact[:metadata][:rank]).to be_a(Integer)
       end
 
@@ -144,7 +151,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
         artifact = collector.collect.find { |a| a[:identifier] == "config/routes.rb" }
         chunk = artifact[:chunks].first
 
-        expect(chunk[:content]).to include("complexity 3")
+        expect(chunk[:content]).to include("complexity 2")
         expect(chunk[:content]).not_to include("revisions")
       end
     end
@@ -162,10 +169,15 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
     end
 
     context "when git log fails" do
-      before { stub_failing_commands }
+      before { stub_failing_git_command }
 
-      it "returns empty array" do
-        expect(collector.collect).to eq([])
+      it "returns complexity-only artifacts with zero revisions" do
+        artifacts = collector.collect
+
+        expect(artifacts).not_to be_empty
+        artifacts.each do |a|
+          expect(a[:metadata][:revisions]).to eq(0)
+        end
       end
     end
 

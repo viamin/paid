@@ -36,12 +36,9 @@ module Knowledge
       private
 
       def run_revisions(repo_path)
-        log_data = generate_git_log(repo_path)
-        return [] if log_data.blank?
-
         Tempfile.create([ "maat_log", ".log" ]) do |f|
-          f.write(log_data)
-          f.flush
+          stream_git_log(repo_path, f)
+          return [] if f.size.zero?
 
           output = run_command(
             "ruby-maat", "-c", "git2", "-l", f.path, "-a", "revisions", "-n", "1",
@@ -73,19 +70,22 @@ module Knowledge
         []
       end
 
-      def generate_git_log(repo_path)
-        run_command(
+      # Streams git log output directly to the given file to avoid loading
+      # the entire log into a Ruby string (can be very large for big repos).
+      def stream_git_log(repo_path, output_file)
+        args = [
           "git", "-C", repo_path, "log", "--all", "--numstat",
-          "--date=short", "--pretty=format:#{GIT_LOG_FORMAT}", "--no-renames",
-          timeout: MAAT_TIMEOUT
-        )
-      rescue StandardError => e
-        Rails.logger.warn(
-          message: "knowledge.churn_hotspot_collector.git_log_failed",
-          project_id: project.id,
-          error: e.message
-        )
-        nil
+          "--date=short", "--pretty=format:#{GIT_LOG_FORMAT}", "--no-renames"
+        ]
+
+        Timeout.timeout(MAAT_TIMEOUT) do
+          Open3.popen3(*args, pgroup: true) do |stdin, stdout, _stderr, wait_thr|
+            stdin.close
+            output_file.write(stdout.read)
+            output_file.flush
+            raise "git log failed (exit #{wait_thr.value.exitstatus})" unless wait_thr.value.success?
+          end
+        end
       end
 
       def parse_csv(output)
@@ -114,13 +114,13 @@ module Knowledge
         data.flat_map do |language_entry|
           (language_entry["Files"] || []).filter_map do |file_entry|
             location = file_entry["Location"]
-            next unless location
+            next unless location&.start_with?(prefix)
 
             entity = location.delete_prefix(prefix)
-            code = file_entry["Code"] || 0
-            next if code <= 0
+            complexity = file_entry["Complexity"] || 0
+            next if complexity <= 0
 
-            { "entity" => entity, "code" => code.to_s }
+            { "entity" => entity, "complexity" => complexity.to_s }
           end
         end
       rescue JSON::ParserError => e
@@ -133,12 +133,12 @@ module Knowledge
         []
       end
 
-      def build_artifacts(revisions, hotspots)
+      def build_artifacts(revisions, complexity_data)
         revision_map = build_revision_map(revisions)
-        hotspot_map = build_hotspot_map(hotspots)
+        complexity_map = build_complexity_map(complexity_data)
 
-        all_files = (revision_map.keys + hotspot_map.keys).uniq
-        ranked = rank_files(all_files, revision_map, hotspot_map)
+        all_files = (revision_map.keys + complexity_map.keys).uniq
+        ranked = rank_files(all_files, revision_map, complexity_map)
 
         ranked.each_with_index.map do |entry, index|
           rank = index + 1
@@ -155,8 +155,8 @@ module Knowledge
         end
       end
 
-      def build_hotspot_map(hotspots)
-        hotspots.each_with_object({}) do |row, map|
+      def build_complexity_map(complexity_data)
+        complexity_data.each_with_object({}) do |row, map|
           entity = row["entity"] || row["module"]
           next unless entity
 
@@ -164,10 +164,10 @@ module Knowledge
         end
       end
 
-      def rank_files(files, revision_map, hotspot_map)
+      def rank_files(files, revision_map, complexity_map)
         files.map do |file|
           revs = revision_map.fetch(file, 0)
-          complexity = hotspot_map.fetch(file, 0)
+          complexity = complexity_map.fetch(file, 0)
           { file: file, revisions: revs, complexity: complexity, score: revs * complexity }
         end.sort_by { |e| [ -e[:score], -e[:revisions], -e[:complexity], e[:file] ] }
       end
