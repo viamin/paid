@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "shellwords"
+
 module Containers
   # Runs git operations inside an agent container via container exec.
   #
@@ -753,7 +755,7 @@ module Containers
         # Atomic move into place
         mv_result = container_service.execute("mv #{tmp_path} #{hook_path}", timeout: nil, stream: false)
         raise Error, "Failed to install co-author hook: #{mv_result.error}" if mv_result.failure?
-      rescue => e
+      rescue
         container_service.execute("rm -f #{tmp_path}", timeout: nil, stream: false) rescue nil
         rollback_original_hook(original_path, hook_path) if renamed_original
         raise
@@ -822,20 +824,14 @@ module Containers
 
     # Generates a commit-msg hook script that appends the co-author trailer
     # to commit messages that don't already contain it.
-    #
-    # Uses POSIX shell escaping for the trailer value: each single quote in
-    # the trailer is replaced with the standard '\'' break-and-rejoin pattern.
-    # Ruby's gsub replacement interprets \\ as a literal backslash, so the
-    # replacement string "'\\\\''" produces the four-character sequence '\''
-    # in the output.
     def commit_msg_hook_script(trailer)
-      escaped = trailer.gsub("'", "'\\\\''")
+      escaped = Shellwords.shellescape(trailer)
 
       <<~SHELL
         #!/bin/sh
         # #{HOOK_INSTALLED_MARKER} — append co-author trailer to commits
-        if ! grep -qF -- '#{escaped}' "$1"; then
-          printf '\\n\\n%s' '#{escaped}' >> "$1"
+        if ! grep -qF -- #{escaped} "$1"; then
+          printf '\\n\\n%s' #{escaped} >> "$1"
         fi
       SHELL
     end
@@ -845,7 +841,7 @@ module Containers
     # the co-author trailer. The original hook is executed via its own
     # shebang, so non-shell hooks are preserved correctly.
     def commit_msg_wrapper_script(trailer, original_path)
-      escaped = trailer.gsub("'", "'\\\\''")
+      escaped = Shellwords.shellescape(trailer)
 
       <<~SHELL
         #!/bin/sh
@@ -853,8 +849,8 @@ module Containers
         if [ -x "#{original_path}" ]; then
           "#{original_path}" "$@" || exit $?
         fi
-        if ! grep -qF -- '#{escaped}' "$1"; then
-          printf '\\n\\n%s' '#{escaped}' >> "$1"
+        if ! grep -qF -- #{escaped} "$1"; then
+          printf '\\n\\n%s' #{escaped} >> "$1"
         fi
       SHELL
     end

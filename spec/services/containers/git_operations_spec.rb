@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "shellwords"
 
 RSpec.describe Containers::GitOperations do
   let(:project) { create(:project) }
@@ -1154,8 +1155,45 @@ RSpec.describe Containers::GitOperations do
 
         git_ops.install_co_author_hook
 
-        expect(hook_script).to include("Co-Authored-By: Claude <noreply@anthropic.com>")
+        escaped_trailer = Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>")
+        expect(hook_script).to include(escaped_trailer)
         expect(hook_script).to include("grep -qF --")
+      end
+    end
+
+    context "when trailer contains a single quote" do
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: O'Brien <ob@example.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "correctly escapes the trailer using Shellwords" do
+        hook_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false) { |script, **|
+            hook_script = script
+            success_result
+          }
+
+        git_ops.install_co_author_hook
+
+        expect(hook_script).to include(Shellwords.shellescape("Co-Authored-By: O'Brien <ob@example.com>"))
+        expect(hook_script).not_to include("''")
       end
     end
 
@@ -1203,8 +1241,9 @@ RSpec.describe Containers::GitOperations do
 
         git_ops.install_co_author_hook
 
+        escaped_trailer = Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>")
         expect(captured_script).to include(".git/hooks/commit-msg.original")
-        expect(captured_script).to include("Co-Authored-By: Claude <noreply@anthropic.com>")
+        expect(captured_script).to include(escaped_trailer)
         expect(captured_script).to include("#!/bin/sh")
       end
     end
@@ -1252,12 +1291,13 @@ RSpec.describe Containers::GitOperations do
         expect(container_service).to have_received(:execute)
           .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
         # Verify the hook script was actually written with the marker and trailer
+        escaped_trailer = Regexp.escape(Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>"))
         expect(container_service).to have_received(:execute)
           .with(
             a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/).and(
               a_string_matching(/Installed by Paid/)
             ).and(
-              a_string_matching(/Co-Authored-By: Claude <noreply@anthropic\.com>/)
+              a_string_matching(/#{escaped_trailer}/)
             ),
             timeout: nil, stream: false
           )
