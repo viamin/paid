@@ -201,6 +201,16 @@ module Activities
                 agent_run_id: agent_run.id
               )
             end
+          rescue InfiniteLoopError => e
+            agent_run.log!("system", "Infinite loop detected: #{e.message}",
+              metadata: { detection_reason: e.message })
+            agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
+            logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message)
+            raise Temporalio::Error::ApplicationError.new(
+              "Infinite loop detected",
+              type: "InfiniteLoopDetected",
+              non_retryable: true
+            )
           rescue ProviderTimeoutError => e
             last_error = "timeout"
             timeout_error ||= e.message
@@ -263,6 +273,7 @@ module Activities
 
     class ProviderExecutionError < StandardError; end
     class ProviderTimeoutError < StandardError; end
+    class InfiniteLoopError < StandardError; end
     CommandContext = Struct.new(:provider_candidate, :provider, :command_prefix, :user, keyword_init: true)
 
     private
@@ -404,7 +415,7 @@ module Activities
       # checkpoint heartbeats at provider attempt boundaries (lines 106, 129).
       # Provider calls can run for many minutes, so without periodic
       # heartbeats the 120s heartbeat_timeout would fire mid-execution.
-      result = with_periodic_heartbeat("executing", provider) do
+      result = with_periodic_heartbeat("executing", provider, agent_run: agent_run) do
         container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout, env: command_env)
       end
 
@@ -431,6 +442,13 @@ module Activities
       else "wall_clock"
       end
       raise ProviderTimeoutError, "#{timeout_type}_timeout: #{e.message}"
+    end
+
+    # Checks if the agent run is stuck in an infinite loop by analyzing
+    # recent output logs. Raises InfiniteLoopError if a loop is detected.
+    def check_infinite_loop!(agent_run)
+      result = AgentRuns::DetectInfiniteLoop.call(agent_run: agent_run)
+      raise InfiniteLoopError, result.reason if result.loop_detected?
     end
 
     # Checks if the output indicates a rate limit error.
@@ -485,7 +503,7 @@ module Activities
     # configured on the workflow side, giving plenty of margin.
     HEARTBEAT_INTERVAL = 30
 
-    def with_periodic_heartbeat(*details, interval: HEARTBEAT_INTERVAL)
+    def with_periodic_heartbeat(*details, interval: HEARTBEAT_INTERVAL, agent_run: nil)
       context = Temporalio::Activity::Context.current_or_nil
       return yield unless context
 
@@ -519,8 +537,15 @@ module Activities
         until worker.join(interval)
           begin
             context.heartbeat(*details)
+            check_infinite_loop!(agent_run) if agent_run
           rescue Temporalio::Error::CanceledError
             canceled = true
+            raise
+          rescue InfiniteLoopError
+            # Terminate the worker thread so the container stops.
+            worker.raise(Interrupt)
+            worker.join(5)
+            worker.kill if worker.alive?
             raise
           rescue StandardError
             # Best-effort; next iteration will retry.
