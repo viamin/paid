@@ -176,16 +176,16 @@ RSpec.describe Project do
       end
     end
 
-    describe "#effective_max_tokens_per_run" do
+    describe "#project_level_max_tokens_per_run" do
       it "returns the project override when set" do
         project = build(:project, max_tokens_per_run: 500_000)
-        expect(project.effective_max_tokens_per_run).to eq(500_000)
+        expect(project.project_level_max_tokens_per_run).to eq(500_000)
       end
 
       it "falls back to account default when project override is nil" do
         project = create(:project, max_tokens_per_run: nil)
         project.account.update!(default_max_tokens_per_run: 2_000_000)
-        expect(project.effective_max_tokens_per_run).to eq(2_000_000)
+        expect(project.project_level_max_tokens_per_run).to eq(2_000_000)
       end
     end
 

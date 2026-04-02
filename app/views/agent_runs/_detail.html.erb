@@ -85,16 +85,17 @@
         <% limit = agent_run.effective_max_tokens_per_run %>
         <% if limit && limit > 0 %>
           <% ratio = agent_run.token_limit_usage_ratio || 0 %>
-          <% percent = [(ratio * 100).round(1), 100].min %>
+          <% raw_percent = (ratio * 100).round(1) %>
+          <% bar_percent = [raw_percent, 100].min %>
           <% warning_ratio = agent_run.project.token_limit_warning_threshold / 100.0 %>
           <div class="mt-2">
             <div class="flex items-center justify-between text-xs text-gray-500">
-              <span><%= percent %>% of limit</span>
+              <span><%= raw_percent %>% of limit</span>
               <span><%= number_with_delimiter(limit) %></span>
             </div>
             <div class="mt-1 h-2 w-full rounded-full bg-gray-200">
               <div class="h-2 rounded-full <%= ratio >= 1.0 ? 'bg-red-500' : ratio >= warning_ratio ? 'bg-yellow-500' : 'bg-green-500' %>"
-                   style="width: <%= percent %>%"></div>
+                   style="width: <%= bar_percent %>%"></div>
             </div>
             <% if agent_run.token_limit_exceeded? %>
               <p class="mt-1 text-xs font-medium text-red-600">Limit exceeded</p>

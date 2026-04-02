@@ -246,15 +246,17 @@ class Project < ApplicationRecord
     allowed_github_usernames.any? { |allowed| allowed.downcase == login.downcase }
   end
 
-  # Returns the effective token limit per agent run.
+  # Returns the effective token limit per agent run at the project/account level.
   # Resolution: project override → account default.
-  def effective_max_tokens_per_run
+  # NOTE: For full resolution (including user settings and global default),
+  # use AgentRun#effective_max_tokens_per_run instead.
+  def project_level_max_tokens_per_run
     max_tokens_per_run || account.default_max_tokens_per_run
   end
 
   # Returns the absolute token count at which a warning should be emitted.
   def token_limit_warning_at
-    (effective_max_tokens_per_run * token_limit_warning_threshold / 100.0).floor
+    (project_level_max_tokens_per_run * token_limit_warning_threshold / 100.0).floor
   end
 
   def increment_metrics!(cost_cents:, tokens_used:)
