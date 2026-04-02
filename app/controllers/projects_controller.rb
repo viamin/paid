@@ -36,6 +36,12 @@ class ProjectsController < ApplicationController
       .includes(:project_version)
       .order(created_at: :desc)
       .limit(20)
+    @latest_failed_collector_runs =
+      if @project.knowledge_status == "failed"
+        failed_collector_runs_for_latest_version
+      else
+        CollectorRun.none
+      end
   end
 
   def new
@@ -148,6 +154,13 @@ class ProjectsController < ApplicationController
     column = Project.arel_table[sort.name]
     direction = sort.dir == "desc" ? column.desc : column.asc
     scope.reorder(direction.nulls_last, Project.arel_table[:created_at].desc)
+  end
+
+  def failed_collector_runs_for_latest_version
+    latest_version_id = @project.project_versions.by_recency.pick(:id)
+    return CollectorRun.none unless latest_version_id
+
+    CollectorRun.failed.where(project_version_id: latest_version_id)
   end
 
   def set_project
