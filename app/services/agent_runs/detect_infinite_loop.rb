@@ -6,8 +6,8 @@ module AgentRuns
   #
   # Heuristics:
   #   1. Repeated output: N consecutive stdout chunks are identical
-  #   2. No file changes: agent has been running for many iterations with
-  #      identical output fingerprints in a sliding window
+  #   2. Cycling/low-uniqueness output: recent outputs cycle through a small
+  #      set of output fingerprints (e.g., patterns like A-B-A-B)
   #
   # @example
   #   result = AgentRuns::DetectInfiniteLoop.call(agent_run: agent_run)
@@ -38,7 +38,7 @@ module AgentRuns
       return Result.new(detected: false) if recent_outputs.size < @window_size
 
       check_repeated_outputs(recent_outputs) ||
-        check_cycling_pattern(recent_outputs) ||
+        check_low_variety_pattern(recent_outputs) ||
         Result.new(detected: false)
     end
 
@@ -71,10 +71,11 @@ module AgentRuns
       )
     end
 
-    # Check if outputs cycle through a small set of patterns (e.g., A-B-A-B).
-    # If the last 2*window_size outputs contain <= 2 unique fingerprints,
-    # the agent is likely cycling.
-    def check_cycling_pattern(outputs)
+    # Check if recent outputs have very low variety, suggesting the agent is
+    # stuck. If the last 2*window_size outputs contain <= 2 unique fingerprints,
+    # the agent is likely looping — whether cycling (A-B-A-B) or repeating a
+    # small set of outputs in any order.
+    def check_low_variety_pattern(outputs)
       cycle_window = @window_size * 2
       return nil if outputs.size < cycle_window
 
@@ -86,7 +87,7 @@ module AgentRuns
 
       Result.new(
         detected: true,
-        reason: "Cycling pattern detected: #{unique_count} unique outputs in last #{cycle_window} entries"
+        reason: "Low output variety detected: #{unique_count} unique outputs in last #{cycle_window} entries"
       )
     end
 

@@ -532,6 +532,7 @@ module Activities
       end
 
       canceled = false
+      interrupted = false
       begin
         # Periodically heartbeat while the worker thread is still running.
         until worker.join(interval)
@@ -542,10 +543,10 @@ module Activities
             canceled = true
             raise
           rescue InfiniteLoopError
-            # Terminate the worker thread so the container stops.
-            worker.raise(Interrupt)
-            worker.join(5)
-            worker.kill if worker.alive?
+            # Mark as interrupted so the ensure block terminates the
+            # worker instead of joining it (which would re-raise the
+            # worker's Interrupt and mask InfiniteLoopError).
+            interrupted = true
             raise
           rescue StandardError
             # Best-effort; next iteration will retry.
@@ -565,6 +566,15 @@ module Activities
             # Last resort if the thread is stuck in an uninterruptible call.
             worker.kill if worker.alive?
           end
+        elsif interrupted
+          # Worker is still running — send Interrupt so the container
+          # stops, then wait briefly for cleanup. Avoid worker.join and
+          # worker.value which would re-raise the worker's Interrupt
+          # and mask the InfiniteLoopError already propagating.
+          worker.raise(Interrupt) if worker.alive?
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+          sleep(0.05) while worker.alive? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+          worker.kill if worker.alive?
         else
           worker.join
         end
@@ -572,8 +582,10 @@ module Activities
 
       # Thread#value re-raises the original exception with its backtrace
       # intact, unlike manual capture-and-reraise which replaces the
-      # backtrace with this method's call site.
-      worker.value
+      # backtrace with this method's call site. Skip when the worker was
+      # intentionally interrupted (infinite loop) — re-raising the
+      # Interrupt would mask the InfiniteLoopError already propagating.
+      worker.value unless interrupted
     end
 
     def build_command(command_context, prompt)

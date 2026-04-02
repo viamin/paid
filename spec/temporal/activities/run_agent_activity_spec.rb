@@ -90,6 +90,34 @@ RSpec.describe Activities::RunAgentActivity do
         end
       }.to raise_error(Temporalio::Error::CanceledError)
     end
+
+    it "raises InfiniteLoopError and terminates the worker when a loop is detected" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+
+      loop_result = AgentRuns::DetectInfiniteLoop::Result.new(detected: true, reason: "test loop")
+      allow(AgentRuns::DetectInfiniteLoop).to receive(:call).and_return(loop_result)
+
+      expect {
+        activity.send(:with_periodic_heartbeat, "test", interval: 0.01, agent_run: agent_run) do
+          sleep 0.2
+          :done
+        end
+      }.to raise_error(described_class::InfiniteLoopError, "test loop")
+    end
+
+    it "does not raise when no infinite loop is detected" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+
+      no_loop_result = AgentRuns::DetectInfiniteLoop::Result.new(detected: false)
+      allow(AgentRuns::DetectInfiniteLoop).to receive(:call).and_return(no_loop_result)
+
+      result = activity.send(:with_periodic_heartbeat, "test", interval: 0.01, agent_run: agent_run) do
+        sleep 0.05
+        42
+      end
+
+      expect(result).to eq(42)
+    end
   end
 
   describe "AGENT_COMMANDS" do

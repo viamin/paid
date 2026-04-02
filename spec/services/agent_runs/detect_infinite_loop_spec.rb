@@ -72,11 +72,11 @@ RSpec.describe AgentRuns::DetectInfiniteLoop do
         end
       end
 
-      it "detects a cycling pattern" do
+      it "detects a low output variety pattern" do
         result = described_class.call(agent_run: agent_run)
 
         expect(result.loop_detected?).to be true
-        expect(result.reason).to include("Cycling pattern detected")
+        expect(result.reason).to include("Low output variety detected")
         expect(result.reason).to include("2 unique outputs")
       end
     end
