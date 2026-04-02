@@ -4,12 +4,18 @@ module Workflows
   # Decomposes a feature request (GitHub issue) into smaller, independently-implementable
   # sub-tasks using LLM analysis. Uses API mode (no container needed).
   #
+  # Triggered by GitHubPollWorkflow when DetectLabelsActivity returns
+  # action: "start_planning".
+  #
   # Steps:
   # 1. Fetch the issue and project context
   # 2. Gather codebase knowledge via semantic search
   # 3. Decompose the feature into sub-tasks using LLM
   # 4. Create sub-issues in GitHub
   # 5. Update labels on the parent issue
+  #
+  # TODO(#694): Add a plan review/approval signal gate between steps 3 and 4
+  # so stakeholders can review the decomposed plan before sub-issues are created.
   class PlanningWorkflow < BaseWorkflow
     NO_RETRY = Temporalio::RetryPolicy.new(max_attempts: 1)
 

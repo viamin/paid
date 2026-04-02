@@ -123,14 +123,14 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       )
     end
 
-    it "starts start_planning child workflow with ABANDON parent close policy" do
+    it "starts PlanningWorkflow for start_planning action" do
       detection = { action: "start_planning", issue_id: 20 }
 
       workflow.send(:handle_detection, detection, project_id)
 
       expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
-        Workflows::AgentExecutionWorkflow,
-        hash_including(project_id: project_id, issue_id: 20),
+        Workflows::PlanningWorkflow,
+        { project_id: project_id, issue_id: 20 },
         hash_including(
           id: /\Aplan-#{project_id}-20-/,
           parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON

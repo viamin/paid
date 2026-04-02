@@ -104,8 +104,8 @@ RSpec.describe Activities::CreateSubIssuesActivity do
           tasks: tasks
         )
 
-        # First fails (nil), second succeeds
-        expect(result[:sub_issue_ids].compact.size).to eq(1)
+        # Only the successfully created sub-issue ID is returned (activity compacts nils)
+        expect(result[:sub_issue_ids].size).to eq(1)
       end
     end
   end

@@ -116,8 +116,19 @@ module Workflows
         start_agent_workflow(project_id, detection[:issue_id],
           source_pull_request_number: detection[:source_pull_request_number])
       when "start_planning"
-        start_agent_workflow(project_id, detection[:issue_id], prefix: "plan")
+        start_planning_workflow(project_id, detection[:issue_id])
       end
+    end
+
+    def start_planning_workflow(project_id, issue_id)
+      workflow_id = "plan-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
+
+      Temporalio::Workflow.start_child_workflow(
+        Workflows::PlanningWorkflow,
+        { project_id: project_id, issue_id: issue_id },
+        id: workflow_id,
+        parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+      )
     end
 
     # When at capacity, queues an AgentRun record (no child workflow). ProcessRunQueueJob
