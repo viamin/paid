@@ -183,7 +183,7 @@ bin/dev                 # Start Rails, JS/CSS watchers, and the Temporal worker
 | `OPENAI_API_KEY` | OpenAI API key (for agents that use OpenAI) | _(none)_ |
 | `GOOGLE_API_KEY` | Google API key for Gemini proxy requests | _(none)_ |
 | `QDRANT_URL` | Qdrant REST endpoint for knowledge search | `http://localhost:6333` |
-| `QDRANT_API_KEY` | Optional Qdrant API key | _(none)_ |
+| `QDRANT_API_KEY` | Qdrant API key — **required in production** (set via Rails credentials `qdrant.api_key` or this env var; credentials take precedence) | _(none; raises in production if unset)_ |
 | `AGENT_TIMEOUT` | Agent execution timeout in seconds | `3600` |
 | `CLAUDE_CONFIG_DIR` | Host path to `~/.claude/` for Claude Code subscription auth | _(none)_ |
 | `CODEX_CONFIG_DIR` | Host path to `~/.codex/` for Codex subscription auth | _(none)_ |
