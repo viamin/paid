@@ -169,7 +169,7 @@
 
     <%= render "projects/agent_runs", project: @project, recent_agent_runs: @recent_agent_runs %>
 
-    <%= render "projects/knowledge", project: @project, collector_runs: @collector_runs %>
+    <%= render "projects/knowledge", project: @project, collector_runs: @collector_runs, failed_collector_runs: @latest_failed_collector_runs %>
   </div>
 
 </div>
