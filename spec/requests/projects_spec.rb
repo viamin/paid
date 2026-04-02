@@ -590,6 +590,16 @@ RSpec.describe "Projects" do
         )
       end
 
+      it "does not show the security threshold when scanning is disabled" do
+        project = create(:project, account: account, github_token: github_token,
+          auto_scan_security: false, security_severity_threshold: "medium")
+
+        get project_path(project)
+
+        expect(response.body).to include("Disabled")
+        expect(response.body).not_to include("Minimum severity:")
+      end
+
       it "shows edit automation link for users with update permission" do
         owner = create(:user, :owner, account: account)
         sign_in owner
@@ -717,6 +727,20 @@ RSpec.describe "Projects" do
         expect(response.body).to include('name="project[auto_scan_security]"')
         expect(response.body).to include('name="project[security_severity_threshold]"')
         expect(response.body).to include(">Medium</option>")
+        # The threshold panel is visible (no hidden attribute) when scanning is enabled
+        expect(response.body).not_to match(/hidden\s+data-checkbox-toggle-target="panel"/)
+      end
+
+      it "hides security severity threshold controls when auto_scan_security is disabled" do
+        project = create(:project, account: account, github_token: github_token,
+          auto_scan_security: false, security_severity_threshold: "medium")
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("Auto-Scan Security Alerts")
+        expect(response.body).to include('name="project[auto_scan_security]"')
+        # The threshold panel is rendered but marked hidden when scanning is disabled
+        expect(response.body).to match(/hidden\s+data-checkbox-toggle-target="panel"/)
       end
 
       it "shows the repository name (not editable)" do
