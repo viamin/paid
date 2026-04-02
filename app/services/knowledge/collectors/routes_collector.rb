@@ -43,6 +43,11 @@ module Knowledge
           raise "routes collector requires containerized mode — failing on host for security"
         end
 
+        # Guard: skip non-Rails repos that lack a routes file or rails binstub.
+        unless repo_file_exists?(SCOPE_PATH)
+          return nil
+        end
+
         run_command("bin/rails", "routes", "--expanded", timeout: 60)
       end
 

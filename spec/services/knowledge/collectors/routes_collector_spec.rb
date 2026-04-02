@@ -111,7 +111,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
       end
 
-      it "raises so CollectorRunner marks the run as failed" do
+      it "raises when not containerized" do
         expect { failing_collector.collect }.to raise_error(
           RuntimeError, /requires containerized mode/
         )
@@ -144,6 +144,11 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
       let(:fixture_output) { File.read(fixture_file) }
 
+      before do
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("config/routes.rb").and_return(true)
+      end
+
       it "runs bin/rails routes --expanded" do
         allow(command_collector).to receive(:run_command)
           .with("bin/rails", "routes", "--expanded", timeout: 60)
@@ -152,11 +157,18 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector.collect.length).to eq(11)
       end
 
-      it "raises when command fails so CollectorRunner marks the run as failed" do
+      it "raises when the command fails" do
         allow(command_collector).to receive(:run_command)
           .and_raise(RuntimeError, "Command failed")
 
         expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
+      end
+
+      it "returns empty array when config/routes.rb is missing" do
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("config/routes.rb").and_return(false)
+
+        expect(command_collector.collect).to eq([])
       end
     end
 
@@ -170,7 +182,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
       end
 
-      it "raises so CollectorRunner marks the run as failed" do
+      it "raises when not containerized" do
         expect { non_container_collector.collect }.to raise_error(
           RuntimeError, /requires containerized mode/
         )
