@@ -134,7 +134,10 @@ module Projects
           budget_type: budget.budget_type,
           limit_cents: budget.limit_cents,
           exceeded: budget.exceeded?,
-          alert_threshold_percent: budget.alert_threshold_percent
+          alert_threshold_percent: budget.alert_threshold_percent,
+          enforcement_mode: budget.enforcement_mode,
+          grace_buffer_percent: budget.grace_buffer_percent,
+          hard_stop_exceeded: budget.hard_stop? && budget.hard_stop_exceeded?
         }
 
         # Per-run budgets are enforced per agent run via

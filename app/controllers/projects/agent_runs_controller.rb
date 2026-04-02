@@ -430,6 +430,17 @@ module Projects
     end
 
     def create_run_and_redirect(on_error_path:, **attrs)
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        Rails.logger.info(
+          message: "agent_execution.budget_check_blocked",
+          project_id: @project.id,
+          reason: budget_result[:reason]
+        )
+        redirect_to on_error_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
       create_agent_run(**attrs)
       ProcessRunQueueJob.perform_later
 
