@@ -69,6 +69,46 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
     end
   end
 
+  def stub_failing_revisions_command
+    allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
+      stdin_io = Popen3Stub::FakeIO.new
+
+      if args.first == "git" && args.include?("log")
+        status = instance_double(Process::Status, success?: true, exitstatus: 0)
+        wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
+        block.call(stdin_io, Popen3Stub::FakeIO.new(git_log_data), Popen3Stub::FakeIO.new(""), wait_thr)
+      elsif args.first == "ruby-maat"
+        status = instance_double(Process::Status, success?: false, exitstatus: 1)
+        wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
+        block.call(stdin_io, Popen3Stub::FakeIO.new(""), Popen3Stub::FakeIO.new("ruby-maat: error"), wait_thr)
+      else
+        raise "Unexpected command in test: #{args.inspect}"
+      end
+    end
+  end
+
+  def stub_failing_scc_command
+    allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
+      stdin_io = Popen3Stub::FakeIO.new
+
+      if args.first == "git" && args.include?("log")
+        status = instance_double(Process::Status, success?: true, exitstatus: 0)
+        wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
+        block.call(stdin_io, Popen3Stub::FakeIO.new(git_log_data), Popen3Stub::FakeIO.new(""), wait_thr)
+      elsif args.first == "ruby-maat"
+        status = instance_double(Process::Status, success?: true, exitstatus: 0)
+        wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
+        block.call(stdin_io, Popen3Stub::FakeIO.new(revisions_csv), Popen3Stub::FakeIO.new(""), wait_thr)
+      elsif args.first == "scc"
+        status = instance_double(Process::Status, success?: false, exitstatus: 1)
+        wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
+        block.call(stdin_io, Popen3Stub::FakeIO.new(""), Popen3Stub::FakeIO.new("scc: not found"), wait_thr)
+      else
+        raise "Unexpected command in test: #{args.inspect}"
+      end
+    end
+  end
+
   describe "#collector_type" do
     it "returns 'churn_hotspot'" do
       expect(collector.collector_type).to eq("churn_hotspot")
@@ -197,6 +237,22 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
 
       it "returns empty array" do
         expect(collector.collect).to eq([])
+      end
+    end
+
+    context "when ruby-maat fails" do
+      before { stub_failing_revisions_command }
+
+      it "raises so CollectorRunner can mark the run as failed" do
+        expect { collector.collect }.to raise_error(RuntimeError, /ruby-maat/)
+      end
+    end
+
+    context "when scc fails" do
+      before { stub_failing_scc_command }
+
+      it "raises so CollectorRunner can mark the run as failed" do
+        expect { collector.collect }.to raise_error(RuntimeError, /scc/)
       end
     end
   end

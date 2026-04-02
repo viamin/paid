@@ -37,7 +37,17 @@ module Knowledge
 
       def run_revisions(repo_path)
         Tempfile.create([ "maat_log", ".log" ]) do |f|
-          write_git_log_file(repo_path, f)
+          begin
+            write_git_log_file(repo_path, f)
+          rescue StandardError => e
+            Rails.logger.warn(
+              message: "knowledge.churn_hotspot_collector.git_log_failed",
+              project_id: project.id,
+              error: e.message
+            )
+            return []
+          end
+
           return [] if f.size.zero?
 
           output = run_command(
@@ -46,13 +56,6 @@ module Knowledge
           )
           parse_csv(output)
         end
-      rescue StandardError => e
-        Rails.logger.warn(
-          message: "knowledge.churn_hotspot_collector.revisions_failed",
-          project_id: project.id,
-          error: e.message
-        )
-        []
       end
 
       def run_complexity(repo_path)
@@ -61,13 +64,6 @@ module Knowledge
           timeout: COLLECTOR_TIMEOUT
         )
         parse_scc_complexity(output, repo_path)
-      rescue StandardError => e
-        Rails.logger.warn(
-          message: "knowledge.churn_hotspot_collector.complexity_failed",
-          project_id: project.id,
-          error: e.message
-        )
-        []
       end
 
       # Writes git log output to the given file. Uses run_command so that
