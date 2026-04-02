@@ -229,11 +229,13 @@ module Workflows
       )
 
       unless detection[:has_conflicts]
-        return detection.merge(
-          detection_failed: false,
-          requires_manual_review: false,
-          resolution: nil
-        )
+        return detection.merge(resolution: nil)
+      end
+
+      # If detection itself failed (all diff sources returned empty),
+      # require manual review without attempting resolution.
+      if detection[:detection_failed]
+        return detection.merge(resolution: nil)
       end
 
       resolution = run_activity(
@@ -244,8 +246,7 @@ module Workflows
 
       detection.merge(
         resolution: resolution,
-        detection_failed: false,
-        requires_manual_review: resolution[:requires_manual_review]
+        requires_manual_review: resolution[:requires_manual_review] || detection[:requires_manual_review]
       )
     rescue => e
       Temporalio::Workflow.logger.warn(

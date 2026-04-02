@@ -175,9 +175,12 @@ module Conflicts
       run_ids = pair[:runs]
       files = pair[:files]
 
-      # Select rerun target by completion time to avoid relying on detection order
+      # Select rerun target by completion time to avoid relying on detection order.
+      # Scope to project_id for consistency with attempt_auto_rebase.
       target_run_id = begin
-        runs = AgentRun.where(id: run_ids).order(:completed_at)
+        scope = AgentRun.where(id: run_ids)
+        scope = scope.where(project_id: @project_id) if @project_id
+        runs = scope.order(:completed_at)
         runs.last&.id || run_ids.last
       rescue StandardError
         run_ids.last

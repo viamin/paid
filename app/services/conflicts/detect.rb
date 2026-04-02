@@ -32,16 +32,24 @@ module Conflicts
       return no_conflicts_result(runs_checked: runs.size) if runs.size < 2
 
       files_by_run = collect_changed_files(runs)
+
+      if files_by_run.empty? && @diff_failures.any?
+        return detection_failed_result(runs_checked: runs.size)
+      end
+
       return no_conflicts_result(runs_checked: runs.size) if files_by_run.empty?
 
       conflicts = find_overlapping_files(files_by_run)
 
       {
-        has_conflicts: conflicts.any?,
+        has_conflicts: conflicts.any? || @diff_failures.any?,
         conflicting_pairs: conflicts,
         files_by_run: files_by_run.transform_values { |set| set.to_a.sort },
         total_runs_checked: runs.size,
-        project_id: @project_id
+        project_id: @project_id,
+        detection_failed: @diff_failures.any?,
+        failed_run_ids: @diff_failures,
+        requires_manual_review: @diff_failures.any?
       }
     end
 
@@ -62,6 +70,7 @@ module Conflicts
 
     def collect_changed_files(runs)
       files_by_run = {}
+      @diff_failures = []
 
       runs.find_each do |run|
         files = changed_files_for_run(run)
@@ -75,7 +84,11 @@ module Conflicts
     # Tries three sources in order:
     #   1. Container git diff (if container still exists)
     #   2. Host bare repo git diff (using stored SHAs)
-    #   3. Phase metadata (if changed_files was recorded)
+    #   3. Phase metadata (if changed_files was recorded in any phase)
+    #
+    # If all sources fail to produce files (and the commits differ),
+    # the run is recorded as a diff failure so the caller can require
+    # manual review instead of silently reporting no conflicts.
     def changed_files_for_run(run)
       return Set.new if run.base_commit_sha == run.result_commit_sha
 
@@ -85,7 +98,12 @@ module Conflicts
       files = diff_files_from_bare_repo(run)
       return files if files.any?
 
-      diff_files_from_metadata(run)
+      files = diff_files_from_metadata(run)
+      return files if files.any?
+
+      # All sources failed — record so we can flag for manual review
+      @diff_failures << run.id
+      Set.new
     end
 
     # Attempts to get changed files from the agent's container if still available.
@@ -131,14 +149,32 @@ module Conflicts
       Set.new
     end
 
-    # Falls back to extracting changed files from agent run logs or phases.
+    # Falls back to extracting changed files from any phase metadata.
+    # Searches all phases (not just push_branch) since changed_files
+    # may be recorded by different phase types depending on the agent.
     def diff_files_from_metadata(run)
-      # Check if any phase metadata recorded changed files
-      phase = run.agent_run_phases.find_by(phase_key: "push_branch")
-      if phase&.metadata.is_a?(Hash) && phase.metadata["changed_files"].is_a?(Array)
-        return Set.new(phase.metadata["changed_files"])
+      files = Set.new
+
+      phases = run.agent_run_phases
+      return files if phases.blank?
+
+      phases.each do |phase|
+        metadata = phase.metadata
+        next unless metadata.is_a?(Hash)
+
+        changed_files = metadata["changed_files"] || metadata[:changed_files]
+        next unless changed_files.is_a?(Array)
+
+        files.merge(changed_files)
       end
 
+      files
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "conflicts.detect.metadata_diff_failed",
+        agent_run_id: run.id,
+        error: e.message
+      )
       Set.new
     end
 
@@ -167,7 +203,23 @@ module Conflicts
         conflicting_pairs: [],
         files_by_run: {},
         total_runs_checked: runs_checked,
-        project_id: @project_id
+        project_id: @project_id,
+        detection_failed: false,
+        failed_run_ids: [],
+        requires_manual_review: false
+      }
+    end
+
+    def detection_failed_result(runs_checked: 0)
+      {
+        has_conflicts: true,
+        conflicting_pairs: [],
+        files_by_run: {},
+        total_runs_checked: runs_checked,
+        project_id: @project_id,
+        detection_failed: true,
+        failed_run_ids: @diff_failures,
+        requires_manual_review: true
       }
     end
   end

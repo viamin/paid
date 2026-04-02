@@ -10,6 +10,9 @@ RSpec.describe Conflicts::Detect do
 
       expect(result[:has_conflicts]).to be false
       expect(result[:conflicting_pairs]).to be_empty
+      expect(result[:detection_failed]).to be false
+      expect(result[:failed_run_ids]).to be_empty
+      expect(result[:requires_manual_review]).to be false
     end
 
     it "returns no conflicts when runs have no git context" do
@@ -113,6 +116,71 @@ RSpec.describe Conflicts::Detect do
         run_a = create_run(result_sha: "b" * 40, changed_files: [ "x.rb", "y.rb" ])
 
         result = described_class.call(agent_run_ids: [ run_a.id ])
+
+        expect(result[:files_by_run]).to be_a(Hash)
+      end
+
+      it "reports detection_failed when all diff sources return empty for runs with different commits" do
+        run_a = create(:agent_run, :completed, project: project,
+          branch_name: "paid/feature-a",
+          base_commit_sha: base_sha,
+          result_commit_sha: "b" * 40,
+          container_id: nil)
+        run_b = create(:agent_run, :completed, project: project,
+          branch_name: "paid/feature-b",
+          base_commit_sha: base_sha,
+          result_commit_sha: "c" * 40,
+          container_id: nil)
+
+        allow(WorktreeService).to receive(:new).and_raise(StandardError, "no repo")
+
+        result = described_class.call(agent_run_ids: [ run_a.id, run_b.id ], project_id: project.id)
+
+        expect(result[:has_conflicts]).to be true
+        expect(result[:detection_failed]).to be true
+        expect(result[:failed_run_ids]).to contain_exactly(run_a.id, run_b.id)
+        expect(result[:requires_manual_review]).to be true
+      end
+
+      it "flags diff failures alongside real conflicts" do
+        run_a = create_run(result_sha: "b" * 40, changed_files: [ "src/app.rb" ])
+        run_b = create_run(result_sha: "c" * 40, changed_files: [ "src/app.rb" ])
+        # Run with no metadata and no container — will fail diff
+        run_c = create(:agent_run, :completed, project: project,
+          branch_name: "paid/feature-c",
+          base_commit_sha: base_sha,
+          result_commit_sha: "d" * 40,
+          container_id: nil)
+
+        allow(WorktreeService).to receive(:new).and_raise(StandardError, "no repo")
+
+        result = described_class.call(
+          agent_run_ids: [ run_a.id, run_b.id, run_c.id ],
+          project_id: project.id
+        )
+
+        expect(result[:has_conflicts]).to be true
+        expect(result[:detection_failed]).to be true
+        expect(result[:failed_run_ids]).to include(run_c.id)
+        expect(result[:requires_manual_review]).to be true
+      end
+
+      it "collects changed_files from any phase, not just push_branch" do
+        run = create(:agent_run, :completed, project: project,
+          branch_name: "paid/feature-multi",
+          base_commit_sha: base_sha,
+          result_commit_sha: "b" * 40,
+          container_id: nil)
+        create(:agent_run_phase, agent_run: run,
+          phase_key: "execute", phase_group: "agent",
+          metadata: { "changed_files" => [ "lib/foo.rb" ] })
+        create(:agent_run_phase, agent_run: run,
+          phase_key: "push_branch", phase_group: "post",
+          metadata: { "changed_files" => [ "lib/bar.rb" ] })
+
+        allow(WorktreeService).to receive(:new).and_raise(StandardError, "no repo")
+
+        result = described_class.call(agent_run_ids: [ run.id ], project_id: project.id)
 
         expect(result[:files_by_run]).to be_a(Hash)
       end
