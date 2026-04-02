@@ -138,18 +138,30 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       expect(mock_container).to have_received(:archive_in_stream).with("/workspace")
     end
 
-    it "sets workspace read-only with root ownership after seeding" do
+    it "enforces root ownership and read-only permissions after seeding" do
       described_class.new(project: project, commit_sha: commit_sha).run
 
+      # chown to root so the agent user cannot restore write permissions
+      expect(mock_container).to have_received(:exec).with(
+        [ "chown", "-R", "root:root", "/workspace" ],
+        user: "root"
+      )
       expect(mock_container).to have_received(:exec).with(
         [ "chmod", "-R", "a=rX", "/workspace" ],
         user: "root"
       )
-      # No chown to agent — files stay root-owned so the agent user
-      # cannot restore write permissions.
-      expect(mock_container).not_to have_received(:exec).with(
-        [ "chown", "-R", "agent:agent", "/workspace" ],
-        user: "root"
+    end
+
+    it "raises ContainerError when chown fails during seeding" do
+      allow(mock_container).to receive(:exec)
+        .with([ "chown", "-R", "root:root", "/workspace" ], user: "root")
+        .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to set workspace ownership/
       )
     end
 

@@ -200,11 +200,19 @@ module Knowledge
     # the entire archive in memory.
     def seed_workspace!
       stream_repo_tar_to_container!
-      # Keep workspace owned by root so the agent user cannot restore
-      # write permissions (they don't own the files). Set read + execute
-      # (for directories) for all users so the agent can read the
-      # codebase for analysis. Collectors should write only to the
-      # size-limited tmpfs locations (/tmp, /home/agent/.cache).
+      # Force root ownership so the agent user cannot restore write
+      # permissions (they don't own the files). Tar preserves uid/gid
+      # from the host clone, which may be a non-root user, so an
+      # explicit chown is required. Then set read + execute (for
+      # directories) for all users so the agent can read the codebase
+      # for analysis. Collectors should write only to the size-limited
+      # tmpfs locations (/tmp, /home/agent/.cache).
+      _stdout, _stderr, chown_status = @container.exec(
+        [ "chown", "-R", "root:root", options[:workspace_mount] ],
+        user: "root"
+      )
+      raise ContainerError, "Failed to set workspace ownership (exit #{chown_status})" unless chown_status.to_i.zero?
+
       _stdout, _stderr, status = @container.exec(
         [ "chmod", "-R", "a=rX", options[:workspace_mount] ],
         user: "root"
