@@ -835,15 +835,15 @@ RSpec.describe Issue do
       expect(result[issue.id]).to eq(:blocked)
     end
 
-    it "returns :blocked when open dependency has paid_state recommend_close" do
+    it "returns :eligible when open dependency has paid_state recommend_close" do
       issue = create(:issue, project: project, github_state: "open")
       dep = create(:issue, :recommend_close, project: project, github_state: "open")
       create(:issue_dependency, issue: issue, depends_on_issue: dep)
 
       result = described_class.lifecycle_statuses([ issue ])
 
-      # Aligns with ready_for_work: any open dependency is blocking
-      expect(result[issue.id]).to eq(:blocked)
+      # Matches blocking_issues semantics: recommend_close deps are not blocking
+      expect(result[issue.id]).to eq(:eligible)
     end
 
     it "returns :eligible when local dependency is closed" do

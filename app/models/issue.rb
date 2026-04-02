@@ -190,9 +190,11 @@ class Issue < ApplicationRecord
 
     issue_ids = issues.map(&:id)
 
+    # Match blocking_issues semantics: open dependencies excluding recommend_close
     blocked_by_local = IssueDependency
       .joins(:depends_on_issue)
       .where(issue_id: issue_ids, depends_on_issue: { github_state: "open" })
+      .where.not(depends_on_issue: { paid_state: "recommend_close" })
       .pluck(:issue_id)
       .to_set
 

@@ -6,8 +6,9 @@
     <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
       <div class="max-h-96 overflow-y-auto">
         <ul role="list" class="divide-y divide-gray-200">
+          <% statuses = local_assigns.fetch(:issue_lifecycle_statuses, {}) %>
           <% issues.each do |issue| %>
-            <%= render "projects/issue", issue: issue, project: project, lifecycle_status: local_assigns.fetch(:issue_lifecycle_statuses, {})[issue.id] %>
+            <%= render "projects/issue", issue: issue, project: project, lifecycle_status: statuses[issue.id] %>
           <% end %>
         </ul>
       </div>
