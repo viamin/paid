@@ -159,7 +159,10 @@ module Conflicts
     end
 
     def push_rebased_branch(git_ops, rebase_run, base_run)
-      git_ops.push_branch
+      # After rebase the remote branch already exists with pre-rebase history,
+      # so a regular push will be rejected. Use force-with-lease to safely
+      # update the remote branch with the rebased commits.
+      git_ops.push_force_with_lease
       true
     rescue StandardError => e
       Rails.logger.warn(

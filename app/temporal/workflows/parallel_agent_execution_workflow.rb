@@ -232,9 +232,10 @@ module Workflows
         return detection.merge(resolution: nil)
       end
 
-      # If detection itself failed (all diff sources returned empty),
+      # If detection failed and produced no usable conflict information,
       # require manual review without attempting resolution.
-      if detection[:detection_failed]
+      if detection[:detection_failed] &&
+         (detection[:conflicting_pairs].nil? || detection[:conflicting_pairs].empty?)
         return detection.merge(resolution: nil)
       end
 

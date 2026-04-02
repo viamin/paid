@@ -242,6 +242,33 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(conflicts[:resolution][:requires_manual_review]).to be true
     end
 
+    it "attempts resolution when detection partially failed but found conflicts" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+      stub_partial_detection_failure_with_conflicts
+
+      result = workflow.execute(two_task_input)
+
+      conflicts = result[:conflicts]
+      expect(conflicts[:has_conflicts]).to be true
+      expect(conflicts[:detection_failed]).to be true
+      expect(conflicts[:resolution]).not_to be_nil
+      expect(conflicts[:requires_manual_review]).to be true
+    end
+
+    it "skips resolution when detection failed with no conflict data" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+      stub_total_detection_failure
+
+      result = workflow.execute(two_task_input)
+
+      conflicts = result[:conflicts]
+      expect(conflicts[:has_conflicts]).to be true
+      expect(conflicts[:detection_failed]).to be true
+      expect(conflicts[:resolution]).to be_nil
+    end
+
     it "returns project_id in no_conflicts_result when fewer than 2 successful runs" do
       stub_full_capacity
       stub_mixed_futures
@@ -379,6 +406,34 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
             max_parallel_per_project: 3, user_active_count: 3, max_concurrent_runs: 10 }
         end
       end
+  end
+
+  def stub_partial_detection_failure_with_conflicts
+    detection = {
+      has_conflicts: true,
+      conflicting_pairs: [ { runs: [ 42, 43 ], files: [ "src/app.rb" ] } ],
+      files_by_run: [ { agent_run_id: 42, files: [ "src/app.rb" ] }, { agent_run_id: 43, files: [ "src/app.rb" ] } ],
+      total_runs_checked: 2,
+      detection_failed: true, failed_run_ids: [ 44 ], requires_manual_review: true
+    }
+    resolution = {
+      resolved: false, strategy: :auto_rebase,
+      resolutions: [ { runs: [ 42, 43 ], files: [ "src/app.rb" ], resolved: false, action: :manual } ],
+      requires_manual_review: true
+    }
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120).and_return(detection)
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::ResolveConflictsActivity, anything, timeout: 300).and_return(resolution)
+  end
+
+  def stub_total_detection_failure
+    detection = {
+      has_conflicts: true, conflicting_pairs: [], files_by_run: [], total_runs_checked: 2,
+      detection_failed: true, failed_run_ids: [ 42, 43 ], requires_manual_review: true
+    }
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120).and_return(detection)
   end
 
   def two_task_input
