@@ -32,13 +32,8 @@ module Activities
       parent_issue = Issue.find_by(id: parent_issue_id) if parent_issue_id
 
       client = project.github_token.client
-      pr = client.create_pull_request(
-        project.full_name,
-        base: project.default_branch,
-        head: feature_branch,
-        title: pr_title(parent_issue),
-        body: pr_body(parent_issue, results, merged_branches, failed_merges),
-        draft: true
+      pr = create_pull_request_idempotently(
+        client, project, feature_branch, parent_issue, results, merged_branches, failed_merges
       )
 
       add_pr_labels(client, project, pr.number)
@@ -58,6 +53,35 @@ module Activities
     end
 
     private
+
+    def create_pull_request_idempotently(client, project, feature_branch, parent_issue, results, merged_branches, failed_merges)
+      client.create_pull_request(
+        project.full_name,
+        base: project.default_branch,
+        head: feature_branch,
+        title: pr_title(parent_issue),
+        body: pr_body(parent_issue, results, merged_branches, failed_merges),
+        draft: true
+      )
+    rescue GithubClient::ApiError => e
+      raise unless e.status == 422
+
+      # PR already exists (likely a retry). Look up the existing open PR for this head branch.
+      existing_prs = client.pull_requests(
+        project.full_name,
+        state: "open",
+        head: "#{project.full_name.split('/').first}:#{feature_branch}"
+      )
+      existing_pr = existing_prs&.first
+      raise unless existing_pr
+
+      logger.info(
+        message: "aggregated_pr.already_exists",
+        project_id: project.id,
+        pull_request_url: existing_pr.html_url
+      )
+      existing_pr
+    end
 
     def pr_title(parent_issue)
       if parent_issue
@@ -96,7 +120,7 @@ module Activities
         if issue
           parts << "- #{icon} ##{issue.github_number}: #{issue.title} (#{status})"
         elsif result[:issue_id]
-          parts << "- #{icon} Sub-task ##{result[:issue_id]} (#{status})"
+          parts << "- #{icon} Sub-task (internal issue id #{result[:issue_id]}) (#{status})"
         end
       end
 

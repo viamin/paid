@@ -80,6 +80,19 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
       end
     end
 
+    it "uses internal id fallback without GitHub-style # prefix" do
+      input = base_input.merge(
+        results: [ { success: true, issue_id: 999 } ]
+      )
+
+      activity.execute(input)
+
+      expect(client).to have_received(:create_pull_request) do |_, opts|
+        expect(opts[:body]).to include("internal issue id 999")
+        expect(opts[:body]).not_to include("#999")
+      end
+    end
+
     it "includes merge failure details in PR body" do
       input = base_input.merge(
         failed_merges: [ { branch: "branch-3", error: "Merge conflict" } ]
@@ -117,6 +130,29 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
       result = activity.execute(base_input)
 
       expect(result[:pull_request_url]).to eq("https://github.com/test/repo/pull/42")
+    end
+
+    it "returns existing PR on 422 retry" do
+      existing_pr = OpenStruct.new(html_url: "https://github.com/test/repo/pull/42", number: 42)
+
+      allow(client).to receive(:create_pull_request)
+        .and_raise(GithubClient::ApiError.new("Validation Failed", status: 422))
+      allow(client).to receive(:pull_requests).and_return([ existing_pr ])
+
+      result = activity.execute(base_input)
+
+      expect(result[:pull_request_url]).to eq("https://github.com/test/repo/pull/42")
+      expect(result[:pull_request_number]).to eq(42)
+    end
+
+    it "re-raises 422 when no existing PR is found" do
+      allow(client).to receive(:create_pull_request)
+        .and_raise(GithubClient::ApiError.new("Validation Failed", status: 422))
+      allow(client).to receive(:pull_requests).and_return([])
+
+      expect {
+        activity.execute(base_input)
+      }.to raise_error(GithubClient::ApiError, "Validation Failed")
     end
   end
 end

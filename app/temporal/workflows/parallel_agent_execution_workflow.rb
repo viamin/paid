@@ -263,6 +263,8 @@ module Workflows
         },
         timeout: 60
       )
+    rescue Temporalio::Error::CanceledError
+      raise
     rescue => e
       Temporalio::Workflow.logger.warn(
         message: "parallel_execution.aggregation_failed",

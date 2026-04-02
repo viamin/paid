@@ -71,9 +71,7 @@ RSpec.describe Activities::AggregateBranchesActivity do
       expect(client).to have_received(:merge).once
     end
 
-    it "skips agent runs without a branch name" do
-      allow(client).to receive(:merge)
-
+    it "skips branch creation when no merge candidates exist" do
       run1 = create(:agent_run, project: project, branch_name: nil)
 
       result = activity.execute(
@@ -83,7 +81,8 @@ RSpec.describe Activities::AggregateBranchesActivity do
       )
 
       expect(result[:merged_branches]).to be_empty
-      expect(client).not_to have_received(:merge)
+      expect(client).not_to have_received(:create_ref)
+      expect(client).not_to have_received(:ref)
     end
 
     it "records merge conflict failures gracefully" do
@@ -132,6 +131,70 @@ RSpec.describe Activities::AggregateBranchesActivity do
       )
 
       expect(result[:feature_branch]).to eq("feature/my-branch")
+    end
+
+    it "handles idempotent branch creation on retry" do
+      allow(client).to receive(:merge)
+      allow(client).to receive(:create_ref)
+        .and_raise(GithubClient::ApiError.new("Reference already exists", status: 422))
+
+      # Return a ref matching the expected SHA
+      allow(client).to receive(:ref)
+        .with(project.full_name, "heads/#{project.default_branch}")
+        .and_return(base_ref)
+      allow(client).to receive(:ref)
+        .with(project.full_name, "heads/feature/test")
+        .and_return(OpenStruct.new(object: OpenStruct.new(sha: "abc123")))
+
+      run1 = create(:agent_run, project: project, branch_name: "branch-1")
+
+      result = activity.execute(
+        project_id: project.id,
+        results: [ { success: true, agent_run_id: run1.id } ],
+        feature_branch_name: "feature/test"
+      )
+
+      expect(result[:merged_branches]).to eq([ "branch-1" ])
+    end
+
+    it "re-raises 422 when existing branch has different SHA" do
+      allow(client).to receive(:create_ref)
+        .and_raise(GithubClient::ApiError.new("Reference already exists", status: 422))
+
+      allow(client).to receive(:ref)
+        .with(project.full_name, "heads/#{project.default_branch}")
+        .and_return(base_ref)
+      allow(client).to receive(:ref)
+        .with(project.full_name, "heads/feature/test")
+        .and_return(OpenStruct.new(object: OpenStruct.new(sha: "different-sha")))
+
+      run1 = create(:agent_run, project: project, branch_name: "branch-1")
+
+      expect {
+        activity.execute(
+          project_id: project.id,
+          results: [ { success: true, agent_run_id: run1.id } ],
+          feature_branch_name: "feature/test"
+        )
+      }.to raise_error(GithubClient::ApiError, "Reference already exists")
+    end
+
+    it "deletes the feature branch when all merges fail" do
+      allow(client).to receive(:merge)
+        .and_raise(GithubClient::ApiError.new("Merge conflict", status: 409))
+      allow(client).to receive(:delete_ref)
+
+      run1 = create(:agent_run, project: project, branch_name: "branch-1")
+
+      result = activity.execute(
+        project_id: project.id,
+        results: [ { success: true, agent_run_id: run1.id } ],
+        feature_branch_name: "feature/test"
+      )
+
+      expect(result[:merged_branches]).to be_empty
+      expect(client).to have_received(:delete_ref)
+        .with(project.full_name, "heads/feature/test")
     end
   end
 end

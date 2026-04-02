@@ -330,6 +330,19 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(result[:success]).to be true
       expect(result[:completed]).to eq(2)
     end
+
+    it "re-raises cancellation errors during aggregation" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .and_raise(Temporalio::Error::CanceledError, "workflow canceled")
+
+      expect {
+        workflow.execute(two_task_input.merge(aggregate_pr: true))
+      }.to raise_error(Temporalio::Error::CanceledError)
+    end
   end
 
   private

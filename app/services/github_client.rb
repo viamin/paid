@@ -575,6 +575,24 @@ class GithubClient
     handle_errors { client.create_ref(repo, ref, sha) }
   end
 
+  # Deletes a git reference (branch or tag).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Reference name (e.g., "heads/feature-branch")
+  # @return [Boolean] true if successfully deleted
+  def delete_ref(repo, ref)
+    handle_errors { client.delete_ref(repo, ref) }
+  end
+
+  # Lists pull requests for a repository.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param options [Hash] Filter options (state, head, base, etc.)
+  # @return [Array<Sawyer::Resource>] List of pull requests
+  def pull_requests(repo, **options)
+    handle_errors { client.pull_requests(repo, **options) }
+  end
+
   # Merges a branch into another branch via the GitHub API.
   #
   # @param repo [String] Repository in "owner/name" format
