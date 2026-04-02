@@ -12,6 +12,7 @@ module Activities
       agent_run_ids = input[:agent_run_ids] || []
 
       runs = AgentRun.where(id: agent_run_ids)
+      runs = runs.where(parent_workflow_id: parent_workflow_id) if parent_workflow_id
       counts_by_status = runs.group(:status).count
 
       completed = counts_by_status["completed"].to_i

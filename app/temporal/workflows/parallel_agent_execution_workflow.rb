@@ -16,17 +16,14 @@ module Workflows
   #
   # The workflow:
   #   1. Checks project-level capacity for parallel runs
-  #   2. Launches child AgentExecutionWorkflow instances respecting concurrency limits
-  #   3. Tracks progress of all child workflows
-  #   4. Propagates cancellation to all children on timeout or parent cancellation
-  #   5. Returns aggregate results
+  #   2. Launches child AgentExecutionWorkflow instances in batches respecting concurrency limits
+  #   3. Re-checks capacity between batches and enforces an overall deadline
+  #   4. Returns aggregate results
   class ParallelAgentExecutionWorkflow < BaseWorkflow
     # Default overall timeout for parallel execution (2 hours)
     DEFAULT_TIMEOUT_SECONDS = 7200
     # Maximum sub-tasks allowed per parallel execution
     MAX_SUB_TASKS = 20
-    # Interval for polling child workflow progress
-    PROGRESS_POLL_INTERVAL = 30
 
     def execute(input)
       project_id = input[:project_id]
@@ -51,13 +48,15 @@ module Workflows
       )
 
       unless capacity[:has_capacity]
+        error_code = capacity[:error] || "no_capacity"
         Temporalio::Workflow.logger.warn(
           message: "parallel_execution.no_capacity",
-          project_id: project_id
+          project_id: project_id,
+          error: error_code
         )
         return {
           success: false,
-          error: "no_capacity",
+          error: error_code,
           project_active_count: capacity[:project_active_count],
           max_parallel_per_project: capacity[:max_parallel_per_project]
         }
@@ -119,6 +118,24 @@ module Workflows
           type: "InvalidInput",
           non_retryable: true
         )
+      end
+
+      sub_tasks.each_with_index do |sub_task, index|
+        unless sub_task.is_a?(Hash)
+          raise Temporalio::Error::ApplicationError.new(
+            "sub_tasks[#{index}] must be a Hash",
+            type: "InvalidInput",
+            non_retryable: true
+          )
+        end
+
+        if sub_task[:issue_id].nil? && sub_task[:custom_prompt].nil?
+          raise Temporalio::Error::ApplicationError.new(
+            "sub_tasks[#{index}] must include at least one of :issue_id or :custom_prompt",
+            type: "InvalidInput",
+            non_retryable: true
+          )
+        end
       end
     end
 

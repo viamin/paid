@@ -31,8 +31,8 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(described_class::MAX_SUB_TASKS).to eq(20)
     end
 
-    it "defines PROGRESS_POLL_INTERVAL" do
-      expect(described_class::PROGRESS_POLL_INTERVAL).to eq(30)
+    it "does not define PROGRESS_POLL_INTERVAL (unused)" do
+      expect(described_class.const_defined?(:PROGRESS_POLL_INTERVAL)).to be false
     end
   end
 
@@ -66,6 +66,31 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
         expect(error.type).to eq("InvalidInput")
       end
     end
+
+    it "raises InvalidInput when a sub_task is not a Hash" do
+      expect {
+        workflow.execute({ project_id: 1, sub_tasks: [ "not_a_hash" ] })
+      }.to raise_error(Temporalio::Error::ApplicationError, "sub_tasks[0] must be a Hash") do |error|
+        expect(error.type).to eq("InvalidInput")
+      end
+    end
+
+    it "raises InvalidInput when a sub_task lacks both issue_id and custom_prompt" do
+      expect {
+        workflow.execute({ project_id: 1, sub_tasks: [ { agent_type: "claude_code" } ] })
+      }.to raise_error(Temporalio::Error::ApplicationError, /must include at least one of/) do |error|
+        expect(error.type).to eq("InvalidInput")
+      end
+    end
+
+    it "accepts sub_task with only custom_prompt" do
+      stub_full_capacity
+      stub_successful_futures(count: 1)
+      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+
+      result = workflow.execute({ project_id: 1, sub_tasks: [ { custom_prompt: "do something" } ] })
+      expect(result[:success]).to be true
+    end
   end
 
   describe "capacity check" do
@@ -79,6 +104,16 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
 
       expect(result[:success]).to be false
       expect(result[:error]).to eq("no_capacity")
+    end
+
+    it "propagates specific error from capacity check" do
+      stub_no_capacity_with_error("project_not_found")
+
+      input = { project_id: 1, sub_tasks: [ { issue_id: 1 } ] }
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be false
+      expect(result[:error]).to eq("project_not_found")
     end
   end
 
@@ -183,6 +218,12 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     allow(workflow).to receive(:run_activity)
       .with(Activities::CheckProjectRunCapacityActivity, anything, timeout: 30)
       .and_return(has_capacity: false, available_slots: 0, project_active_count: 3, max_parallel_per_project: 3)
+  end
+
+  def stub_no_capacity_with_error(error)
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::CheckProjectRunCapacityActivity, anything, timeout: 30)
+      .and_return(has_capacity: false, available_slots: 0, error: error)
   end
 
   def full_capacity_result
