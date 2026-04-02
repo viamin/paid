@@ -87,9 +87,11 @@ RUN gem install --no-document bundler:2.7.2
 
 # Install ruby-maat (VCS mining tool for churn/hotspot analysis)
 # https://github.com/viamin/ruby-maat
-# Keep RUBY_MAAT_VERSION in sync with the version resolved in Gemfile.lock.
-ARG RUBY_MAAT_VERSION=1.2.0
-RUN gem install --no-document "ruby-maat:${RUBY_MAAT_VERSION}"
+# Version is sourced from Gemfile.lock at build time — see build-agent-image.sh
+# and .github/workflows/agent-image.yml for the extraction logic.
+ARG RUBY_MAAT_VERSION
+RUN test -n "${RUBY_MAAT_VERSION}" || { echo "RUBY_MAAT_VERSION build-arg is required" >&2; exit 1; } \
+    && gem install --no-document "ruby-maat:${RUBY_MAAT_VERSION}"
 
 # Install Yarn via corepack (pinned to match package.json)
 # Set COREPACK_HOME to a shared location so the prepared Yarn version is
