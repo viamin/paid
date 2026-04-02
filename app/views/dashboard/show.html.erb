@@ -52,12 +52,26 @@
       Cumulative / Periodic Metrics
     </summary>
     <div class="mt-4">
-      <%= render "dashboard/content", stats: @stats, account: current_account %>
+      <%= turbo_frame_tag "dashboard-metrics" do %>
+        <%= render "dashboard/metrics", stats: @stats, account: current_account, time_range: @time_range %>
+      <% end %>
       <%= render "dashboard/knowledge_widget", knowledge_stats: @knowledge_stats %>
     </div>
   </details>
 
-  <%# Section 3: Recent Activity (collapsed by default) %>
+  <%# Section 3: Performance (expanded by default) %>
+  <details open class="mt-8">
+    <summary class="cursor-pointer select-none text-lg font-semibold text-gray-900 hover:text-indigo-600">
+      Performance
+    </summary>
+    <div class="mt-4">
+      <%= turbo_frame_tag "dashboard-performance" do %>
+        <%= render "dashboard/performance", stats: @stats, time_range: @time_range, status_filter: @status_filter, goal_filter: @goal_filter %>
+      <% end %>
+    </div>
+  </details>
+
+  <%# Section 4: Recent Activity (collapsed by default) %>
   <details class="mt-8">
     <summary class="cursor-pointer select-none text-lg font-semibold text-gray-900 hover:text-indigo-600">
       Recent Activity
