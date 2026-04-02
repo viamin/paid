@@ -166,6 +166,18 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       )
     end
 
+    it "wraps Docker errors from seed_workspace! as ContainerError" do
+      allow(mock_container).to receive(:archive_in_stream)
+        .and_raise(Docker::Error::ServerError.new("daemon error"))
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /Failed to seed workspace.*daemon error/
+      )
+    end
+
     it "raises ContainerError when tar fails" do
       failed_status = instance_double(Process::Status, success?: false, exitstatus: 1)
       failed_wait_thr = instance_double(Thread, value: failed_status)

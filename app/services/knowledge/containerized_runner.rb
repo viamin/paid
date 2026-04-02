@@ -210,6 +210,10 @@ module Knowledge
         user: "root"
       )
       raise ContainerError, "Failed to set workspace permissions (exit #{status})" unless status.to_i.zero?
+    rescue ContainerError
+      raise
+    rescue Docker::Error::DockerError, Errno::ENOENT => e
+      raise ContainerError, "Failed to seed workspace: #{e.message}"
     end
 
     def stream_repo_tar_to_container!
