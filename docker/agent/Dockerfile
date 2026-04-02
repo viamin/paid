@@ -85,6 +85,10 @@ RUN apt-get update && apt-get purge -y --auto-remove \
 # Install Bundler (pinned to match Gemfile.lock)
 RUN gem install --no-document bundler:2.7.2
 
+# Install ruby-maat (VCS mining tool for churn/hotspot analysis)
+# https://github.com/viamin/ruby-maat
+RUN gem install --no-document ruby-maat
+
 # Install Yarn via corepack (pinned to match package.json)
 # Set COREPACK_HOME to a shared location so the prepared Yarn version is
 # accessible to the non-root agent user without re-downloading at runtime.

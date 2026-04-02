@@ -1,0 +1,51 @@
+[
+  {
+    "Name": "Ruby",
+    "Files": [
+      {
+        "Language": "Ruby",
+        "Location": "/tmp/test-repo/app/models/agent_run.rb",
+        "Filename": "agent_run.rb",
+        "Lines": 30,
+        "Code": 23,
+        "Comment": 4,
+        "Blank": 3,
+        "Complexity": 5,
+        "Bytes": 900
+      },
+      {
+        "Language": "Ruby",
+        "Location": "/tmp/test-repo/app/models/project.rb",
+        "Filename": "project.rb",
+        "Lines": 20,
+        "Code": 15,
+        "Comment": 3,
+        "Blank": 2,
+        "Complexity": 3,
+        "Bytes": 600
+      },
+      {
+        "Language": "Ruby",
+        "Location": "/tmp/test-repo/app/controllers/projects_controller.rb",
+        "Filename": "projects_controller.rb",
+        "Lines": 55,
+        "Code": 42,
+        "Comment": 8,
+        "Blank": 5,
+        "Complexity": 10,
+        "Bytes": 1500
+      },
+      {
+        "Language": "Ruby",
+        "Location": "/tmp/test-repo/config/routes.rb",
+        "Filename": "routes.rb",
+        "Lines": 5,
+        "Code": 3,
+        "Comment": 1,
+        "Blank": 1,
+        "Complexity": 0,
+        "Bytes": 100
+      }
+    ]
+  }
+]

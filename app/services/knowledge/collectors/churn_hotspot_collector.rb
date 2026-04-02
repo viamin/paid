@@ -1,22 +1,25 @@
 # frozen_string_literal: true
 
 require "csv"
+require "json"
+require "tempfile"
 
 module Knowledge
   module Collectors
     class ChurnHotspotCollector < BaseCollector
       MAAT_TIMEOUT = 120 # seconds
+      GIT_LOG_FORMAT = "--%h--%ad--%aN"
 
       def collect
         repo_path = resolve_repo_path
         return [] unless repo_path
 
-        revisions = run_maat(repo_path, "revisions")
-        hotspots = run_maat(repo_path, "hotspots")
+        revisions = run_revisions(repo_path)
+        complexity = run_complexity(repo_path)
 
-        return [] if revisions.empty? && hotspots.empty?
+        return [] if revisions.empty? && complexity.empty?
 
-        build_artifacts(revisions, hotspots)
+        build_artifacts(revisions, complexity)
       end
 
       def collector_type
@@ -24,7 +27,7 @@ module Knowledge
       end
 
       def tool_version
-        version_output = run_command("maat", "--version")
+        version_output = run_command("ruby-maat", "--version")
         version_output.strip.presence
       rescue StandardError
         nil
@@ -32,20 +35,57 @@ module Knowledge
 
       private
 
-      def run_maat(repo_path, analysis)
-        output = run_command(
-          "maat", "-c", "git2", "-l", repo_path, "-a", analysis,
-          timeout: MAAT_TIMEOUT
-        )
-        parse_csv(output)
+      def run_revisions(repo_path)
+        log_data = generate_git_log(repo_path)
+        return [] if log_data.blank?
+
+        Tempfile.create([ "maat_log", ".log" ]) do |f|
+          f.write(log_data)
+          f.flush
+
+          output = run_command(
+            "ruby-maat", "-c", "git2", "-l", f.path, "-a", "revisions", "-n", "1",
+            timeout: MAAT_TIMEOUT
+          )
+          parse_csv(output)
+        end
       rescue StandardError => e
         Rails.logger.warn(
-          message: "knowledge.churn_hotspot_collector.maat_failed",
-          analysis: analysis,
+          message: "knowledge.churn_hotspot_collector.revisions_failed",
           project_id: project.id,
           error: e.message
         )
         []
+      end
+
+      def run_complexity(repo_path)
+        output = run_command(
+          "scc", "--by-file", "-f", "json", repo_path,
+          timeout: MAAT_TIMEOUT
+        )
+        parse_scc_complexity(output, repo_path)
+      rescue StandardError => e
+        Rails.logger.warn(
+          message: "knowledge.churn_hotspot_collector.complexity_failed",
+          project_id: project.id,
+          error: e.message
+        )
+        []
+      end
+
+      def generate_git_log(repo_path)
+        run_command(
+          "git", "-C", repo_path, "log", "--all", "--numstat",
+          "--date=short", "--pretty=format:#{GIT_LOG_FORMAT}", "--no-renames",
+          timeout: MAAT_TIMEOUT
+        )
+      rescue StandardError => e
+        Rails.logger.warn(
+          message: "knowledge.churn_hotspot_collector.git_log_failed",
+          project_id: project.id,
+          error: e.message
+        )
+        nil
       end
 
       def parse_csv(output)
@@ -56,6 +96,36 @@ module Knowledge
       rescue CSV::MalformedCSVError => e
         Rails.logger.warn(
           message: "knowledge.churn_hotspot_collector.malformed_csv",
+          project_id: project.id,
+          error: e.message,
+          output_snippet: output.to_s.first(200)
+        )
+        []
+      end
+
+      def parse_scc_complexity(output, repo_path)
+        return [] if output.blank?
+
+        data = JSON.parse(output)
+        return [] unless data.is_a?(Array)
+
+        prefix = repo_path.end_with?("/") ? repo_path : "#{repo_path}/"
+
+        data.flat_map do |language_entry|
+          (language_entry["Files"] || []).filter_map do |file_entry|
+            location = file_entry["Location"]
+            next unless location
+
+            entity = location.delete_prefix(prefix)
+            code = file_entry["Code"] || 0
+            next if code <= 0
+
+            { "entity" => entity, "code" => code.to_s }
+          end
+        end
+      rescue JSON::ParserError => e
+        Rails.logger.warn(
+          message: "knowledge.churn_hotspot_collector.malformed_scc_json",
           project_id: project.id,
           error: e.message,
           output_snippet: output.to_s.first(200)
