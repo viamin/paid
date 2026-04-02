@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_02_050141) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_02_063805) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -707,6 +707,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_050141) do
     t.string "owner_reviewer_login"
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
+    t.boolean "pr_aggregation_enabled", default: false, null: false
     t.string "repo", null: false
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false

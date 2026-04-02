@@ -556,6 +556,38 @@ class GithubClient
     handle_errors { client.put(path, options) }
   end
 
+  # Fetches a git reference (branch or tag).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Reference name (e.g., "heads/main")
+  # @return [Sawyer::Resource] The reference object with :object containing :sha
+  def ref(repo, ref)
+    handle_errors { client.ref(repo, ref) }
+  end
+
+  # Creates a git reference (branch or tag).
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param ref [String] Reference name (e.g., "refs/heads/feature-branch")
+  # @param sha [String] SHA to point the reference at
+  # @return [Sawyer::Resource] The created reference
+  def create_ref(repo, ref, sha)
+    handle_errors { client.create_ref(repo, ref, sha) }
+  end
+
+  # Merges a branch into another branch via the GitHub API.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] Branch to merge into
+  # @param head [String] Branch to merge from
+  # @param commit_message [String] Merge commit message
+  # @return [Sawyer::Resource] The merge commit
+  def merge(repo, base, head, commit_message: nil)
+    options = { base: base, head: head }
+    options[:commit_message] = commit_message if commit_message
+    handle_errors { client.merge(repo, base, head, options) }
+  end
+
   # Fetches code scanning alerts for a repository for the given state (default: "open").
   # Uses auto-pagination to get an authoritative snapshot of all alerts in the requested state.
   #
