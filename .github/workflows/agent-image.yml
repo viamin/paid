@@ -37,8 +37,12 @@ jobs:
       - name: Extract ruby-maat version from Gemfile.lock
         id: ruby-maat
         run: |
-          version=$(sed -n 's/^  *ruby-maat (\(.*\))/\1/p' Gemfile.lock)
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          version=$(sed -n '/^GEM$/,/^$/s/^  *ruby-maat (\(.*\))/\1/p' Gemfile.lock | head -n 1)
+          if [ -z "$version" ]; then
+            echo "Failed to extract ruby-maat version from Gemfile.lock" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Build paid-agent image
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0

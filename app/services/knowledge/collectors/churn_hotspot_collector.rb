@@ -46,17 +46,28 @@ module Knowledge
 
       # In containerized mode, write the git log to a container-local temp
       # file via shell redirect so ruby-maat can read it without crossing
-      # the host/container boundary.
+      # the host/container boundary.  Rescues git log failures to match
+      # the host-mode behavior (returns [] so complexity-only artifacts
+      # can still be produced).
       def run_containerized_revisions(repo_path)
         container_log_path = "/tmp/maat_log.log"
 
-        run_command(
-          "sh", "-c",
-          "git -C #{Shellwords.shellescape(repo_path)} log --all --numstat " \
-          "--date=short '--pretty=format:#{GIT_LOG_FORMAT}' " \
-          "--no-renames > #{container_log_path}",
-          timeout: COLLECTOR_TIMEOUT
-        )
+        begin
+          run_command(
+            "sh", "-c",
+            "git -C #{Shellwords.shellescape(repo_path)} log --all --numstat " \
+            "--date=short '--pretty=format:#{GIT_LOG_FORMAT}' " \
+            "--no-renames > #{container_log_path}",
+            timeout: COLLECTOR_TIMEOUT
+          )
+        rescue StandardError => e
+          Rails.logger.warn(
+            message: "knowledge.churn_hotspot_collector.git_log_failed",
+            project_id: project.id,
+            error: e.message
+          )
+          return []
+        end
 
         output = run_command(
           "ruby-maat", "-c", "git2", "-l", container_log_path,

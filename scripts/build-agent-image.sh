@@ -15,8 +15,10 @@ IMAGE_NAME="${IMAGE_NAME:-paid-agent}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 
-# Extract ruby-maat version from Gemfile.lock (single source of truth)
-RUBY_MAAT_VERSION=$(sed -n 's/^  *ruby-maat (\(.*\))/\1/p' "${PROJECT_ROOT}/Gemfile.lock")
+# Extract ruby-maat version from Gemfile.lock (single source of truth).
+# Restrict the match to the GEM section and take only the first hit to avoid
+# matching the CHECKSUMS section (which includes a sha256 suffix).
+RUBY_MAAT_VERSION=$(sed -n '/^GEM$/,/^$/s/^  *ruby-maat (\(.*\))/\1/p' "${PROJECT_ROOT}/Gemfile.lock" | head -n 1)
 if [ -z "${RUBY_MAAT_VERSION}" ]; then
     echo "ERROR: Could not extract ruby-maat version from Gemfile.lock" >&2
     exit 1
