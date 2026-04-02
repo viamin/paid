@@ -66,13 +66,14 @@ RSpec.describe Workflows::PlanningWorkflow do
         workflow.execute(input)
 
         expect(workflow).to have_received(:run_activity)
-          .with(Activities::FetchPlanningContextActivity, hash_including(project_id: 1, issue_id: 2), anything)
+          .with(Activities::FetchPlanningContextActivity, hash_including(project_id: 1, issue_id: 2), timeout: 60)
         expect(workflow).to have_received(:run_activity)
-          .with(Activities::DecomposeFeatureActivity, hash_including(project_id: 1, issue_id: 2), anything)
+          .with(Activities::DecomposeFeatureActivity, hash_including(project_id: 1, issue_id: 2), timeout: 120)
         expect(workflow).to have_received(:run_activity)
-          .with(Activities::CreateSubIssuesActivity, hash_including(project_id: 1, parent_issue_id: 2, tasks: tasks), anything)
+          .with(Activities::CreateSubIssuesActivity, hash_including(project_id: 1, parent_issue_id: 2, tasks: tasks),
+            timeout: 120, retry_policy: { maximum_attempts: 1 })
         expect(workflow).to have_received(:run_activity)
-          .with(Activities::UpdatePlanningLabelsActivity, hash_including(project_id: 1, issue_id: 2, task_count: 3), anything)
+          .with(Activities::UpdatePlanningLabelsActivity, hash_including(project_id: 1, issue_id: 2, task_count: 3), timeout: 30)
       end
     end
 
@@ -103,7 +104,7 @@ RSpec.describe Workflows::PlanningWorkflow do
         expect(result[:task_count]).to eq(1)
         expect(result[:sub_issue_ids]).to eq([])
         expect(workflow).not_to have_received(:run_activity)
-          .with(Activities::CreateSubIssuesActivity, anything, anything)
+          .with(Activities::CreateSubIssuesActivity, anything, any_args)
       end
     end
 

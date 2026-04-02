@@ -48,7 +48,8 @@ module Workflows
             parent_issue_id: issue_id,
             tasks: tasks
           },
-          timeout: 120
+          timeout: 120,
+          retry_policy: { maximum_attempts: 1 }
         )
 
         sub_issue_ids = create_result[:sub_issue_ids]
@@ -77,7 +78,11 @@ module Workflows
 
     rescue => e
       Temporalio::Workflow.logger.error(
-        "PlanningWorkflow failed for project=#{project_id} issue=#{issue_id}: #{e.message}"
+        message: "PlanningWorkflow failed",
+        project_id: project_id,
+        issue_id: issue_id,
+        error_class: e.class.to_s,
+        error: e.message
       )
       raise
     end

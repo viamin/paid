@@ -15,8 +15,11 @@ module Activities
       parent_issue = project.issues.find(parent_issue_id)
       client = project.github_token.client
 
+      created_issues = []
       sub_issue_ids = tasks.map do |task|
-        create_sub_issue(client, project, parent_issue, task)
+        issue = create_sub_issue(client, project, parent_issue, task, created_issues)
+        created_issues << issue
+        issue&.id
       end.compact
 
       logger.info(
@@ -31,7 +34,7 @@ module Activities
 
     private
 
-    def create_sub_issue(client, project, parent_issue, task)
+    def create_sub_issue(client, project, parent_issue, task, created_issues)
       body = build_issue_body(task, parent_issue)
       labels = sub_issue_labels(project)
 
@@ -43,11 +46,13 @@ module Activities
       )
 
       issue = sync_issue_record(project, parent_issue, gh_issue)
-      create_dependencies(issue, task[:dependencies], project)
+      create_dependencies(issue, task[:dependencies], created_issues)
 
       heartbeat("created sub-issue ##{gh_issue.number}")
 
-      issue.id
+      issue
+    rescue Temporalio::Error::CanceledError
+      raise
     rescue => e
       logger.warn(
         message: "planning.create_sub_issue_failed",
@@ -100,14 +105,13 @@ module Activities
       issue
     end
 
-    def create_dependencies(issue, dependency_indices, project)
+    def create_dependencies(issue, dependency_indices, created_issues)
       return if dependency_indices.blank?
 
-      # Dependencies reference task indices. Sub-issues are created in order,
-      # so we look up already-created siblings by their position.
-      siblings = issue.parent_issue.sub_issues.order(:id).to_a
+      # Dependencies reference task indices. Use the in-memory array of issues
+      # created in this run to resolve indices reliably.
       dependency_indices.each do |dep_index|
-        dep_issue = siblings[dep_index]
+        dep_issue = created_issues[dep_index]
         next unless dep_issue && dep_issue.id != issue.id
 
         IssueDependency.find_or_create_by!(
@@ -115,6 +119,8 @@ module Activities
           depends_on_issue: dep_issue
         )
       end
+    rescue Temporalio::Error::CanceledError
+      raise
     rescue => e
       logger.warn(
         message: "planning.create_dependency_failed",

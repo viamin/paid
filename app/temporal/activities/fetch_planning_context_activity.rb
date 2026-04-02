@@ -51,6 +51,8 @@ module Activities
         limit: MAX_CONTEXT_RESULTS
       )
       result[:results].map { |r| { title: r[:title], content: r[:content].to_s.truncate(2000) } }
+    rescue Temporalio::Error::CanceledError
+      raise
     rescue => e
       logger.warn(
         message: "planning.knowledge_fetch_failed",

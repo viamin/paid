@@ -79,7 +79,9 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_including("Auth docs"),
-        anything
+        provider: :claude,
+        model: described_class::DEFAULT_MODEL,
+        timeout: described_class::TIMEOUT
       )
     end
 

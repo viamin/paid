@@ -111,12 +111,15 @@ module Activities
         )
       end
 
-      tasks.first(MAX_TASKS).map.with_index do |task, index|
+      truncated_tasks = tasks.first(MAX_TASKS)
+      task_count = truncated_tasks.length
+
+      truncated_tasks.map.with_index do |task, index|
         {
           index: index,
           title: task[:title].to_s.truncate(255),
           description: task[:description].to_s.truncate(5000),
-          dependencies: Array(task[:dependencies]).select { |d| d.is_a?(Integer) && d >= 0 && d < MAX_TASKS },
+          dependencies: Array(task[:dependencies]).select { |d| d.is_a?(Integer) && d >= 0 && d < task_count },
           parallel_group: task[:parallel_group].is_a?(Integer) ? task[:parallel_group] : index
         }
       end
