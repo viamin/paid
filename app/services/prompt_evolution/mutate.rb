@@ -227,6 +227,7 @@ module PromptEvolution
       cleaned = clean_output(raw_output)
       data = JSON.parse(cleaned)
       mutations_data = data.fetch("mutations") { return [] }
+      return [] unless mutations_data.is_a?(Array)
 
       mutations_data.filter_map { |m| build_mutation(m) }
     rescue JSON::ParserError => e
@@ -252,6 +253,8 @@ module PromptEvolution
     end
 
     def build_mutation(data)
+      return nil unless data.is_a?(Hash)
+
       template = data["template"].to_s.strip
       strategy = data["strategy"].to_s.strip
       reasoning = data["reasoning"].to_s.strip
@@ -260,7 +263,7 @@ module PromptEvolution
       return nil if template.blank?
       return nil if template.length > MAX_GENERATED_TEMPLATE_LENGTH
       return nil unless valid_variables?(template)
-      return nil unless STRATEGIES.include?(strategy)
+      return nil unless @strategies.include?(strategy)
 
       Mutation.new(
         template: template,

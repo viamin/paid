@@ -240,6 +240,22 @@ RSpec.describe PromptEvolution::Mutate do
 
       expect(mutations).to eq([])
     end
+
+    it "returns empty array when LLM returns JSON with non-array mutations" do
+      allow(harness_response).to receive(:output).and_return('{"mutations":"oops"}')
+
+      mutations = described_class.call(prompt: prompt)
+
+      expect(mutations).to eq([])
+    end
+
+    it "returns empty array when LLM returns JSON with non-hash mutation entries" do
+      allow(harness_response).to receive(:output).and_return('{"mutations":["not a hash"]}')
+
+      mutations = described_class.call(prompt: prompt)
+
+      expect(mutations).to eq([])
+    end
   end
 
   describe "mutation validation" do
@@ -314,7 +330,7 @@ RSpec.describe PromptEvolution::Mutate do
     end
 
     it "handles LLM response wrapped in quotes" do
-      quoted = "\"#{valid_llm_response.gsub('"', '\\"')}\""
+      quoted = "\"#{valid_llm_response.gsub('\\', '\\\\\\\\').gsub('"', '\\"')}\""
       allow(harness_response).to receive(:output).and_return(quoted)
 
       # The JSON inside quotes may not parse cleanly after unescaping,
@@ -333,6 +349,23 @@ RSpec.describe PromptEvolution::Mutate do
         a_string_matching(/refinement.*expansion/m),
         hash_including(provider: :claude)
       )
+    end
+
+    it "only returns mutations for the requested strategies" do
+      mixed_response = {
+        "mutations" => [
+          { "template" => "Refined {{title}}", "strategy" => "refinement",
+            "reasoning" => "test", "expected_improvement" => "test" },
+          { "template" => "Expanded {{title}}", "strategy" => "expansion",
+            "reasoning" => "test", "expected_improvement" => "test" }
+        ]
+      }.to_json
+      allow(harness_response).to receive(:output).and_return(mixed_response)
+
+      mutations = described_class.call(prompt: prompt, strategies: %w[refinement])
+
+      expect(mutations.size).to eq(1)
+      expect(mutations.first.strategy).to eq("refinement")
     end
   end
 
