@@ -28,7 +28,11 @@ class DashboardController < ApplicationController
 
   def metrics
     @time_range = valid_time_range
-    @stats = Dashboard::Stats.call(account: current_account, time_range: @time_range)
+    @stats = Dashboard::Stats.call(
+      account: current_account,
+      time_range: @time_range,
+      only: Dashboard::Stats::METRICS_SECTIONS
+    )
     render partial: "dashboard/metrics", locals: { stats: @stats, account: current_account, time_range: @time_range }
   end
 
@@ -40,7 +44,8 @@ class DashboardController < ApplicationController
       account: current_account,
       time_range: @time_range,
       status_filter: @status_filter,
-      goal_filter: @goal_filter
+      goal_filter: @goal_filter,
+      only: Dashboard::Stats::PERFORMANCE_SECTIONS
     )
     render partial: "dashboard/performance",
       locals: { stats: @stats, time_range: @time_range, status_filter: @status_filter, goal_filter: @goal_filter }

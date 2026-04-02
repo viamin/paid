@@ -9,13 +9,29 @@ module Dashboard
     VALID_STATUSES = %w[all completed failed].freeze
     VALID_GOALS = %w[all create_pr create_issue review].freeze
 
-    attr_reader :account, :time_range, :status_filter, :goal_filter
+    SECTIONS = %i[
+      run_volume duration_percentiles phase_breakdown cost_and_tokens
+      performance_by_outcome performance_by_goal
+      runs_by_agent_type runs_by_provider provider_fallback_stats
+      runs_by_project cost_by_project issue_completion
+    ].freeze
 
-    def initialize(account:, time_range: "cumulative", status_filter: "all", goal_filter: "all")
+    METRICS_SECTIONS = %i[
+      run_volume cost_and_tokens duration_percentiles phase_breakdown
+      issue_completion cost_by_project provider_fallback_stats
+      runs_by_provider runs_by_project
+    ].freeze
+
+    PERFORMANCE_SECTIONS = %i[performance_by_outcome performance_by_goal].freeze
+
+    attr_reader :account, :time_range, :status_filter, :goal_filter, :only_sections
+
+    def initialize(account:, time_range: "cumulative", status_filter: "all", goal_filter: "all", only: nil)
       @account = account
       @time_range = TIME_RANGES.include?(time_range) ? time_range : "cumulative"
       @status_filter = VALID_STATUSES.include?(status_filter) ? status_filter : "all"
       @goal_filter = VALID_GOALS.include?(goal_filter) ? goal_filter : "all"
+      @only_sections = only
     end
 
     def self.call(...)
@@ -23,20 +39,10 @@ module Dashboard
     end
 
     def call
-      {
-        run_volume: run_volume,
-        duration_percentiles: duration_percentiles,
-        phase_breakdown: phase_breakdown,
-        cost_and_tokens: cost_and_tokens,
-        performance_by_outcome: performance_by_outcome,
-        performance_by_goal: performance_by_goal,
-        runs_by_agent_type: runs_by_agent_type,
-        runs_by_provider: runs_by_provider,
-        provider_fallback_stats: provider_fallback_stats,
-        runs_by_project: runs_by_project,
-        cost_by_project: cost_by_project,
-        issue_completion: issue_completion
-      }
+      sections = only_sections || SECTIONS
+      sections.each_with_object({}) do |section, result|
+        result[section] = send(section)
+      end
     end
 
     private
@@ -126,7 +132,8 @@ module Dashboard
     def cost_and_tokens
       scope = time_filtered_runs
       now = Time.current
-      trailing_30 = scope.where(created_at: (now - 30.days)..now)
+      # Trailing windows always use unfiltered runs so labels stay accurate
+      trailing_30 = agent_runs.where(created_at: (now - 30.days)..now)
       completed_runs = scope.where(status: "completed")
       completed_count = completed_runs.count
 

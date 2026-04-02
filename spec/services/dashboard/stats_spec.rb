@@ -259,6 +259,32 @@ RSpec.describe Dashboard::Stats do
         result = described_class.call(account: account, time_range: "24h")
         expect(result[:run_volume][:total]).to eq(0)
       end
+
+      it "keeps trailing 30-day cost unfiltered when time_range narrows the window" do
+        result = described_class.call(account: account, time_range: "7d")
+        # Only 1 run in 7d window (cost 100), but trailing 30d should include 2 runs (cost 300)
+        expect(result[:cost_and_tokens][:total_cost_cents]).to eq(100)
+        expect(result[:cost_and_tokens][:trailing_30d_cost_cents]).to eq(300)
+      end
+    end
+
+    context "with only: section scoping" do
+      before do
+        create(:agent_run, :completed, project: project, cost_cents: 100,
+          tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
+      end
+
+      it "returns only requested sections" do
+        result = described_class.call(account: account, only: %i[run_volume])
+        expect(result).to have_key(:run_volume)
+        expect(result).not_to have_key(:cost_and_tokens)
+        expect(result).not_to have_key(:performance_by_outcome)
+      end
+
+      it "returns all sections when only is nil" do
+        result = described_class.call(account: account)
+        expect(result.keys).to match_array(Dashboard::Stats::SECTIONS)
+      end
     end
 
     context "with status and goal filters on performance" do
