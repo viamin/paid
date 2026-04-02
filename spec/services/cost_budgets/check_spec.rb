@@ -21,9 +21,41 @@ RSpec.describe CostBudgets::Check do
       end
     end
 
-    context "when budget is exceeded" do
+    context "when alert-mode budget is exceeded" do
+      it "returns allowed (alert mode does not block)" do
+        create(:cost_budget, project: project, budget_type: "monthly",
+          enforcement_mode: "alert",
+          limit_cents: 10_000, current_usage_cents: 10_001)
+        result = described_class.call(project)
+
+        expect(result[:allowed]).to be true
+      end
+    end
+
+    context "when hard_stop budget is exceeded" do
       it "returns blocked with reason" do
-        create(:cost_budget, project: project, budget_type: "monthly", limit_cents: 10_000, current_usage_cents: 10_001)
+        create(:cost_budget, :hard_stop, project: project, budget_type: "monthly",
+          limit_cents: 10_000, current_usage_cents: 10_001)
+        result = described_class.call(project)
+
+        expect(result[:allowed]).to be false
+        expect(result[:reason]).to include("monthly budget exceeded")
+        expect(result[:budget]).to be_a(CostBudget)
+      end
+    end
+
+    context "with grace buffer on hard_stop budget" do
+      it "allows when usage is within grace buffer" do
+        create(:cost_budget, :hard_stop, project: project, budget_type: "monthly",
+          limit_cents: 10_000, current_usage_cents: 10_500, grace_buffer_percent: 10)
+        result = described_class.call(project)
+
+        expect(result[:allowed]).to be true
+      end
+
+      it "blocks when usage exceeds grace buffer" do
+        create(:cost_budget, :hard_stop, project: project, budget_type: "monthly",
+          limit_cents: 10_000, current_usage_cents: 11_001, grace_buffer_percent: 10)
         result = described_class.call(project)
 
         expect(result[:allowed]).to be false
@@ -34,16 +66,16 @@ RSpec.describe CostBudgets::Check do
     context "with a per_run budget" do
       it "checks per_run usage against the specific agent_run's token_usages" do
         agent_run = create(:agent_run, :running, project: project)
-        create(:cost_budget, :per_run, project: project, limit_cents: 1_000, current_usage_cents: 0)
+        create(:cost_budget, :per_run, :hard_stop, project: project, limit_cents: 1_000, current_usage_cents: 0)
         create(:token_usage, agent_run: agent_run, cost_cents: 500)
 
         result = described_class.call(project, agent_run: agent_run)
         expect(result[:allowed]).to be true
       end
 
-      it "blocks when agent_run's token_usages exceed per_run limit" do
+      it "blocks when agent_run's token_usages exceed per_run hard_stop limit" do
         agent_run = create(:agent_run, :running, project: project)
-        create(:cost_budget, :per_run, project: project, limit_cents: 1_000, current_usage_cents: 0)
+        create(:cost_budget, :per_run, :hard_stop, project: project, limit_cents: 1_000, current_usage_cents: 0)
         create(:token_usage, agent_run: agent_run, cost_cents: 1_001)
 
         result = described_class.call(project, agent_run: agent_run)
@@ -51,19 +83,37 @@ RSpec.describe CostBudgets::Check do
         expect(result[:reason]).to include("per_run budget exceeded")
       end
 
+      it "does not block when per_run budget is alert-only" do
+        agent_run = create(:agent_run, :running, project: project)
+        create(:cost_budget, :per_run, project: project, enforcement_mode: "alert",
+          limit_cents: 1_000, current_usage_cents: 0)
+        create(:token_usage, agent_run: agent_run, cost_cents: 1_001)
+
+        result = described_class.call(project, agent_run: agent_run)
+        expect(result[:allowed]).to be true
+      end
+
       it "ignores per_run budgets when no agent_run is provided" do
-        create(:cost_budget, :per_run, project: project, limit_cents: 1_000, current_usage_cents: 5_000)
+        create(:cost_budget, :per_run, :hard_stop, project: project, limit_cents: 1_000, current_usage_cents: 5_000)
         result = described_class.call(project)
         expect(result[:allowed]).to be true
       end
 
       it "excludes run_summary records from per_run usage to avoid double-counting" do
         agent_run = create(:agent_run, :running, project: project)
-        create(:cost_budget, :per_run, project: project, limit_cents: 1_000, current_usage_cents: 0)
-        # Proxy record below budget
+        create(:cost_budget, :per_run, :hard_stop, project: project, limit_cents: 1_000, current_usage_cents: 0)
         create(:token_usage, agent_run: agent_run, cost_cents: 500, request_type: "agent")
-        # run_summary audit record that would push total over budget if counted
         create(:token_usage, agent_run: agent_run, cost_cents: 600, request_type: "run_summary")
+
+        result = described_class.call(project, agent_run: agent_run)
+        expect(result[:allowed]).to be true
+      end
+
+      it "respects grace buffer on per_run budgets" do
+        agent_run = create(:agent_run, :running, project: project)
+        create(:cost_budget, :per_run, :hard_stop, project: project,
+          limit_cents: 1_000, current_usage_cents: 0, grace_buffer_percent: 10)
+        create(:token_usage, agent_run: agent_run, cost_cents: 1_050)
 
         result = described_class.call(project, agent_run: agent_run)
         expect(result[:allowed]).to be true
@@ -72,7 +122,7 @@ RSpec.describe CostBudgets::Check do
 
     context "when a daily budget has stale usage from a previous period" do
       it "rolls over the period before checking" do
-        budget = create(:cost_budget, :daily, project: project,
+        budget = create(:cost_budget, :daily, :hard_stop, project: project,
           limit_cents: 1_000, current_usage_cents: 1_500,
           period_started_at: 2.days.ago)
         result = described_class.call(project)
@@ -83,11 +133,11 @@ RSpec.describe CostBudgets::Check do
     end
 
     context "when multiple budgets are exceeded" do
-      it "returns the most specific exceeded budget (per_run > daily > monthly)" do
-        create(:cost_budget, project: project, budget_type: "monthly",
+      it "returns the most specific exceeded budget (daily > monthly)" do
+        create(:cost_budget, :hard_stop, project: project, budget_type: "monthly",
           limit_cents: 10_000, current_usage_cents: 10_001,
           period_started_at: Time.current.beginning_of_month)
-        create(:cost_budget, project: project, budget_type: "daily",
+        create(:cost_budget, :hard_stop, project: project, budget_type: "daily",
           limit_cents: 1_000, current_usage_cents: 1_001,
           period_started_at: Time.current.beginning_of_day)
 

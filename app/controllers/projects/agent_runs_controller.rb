@@ -430,6 +430,12 @@ module Projects
     end
 
     def create_run_and_redirect(on_error_path:, **attrs)
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        redirect_to on_error_path, alert: "Budget limit reached: #{budget_result[:reason]}"
+        return
+      end
+
       create_agent_run(**attrs)
       ProcessRunQueueJob.perform_later
 

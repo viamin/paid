@@ -199,6 +199,17 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   def start_claimed_run(agent_run)
+    budget_result = CostBudgets::Check.call(agent_run.project)
+    unless budget_result[:allowed]
+      agent_run.fail!(error: "Budget enforcement: #{budget_result[:reason]}")
+      Rails.logger.warn(
+        message: "process_run_queue.budget_blocked",
+        agent_run_id: agent_run.id,
+        reason: budget_result[:reason]
+      )
+      return true # not a workflow failure, don't count as consecutive failure
+    end
+
     workflow_input = {
       project_id: agent_run.project_id,
       agent_type: agent_run.agent_type,

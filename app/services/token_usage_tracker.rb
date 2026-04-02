@@ -45,6 +45,7 @@ class TokenUsageTracker
         )
 
         update_cost_budgets(agent_run.project, cost_cents)
+        enforce_hard_stop_budgets(agent_run)
       end
 
       agent_run.log!("metric", {
@@ -117,4 +118,23 @@ class TokenUsageTracker
     end
   end
   private_class_method :update_cost_budgets
+
+  # Checks hard_stop budgets after recording usage. If any budget is
+  # exceeded, cancels the running agent to enforce the cost limit.
+  def self.enforce_hard_stop_budgets(agent_run)
+    return unless agent_run.status == "running"
+
+    result = CostBudgets::Check.call(agent_run.project, agent_run: agent_run)
+    return if result[:allowed]
+
+    Rails.logger.warn(
+      message: "cost_budget.hard_stop_enforced",
+      agent_run_id: agent_run.id,
+      reason: result[:reason]
+    )
+
+    AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
+    agent_run.fail!(error: "Budget enforcement: #{result[:reason]}")
+  end
+  private_class_method :enforce_hard_stop_budgets
 end
