@@ -210,7 +210,7 @@ module Activities
             agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
             logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message)
             raise Temporalio::Error::ApplicationError.new(
-              "Infinite loop detected",
+              "Infinite loop detected: #{e.message}",
               type: "InfiniteLoopDetected",
               non_retryable: true
             )
