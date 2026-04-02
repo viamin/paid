@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "shellwords"
 
 RSpec.describe Containers::GitOperations do
   let(:project) { create(:project) }
@@ -594,6 +595,29 @@ RSpec.describe Containers::GitOperations do
       expect(git_ops.commit_uncommitted_changes).to be true
     end
 
+    it "appends the co-author trailer to the commit message when configured" do
+      status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "status", "--porcelain" ], timeout: nil, stream: false)
+        .and_return(status_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "add", "-A" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+      expect(container_service).to receive(:execute)
+        .with(
+          [ "git", "commit", "--no-verify", "-m",
+            "Apply agent changes\n\nCo-Authored-By: Claude <noreply@anthropic.com>" ],
+          timeout: nil, stream: false
+        )
+        .and_return(success_result)
+
+      expect(git_ops.commit_uncommitted_changes).to be true
+    end
+
     it "raises Error when staging fails" do
       status_result = Containers::Provision::Result.success(stdout: "M  file.rb\n", stderr: "", exit_code: 0)
       allow(container_service).to receive(:execute)
@@ -1091,6 +1115,283 @@ RSpec.describe Containers::GitOperations do
           hash_including(message: "container_git.install_hooks_failed")
         )
       end
+    end
+  end
+
+  describe "#install_co_author_hook" do
+    let(:hook_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
+    let(:hook_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+    let(:marker_missing_result) { Containers::Provision::Result.failure(error: "not found", stdout: "", stderr: "", exit_code: 1) }
+    let(:marker_exists_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
+
+    context "when project has a trailer configured" do
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "installs a commit-msg hook that appends the trailer" do
+        hook_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false) { |script, **|
+            hook_script = script
+            success_result
+          }
+
+        git_ops.install_co_author_hook
+
+        escaped_trailer = Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>")
+        expect(hook_script).to include(escaped_trailer)
+        expect(hook_script).to include("grep -qF --")
+      end
+    end
+
+    context "when trailer contains a single quote" do
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: O'Brien <ob@example.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "correctly escapes the trailer using Shellwords" do
+        hook_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false) { |script, **|
+            hook_script = script
+            success_result
+          }
+
+        git_ops.install_co_author_hook
+
+        expect(hook_script).to include(Shellwords.shellescape("Co-Authored-By: O'Brien <ob@example.com>"))
+        expect(hook_script).not_to include("''")
+      end
+    end
+
+    context "when project has no trailer configured" do
+      before { project.update!(agent_co_author_trailer: nil) }
+
+      it "does not install a hook" do
+        expect(container_service).not_to receive(:execute)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
+    context "when a commit-msg hook already exists" do
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "renames the existing hook and installs a wrapper" do
+        captured_script = nil
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false) { |script, **|
+            captured_script = script
+            success_result
+          }
+
+        git_ops.install_co_author_hook
+
+        escaped_trailer = Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>")
+        expect(captured_script).to include(".git/hooks/commit-msg.original")
+        expect(captured_script).to include(escaped_trailer)
+        expect(captured_script).to include("#!/bin/sh")
+      end
+    end
+
+    context "when a prior failed installation left commit-msg.original orphaned" do
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        # commit-msg.original exists initially, but is gone after the restore mv
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_exists_result, hook_missing_result)
+        # commit-msg is missing initially, exists after restore, then exists
+        # again after the wrapper renames it back to .original
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_missing_result, hook_exists_result)
+        # Restores original hook
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+        # Then proceeds with normal wrapper flow: rename restored hook back
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("chmod +x .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+      end
+
+      it "restores the original hook and then installs the wrapper with the trailer" do
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_return(success_result)
+
+        git_ops.install_co_author_hook
+
+        # Verify the restore step happened
+        expect(container_service).to have_received(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+        # Verify the hook script was actually written with the marker and trailer
+        escaped_trailer = Regexp.escape(Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>"))
+        expect(container_service).to have_received(:execute)
+          .with(
+            a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/).and(
+              a_string_matching(/Installed by Paid/)
+            ).and(
+              a_string_matching(/#{escaped_trailer}/)
+            ),
+            timeout: nil, stream: false
+          )
+      end
+    end
+
+    context "when the hook marker is already present (idempotency)" do
+      before { project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>") }
+
+      it "skips installation to avoid duplicate appends" do
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_exists_result)
+
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/cat >>/), timeout: nil, stream: false)
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/cat > /), timeout: nil, stream: false)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
+    context "when commit-msg.original already exists alongside commit-msg" do
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        # Both commit-msg.original and commit-msg exist
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+      end
+
+      it "skips installation to avoid overwriting the existing backup" do
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/mv .git\/hooks\/commit-msg /), timeout: nil, stream: false)
+        expect(container_service).not_to receive(:execute)
+          .with(a_string_matching(/cat > /), timeout: nil, stream: false)
+
+        git_ops.install_co_author_hook
+      end
+    end
+
+    context "when an exception occurs after renaming the original hook" do
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result, hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(success_result)
+        # Simulate an exception (not a Result failure) during hook write
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_raise(RuntimeError, "connection lost")
+      end
+
+      it "cleans up the tmp file and restores the original hook" do
+        allow(container_service).to receive(:execute)
+          .with("rm -f .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+
+        # install_co_author_hook rescues all errors at the top level
+        expect { git_ops.install_co_author_hook }.not_to raise_error
+
+        expect(container_service).to have_received(:execute)
+          .with("rm -f .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+        expect(container_service).to have_received(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+      end
+    end
+
+    it "does not raise when installation fails" do
+      project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+      allow(container_service).to receive(:execute).and_raise(StandardError, "container error")
+
+      expect { git_ops.install_co_author_hook }.not_to raise_error
     end
   end
 end
