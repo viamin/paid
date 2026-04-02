@@ -7,7 +7,7 @@ require "tempfile"
 module Knowledge
   module Collectors
     class ChurnHotspotCollector < BaseCollector
-      MAAT_TIMEOUT = 120 # seconds
+      COLLECTOR_TIMEOUT = 120 # seconds
       GIT_LOG_FORMAT = "--%h--%ad--%aN"
 
       def collect
@@ -42,7 +42,7 @@ module Knowledge
 
           output = run_command(
             "ruby-maat", "-c", "git2", "-l", f.path, "-a", "revisions", "-n", "1",
-            timeout: MAAT_TIMEOUT
+            timeout: COLLECTOR_TIMEOUT
           )
           parse_csv(output)
         end
@@ -58,7 +58,7 @@ module Knowledge
       def run_complexity(repo_path)
         output = run_command(
           "scc", "--by-file", "-f", "json", repo_path,
-          timeout: MAAT_TIMEOUT
+          timeout: COLLECTOR_TIMEOUT
         )
         parse_scc_complexity(output, repo_path)
       rescue StandardError => e
@@ -70,22 +70,19 @@ module Knowledge
         []
       end
 
-      # Streams git log output directly to the given file to avoid loading
-      # the entire log into a Ruby string (can be very large for big repos).
+      # Runs git log and writes the output to the given file. Uses
+      # run_command so that container execution mode and timeout / process
+      # cleanup behavior are consistent with other collectors.
       def stream_git_log(repo_path, output_file)
-        args = [
+        output = run_command(
           "git", "-C", repo_path, "log", "--all", "--numstat",
-          "--date=short", "--pretty=format:#{GIT_LOG_FORMAT}", "--no-renames"
-        ]
+          "--date=short", "--pretty=format:#{GIT_LOG_FORMAT}", "--no-renames",
+          timeout: COLLECTOR_TIMEOUT
+        )
+        return if output.blank?
 
-        Timeout.timeout(MAAT_TIMEOUT) do
-          Open3.popen3(*args, pgroup: true) do |stdin, stdout, _stderr, wait_thr|
-            stdin.close
-            output_file.write(stdout.read)
-            output_file.flush
-            raise "git log failed (exit #{wait_thr.value.exitstatus})" unless wait_thr.value.success?
-          end
-        end
+        output_file.write(output)
+        output_file.flush
       end
 
       def parse_csv(output)

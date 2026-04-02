@@ -28,19 +28,23 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
   end
 
   # Helper to stub all three shell commands used by the collector:
-  # git log, ruby-maat, and scc. Raises on unrecognized commands to prevent
-  # tests from silently passing when the collector shells out unexpectedly.
+  # git log, ruby-maat, and scc. Validates the expected command shape for each
+  # invocation and raises on unrecognized commands to prevent tests from
+  # silently passing when the collector shells out unexpectedly.
   def stub_collector_commands(git_log: git_log_data, revisions: revisions_csv, scc: scc_by_file_json)
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
       status = instance_double(Process::Status, success?: true, exitstatus: 0)
       wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
       stdin_io = Popen3Stub::FakeIO.new
 
-      stdout_content = case args.first
-      when "ruby-maat" then revisions
-      when "scc" then scc
-      when "git" then git_log
-      else raise "Unexpected command in test: #{args.inspect}"
+      stdout_content = if args.first == "git" && args.include?("log")
+        git_log
+      elsif args.first == "ruby-maat"
+        revisions
+      elsif args.first == "scc"
+        scc
+      else
+        raise "Unexpected command in test: #{args.inspect}"
       end
 
       block.call(stdin_io, Popen3Stub::FakeIO.new(stdout_content), Popen3Stub::FakeIO.new(""), wait_thr)
@@ -51,12 +55,11 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
       stdin_io = Popen3Stub::FakeIO.new
 
-      case args.first
-      when "git"
+      if args.first == "git" && args.include?("log")
         status = instance_double(Process::Status, success?: false, exitstatus: 1)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new(""), Popen3Stub::FakeIO.new("error"), wait_thr)
-      when "scc"
+      elsif args.first == "scc"
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
         block.call(stdin_io, Popen3Stub::FakeIO.new(scc), Popen3Stub::FakeIO.new(""), wait_thr)
