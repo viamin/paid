@@ -100,11 +100,11 @@ cp .env.example .env
 # Start the full dev stack
 docker compose up --build
 
-# In another terminal, setup the database
-docker compose exec web bin/rails db:prepare
+# On first boot, wait for the web service to finish `bin/setup`
+# before using the app. `bin/setup` already runs `bin/rails db:prepare`.
 ```
 
-> **Note**: The checked-in `docker-compose.yml` starts `postgres`, `temporal`, `temporal-ui`, `qdrant`, `web`, and `worker`. It already wires `DATABASE_URL`, Temporal, and Qdrant for the app. `ANTHROPIC_API_KEY` is passed through today; if you want proxy-based OpenAI or Google auth in Compose, add `OPENAI_API_KEY` and/or `GOOGLE_API_KEY` to the `web` service, and to `worker` as well if you want worker-side flows to see them.
+> **Note**: By default, the checked-in `docker-compose.yml` starts `postgres`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `qdrant`, `web`, and `worker` when you run `docker compose up --build`. The `agent-image` and `agent-test` services are profile-gated, so they only start when their profiles are explicitly enabled. The compose file already wires `DATABASE_URL`, Temporal, and Qdrant for the app. `ANTHROPIC_API_KEY` is passed through today; if you want proxy-based OpenAI or Google auth in Compose, add `OPENAI_API_KEY` and/or `GOOGLE_API_KEY` to the `web` service, and to `worker` as well if you want worker-side flows to see them.
 
 ### Option 2: Dev Container
 
