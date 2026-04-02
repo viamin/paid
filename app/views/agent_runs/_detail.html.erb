@@ -85,7 +85,7 @@
         <% limit = agent_run.effective_max_tokens_per_run %>
         <% if limit && limit > 0 %>
           <% ratio = agent_run.token_limit_usage_ratio || 0 %>
-          <% percent = [ratio * 100, 100].min.round(1) %>
+          <% percent = [(ratio * 100).round(1), 100].min %>
           <% warning_ratio = agent_run.project.token_limit_warning_threshold / 100.0 %>
           <div class="mt-2">
             <div class="flex items-center justify-between text-xs text-gray-500">

@@ -80,7 +80,7 @@ class TokenUsageTracker
 
     return if new_status == previous_status
 
-    agent_run.update_column(:token_limit_status, new_status)
+    agent_run.update!(token_limit_status: new_status)
 
     if new_status == "warning" && previous_status != "warning"
       agent_run.log!(

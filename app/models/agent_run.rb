@@ -11,6 +11,7 @@ class AgentRun < ApplicationRecord
   UNFINISHED_STATUSES = %w[queued pending running].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
+  DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
 
   belongs_to :project
   belongs_to :issue, optional: true
@@ -358,7 +359,7 @@ class AgentRun < ApplicationRecord
     project.max_tokens_per_run ||
       AgentRuns::UserSettingsResolver.call(project: project, strict: false)&.max_tokens_per_run ||
       project.account.default_max_tokens_per_run ||
-      Api::SecretsProxyController::DEFAULT_MAX_TOKENS_PER_RUN
+      DEFAULT_MAX_TOKENS_PER_RUN
   end
 
   # Returns the fraction of the token limit consumed (0.0–1.0+).

@@ -7,8 +7,9 @@ module Api
     before_action :check_rate_limit
 
     # Default maximum tokens per agent run before rate limiting kicks in.
-    # Overridden by UserSetting#max_tokens_per_run at runtime.
-    DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
+    # Canonical value lives on AgentRun::DEFAULT_MAX_TOKENS_PER_RUN;
+    # this alias keeps existing references working.
+    DEFAULT_MAX_TOKENS_PER_RUN = AgentRun::DEFAULT_MAX_TOKENS_PER_RUN
 
     # POST /api/proxy/anthropic/*path
     def anthropic
