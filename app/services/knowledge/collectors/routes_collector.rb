@@ -44,7 +44,7 @@ module Knowledge
         end
 
         # Guard: skip non-Rails repos that lack a routes file or rails binstub.
-        unless repo_file_exists?(SCOPE_PATH)
+        unless repo_file_exists?(SCOPE_PATH) && repo_file_exists?("bin/rails")
           return nil
         end
 

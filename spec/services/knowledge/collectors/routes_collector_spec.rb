@@ -147,6 +147,8 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       before do
         allow(command_collector).to receive(:repo_file_exists?)
           .with("config/routes.rb").and_return(true)
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("bin/rails").and_return(true)
       end
 
       it "runs bin/rails routes --expanded" do
@@ -167,6 +169,17 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       it "returns empty array when config/routes.rb is missing" do
         allow(command_collector).to receive(:repo_file_exists?)
           .with("config/routes.rb").and_return(false)
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("bin/rails").and_return(true)
+
+        expect(command_collector.collect).to eq([])
+      end
+
+      it "returns empty array when bin/rails binstub is missing" do
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("config/routes.rb").and_return(true)
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("bin/rails").and_return(false)
 
         expect(command_collector.collect).to eq([])
       end
