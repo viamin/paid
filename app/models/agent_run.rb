@@ -51,6 +51,7 @@ class AgentRun < ApplicationRecord
   validates :review_url, length: { maximum: 500 }
   validates :temporal_workflow_id, length: { maximum: 255 }
   validates :temporal_run_id, length: { maximum: 255 }
+  validates :parent_workflow_id, length: { maximum: 255 }
   validates :container_id, length: { maximum: 128 }
   validates :iterations, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :tokens_input, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
@@ -187,6 +188,11 @@ class AgentRun < ApplicationRecord
     end
 
     scope.count
+  end
+
+  # Returns the count of active runs for a given project.
+  def self.active_count_for_project(project)
+    active.where(project_id: project.id).count
   end
 
   # Returns true if this user is the fallback owner for orphaned
