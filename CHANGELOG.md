@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.2](https://github.com/viamin/paid/compare/v0.14.1...v0.14.2) (2026-04-02)
+
+
+### Bug Fixes
+
+* 685: Add time range filters to metrics and category/status filters to performance section ([#747](https://github.com/viamin/paid/issues/747)) ([52f95c6](https://github.com/viamin/paid/commit/52f95c6626e66a74b4a9c56b9510de705679ab79))
+* 689: Make tables horizontally scrollable on mobile devices ([#748](https://github.com/viamin/paid/issues/748)) ([1289066](https://github.com/viamin/paid/commit/1289066233e8f375b74425840893759dd9e0ffd1))
+* 690: feat(knowledge): install ruby-maat gem and wire up ChurnHotspotCollector ([#750](https://github.com/viamin/paid/issues/750)) ([d5cc546](https://github.com/viamin/paid/commit/d5cc546f9115c8acb9404f128d02deaf23cc36d0))
+* 691: fix(knowledge): RoutesCollector reads a file that nothing generates ([#749](https://github.com/viamin/paid/issues/749)) ([ded1b6d](https://github.com/viamin/paid/commit/ded1b6de4000a8611f56e2cb2beb3fd7811c2721))
+* 695: feat(orchestration): create sub-issues in GitHub from decomposed plan ([#753](https://github.com/viamin/paid/issues/753)) ([7bd8ad9](https://github.com/viamin/paid/commit/7bd8ad9b05dd15de7b42013594db26539fb7241b))
+* 696: feat(orchestration): parallel AgentExecutionWorkflow invocation ([#755](https://github.com/viamin/paid/issues/755)) ([0c8b164](https://github.com/viamin/paid/commit/0c8b164af1c287c38080710013c55db739664e2e))
+* **knowledge:** show specific error details when collection fails ([#746](https://github.com/viamin/paid/issues/746)) ([478e283](https://github.com/viamin/paid/commit/478e28304c8ea537fe696d1a79e8f94c784c44bb))
+
 ## [0.14.1](https://github.com/viamin/paid/compare/v0.14.0...v0.14.1) (2026-04-02)
 
 
