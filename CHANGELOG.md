@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.14.1](https://github.com/viamin/paid/compare/v0.14.0...v0.14.1) (2026-04-02)
+
+
+### Bug Fixes
+
+* 656: Add project setting to append provider co-authored-by to agent run commits ([#675](https://github.com/viamin/paid/issues/675)) ([78f1150](https://github.com/viamin/paid/commit/78f11502e325bc039f3c8791d53629e782585fc2))
+* 683: Issue status should reflect overall lifecycle, not latest agent run status ([#744](https://github.com/viamin/paid/issues/744)) ([a7d6a7a](https://github.com/viamin/paid/commit/a7d6a7a7127dbb7b66100e7d179b6ef0deaddf72))
+* 693: fix(knowledge): ContainerizedRunner bind mount is empty in DinD/DooD environments ([#743](https://github.com/viamin/paid/issues/743)) ([eb1abbf](https://github.com/viamin/paid/commit/eb1abbf09e61a6cf73ee337bad59c0ffb7fb07f3))
+* **knowledge:** add fetch refspec to bare clones so staleness detection works ([#688](https://github.com/viamin/paid/issues/688)) ([d92d9c3](https://github.com/viamin/paid/commit/d92d9c3d2fe4c0445085a2b15dc41a936ff1a300))
+
 ## [0.14.0](https://github.com/viamin/paid/compare/v0.13.0...v0.14.0) (2026-04-01)
 
 
