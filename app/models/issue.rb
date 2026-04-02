@@ -182,6 +182,57 @@ class Issue < ApplicationRecord
     dependents
   end
 
+  # Compute lifecycle statuses for a collection of issues.
+  # Returns a Hash of issue_id => :blocked | :in_progress | :eligible
+  def self.lifecycle_statuses(issues)
+    issues = issues.to_a
+    return {} if issues.empty?
+
+    issue_ids = issues.map(&:id)
+
+    # Match blocking_issues semantics: open dependencies excluding recommend_close
+    blocked_by_local = IssueDependency
+      .joins(:depends_on_issue)
+      .where(issue_id: issue_ids, depends_on_issue: { github_state: "open" })
+      .where.not(depends_on_issue: { paid_state: "recommend_close" })
+      .pluck(:issue_id)
+      .to_set
+
+    # Match IssueDependency#external? semantics: owner+repo+number present, no local issue link
+    blocked_by_external = IssueDependency
+      .where(issue_id: issue_ids, depends_on_issue_id: nil)
+      .where.not(depends_on_owner: [ nil, "" ])
+      .where.not(depends_on_repo: [ nil, "" ])
+      .where.not(depends_on_number: nil)
+      .pluck(:issue_id)
+      .to_set
+
+    blocked_ids = blocked_by_local | blocked_by_external
+
+    active_run_ids = AgentRun
+      .where(issue_id: issue_ids, status: AgentRun::UNFINISHED_STATUSES)
+      .pluck(:issue_id)
+      .to_set
+
+    has_open_pr_ids = Issue
+      .where(parent_issue_id: issue_ids, is_pull_request: true, github_state: "open")
+      .distinct
+      .pluck(:parent_issue_id)
+      .to_set
+
+    in_progress_ids = active_run_ids | has_open_pr_ids
+
+    issues.each_with_object({}) do |issue, hash|
+      hash[issue.id] = if blocked_ids.include?(issue.id)
+        :blocked
+      elsif in_progress_ids.include?(issue.id)
+        :in_progress
+      else
+        :eligible
+      end
+    end
+  end
+
   private
 
   def parent_issue_belongs_to_same_project
