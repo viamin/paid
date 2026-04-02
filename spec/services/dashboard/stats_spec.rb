@@ -445,11 +445,28 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with deleted routed provider entries" do
+      let(:owner) { project.effective_owner }
+      let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
+      let(:deleted_provider_routing_key) do
+        provider = create(:provider, :api_key, user: owner, provider_key: "opencode",
+          provider_api_key: api_key, name: "Deleted Provider Entry 1")
+        routing_key = provider.routing_key
+        provider.destroy!
+        routing_key
+      end
+      let(:other_deleted_provider_routing_key) do
+        provider = create(:provider, :api_key, user: owner, provider_key: "opencode",
+          provider_api_key: api_key, name: "Deleted Provider Entry 2")
+        routing_key = provider.routing_key
+        provider.destroy!
+        routing_key
+      end
+
       before do
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: "provider:999999", provider_switches: 1)
+          final_provider: deleted_provider_routing_key, provider_switches: 1)
         create(:agent_run, :completed, project: project, agent_type: "claude_code",
-          final_provider: "provider:888888", provider_switches: 1)
+          final_provider: other_deleted_provider_routing_key, provider_switches: 1)
       end
 
       it "shows a deleted provider entry label in runs_by_provider" do

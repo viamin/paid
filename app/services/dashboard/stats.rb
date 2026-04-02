@@ -509,7 +509,9 @@ module Dashboard
       routing_ids = identifiers.filter_map { |identifier| Provider.id_from_routing_key(identifier) }.uniq
       return {} if routing_ids.empty?
 
-      Provider.where(id: routing_ids).index_by(&:routing_key)
+      Provider.joins(:user)
+              .where(id: routing_ids, users: { account_id: account.id })
+              .index_by(&:routing_key)
     end
 
     def provider_label(identifier, provider_record)
