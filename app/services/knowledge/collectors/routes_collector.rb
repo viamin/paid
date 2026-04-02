@@ -28,12 +28,17 @@ module Knowledge
           return File.read(routes_file)
         end
 
-        # Fall back to the pre-generated expanded routes file within the repo.
-        expanded_path = File.join("tmp", "routes_expanded.txt")
-        if repo_file_exists?(expanded_path)
-          return read_repo_file(expanded_path)
-        end
+        # Generate routes by running the rails command directly.
+        generate_routes_output
+      end
 
+      def generate_routes_output
+        run_command("bin/rails", "routes", "--expanded", timeout: 60)
+      rescue => e
+        Rails.logger.info(
+          message: "routes_collector.generate_routes_failed",
+          error: e.message
+        )
         nil
       end
 
