@@ -21,6 +21,10 @@ module Knowledge
       private
 
       def skip_reason
+        if options[:routes_file].present?
+          return "routes_file not found or empty (#{options[:routes_file]})"
+        end
+
         return "repository path not available" if resolve_repo_path.nil?
 
         unless repo_file_exists?("config/routes.rb")

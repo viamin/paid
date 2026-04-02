@@ -73,7 +73,7 @@ module Knowledge
 
       collector_run.with_lock do
         if collector_run.status == "completed"
-          return { collector_type: collector_type, status: "skipped" }
+          return { collector_type: collector_type, status: "completed", cached: true }
         end
 
         if collector_run.status == "running"

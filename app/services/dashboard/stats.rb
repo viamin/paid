@@ -5,10 +5,33 @@ module Dashboard
     PHASE_BREAKDOWN_WINDOW = 30.days
     PHASE_BREAKDOWN_RUN_LIMIT = 500
 
-    attr_reader :account
+    TIME_RANGES = %w[cumulative 30d 7d 24h].freeze
+    VALID_STATUSES = %w[all completed failed].freeze
+    VALID_GOALS = %w[all create_pr create_issue review].freeze
 
-    def initialize(account:)
+    SECTIONS = %i[
+      run_volume duration_percentiles phase_breakdown cost_and_tokens
+      performance_by_outcome performance_by_goal
+      runs_by_agent_type runs_by_provider provider_fallback_stats
+      runs_by_project cost_by_project issue_completion
+    ].freeze
+
+    METRICS_SECTIONS = %i[
+      run_volume cost_and_tokens duration_percentiles phase_breakdown
+      issue_completion cost_by_project provider_fallback_stats
+      runs_by_provider runs_by_project
+    ].freeze
+
+    PERFORMANCE_SECTIONS = %i[performance_by_outcome performance_by_goal].freeze
+
+    attr_reader :account, :time_range, :status_filter, :goal_filter, :only_sections
+
+    def initialize(account:, time_range: "cumulative", status_filter: "all", goal_filter: "all", only: nil)
       @account = account
+      @time_range = TIME_RANGES.include?(time_range) ? time_range : "cumulative"
+      @status_filter = VALID_STATUSES.include?(status_filter) ? status_filter : "all"
+      @goal_filter = VALID_GOALS.include?(goal_filter) ? goal_filter : "all"
+      @only_sections = only
     end
 
     def self.call(...)
@@ -16,20 +39,10 @@ module Dashboard
     end
 
     def call
-      {
-        run_volume: run_volume,
-        duration_percentiles: duration_percentiles,
-        phase_breakdown: phase_breakdown,
-        cost_and_tokens: cost_and_tokens,
-        performance_by_outcome: performance_by_outcome,
-        performance_by_goal: performance_by_goal,
-        runs_by_agent_type: runs_by_agent_type,
-        runs_by_provider: runs_by_provider,
-        provider_fallback_stats: provider_fallback_stats,
-        runs_by_project: runs_by_project,
-        cost_by_project: cost_by_project,
-        issue_completion: issue_completion
-      }
+      sections = only_sections || SECTIONS
+      sections.each_with_object({}) do |section, result|
+        result[section] = send(section)
+      end
     end
 
     private
@@ -50,21 +63,48 @@ module Dashboard
       @agent_runs ||= AgentRun.joins(:project).where(projects: { account_id: account.id })
     end
 
+    def time_filtered_runs
+      @time_filtered_runs ||= apply_time_range(agent_runs)
+    end
+
+    def performance_filtered_runs
+      @performance_filtered_runs ||= begin
+        scope = time_filtered_runs
+        scope = scope.where(status: status_filter) unless status_filter == "all"
+        scope = scope.where(goal: goal_filter) unless goal_filter == "all"
+        scope
+      end
+    end
+
+    def apply_time_range(scope)
+      return scope if time_range == "cumulative"
+
+      cutoff = case time_range
+      when "30d" then 30.days.ago
+      when "7d" then 7.days.ago
+      when "24h" then 24.hours.ago
+      end
+      scope.where(created_at: cutoff..)
+    end
+
     def run_volume
+      scope = time_filtered_runs
       now = Time.current
       {
-        total: agent_runs.count,
+        total: scope.count,
+        # Trailing windows always use unfiltered runs so labels stay accurate
         last_7_days: agent_runs.where(created_at: (now - 7.days)..now).count,
         last_30_days: agent_runs.where(created_at: (now - 30.days)..now).count,
-        active: agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).count,
-        by_status: agent_runs.group(:status).count,
+        active: scope.where(status: AgentRun::UNFINISHED_STATUSES).count,
+        by_status: scope.group(:status).count,
         failure_rate: failure_rate
       }
     end
 
     def failure_rate
-      completed = agent_runs.where(status: "completed").count
-      failed = agent_runs.where(status: "failed").count
+      scope = time_filtered_runs
+      completed = scope.where(status: "completed").count
+      failed = scope.where(status: "failed").count
       total = completed + failed
       return 0.0 if total.zero?
 
@@ -72,7 +112,7 @@ module Dashboard
     end
 
     def duration_percentiles
-      result = agent_runs.where(status: "completed")
+      result = time_filtered_runs.where(status: "completed")
         .where.not(duration_seconds: nil)
         .pick(
           Arel.sql("percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_seconds)"),
@@ -90,12 +130,14 @@ module Dashboard
     end
 
     def cost_and_tokens
+      scope = time_filtered_runs
       now = Time.current
+      # Trailing windows always use unfiltered runs so labels stay accurate
       trailing_30 = agent_runs.where(created_at: (now - 30.days)..now)
-      completed_runs = agent_runs.where(status: "completed")
+      completed_runs = scope.where(status: "completed")
       completed_count = completed_runs.count
 
-      totals = agent_runs.pick(
+      totals = scope.pick(
         Arel.sql("COALESCE(SUM(cost_cents), 0)"),
         Arel.sql("COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0)")
       )
@@ -150,7 +192,7 @@ module Dashboard
     def recent_completed_runs_for_phase_breakdown
       now = Time.current
 
-      agent_runs.where(status: "completed", created_at: (now - PHASE_BREAKDOWN_WINDOW)..now)
+      time_filtered_runs.where(status: "completed", created_at: (now - PHASE_BREAKDOWN_WINDOW)..now)
         .order(created_at: :desc)
         .limit(PHASE_BREAKDOWN_RUN_LIMIT)
         .includes(:agent_run_phases)
@@ -158,14 +200,14 @@ module Dashboard
     end
 
     def avg_iterations_per_run
-      result = agent_runs.where(status: "completed")
+      result = time_filtered_runs.where(status: "completed")
         .where("iterations > 0")
         .pick(Arel.sql("AVG(iterations)"))
       result&.to_f&.round(1) || 0.0
     end
 
     def performance_by_outcome
-      finished = agent_runs.finished
+      finished = performance_filtered_runs.finished
       outcome_sql = Arel.sql(<<~SQL.squish)
         CASE WHEN status = 'completed' THEN 'completed' ELSE 'other' END
       SQL
@@ -200,7 +242,7 @@ module Dashboard
 
     def performance_by_goal
       # Pre-aggregate per (goal, outcome) to avoid N+1 queries.
-      finished = agent_runs.finished
+      finished = performance_filtered_runs.finished
       outcome_case = Arel.sql(<<~SQL.squish)
         CASE WHEN status = 'completed' THEN 'completed' ELSE 'other' END
       SQL
@@ -290,24 +332,24 @@ module Dashboard
     end
 
     def runs_by_agent_type
-      agent_runs.group(:agent_type).count.sort_by { |_, v| -v }
+      time_filtered_runs.group(:agent_type).count.sort_by { |_, v| -v }
     end
 
     def runs_by_provider
-      agent_runs
+      time_filtered_runs
         .group(Arel.sql(effective_provider_sql))
         .count
         .sort_by { |_, v| -v }
     end
 
     def provider_fallback_stats
-      total = agent_runs.count
+      total = time_filtered_runs.count
       table = AgentRun.arel_table
       switches = table[:provider_switches].gt(0)
       provider_changed = table[:final_provider].not_eq(nil)
         .and(table[:final_provider].not_eq(""))
         .and(Arel.sql(normalized_final_provider_sql).not_eq(Arel.sql(normalized_agent_type_sql)))
-      fallback_runs = agent_runs.where(switches.or(provider_changed))
+      fallback_runs = time_filtered_runs.where(switches.or(provider_changed))
       fallback_count = fallback_runs.count
 
       {
@@ -323,7 +365,7 @@ module Dashboard
     end
 
     def runs_by_project
-      agent_runs
+      time_filtered_runs
         .group("projects.name")
         .count
         .sort_by { |_, v| -v }

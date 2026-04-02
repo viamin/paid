@@ -233,6 +233,94 @@ RSpec.describe Dashboard::Stats do
       end
     end
 
+    context "with time_range filter" do
+      before do
+        create(:agent_run, :completed, project: project, created_at: 2.days.ago, cost_cents: 100)
+        create(:agent_run, :completed, project: project, created_at: 10.days.ago, cost_cents: 200)
+        create(:agent_run, :completed, project: project, created_at: 40.days.ago, cost_cents: 300)
+      end
+
+      it "returns all runs for cumulative" do
+        result = described_class.call(account: account, time_range: "cumulative")
+        expect(result[:run_volume][:total]).to eq(3)
+      end
+
+      it "filters to past 7 days" do
+        result = described_class.call(account: account, time_range: "7d")
+        expect(result[:run_volume][:total]).to eq(1)
+      end
+
+      it "filters to past 30 days" do
+        result = described_class.call(account: account, time_range: "30d")
+        expect(result[:run_volume][:total]).to eq(2)
+      end
+
+      it "filters to past 24 hours" do
+        result = described_class.call(account: account, time_range: "24h")
+        expect(result[:run_volume][:total]).to eq(0)
+      end
+
+      it "keeps trailing 30-day cost unfiltered when time_range narrows the window" do
+        result = described_class.call(account: account, time_range: "7d")
+        # Only 1 run in 7d window (cost 100), but trailing 30d should include 2 runs (cost 300)
+        expect(result[:cost_and_tokens][:total_cost_cents]).to eq(100)
+        expect(result[:cost_and_tokens][:trailing_30d_cost_cents]).to eq(300)
+      end
+    end
+
+    context "with only: section scoping" do
+      before do
+        create(:agent_run, :completed, project: project, cost_cents: 100,
+          tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
+      end
+
+      it "returns only requested sections" do
+        result = described_class.call(account: account, only: %i[run_volume])
+        expect(result).to have_key(:run_volume)
+        expect(result).not_to have_key(:cost_and_tokens)
+        expect(result).not_to have_key(:performance_by_outcome)
+      end
+
+      it "returns all sections when only is nil" do
+        result = described_class.call(account: account)
+        expect(result.keys).to match_array(Dashboard::Stats::SECTIONS)
+      end
+    end
+
+    context "with status and goal filters on performance" do
+      before do
+        create(:agent_run, :completed, project: project, goal: "create_pr",
+          cost_cents: 100, tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
+        create(:agent_run, project: project, goal: "create_pr", status: "failed",
+          cost_cents: 50, tokens_input: 500, tokens_output: 250, duration_seconds: 30)
+        create(:agent_run, :completed, :review_goal, project: project,
+          cost_cents: 75, tokens_input: 800, tokens_output: 400, duration_seconds: 45)
+      end
+
+      it "filters performance by status" do
+        result = described_class.call(account: account, status_filter: "completed")
+        completed = result[:performance_by_outcome]["completed"]
+        expect(completed[:run_count]).to eq(2)
+        expect(result[:performance_by_outcome]["other"][:run_count]).to eq(0)
+      end
+
+      it "filters performance by goal" do
+        result = described_class.call(account: account, goal_filter: "create_pr")
+        pr = result[:performance_by_goal]["create_pr"]
+        expect(pr[:run_count]).to eq(2)
+        # review goal shows 0 because the data is filtered to create_pr only
+        review = result[:performance_by_goal]["review"]
+        expect(review[:run_count]).to eq(0)
+      end
+
+      it "combines status and goal filters" do
+        result = described_class.call(account: account, status_filter: "completed", goal_filter: "create_pr")
+        completed = result[:performance_by_outcome]["completed"]
+        expect(completed[:run_count]).to eq(1)
+        expect(completed[:avg_cost_cents]).to eq(100)
+      end
+    end
+
     context "with runs from another account" do
       let(:other_account) { create(:account) }
       let(:other_project) { create(:project, account: other_account) }

@@ -83,7 +83,8 @@ RSpec.describe Knowledge::CollectorRunner do
         result1 = described_class.call(project: project, commit_sha: commit_sha)
         result2 = described_class.call(project: project, commit_sha: commit_sha)
 
-        expect(result2[:results].first[:status]).to eq("skipped")
+        expect(result2[:results].first[:status]).to eq("completed")
+        expect(result2[:results].first[:cached]).to be(true)
         expect(KnowledgeArtifact.active.count).to eq(1)
       end
 
