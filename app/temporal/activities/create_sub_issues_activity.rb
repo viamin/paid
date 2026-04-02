@@ -4,6 +4,9 @@ module Activities
   # Creates GitHub sub-issues from a decomposed plan and links them
   # to the parent issue using Paid's parent-child relationship system.
   #
+  # NOTE: This activity is designed to be invoked from PlanningWorkflow
+  # once the workflow layer is implemented. See #695 for the full scope.
+  #
   # Input:
   #   project_id:      [Integer] The project to create issues in
   #   parent_issue_id: [Integer] The parent Issue record id
@@ -26,7 +29,7 @@ module Activities
       sub_tasks.each_with_index do |task, index|
         heartbeat("creating_sub_issue_#{index + 1}_of_#{sub_tasks.size}")
 
-        title = task[:title].to_s.truncate(1000)
+        title = task[:title].to_s.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH)
         body = build_body(task[:body], parent_issue)
         labels = build_labels(project)
 

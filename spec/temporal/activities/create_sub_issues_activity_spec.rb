@@ -138,6 +138,21 @@ RSpec.describe Activities::CreateSubIssuesActivity do
       end
     end
 
+    it "truncates overlong titles to MAX_TITLE_LENGTH" do
+      long_title = "A" * 500
+      tasks = [ { title: long_title, body: "body" } ]
+
+      expect(github_client).to receive(:create_issue).with(
+        project.full_name,
+        hash_including(title: a_string_matching(/\A#{Regexp.escape("A" * 252)}\.{3}\z/))
+      ).and_return(
+        gh_issue_response(number: 101, id: 200_001, title: long_title.truncate(255), body: "body")
+      )
+
+      result = activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: tasks)
+      expect(result[:created_issues].first[:title].length).to be <= Llm::GenerateIssueTitle::MAX_TITLE_LENGTH
+    end
+
     context "with empty sub_tasks" do
       it "returns empty created_issues array" do
         result = activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: [])
