@@ -86,6 +86,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     it "accepts sub_task with only custom_prompt" do
       stub_full_capacity
       stub_successful_futures(count: 1)
+      stub_no_conflicts
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
 
       result = workflow.execute({ project_id: 1, sub_tasks: [ { custom_prompt: "do something" } ] })
@@ -126,6 +127,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     it "launches child workflows and collects results" do
       stub_full_capacity
       stub_successful_futures(count: 2)
+      stub_no_conflicts
 
       result = workflow.execute(two_task_input)
 
@@ -137,6 +139,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     it "reports failures from child workflows" do
       stub_full_capacity
       stub_mixed_futures
+      stub_no_conflicts
 
       result = workflow.execute(two_task_input)
 
@@ -148,6 +151,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     it "batches sub-tasks based on available slots" do
       capacity_call_count = stub_incremental_capacity
       stub_successful_futures(count: 3)
+      stub_no_conflicts
 
       result = workflow.execute(three_task_input)
 
@@ -158,6 +162,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     it "marks remaining tasks as no_capacity when capacity runs out" do
       stub_capacity_then_exhausted
       stub_successful_futures(count: 1)
+      stub_no_conflicts
 
       result = workflow.execute(two_task_input)
 
@@ -174,6 +179,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       # so batch 1 should only launch 1 task.
       stub_shrinking_capacity
       stub_successful_futures(count: 3)
+      stub_no_conflicts
 
       result = workflow.execute(three_task_input)
 
@@ -186,6 +192,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       # Capacity returns 1 slot so tasks are batched one at a time
       stub_incremental_capacity
       stub_successful_futures(count: 3)
+      stub_no_conflicts
 
       # Simulate time passing beyond the deadline after first batch completes
       now = Time.now
@@ -205,6 +212,28 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       deadline_exceeded = result[:results].select { |r| r[:error] == "deadline_exceeded" }
       expect(deadline_exceeded).not_to be_empty
     end
+
+    it "includes conflict detection results" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+      stub_no_conflicts
+
+      result = workflow.execute(two_task_input)
+
+      expect(result[:conflicts]).to be_a(Hash)
+      expect(result[:conflicts][:has_conflicts]).to be false
+    end
+
+    it "detects conflicts between successful runs" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+      stub_conflict_detected_and_unresolved
+
+      result = workflow.execute(two_task_input)
+
+      expect(result[:conflicts][:has_conflicts]).to be true
+      expect(result[:conflicts][:resolution][:requires_manual_review]).to be true
+    end
   end
 
   private
@@ -212,6 +241,29 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
   def stub_temporal_workflow
     workflow_info = Struct.new(:workflow_id).new("test-parallel-wf")
     allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, info: workflow_info)
+  end
+
+  def stub_no_conflicts
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120)
+      .and_return(has_conflicts: false, conflicting_pairs: [], files_by_run: {}, total_runs_checked: 0)
+  end
+
+  def stub_conflict_detected_and_unresolved
+    detection = {
+      has_conflicts: true,
+      conflicting_pairs: [ { runs: [ 42, 42 ], files: [ "src/app.rb" ] } ],
+      files_by_run: { 42 => [ "src/app.rb" ] }, total_runs_checked: 2
+    }
+    resolution = {
+      resolved: false, strategy: :auto_rebase,
+      resolutions: [ { runs: [ 42, 42 ], files: [ "src/app.rb" ], resolved: false, action: :manual } ],
+      requires_manual_review: true
+    }
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120).and_return(detection)
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::ResolveConflictsActivity, anything, timeout: 300).and_return(resolution)
   end
 
   def stub_no_capacity

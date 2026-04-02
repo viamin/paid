@@ -72,16 +72,22 @@ module Workflows
         timeout_seconds: timeout_seconds
       )
 
-      # Step 3: Return aggregate results
+      # Step 3: Detect conflicts between successful runs
       completed = results.count { |r| r[:success] }
       failed = results.count { |r| r[:success] == false }
+
+      conflict_result = detect_and_resolve_conflicts(
+        results: results,
+        project_id: project_id
+      )
 
       Temporalio::Workflow.logger.info(
         message: "parallel_execution.completed",
         project_id: project_id,
         total: sub_tasks.size,
         completed: completed,
-        failed: failed
+        failed: failed,
+        has_conflicts: conflict_result[:has_conflicts]
       )
 
       {
@@ -89,7 +95,8 @@ module Workflows
         total: sub_tasks.size,
         completed: completed,
         failed: failed,
-        results: results
+        results: results,
+        conflicts: conflict_result
       }
     end
 
@@ -203,6 +210,45 @@ module Workflows
       end
 
       all_results
+    end
+
+    # Detects and attempts to resolve conflicts between successful parallel runs.
+    # Only checks runs that completed successfully and produced agent_run_ids.
+    # Returns a summary of conflict detection and resolution outcomes.
+    def detect_and_resolve_conflicts(results:, project_id:)
+      successful_run_ids = results
+        .select { |r| r[:success] && r[:agent_run_id] }
+        .map { |r| r[:agent_run_id] }
+
+      return no_conflicts_result if successful_run_ids.size < 2
+
+      detection = run_activity(
+        Activities::DetectConflictsActivity,
+        { agent_run_ids: successful_run_ids, project_id: project_id },
+        timeout: 120
+      )
+
+      return detection unless detection[:has_conflicts]
+
+      resolution = run_activity(
+        Activities::ResolveConflictsActivity,
+        { detection_result: detection, project_id: project_id, strategy: "auto_rebase" },
+        timeout: 300
+      )
+
+      detection.merge(resolution: resolution)
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "parallel_execution.conflict_detection_failed",
+        project_id: project_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      no_conflicts_result.merge(error: e.message)
+    end
+
+    def no_conflicts_result
+      { has_conflicts: false, conflicting_pairs: [], files_by_run: {} }
     end
 
     # Launches a batch of child workflows in parallel and waits for all to complete.
