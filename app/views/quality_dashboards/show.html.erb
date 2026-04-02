@@ -44,7 +44,7 @@
     <%# Trends %>
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Recent Trends</h2>
-      <div class="mt-4 overflow-x-auto rounded-lg bg-white shadow">
+      <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
         <% if @stats[:trends].any? %>
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
@@ -132,7 +132,7 @@
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Quality Metrics Reference</h2>
       <p class="mt-1 text-sm text-gray-500">All quality metrics with their weights, descriptions, and applicable goal types.</p>
-      <div class="mt-4 overflow-x-auto rounded-lg bg-white shadow">
+      <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -185,7 +185,7 @@
     <%# Prompt Comparison %>
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Prompt Comparison</h2>
-      <div class="mt-4 overflow-x-auto rounded-lg bg-white shadow">
+      <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
         <% if @stats[:prompt_comparison].any? %>
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">

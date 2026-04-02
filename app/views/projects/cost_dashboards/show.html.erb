@@ -84,7 +84,7 @@
     <p class="mt-1 text-sm text-gray-500">Compare costs across different types of agent work.</p>
     <% goals_with_runs = @stats[:cost_by_goal].select { |_, v| v[:run_count] > 0 } %>
     <% if goals_with_runs.any? %>
-      <div class="mt-4 overflow-x-auto rounded-lg bg-white shadow">
+      <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -154,7 +154,7 @@
       <h2 class="text-lg font-semibold text-gray-900">Cost by Model</h2>
       <% cost_by_model = @stats[:cost_by_model] %>
       <% if cost_by_model.any? %>
-        <div class="mt-4 overflow-x-auto rounded-lg bg-white shadow">
+        <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
@@ -184,7 +184,7 @@
       <h2 class="text-lg font-semibold text-gray-900">Cost by Request Type</h2>
       <% cost_by_type = @stats[:cost_by_request_type] %>
       <% if cost_by_type.any? %>
-        <div class="mt-4 overflow-x-auto rounded-lg bg-white shadow">
+        <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
