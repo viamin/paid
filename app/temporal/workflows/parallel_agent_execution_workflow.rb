@@ -265,6 +265,7 @@ module Workflows
         total_runs_checked: 0,
         project_id: project_id,
         detection_failed: true,
+        failed_run_ids: [],
         requires_manual_review: true,
         resolution: nil,
         error: e.message
@@ -279,8 +280,10 @@ module Workflows
         total_runs_checked: 0,
         project_id: project_id,
         detection_failed: false,
+        failed_run_ids: [],
         requires_manual_review: false,
-        resolution: nil
+        resolution: nil,
+        error: nil
       }
     end
 

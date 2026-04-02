@@ -10,7 +10,7 @@ RSpec.describe Activities::DetectConflictsActivity do
       expected_result = {
         has_conflicts: false,
         conflicting_pairs: [],
-        files_by_run: {},
+        files_by_run: [],
         total_runs_checked: 0,
         project_id: 42
       }
@@ -29,7 +29,10 @@ RSpec.describe Activities::DetectConflictsActivity do
       detection = {
         has_conflicts: true,
         conflicting_pairs: [ { runs: [ 1, 2 ], files: [ "app.rb" ] } ],
-        files_by_run: { 1 => [ "app.rb" ], 2 => [ "app.rb", "test.rb" ] },
+        files_by_run: [
+          { agent_run_id: 1, files: [ "app.rb" ] },
+          { agent_run_id: 2, files: [ "app.rb", "test.rb" ] }
+        ],
         total_runs_checked: 2,
         project_id: 10
       }
@@ -45,7 +48,7 @@ RSpec.describe Activities::DetectConflictsActivity do
     it "handles empty agent_run_ids" do
       allow(Conflicts::Detect).to receive(:call)
         .with(agent_run_ids: [], project_id: nil)
-        .and_return(has_conflicts: false, conflicting_pairs: [], files_by_run: {}, total_runs_checked: 0, project_id: nil)
+        .and_return(has_conflicts: false, conflicting_pairs: [], files_by_run: [], total_runs_checked: 0, project_id: nil)
 
       result = activity.execute({})
 
