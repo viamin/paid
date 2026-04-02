@@ -37,10 +37,10 @@ module Knowledge
         # repo (initializers, config, etc.). Only allow this inside a
         # sandboxed container to avoid executing untrusted code on the host.
         # Raise so CollectorRunner marks the run as failed rather than
-        # silently completing with zero artifacts (which would stale
-        # previously collected routes).
+        # silently completing with zero artifacts (which would leave
+        # previously collected routes stale).
         unless containerized?
-          raise "routes collector requires containerized mode — skipped on host for security"
+          raise "routes collector requires containerized mode — failing on host for security"
         end
 
         run_command("bin/rails", "routes", "--expanded", timeout: 60)
