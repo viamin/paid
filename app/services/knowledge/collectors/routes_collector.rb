@@ -28,13 +28,29 @@ module Knowledge
           return File.read(routes_file)
         end
 
-        # Fall back to the pre-generated expanded routes file within the repo.
-        expanded_path = File.join("tmp", "routes_expanded.txt")
-        if repo_file_exists?(expanded_path)
-          return read_repo_file(expanded_path)
+        # Generate routes by running the rails command directly.
+        generate_routes_output
+      end
+
+      def generate_routes_output
+        # Guard: skip non-Rails repos that lack a routes file or rails binstub.
+        # This check runs before the containerized? gate so that non-Rails
+        # repos return [] in any mode instead of raising.
+        unless repo_file_exists?(SCOPE_PATH) && repo_file_exists?("bin/rails")
+          return nil
         end
 
-        nil
+        # Running `bin/rails routes` executes arbitrary Ruby from the target
+        # repo (initializers, config, etc.). Only allow this inside a
+        # sandboxed container to avoid executing untrusted code on the host.
+        # Raise so CollectorRunner marks the run as failed rather than
+        # silently completing with zero artifacts (which would leave
+        # previously collected routes stale).
+        unless containerized?
+          raise "routes collector requires containerized mode — failing on host for security"
+        end
+
+        run_command("bin/rails", "routes", "--expanded", timeout: 60)
       end
 
       def parse_expanded_output(output)
