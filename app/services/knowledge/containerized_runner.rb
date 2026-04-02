@@ -225,11 +225,17 @@ module Knowledge
     end
 
     def stream_repo_tar_to_container!
-      Open3.popen2("tar", "-cf", "-", "-C", @host_repo_dir, ".") do |_stdin, stdout, wait_thr|
+      Open3.popen3("tar", "-cf", "-", "-C", @host_repo_dir, ".") do |_stdin, stdout, stderr, wait_thr|
         stdout.binmode
         @container.archive_in_stream(options[:workspace_mount]) { stdout.read(8192) }
         status = wait_thr.value
-        raise ContainerError, "tar failed (exit #{status.exitstatus})" unless status.success?
+        unless status.success?
+          error_output = stderr.read.to_s.strip
+          snippet = error_output.lines.first(10).join[0, 500] unless error_output.empty?
+          message = +"tar failed (exit #{status.exitstatus})"
+          message << " stderr: #{snippet}" if snippet
+          raise ContainerError, message
+        end
       end
     end
 

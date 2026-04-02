@@ -31,11 +31,12 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
     allow(FileUtils).to receive(:rm_rf)
     # Stub tar streaming and Docker archive_in_stream for seeding
     tar_stdout = instance_double(IO, read: nil, binmode: nil)
+    tar_stderr = instance_double(IO, read: "")
     tar_status = instance_double(Process::Status, success?: true, exitstatus: 0)
     tar_wait_thr = instance_double(Thread, value: tar_status)
-    allow(Open3).to receive(:popen2)
+    allow(Open3).to receive(:popen3)
       .with("tar", "-cf", "-", "-C", "/tmp/paid-collector-test", ".")
-      .and_yield(instance_double(IO), tar_stdout, tar_wait_thr)
+      .and_yield(instance_double(IO), tar_stdout, tar_stderr, tar_wait_thr)
     allow(mock_container).to receive(:archive_in_stream)
   end
 
@@ -132,7 +133,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
     it "streams repo tar into the container via Docker API" do
       described_class.new(project: project, commit_sha: commit_sha).run
 
-      expect(Open3).to have_received(:popen2).with(
+      expect(Open3).to have_received(:popen3).with(
         "tar", "-cf", "-", "-C", "/tmp/paid-collector-test", "."
       )
       expect(mock_container).to have_received(:archive_in_stream).with("/workspace")
@@ -194,13 +195,17 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       failed_status = instance_double(Process::Status, success?: false, exitstatus: 1)
       failed_wait_thr = instance_double(Thread, value: failed_status)
       tar_stdout = instance_double(IO, read: nil, binmode: nil)
-      allow(Open3).to receive(:popen2)
+      tar_stderr = instance_double(IO, read: "tar: /nonexistent: No such file or directory")
+      allow(Open3).to receive(:popen3)
         .with("tar", "-cf", "-", "-C", "/tmp/paid-collector-test", ".")
-        .and_yield(instance_double(IO), tar_stdout, failed_wait_thr)
+        .and_yield(instance_double(IO), tar_stdout, tar_stderr, failed_wait_thr)
 
       expect {
         described_class.new(project: project, commit_sha: commit_sha).run
-      }.to raise_error(Knowledge::ContainerizedRunner::ContainerError, /tar failed/)
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        /tar failed \(exit 1\) stderr: tar: \/nonexistent/
+      )
     end
 
     it "passes container_runner in options to CollectorRunner" do
