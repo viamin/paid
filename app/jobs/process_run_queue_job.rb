@@ -78,7 +78,12 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        if start_claimed_run(agent_run)
+        result = start_claimed_run(agent_run)
+        if result == :budget_blocked
+          # Budget-blocked is not a workflow failure and not a real start —
+          # skip capacity accounting and continue processing the queue.
+          next
+        elsif result
           consecutive_failures = 0
           starts_count += 1
           record_started_run(user)
@@ -199,6 +204,17 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   def start_claimed_run(agent_run)
+    budget_result = CostBudgets::Check.call(agent_run.project)
+    unless budget_result[:allowed]
+      agent_run.fail!(error: "Budget enforcement: #{budget_result[:reason]}")
+      Rails.logger.warn(
+        message: "process_run_queue.budget_blocked",
+        agent_run_id: agent_run.id,
+        reason: budget_result[:reason]
+      )
+      return :budget_blocked
+    end
+
     workflow_input = {
       project_id: agent_run.project_id,
       agent_type: agent_run.agent_type,

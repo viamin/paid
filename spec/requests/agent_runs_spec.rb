@@ -600,6 +600,29 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("No runnable provider could be resolved for this project")
       end
 
+      context "when budget blocks run creation" do
+        let(:issue) { create(:issue, project: project, github_number: 42, title: "Fix the bug") }
+
+        before do
+          create(:cost_budget, :hard_stop, :daily, project: project,
+            limit_cents: 100, current_usage_cents: 200,
+            period_started_at: Time.current.beginning_of_day)
+        end
+
+        it "does not create an agent run" do
+          expect {
+            post project_agent_runs_path(project), params: { issue_id: issue.id }
+          }.not_to change(AgentRun, :count)
+        end
+
+        it "redirects with a user-friendly budget alert" do
+          post project_agent_runs_path(project), params: { issue_id: issue.id }
+
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
+          expect(flash[:alert]).to include("budget has been reached")
+        end
+      end
+
       context "with goal=review" do
         let(:pr) { create(:issue, :pull_request, project: project, github_number: 55, title: "Review target PR") }
 

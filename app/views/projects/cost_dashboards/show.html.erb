@@ -216,27 +216,56 @@
 
     <% budgets = @stats[:budgets] %>
     <% if budgets.any? %>
+      <% hard_stop_exceeded = budgets.any? { |b| b[:hard_stop_exceeded] } %>
+      <% if hard_stop_exceeded %>
+        <div class="mt-4 rounded-lg border border-red-300 bg-red-50 p-4">
+          <div class="flex">
+            <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd" />
+            </svg>
+            <div class="ml-3">
+              <h3 class="text-sm font-medium text-red-800">Budget Enforcement Active</h3>
+              <p class="mt-1 text-sm text-red-700">One or more hard stop budgets have been exceeded. New agent runs are blocked and running agents will be stopped.</p>
+            </div>
+          </div>
+        </div>
+      <% end %>
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <% budgets.each do |budget| %>
           <% is_per_run = budget[:budget_type] == "per_run" %>
+          <% is_hard_stop = budget[:enforcement_mode] == "hard_stop" %>
           <% usage_percent = budget[:usage_percent] || 0 %>
           <% color = is_per_run ? "gray" : budget_status_color(usage_percent, budget[:alert_threshold_percent]) %>
           <% classes = budget_status_classes(color) %>
-          <div class="overflow-hidden rounded-lg bg-white shadow">
+          <div class="overflow-hidden rounded-lg bg-white shadow <%= 'ring-2 ring-red-500' if budget[:hard_stop_exceeded] %>">
             <div class="px-4 py-5 sm:p-6">
               <div class="flex items-center justify-between">
                 <dt class="text-sm font-medium text-gray-500"><%= budget_type_label(budget[:budget_type]) %> Limit</dt>
-                <% if is_per_run %>
-                  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">
-                    Per Run
-                  </span>
-                <% else %>
-                  <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= classes[:bg] %> <%= classes[:text] %>">
-                    <%= budget[:exceeded] ? "Exceeded" : "#{usage_percent}%" %>
-                  </span>
-                <% end %>
+                <div class="flex items-center gap-1">
+                  <% if is_hard_stop %>
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700">
+                      Hard Stop
+                    </span>
+                  <% else %>
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700">
+                      Alert Only
+                    </span>
+                  <% end %>
+                  <% if is_per_run %>
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">
+                      Per Run
+                    </span>
+                  <% else %>
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= classes[:bg] %> <%= classes[:text] %>">
+                      <%= budget[:exceeded] ? "Exceeded" : "#{usage_percent}%" %>
+                    </span>
+                  <% end %>
+                </div>
               </div>
               <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= format_cost_cents(budget[:limit_cents]) %></dd>
+              <% if budget[:grace_buffer_percent].to_i > 0 %>
+                <p class="mt-1 text-xs text-gray-500">Grace buffer: <%= budget[:grace_buffer_percent] %>%</p>
+              <% end %>
               <% if is_per_run %>
                 <%# Per-run budgets are enforced per agent run, not via period-based usage tracking %>
                 <p class="mt-2 text-xs text-gray-500">Enforced per agent run. Each run is limited to this amount.</p>
@@ -262,7 +291,7 @@
                     </ul>
                   </div>
                 <% end %>
-                <div class="mt-3 flex gap-2">
+                <div class="mt-3 flex flex-wrap gap-2">
                   <%# Use @failed_budget when present so the user's submitted value is preserved on validation failure %>
                   <% budget_record = (@failed_budget&.id == budget[:id] ? @failed_budget : @cost_budgets[budget[:id]]) %>
                   <%= form_with model: [@project, budget_record], url: project_cost_budget_path(@project, budget[:id]), method: :patch, class: "flex items-center gap-2" do |f| %>
@@ -270,6 +299,7 @@
                       <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2 text-gray-400 text-sm">$</span>
                       <%= f.number_field :limit_dollars, value: (budget_record.limit_dollars || format("%.2f", budget[:limit_cents] / 100.0)), step: 0.01, min: 0.01, class: "block w-24 rounded-md border-0 py-1 pl-6 pr-2 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
                     </div>
+                    <%= f.select :enforcement_mode, CostBudget::ENFORCEMENT_MODES.map { |m| [m == "hard_stop" ? "Hard Stop" : "Alert Only", m] }, {}, class: "block rounded-md border-0 py-1 text-xs text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
                     <%= f.submit "Update", class: "rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
                   <% end %>
                   <%= button_to "Remove", project_cost_budget_path(@project, budget[:id]), method: :delete, class: "rounded-md bg-white px-2 py-1 text-xs font-medium text-red-600 ring-1 ring-inset ring-red-200 hover:bg-red-50 cursor-pointer", form: { data: { turbo_confirm: "Remove this budget limit?" } } %>
@@ -322,6 +352,14 @@
               <div>
                 <%= f.label :alert_threshold_percent, "Alert at %", class: "block text-xs font-medium text-gray-700" %>
                 <%= f.number_field :alert_threshold_percent, value: (@cost_budget.alert_threshold_percent || 80), min: 1, max: 100, class: "mt-1 block w-20 rounded-md border-0 py-1.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
+              </div>
+              <div>
+                <%= f.label :enforcement_mode, "Enforcement", class: "block text-xs font-medium text-gray-700" %>
+                <%= f.select :enforcement_mode, CostBudget::ENFORCEMENT_MODES.map { |m| [m == "hard_stop" ? "Hard Stop" : "Alert Only", m] }, {}, class: "mt-1 block rounded-md border-0 py-1.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
+              </div>
+              <div>
+                <%= f.label :grace_buffer_percent, "Grace %", class: "block text-xs font-medium text-gray-700" %>
+                <%= f.number_field :grace_buffer_percent, value: (@cost_budget.grace_buffer_percent || 0), min: 0, max: 100, class: "mt-1 block w-20 rounded-md border-0 py-1.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
               </div>
               <%= f.submit "Add Limit", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
             <% end %>

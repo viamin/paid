@@ -15,6 +15,9 @@ RSpec.describe CostBudget do
     it { is_expected.to validate_presence_of(:limit_cents) }
     it { is_expected.to validate_numericality_of(:limit_cents).is_greater_than(0) }
     it { is_expected.to validate_numericality_of(:current_usage_cents).is_greater_than_or_equal_to(0) }
+    it { is_expected.to validate_presence_of(:enforcement_mode) }
+    it { is_expected.to validate_inclusion_of(:enforcement_mode).in_array(described_class::ENFORCEMENT_MODES) }
+    it { is_expected.to validate_numericality_of(:grace_buffer_percent).is_greater_than_or_equal_to(0) }
 
     it "validates limit_dollars is greater than 0 when present" do
       budget = build(:cost_budget, limit_dollars: "0")
@@ -47,6 +50,52 @@ RSpec.describe CostBudget do
 
       expect(duplicate).not_to be_valid
       expect(duplicate.errors[:budget_type]).to include("has already been taken")
+    end
+  end
+
+  describe "#hard_stop?" do
+    it "returns true for hard_stop enforcement mode" do
+      budget = build(:cost_budget, :hard_stop)
+      expect(budget).to be_hard_stop
+    end
+
+    it "returns false for alert enforcement mode" do
+      budget = build(:cost_budget, enforcement_mode: "alert")
+      expect(budget).not_to be_hard_stop
+    end
+  end
+
+  describe "#effective_limit_cents" do
+    it "returns limit_cents when no grace buffer" do
+      budget = build(:cost_budget, limit_cents: 1000, grace_buffer_percent: 0)
+      expect(budget.effective_limit_cents).to eq(1000)
+    end
+
+    it "includes grace buffer in effective limit" do
+      budget = build(:cost_budget, limit_cents: 1000, grace_buffer_percent: 10)
+      expect(budget.effective_limit_cents).to eq(1100)
+    end
+
+    it "rounds to nearest cent" do
+      budget = build(:cost_budget, limit_cents: 333, grace_buffer_percent: 10)
+      expect(budget.effective_limit_cents).to eq(366)
+    end
+  end
+
+  describe "#hard_stop_exceeded?" do
+    it "returns true when usage exceeds effective limit" do
+      budget = build(:cost_budget, limit_cents: 1000, current_usage_cents: 1100, grace_buffer_percent: 0)
+      expect(budget).to be_hard_stop_exceeded
+    end
+
+    it "returns false when usage is within grace buffer" do
+      budget = build(:cost_budget, limit_cents: 1000, current_usage_cents: 1050, grace_buffer_percent: 10)
+      expect(budget).not_to be_hard_stop_exceeded
+    end
+
+    it "returns true when usage exceeds effective limit with grace buffer" do
+      budget = build(:cost_budget, limit_cents: 1000, current_usage_cents: 1100, grace_buffer_percent: 10)
+      expect(budget).to be_hard_stop_exceeded
     end
   end
 
