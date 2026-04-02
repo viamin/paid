@@ -6,7 +6,7 @@
       <span class="text-sm font-medium text-gray-500 mr-1">Status:</span>
       <% Dashboard::Stats::VALID_STATUSES.each do |s| %>
         <%= link_to DashboardHelper::STATUS_FILTER_LABELS[s],
-              dashboard_performance_path(status: s, goal: goal_filter, time_range: time_range),
+              dashboard_path(status: s, goal: goal_filter, time_range: time_range),
               class: filter_button_classes(status_filter == s),
               data: { turbo_frame: "dashboard-performance" } %>
       <% end %>
@@ -17,7 +17,7 @@
       <span class="text-sm font-medium text-gray-500 mr-1">Type:</span>
       <% Dashboard::Stats::VALID_GOALS.each do |g| %>
         <%= link_to DashboardHelper::GOAL_FILTER_LABELS[g],
-              dashboard_performance_path(status: status_filter, goal: g, time_range: time_range),
+              dashboard_path(status: status_filter, goal: g, time_range: time_range),
               class: filter_button_classes(goal_filter == g),
               data: { turbo_frame: "dashboard-performance" } %>
       <% end %>
