@@ -84,6 +84,14 @@ RSpec.describe Activities::CheckProjectRunCapacityActivity do
       expect(result[:available_slots]).to eq(2)
     end
 
+    it "includes pr_aggregation_enabled from project setting" do
+      project = create(:project, pr_aggregation_enabled: true)
+
+      result = activity.execute({ project_id: project.id })
+
+      expect(result[:pr_aggregation_enabled]).to be true
+    end
+
     it "does not count queued runs as active" do
       project = create(:project)
       user = project.created_by

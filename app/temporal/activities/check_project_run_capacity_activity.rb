@@ -49,7 +49,8 @@ module Activities
         project_active_count: active_count,
         max_parallel_per_project: max_parallel,
         user_active_count: user_active_count,
-        max_concurrent_runs: user_max
+        max_concurrent_runs: user_max,
+        pr_aggregation_enabled: project.pr_aggregation_enabled?
       }
     end
   end
