@@ -313,7 +313,7 @@
         </div>
       </div>
     <% else %>
-      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
         <div class="px-4 py-5 text-sm text-gray-500">No merged PRs with agent runs yet.</div>
       </div>
     <% end %>
@@ -323,7 +323,7 @@
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Cost by Project</h2>
     <% if stats[:cost_by_project].any? %>
-      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -342,7 +342,7 @@
         </table>
       </div>
     <% else %>
-      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
         <div class="px-4 py-5 text-sm text-gray-500">No project costs recorded yet.</div>
       </div>
     <% end %>
@@ -359,7 +359,7 @@
           (<%= fallback_stats[:fallback_rate] %>%) used provider fallback
         </p>
       <% end %>
-      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
         <% if stats[:runs_by_provider].any? %>
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
@@ -386,7 +386,7 @@
     <%# Runs by Project %>
     <div>
       <h2 class="text-lg font-semibold text-gray-900">Top Projects by Runs</h2>
-      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="mt-4 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
         <% if stats[:runs_by_project].any? %>
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
