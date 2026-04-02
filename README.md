@@ -2,9 +2,9 @@
 
 Paid is a Rails 8 application that orchestrates AI agents to build software. Users add GitHub projects, and Paid watches for labeled issues, plans implementations, and runs agents in isolated Docker containers to create pull requests.
 
-## Philosophy
+Phase 2 (Intelligence) is complete as of 2026-04-01. The app now includes prompt versioning and A/B tests, model selection, semantic code search, quality and cost dashboards, provider management, and service-container support in addition to the original issue-to-PR workflow.
 
-> "Configuration is ephemeral, but data endures."
+## Philosophy
 
 Paid stores every decision point as data—prompts, model preferences, workflow patterns—rather than hardcoding assumptions. This allows the system to evolve through measurement and A/B testing rather than relying on intuition alone. See [VISION.md](docs/VISION.md) for our full philosophy.
 
@@ -13,19 +13,27 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 - **GitHub Integration**: Add projects via PAT, watch for labeled issues
 - **Temporal Workflows**: Durable, observable orchestration of agent activities
 - **Container Isolation**: Agents run in sandboxed Docker containers with no default internet access
-- **Multiple Agents**: Support for Claude Code, Cursor, Aider (via agent-harness gem)
+- **Multiple Agents and Providers**: Support for Claude Code, Codex, Cursor, Gemini, Aider, OpenCode, Kilocode, Copilot, and other `agent-harness`-supported runtimes
 - **Secrets Proxy**: API keys and git credentials never enter agent containers; proxied through authenticated endpoints
-- **Human-in-the-Loop**: All changes go through PRs; humans approve merges
+- **Human-in-the-Loop**: All changes go through PRs; humans approve merges (can be automated if desired)
+- **Full Automation or Manual Control**: Auto-pick next issue or trigger runs manually from the UI
+- **Prompt Management**: Version prompts as data, diff versions, and run A/B tests before promoting prompt changes
+- **Knowledge Base**: Index repos into PostgreSQL + Qdrant for hybrid exact/semantic search and richer prompt context
+- **Live Dashboards**: Track active runs, performance, quality, cost, and knowledge-collection health from the UI
+- **Provider and Integration Management**: Test provider auth from the UI and manage GitHub, Linear, provider API keys, and generic integration credentials
+- **Service Containers**: Attach approved supporting services like Postgres, Redis, or Selenium to project runs when agents need dependencies beyond the app code
 
 ## How It Works
 
 1. User adds a GitHub project with a Personal Access Token
 2. Paid polls the repo for issues matching the project's configured `label_mappings` (if no mappings are configured, all open issues are fetched)
 3. An `AgentExecutionWorkflow` starts in Temporal, orchestrating:
+   - Prompt resolution, provider selection, and project policy checks
+   - Knowledge-base retrieval and style-guide injection when available
    - Docker container provisioning on a restricted network
    - Repository clone and branch creation inside the container
    - Agent execution (e.g., Claude Code) with the issue as prompt
-   - Branch push, PR creation, and issue update
+   - Branch push, PR creation, issue update, and optional review follow-up
 4. User reviews and merges the PR
 
 ## GitHub Labels
@@ -86,17 +94,17 @@ Blocked by #103
 ```bash
 # Clone and configure
 git clone <repo-url> && cd paid
-# Optional: copy .env.example for local reference or if you add `env_file: .env` to docker-compose.yml
+# Optional: copy .env.example for local reference or if you add `env_file: .env`
 cp .env.example .env
 
-# Start all services
-docker compose up
+# Start the full dev stack
+docker compose up --build
 
 # In another terminal, setup the database
 docker compose exec web bin/rails db:prepare
 ```
 
-> **Note**: Docker Compose sets `DATABASE_URL`, the Temporal address (via `TEMPORAL_HOST` on `web`, `TEMPORAL_ADDRESS` on `worker`), and `RAILS_ENV` directly in `docker-compose.yml`. Additional variables like `ANTHROPIC_API_KEY` (needed for agent execution) should be added to the `environment` section of the `web` service (which hosts the secrets proxy), or loaded via `env_file: .env` for whichever services actually require them.
+> **Note**: The checked-in `docker-compose.yml` starts `postgres`, `temporal`, `temporal-ui`, `qdrant`, `web`, and `worker`. It already wires `DATABASE_URL`, Temporal, and Qdrant for the app. `ANTHROPIC_API_KEY` is passed through today; if you want proxy-based OpenAI or Google auth in Compose, add `OPENAI_API_KEY` and/or `GOOGLE_API_KEY` to the `web` service, and to `worker` as well if you want worker-side flows to see them.
 
 ### Option 2: Dev Container
 
@@ -128,10 +136,13 @@ bash .devcontainer/setup-signing-key.sh
 ### Option 3: Local Development
 
 ```bash
-# Prerequisites: Ruby 3.4+, PostgreSQL 16+, Node.js 20+, Yarn
+# Prerequisites: Ruby 3.4+, Bundler 2.7.2, PostgreSQL 16+, Node.js, Yarn 1.22.22, Docker Engine
+# Also start PostgreSQL, Temporal, and Qdrant locally before running setup.
 bin/setup               # Install deps, prepare DB
 bin/dev                 # Start dev server (Rails + JS + CSS watchers)
 ```
+
+`bin/setup` now does more than install Ruby and JS dependencies: it configures git hooks, prepares the database, checks Qdrant connectivity, builds the `paid-agent:latest` Docker image, and cleans up stale dev state. If Docker is unavailable, setup is incomplete.
 
 ### Access Points
 
@@ -141,6 +152,7 @@ bin/dev                 # Start dev server (Rails + JS + CSS watchers)
 | Temporal UI | <http://localhost:8080> | Workflow monitoring |
 | PostgreSQL | localhost:5432 | Database (user: paid, password: paid) |
 | Temporal gRPC | localhost:7233 | Temporal server |
+| Qdrant | <http://localhost:6333> | Vector store for semantic knowledge search |
 
 ### First-Time Setup
 
@@ -170,6 +182,8 @@ bin/dev                 # Start dev server (Rails + JS + CSS watchers)
 | `TEMPORAL_UI_URL` | Temporal UI base URL for monitoring links | `http://localhost:8080` |
 | `OPENAI_API_KEY` | OpenAI API key (for agents that use OpenAI) | _(none)_ |
 | `GOOGLE_API_KEY` | Google API key for Gemini proxy requests | _(none)_ |
+| `QDRANT_URL` | Qdrant REST endpoint for knowledge search | `http://localhost:6333` |
+| `QDRANT_API_KEY` | Optional Qdrant API key | _(none)_ |
 | `AGENT_TIMEOUT` | Agent execution timeout in seconds | `3600` |
 | `CLAUDE_CONFIG_DIR` | Host path to `~/.claude/` for Claude Code subscription auth | _(none)_ |
 | `CODEX_CONFIG_DIR` | Host path to `~/.codex/` for Codex subscription auth | _(none)_ |
@@ -208,6 +222,7 @@ By default, provider tests and real agent runs use the same containerized auth p
 
 - Restart the `web` and `worker` services so new env vars and credential mounts are picked up.
 - Re-run `Test Agent` from the Providers page.
+- In Docker Compose, adding a variable to `.env` is not enough by itself unless the compose service actually passes it through.
 - If a provider still fails, compare the error with the expected file/env setup above:
   - `API key not configured for google` means `GOOGLE_API_KEY` is missing on `web`.
   - `API key not configured for openai` means `OPENAI_API_KEY` is missing on `web` for Codex or OpenCode.
@@ -221,10 +236,11 @@ By default, provider tests and real agent runs use the same containerized auth p
 | `postgres` | 5432 | PostgreSQL database |
 | `temporal` | 7233 | Temporal server (gRPC) |
 | `temporal-ui` | 8080 | Temporal web interface |
+| `qdrant` | 6333 | Vector database for semantic knowledge search |
 | `temporal-admin-tools` | - | CLI tools for Temporal administration |
 | `worker` | - | Temporal worker process (executes workflows) |
-| `agent-image` | - | Builds the `paid-agent:latest` image (setup profile, exits immediately) |
-| `agent-test` | - | Agent container for testing (test profile only) |
+| `agent-image` | - | Builds the `paid-agent:latest` image (`setup` profile, exits immediately) |
+| `agent-test` | - | Agent container for testing the image (`test` profile only) |
 
 ### Networks
 
@@ -248,9 +264,12 @@ bin/setup --reset            # Setup with database reset
 bin/update                   # Update Ruby, Yarn, and supported Dockerfile-pinned deps
 
 # Development
-bin/dev                      # Start dev server with Foreman
+bin/dev                      # Start dev server with Overmind (Rails + JS + CSS + Temporal worker)
 bin/rails server             # Start Rails server only
 bin/rails console            # Rails console
+bin/temporal_worker          # Run the Temporal worker directly
+bin/dev-update --lightweight # Pull latest main without restarting the dev stack
+bin/dev-update --full        # Pull latest main, rerun setup, and restart the dev stack
 
 # Testing
 bin/rspec                    # Run the full RSpec test suite
@@ -258,15 +277,19 @@ bin/rspec                    # Run the full RSpec test suite
 # Code Quality
 bin/rubocop                  # Run RuboCop linter
 bin/rubocop -a               # Auto-fix violations
-bin/lint                     # Run all linters (RuboCop, markdownlint)
+bin/lint                     # Run all linters (RuboCop, ESLint, markdownlint, ShellCheck)
+bin/lint --changed           # Lint changed files only
+bin/lint --staged            # Lint staged files only
 bin/lint -A                  # Run all linters with auto-fix
 
 # Security
+bin/audit                    # Run Brakeman, bundler-audit, and yarn audit
 bin/brakeman                 # Static security analysis
 bin/bundler-audit            # Gem vulnerability audit
+yarn audit                   # JavaScript dependency audit
 
-# CI (runs all checks)
-bin/ci                       # Setup, style, security checks
+# CI helper
+bin/ci                       # Runs setup, lint, and security audit
 ```
 
 ## Architecture Overview
@@ -276,8 +299,9 @@ bin/ci                       # Setup, style, security checks
 │                         Rails App (3000)                        │
 │   Controllers ─── Services ─── Models ─── Views (ERB/Hotwire)  │
 │        │              │            │                            │
-│   Auth (Devise)  GitHub Client  PostgreSQL                     │
+│   Auth (Devise)  GitHub Client  PostgreSQL + Qdrant            │
 │   Authz (Pundit) Container Mgmt  Encrypted tokens              │
+│   Prompts / A-B tests  Dashboards  Knowledge Search            │
 └────────────┬───────────┬────────────────────────────────────────┘
              │           │
 ┌────────────▼───────────▼────────────────────────────────────────┐
@@ -285,19 +309,20 @@ bin/ci                       # Setup, style, security checks
 │   GitHubPollWorkflow ──► AgentExecutionWorkflow                 │
 │   (long-running)         (per-issue lifecycle)                  │
 │                          1. Create AgentRun                     │
-│                          2. Provision Container                 │
-│                          3. Clone Repo & Create Branch          │
-│                          4. Run Agent                           │
-│                          5. Push Branch                         │
-│                          6. Create PR                           │
-│                          7. Update Issue                        │
+│                          2. Resolve prompt/provider/context     │
+│                          3. Provision Container                 │
+│                          4. Clone Repo & Create Branch          │
+│                          5. Run Agent                           │
+│                          6. Push Branch                         │
+│                          7. Create PR / follow-up               │
 └────────────────────────────┬────────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────────┐
 │                  Docker Containers (paid_agent network)          │
-│   Agent CLI (Claude Code, Cursor, Aider)                        │
+│   Agent CLI (Claude, Codex, Cursor, Gemini, Aider, ...)         │
 │   ── Secrets Proxy ──► Anthropic/OpenAI APIs                    │
 │   ── Git Credential Proxy ──► GitHub                            │
+│   ── Optional service containers (Postgres/Redis/Selenium)      │
 │   ── No default internet access                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -311,7 +336,10 @@ bin/ci                       # Setup, style, security checks
 | [ROADMAP.md](docs/ROADMAP.md) | Phased implementation plan |
 | [DATA_MODEL.md](docs/DATA_MODEL.md) | Database schema, accounts, and RBAC |
 | [AGENT_SYSTEM.md](docs/AGENT_SYSTEM.md) | Agent execution and Temporal workflows |
+| [KNOWLEDGE_BASE.md](docs/KNOWLEDGE_BASE.md) | Knowledge collection, embeddings, and hybrid search |
 | [SECURITY.md](docs/SECURITY.md) | Security model and container isolation |
+| [DEBUGGING_CONTAINERS.md](docs/DEBUGGING_CONTAINERS.md) | Container debugging and operational troubleshooting |
+| [LLM_STYLE_GUIDE.md](docs/LLM_STYLE_GUIDE.md) | Concise AI-assistant implementation guidance |
 | [STYLE_GUIDE.md](docs/STYLE_GUIDE.md) | Coding standards for developing Paid |
 | [RDRs](docs/rdrs/README.md) | Recommendation Decision Records |
 | [VISION.md](docs/VISION.md) | Philosophy, principles, and goals |
@@ -324,7 +352,7 @@ Paid is inspired by [aidp](https://github.com/viamin/aidp), a CLI tool for AI-dr
 
 ## Status
 
-Phase 1 (Foundation) is complete. See [ROADMAP.md](docs/ROADMAP.md) for implementation phases.
+Phase 2 (Intelligence) is complete. Phase 3 (Scale) is next. See [ROADMAP.md](docs/ROADMAP.md) for the current implementation phases.
 
 ## License
 
