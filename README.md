@@ -26,7 +26,7 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 ## How It Works
 
 1. User adds a GitHub project with a Personal Access Token
-2. Paid polls the repo for issues matching the project's configured `label_mappings` (if no mappings are configured, all open issues are fetched)
+2. Paid polls the repo for open issues and PRs, then evaluates the project's configured `label_mappings` (and automation labels) to decide whether an item should trigger agent work
 3. An `AgentExecutionWorkflow` starts in Temporal, orchestrating:
    - Prompt resolution, provider selection, and project policy checks
    - Knowledge-base retrieval and style-guide injection when available
