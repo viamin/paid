@@ -111,12 +111,10 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
       end
 
-      before do
-        allow(Rails.logger).to receive(:warn)
-      end
-
-      it "returns empty array" do
-        expect(failing_collector.collect).to eq([])
+      it "raises so CollectorRunner marks the run as failed" do
+        expect { failing_collector.collect }.to raise_error(
+          RuntimeError, /requires containerized mode/
+        )
       end
     end
 
@@ -154,12 +152,11 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect(command_collector.collect.length).to eq(11)
       end
 
-      it "returns empty array when command fails" do
+      it "raises when command fails so CollectorRunner marks the run as failed" do
         allow(command_collector).to receive(:run_command)
           .and_raise(RuntimeError, "Command failed")
-        allow(Rails.logger).to receive(:warn)
 
-        expect(command_collector.collect).to eq([])
+        expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
       end
     end
 
@@ -173,17 +170,9 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
       end
 
-      before { allow(Rails.logger).to receive(:warn) }
-
-      it "skips route generation for security" do
-        expect(non_container_collector.collect).to eq([])
-      end
-
-      it "logs a warning" do
-        non_container_collector.collect
-
-        expect(Rails.logger).to have_received(:warn).with(
-          hash_including(message: "knowledge.routes_collector.skipped_non_containerized")
+      it "raises so CollectorRunner marks the run as failed" do
+        expect { non_container_collector.collect }.to raise_error(
+          RuntimeError, /requires containerized mode/
         )
       end
     end

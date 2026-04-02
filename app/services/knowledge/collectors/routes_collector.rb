@@ -36,24 +36,14 @@ module Knowledge
         # Running `bin/rails routes` executes arbitrary Ruby from the target
         # repo (initializers, config, etc.). Only allow this inside a
         # sandboxed container to avoid executing untrusted code on the host.
+        # Raise so CollectorRunner marks the run as failed rather than
+        # silently completing with zero artifacts (which would stale
+        # previously collected routes).
         unless containerized?
-          Rails.logger.warn(
-            message: "knowledge.routes_collector.skipped_non_containerized",
-            project_id: project.id
-          )
-          return nil
+          raise "routes collector requires containerized mode — skipped on host for security"
         end
 
         run_command("bin/rails", "routes", "--expanded", timeout: 60)
-      rescue StandardError => e
-        Rails.logger.warn(
-          message: "knowledge.routes_collector.generate_routes_failed",
-          project_id: project.id,
-          collector_type: collector_type,
-          error_class: e.class.name,
-          error_message: e.message.to_s.truncate(500)
-        )
-        nil
       end
 
       def parse_expanded_output(output)
