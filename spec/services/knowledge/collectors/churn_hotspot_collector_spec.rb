@@ -28,9 +28,9 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
   end
 
   # Helper to stub all three shell commands used by the collector:
-  # git log, ruby-maat, and scc. Validates the expected command shape for each
-  # invocation and raises on unrecognized commands to prevent tests from
-  # silently passing when the collector shells out unexpectedly.
+  # git log, ruby-maat, and scc. Distinguishes commands by executable
+  # (and git subcommand) and raises on unrecognized executables so tests
+  # do not silently pass when the collector shells out to unexpected tools.
   def stub_collector_commands(git_log: git_log_data, revisions: revisions_csv, scc: scc_by_file_json)
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
       status = instance_double(Process::Status, success?: true, exitstatus: 0)

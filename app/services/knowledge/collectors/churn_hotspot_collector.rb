@@ -37,7 +37,7 @@ module Knowledge
 
       def run_revisions(repo_path)
         Tempfile.create([ "maat_log", ".log" ]) do |f|
-          stream_git_log(repo_path, f)
+          write_git_log_file(repo_path, f)
           return [] if f.size.zero?
 
           output = run_command(
@@ -57,7 +57,7 @@ module Knowledge
 
       def run_complexity(repo_path)
         output = run_command(
-          "scc", "--by-file", "-f", "json", repo_path,
+          "scc", "--by-file", "--format", "json", repo_path,
           timeout: COLLECTOR_TIMEOUT
         )
         parse_scc_complexity(output, repo_path)
@@ -70,10 +70,10 @@ module Knowledge
         []
       end
 
-      # Runs git log and writes the output to the given file. Uses
-      # run_command so that container execution mode and timeout / process
-      # cleanup behavior are consistent with other collectors.
-      def stream_git_log(repo_path, output_file)
+      # Writes git log output to the given file. Uses run_command so that
+      # container execution mode and timeout / process cleanup behavior are
+      # consistent with other collectors.
+      def write_git_log_file(repo_path, output_file)
         output = run_command(
           "git", "-C", repo_path, "log", "--all", "--numstat",
           "--date=short", "--pretty=format:#{GIT_LOG_FORMAT}", "--no-renames",
