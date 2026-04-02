@@ -5,10 +5,10 @@ module CostBudgets
   #
   # 1. **Daily/monthly** — pre-flight checks using the shared `current_usage_cents`
   #    counter. These can block a run *before* it starts.
-  # 2. **Per-run** — in-run checks using `agent_run.token_usages.sum(:cost_cents)`,
-  #    which is only meaningful *after* usage has accrued. These detect a single
-  #    run exceeding its per-run budget and should be called periodically during
-  #    execution (not solely at start).
+  # 2. **Per-run** — in-run checks using the pre-aggregated `agent_run.cost_cents`
+  #    counter, which is only meaningful *after* usage has accrued. These detect
+  #    a single run exceeding its per-run budget and should be called periodically
+  #    during execution (not solely at start).
   #
   # Only budgets with `enforcement_mode: "hard_stop"` will block runs.
   # Budgets in "alert" mode log warnings but never block.

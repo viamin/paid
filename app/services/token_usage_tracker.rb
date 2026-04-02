@@ -129,7 +129,7 @@ class TokenUsageTracker
   # Short-circuits when the project has no hard-stop budgets to avoid
   # unnecessary queries on every token-tracking request.
   def self.enforce_hard_stop_budgets(agent_run)
-    return unless agent_run.status == "running"
+    return unless AgentRun.where(id: agent_run.id, status: "running").exists?
     return unless agent_run.project.cost_budgets.hard_stop.exists?
 
     result = CostBudgets::Check.call(agent_run.project, agent_run: agent_run)
@@ -141,8 +141,19 @@ class TokenUsageTracker
       reason: result[:reason]
     )
 
-    AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
-    agent_run.fail!(error: "Budget enforcement: #{result[:reason]}")
+    begin
+      AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
+    rescue => e
+      Rails.logger.error(
+        message: "cost_budget.hard_stop_cancel_failed",
+        agent_run_id: agent_run.id,
+        reason: result[:reason],
+        error_class: e.class.name,
+        error_message: e.message
+      )
+    ensure
+      agent_run.fail!(error: "Budget enforcement: #{result[:reason]}")
+    end
   end
   private_class_method :enforce_hard_stop_budgets
 end

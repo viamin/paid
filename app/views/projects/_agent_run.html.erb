@@ -30,10 +30,17 @@
     <% end %>
   </td>
   <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-    <% if agent_run.duration_seconds.present? %>
-      <%= agent_run.duration_seconds %>s
-    <% elsif agent_run.running? && agent_run.started_at.present? %>
-      <%= (Time.current - agent_run.started_at).to_i %>s
+    <% elapsed = if agent_run.duration_seconds.present?
+         agent_run.duration_seconds
+       elsif agent_run.running? && agent_run.started_at.present?
+         (Time.current - agent_run.started_at).to_i
+       end %>
+    <% if elapsed %>
+      <%= elapsed %>s
+      <% max_exec = agent_run.project.max_execution_seconds %>
+      <% if max_exec %>
+        <span class="text-gray-400">/ <%= max_exec %>s</span>
+      <% end %>
     <% else %>
       <span class="text-gray-400">-</span>
     <% end %>
