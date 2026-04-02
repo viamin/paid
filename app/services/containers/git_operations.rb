@@ -24,6 +24,10 @@ module Containers
     DEFAULT_CLONE_TIMEOUT = 600
     DEFAULT_PUSH_TIMEOUT = 60
 
+    # Marker comment embedded in all Paid-installed git hooks. Used as a
+    # grep guard so Temporal retries don't install duplicate hooks.
+    HOOK_INSTALLED_MARKER = "Installed by Paid"
+
     # Marker comment used as a grep guard so Temporal retries don't
     # duplicate the exclude block.  Defined once and referenced both
     # in CONTAINER_ARTIFACT_EXCLUDES and in install_artifact_excludes.
@@ -189,7 +193,7 @@ module Containers
     # delegates to the original hook first, then appends the trailer. This
     # preserves non-shell hooks (node, python, ruby) that would break if
     # shell code were appended directly.
-    # A "Installed by Paid" marker prevents duplicate installs on retries.
+    # The HOOK_INSTALLED_MARKER prevents duplicate installs on retries.
     #
     # @return [void]
     def install_co_author_hook
@@ -665,7 +669,7 @@ module Containers
     end
 
     # Installs the co-author trailer hook, safely wrapping any existing
-    # commit-msg hook. Uses the "Installed by Paid" marker for idempotency.
+    # commit-msg hook. Uses HOOK_INSTALLED_MARKER for idempotency.
     #
     # When an existing hook is present (e.g. Husky, Lefthook, or a
     # node/python/ruby hook), it is renamed to commit-msg.original and a
@@ -679,7 +683,7 @@ module Containers
 
       # Check for existing marker to prevent duplicate appends on retries
       marker_check = container_service.execute(
-        "grep -qF 'Installed by Paid' #{hook_path} 2>/dev/null",
+        "grep -qF '#{HOOK_INSTALLED_MARKER}' #{hook_path} 2>/dev/null",
         timeout: nil, stream: false
       )
       if marker_check.success?
@@ -792,7 +796,7 @@ module Containers
 
       <<~SHELL
         #!/bin/sh
-        # Installed by Paid — enforce lint + tests before commit
+        # #{HOOK_INSTALLED_MARKER} — enforce lint + tests before commit
         # All quality checks run here so the agent gets immediate feedback
         # and can fix issues before the commit succeeds.
 
@@ -828,7 +832,7 @@ module Containers
 
       <<~SHELL
         #!/bin/sh
-        # Installed by Paid — append co-author trailer to commits
+        # #{HOOK_INSTALLED_MARKER} — append co-author trailer to commits
         if ! grep -qF -- '#{escaped}' "$1"; then
           printf '\\n\\n%s' '#{escaped}' >> "$1"
         fi
@@ -844,7 +848,7 @@ module Containers
 
       <<~SHELL
         #!/bin/sh
-        # Installed by Paid — wrapper that chains original hook + co-author trailer
+        # #{HOOK_INSTALLED_MARKER} — wrapper that chains original hook + co-author trailer
         if [ -x "#{original_path}" ]; then
           "#{original_path}" "$@" || exit $?
         fi
