@@ -192,13 +192,15 @@ class Issue < ApplicationRecord
     blocked_by_local = IssueDependency
       .joins(:depends_on_issue)
       .where(issue_id: issue_ids, depends_on_issue: { github_state: "open" })
-      .where.not(depends_on_issue: { paid_state: "recommend_close" })
       .pluck(:issue_id)
       .to_set
 
+    # Match IssueDependency#external? semantics: owner+repo+number present, no local issue link
     blocked_by_external = IssueDependency
-      .where(issue_id: issue_ids)
-      .where.not(depends_on_owner: nil)
+      .where(issue_id: issue_ids, depends_on_issue_id: nil)
+      .where.not(depends_on_owner: [ nil, "" ])
+      .where.not(depends_on_repo: [ nil, "" ])
+      .where.not(depends_on_number: nil)
       .pluck(:issue_id)
       .to_set
 
