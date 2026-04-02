@@ -49,13 +49,14 @@ module AgentRuns
     attr_reader :agent_run
 
     def fetch_recent_outputs
-      agent_run
+      contents = agent_run
         .agent_run_logs
         .stdout
-        .chronological
-        .last(LOG_FETCH_LIMIT)
-        .map(&:content)
-        .select { |c| c.length >= MIN_CONTENT_LENGTH }
+        .order(created_at: :desc)
+        .limit(LOG_FETCH_LIMIT)
+        .pluck(:content)
+
+      contents.reverse.select { |c| c.length >= MIN_CONTENT_LENGTH }
     end
 
     # Check if the last N outputs are all identical.
