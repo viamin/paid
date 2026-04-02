@@ -71,7 +71,7 @@ RSpec.describe Workflows::PlanningWorkflow do
           .with(Activities::DecomposeFeatureActivity, hash_including(project_id: 1, issue_id: 2), timeout: 120)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::CreateSubIssuesActivity, hash_including(project_id: 1, parent_issue_id: 2, tasks: tasks),
-            timeout: 120, retry_policy: { maximum_attempts: 1 })
+            timeout: 120, retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::UpdatePlanningLabelsActivity, hash_including(project_id: 1, issue_id: 2, task_count: 3), timeout: 30)
       end

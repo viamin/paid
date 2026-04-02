@@ -11,6 +11,8 @@ module Workflows
   # 4. Create sub-issues in GitHub
   # 5. Update labels on the parent issue
   class PlanningWorkflow < BaseWorkflow
+    NO_RETRY = Temporalio::RetryPolicy.new(max_attempts: 1)
+
     def execute(input)
       project_id = input[:project_id]
       issue_id = input[:issue_id]
@@ -49,7 +51,7 @@ module Workflows
             tasks: tasks
           },
           timeout: 120,
-          retry_policy: { maximum_attempts: 1 }
+          retry_policy: NO_RETRY
         )
 
         sub_issue_ids = create_result[:sub_issue_ids]
