@@ -17,6 +17,8 @@ Rails.application.routes.draw do
   # Dashboard for authenticated users
   get "dashboard", to: "dashboard#show"
   get "dashboard/live", to: redirect("/dashboard")
+  get "dashboard/metrics", to: "dashboard#metrics", as: :dashboard_metrics
+  get "dashboard/performance", to: "dashboard#performance", as: :dashboard_performance
   post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
 
   # Integrations hub

@@ -79,7 +79,7 @@ RSpec.describe "Dashboard" do
         doc = Nokogiri::HTML(response.body)
         details_elements = doc.css("details")
 
-        expect(details_elements.length).to eq(3)
+        expect(details_elements.length).to eq(4)
       end
 
       it "collapses recent activity by default" do
@@ -89,18 +89,71 @@ RSpec.describe "Dashboard" do
 
         live_metrics = doc.at_xpath("//details[summary[contains(text(), 'Live Metrics')]]")
         cumulative = doc.at_xpath("//details[summary[contains(text(), 'Cumulative')]]")
+        performance = doc.at_xpath("//details[summary[contains(text(), 'Performance')]]")
         recent_activity = doc.at_xpath("//details[summary[contains(text(), 'Recent Activity')]]")
 
         expect(live_metrics).to be_present
         expect(cumulative).to be_present
+        expect(performance).to be_present
         expect(recent_activity).to be_present
 
-        # First two sections should be open (boolean attribute present)
+        # First three sections should be open (boolean attribute present)
         expect(live_metrics.has_attribute?("open")).to be true
         expect(cumulative.has_attribute?("open")).to be true
+        expect(performance.has_attribute?("open")).to be true
         # Recent Activity should be collapsed (no open attribute)
         expect(recent_activity.has_attribute?("open")).to be false
       end
+    end
+  end
+
+  describe "GET /dashboard/metrics" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    before { sign_in user }
+
+    it "returns metrics partial within a turbo frame" do
+      get dashboard_metrics_path(time_range: "7d")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-metrics")
+      expect(response.body).to include("Run Volume")
+    end
+
+    it "defaults to cumulative when time_range is invalid" do
+      get dashboard_metrics_path(time_range: "invalid")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-metrics")
+    end
+  end
+
+  describe "GET /dashboard/performance" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    before { sign_in user }
+
+    it "returns performance partial within a turbo frame" do
+      get dashboard_performance_path(status: "all", goal: "all")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-performance")
+      expect(response.body).to include("Performance by Outcome")
+    end
+
+    it "accepts status and goal filters" do
+      get dashboard_performance_path(status: "completed", goal: "create_pr")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-performance")
+    end
+
+    it "defaults invalid filters to all" do
+      get dashboard_performance_path(status: "invalid", goal: "invalid")
+
+      expect(response).to have_http_status(:ok)
     end
   end
 
