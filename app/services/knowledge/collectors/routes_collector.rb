@@ -51,7 +51,7 @@ module Knowledge
           project_id: project.id,
           collector_type: collector_type,
           error_class: e.class.name,
-          error_message: e.message
+          error_message: e.message.to_s.truncate(500)
         )
         nil
       end
