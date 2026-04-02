@@ -87,8 +87,6 @@ RSpec.describe WorktreeService do
     describe "#clone_repository (private)" do
       it "configures fetch refspec after bare clone" do
         allow(service).to receive(:run_git)
-
-        # clone_repository now delegates to ensure_fetch_refspec, which uses --get-all/--add
         allow(service).to receive(:run_git)
           .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
           .and_return("")
@@ -102,7 +100,7 @@ RSpec.describe WorktreeService do
       end
     end
 
-    describe "#ensure_fetch_refspec via fetch_latest" do
+    describe "#ensure_cloned configures fetch refspec" do
       before do
         FileUtils.mkdir_p(repo_path)
         FileUtils.touch(File.join(repo_path, "HEAD"))
