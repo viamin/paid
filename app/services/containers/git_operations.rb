@@ -709,6 +709,8 @@ module Containers
         original_exists = container_service.execute("test -f #{original_path}", timeout: nil, stream: false)
       end
 
+      renamed_original = false
+
       if hook_exists.success?
         # If a backup already exists, avoid overwriting it and skip installation.
         # This can happen if a repo or tool (e.g. Husky) already created
@@ -726,6 +728,7 @@ module Containers
         mv_result = container_service.execute("mv #{hook_path} #{original_path}", timeout: nil, stream: false)
         raise Error, "Failed to rename existing hook: #{mv_result.error}" if mv_result.failure?
 
+        renamed_original = true
         script = commit_msg_wrapper_script(trailer, original_path)
       else
         script = commit_msg_hook_script(trailer)
@@ -734,28 +737,26 @@ module Containers
       # Write to a temp file first, then atomically move into place.
       # If the write or chmod fails after we renamed the original, we
       # restore it so the repo is never left without a commit-msg hook.
-      write_result = container_service.execute(
-        "cat > #{tmp_path} << 'HOOKEOF'\n#{script}\nHOOKEOF",
-        timeout: nil, stream: false
-      )
-      if write_result.failure?
-        rollback_original_hook(original_path, hook_path)
-        raise Error, "Failed to write co-author hook: #{write_result.error}"
-      end
+      # The rescue ensures rollback even if container_service.execute
+      # raises an exception (e.g. network error) rather than returning
+      # a failure Result.
+      begin
+        write_result = container_service.execute(
+          "cat > #{tmp_path} << 'HOOKEOF'\n#{script}\nHOOKEOF",
+          timeout: nil, stream: false
+        )
+        raise Error, "Failed to write co-author hook: #{write_result.error}" if write_result.failure?
 
-      chmod_result = container_service.execute("chmod +x #{tmp_path}", timeout: nil, stream: false)
-      if chmod_result.failure?
-        container_service.execute("rm -f #{tmp_path}", timeout: nil, stream: false)
-        rollback_original_hook(original_path, hook_path)
-        raise Error, "Failed to chmod co-author hook: #{chmod_result.error}"
-      end
+        chmod_result = container_service.execute("chmod +x #{tmp_path}", timeout: nil, stream: false)
+        raise Error, "Failed to chmod co-author hook: #{chmod_result.error}" if chmod_result.failure?
 
-      # Atomic move into place
-      mv_result = container_service.execute("mv #{tmp_path} #{hook_path}", timeout: nil, stream: false)
-      if mv_result.failure?
-        container_service.execute("rm -f #{tmp_path}", timeout: nil, stream: false)
-        rollback_original_hook(original_path, hook_path)
-        raise Error, "Failed to install co-author hook: #{mv_result.error}"
+        # Atomic move into place
+        mv_result = container_service.execute("mv #{tmp_path} #{hook_path}", timeout: nil, stream: false)
+        raise Error, "Failed to install co-author hook: #{mv_result.error}" if mv_result.failure?
+      rescue => e
+        container_service.execute("rm -f #{tmp_path}", timeout: nil, stream: false) rescue nil
+        rollback_original_hook(original_path, hook_path) if renamed_original
+        raise
       end
     end
 

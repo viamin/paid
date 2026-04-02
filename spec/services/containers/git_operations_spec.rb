@@ -1307,6 +1307,46 @@ RSpec.describe Containers::GitOperations do
       end
     end
 
+    context "when an exception occurs after renaming the original hook" do
+      before do
+        project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/grep -qF 'Installed by Paid'/), timeout: nil, stream: false)
+          .and_return(marker_missing_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(hook_missing_result, hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("test -f .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(hook_exists_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg .git/hooks/commit-msg.original", timeout: nil, stream: false)
+          .and_return(success_result)
+        # Simulate an exception (not a Result failure) during hook write
+        allow(container_service).to receive(:execute)
+          .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
+          .and_raise(RuntimeError, "connection lost")
+      end
+
+      it "cleans up the tmp file and restores the original hook" do
+        allow(container_service).to receive(:execute)
+          .with("rm -f .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+          .and_return(success_result)
+        allow(container_service).to receive(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+          .and_return(success_result)
+
+        # install_co_author_hook rescues all errors at the top level
+        expect { git_ops.install_co_author_hook }.not_to raise_error
+
+        expect(container_service).to have_received(:execute)
+          .with("rm -f .git/hooks/commit-msg.tmp", timeout: nil, stream: false)
+        expect(container_service).to have_received(:execute)
+          .with("mv .git/hooks/commit-msg.original .git/hooks/commit-msg", timeout: nil, stream: false)
+      end
+    end
+
     it "does not raise when installation fails" do
       project.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
       allow(container_service).to receive(:execute).and_raise(StandardError, "container error")
