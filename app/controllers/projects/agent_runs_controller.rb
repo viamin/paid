@@ -7,7 +7,7 @@ module Projects
     NoRunnableProviderError = Class.new(StandardError)
 
     before_action :set_project
-    before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error ]
+    before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate ]
 
     def index
       authorize @project, :show?
@@ -202,6 +202,37 @@ module Projects
 
       redirect_to project_agent_run_path(@project, @agent_run),
         notice: "Error diagnosis started. You'll see the result shortly."
+    end
+
+    def resume
+      authorize @agent_run
+
+      unless @agent_run.paused?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Only paused runs can be resumed."
+        return
+      end
+
+      @agent_run.resume!
+
+      redirect_to project_agent_run_path(@project, @agent_run),
+        notice: "Agent run resumed."
+    end
+
+    def terminate
+      authorize @agent_run
+
+      unless @agent_run.paused?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Only paused runs can be terminated."
+        return
+      end
+
+      AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
+      @agent_run.fail!(error: "Terminated after guardrail violation: #{@agent_run.guardrail_violation_type}")
+
+      redirect_to project_agent_run_path(@project, @agent_run),
+        notice: "Agent run terminated."
     end
 
     def retry

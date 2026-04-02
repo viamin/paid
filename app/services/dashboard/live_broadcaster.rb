@@ -77,11 +77,14 @@ module Dashboard
     end
 
     def alert_worthy?
-      AgentRun::FAILURE_STATUSES.include?(agent_run.status)
+      AgentRun::FAILURE_STATUSES.include?(agent_run.status) || agent_run.paused?
     end
 
     def alert_content
       case agent_run.status
+      when "paused"
+        violation = agent_run.guardrail_violation_type&.tr("_", " ") || "guardrail violation"
+        [ "warning", "Agent run paused for #{agent_run.project.full_name}: #{violation}. Review and resume or terminate." ]
       when "failed"
         error_detail = agent_run.error_message.presence&.then { |msg| ": #{msg.truncate(100)}" }
         [ "error", "Agent run failed for #{agent_run.project.full_name}#{error_detail}" ]
