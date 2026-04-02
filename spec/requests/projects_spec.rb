@@ -556,7 +556,8 @@ RSpec.describe "Projects" do
       it "shows automation settings with their current state" do
         project = create(:project, account: account, github_token: github_token,
           auto_add_labels_enabled: true, automation_on_label_enabled: false,
-          auto_pick_enabled: true, auto_merge_enabled: false, auto_fix_merge_conflicts: true)
+          auto_pick_enabled: true, auto_merge_enabled: false, auto_fix_merge_conflicts: true,
+          auto_scan_security: true, security_severity_threshold: "medium")
         get project_path(project)
         expect(response.body).to include("Configuration")
         # Ensure the old separate "Automation" section header is gone (the word still appears in setting labels)
@@ -576,6 +577,17 @@ RSpec.describe "Projects" do
             %r{<dt[^>]*>\s*#{Regexp.escape(label)}\s*</dt>\s*<dd[^>]*>.*?\b#{state}\b.*?</dd>}m
           )
         end
+      end
+
+      it "shows the security automation threshold when enabled" do
+        project = create(:project, account: account, github_token: github_token,
+          auto_scan_security: true, security_severity_threshold: "medium")
+
+        get project_path(project)
+
+        expect(response.body).to match(
+          %r{<dt[^>]*>\s*Auto-Scan Security Alerts\s*</dt>\s*<dd[^>]*>.*?\bEnabled\b.*?Minimum severity:\s*<span[^>]*>\s*Medium\s*</span>}m
+        )
       end
 
       it "shows edit automation link for users with update permission" do
@@ -695,6 +707,18 @@ RSpec.describe "Projects" do
         expect(response.body).to include("My Project")
       end
 
+      it "shows security automation controls in the automation section" do
+        project = create(:project, account: account, github_token: github_token,
+          auto_scan_security: true, security_severity_threshold: "medium")
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("Auto-Scan Security Alerts")
+        expect(response.body).to include('name="project[auto_scan_security]"')
+        expect(response.body).to include('name="project[security_severity_threshold]"')
+        expect(response.body).to include(">Medium</option>")
+      end
+
       it "shows the repository name (not editable)" do
         project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")
         get edit_project_path(project)
@@ -745,6 +769,16 @@ RSpec.describe "Projects" do
         project = create(:project, account: account, github_token: github_token, auto_fix_merge_conflicts: false)
         patch project_path(project), params: { project: { auto_fix_merge_conflicts: true } }
         expect(project.reload.auto_fix_merge_conflicts).to be true
+      end
+
+      it "allows updating security scanning settings" do
+        project = create(:project, account: account, github_token: github_token,
+          auto_scan_security: false, security_severity_threshold: "high")
+
+        patch project_path(project), params: { project: { auto_scan_security: true, security_severity_threshold: "medium" } }
+
+        expect(project.reload.auto_scan_security).to be true
+        expect(project.security_severity_threshold).to eq("medium")
       end
 
       it "allows updating github_token to another valid token" do

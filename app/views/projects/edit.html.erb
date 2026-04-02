@@ -369,6 +369,35 @@
                 <p class="mt-1 ml-7 text-xs text-gray-500"><%= setting[:description] %></p>
               </div>
             <% end %>
+
+            <div data-controller="checkbox-toggle">
+              <div class="flex items-center">
+                <%= form.check_box :auto_scan_security,
+                  class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600",
+                  data: { action: "checkbox-toggle#toggle", checkbox_toggle_target: "checkbox" } %>
+                <%= form.label :auto_scan_security, "Auto-Scan Security Alerts",
+                  class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
+              </div>
+              <p class="mt-1 ml-7 text-xs text-gray-500">
+                Periodically scan GitHub CodeQL alerts and create synthetic issues for alerts at or above the selected severity threshold.
+              </p>
+
+              <div class="mt-3 ml-7 max-w-xs"
+                <%= "hidden" unless @project.auto_scan_security? %>
+                data-checkbox-toggle-target="panel">
+                <%= form.label :security_severity_threshold, "Minimum Severity",
+                  class: "block text-sm font-medium leading-6 text-gray-900" %>
+                <div class="mt-2">
+                  <%= form.select :security_severity_threshold,
+                    Issue::SEVERITY_ORDER.map { |severity| [severity.titleize, severity] },
+                    {},
+                    class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+                </div>
+                <p class="mt-1 text-xs text-gray-500">
+                  Lower-severity alerts stay visible in GitHub, but Paid will only create issues for alerts at or above this level.
+                </p>
+              </div>
+            </div>
           </fieldset>
 
           <fieldset id="git-settings" class="space-y-4 rounded-md border border-gray-200 p-4">
