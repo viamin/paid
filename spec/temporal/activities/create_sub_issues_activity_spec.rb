@@ -139,18 +139,19 @@ RSpec.describe Activities::CreateSubIssuesActivity do
     end
 
     it "truncates overlong titles to MAX_TITLE_LENGTH" do
+      max_length = Llm::GenerateIssueTitle::MAX_TITLE_LENGTH
       long_title = "A" * 500
       tasks = [ { title: long_title, body: "body" } ]
 
       expect(github_client).to receive(:create_issue).with(
         project.full_name,
-        hash_including(title: a_string_matching(/\A#{Regexp.escape("A" * 252)}\.{3}\z/))
+        hash_including(title: a_string_matching(/\A#{"A" * (max_length - 3)}\.{3}\z/))
       ).and_return(
-        gh_issue_response(number: 101, id: 200_001, title: long_title.truncate(255), body: "body")
+        gh_issue_response(number: 101, id: 200_001, title: long_title.truncate(max_length), body: "body")
       )
 
       result = activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: tasks)
-      expect(result[:created_issues].first[:title].length).to be <= Llm::GenerateIssueTitle::MAX_TITLE_LENGTH
+      expect(result[:created_issues].first[:title].length).to be <= max_length
     end
 
     context "with empty sub_tasks" do
@@ -177,6 +178,26 @@ RSpec.describe Activities::CreateSubIssuesActivity do
       expect {
         activity.execute(project_id: project.id, parent_issue_id: -1, sub_tasks: sub_tasks)
       }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    context "with invalid sub_tasks input" do
+      it "raises a non-retryable error when sub_tasks is not an Array" do
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: "not an array")
+        }.to raise_error(Temporalio::Error::ApplicationError, /must be an Array/)
+      end
+
+      it "raises a non-retryable error when a sub_task is not a Hash" do
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: [ "not a hash" ])
+        }.to raise_error(Temporalio::Error::ApplicationError, /must be a Hash/)
+      end
+
+      it "raises a non-retryable error when a sub_task has a blank title" do
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: [ { title: "", body: "x" } ])
+        }.to raise_error(Temporalio::Error::ApplicationError, /non-blank title/)
+      end
     end
 
     context "when sync_issue_record fails" do

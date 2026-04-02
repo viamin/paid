@@ -7,6 +7,10 @@ module Activities
   # NOTE: This activity is designed to be invoked from PlanningWorkflow
   # once the workflow layer is implemented. See #695 for the full scope.
   #
+  # IMPORTANT: This activity creates GitHub issues as a side effect and is
+  # NOT idempotent. Callers must use a no-retry policy (max_attempts: 1)
+  # to avoid creating duplicate sub-issues on transient failures/timeouts.
+  #
   # Input:
   #   project_id:      [Integer] The project to create issues in
   #   parent_issue_id: [Integer] The parent Issue record id
@@ -21,7 +25,7 @@ module Activities
     def execute(input)
       project = Project.find(input[:project_id])
       parent_issue = project.issues.find(input[:parent_issue_id])
-      sub_tasks = Array(input[:sub_tasks])
+      sub_tasks = validate_sub_tasks!(input[:sub_tasks])
 
       client = project.github_token.client
       created_issues = []
@@ -64,6 +68,24 @@ module Activities
     end
 
     private
+
+    def validate_sub_tasks!(sub_tasks)
+      raise Temporalio::Error::ApplicationError.new(
+        "sub_tasks must be an Array", type: "InvalidInput", non_retryable: true
+      ) unless sub_tasks.is_a?(Array)
+
+      sub_tasks.each_with_index do |task, index|
+        raise Temporalio::Error::ApplicationError.new(
+          "sub_tasks[#{index}] must be a Hash", type: "InvalidInput", non_retryable: true
+        ) unless task.is_a?(Hash)
+
+        raise Temporalio::Error::ApplicationError.new(
+          "sub_tasks[#{index}] must have a non-blank title", type: "InvalidInput", non_retryable: true
+        ) if task[:title].to_s.blank?
+      end
+
+      sub_tasks
+    end
 
     def build_body(task_body, parent_issue)
       parts = []
