@@ -101,19 +101,20 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       expect(first_run).to eq(second_run)
     end
 
-    context "when routes file does not exist" do
-      let(:missing_file) { "/nonexistent/path/routes.txt" }
-      let(:missing_collector) do
+    context "when routes file does not exist and not containerized" do
+      let(:failing_collector) do
         described_class.new(
           project: project,
           project_version: project_version,
           collector_run: collector_run,
-          options: { routes_file: missing_file }
+          options: { routes_file: "/nonexistent/path/routes.txt" }
         )
       end
 
-      it "returns empty array" do
-        expect(missing_collector.collect).to eq([])
+      it "returns empty array for non-Rails repos" do
+        allow(failing_collector).to receive(:repo_file_exists?).and_return(false)
+
+        expect(failing_collector.collect).to eq([])
       end
     end
 
@@ -130,31 +131,91 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       end
     end
 
-    context "with scan_path fallback" do
-      let(:scan_dir) { Rails.root.join("spec/fixtures/knowledge").to_s }
-      let(:scan_collector) do
+    context "when generating routes via command in container" do
+      let(:container_runner) { instance_double(Knowledge::ContainerizedRunner, host_repo_dir: "/tmp/repo") }
+      let(:command_collector) do
         described_class.new(
           project: project,
           project_version: project_version,
           collector_run: collector_run,
-          options: { scan_path: scan_dir }
+          options: { container_runner: container_runner }
         )
       end
 
+      let(:fixture_output) { File.read(fixture_file) }
+
       before do
-        # Create tmp/routes_expanded.txt under the scan path
-        tmp_dir = File.join(scan_dir, "tmp")
-        FileUtils.mkdir_p(tmp_dir)
-        FileUtils.cp(fixture_file, File.join(tmp_dir, "routes_expanded.txt"))
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("config/routes.rb").and_return(true)
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("bin/rails").and_return(true)
       end
 
-      after do
-        tmp_dir = File.join(scan_dir, "tmp")
-        FileUtils.rm_rf(tmp_dir)
+      it "runs bin/rails routes --expanded" do
+        allow(command_collector).to receive(:run_command)
+          .with("bin/rails", "routes", "--expanded", timeout: 60)
+          .and_return(fixture_output)
+
+        expect(command_collector.collect.length).to eq(11)
       end
 
-      it "reads from tmp/routes_expanded.txt under scan_path" do
-        expect(scan_collector.collect.length).to eq(11)
+      it "raises when the command fails" do
+        allow(command_collector).to receive(:run_command)
+          .and_raise(RuntimeError, "Command failed")
+
+        expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
+      end
+
+      it "returns empty array when config/routes.rb is missing" do
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("config/routes.rb").and_return(false)
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("bin/rails").and_return(true)
+
+        expect(command_collector.collect).to eq([])
+      end
+
+      it "returns empty array when bin/rails binstub is missing" do
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("config/routes.rb").and_return(true)
+        allow(command_collector).to receive(:repo_file_exists?)
+          .with("bin/rails").and_return(false)
+
+        expect(command_collector.collect).to eq([])
+      end
+    end
+
+    context "when not containerized" do
+      let(:non_container_collector) do
+        described_class.new(
+          project: project,
+          project_version: project_version,
+          collector_run: collector_run,
+          options: {}
+        )
+      end
+
+      it "returns empty array when Rails indicators are absent" do
+        allow(non_container_collector).to receive(:repo_file_exists?).and_return(false)
+
+        expect(non_container_collector.collect).to eq([])
+      end
+
+      it "returns empty array when only config/routes.rb is present" do
+        allow(non_container_collector).to receive(:repo_file_exists?)
+          .with("config/routes.rb").and_return(true)
+        allow(non_container_collector).to receive(:repo_file_exists?)
+          .with("bin/rails").and_return(false)
+
+        expect(non_container_collector.collect).to eq([])
+      end
+
+      it "raises when Rails indicators are present" do
+        allow(non_container_collector).to receive(:repo_file_exists?).and_return(true)
+
+        expect { non_container_collector.collect }.to raise_error(
+          RuntimeError, /requires containerized mode/
+        )
       end
     end
   end
