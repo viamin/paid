@@ -139,7 +139,7 @@ bash .devcontainer/setup-signing-key.sh
 # Prerequisites: Ruby 3.4+, Bundler 2.7.2, PostgreSQL 16+, Node.js, Yarn 1.22.22, Docker Engine
 # Also start PostgreSQL, Temporal, and Qdrant locally before running setup.
 bin/setup               # Install deps, prepare DB
-bin/dev                 # Start dev server (Rails + JS + CSS watchers)
+bin/dev                 # Start Rails, JS/CSS watchers, and the Temporal worker
 ```
 
 `bin/setup` now does more than install Ruby and JS dependencies: it configures git hooks, prepares the database, checks Qdrant connectivity, builds the `paid-agent:latest` Docker image, and cleans up stale dev state. If Docker is unavailable, setup is incomplete.
