@@ -8,8 +8,10 @@ module Activities
   # once the workflow layer is implemented. See #695 for the full scope.
   #
   # IMPORTANT: This activity creates GitHub issues as a side effect and is
-  # NOT idempotent. Callers must use a no-retry policy (max_attempts: 1)
-  # to avoid creating duplicate sub-issues on transient failures/timeouts.
+  # NOT idempotent. If a failure occurs after some sub-issues have already
+  # been created, the error is raised as non-retryable to prevent Temporal
+  # retries from producing duplicates. Callers should also prefer a
+  # no-retry policy (max_attempts: 1) as a belt-and-suspenders safeguard.
   #
   # Input:
   #   project_id:      [Integer] The project to create issues in
@@ -30,6 +32,19 @@ module Activities
       client = project.github_token.client
       created_issues = []
 
+      create_issues_with_partial_failure_guard(
+        sub_tasks, created_issues, client, project, parent_issue
+      )
+
+      {
+        parent_issue_id: parent_issue.id,
+        created_issues: created_issues
+      }
+    end
+
+    private
+
+    def create_issues_with_partial_failure_guard(sub_tasks, created_issues, client, project, parent_issue)
       sub_tasks.each_with_index do |task, index|
         heartbeat("creating_sub_issue_#{index + 1}_of_#{sub_tasks.size}")
 
@@ -60,14 +75,15 @@ module Activities
           sub_issue_number: gh_issue.number
         )
       end
+    rescue StandardError => e
+      raise e if created_issues.empty?
 
-      {
-        parent_issue_id: parent_issue.id,
-        created_issues: created_issues
-      }
+      raise Temporalio::Error::ApplicationError.new(
+        "Partial failure after creating #{created_issues.size}/#{sub_tasks.size} sub-issues: #{e.message}",
+        type: "SubIssueCreationPartialFailure",
+        non_retryable: true
+      )
     end
-
-    private
 
     def validate_sub_tasks!(sub_tasks)
       raise Temporalio::Error::ApplicationError.new(

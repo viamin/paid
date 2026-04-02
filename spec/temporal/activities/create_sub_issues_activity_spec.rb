@@ -200,6 +200,36 @@ RSpec.describe Activities::CreateSubIssuesActivity do
       end
     end
 
+    context "when create_issue fails after partial success" do
+      it "raises a non-retryable error to prevent duplicate sub-issues" do
+        call_count = 0
+        allow(github_client).to receive(:create_issue) do |*_args|
+          call_count += 1
+          if call_count == 1
+            gh_issue_response(number: 101, id: 200_001, title: "Implement authentication", body: "body1")
+          else
+            raise StandardError, "GitHub API timeout"
+          end
+        end
+
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+        }.to raise_error(Temporalio::Error::ApplicationError, /Partial failure/) { |e|
+          expect(e.non_retryable).to be true
+        }
+      end
+
+      it "lets the error propagate normally when no sub-issues were created" do
+        allow(github_client).to receive(:create_issue).and_raise(
+          StandardError, "GitHub API timeout"
+        )
+
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+        }.to raise_error(StandardError, "GitHub API timeout")
+      end
+    end
+
     context "when sync_issue_record fails" do
       it "continues creating remaining issues and returns nil issue_id" do
         parent_issue # ensure created before stubbing
