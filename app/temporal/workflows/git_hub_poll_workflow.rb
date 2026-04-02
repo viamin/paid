@@ -120,13 +120,20 @@ module Workflows
       end
     end
 
+    # Unlike agent workflows, planning workflows cannot be queued via QueueAgentRunActivity
+    # because ProcessRunQueueJob always starts AgentExecutionWorkflow. Instead, we poll
+    # for capacity within the workflow — Temporal handles the durable sleep efficiently.
     def start_planning_workflow(project_id, issue_id)
       capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
 
-      unless capacity[:has_capacity]
-        run_activity(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: issue_id }, timeout: 30)
-        return
+      until capacity[:has_capacity]
+        Temporalio::Workflow.logger.info(
+          message: "planning.deferred_due_to_capacity",
+          project_id: project_id,
+          issue_id: issue_id
+        )
+        Temporalio::Workflow.sleep(30)
+        capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
       end
 
       workflow_id = "plan-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
