@@ -48,6 +48,9 @@ gem "qdrant-ruby"
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
 gem "agent-harness"
 
+# Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
+gem "ruby-maat"
+
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[windows jruby]
 
