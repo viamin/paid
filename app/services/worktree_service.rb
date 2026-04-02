@@ -57,6 +57,7 @@ class WorktreeService
 
     @mutex.synchronize do
       if File.exist?(File.join(repo_path, "HEAD"))
+        ensure_fetch_refspec
         fetch_latest unless max_fetch_age && recently_fetched?(repo_path, max_fetch_age)
       else
         clone_repository
