@@ -28,8 +28,13 @@ module Knowledge
       def tool_version
         version_output = run_command("maat", "--version")
         version_output.strip.presence
-      rescue Errno::ENOENT, RuntimeError, Knowledge::ContainerizedRunner::ContainerError => e
-        raise if e.is_a?(Timeout::Error) || e.is_a?(Knowledge::ContainerizedRunner::TimeoutError)
+      rescue Errno::ENOENT
+        nil
+      rescue RuntimeError => e
+        raise if e.is_a?(Timeout::Error)
+        nil
+      rescue Knowledge::ContainerizedRunner::ContainerError => e
+        raise unless e.message.match?(/\ACommand failed \(exit \d+\)/)
         nil
       end
 
@@ -38,9 +43,17 @@ module Knowledge
       def maat_available?
         run_command("which", "maat")
         true
-      rescue Errno::ENOENT, RuntimeError, Knowledge::ContainerizedRunner::ContainerError => e
-        # Re-raise timeouts — only treat "command not found" (non-zero exit) as unavailable
-        raise if e.is_a?(Timeout::Error) || e.is_a?(Knowledge::ContainerizedRunner::TimeoutError)
+      rescue Errno::ENOENT => e
+        # Binary genuinely missing on host
+        false
+      rescue RuntimeError => e
+        # Host-mode run_command raises RuntimeError for non-zero exit
+        raise if e.is_a?(Timeout::Error)
+        false
+      rescue Knowledge::ContainerizedRunner::ContainerError => e
+        # Re-raise infrastructure errors (container not provisioned, Docker
+        # exec failures) — only treat non-zero exit from `which` as unavailable
+        raise unless e.message.match?(/\ACommand failed \(exit \d+\)/)
         false
       end
 

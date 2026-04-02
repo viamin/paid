@@ -143,6 +143,20 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
       end
     end
 
+    context "when container infrastructure fails during maat check" do
+      before do
+        allow(Open3).to receive(:popen3).and_raise(
+          Knowledge::ContainerizedRunner::ContainerError, "Container not provisioned"
+        )
+      end
+
+      it "re-raises the container error" do
+        expect { collector.collect }.to raise_error(
+          Knowledge::ContainerizedRunner::ContainerError, "Container not provisioned"
+        )
+      end
+    end
+
     context "when maat is installed but fails at runtime" do
       before do
         stub_popen3(%w[which maat], stdout: "/usr/local/bin/maat\n")
