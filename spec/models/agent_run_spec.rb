@@ -35,6 +35,7 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_numericality_of(:tokens_output).is_greater_than_or_equal_to(0).allow_nil }
     it { is_expected.to validate_numericality_of(:cost_cents).is_greater_than_or_equal_to(0).allow_nil }
     it { is_expected.to validate_numericality_of(:duration_seconds).is_greater_than_or_equal_to(0).allow_nil }
+    it { is_expected.to validate_inclusion_of(:token_limit_status).in_array(described_class::TOKEN_LIMIT_STATUSES).allow_nil }
 
     describe "issue project validation" do
       it "allows issue from the same project" do
@@ -509,6 +510,33 @@ RSpec.describe AgentRun do
         agent_run = build(:agent_run, tokens_input: 1000, tokens_output: 500)
 
         expect(agent_run.total_tokens).to eq(1500)
+      end
+    end
+
+    describe "#token_limit_exceeded?" do
+      it "returns true when token_limit_status is exceeded" do
+        agent_run = build(:agent_run, token_limit_status: "exceeded")
+        expect(agent_run.token_limit_exceeded?).to be true
+      end
+
+      it "returns false when token_limit_status is warning" do
+        agent_run = build(:agent_run, token_limit_status: "warning")
+        expect(agent_run.token_limit_exceeded?).to be false
+      end
+    end
+
+    describe "#token_limit_warning?" do
+      it "returns true when token_limit_status is warning" do
+        agent_run = build(:agent_run, token_limit_status: "warning")
+        expect(agent_run.token_limit_warning?).to be true
+      end
+    end
+
+    describe "#token_limit_usage_ratio" do
+      it "returns the ratio of tokens used to limit" do
+        project = build(:project, max_tokens_per_run: 1_000_000)
+        agent_run = build(:agent_run, project: project, tokens_input: 400_000, tokens_output: 100_000)
+        expect(agent_run.token_limit_usage_ratio).to eq(0.5)
       end
     end
 

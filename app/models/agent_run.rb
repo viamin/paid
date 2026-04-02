@@ -10,6 +10,7 @@ class AgentRun < ApplicationRecord
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   UNFINISHED_STATUSES = %w[queued pending running].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
+  TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
 
   belongs_to :project
   belongs_to :issue, optional: true
@@ -65,6 +66,7 @@ class AgentRun < ApplicationRecord
   validates :final_provider, length: { maximum: 50 }
   validates :provider_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :stale_requeue_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :token_limit_status, inclusion: { in: TOKEN_LIMIT_STATUSES }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :provider_belongs_to_project_owner, if: -> { provider.present? }
   validate :has_prompt_source, on: :create
@@ -339,6 +341,23 @@ class AgentRun < ApplicationRecord
 
   def total_tokens
     tokens_input + tokens_output
+  end
+
+  def token_limit_exceeded?
+    token_limit_status == "exceeded"
+  end
+
+  def token_limit_warning?
+    token_limit_status == "warning"
+  end
+
+  # Returns the fraction of the token limit consumed (0.0–1.0+).
+  # Returns nil if no limit is configured.
+  def token_limit_usage_ratio
+    limit = project.effective_max_tokens_per_run
+    return nil if limit.nil? || limit.zero?
+
+    total_tokens.to_f / limit
   end
 
   def resource_summary

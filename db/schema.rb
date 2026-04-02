@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_02_050141) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_02_072439) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -81,6 +81,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_050141) do
 
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.integer "default_max_tokens_per_run", default: 10000000, null: false
     t.string "name", null: false
     t.string "slug", null: false
     t.datetime "updated_at", null: false
@@ -166,6 +167,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_050141) do
     t.string "status", limit: 50, default: "pending", null: false
     t.string "temporal_run_id", limit: 255
     t.string "temporal_workflow_id", limit: 255
+    t.string "token_limit_status", limit: 50
     t.integer "tokens_input", default: 0
     t.integer "tokens_output", default: 0
     t.string "trigger_type", limit: 50, default: "automatic", null: false
@@ -700,6 +702,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_050141) do
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_pr_followup_runs", default: 8, null: false
+    t.integer "max_tokens_per_run"
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
@@ -711,6 +714,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_050141) do
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
     t.string "security_severity_threshold", default: "high", null: false
+    t.integer "token_limit_warning_threshold", default: 80, null: false
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false

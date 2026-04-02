@@ -54,8 +54,65 @@ class TokenUsageTracker
         llm_model: llm_model,
         request_type: request_type
       }.to_json, metadata: { type: "token_usage" })
+
+      check_token_limits(agent_run) if update_aggregates
     end
   end
+
+  # Evaluates the agent run's cumulative token usage against project limits
+  # and updates the token_limit_status field. Logs warnings at the soft
+  # threshold and records "exceeded" at the hard limit.
+  def self.check_token_limits(agent_run)
+    project = agent_run.project
+    hard_limit = project.effective_max_tokens_per_run
+    warning_at = project.token_limit_warning_at
+    current_tokens = agent_run.total_tokens
+
+    new_status = if current_tokens >= hard_limit
+      "exceeded"
+    elsif current_tokens >= warning_at
+      "warning"
+    else
+      "ok"
+    end
+
+    previous_status = agent_run.token_limit_status
+
+    return if new_status == previous_status
+
+    agent_run.update_column(:token_limit_status, new_status)
+
+    if new_status == "warning" && previous_status != "warning"
+      agent_run.log!(
+        "system",
+        "Token usage warning: #{current_tokens} of #{hard_limit} tokens used " \
+        "(#{(current_tokens * 100.0 / hard_limit).round(1)}%). " \
+        "Run will be stopped at #{hard_limit} tokens.",
+        metadata: { type: "token_limit_warning" }
+      )
+      Rails.logger.warn(
+        message: "agent_execution.token_limit_warning",
+        agent_run_id: agent_run.id,
+        current_tokens: current_tokens,
+        hard_limit: hard_limit,
+        usage_percent: (current_tokens * 100.0 / hard_limit).round(1)
+      )
+    elsif new_status == "exceeded"
+      agent_run.log!(
+        "system",
+        "Token limit exceeded: #{current_tokens} of #{hard_limit} tokens used. " \
+        "Agent will be stopped after the current operation completes.",
+        metadata: { type: "token_limit_exceeded" }
+      )
+      Rails.logger.warn(
+        message: "agent_execution.token_limit_exceeded",
+        agent_run_id: agent_run.id,
+        current_tokens: current_tokens,
+        hard_limit: hard_limit
+      )
+    end
+  end
+  private_class_method :check_token_limits
 
   # Thread-safe in-memory cache of LlmModel records keyed by model_id string.
   # Avoids a DB query per tracked request in the high-volume proxy path.

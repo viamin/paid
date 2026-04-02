@@ -50,9 +50,24 @@ module Api
 
     def check_rate_limit
       limit = resolve_max_tokens_per_run
-      return unless @agent_run.total_tokens > limit
+      current_tokens = @agent_run.total_tokens
 
-      render json: { error: "Token limit exceeded for this agent run" }, status: :too_many_requests
+      if current_tokens > limit
+        render json: {
+          error: "Token limit exceeded for this agent run",
+          token_usage: current_tokens,
+          token_limit: limit
+        }, status: :too_many_requests
+        return
+      end
+
+      warning_threshold = @agent_run.project.token_limit_warning_threshold
+      warning_at = (limit * warning_threshold / 100.0).floor
+      if current_tokens >= warning_at
+        response.set_header("X-Token-Usage", current_tokens.to_s)
+        response.set_header("X-Token-Limit", limit.to_s)
+        response.set_header("X-Token-Limit-Warning", "true")
+      end
     end
 
     def proxy_request(base_url:, auth_header:, api_key:)
@@ -158,8 +173,15 @@ module Api
 
     def resolve_max_tokens_per_run
       @max_tokens_per_run ||= begin
-        settings = AgentRuns::UserSettingsResolver.call(project: @agent_run.project, strict: false)
-        settings&.max_tokens_per_run || DEFAULT_MAX_TOKENS_PER_RUN
+        project = @agent_run.project
+        # Prefer explicit project-level override, then user settings, then account default, then global default.
+        project.max_tokens_per_run ||
+          begin
+            settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+            settings&.max_tokens_per_run
+          end ||
+          project.account.default_max_tokens_per_run ||
+          DEFAULT_MAX_TOKENS_PER_RUN
       end
     end
 

@@ -134,6 +134,58 @@ RSpec.describe TokenUsageTracker do
     end
   end
 
+  describe "token limit checking" do
+    before do
+      project.update!(max_tokens_per_run: 10_000, token_limit_warning_threshold: 80)
+    end
+
+    it "sets token_limit_status to ok when below warning threshold" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 1000 })
+      expect(agent_run.reload.token_limit_status).to eq("ok")
+    end
+
+    it "sets token_limit_status to warning when at or above warning threshold" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      expect(agent_run.reload.token_limit_status).to eq("warning")
+    end
+
+    it "sets token_limit_status to exceeded when at or above hard limit" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
+      expect(agent_run.reload.token_limit_status).to eq("exceeded")
+    end
+
+    it "logs a warning when crossing the soft threshold" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      log = agent_run.agent_run_logs.find_by(log_type: "system")
+      expect(log.content).to include("Token usage warning")
+      expect(log.metadata).to eq({ "type" => "token_limit_warning" })
+    end
+
+    it "logs an exceeded message when crossing the hard limit" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
+      log = agent_run.agent_run_logs.where(log_type: "system").last
+      expect(log.content).to include("Token limit exceeded")
+      expect(log.metadata).to eq({ "type" => "token_limit_exceeded" })
+    end
+
+    it "does not check limits when update_aggregates is false" do
+      described_class.track(
+        agent_run: agent_run,
+        usage: { tokens_input: 7000, tokens_output: 4000 },
+        update_aggregates: false
+      )
+      expect(agent_run.reload.token_limit_status).to be_nil
+    end
+
+    it "transitions from warning to exceeded as usage grows" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      expect(agent_run.reload.token_limit_status).to eq("warning")
+
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 2000, tokens_output: 1000 })
+      expect(agent_run.reload.token_limit_status).to eq("exceeded")
+    end
+  end
+
   describe ".calculate_cost" do
     it "returns 0 for zero tokens" do
       expect(described_class.calculate_cost(0, 0)).to eq(0)

@@ -82,6 +82,26 @@
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
           <%= number_with_delimiter((agent_run.tokens_input || 0) + (agent_run.tokens_output || 0)) %>
         </dd>
+        <% limit = agent_run.project.effective_max_tokens_per_run %>
+        <% if limit && limit > 0 %>
+          <% ratio = agent_run.token_limit_usage_ratio || 0 %>
+          <% percent = [ratio * 100, 100].min.round(1) %>
+          <div class="mt-2">
+            <div class="flex items-center justify-between text-xs text-gray-500">
+              <span><%= percent %>% of limit</span>
+              <span><%= number_with_delimiter(limit) %></span>
+            </div>
+            <div class="mt-1 h-2 w-full rounded-full bg-gray-200">
+              <div class="h-2 rounded-full <%= ratio >= 1.0 ? 'bg-red-500' : ratio >= 0.8 ? 'bg-yellow-500' : 'bg-green-500' %>"
+                   style="width: <%= percent %>%"></div>
+            </div>
+            <% if agent_run.token_limit_exceeded? %>
+              <p class="mt-1 text-xs font-medium text-red-600">Limit exceeded</p>
+            <% elsif agent_run.token_limit_warning? %>
+              <p class="mt-1 text-xs font-medium text-yellow-600">Approaching limit</p>
+            <% end %>
+          </div>
+        <% end %>
       </div>
 
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
@@ -186,6 +206,17 @@
       <h2 class="text-sm font-semibold text-blue-800">Issue Created</h2>
       <p class="mt-1">
         <%= link_to agent_run.created_issue_url, agent_run.created_issue_url, target: "_blank", rel: "noopener noreferrer", class: "text-blue-700 hover:text-blue-900 underline" %>
+      </p>
+    </div>
+  <% end %>
+
+  <% if agent_run.token_limit_exceeded? %>
+    <div class="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
+      <h2 class="text-sm font-semibold text-red-800">Token Limit Exceeded</h2>
+      <p class="mt-1 text-sm text-red-700">
+        This agent run was stopped because it exceeded the configured token limit
+        of <%= number_with_delimiter(agent_run.project.effective_max_tokens_per_run) %> tokens.
+        Total tokens used: <strong><%= number_with_delimiter(agent_run.total_tokens) %></strong>.
       </p>
     </div>
   <% end %>
