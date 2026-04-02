@@ -136,7 +136,7 @@ bash .devcontainer/setup-signing-key.sh
 ### Option 3: Local Development
 
 ```bash
-# Prerequisites: Ruby 3.4+, Bundler 2.7.2, PostgreSQL 16+, Node.js, Yarn 1.22.22, Docker Engine
+# Prerequisites: Ruby 3.4+, Bundler 2.7.2, PostgreSQL 16+, Node.js 22.x (see .tool-versions for the exact pinned version), Yarn 1.22.22, Docker Engine
 # Also start PostgreSQL, Temporal, and Qdrant locally before running setup.
 bin/setup               # Install deps, prepare DB
 bin/dev                 # Start Rails, JS/CSS watchers, and the Temporal worker
