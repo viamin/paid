@@ -2,13 +2,14 @@
 
 require "csv"
 require "json"
+require "shellwords"
 require "tempfile"
 
 module Knowledge
   module Collectors
     class ChurnHotspotCollector < BaseCollector
       COLLECTOR_TIMEOUT = 120 # seconds
-      GIT_LOG_FORMAT = "--%h--%ad--%aN"
+      GIT_LOG_FORMAT = "--%h--%ad--%aN%n"
 
       def collect
         repo_path = resolve_repo_path
@@ -36,6 +37,38 @@ module Knowledge
       private
 
       def run_revisions(repo_path)
+        if containerized?
+          run_containerized_revisions(repo_path)
+        else
+          run_host_revisions(repo_path)
+        end
+      end
+
+      # In containerized mode, write the git log to a container-local temp
+      # file via shell redirect so ruby-maat can read it without crossing
+      # the host/container boundary.
+      def run_containerized_revisions(repo_path)
+        container_log_path = "/tmp/maat_log.log"
+
+        run_command(
+          "sh", "-c",
+          "git -C #{Shellwords.shellescape(repo_path)} log --all --numstat " \
+          "--date=short '--pretty=format:#{GIT_LOG_FORMAT}' " \
+          "--no-renames > #{container_log_path}",
+          timeout: COLLECTOR_TIMEOUT
+        )
+
+        output = run_command(
+          "ruby-maat", "-c", "git2", "-l", container_log_path,
+          "-a", "revisions", "-n", "1",
+          timeout: COLLECTOR_TIMEOUT
+        )
+        parse_csv(output)
+      end
+
+      # In host mode, use a Tempfile visible to both git and ruby-maat
+      # since they run in the same filesystem.
+      def run_host_revisions(repo_path)
         Tempfile.create([ "maat_log", ".log" ]) do |f|
           begin
             write_git_log_file(repo_path, f)
