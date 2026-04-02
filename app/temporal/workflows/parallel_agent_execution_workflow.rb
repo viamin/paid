@@ -220,7 +220,7 @@ module Workflows
         .select { |r| r[:success] && r[:agent_run_id] }
         .map { |r| r[:agent_run_id] }
 
-      return no_conflicts_result if successful_run_ids.size < 2
+      return no_conflicts_result(project_id: project_id) if successful_run_ids.size < 2
 
       detection = run_activity(
         Activities::DetectConflictsActivity,
@@ -242,7 +242,11 @@ module Workflows
         timeout: 300
       )
 
-      detection.merge(resolution: resolution)
+      detection.merge(
+        resolution: resolution,
+        detection_failed: false,
+        requires_manual_review: resolution[:requires_manual_review]
+      )
     rescue => e
       Temporalio::Workflow.logger.warn(
         message: "parallel_execution.conflict_detection_failed",
@@ -263,13 +267,13 @@ module Workflows
       }
     end
 
-    def no_conflicts_result
+    def no_conflicts_result(project_id: nil)
       {
         has_conflicts: false,
         conflicting_pairs: [],
         files_by_run: {},
         total_runs_checked: 0,
-        project_id: nil,
+        project_id: project_id,
         detection_failed: false,
         requires_manual_review: false,
         resolution: nil

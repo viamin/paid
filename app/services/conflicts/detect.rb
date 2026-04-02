@@ -72,15 +72,19 @@ module Conflicts
     end
 
     # Determines files changed by a run by comparing base and result commits.
-    # Uses the agent run's recorded SHAs rather than live git operations,
-    # since containers may have been cleaned up.
+    # Tries three sources in order:
+    #   1. Container git diff (if container still exists)
+    #   2. Host bare repo git diff (using stored SHAs)
+    #   3. Phase metadata (if changed_files was recorded)
     def changed_files_for_run(run)
       return Set.new if run.base_commit_sha == run.result_commit_sha
 
       files = diff_files_from_container(run)
       return files if files.any?
 
-      # Fallback: use stored metadata if container is gone
+      files = diff_files_from_bare_repo(run)
+      return files if files.any?
+
       diff_files_from_metadata(run)
     end
 
@@ -100,6 +104,27 @@ module Conflicts
     rescue StandardError => e
       Rails.logger.warn(
         message: "conflicts.detect.container_diff_failed",
+        agent_run_id: run.id,
+        error: e.message
+      )
+      Set.new
+    end
+
+    # Computes changed files via the host bare repo using stored commit SHAs.
+    # Works even after containers are cleaned up, as long as the commits
+    # were pushed to the remote and fetched into the bare clone.
+    def diff_files_from_bare_repo(run)
+      return Set.new unless run.project
+
+      worktree_service = WorktreeService.new(run.project)
+      output = worktree_service.run_repo_command(
+        "diff", "--name-only", run.base_commit_sha, run.result_commit_sha
+      )
+
+      Set.new(output.to_s.strip.split("\n").reject(&:blank?))
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "conflicts.detect.bare_repo_diff_failed",
         agent_run_id: run.id,
         error: e.message
       )

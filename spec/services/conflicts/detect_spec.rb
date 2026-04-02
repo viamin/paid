@@ -70,6 +70,35 @@ RSpec.describe Conflicts::Detect do
         expect(result[:conflicting_pairs].first[:files]).to eq([ "shared.rb" ])
       end
 
+      it "falls back to bare repo diff when container is unavailable" do
+        run_a, run_b = create_bare_repo_runs(
+          files_a: "src/app.rb\nsrc/config.rb\n",
+          files_b: "src/app.rb\ntest/app_test.rb\n"
+        )
+
+        result = described_class.call(
+          agent_run_ids: [ run_a.id, run_b.id ],
+          project_id: run_a.project_id
+        )
+
+        expect(result[:has_conflicts]).to be true
+        expect(result[:conflicting_pairs].first[:files]).to eq([ "src/app.rb" ])
+      end
+
+      it "falls through to metadata when bare repo diff fails" do
+        run_a = create_run(result_sha: "b" * 40, changed_files: [ "src/app.rb" ])
+        run_b = create_run(result_sha: "c" * 40, changed_files: [ "src/app.rb" ])
+
+        allow(WorktreeService).to receive(:new).and_raise(StandardError, "no repo")
+
+        result = described_class.call(
+          agent_run_ids: [ run_a.id, run_b.id ],
+          project_id: project.id
+        )
+
+        expect(result[:has_conflicts]).to be true
+      end
+
       it "skips runs where base and result SHAs are identical" do
         no_change_run = create(:agent_run, :completed, project: project,
           branch_name: "paid/no-change", base_commit_sha: base_sha, result_commit_sha: base_sha)
@@ -86,6 +115,26 @@ RSpec.describe Conflicts::Detect do
         result = described_class.call(agent_run_ids: [ run_a.id ])
 
         expect(result[:files_by_run]).to be_a(Hash)
+      end
+
+      def create_bare_repo_runs(files_a:, files_b:)
+        bare_project = create(:project)
+        worktree_svc = instance_double(WorktreeService)
+        allow(WorktreeService).to receive(:new).with(bare_project).and_return(worktree_svc)
+
+        run_a = create(:agent_run, :completed, project: bare_project,
+          branch_name: "paid/bare-a", base_commit_sha: base_sha,
+          result_commit_sha: "b" * 40, container_id: nil)
+        allow(worktree_svc).to receive(:run_repo_command)
+          .with("diff", "--name-only", base_sha, "b" * 40).and_return(files_a)
+
+        run_b = create(:agent_run, :completed, project: bare_project,
+          branch_name: "paid/bare-b", base_commit_sha: base_sha,
+          result_commit_sha: "c" * 40, container_id: nil)
+        allow(worktree_svc).to receive(:run_repo_command)
+          .with("diff", "--name-only", base_sha, "c" * 40).and_return(files_b)
+
+        [ run_a, run_b ]
       end
     end
   end

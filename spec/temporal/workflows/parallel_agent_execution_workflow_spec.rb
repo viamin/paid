@@ -213,26 +213,43 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(deadline_exceeded).not_to be_empty
     end
 
-    it "includes conflict detection results" do
+    it "includes conflict detection results with consistent schema" do
       stub_full_capacity
       stub_successful_futures(count: 2)
       stub_no_conflicts
 
       result = workflow.execute(two_task_input)
 
-      expect(result[:conflicts]).to be_a(Hash)
-      expect(result[:conflicts][:has_conflicts]).to be false
+      conflicts = result[:conflicts]
+      expect(conflicts).to be_a(Hash)
+      expect(conflicts[:has_conflicts]).to be false
+      expect(conflicts[:detection_failed]).to be false
+      expect(conflicts[:requires_manual_review]).to be false
+      expect(conflicts[:resolution]).to be_nil
     end
 
-    it "detects conflicts between successful runs" do
+    it "detects conflicts between successful runs with consistent schema" do
       stub_full_capacity
       stub_successful_futures(count: 2)
       stub_conflict_detected_and_unresolved
 
       result = workflow.execute(two_task_input)
 
-      expect(result[:conflicts][:has_conflicts]).to be true
-      expect(result[:conflicts][:resolution][:requires_manual_review]).to be true
+      conflicts = result[:conflicts]
+      expect(conflicts[:has_conflicts]).to be true
+      expect(conflicts[:detection_failed]).to be false
+      expect(conflicts[:requires_manual_review]).to be true
+      expect(conflicts[:resolution][:requires_manual_review]).to be true
+    end
+
+    it "returns project_id in no_conflicts_result when fewer than 2 successful runs" do
+      stub_full_capacity
+      stub_mixed_futures
+      stub_no_conflicts
+
+      result = workflow.execute(two_task_input)
+
+      expect(result[:conflicts][:project_id]).to eq(1)
     end
   end
 
