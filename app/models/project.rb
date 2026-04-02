@@ -89,6 +89,8 @@ class Project < ApplicationRecord
 
   encrypts :webhook_secret
 
+  before_validation :normalize_agent_co_author_trailer
+
   validates :name, presence: true
   validates :owner, presence: true
   validates :repo, presence: true
@@ -103,6 +105,7 @@ class Project < ApplicationRecord
   validates :code_scanning_interval_hours, numericality: { greater_than_or_equal_to: 24 }
   validates :knowledge_status, inclusion: { in: KNOWLEDGE_STATUSES }
   validate :allowed_github_usernames_not_empty
+  validate :agent_co_author_trailer_is_single_line
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :github_token_belongs_to_same_account, if: -> { github_token.present? }
   validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
@@ -543,6 +546,18 @@ class Project < ApplicationRecord
     return if has_any_condition
 
     errors.add(:review_settings, "#{method_name} must have at least one termination condition configured")
+  end
+
+  def normalize_agent_co_author_trailer
+    stripped = agent_co_author_trailer.to_s.strip
+    self.agent_co_author_trailer = stripped.present? ? stripped : nil
+  end
+
+  def agent_co_author_trailer_is_single_line
+    return if agent_co_author_trailer.blank?
+    return unless agent_co_author_trailer.match?(/[\r\n]/)
+
+    errors.add(:agent_co_author_trailer, "must be a single line (no newlines)")
   end
 
   def allowed_github_usernames_not_empty
