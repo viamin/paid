@@ -88,8 +88,13 @@ RSpec.describe WorktreeService do
       it "configures fetch refspec after bare clone" do
         allow(service).to receive(:run_git)
 
+        # clone_repository now delegates to ensure_fetch_refspec, which uses --get-all/--add
+        allow(service).to receive(:run_git)
+          .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
+          .and_return("")
+
         expect(service).to receive(:run_git).with(
-          "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*",
+          "config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC,
           chdir: repo_path
         )
 
@@ -110,7 +115,7 @@ RSpec.describe WorktreeService do
           .and_return("")
 
         expect(service).to receive(:run_git).with(
-          "config", "--add", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*",
+          "config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC,
           chdir: repo_path
         )
 
@@ -123,7 +128,7 @@ RSpec.describe WorktreeService do
           .and_return("+refs/tags/*:refs/tags/*\n")
 
         expect(service).to receive(:run_git).with(
-          "config", "--add", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*",
+          "config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC,
           chdir: repo_path
         )
 
@@ -133,10 +138,10 @@ RSpec.describe WorktreeService do
       it "skips adding refspec when already configured" do
         allow(service).to receive(:run_git)
           .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
-          .and_return("+refs/heads/*:refs/remotes/origin/*\n")
+          .and_return("#{described_class::FETCH_REFSPEC}\n")
 
         expect(service).not_to receive(:run_git).with(
-          "config", "--add", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*",
+          "config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC,
           chdir: repo_path
         )
 
@@ -146,10 +151,10 @@ RSpec.describe WorktreeService do
       it "skips adding refspec when desired refspec exists among multiple" do
         allow(service).to receive(:run_git)
           .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
-          .and_return("+refs/tags/*:refs/tags/*\n+refs/heads/*:refs/remotes/origin/*\n")
+          .and_return("+refs/tags/*:refs/tags/*\n#{described_class::FETCH_REFSPEC}\n")
 
         expect(service).not_to receive(:run_git).with(
-          "config", "--add", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*",
+          "config", "--add", "remote.origin.fetch", described_class::FETCH_REFSPEC,
           chdir: repo_path
         )
 
@@ -159,7 +164,7 @@ RSpec.describe WorktreeService do
       it "caches the refspec check so subsequent fetches skip git config" do
         allow(service).to receive(:run_git)
           .with("config", "--get-all", "remote.origin.fetch", chdir: repo_path, raise_on_error: false)
-          .and_return("+refs/heads/*:refs/remotes/origin/*\n")
+          .and_return("#{described_class::FETCH_REFSPEC}\n")
 
         service.ensure_cloned
         service.ensure_cloned

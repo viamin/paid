@@ -255,8 +255,8 @@ class WorktreeService
     run_git("clone", "--bare", clone_url, project_repo_path)
 
     # Bare clones don't configure a fetch refspec, so `git fetch` won't
-    # create origin/* refs. Add it so fetch_latest and current_commit_sha work.
-    run_git("config", "remote.origin.fetch", FETCH_REFSPEC, chdir: project_repo_path)
+    # create origin/* refs. Ensure it exists so fetch_latest and current_commit_sha work.
+    ensure_fetch_refspec
 
     project.github_token.touch_last_used!
   rescue Error
