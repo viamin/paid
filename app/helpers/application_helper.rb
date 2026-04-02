@@ -215,6 +215,14 @@ module ApplicationHelper
     end
   end
 
+  # Redacts potential secrets from error messages before displaying them in the UI.
+  # Uses the Knowledge::Redaction::Redactor for consistent secret detection.
+  def redacted_error_message(message)
+    return nil if message.blank?
+
+    Knowledge::Redaction::Redactor.call(text: message).clean_text
+  end
+
   private
 
   def create_pr_context(run)

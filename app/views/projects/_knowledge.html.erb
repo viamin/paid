@@ -38,7 +38,7 @@
               <ul class="list-disc space-y-1 pl-5">
                 <% failed_collector_runs.each do |run| %>
                   <li>
-                    <span class="font-medium"><%= run.collector_type %></span><% if run.error_message.present? %>: <%= truncate(run.error_message, length: 200) %><% end %>
+                    <span class="font-medium"><%= run.collector_type %></span><% if run.error_message.present? %>: <%= truncate(redacted_error_message(run.error_message), length: 200) %><% end %>
                   </li>
                 <% end %>
               </ul>
@@ -139,7 +139,7 @@
             <% if run.status == "failed" && run.error_message.present? %>
               <tr class="bg-red-50">
                 <td colspan="6" class="px-4 py-2 text-xs text-red-700">
-                  <span class="font-medium">Error:</span> <%= truncate(run.error_message, length: 300) %>
+                  <span class="font-medium">Error:</span> <%= truncate(redacted_error_message(run.error_message), length: 300) %>
                 </td>
               </tr>
             <% end %>

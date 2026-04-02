@@ -635,6 +635,18 @@ RSpec.describe "Projects" do
           expect(response.body).to include("Clone failed")
         end
 
+        it "redacts secrets from error messages in the banner and inline rows" do
+          project = create(:project, account: account, github_token: github_token, knowledge_status: "failed")
+          version = create(:project_version, project: project)
+          create(:collector_run, :failed, project_version: version, collector_type: "code_structure",
+            error_message: "Clone failed: https://ghp_abc123def456ghi789jkl012mno345pqr678@github.com/org/repo.git")
+
+          get project_path(project)
+
+          expect(response.body).to include("code_structure")
+          expect(response.body).not_to include("ghp_abc123def456ghi789jkl012mno345pqr678")
+        end
+
         it "does not show stale errors from previous versions in the banner" do
           project = create(:project, account: account, github_token: github_token, knowledge_status: "failed")
           old_version = create(:project_version, project: project, created_at: 1.day.ago)
@@ -645,11 +657,11 @@ RSpec.describe "Projects" do
 
           get project_path(project)
 
-          expect(response.body).to include("Knowledge collection failed")
-          # The banner should not list old_collector since it belongs to a previous version
-          banner_html = response.body[/role="alert".*?<\/div>\s*<\/div>\s*<\/div>/m]
-          expect(banner_html).not_to include("old_collector")
-          expect(banner_html).to include("no collector-level error details are available")
+          doc = Nokogiri::HTML(response.body)
+          banner = doc.at_css("[role='alert']")
+          expect(banner).to be_present
+          expect(banner.text).not_to include("old_collector")
+          expect(banner.text).to include("no collector-level error details are available")
         end
       end
 
