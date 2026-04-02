@@ -308,6 +308,57 @@ RSpec.describe PromptEvolution::Mutate do
       expect(mutations.first.template).to include("{{task}}", "{{repo}}")
     end
 
+    it "handles hash-based variables with name keys" do
+      prompt_with_hash_vars = create(:prompt, :global)
+      prompt_with_hash_vars.create_version!(
+        template: "Do {{task}} for {{repo}}",
+        variables: [ { "name" => "task" }, { "name" => "repo" } ]
+      )
+
+      response = { "mutations" => [ { "template" => "Complete {{task}} in {{repo}} carefully",
+                                    "strategy" => "expansion",
+                                    "reasoning" => "test",
+                                    "expected_improvement" => "test" } ] }.to_json
+      allow(harness_response).to receive(:output).and_return(response)
+
+      mutations = described_class.call(prompt: prompt_with_hash_vars)
+
+      expect(mutations.size).to eq(1)
+      expect(mutations.first.template).to include("{{task}}", "{{repo}}")
+    end
+
+    it "rejects mutations missing hash-based required variables" do
+      prompt_with_hash_vars = create(:prompt, :global)
+      prompt_with_hash_vars.create_version!(
+        template: "Do {{task}} for {{repo}}",
+        variables: [ { "name" => "task" }, { "name" => "repo" } ]
+      )
+
+      response = { "mutations" => [ { "template" => "Do {{task}} only",
+                                    "strategy" => "simplification",
+                                    "reasoning" => "test",
+                                    "expected_improvement" => "test" } ] }.to_json
+      allow(harness_response).to receive(:output).and_return(response)
+
+      mutations = described_class.call(prompt: prompt_with_hash_vars)
+
+      expect(mutations).to be_empty
+    end
+
+    it "truncates mutations to the requested count" do
+      many_mutations = {
+        "mutations" => 6.times.map do |i|
+          { "template" => "Variant #{i} for {{title}}", "strategy" => "refinement",
+            "reasoning" => "test", "expected_improvement" => "test" }
+        end
+      }.to_json
+      allow(harness_response).to receive(:output).and_return(many_mutations)
+
+      mutations = described_class.call(prompt: prompt, mutation_count: 2)
+
+      expect(mutations.size).to eq(2)
+    end
+
     it "rejects mutations exceeding max template length" do
       response = { "mutations" => [ { "template" => "x" * 50_001, "strategy" => "expansion",
                                      "reasoning" => "test", "expected_improvement" => "test" } ] }.to_json
@@ -330,7 +381,7 @@ RSpec.describe PromptEvolution::Mutate do
     end
 
     it "handles LLM response wrapped in quotes" do
-      quoted = "\"#{valid_llm_response.gsub('\\', '\\\\\\\\').gsub('"', '\\"')}\""
+      quoted = valid_llm_response.to_json
       allow(harness_response).to receive(:output).and_return(quoted)
 
       # The JSON inside quotes may not parse cleanly after unescaping,

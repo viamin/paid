@@ -71,7 +71,15 @@ module PromptEvolution
         model: DEFAULT_MODEL,
         timeout: TIMEOUT
       )
-      return nil unless response.success?
+      unless response.success?
+        Rails.logger.warn(
+          message: "prompt_evolution.mutate_unsuccessful_response",
+          prompt_id: @prompt.id,
+          exit_code: response.respond_to?(:exit_code) ? response.exit_code : nil,
+          error_output: response.respond_to?(:error_output) ? response.error_output : nil
+        )
+        return nil
+      end
 
       response.output
     rescue AgentHarness::Error => e
@@ -84,19 +92,25 @@ module PromptEvolution
       nil
     end
 
+    def redact(text)
+      return text if text.blank?
+
+      Knowledge::Redaction::Redactor.call(text: text).clean_text
+    end
+
     def build_prompt
       <<~PROMPT
         You are a prompt engineering expert. Analyze the following prompt and its performance data, then generate #{@mutation_count} improved variant(s).
 
         ## Current Prompt Template
         ```
-        #{current_template}
+        #{redact(current_template)}
         ```
 
         #{variables_section}
-        #{system_prompt_section}
+        #{redact(system_prompt_section)}
         #{performance_section}
-        #{sample_outputs_section}
+        #{redact(sample_outputs_section)}
         #{strategies_section}
 
         ## Instructions
@@ -116,7 +130,17 @@ module PromptEvolution
     end
 
     def variable_names
-      @prompt.current_version.variables.presence || []
+      @variable_names ||= Array(@prompt.current_version.variables).filter_map do |variable|
+        name =
+          if variable.is_a?(Hash)
+            variable["name"] || variable[:name]
+          else
+            variable
+          end
+
+        normalized = name.to_s.strip
+        normalized if normalized.present?
+      end
     end
 
     def variables_section
@@ -229,7 +253,7 @@ module PromptEvolution
       mutations_data = data.fetch("mutations") { return [] }
       return [] unless mutations_data.is_a?(Array)
 
-      mutations_data.filter_map { |m| build_mutation(m) }
+      mutations_data.filter_map { |m| build_mutation(m) }.first(@mutation_count)
     rescue JSON::ParserError => e
       Rails.logger.warn(
         message: "prompt_evolution.mutate_parse_failed",
