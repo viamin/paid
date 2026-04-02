@@ -299,7 +299,7 @@
                       <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2 text-gray-400 text-sm">$</span>
                       <%= f.number_field :limit_dollars, value: (budget_record.limit_dollars || format("%.2f", budget[:limit_cents] / 100.0)), step: 0.01, min: 0.01, class: "block w-24 rounded-md border-0 py-1 pl-6 pr-2 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
                     </div>
-                    <%= f.select :enforcement_mode, CostBudget::ENFORCEMENT_MODES.map { |m| [m == "hard_stop" ? "Hard Stop" : "Alert Only", m] }, { selected: budget[:enforcement_mode] }, class: "block rounded-md border-0 py-1 text-xs text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
+                    <%= f.select :enforcement_mode, CostBudget::ENFORCEMENT_MODES.map { |m| [m == "hard_stop" ? "Hard Stop" : "Alert Only", m] }, {}, class: "block rounded-md border-0 py-1 text-xs text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600" %>
                     <%= f.submit "Update", class: "rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
                   <% end %>
                   <%= button_to "Remove", project_cost_budget_path(@project, budget[:id]), method: :delete, class: "rounded-md bg-white px-2 py-1 text-xs font-medium text-red-600 ring-1 ring-inset ring-red-200 hover:bg-red-50 cursor-pointer", form: { data: { turbo_confirm: "Remove this budget limit?" } } %>

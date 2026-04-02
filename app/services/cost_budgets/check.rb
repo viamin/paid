@@ -45,7 +45,7 @@ module CostBudgets
       exceeded = project.cost_budgets
         .hard_stop
         .where(budget_type: %w[daily monthly])
-        .where("current_usage_cents >= (limit_cents * (100 + grace_buffer_percent) / 100.0)")
+        .where("current_usage_cents >= ROUND(limit_cents * (100 + grace_buffer_percent) / 100.0)")
         .order(Arel.sql(PRIORITY_ORDER_SQL))
         .first
       return blocked_result(exceeded) if exceeded
@@ -65,9 +65,10 @@ module CostBudgets
       usage = actual_usage_cents || budget.current_usage_cents
       effective_limit = budget.effective_limit_cents
       percent = effective_limit.positive? ? (usage.to_f / effective_limit * 100).round(1) : 0
+      grace_note = budget.grace_buffer_percent.positive? ? " (includes #{budget.grace_buffer_percent}% grace buffer)" : ""
       {
         allowed: false,
-        reason: "#{budget.budget_type} budget exceeded: #{usage} of #{budget.limit_cents} cents used (#{percent}%)",
+        reason: "#{budget.budget_type} budget exceeded: #{usage} of #{effective_limit} cents effective limit used (#{percent}%)#{grace_note}",
         budget: budget
       }
     end
@@ -79,7 +80,9 @@ module CostBudgets
       hard_stop_budgets = project.cost_budgets.per_run.hard_stop.to_a
       return nil if hard_stop_budgets.empty?
 
-      run_cost = agent_run.token_usages.where.not(request_type: "run_summary").sum(:cost_cents)
+      # Use the pre-aggregated counter on agent_run for O(1) lookup instead
+      # of summing token_usages rows, which grows expensive for long runs.
+      run_cost = agent_run.cost_cents
       exceeded_budget = hard_stop_budgets.find { |budget| run_cost >= budget.effective_limit_cents }
       return nil unless exceeded_budget
 

@@ -78,7 +78,12 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        if start_claimed_run(agent_run)
+        result = start_claimed_run(agent_run)
+        if result == :budget_blocked
+          # Budget-blocked is not a workflow failure and not a real start —
+          # skip capacity accounting and continue processing the queue.
+          next
+        elsif result
           consecutive_failures = 0
           starts_count += 1
           record_started_run(user)
@@ -207,7 +212,7 @@ class ProcessRunQueueJob < ApplicationJob
         agent_run_id: agent_run.id,
         reason: budget_result[:reason]
       )
-      return true # not a workflow failure, don't count as consecutive failure
+      return :budget_blocked
     end
 
     workflow_input = {

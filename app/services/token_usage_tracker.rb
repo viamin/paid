@@ -45,7 +45,6 @@ class TokenUsageTracker
         )
 
         update_cost_budgets(agent_run.project, cost_cents)
-        enforce_hard_stop_budgets(agent_run)
       end
 
       agent_run.log!("metric", {
@@ -56,6 +55,12 @@ class TokenUsageTracker
         request_type: request_type
       }.to_json, metadata: { type: "token_usage" })
     end
+
+    # Enforce hard-stop budgets *after* the transaction commits so that:
+    # 1. Row locks from the usage write are already released
+    # 2. External side-effects (Temporal cancel, container cleanup) don't
+    #    run inside a transaction — a failure won't roll back recorded usage
+    enforce_hard_stop_budgets(agent_run) if update_aggregates && cost_cents.positive?
   end
 
   # Thread-safe in-memory cache of LlmModel records keyed by model_id string.
@@ -121,8 +126,11 @@ class TokenUsageTracker
 
   # Checks hard_stop budgets after recording usage. If any budget is
   # exceeded, cancels the running agent to enforce the cost limit.
+  # Short-circuits when the project has no hard-stop budgets to avoid
+  # unnecessary queries on every token-tracking request.
   def self.enforce_hard_stop_budgets(agent_run)
     return unless agent_run.status == "running"
+    return unless agent_run.project.cost_budgets.hard_stop.exists?
 
     result = CostBudgets::Check.call(agent_run.project, agent_run: agent_run)
     return if result[:allowed]
