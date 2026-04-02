@@ -29,13 +29,15 @@ module Guardrails
     end
 
     def call
-      return already_handled_result unless agent_run.running?
-
       context = build_violation_context
-      agent_run.pause!(violation_type: violation_type, context: context)
+      paused = agent_run.pause!(violation_type: violation_type, context: context)
+
+      return already_handled_result unless paused
 
       log_violation(context)
-      broadcast_alert(context)
+
+      # Dashboard alert is handled by LiveDashboardBroadcastJob (triggered by
+      # the status change callback) to avoid duplicate notifications.
 
       Result.new(paused: true, violation_type: violation_type, context: context)
     end
@@ -95,33 +97,6 @@ module Guardrails
         violation_type: violation_type,
         details: details
       )
-    end
-
-    def broadcast_alert(context)
-      return unless agent_run.project&.account_id
-
-      Turbo::StreamsChannel.broadcast_prepend_to(
-        [ agent_run.project.account, :live_dashboard ],
-        target: "dashboard-alerts",
-        partial: "dashboard/alert",
-        locals: {
-          alert_type: "warning",
-          message: alert_message,
-          dom_id_for_alert: "alert-guardrail-#{agent_run.id}",
-          alert_bg_class: "bg-yellow-50",
-          alert_text_class: "text-yellow-800"
-        }
-      )
-    end
-
-    def alert_message
-      project_name = agent_run.project.full_name
-      "Agent run paused for #{project_name}: #{violation_type_label} - #{details}. " \
-        "Review and resume or terminate the run."
-    end
-
-    def violation_type_label
-      violation_type.tr("_", " ")
     end
 
     class Result

@@ -427,7 +427,7 @@ class AgentRun < ApplicationRecord
   def pause!(violation_type:, context: nil)
     with_lock do
       reload
-      return unless running?
+      return false unless running?
 
       update!(
         status: "paused",
@@ -435,6 +435,7 @@ class AgentRun < ApplicationRecord
         guardrail_violation_type: violation_type,
         guardrail_context: context
       )
+      true
     end
   end
 

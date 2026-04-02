@@ -228,8 +228,23 @@ module Projects
         return
       end
 
-      AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
-      @agent_run.fail!(error: "Terminated after guardrail violation: #{@agent_run.guardrail_violation_type}")
+      begin
+        AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
+      rescue StandardError => e
+        Rails.logger.error(
+          message: "agent_execution.terminate_failed",
+          agent_run_id: @agent_run.id,
+          error_class: e.class.name,
+          error_message: e.message
+        )
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Failed to terminate the agent run. Please try again."
+        return
+      end
+
+      guardrail_type = @agent_run.guardrail_violation_type
+      @agent_run.update!(paused_at: nil)
+      @agent_run.fail!(error: "Terminated after guardrail violation: #{guardrail_type}")
 
       redirect_to project_agent_run_path(@project, @agent_run),
         notice: "Agent run terminated."

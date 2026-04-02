@@ -112,7 +112,7 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(log.content).to include("5 consecutive identical outputs")
     end
 
-    it "broadcasts a dashboard alert" do
+    it "does not broadcast directly (delegates to LiveDashboardBroadcastJob)" do
       allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
 
       described_class.call(
@@ -121,13 +121,7 @@ RSpec.describe Guardrails::ViolationHandler do
         details: "Budget exceeded"
       )
 
-      expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to).with(
-        [ agent_run.project.account, :live_dashboard ],
-        hash_including(
-          target: "dashboard-alerts",
-          partial: "dashboard/alert"
-        )
-      )
+      expect(Turbo::StreamsChannel).not_to have_received(:broadcast_prepend_to)
     end
 
     it "does not pause a non-running agent run" do
