@@ -845,7 +845,9 @@ module Containers
       <<~SHELL
         #!/bin/sh
         # Installed by Paid — wrapper that chains original hook + co-author trailer
-        #{original_path} "$@" || exit $?
+        if [ -x "#{original_path}" ]; then
+          "#{original_path}" "$@" || exit $?
+        fi
         if ! grep -qF -- '#{escaped}' "$1"; then
           printf '\\n\\n%s' '#{escaped}' >> "$1"
         fi
