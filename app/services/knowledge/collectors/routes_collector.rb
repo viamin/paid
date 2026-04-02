@@ -33,6 +33,13 @@ module Knowledge
       end
 
       def generate_routes_output
+        # Guard: skip non-Rails repos that lack a routes file or rails binstub.
+        # This check runs before the containerized? gate so that non-Rails
+        # repos return [] in any mode instead of raising.
+        unless repo_file_exists?(SCOPE_PATH) && repo_file_exists?("bin/rails")
+          return nil
+        end
+
         # Running `bin/rails routes` executes arbitrary Ruby from the target
         # repo (initializers, config, etc.). Only allow this inside a
         # sandboxed container to avoid executing untrusted code on the host.
@@ -41,11 +48,6 @@ module Knowledge
         # previously collected routes stale).
         unless containerized?
           raise "routes collector requires containerized mode — failing on host for security"
-        end
-
-        # Guard: skip non-Rails repos that lack a routes file or rails binstub.
-        unless repo_file_exists?(SCOPE_PATH) && repo_file_exists?("bin/rails")
-          return nil
         end
 
         run_command("bin/rails", "routes", "--expanded", timeout: 60)

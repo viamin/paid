@@ -111,10 +111,10 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
       end
 
-      it "raises when not containerized" do
-        expect { failing_collector.collect }.to raise_error(
-          RuntimeError, /requires containerized mode/
-        )
+      it "returns empty array for non-Rails repos" do
+        allow(failing_collector).to receive(:repo_file_exists?).and_return(false)
+
+        expect(failing_collector.collect).to eq([])
       end
     end
 
@@ -185,7 +185,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       end
     end
 
-    context "when not containerized and no routes file" do
+    context "when not containerized" do
       let(:non_container_collector) do
         described_class.new(
           project: project,
@@ -195,7 +195,24 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
       end
 
-      it "raises when not containerized" do
+      it "returns empty array when Rails indicators are absent" do
+        allow(non_container_collector).to receive(:repo_file_exists?).and_return(false)
+
+        expect(non_container_collector.collect).to eq([])
+      end
+
+      it "returns empty array when only config/routes.rb is present" do
+        allow(non_container_collector).to receive(:repo_file_exists?)
+          .with("config/routes.rb").and_return(true)
+        allow(non_container_collector).to receive(:repo_file_exists?)
+          .with("bin/rails").and_return(false)
+
+        expect(non_container_collector.collect).to eq([])
+      end
+
+      it "raises when Rails indicators are present" do
+        allow(non_container_collector).to receive(:repo_file_exists?).and_return(true)
+
         expect { non_container_collector.collect }.to raise_error(
           RuntimeError, /requires containerized mode/
         )
