@@ -29,7 +29,7 @@ module Activities
       failed_merges = input.fetch(:failed_merges, [])
       results = input.fetch(:results, [])
 
-      parent_issue = Issue.find_by(id: parent_issue_id) if parent_issue_id
+      parent_issue = Issue.find_by(id: parent_issue_id, project_id: project.id) if parent_issue_id
 
       client = project.github_token.client
       pr = create_pull_request_idempotently(
@@ -60,7 +60,7 @@ module Activities
         base: project.default_branch,
         head: feature_branch,
         title: pr_title(parent_issue),
-        body: pr_body(parent_issue, results, merged_branches, failed_merges),
+        body: pr_body(project, parent_issue, results, merged_branches, failed_merges),
         draft: true
       )
     rescue GithubClient::ApiError => e
@@ -91,7 +91,7 @@ module Activities
       end
     end
 
-    def pr_body(parent_issue, results, merged_branches, failed_merges)
+    def pr_body(project, parent_issue, results, merged_branches, failed_merges)
       parts = []
 
       parts << "## Summary"
@@ -109,7 +109,7 @@ module Activities
 
       # Preload all referenced issues in one query to avoid N+1
       issue_ids = results.filter_map { |r| r[:issue_id] }
-      issues_by_id = Issue.where(id: issue_ids).index_by(&:id) if issue_ids.any?
+      issues_by_id = project.issues.where(id: issue_ids).index_by(&:id) if issue_ids.any?
       issues_by_id ||= {}
 
       results.each do |result|

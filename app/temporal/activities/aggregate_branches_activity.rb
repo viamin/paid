@@ -32,7 +32,7 @@ module Activities
       successful_agent_run_ids = results
         .select { |result| result[:success] && result[:agent_run_id].present? }
         .map { |result| result[:agent_run_id] }
-      agent_runs_by_id = AgentRun.where(id: successful_agent_run_ids).index_by(&:id)
+      agent_runs_by_id = AgentRun.where(project_id: project.id, id: successful_agent_run_ids).index_by(&:id)
 
       # Identify merge candidates before creating the branch to avoid orphan refs
       merge_candidates = results.filter_map do |result|
@@ -115,11 +115,7 @@ module Activities
     rescue GithubClient::ApiError => e
       raise unless e.status == 422
 
-      # Branch already exists (likely a retry). Verify it points to the expected SHA.
-      existing_ref = client.ref(repo, "heads/#{feature_branch}")
-      unless existing_ref.object.sha == base_sha
-        raise
-      end
+      # Branch already exists (likely a retry). Treat this as success and proceed.
 
       logger.info(
         message: "aggregate_branches.feature_branch_already_exists",

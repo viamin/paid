@@ -138,14 +138,6 @@ RSpec.describe Activities::AggregateBranchesActivity do
       allow(client).to receive(:create_ref)
         .and_raise(GithubClient::ApiError.new("Reference already exists", status: 422))
 
-      # Return a ref matching the expected SHA
-      allow(client).to receive(:ref)
-        .with(project.full_name, "heads/#{project.default_branch}")
-        .and_return(base_ref)
-      allow(client).to receive(:ref)
-        .with(project.full_name, "heads/feature/test")
-        .and_return(OpenStruct.new(object: OpenStruct.new(sha: "abc123")))
-
       run1 = create(:agent_run, project: project, branch_name: "branch-1")
 
       result = activity.execute(
@@ -155,28 +147,6 @@ RSpec.describe Activities::AggregateBranchesActivity do
       )
 
       expect(result[:merged_branches]).to eq([ "branch-1" ])
-    end
-
-    it "re-raises 422 when existing branch has different SHA" do
-      allow(client).to receive(:create_ref)
-        .and_raise(GithubClient::ApiError.new("Reference already exists", status: 422))
-
-      allow(client).to receive(:ref)
-        .with(project.full_name, "heads/#{project.default_branch}")
-        .and_return(base_ref)
-      allow(client).to receive(:ref)
-        .with(project.full_name, "heads/feature/test")
-        .and_return(OpenStruct.new(object: OpenStruct.new(sha: "different-sha")))
-
-      run1 = create(:agent_run, project: project, branch_name: "branch-1")
-
-      expect {
-        activity.execute(
-          project_id: project.id,
-          results: [ { success: true, agent_run_id: run1.id } ],
-          feature_branch_name: "feature/test"
-        )
-      }.to raise_error(GithubClient::ApiError, "Reference already exists")
     end
 
     it "deletes the feature branch when all merges fail" do

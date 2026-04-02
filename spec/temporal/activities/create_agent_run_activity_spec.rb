@@ -28,6 +28,19 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.agent_type).to eq("claude_code")
     end
 
+    it "returns the project max_execution_seconds in the result" do
+      project.update!(max_execution_seconds: 900)
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      expect(result[:max_execution_seconds]).to eq(900)
+    end
+
+    it "returns default max_execution_seconds when not customized" do
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      expect(result[:max_execution_seconds]).to eq(1800)
+    end
+
     it "accepts a custom agent_type" do
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "aider")
 
