@@ -185,6 +185,7 @@ class Issue < ApplicationRecord
   # Compute lifecycle statuses for a collection of issues.
   # Returns a Hash of issue_id => :blocked | :in_progress | :eligible
   def self.lifecycle_statuses(issues)
+    issues = issues.to_a
     return {} if issues.empty?
 
     issue_ids = issues.map(&:id)
