@@ -8,9 +8,16 @@ require "timeout"
 module Knowledge
   # Runs knowledge collectors inside an isolated Docker container.
   #
-  # Clones the repo on the host, then provisions a lightweight container
-  # (paid-agent:latest) with the repo bind-mounted read-only. Runs each
-  # registered collector inside the container and extracts results.
+  # Uses a two-step workspace setup:
+  # 1. Clones the repo on the host into a tmpdir (shallow fetch of the
+  #    target commit).
+  # 2. Streams the clone as a tar archive into the container via the
+  #    Docker API (archive_in_stream), which works correctly in DooD
+  #    environments where bind-mounting host paths would fail because
+  #    the host Docker daemon cannot see devcontainer filesystem paths.
+  #
+  # The container uses a Docker named volume at /workspace (not a bind
+  # mount), matching the pattern in Containers::Provision.
   # No API keys or secrets are exposed — collectors are read-only analysis.
   #
   # @example
@@ -66,6 +73,7 @@ module Knowledge
     def run
       clone_repo_on_host!
       provision_container!
+      seed_workspace!
 
       Knowledge::CollectorRunner.call(
         project: project,
@@ -160,6 +168,7 @@ module Knowledge
     def provision_container!
       log("containerized_runner.provision.start")
 
+      create_workspace_volume!
       @container = Docker::Container.create(container_config)
       @container.start
 
@@ -167,6 +176,67 @@ module Knowledge
     rescue Docker::Error::DockerError => e
       cleanup!
       raise ContainerError, "Failed to provision collector container: #{e.message}"
+    end
+
+    # Creates a Docker named volume for the workspace. Named volumes are
+    # managed by the Docker daemon and work correctly in DooD environments
+    # where bind-mounting host paths would fail.
+    def create_workspace_volume!
+      @workspace_volume = "paid-collector-#{project.id}-#{SecureRandom.hex(4)}"
+      Docker::Volume.create(
+        @workspace_volume,
+        "Labels" => {
+          "paid.managed" => "true",
+          "paid.resource" => "collector_volume",
+          "paid.project_id" => project.id.to_s
+        }
+      )
+    end
+
+    # Copies the host-side clone into the container via the Docker API.
+    # This works in DooD because archive_in_stream sends a tar over the
+    # API socket rather than relying on filesystem path visibility.
+    # The tar output is streamed directly to Docker to avoid buffering
+    # the entire archive in memory.
+    def seed_workspace!
+      stream_repo_tar_to_container!
+      # Force root ownership so the agent user cannot restore write
+      # permissions (they don't own the files). Tar preserves uid/gid
+      # from the host clone, which may be a non-root user, so an
+      # explicit chown is required. Then set read + execute (for
+      # directories) for all users so the agent can read the codebase
+      # for analysis. Collectors should write only to the size-limited
+      # tmpfs locations (/tmp, /home/agent/.cache).
+      _stdout, _stderr, chown_status = @container.exec(
+        [ "chown", "-R", "root:root", options[:workspace_mount] ],
+        user: "root"
+      )
+      raise ContainerError, "Failed to set workspace ownership (exit #{chown_status})" unless chown_status.to_i.zero?
+
+      _stdout, _stderr, status = @container.exec(
+        [ "chmod", "-R", "a=rX", options[:workspace_mount] ],
+        user: "root"
+      )
+      raise ContainerError, "Failed to set workspace permissions (exit #{status})" unless status.to_i.zero?
+    rescue ContainerError
+      raise
+    rescue Docker::Error::DockerError, Errno::ENOENT => e
+      raise ContainerError, "Failed to seed workspace: #{e.message}"
+    end
+
+    def stream_repo_tar_to_container!
+      Open3.popen3("tar", "-cf", "-", "-C", @host_repo_dir, ".") do |_stdin, stdout, stderr, wait_thr|
+        stdout.binmode
+        @container.archive_in_stream(options[:workspace_mount]) { stdout.read(8192) }
+        status = wait_thr.value
+        unless status.success?
+          error_output = stderr.read.to_s.strip
+          snippet = error_output.lines.first(10).join[0, 500] unless error_output.empty?
+          message = +"tar failed (exit #{status.exitstatus})"
+          message << " stderr: #{snippet}" if snippet
+          raise ContainerError, message
+        end
+      end
     end
 
     def container_config
@@ -202,7 +272,7 @@ module Knowledge
           "/home/agent/.cache" => "size=#{128 * 1024 * 1024},mode=0755"
         },
         "Binds" => [
-          "#{@host_repo_dir}:#{options[:workspace_mount]}:ro"
+          "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
         ],
         "NetworkMode" => "none"
       }
@@ -271,6 +341,7 @@ module Knowledge
 
     def cleanup!
       cleanup_container!
+      cleanup_workspace_volume!
       cleanup_host_repo!
     end
 
@@ -290,6 +361,25 @@ module Knowledge
       end
       @container = nil
       log("containerized_runner.cleanup.success")
+    end
+
+    def cleanup_workspace_volume!
+      return unless @workspace_volume
+
+      Docker::Volume.get(@workspace_volume).remove(force: true)
+    rescue Docker::Error::NotFoundError
+      # Volume already removed
+    rescue Docker::Error::DockerError => e
+      Rails.logger.warn(
+        message: "knowledge.containerized_runner.cleanup_workspace_volume.failed",
+        project_id: project.id,
+        commit_sha: commit_sha,
+        workspace_volume: @workspace_volume,
+        error_class: e.class.name,
+        error_message: e.message
+      )
+    ensure
+      @workspace_volume = nil
     end
 
     def cleanup_host_repo!
