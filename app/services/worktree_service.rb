@@ -20,6 +20,7 @@ class WorktreeService
   class WorktreeError < Error; end
 
   DEFAULT_WORKSPACE_ROOT = "/var/paid/workspaces"
+  FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
 
   def self.workspace_root
     Rails.application.config.x.workspace_root || DEFAULT_WORKSPACE_ROOT
@@ -56,7 +57,8 @@ class WorktreeService
 
     @mutex.synchronize do
       if File.exist?(File.join(repo_path, "HEAD"))
-        fetch_latest unless max_fetch_age && recently_fetched?(repo_path, max_fetch_age)
+        refspec_added = ensure_fetch_refspec
+        fetch_latest unless !refspec_added && max_fetch_age && recently_fetched?(repo_path, max_fetch_age)
       else
         clone_repository
       end
@@ -253,6 +255,10 @@ class WorktreeService
     clone_url = authenticated_clone_url
     run_git("clone", "--bare", clone_url, project_repo_path)
 
+    # Bare clones don't configure a fetch refspec, so `git fetch` won't
+    # create origin/* refs. Ensure it exists so fetch_latest and current_commit_sha work.
+    ensure_fetch_refspec
+
     project.github_token.touch_last_used!
   rescue Error
     raise
@@ -263,9 +269,32 @@ class WorktreeService
   def fetch_latest
     remote_url = authenticated_clone_url
     run_git("remote", "set-url", "origin", remote_url, chdir: project_repo_path, raise_on_error: false)
+    ensure_fetch_refspec
     run_git("fetch", "--all", "--prune", chdir: project_repo_path)
 
     project.github_token.touch_last_used!
+  end
+
+  # Bare repos cloned before the refspec fix lack remote.origin.fetch,
+  # so `git fetch` silently skips creating origin/* refs. Idempotently
+  # add the refspec so existing repos self-heal on next fetch.
+  #
+  # @return [Boolean] true if the config was modified (callers may need to force a fetch)
+  def ensure_fetch_refspec
+    return false if @fetch_refspec_verified
+
+    desired_refspec = FETCH_REFSPEC
+    raw_output = run_git("config", "--get-all", "remote.origin.fetch", chdir: project_repo_path, raise_on_error: false)
+    existing = raw_output.lines.map(&:strip).reject(&:empty?)
+
+    if existing.include?(desired_refspec)
+      @fetch_refspec_verified = true
+      return false
+    end
+
+    run_git("config", "--add", "remote.origin.fetch", desired_refspec, chdir: project_repo_path)
+    @fetch_refspec_verified = true
+    true
   end
 
   def authenticated_clone_url
