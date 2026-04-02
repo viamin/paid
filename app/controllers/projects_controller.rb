@@ -30,6 +30,23 @@ class ProjectsController < ApplicationController
     @pr_numbers_with_active_runs = @project.pr_numbers_with_active_runs
     @cost_budgets = @project.cost_budgets.load
     @quality_summary = QualityMetrics::DashboardStats.overview(project: @project)
+    if @project.auto_merge_enabled?
+      @recent_merged_pull_requests = @project.issues
+        .pull_requests_only
+        .where(github_state: "closed", pr_review_phase: "merged")
+        .includes(:parent_issue)
+        .order(github_updated_at: :desc, updated_at: :desc)
+        .limit(10)
+
+      closing_issue_numbers = @recent_merged_pull_requests.flat_map(&:closing_referenced_issue_numbers).uniq
+      @merged_pull_request_closed_issues_by_number = @project.issues
+        .issues_only
+        .where(github_number: closing_issue_numbers)
+        .index_by(&:github_number)
+    else
+      @recent_merged_pull_requests = Issue.none
+      @merged_pull_request_closed_issues_by_number = {}
+    end
     @collector_runs = CollectorRun
       .joins(:project_version)
       .where(project_versions: { project_id: @project.id })

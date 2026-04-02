@@ -126,6 +126,32 @@ class Issue < ApplicationRecord
     body.to_s.scan(/(?<!\w)#(\d+)/).flatten.map(&:to_i).uniq
   end
 
+  def closing_referenced_issue_numbers
+    return [] if body.blank?
+
+    body.to_s
+      .scan(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b([^.\n\r]*)/i)
+      .flatten
+      .flat_map do |clause|
+        clause.scan(/(?:(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+))?#(?<number>\d+)/).filter_map do |owner, repo, number|
+          next if owner.present? && !owner.casecmp?(project.owner)
+          next if repo.present? && !repo.casecmp?(project.repo)
+
+          number.to_i
+        end
+      end
+      .uniq
+  end
+
+  def closed_issue(referenced_issues_by_number = {})
+    closing_referenced_issue_numbers.each do |github_number|
+      issue = referenced_issues_by_number[github_number]
+      return issue if issue.present?
+    end
+
+    parent_issue
+  end
+
   def has_associated_pull_requests?
     if sub_issues.loaded?
       sub_issues.any?(&:is_pull_request?)

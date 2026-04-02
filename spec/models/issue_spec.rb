@@ -803,6 +803,55 @@ RSpec.describe Issue do
     end
   end
 
+  describe "#closing_referenced_issue_numbers" do
+    let(:project) { build(:project, owner: "acme", repo: "widget") }
+
+    it "extracts same-repo closing references from the body" do
+      issue = build(:issue, project: project, body: "Closes #12. Fixes #14 and #15.")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([ 12, 14, 15 ])
+    end
+
+    it "includes fully-qualified references for the same repo" do
+      issue = build(:issue, project: project, body: "Resolves acme/widget#42")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([ 42 ])
+    end
+
+    it "ignores references for other repos" do
+      issue = build(:issue, project: project, body: "Closes other/repo#9 and #12")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([ 12 ])
+    end
+
+    it "ignores non-closing references" do
+      issue = build(:issue, project: project, body: "Related to #12. Depends on #14.")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([])
+    end
+  end
+
+  describe "#closed_issue" do
+    let(:project) { create(:project, owner: "acme", repo: "widget") }
+
+    it "prefers a cached closing reference over parent_issue" do
+      parent_issue = create(:issue, project: project, github_number: 12, title: "Parent issue")
+      closed_issue = create(:issue, project: project, github_number: 42, title: "Actually closed")
+      pr = create(:issue, :pull_request, project: project, parent_issue: parent_issue,
+        body: "Closes #42")
+
+      expect(pr.closed_issue(42 => closed_issue)).to eq(closed_issue)
+    end
+
+    it "falls back to parent_issue when no cached closing reference is available" do
+      parent_issue = create(:issue, project: project, github_number: 12, title: "Parent issue")
+      pr = create(:issue, :pull_request, project: project, parent_issue: parent_issue,
+        body: "Related to #42")
+
+      expect(pr.closed_issue).to eq(parent_issue)
+    end
+  end
+
   describe ".lifecycle_statuses" do
     let(:project) { create(:project) }
 

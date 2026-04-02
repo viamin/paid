@@ -514,6 +514,56 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Quick Run")
       end
 
+      it "shows recently merged PRs with linked closed issues when auto-merge is enabled" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+        issue = create(:issue, project: project, github_number: 21, title: "Fix flaky spec")
+        create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
+          github_number: 34, title: "Fix flaky spec in CI", pr_review_phase: "merged",
+          github_updated_at: Time.utc(2026, 4, 1, 12, 0, 0))
+
+        get project_path(project)
+
+        expect(response.body).to include("Recently Merged PRs")
+        expect(response.body).to include(">#34<")
+        expect(response.body).to include(">Fix flaky spec in CI<")
+        expect(response.body).to include(">#21<")
+        expect(response.body).to include(">Fix flaky spec<")
+      end
+
+      it "shows the issue from cached closing references when parent_issue is absent" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+        create(:issue, project: project, github_number: 21, title: "Fix flaky spec")
+        create(:issue, :pull_request, :closed, project: project,
+          github_number: 34, title: "Fix flaky spec in CI", pr_review_phase: "merged",
+          body: "Closes #21")
+
+        get project_path(project)
+
+        expect(response.body).to include("Recently Merged PRs")
+        expect(response.body).to include(">#21<")
+        expect(response.body).to include(">Fix flaky spec<")
+      end
+
+      it "shows the empty recent merged PR state when auto-merge is enabled but nothing has merged" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
+
+        get project_path(project)
+
+        expect(response.body).to include("Recently Merged PRs")
+        expect(response.body).to include("No recently merged PRs")
+      end
+
+      it "hides the recent merged PR section when auto-merge is disabled" do
+        project = create(:project, account: account, github_token: github_token, auto_merge_enabled: false)
+        issue = create(:issue, project: project, github_number: 21, title: "Fix flaky spec")
+        create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
+          github_number: 34, title: "Fix flaky spec in CI", pr_review_phase: "merged")
+
+        get project_path(project)
+
+        expect(response.body).not_to include("Recently Merged PRs")
+      end
+
       it "shows pause button for PRs with automation label" do
         project = create(:project, account: account, github_token: github_token)
         pr = create(:issue, :pull_request, project: project, github_number: 10, title: "Automated PR",
