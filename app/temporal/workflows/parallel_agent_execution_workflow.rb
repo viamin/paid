@@ -72,8 +72,14 @@ module Workflows
         timeout_seconds: timeout_seconds
       )
 
-      # Step 3: Optionally aggregate branches into a single PR
-      aggregate = input.fetch(:aggregate_pr, false)
+      # Step 3: Optionally aggregate branches into a single PR.
+      # Default to the project-level setting (returned by the capacity check)
+      # when the caller does not explicitly pass aggregate_pr.
+      aggregate = if input.key?(:aggregate_pr)
+        input[:aggregate_pr]
+      else
+        capacity.fetch(:pr_aggregation_enabled, false)
+      end
       parent_issue_id = input[:parent_issue_id]
 
       aggregated_pr = nil
@@ -227,7 +233,8 @@ module Workflows
     # one sub-task succeeded.
     def aggregate_branches_and_create_pr(project_id:, parent_issue_id:, results:, parent_wf_id:)
       timestamp = Temporalio::Workflow.now.to_i
-      feature_branch = "feature/aggregated-#{parent_wf_id}-#{timestamp}"
+      safe_id = parent_wf_id.to_s.parameterize[0, 60]
+      feature_branch = "feature/aggregated-#{safe_id}-#{timestamp}"
 
       # Step 1: Merge sub-task branches into feature branch
       aggregate_result = run_activity(

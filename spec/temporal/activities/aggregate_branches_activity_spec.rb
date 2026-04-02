@@ -86,14 +86,14 @@ RSpec.describe Activities::AggregateBranchesActivity do
       expect(client).not_to have_received(:merge)
     end
 
-    it "records merge failures gracefully" do
+    it "records merge conflict failures gracefully" do
       run1 = create(:agent_run, project: project, branch_name: "branch-1")
       run2 = create(:agent_run, project: project, branch_name: "branch-2")
 
       call_count = 0
       allow(client).to receive(:merge) do |*_args, **_kwargs|
         call_count += 1
-        raise GithubClient::Error, "Merge conflict" if call_count == 2
+        raise GithubClient::ApiError.new("Merge conflict", status: 409) if call_count == 2
       end
 
       result = activity.execute(
@@ -107,6 +107,21 @@ RSpec.describe Activities::AggregateBranchesActivity do
 
       expect(result[:merged_branches]).to eq([ "branch-1" ])
       expect(result[:failed_merges]).to eq([ { branch: "branch-2", error: "Merge conflict" } ])
+    end
+
+    it "re-raises non-conflict API errors" do
+      run1 = create(:agent_run, project: project, branch_name: "branch-1")
+
+      allow(client).to receive(:merge)
+        .and_raise(GithubClient::ApiError.new("Rate limited", status: 403))
+
+      expect {
+        activity.execute(
+          project_id: project.id,
+          results: [ { success: true, agent_run_id: run1.id } ],
+          feature_branch_name: "feature/test"
+        )
+      }.to raise_error(GithubClient::ApiError, "Rate limited")
     end
 
     it "returns the feature branch name" do

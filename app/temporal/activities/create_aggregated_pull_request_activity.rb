@@ -83,8 +83,13 @@ module Activities
       parts << "## Sub-task Results"
       parts << ""
 
+      # Preload all referenced issues in one query to avoid N+1
+      issue_ids = results.filter_map { |r| r[:issue_id] }
+      issues_by_id = Issue.where(id: issue_ids).index_by(&:id) if issue_ids.any?
+      issues_by_id ||= {}
+
       results.each do |result|
-        issue = Issue.find_by(id: result[:issue_id]) if result[:issue_id]
+        issue = issues_by_id[result[:issue_id]] if result[:issue_id]
         status = result[:success] ? "completed" : "failed"
         icon = result[:success] ? "\u2705" : "\u274c"
 

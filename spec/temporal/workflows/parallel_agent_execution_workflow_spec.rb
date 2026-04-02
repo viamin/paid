@@ -222,13 +222,33 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(result[:aggregated_pr]).to be_nil
     end
 
-    it "skips aggregation when aggregate_pr is not provided" do
+    it "skips aggregation when aggregate_pr is not provided and project setting is off" do
       stub_full_capacity
       stub_successful_futures(count: 2)
 
       result = workflow.execute(two_task_input)
 
       expect(result[:aggregated_pr]).to be_nil
+    end
+
+    it "defaults to project setting when aggregate_pr is not provided" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckProjectRunCapacityActivity, anything, timeout: 30)
+        .and_return(full_capacity_result.merge(pr_aggregation_enabled: true))
+      stub_successful_futures(count: 2)
+
+      pr_result = { pull_request_url: "https://github.com/test/repo/pull/99", pull_request_number: 99 }
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .and_return(feature_branch: "feature/aggregated-test", merged_branches: [ "b-1" ], failed_merges: [])
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CreateAggregatedPullRequestActivity, anything, timeout: 60)
+        .and_return(pr_result)
+
+      result = workflow.execute(two_task_input)
+
+      expect(result[:aggregated_pr]).to eq(pr_result)
     end
 
     it "calls aggregation activities when aggregate_pr is true" do
@@ -334,7 +354,8 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
   def full_capacity_result
     {
       has_capacity: true, available_slots: 5, project_active_count: 0,
-      max_parallel_per_project: 5, user_active_count: 0, max_concurrent_runs: 10
+      max_parallel_per_project: 5, user_active_count: 0, max_concurrent_runs: 10,
+      pr_aggregation_enabled: false
     }
   end
 

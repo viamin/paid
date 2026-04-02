@@ -43,14 +43,19 @@ module Activities
         base_sha: base_sha
       )
 
-      # Collect branches from successful sub-task runs
+      # Preload agent runs for successful results to avoid N+1 queries
+      successful_agent_run_ids = results
+        .select { |result| result[:success] && result[:agent_run_id].present? }
+        .map { |result| result[:agent_run_id] }
+      agent_runs_by_id = AgentRun.where(id: successful_agent_run_ids).index_by(&:id)
+
       merged_branches = []
       failed_merges = []
 
       results.each do |result|
         next unless result[:success]
 
-        agent_run = AgentRun.find_by(id: result[:agent_run_id])
+        agent_run = agent_runs_by_id[result[:agent_run_id]]
         next unless agent_run&.branch_name.present?
 
         branch_name = agent_run.branch_name
@@ -66,7 +71,11 @@ module Activities
             feature_branch: feature_branch,
             source_branch: branch_name
           )
-        rescue GithubClient::Error => e
+        rescue GithubClient::ApiError => e
+          # Only treat merge conflicts (HTTP 409) as expected per-branch failures.
+          # Re-raise auth errors, rate limits, and other API errors.
+          raise unless e.status == 409
+
           failed_merges << { branch: branch_name, error: e.message }
 
           logger.warn(
