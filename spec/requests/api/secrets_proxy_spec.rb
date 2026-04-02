@@ -551,6 +551,16 @@ RSpec.describe "Api::SecretsProxy" do
 
         expect(response).to have_http_status(:ok)
       end
+
+      it "returns 429 when usage equals the project limit" do
+        agent_run.update!(tokens_input: 30_000, tokens_output: 20_000)
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:too_many_requests)
+      end
     end
 
     context "when usage is near the warning threshold" do

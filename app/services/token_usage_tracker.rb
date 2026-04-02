@@ -37,6 +37,8 @@ class TokenUsageTracker
           agent_run.increment(:tokens_output, tokens_output)
           agent_run.increment(:cost_cents, cost_cents)
           agent_run.save!
+
+          check_token_limits(agent_run)
         end
 
         agent_run.project.increment_metrics!(
@@ -54,8 +56,6 @@ class TokenUsageTracker
         llm_model: llm_model,
         request_type: request_type
       }.to_json, metadata: { type: "token_usage" })
-
-      check_token_limits(agent_run) if update_aggregates
     end
   end
 
@@ -63,9 +63,9 @@ class TokenUsageTracker
   # and updates the token_limit_status field. Logs warnings at the soft
   # threshold and records "exceeded" at the hard limit.
   def self.check_token_limits(agent_run)
-    project = agent_run.project
-    hard_limit = project.effective_max_tokens_per_run
-    warning_at = project.token_limit_warning_at
+    hard_limit = agent_run.effective_max_tokens_per_run
+    warning_threshold = agent_run.project.token_limit_warning_threshold
+    warning_at = (hard_limit * warning_threshold / 100.0).floor
     current_tokens = agent_run.total_tokens
 
     new_status = if current_tokens >= hard_limit

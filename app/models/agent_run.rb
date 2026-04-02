@@ -351,10 +351,20 @@ class AgentRun < ApplicationRecord
     token_limit_status == "warning"
   end
 
+  # Resolves the effective max tokens per run for this agent run using the
+  # full resolution chain: project override → user settings → account default
+  # → global default. Matches the enforcement logic in SecretsProxyController.
+  def effective_max_tokens_per_run
+    project.max_tokens_per_run ||
+      AgentRuns::UserSettingsResolver.call(project: project, strict: false)&.max_tokens_per_run ||
+      project.account.default_max_tokens_per_run ||
+      Api::SecretsProxyController::DEFAULT_MAX_TOKENS_PER_RUN
+  end
+
   # Returns the fraction of the token limit consumed (0.0–1.0+).
   # Returns nil if no limit is configured.
   def token_limit_usage_ratio
-    limit = project.effective_max_tokens_per_run
+    limit = effective_max_tokens_per_run
     return nil if limit.nil? || limit.zero?
 
     total_tokens.to_f / limit

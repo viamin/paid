@@ -184,6 +184,25 @@ RSpec.describe TokenUsageTracker do
       described_class.track(agent_run: agent_run, usage: { tokens_input: 2000, tokens_output: 1000 })
       expect(agent_run.reload.token_limit_status).to eq("exceeded")
     end
+
+    context "when a UserSetting overrides max_tokens_per_run" do
+      before do
+        project.update!(max_tokens_per_run: nil)
+        user = project.created_by
+        user_setting = user.settings
+        user_setting.update!(max_tokens_per_run: 5_000)
+      end
+
+      it "uses the UserSetting limit for status transitions" do
+        described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 1500 })
+        expect(agent_run.reload.token_limit_status).to eq("warning")
+      end
+
+      it "marks exceeded when usage reaches the UserSetting limit" do
+        described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 2000 })
+        expect(agent_run.reload.token_limit_status).to eq("exceeded")
+      end
+    end
   end
 
   describe ".calculate_cost" do

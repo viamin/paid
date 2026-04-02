@@ -52,7 +52,7 @@ module Api
       limit = resolve_max_tokens_per_run
       current_tokens = @agent_run.total_tokens
 
-      if current_tokens > limit
+      if current_tokens >= limit
         render json: {
           error: "Token limit exceeded for this agent run",
           token_usage: current_tokens,
@@ -172,17 +172,7 @@ module Api
     end
 
     def resolve_max_tokens_per_run
-      @max_tokens_per_run ||= begin
-        project = @agent_run.project
-        # Prefer explicit project-level override, then user settings, then account default, then global default.
-        project.max_tokens_per_run ||
-          begin
-            settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
-            settings&.max_tokens_per_run
-          end ||
-          project.account.default_max_tokens_per_run ||
-          DEFAULT_MAX_TOKENS_PER_RUN
-      end
+      @max_tokens_per_run ||= @agent_run.effective_max_tokens_per_run
     end
 
     def log_error(message, error)
