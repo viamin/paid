@@ -60,4 +60,37 @@ module DashboardHelper
   def outcome_label(outcome)
     OUTCOME_LABELS.fetch(outcome, outcome.to_s.titleize)
   end
+
+  TIME_RANGE_LABELS = {
+    "cumulative" => "Cumulative",
+    "30d" => "Past 30 Days",
+    "7d" => "Past Week",
+    "24h" => "Past 24 Hours"
+  }.freeze
+
+  STATUS_FILTER_LABELS = {
+    "all" => "All Runs",
+    "completed" => "Successful",
+    "failed" => "Failed"
+  }.freeze
+
+  GOAL_FILTER_LABELS = {
+    "all" => "All Types",
+    "create_issue" => "Issue Creation",
+    "create_pr" => "PR Coding",
+    "review" => "PR Reviews"
+  }.freeze
+
+  def time_range_label(range)
+    TIME_RANGE_LABELS.fetch(range, range.to_s.titleize)
+  end
+
+  def filter_button_classes(active)
+    if active
+      "inline-flex items-center rounded-md px-3 py-1.5 text-sm font-semibold text-white bg-indigo-600 shadow-sm"
+    else
+      "inline-flex items-center rounded-md px-3 py-1.5 text-sm font-semibold text-gray-700 bg-white " \
+        "ring-1 ring-inset ring-gray-300 hover:bg-gray-50 shadow-sm"
+    end
+  end
 end
