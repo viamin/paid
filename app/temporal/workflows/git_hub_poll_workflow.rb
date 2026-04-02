@@ -116,8 +116,34 @@ module Workflows
         start_agent_workflow(project_id, detection[:issue_id],
           source_pull_request_number: detection[:source_pull_request_number])
       when "start_planning"
-        start_agent_workflow(project_id, detection[:issue_id], prefix: "plan")
+        start_planning_workflow(project_id, detection[:issue_id])
       end
+    end
+
+    # Unlike agent workflows, planning workflows cannot be queued via QueueAgentRunActivity
+    # because ProcessRunQueueJob always starts AgentExecutionWorkflow. Instead of blocking
+    # the poll workflow while waiting for capacity, we perform a single capacity check and
+    # defer planning to a future poll cycle if needed.
+    def start_planning_workflow(project_id, issue_id)
+      capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
+
+      unless capacity[:has_capacity]
+        Temporalio::Workflow.logger.info(
+          message: "planning.deferred_due_to_capacity",
+          project_id: project_id,
+          issue_id: issue_id
+        )
+        return
+      end
+
+      workflow_id = "plan-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
+
+      Temporalio::Workflow.start_child_workflow(
+        Workflows::PlanningWorkflow,
+        { project_id: project_id, issue_id: issue_id },
+        id: workflow_id,
+        parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+      )
     end
 
     # When at capacity, queues an AgentRun record (no child workflow). ProcessRunQueueJob
