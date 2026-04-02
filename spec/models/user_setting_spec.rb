@@ -46,6 +46,7 @@ RSpec.describe UserSetting do
     it { is_expected.to validate_numericality_of(:style_guide_max_raw_prompt_bytes).only_integer.is_greater_than_or_equal_to(1000).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
     # Concurrency
     it { is_expected.to validate_numericality_of(:max_concurrent_runs).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(100) }
+    it { is_expected.to validate_numericality_of(:max_parallel_agents_per_project).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(20) }
     it { is_expected.to validate_numericality_of(:container_timeout_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
 
     # Project Defaults
