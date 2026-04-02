@@ -67,10 +67,21 @@
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
         <dt class="truncate text-sm font-medium text-gray-500">Duration</dt>
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <% if agent_run.duration_seconds.present? %>
-            <%= agent_run.duration_seconds %>s
-          <% elsif agent_run.running? && agent_run.started_at.present? %>
-            <%= (Time.current - agent_run.started_at).to_i %>s
+          <% elapsed = if agent_run.duration_seconds.present?
+               agent_run.duration_seconds
+             elsif agent_run.running? && agent_run.started_at.present?
+               (Time.current - agent_run.started_at).to_i
+             end %>
+          <% if elapsed %>
+            <%= elapsed %>s
+            <% max_exec = agent_run.project.max_execution_seconds %>
+            <% if max_exec %>
+              <span class="text-sm font-normal text-gray-500">/ <%= max_exec %>s</span>
+              <% pct = (elapsed * 100.0 / max_exec).clamp(0, 100) %>
+              <div class="mt-2 h-1.5 w-full rounded-full bg-gray-200">
+                <div class="h-1.5 rounded-full <%= pct >= 90 ? 'bg-red-500' : pct >= 75 ? 'bg-yellow-500' : 'bg-indigo-600' %>" style="width: <%= pct.round %>%"></div>
+              </div>
+            <% end %>
           <% else %>
             -
           <% end %>
@@ -190,7 +201,17 @@
     </div>
   <% end %>
 
-  <% if agent_run.rate_limited? %>
+  <% if agent_run.status == "timeout" %>
+    <div class="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+      <h2 class="text-sm font-semibold text-yellow-800">Execution Timed Out</h2>
+      <p class="mt-1 text-sm text-yellow-700">
+        This run exceeded the maximum execution time of <strong><%= agent_run.project.max_execution_seconds %>s</strong>.
+        <% if agent_run.error_message.present? %>
+          <br><span class="text-yellow-600"><%= agent_run.error_message %></span>
+        <% end %>
+      </p>
+    </div>
+  <% elsif agent_run.rate_limited? %>
     <div class="mt-6 rounded-lg border border-orange-200 bg-orange-50 p-4">
       <h2 class="text-sm font-semibold text-orange-800">Rate Limited</h2>
       <p class="mt-1 text-sm text-orange-700">
