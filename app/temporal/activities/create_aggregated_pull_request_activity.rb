@@ -121,6 +121,8 @@ module Activities
           parts << "- #{icon} ##{issue.github_number}: #{issue.title} (#{status})"
         elsif result[:issue_id]
           parts << "- #{icon} Sub-task (internal issue id #{result[:issue_id]}) (#{status})"
+        else
+          parts << "- #{icon} Sub-task (no issue linked) (#{status})"
         end
       end
 

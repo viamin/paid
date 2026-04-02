@@ -9,7 +9,6 @@ module Activities
   #
   # Input:
   #   project_id: ID of the project
-  #   parent_issue_id: ID of the parent feature issue (optional)
   #   results: Array of child workflow results with branch info
   #   feature_branch_name: Name for the aggregated feature branch
   #

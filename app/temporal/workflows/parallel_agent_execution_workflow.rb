@@ -241,7 +241,6 @@ module Workflows
         Activities::AggregateBranchesActivity,
         {
           project_id: project_id,
-          parent_issue_id: parent_issue_id,
           results: results,
           feature_branch_name: feature_branch
         },

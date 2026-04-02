@@ -93,6 +93,19 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
       end
     end
 
+    it "includes fallback bullet for sub-tasks with no issue linked" do
+      input = base_input.merge(
+        results: [ { success: true, issue_id: nil }, { success: false, issue_id: nil } ]
+      )
+
+      activity.execute(input)
+
+      expect(client).to have_received(:create_pull_request) do |_, opts|
+        expect(opts[:body]).to include("Sub-task (no issue linked) (completed)")
+        expect(opts[:body]).to include("Sub-task (no issue linked) (failed)")
+      end
+    end
+
     it "includes merge failure details in PR body" do
       input = base_input.merge(
         failed_merges: [ { branch: "branch-3", error: "Merge conflict" } ]
