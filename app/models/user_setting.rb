@@ -34,6 +34,8 @@ class UserSetting < ApplicationRecord
   # Concurrency
   validates :max_concurrent_runs,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
+  validates :max_parallel_agents_per_project,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 20 }
 
   # Token & rate limits
   validates :max_tokens_per_run,
