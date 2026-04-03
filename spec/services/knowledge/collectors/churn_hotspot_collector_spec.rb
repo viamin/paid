@@ -27,19 +27,15 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
     end
   end
 
-  # Helper to stub all three shell commands used by the collector:
-  # git log, ruby-maat, and scc. Distinguishes commands by executable
-  # (and git subcommand) and raises on unrecognized executables so tests
-  # do not silently pass when the collector shells out to unexpected tools.
-  # Stubs all shell commands: `which maat`, git log, ruby-maat, and scc.
+  # Stubs all shell commands: `command -v ruby-maat`, git log, ruby-maat, and scc.
   def stub_collector_commands(git_log: git_log_data, revisions: revisions_csv, scc: scc_by_file_json)
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
       stdin_io = Popen3Stub::FakeIO.new
       status = instance_double(Process::Status, success?: true, exitstatus: 0)
       wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
 
-      stdout_content = if args.first == "which" && args.include?("maat")
-        "/usr/local/bin/maat\n"
+      stdout_content = if args.first == "sh" && args.include?("command -v ruby-maat")
+        "/usr/local/bin/ruby-maat\n"
       elsif args.first == "git" && args.include?("log")
         git_log
       elsif args.first == "ruby-maat"
@@ -58,10 +54,10 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
       stdin_io = Popen3Stub::FakeIO.new
 
-      if args.first == "which" && args.include?("maat")
+      if args.first == "sh" && args.include?("command -v ruby-maat")
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
-        block.call(stdin_io, Popen3Stub::FakeIO.new("/usr/local/bin/maat\n"), Popen3Stub::FakeIO.new(""), wait_thr)
+        block.call(stdin_io, Popen3Stub::FakeIO.new("/usr/local/bin/ruby-maat\n"), Popen3Stub::FakeIO.new(""), wait_thr)
       elsif args.first == "git" && args.include?("log")
         status = instance_double(Process::Status, success?: false, exitstatus: 1)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
@@ -80,10 +76,10 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
       stdin_io = Popen3Stub::FakeIO.new
 
-      if args.first == "which" && args.include?("maat")
+      if args.first == "sh" && args.include?("command -v ruby-maat")
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
-        block.call(stdin_io, Popen3Stub::FakeIO.new("/usr/local/bin/maat\n"), Popen3Stub::FakeIO.new(""), wait_thr)
+        block.call(stdin_io, Popen3Stub::FakeIO.new("/usr/local/bin/ruby-maat\n"), Popen3Stub::FakeIO.new(""), wait_thr)
       elsif args.first == "git" && args.include?("log")
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
@@ -102,10 +98,10 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
     allow(Open3).to receive(:popen3).and_wrap_original do |_original, *args, **_kwargs, &block|
       stdin_io = Popen3Stub::FakeIO.new
 
-      if args.first == "which" && args.include?("maat")
+      if args.first == "sh" && args.include?("command -v ruby-maat")
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
-        block.call(stdin_io, Popen3Stub::FakeIO.new("/usr/local/bin/maat\n"), Popen3Stub::FakeIO.new(""), wait_thr)
+        block.call(stdin_io, Popen3Stub::FakeIO.new("/usr/local/bin/ruby-maat\n"), Popen3Stub::FakeIO.new(""), wait_thr)
       elsif args.first == "git" && args.include?("log")
         status = instance_double(Process::Status, success?: true, exitstatus: 0)
         wait_thr = instance_double(Process::Waiter, pid: 12345, value: status)
@@ -218,7 +214,7 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
       let(:worktree_entry) { nil }
 
       before do
-        stub_popen3(%w[which maat], stdout: "/usr/local/bin/maat\n")
+        stub_popen3(%w[sh -c command\ -v\ ruby-maat], stdout: "/usr/local/bin/ruby-maat\n")
         allow(Rails.root).to receive(:join).and_return(Pathname.new("/nonexistent/path"))
       end
 
@@ -227,13 +223,13 @@ RSpec.describe Knowledge::Collectors::ChurnHotspotCollector, :no_db do
       end
     end
 
-    context "when maat is not installed" do
+    context "when ruby-maat is not installed" do
       before do
-        stub_popen3(%w[which maat], stdout: "", stderr: "", success: false, exit_code: 1)
+        stub_popen3(%w[sh -c command\ -v\ ruby-maat], stdout: "", stderr: "", success: false, exit_code: 1)
       end
 
       it "raises SkipCollector" do
-        expect { collector.collect }.to raise_error(Knowledge::SkipCollector, "maat binary not found")
+        expect { collector.collect }.to raise_error(Knowledge::SkipCollector, "ruby-maat binary not found")
       end
     end
 

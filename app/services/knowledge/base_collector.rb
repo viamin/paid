@@ -60,15 +60,20 @@ module Knowledge
 
     # Reads a file from the repo. In containerized mode reads from the
     # host-side clone so Ruby file I/O works without a container exec.
+    # Raises SkipCollector when no repo path is available to prevent
+    # falling back to process-relative paths.
     def read_repo_file(relative_path)
-      full_path = File.join(host_repo_path.to_s, relative_path)
-      File.read(full_path)
+      base = host_repo_path
+      skip!("repository path not available") if base.blank?
+      File.read(File.join(base.to_s, relative_path))
     end
 
-    # Checks if a file exists in the repo.
+    # Checks if a file exists in the repo. Returns false when no repo
+    # path is available to prevent falling back to process-relative paths.
     def repo_file_exists?(relative_path)
-      full_path = File.join(host_repo_path.to_s, relative_path)
-      File.exist?(full_path)
+      base = host_repo_path
+      return false if base.blank?
+      File.exist?(File.join(base.to_s, relative_path))
     end
 
     # Returns the host-side repo path for direct file I/O. In

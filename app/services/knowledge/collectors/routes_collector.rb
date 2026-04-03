@@ -58,9 +58,6 @@ module Knowledge
         return nil unless resolve_repo_path
 
         # Guard: skip non-Rails repos that lack a routes file or rails binstub.
-        # This check runs before the containerized? gate so that non-Rails
-        # repos cause this method to return nil; the caller treats blank output
-        # as a signal to skip! rather than "complete with 0 artifacts".
         unless repo_file_exists?(SCOPE_PATH) && repo_file_exists?("bin/rails")
           return nil
         end

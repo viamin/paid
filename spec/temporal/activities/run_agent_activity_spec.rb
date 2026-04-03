@@ -90,6 +90,34 @@ RSpec.describe Activities::RunAgentActivity do
         end
       }.to raise_error(Temporalio::Error::CanceledError)
     end
+
+    it "raises InfiniteLoopError when a loop is detected" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+
+      loop_result = AgentRuns::DetectInfiniteLoop::Result.new(detected: true, reason: "test loop")
+      allow(AgentRuns::DetectInfiniteLoop).to receive(:call).and_return(loop_result)
+
+      expect {
+        activity.send(:with_periodic_heartbeat, "test", interval: 0.01, agent_run: agent_run) do
+          sleep 0.2
+          :done
+        end
+      }.to raise_error(described_class::InfiniteLoopError, "test loop")
+    end
+
+    it "does not raise when no infinite loop is detected" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+
+      no_loop_result = AgentRuns::DetectInfiniteLoop::Result.new(detected: false)
+      allow(AgentRuns::DetectInfiniteLoop).to receive(:call).and_return(no_loop_result)
+
+      result = activity.send(:with_periodic_heartbeat, "test", interval: 0.01, agent_run: agent_run) do
+        sleep 0.05
+        42
+      end
+
+      expect(result).to eq(42)
+    end
   end
 
   describe "AGENT_COMMANDS" do
@@ -663,6 +691,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     context "when goal is create_pr" do
       it "uses the default agent timeout without idle_timeout" do
+        project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
 
@@ -899,6 +928,38 @@ RSpec.describe Activities::RunAgentActivity do
           activity.execute(agent_run_id: orphan_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError, /No user available/)
       end
+    end
+  end
+
+  describe "max_execution_seconds enforcement" do
+    before do
+      allow(container_service).to receive(:execute).and_return(exec_success)
+      allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+    end
+
+    it "caps effective_timeout by remaining execution time" do
+      project.update!(max_execution_seconds: 600)
+      agent_run.update!(started_at: 5.minutes.ago, status: "running")
+
+      expect(container_service).to receive(:execute).with(
+        anything,
+        hash_including(timeout: a_value <= 300)
+      ).and_return(exec_success)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "times out when execution time limit is exceeded" do
+      project.update!(max_execution_seconds: 60)
+      agent_run.update!(started_at: 2.minutes.ago, status: "running")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError)
+
+      agent_run.reload
+      expect(agent_run.status).to eq("timeout")
+      expect(agent_run.error_message).to include("Execution time limit")
     end
   end
 end

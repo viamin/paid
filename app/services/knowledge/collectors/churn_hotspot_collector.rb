@@ -12,7 +12,7 @@ module Knowledge
       GIT_LOG_FORMAT = "--%h--%ad--%aN%n"
 
       def collect
-        skip!("maat binary not found") unless maat_available?
+        skip!("ruby-maat binary not found") unless maat_available?
 
         repo_path = resolve_repo_path
         skip!("repository path not available") unless repo_path
@@ -46,24 +46,22 @@ module Knowledge
       def command_unavailable?(error)
         case error
         when Errno::ENOENT
-          # Binary genuinely missing on host
           true
         when RuntimeError
-          # Host-mode run_command raises RuntimeError for non-zero exit;
-          # Timeout::Error is a subclass of RuntimeError — always re-raise it.
           return false if error.is_a?(Timeout::Error)
           true
         when Knowledge::ContainerizedRunner::ContainerError
-          # Re-raise infrastructure errors (container not provisioned, Docker
-          # exec failures) — only treat non-zero exit from command as unavailable
           error.message.match?(/\ACommand failed \(exit \d+\)/)
         else
           false
         end
       end
 
+      # Uses `command -v` (a POSIX shell builtin) instead of `which` to
+      # avoid a hard dependency on the `which` binary, which may not be
+      # present in minimal container images.
       def maat_available?
-        run_command("which", "maat")
+        run_command("sh", "-c", "command -v ruby-maat")
         true
       rescue => e
         raise unless command_unavailable?(e)
