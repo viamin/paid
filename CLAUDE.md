@@ -23,7 +23,7 @@ Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI
 When working on a GitHub issue:
 
 - **Read all comments** - Always read the entire comment thread on an issue before starting work. Important context, clarifications, and decisions are often in the comments.
-- **Use explicit dependency wording when blocking auto-pick** - Paid's dependency parser recognizes phrases like `Depends on #123` and `Depends on owner/repo#123`, including cross-repo references. A plain mention like `owner/repo#123` is not enough to block auto-pick.
+- **Use explicit dependency wording when blocking auto-pick** - Paid's dependency parser recognizes inline dependency phrases like `Depends on #123`, `Depends on owner/repo#123`, and `Blocked by owner/repo#123`, and also dependency references listed under a `## Dependencies` section. A bare mention like `owner/repo#123` only fails to block auto-pick when it appears outside those dependency-scoped contexts.
 - **Cross-project dependency blocking is text-driven, not GitHub-native** - For Paid issues, write explicit dependency lines in the issue body/comments if the issue must stay blocked on upstream work. Paid currently uses its own parsed dependency records, not GitHub's native cross-repo dependency graph, for auto-pick eligibility.
 - **External dependencies stay blocked conservatively** - If an issue depends on `owner/repo#123` in a repo that is not also synced into the same Paid account, the dependency remains external and auto-pick will keep treating the issue as blocked until the dependency text is removed or the external reference is resolved through sync.
 
