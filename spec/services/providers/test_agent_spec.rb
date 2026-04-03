@@ -154,12 +154,22 @@ RSpec.describe Providers::TestAgent do
       end
 
       it "adds the skip git repo check flag" do
+        service = described_class.new(provider: provider)
+        base_command = Providers::TestAgent::CONTAINER_COMMANDS.fetch("codex")
+        codex_command = service.send(
+          :command_with_flags_before_separator,
+          base_command,
+          "--skip-git-repo-check",
+          "--output-last-message",
+          "$tmp_output"
+        ).join(" ")
+
         described_class.call(provider: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
           a_string_including('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
             .and(include("-u OPENAI_API_KEY"))
-            .and(include("codex exec --full-auto --sandbox none --skip-git-repo-check --output-last-message")),
+            .and(include(codex_command)),
           timeout: 60,
           stream: false,
           env: {}
