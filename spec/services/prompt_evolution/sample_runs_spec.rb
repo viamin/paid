@@ -140,6 +140,18 @@ RSpec.describe PromptEvolution::SampleRuns do
       expect(all_selected_project_ids.size).to be > 3
     end
 
+    it "returns exactly sample_size when enough runs exist and strata don't divide evenly" do
+      # 3 strata with 4 runs each = 12 runs, sample_size = 10, 10 % 3 != 0
+      3.times do |i|
+        proj = create(:project)
+        4.times { create_completed_run(project: proj, goal: "create_pr") }
+      end
+
+      result = described_class.call(sample_size: 10, days: 7)
+
+      expect(result.samples.size).to eq(10)
+    end
+
     it "respects sample_size limit" do
       8.times { create_completed_run }
 
