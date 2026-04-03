@@ -730,7 +730,7 @@ RSpec.describe "Projects" do
         expect(response.body).to include('name="project[security_severity_threshold]"')
         expect(response.body).to include(">Medium</option>")
         # The threshold panel is visible (no hidden attribute) when scanning is enabled
-        expect(response.body).not_to match(/hidden\s+data-checkbox-toggle-target="panel"/)
+        expect(response.body).not_to match(/data-checkbox-toggle-target="panel"[^>]*\bhidden\b/)
       end
 
       it "hides security severity threshold controls when auto_scan_security is disabled" do
@@ -742,7 +742,7 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Auto-Scan Security Alerts")
         expect(response.body).to include('name="project[auto_scan_security]"')
         # The threshold panel is rendered but marked hidden when scanning is disabled
-        expect(response.body).to match(/hidden\s+data-checkbox-toggle-target="panel"/)
+        expect(response.body).to match(/data-checkbox-toggle-target="panel"[^>]*\bhidden\b/)
       end
 
       it "shows the repository name (not editable)" do
