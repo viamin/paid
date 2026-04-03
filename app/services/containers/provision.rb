@@ -878,14 +878,19 @@ module Containers
       # Ownership is fixed by fix_cursor_tmpfs_ownership! after container start.
       tmpfs["/home/agent/.cursor-agent"] = "size=#{64 * 1024 * 1024},mode=0700"
 
-      # Kilocode CLI stores plugin data under ~/.kilocode.
-      # Ownership is fixed by fix_kilocode_tmpfs_ownership! after container start.
+      # Writable directories inside the container for Kilocode CLI:
+      # - ~/.kilocode (plugin data)
+      # - ~/.config/kilo (config.json)
+      # - ~/.local/share/kilo (auth.json, kilo.db)
+      # Ownership is fixed by:
+      # - fix_kilocode_tmpfs_ownership! (for ~/.kilocode)
+      # - fix_kilocode_config_tmpfs_ownership! (for ~/.config/kilo)
+      # - fix_kilocode_data_tmpfs_ownership! (for ~/.local/share/kilo)
+      # after container start.
       tmpfs["/home/agent/.kilocode"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       # Kilocode CLI stores config under ~/.config/kilo (config.json) and data
-      # under ~/.local/share/kilo (auth.json, kilo.db). Ownership is fixed by
-      # fix_kilocode_config_tmpfs_ownership! and fix_kilocode_data_tmpfs_ownership!
-      # after container start.
+      # under ~/.local/share/kilo (auth.json, kilo.db).
       tmpfs["/home/agent/.config/kilo"] = "size=#{64 * 1024 * 1024},mode=0700"
       tmpfs["/home/agent/.local/share/kilo"] = "size=#{64 * 1024 * 1024},mode=0700"
 

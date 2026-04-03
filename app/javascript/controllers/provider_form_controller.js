@@ -26,17 +26,31 @@ function loadProviderApiServiceType() {
 const PROVIDER_API_SERVICE_TYPE = loadProviderApiServiceType()
 
 // OpenCode and KiloCode support multiple upstream API providers, each with its
-// own API key type. This maps the api_provider dropdown value to the required
-// ProviderApiKey.api_service_type.
-const DIRECT_OUTBOUND_API_PROVIDER_SERVICE_TYPES = {
-  openrouter: "openrouter",
-  anthropic: "anthropic",
-  openai: "openai",
-  inception: "inception",
-  deepseek: "deepseek",
-  mistral: "mistral",
-  xai: "xai",
+// own API key type. The mapping is derived from data-service-type attributes on
+// the <option> elements rendered by the backend (Provider::DIRECT_OUTBOUND_API_PROVIDERS),
+// keeping the backend as the single source of truth.
+function loadDirectOutboundApiProviderServiceTypes() {
+  const selects = document.querySelectorAll(
+    "[data-provider-form-target='directOutboundApiProviderSelect']"
+  )
+  for (const select of selects) {
+    const mapping = {}
+    let found = false
+    for (const option of select.options) {
+      const serviceType = option.dataset?.serviceType
+      if (option.value && serviceType) {
+        mapping[option.value] = serviceType
+        found = true
+      }
+    }
+    if (found) return mapping
+  }
+
+  // Fallback if backend has not yet rendered the options (e.g. no provider form on page).
+  return {}
 }
+
+const DIRECT_OUTBOUND_API_PROVIDER_SERVICE_TYPES = loadDirectOutboundApiProviderServiceTypes()
 
 // Provider keys that use dynamic api_provider selection.
 const DYNAMIC_API_PROVIDER_KEYS = new Set(["opencode", "kilocode"])

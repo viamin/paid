@@ -153,7 +153,7 @@
                 data-provider-key="opencode"
                 data-action="change->provider-form#refreshProviderSpecificFields">
           <% Provider::DIRECT_OUTBOUND_API_PROVIDERS.each do |slug, cfg| %>
-            <option value="<%= slug %>" <%= "selected" if opencode_api_provider == slug %>><%= cfg[:label] %></option>
+            <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <%= "selected" if opencode_api_provider == slug %>><%= cfg[:label] %></option>
           <% end %>
         </select>
       </div>
@@ -189,7 +189,7 @@
                 data-provider-key="kilocode"
                 data-action="change->provider-form#refreshProviderSpecificFields">
           <% Provider::DIRECT_OUTBOUND_API_PROVIDERS.each do |slug, cfg| %>
-            <option value="<%= slug %>" <%= "selected" if kilocode_api_provider == slug %>><%= cfg[:label] %></option>
+            <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <%= "selected" if kilocode_api_provider == slug %>><%= cfg[:label] %></option>
           <% end %>
         </select>
       </div>
