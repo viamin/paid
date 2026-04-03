@@ -243,6 +243,66 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "max_execution_seconds timeout capping" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
+
+    before do
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+    end
+
+    it "caps activity timeout by max_execution_seconds when it is smaller" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity"
+          { agent_run_id: 42, provider_attempt_count: 3, agent_timeout_seconds: 3600, max_execution_seconds: 1800 }
+        when "Activities::RunAgentActivity"
+          # Without cap: (3600 * 3) + 300 = 11_100
+          # With cap: 1800 + 300 = 2100
+          expect(opts[:start_to_close_timeout]).to eq(2100)
+          { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+    end
+
+    it "does not cap when max_execution_seconds is larger than computed timeout" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity"
+          { agent_run_id: 42, provider_attempt_count: 1, agent_timeout_seconds: 1800, max_execution_seconds: 86_400 }
+        when "Activities::RunAgentActivity"
+          # Computed: (1800 * 1) + 300 = 2100
+          # Cap: 86_400 + 300 = 86_700 (larger, so no cap)
+          expect(opts[:start_to_close_timeout]).to eq(2100)
+          { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+    end
+
+    it "does not cap when max_execution_seconds is nil" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity"
+          { agent_run_id: 42, provider_attempt_count: 1, agent_timeout_seconds: 3600, max_execution_seconds: nil }
+        when "Activities::RunAgentActivity"
+          expect(opts[:start_to_close_timeout]).to eq(3900)
+          { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+    end
+  end
+
   describe "existing PR follow-up reviews" do
     let(:input) { { project_id: 1, issue_id: 1, source_pull_request_number: 42 } }
 

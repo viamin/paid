@@ -11,8 +11,18 @@ class AgentRunAnomaly < ApplicationRecord
   validates :severity, presence: true, inclusion: { in: SEVERITIES }
   validates :metric_name, presence: true, inclusion: { in: ProjectBaseline::METRIC_NAMES }
   validates :metric_value, :baseline_mean, :baseline_standard_deviation, :deviation_factor, presence: true
+  validate :project_matches_agent_run
 
   scope :warnings, -> { where(severity: "warning") }
   scope :critical, -> { where(severity: "critical") }
   scope :recent, -> { where(created_at: 24.hours.ago..) }
+
+  private
+
+  def project_matches_agent_run
+    return unless project && agent_run
+    return if project_id == agent_run.project_id
+
+    errors.add(:project, "must match the agent run project")
+  end
 end

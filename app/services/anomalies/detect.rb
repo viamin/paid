@@ -17,9 +17,13 @@ module Anomalies
     end
 
     def call
-      Anomalies::UpdateBaseline.call(project, exclude_run: agent_run)
+      baselines = project.project_baselines.to_a
+      if baselines.empty?
+        Anomalies::UpdateBaseline.call(project, exclude_run: agent_run)
+        baselines = project.project_baselines.reload.to_a
+      end
 
-      baselines = project.project_baselines.index_by(&:metric_name)
+      baselines = baselines.index_by(&:metric_name)
       return [] if baselines.empty?
 
       anomalies = []
@@ -76,18 +80,24 @@ module Anomalies
     end
 
     def record_anomaly(metric_name, value, baseline, deviation, severity)
-      AgentRunAnomaly.create!(
+      anomaly = AgentRunAnomaly.find_or_initialize_by(
         agent_run: agent_run,
+        metric_name: metric_name
+      )
+
+      anomaly.assign_attributes(
         project: project,
         anomaly_type: anomaly_type(deviation),
         severity: severity,
-        metric_name: metric_name,
         metric_value: value,
         baseline_mean: baseline.mean,
         baseline_standard_deviation: baseline.standard_deviation,
         deviation_factor: deviation.abs,
         message: build_message(metric_name, value, baseline, deviation, severity)
       )
+
+      anomaly.save!
+      anomaly
     end
 
     def build_message(metric_name, value, baseline, deviation, severity)

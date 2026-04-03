@@ -60,6 +60,40 @@ dev_supervisor_log_line() {
   printf '[dev-supervisor] %s %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$*" >> "$file"
 }
 
+dev_supervisor_command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+dev_supervisor_tty() {
+  tty 2>/dev/null || echo "not-a-tty"
+}
+
+dev_supervisor_append_shell_context() {
+  local file="$1"
+
+  {
+    printf '== shell context ==\n'
+    printf 'pid=%s\n' "$$"
+    printf 'ppid=%s\n' "$PPID"
+    printf 'pwd=%s\n' "$PWD"
+    printf 'tty=%s\n' "$(dev_supervisor_tty)"
+    printf 'term=%s\n' "${TERM:-}"
+    printf 'shell=%s\n' "${SHELL:-}"
+    printf 'tmux=%s\n' "${TMUX:-}"
+    printf 'overmind_socket=%s\n' "${OVERMIND_SOCKET:-}"
+    printf '\n'
+  } >> "$file"
+
+  dev_supervisor_append_command "$file" "process self" \
+    sh -c "ps -o pid=,ppid=,pgid=,sid=,tpgid=,tty=,stat=,etime=,command= -p $$ ${PPID:+-p $PPID} 2>&1"
+  dev_supervisor_append_command "$file" "process tree" \
+    sh -c "pstree -aps $$ 2>&1 || ps -ef 2>&1"
+  dev_supervisor_append_command "$file" "selected env" \
+    sh -c "env | sort | grep -E '^(TERM|TMUX|OVERMIND_SOCKET|PATH|SHELL|STARTUP_CLEANUP_GRACE_PERIOD|SKIP_DEV_CLEANUP)=' 2>&1 || true"
+  dev_supervisor_append_command "$file" "tty settings" \
+    sh -c "stty -a < /dev/tty 2>&1 || true"
+}
+
 dev_supervisor_append_command() {
   local file="$1"
   local label="$2"
@@ -91,11 +125,13 @@ dev_supervisor_snapshot_state() {
     printf 'tmux_config=%s\n\n' "$(dev_supervisor_tmux_config)"
   } >> "$file"
 
+  dev_supervisor_append_shell_context "$file"
   dev_supervisor_append_command "$file" "overmind status" dev_supervisor_run_overmind overmind status
   dev_supervisor_append_command "$file" "tmux sockets" sh -c "ls -la '$(dev_supervisor_tmux_socket_dir)' 2>/dev/null"
   dev_supervisor_append_command "$file" "overmind socket" sh -c "ls -la '${OVERMIND_SOCKET:-.overmind.sock}' 2>/dev/null"
   dev_supervisor_append_command "$file" "tmux sessions" sh -c "for socket in '$(dev_supervisor_tmux_socket_dir)'/overmind-$(dev_supervisor_app_name)-*; do [ -S \"\$socket\" ] || continue; echo \"-- \$socket --\"; tmux -S \"\$socket\" ls 2>&1 || true; done"
-  dev_supervisor_append_command "$file" "processes" sh -c "ps -ef | rg 'overmind|tmux|bin/dev|bin/rails server|bin/temporal_worker|yarn build --watch|build:css --watch|esbuild' -S || true"
+  dev_supervisor_append_command "$file" "processes" sh -c "if command -v rg >/dev/null 2>&1; then ps -ef | rg 'overmind|tmux|bin/dev|bin/rails server|bin/temporal_worker|yarn build --watch|build:css --watch|esbuild' -S; else ps -ef | grep -E 'overmind|tmux|bin/dev|bin/rails server|bin/temporal_worker|yarn build --watch|build:css --watch|esbuild' | grep -v grep; fi 2>&1 || true"
+  dev_supervisor_append_command "$file" "overmind temp files" sh -c "ls -la /tmp/overmind-* 2>/dev/null || true"
 
   dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "Wrote diagnostics snapshot to $file"
 }

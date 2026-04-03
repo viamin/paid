@@ -47,6 +47,14 @@ RSpec.describe CollectorRun do
         expect(described_class.by_status("pending")).to contain_exactly(pending_run)
       end
     end
+
+    describe ".skipped" do
+      let!(:skipped_run) { create(:collector_run, :skipped) }
+
+      it "returns skipped runs" do
+        expect(described_class.skipped).to contain_exactly(skipped_run)
+      end
+    end
   end
 
   describe "#mark_running!" do
@@ -99,6 +107,18 @@ RSpec.describe CollectorRun do
       expect(run.status).to eq("failed")
       expect(run.error_message).to eq("timeout")
       expect(run.completed_at).to be_present
+    end
+  end
+
+  describe "#mark_skipped!" do
+    it "transitions to skipped with reason" do
+      run = create(:collector_run, :running)
+      run.mark_skipped!(reason: "maat binary not found")
+
+      expect(run.status).to eq("skipped")
+      expect(run.error_message).to eq("maat binary not found")
+      expect(run.completed_at).to be_present
+      expect(run.artifacts_count).to eq(0)
     end
   end
 end

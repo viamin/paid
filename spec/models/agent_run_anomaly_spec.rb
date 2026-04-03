@@ -22,22 +22,22 @@ RSpec.describe AgentRunAnomaly do
     let(:run) { create(:agent_run, :completed, :with_metrics, project: project) }
 
     it ".warnings returns only warning severity" do
-      warning = create(:agent_run_anomaly, agent_run: run, project: project, severity: "warning")
-      create(:agent_run_anomaly, agent_run: run, project: project, severity: "critical")
+      warning = create(:agent_run_anomaly, agent_run: run, project: project, severity: "warning", metric_name: "tokens_total")
+      create(:agent_run_anomaly, agent_run: run, project: project, severity: "critical", metric_name: "duration_seconds")
 
       expect(described_class.warnings).to contain_exactly(warning)
     end
 
     it ".critical returns only critical severity" do
-      create(:agent_run_anomaly, agent_run: run, project: project, severity: "warning")
-      critical = create(:agent_run_anomaly, agent_run: run, project: project, severity: "critical")
+      create(:agent_run_anomaly, agent_run: run, project: project, severity: "warning", metric_name: "tokens_total")
+      critical = create(:agent_run_anomaly, agent_run: run, project: project, severity: "critical", metric_name: "duration_seconds")
 
       expect(described_class.critical).to contain_exactly(critical)
     end
 
     it ".recent returns anomalies from the last 24 hours" do
-      recent = create(:agent_run_anomaly, agent_run: run, project: project)
-      create(:agent_run_anomaly, agent_run: run, project: project, created_at: 2.days.ago)
+      recent = create(:agent_run_anomaly, agent_run: run, project: project, metric_name: "tokens_total")
+      create(:agent_run_anomaly, agent_run: run, project: project, metric_name: "duration_seconds", created_at: 2.days.ago)
 
       expect(described_class.recent).to contain_exactly(recent)
     end

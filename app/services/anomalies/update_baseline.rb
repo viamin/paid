@@ -25,7 +25,7 @@ module Anomalies
 
       ProjectBaseline::METRIC_NAMES.each do |metric_name|
         values = extract_values(runs, metric_name)
-        next if values.empty?
+        next if values.size < MIN_SAMPLE_SIZE
 
         update_baseline(metric_name, values)
       end
@@ -44,7 +44,10 @@ module Anomalies
     def extract_values(runs, metric_name)
       case metric_name
       when "tokens_total"
-        runs.pluck(:tokens_input, :tokens_output).map { |i, o| (i || 0) + (o || 0) }
+        runs
+          .where.not(tokens_input: nil, tokens_output: nil)
+          .pluck(:tokens_input, :tokens_output)
+          .map { |tokens_input, tokens_output| (tokens_input || 0) + (tokens_output || 0) }
       when "duration_seconds"
         runs.where.not(duration_seconds: nil).pluck(:duration_seconds)
       when "iterations"
@@ -62,13 +65,25 @@ module Anomalies
       std_dev = Math.sqrt(variance)
       p95 = percentile(values, 95)
 
-      project.project_baselines.find_or_initialize_by(metric_name: metric_name).update!(
+      attrs = {
         mean: mean,
         standard_deviation: std_dev,
         sample_count: values.size,
         p95: p95,
         last_calculated_at: Time.current
-      )
+      }
+
+      retries = 0
+      begin
+        baseline = project.project_baselines.find_or_initialize_by(metric_name: metric_name)
+        baseline.update!(attrs)
+      rescue ActiveRecord::RecordNotUnique
+        retries += 1
+        raise if retries > 1
+
+        baseline = project.project_baselines.find_by!(metric_name: metric_name)
+        retry
+      end
     end
 
     def percentile(values, pct)
