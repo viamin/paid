@@ -371,7 +371,7 @@
             <tbody class="divide-y divide-gray-200 bg-white">
               <% stats[:runs_by_provider].each do |provider, count| %>
                 <tr>
-                  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= provider.titleize %></td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= provider %></td>
                   <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right"><%= number_with_delimiter(count) %></td>
                 </tr>
               <% end %>
