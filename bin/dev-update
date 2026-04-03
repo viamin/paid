@@ -43,6 +43,43 @@ OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
 OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
 STARTUP_CLEANUP_GRACE_PERIOD="${DEV_UPDATE_STARTUP_CLEANUP_GRACE_PERIOD:-300}"
 
+newline_list_to_csv() {
+  printf '%s' "${1:-}" | tr '\n' ',' | sed 's/,$//'
+}
+
+restart_required_for_file() {
+  local file="$1"
+
+  case "$file" in
+    app/temporal/*|config/*|db/migrate/*|bin/*|lib/*|Procfile*)
+      return 0
+      ;;
+    Gemfile|Gemfile.lock|package.json|package-lock.json|yarn.lock)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+restart_required_from_trigger_context() {
+  local file
+
+  if [ -n "${DEV_UPDATE_RESTART_TRIGGER_FILES:-}" ]; then
+    return 0
+  fi
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if restart_required_for_file "$file"; then
+      return 0
+    fi
+  done <<< "${DEV_UPDATE_CHANGED_FILES:-}"
+
+  return 1
+}
+
 log() {
   echo "$LOG_PREFIX $(date '+%Y-%m-%d %H:%M:%S') $*"
 }
@@ -78,6 +115,28 @@ configure_logging() {
     exec > >(tee -a "$SCRIPT_LOG") 2>&1
   else
     exec >>"$SCRIPT_LOG" 2>&1
+  fi
+}
+
+log_trigger_context() {
+  log "Trigger source: ${DEV_UPDATE_TRIGGER_SOURCE:-unknown}"
+  log "Requested mode: ${DEV_UPDATE_TRIGGER_MODE:-unknown}"
+  log "Project ID: ${DEV_UPDATE_PROJECT_ID:-unknown}"
+  log "PR number: ${DEV_UPDATE_PR_NUMBER:-unknown}"
+
+  local changed_files_csv
+  changed_files_csv="$(newline_list_to_csv "${DEV_UPDATE_CHANGED_FILES:-}")"
+  local restart_files_csv
+  restart_files_csv="$(newline_list_to_csv "${DEV_UPDATE_RESTART_TRIGGER_FILES:-}")"
+
+  [ -z "$changed_files_csv" ] || log "Changed files: $changed_files_csv"
+  [ -z "$restart_files_csv" ] || log "Restart trigger files: $restart_files_csv"
+}
+
+enforce_safe_mode() {
+  if [ "$MODE" = "--lightweight" ] && restart_required_from_trigger_context; then
+    log "Restart-worthy files were provided with a lightweight request; upgrading to full restart."
+    MODE="--full"
   fi
 }
 
@@ -244,7 +303,6 @@ recover_dev_if_needed() {
 }
 
 run_full_restart() {
-  configure_logging
   log "Starting full restart update..."
   ensure_on_main
   pull_latest
@@ -266,12 +324,20 @@ run_full_restart() {
 case "$MODE" in
   --lightweight)
     configure_logging
+    log_trigger_context
+    enforce_safe_mode
+    if [ "$MODE" = "--full" ]; then
+      run_full_restart
+      exit 0
+    fi
     log "Starting lightweight update..."
     ensure_on_main
     pull_latest
     log "Lightweight update complete. Rails will autoload changes."
     ;;
   --full)
+    configure_logging
+    log_trigger_context
     run_full_restart
     ;;
   *)
