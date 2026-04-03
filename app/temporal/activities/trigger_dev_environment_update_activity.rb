@@ -50,7 +50,13 @@ module Activities
 
       restart_trigger_files = full_restart_trigger_files(changed_files)
       mode = determine_update_mode(restart_trigger_files)
-      return { triggered: false, reason: "spawn_failed" } unless trigger_update(mode)
+      return { triggered: false, reason: "spawn_failed" } unless trigger_update(
+        mode: mode,
+        project_id: project.id,
+        pr_number: pr_number,
+        changed_files: changed_files,
+        restart_trigger_files: restart_trigger_files
+      )
 
       logger.info(
         message: "dev_update.triggered",
@@ -97,7 +103,7 @@ module Activities
       end
     end
 
-    def trigger_update(mode)
+    def trigger_update(mode:, project_id:, pr_number:, changed_files:, restart_trigger_files:)
       script = File.expand_path("../../../bin/dev-update", __dir__)
       flag = mode == "full" ? "--full" : "--lightweight"
       log_path = Rails.root.join("log", "dev-update", "dev-update.log")
@@ -106,6 +112,14 @@ module Activities
       # Spawn detached so the Temporal worker (which runs under Overmind)
       # is not the parent — setsid creates a new session.
       pid = Process.spawn(
+        {
+          "DEV_UPDATE_TRIGGER_SOURCE" => self.class.name,
+          "DEV_UPDATE_TRIGGER_MODE" => mode,
+          "DEV_UPDATE_PROJECT_ID" => project_id.to_s,
+          "DEV_UPDATE_PR_NUMBER" => pr_number.to_s,
+          "DEV_UPDATE_CHANGED_FILES" => changed_files.join("\n"),
+          "DEV_UPDATE_RESTART_TRIGGER_FILES" => restart_trigger_files.join("\n")
+        },
         "setsid", script, flag,
         out: [ log_path.to_s, "a" ],
         err: [ log_path.to_s, "a" ]
@@ -116,7 +130,11 @@ module Activities
         message: "dev_update.process_spawned",
         pid: pid,
         mode: mode,
-        log_path: log_path.to_s
+        log_path: log_path.to_s,
+        project_id: project_id,
+        pr_number: pr_number,
+        changed_files: changed_files,
+        restart_trigger_files: restart_trigger_files
       )
 
       true
