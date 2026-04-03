@@ -527,6 +527,7 @@ RSpec.describe "Projects" do
         expect(response.body).to include(%(id="recent_merge_issue_#{pr.id}"))
 
         recent_merge_row = response.body.match(/<tr[^>]*id="recent_merge_issue_#{pr.id}"[^>]*>.*?<\/tr>/m)&.[](0)
+        expect(recent_merge_row).to be_present, "expected to find a <tr> with id='recent_merge_issue_#{pr.id}'"
 
         expect(recent_merge_row).to include(">#34<")
         expect(recent_merge_row).to include(">Fix flaky spec in CI<")
@@ -547,6 +548,7 @@ RSpec.describe "Projects" do
         expect(response.body).to include(%(id="recent_merge_issue_#{pr.id}"))
 
         recent_merge_row = response.body.match(/<tr[^>]*id="recent_merge_issue_#{pr.id}"[^>]*>.*?<\/tr>/m)&.[](0)
+        expect(recent_merge_row).to be_present, "expected to find a <tr> with id='recent_merge_issue_#{pr.id}'"
 
         expect(recent_merge_row).to include(">#34<")
         expect(recent_merge_row).to include(">Fix flaky spec in CI<")
