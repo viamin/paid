@@ -262,6 +262,8 @@ class Issue < ApplicationRecord
     text = body.to_s
     text.scan(CLOSING_KEYWORD_RE) do
       pos = Regexp.last_match.end(0)
+      # Skip optional colon after keyword (e.g. "Fixes: #123", "Closes: #123")
+      pos += 1 if text[pos] == ":"
       while (m = CLOSING_REF_RE.match(text, pos))
         owner, repo, number = m[1], m[2], m[3]
         unless (owner.present? && !owner.casecmp?(project.owner)) ||

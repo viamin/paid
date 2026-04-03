@@ -836,6 +836,12 @@ RSpec.describe Issue do
       expect(issue.closing_referenced_issue_numbers).to eq([])
     end
 
+    it "handles colon after closing keyword" do
+      issue = build(:issue, project: project, body: "Fixes: #123")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([ 123 ])
+    end
+
     it "stops at non-reference tokens so unrelated refs in the same clause are excluded" do
       issue = build(:issue, project: project, body: "Closes #12, related to #14")
 
