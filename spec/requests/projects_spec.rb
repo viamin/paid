@@ -596,7 +596,9 @@ RSpec.describe "Projects" do
 
         get project_path(project)
 
-        expect(response.body).to include("Disabled")
+        expect(response.body).to match(
+          %r{<dt[^>]*>\s*Auto-Scan Security Alerts\s*</dt>\s*<dd[^>]*>.*?\bDisabled\b.*?</dd>}m
+        )
         expect(response.body).not_to include("Minimum severity:")
       end
 

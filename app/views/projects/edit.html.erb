@@ -374,7 +374,7 @@
               <div class="flex items-center">
                 <%= form.check_box :auto_scan_security,
                   class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600",
-                  data: { action: "checkbox-toggle#toggle", checkbox_toggle_target: "checkbox" } %>
+                  data: { action: "change->checkbox-toggle#toggle", checkbox_toggle_target: "checkbox" } %>
                 <%= form.label :auto_scan_security, "Auto-Scan Security Alerts",
                   class: "ml-3 block text-sm font-medium leading-6 text-gray-900" %>
               </div>
@@ -382,9 +382,7 @@
                 Periodically scan GitHub CodeQL alerts and create synthetic issues for alerts at or above the selected severity threshold.
               </p>
 
-              <div class="mt-3 ml-7 max-w-xs"
-                <%= "hidden" unless @project.auto_scan_security? %>
-                data-checkbox-toggle-target="panel">
+              <div class="mt-3 ml-7 max-w-xs" data-checkbox-toggle-target="panel" <%= "hidden" unless @project.auto_scan_security? %>>
                 <%= form.label :security_severity_threshold, "Minimum Severity",
                   class: "block text-sm font-medium leading-6 text-gray-900" %>
                 <div class="mt-2">
