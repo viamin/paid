@@ -133,7 +133,7 @@ class Issue < ApplicationRecord
       .scan(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b([^.\n\r]*)/i)
       .flatten
       .flat_map do |clause|
-        clause.scan(/(?:(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+))?#(?<number>\d+)/).filter_map do |owner, repo, number|
+        clause.scan(/(?:(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)|(?<!\w))#(?<number>\d+)/).filter_map do |owner, repo, number|
           next if owner.present? && !owner.casecmp?(project.owner)
           next if repo.present? && !repo.casecmp?(project.repo)
 

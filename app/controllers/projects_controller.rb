@@ -39,10 +39,15 @@ class ProjectsController < ApplicationController
         .limit(10)
 
       closing_issue_numbers = @recent_merged_pull_requests.flat_map(&:closing_referenced_issue_numbers).uniq
-      @merged_pull_request_closed_issues_by_number = @project.issues
-        .issues_only
-        .where(github_number: closing_issue_numbers)
-        .index_by(&:github_number)
+      @merged_pull_request_closed_issues_by_number =
+        if closing_issue_numbers.any?
+          @project.issues
+            .issues_only
+            .where(github_number: closing_issue_numbers)
+            .index_by(&:github_number)
+        else
+          {}
+        end
     else
       @recent_merged_pull_requests = Issue.none
       @merged_pull_request_closed_issues_by_number = {}

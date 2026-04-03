@@ -517,31 +517,41 @@ RSpec.describe "Projects" do
       it "shows recently merged PRs with linked closed issues when auto-merge is enabled" do
         project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
         issue = create(:issue, project: project, github_number: 21, title: "Fix flaky spec")
-        create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
+        pr = create(:issue, :pull_request, :closed, project: project, parent_issue: issue,
           github_number: 34, title: "Fix flaky spec in CI", pr_review_phase: "merged",
           github_updated_at: Time.utc(2026, 4, 1, 12, 0, 0))
 
         get project_path(project)
 
         expect(response.body).to include("Recently Merged PRs")
-        expect(response.body).to include(">#34<")
-        expect(response.body).to include(">Fix flaky spec in CI<")
-        expect(response.body).to include(">#21<")
-        expect(response.body).to include(">Fix flaky spec<")
+        expect(response.body).to include(%(id="recent_merge_issue_#{pr.id}"))
+
+        recent_merge_row = response.body.match(/<tr[^>]*id="recent_merge_issue_#{pr.id}"[^>]*>.*?<\/tr>/m)&.[](0)
+
+        expect(recent_merge_row).to include(">#34<")
+        expect(recent_merge_row).to include(">Fix flaky spec in CI<")
+        expect(recent_merge_row).to match(/<a [^>]*>#21<\/a>/)
+        expect(recent_merge_row).to include(">Fix flaky spec<")
       end
 
       it "shows the issue from cached closing references when parent_issue is absent" do
         project = create(:project, account: account, github_token: github_token, auto_merge_enabled: true)
         create(:issue, project: project, github_number: 21, title: "Fix flaky spec")
-        create(:issue, :pull_request, :closed, project: project,
+        pr = create(:issue, :pull_request, :closed, project: project,
           github_number: 34, title: "Fix flaky spec in CI", pr_review_phase: "merged",
           body: "Closes #21")
 
         get project_path(project)
 
         expect(response.body).to include("Recently Merged PRs")
-        expect(response.body).to include(">#21<")
-        expect(response.body).to include(">Fix flaky spec<")
+        expect(response.body).to include(%(id="recent_merge_issue_#{pr.id}"))
+
+        recent_merge_row = response.body.match(/<tr[^>]*id="recent_merge_issue_#{pr.id}"[^>]*>.*?<\/tr>/m)&.[](0)
+
+        expect(recent_merge_row).to include(">#34<")
+        expect(recent_merge_row).to include(">Fix flaky spec in CI<")
+        expect(recent_merge_row).to match(/<a [^>]*>#21<\/a>/)
+        expect(recent_merge_row).to include(">Fix flaky spec<")
       end
 
       it "shows the empty recent merged PR state when auto-merge is enabled but nothing has merged" do
