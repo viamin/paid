@@ -77,13 +77,13 @@ RSpec.describe PromptEvolution::Mutate do
     it "generates the requested number of mutations" do
       allow(harness_response).to receive(:output).and_return(multi_mutation_response)
 
-      mutations = described_class.call(prompt: prompt, mutation_count: 3)
+      mutations = described_class.call(prompt: prompt, options: { mutation_count: 3 })
 
       expect(mutations.size).to eq(3)
     end
 
     it "includes mutation strategies in the prompt" do
-      described_class.call(prompt: prompt, strategies: %w[refinement simplification])
+      described_class.call(prompt: prompt, options: { strategies: %w[refinement simplification] })
 
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_including("Refinement", "Simplification"),
@@ -103,14 +103,14 @@ RSpec.describe PromptEvolution::Mutate do
 
     it "raises when strategies list is empty after filtering" do
       expect {
-        described_class.call(prompt: prompt, strategies: %w[invalid])
+        described_class.call(prompt: prompt, options: { strategies: %w[invalid] })
       }.to raise_error(ArgumentError, /strategies/)
     end
   end
 
   describe "mutation_count clamping" do
     it "clamps mutation_count to minimum of 1" do
-      described_class.call(prompt: prompt, mutation_count: 0)
+      described_class.call(prompt: prompt, options: { mutation_count: 0 })
 
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_including("1 improved variant"),
@@ -119,7 +119,7 @@ RSpec.describe PromptEvolution::Mutate do
     end
 
     it "clamps mutation_count to maximum of 5" do
-      described_class.call(prompt: prompt, mutation_count: 10)
+      described_class.call(prompt: prompt, options: { mutation_count: 10 })
 
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_including("5 improved variant"),
@@ -354,7 +354,7 @@ RSpec.describe PromptEvolution::Mutate do
       }.to_json
       allow(harness_response).to receive(:output).and_return(many_mutations)
 
-      mutations = described_class.call(prompt: prompt, mutation_count: 2)
+      mutations = described_class.call(prompt: prompt, options: { mutation_count: 2 })
 
       expect(mutations.size).to eq(2)
     end
@@ -381,7 +381,9 @@ RSpec.describe PromptEvolution::Mutate do
     end
 
     it "handles LLM response wrapped in quotes" do
-      quoted = valid_llm_response.to_json
+      # Use JSON.generate to properly encode the string (escapes both quotes
+      # and backslashes), simulating an LLM that wraps its JSON in quotes.
+      quoted = JSON.generate(valid_llm_response)
       allow(harness_response).to receive(:output).and_return(quoted)
 
       # The JSON inside quotes may not parse cleanly after unescaping,
@@ -394,7 +396,7 @@ RSpec.describe PromptEvolution::Mutate do
 
   describe "strategies filtering" do
     it "only includes valid strategies" do
-      described_class.call(prompt: prompt, strategies: %w[refinement invalid expansion])
+      described_class.call(prompt: prompt, options: { strategies: %w[refinement invalid expansion] })
 
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_matching(/refinement.*expansion/m),
@@ -413,7 +415,7 @@ RSpec.describe PromptEvolution::Mutate do
       }.to_json
       allow(harness_response).to receive(:output).and_return(mixed_response)
 
-      mutations = described_class.call(prompt: prompt, strategies: %w[refinement])
+      mutations = described_class.call(prompt: prompt, options: { strategies: %w[refinement] })
 
       expect(mutations.size).to eq(1)
       expect(mutations.first.strategy).to eq("refinement")
@@ -431,6 +433,32 @@ RSpec.describe PromptEvolution::Mutate do
         a_string_including("System Prompt", "You are a coding assistant"),
         hash_including(provider: :claude)
       )
+    end
+  end
+
+  describe "input coercion" do
+    it "coerces string mutation_count to integer" do
+      described_class.call(prompt: prompt, options: { mutation_count: "2" })
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("2 improved variant"),
+        hash_including(provider: :claude)
+      )
+    end
+
+    it "wraps a single strategy string in an array" do
+      described_class.call(prompt: prompt, options: { strategies: "refinement" })
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("Refinement"),
+        hash_including(provider: :claude)
+      )
+    end
+
+    it "raises ArgumentError for non-numeric mutation_count" do
+      expect {
+        described_class.call(prompt: prompt, options: { mutation_count: "abc" })
+      }.to raise_error(ArgumentError)
     end
   end
 end

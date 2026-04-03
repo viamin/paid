@@ -10,7 +10,7 @@ module PromptEvolution
   #     prompt: prompt,
   #     quality_metrics: metrics,
   #     sample_outputs: { successes: [...], failures: [...] },
-  #     mutation_count: 3
+  #     options: { mutation_count: 3 }
   #   )
   #   mutations.each { |m| prompt.create_version!(template: m.template, ...) }
   class Mutate
@@ -30,23 +30,24 @@ module PromptEvolution
     Mutation = Struct.new(:template, :strategy, :reasoning, :expected_improvement, keyword_init: true)
 
     class << self
-      def call(prompt:, quality_metrics: [], sample_outputs: {}, mutation_count: 3, strategies: STRATEGIES)
+      def call(prompt:, quality_metrics: [], sample_outputs: {}, options: {})
         new(
           prompt: prompt,
           quality_metrics: quality_metrics,
           sample_outputs: sample_outputs,
-          mutation_count: mutation_count,
-          strategies: strategies
+          options: options
         ).mutate
       end
     end
 
-    def initialize(prompt:, quality_metrics: [], sample_outputs: {}, mutation_count: 3, strategies: STRATEGIES)
+    def initialize(prompt:, quality_metrics: [], sample_outputs: {}, options: {})
       @prompt = prompt
       @quality_metrics = quality_metrics
       @sample_outputs = sample_outputs
-      @mutation_count = mutation_count.clamp(MIN_MUTATION_COUNT, MAX_MUTATION_COUNT)
-      @strategies = strategies & STRATEGIES
+      raw_count = options.fetch(:mutation_count, options.fetch("mutation_count", 3))
+      @mutation_count = Integer(raw_count).clamp(MIN_MUTATION_COUNT, MAX_MUTATION_COUNT)
+      raw_strategies = options.fetch(:strategies, options.fetch("strategies", STRATEGIES))
+      @strategies = Array(raw_strategies) & STRATEGIES
       validate!
     end
 
