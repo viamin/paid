@@ -825,15 +825,21 @@ RSpec.describe Issue do
     end
 
     it "ignores repo-only qualified references like repo#123" do
-      issue = build(:issue, project: project, body: "Closes widget#42 and #12")
+      issue = build(:issue, project: project, body: "Closes widget#42")
 
-      expect(issue.closing_referenced_issue_numbers).to eq([ 12 ])
+      expect(issue.closing_referenced_issue_numbers).to eq([])
     end
 
     it "ignores non-closing references" do
       issue = build(:issue, project: project, body: "Related to #12. Depends on #14.")
 
       expect(issue.closing_referenced_issue_numbers).to eq([])
+    end
+
+    it "stops at non-reference tokens so unrelated refs in the same clause are excluded" do
+      issue = build(:issue, project: project, body: "Closes #12, related to #14")
+
+      expect(issue.closing_referenced_issue_numbers).to eq([ 12 ])
     end
   end
 

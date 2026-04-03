@@ -127,20 +127,7 @@ class Issue < ApplicationRecord
   end
 
   def closing_referenced_issue_numbers
-    return [] if body.blank?
-
-    body.to_s
-      .scan(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b([^.\n\r]*)/i)
-      .flatten
-      .flat_map do |clause|
-        clause.scan(/(?:(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)|(?<!\w))#(?<number>\d+)/).filter_map do |owner, repo, number|
-          next if owner.present? && !owner.casecmp?(project.owner)
-          next if repo.present? && !repo.casecmp?(project.repo)
-
-          number.to_i
-        end
-      end
-      .uniq
+    @closing_referenced_issue_numbers ||= parse_closing_references
   end
 
   def closed_issue(referenced_issues_by_number = {})
@@ -260,6 +247,32 @@ class Issue < ApplicationRecord
   end
 
   private
+
+  CLOSING_KEYWORD_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b/i
+  CLOSING_REF_RE = /\G\s*(?:,\s*)?(?:and\s+)?(?:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)|(?<!\w))#(\d+)/
+
+  # Parses closing issue references that immediately follow a closing keyword,
+  # consuming only chained references (separated by "," or "and"). Stops at the
+  # first non-reference token so that e.g. "Closes #12, related to #14" only
+  # returns [12].
+  def parse_closing_references
+    return [] if body.blank?
+
+    numbers = []
+    text = body.to_s
+    text.scan(CLOSING_KEYWORD_RE) do
+      pos = Regexp.last_match.end(0)
+      while (m = CLOSING_REF_RE.match(text, pos))
+        owner, repo, number = m[1], m[2], m[3]
+        unless (owner.present? && !owner.casecmp?(project.owner)) ||
+               (repo.present? && !repo.casecmp?(project.repo))
+          numbers << number.to_i
+        end
+        pos = m.end(0)
+      end
+    end
+    numbers.uniq
+  end
 
   def parent_issue_belongs_to_same_project
     return if parent_issue.project_id == project_id
