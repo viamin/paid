@@ -12,8 +12,10 @@ module Knowledge
       GIT_LOG_FORMAT = "--%h--%ad--%aN%n"
 
       def collect
+        skip!("ruby-maat binary not found") unless maat_available?
+
         repo_path = resolve_repo_path
-        return [] unless repo_path
+        skip!("repository path not available") unless repo_path
 
         revisions = run_revisions(repo_path)
         complexity = run_complexity(repo_path)
@@ -30,11 +32,41 @@ module Knowledge
       def tool_version
         version_output = run_command("ruby-maat", "--version")
         version_output.strip.presence
-      rescue StandardError
+      rescue => e
+        raise unless command_unavailable?(e)
         nil
       end
 
       private
+
+      # Returns true when the error indicates the command binary is not
+      # installed or not found, as opposed to an infrastructure failure
+      # (container not provisioned, Docker exec error, etc.) that should
+      # propagate as a failed run.
+      def command_unavailable?(error)
+        case error
+        when Errno::ENOENT
+          true
+        when RuntimeError
+          return false if error.is_a?(Timeout::Error)
+          true
+        when Knowledge::ContainerizedRunner::ContainerError
+          error.message.match?(/\ACommand failed \(exit \d+\)/)
+        else
+          false
+        end
+      end
+
+      # Uses `command -v` (a POSIX shell builtin) instead of `which` to
+      # avoid a hard dependency on the `which` binary, which may not be
+      # present in minimal container images.
+      def maat_available?
+        run_command("sh", "-c", "command -v ruby-maat")
+        true
+      rescue => e
+        raise unless command_unavailable?(e)
+        false
+      end
 
       def run_revisions(repo_path)
         if containerized?
