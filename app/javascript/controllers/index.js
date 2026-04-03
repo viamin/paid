@@ -4,47 +4,50 @@
 
 import { application } from "./application"
 
-import HelloController from "./hello_controller"
-application.register("hello", HelloController)
+import AgentRunActionsController from "./agent_run_actions_controller"
+application.register("agent-run-actions", AgentRunActionsController)
 
-import FormSubmitController from "./form_submit_controller"
-application.register("form-submit", FormSubmitController)
-
-import RepositorySelectorController from "./repository_selector_controller"
-application.register("repository-selector", RepositorySelectorController)
-
-import MobileMenuController from "./mobile_menu_controller"
-application.register("mobile-menu", MobileMenuController)
-
-import GoalToggleController from "./goal_toggle_controller"
-application.register("goal-toggle", GoalToggleController)
-
-import SortableController from "./sortable_controller"
-application.register("sortable", SortableController)
-
-import DropdownController from "./dropdown_controller"
-application.register("dropdown", DropdownController)
-
-import TestAgentController from "./test_agent_controller"
-application.register("test-agent", TestAgentController)
-
-import LocalTimeController from "./local_time_controller"
-application.register("local-time", LocalTimeController)
-
-import TooltipController from "./tooltip_controller"
-application.register("tooltip", TooltipController)
-
-import LiveDashboardController from "./live_dashboard_controller"
-application.register("live-dashboard", LiveDashboardController)
-
-import ElapsedTimeController from "./elapsed_time_controller"
-application.register("elapsed-time", ElapsedTimeController)
-
-import ProviderFormController from "./provider_form_controller"
-application.register("provider-form", ProviderFormController)
+import CheckboxToggleController from "./checkbox_toggle_controller"
+application.register("checkbox-toggle", CheckboxToggleController)
 
 import ConfirmDeleteController from "./confirm_delete_controller"
 application.register("confirm-delete", ConfirmDeleteController)
 
-import AgentRunActionsController from "./agent_run_actions_controller"
-application.register("agent-run-actions", AgentRunActionsController)
+import DropdownController from "./dropdown_controller"
+application.register("dropdown", DropdownController)
+
+import ElapsedTimeController from "./elapsed_time_controller"
+application.register("elapsed-time", ElapsedTimeController)
+
+import FormSubmitController from "./form_submit_controller"
+application.register("form-submit", FormSubmitController)
+
+import GoalToggleController from "./goal_toggle_controller"
+application.register("goal-toggle", GoalToggleController)
+
+import HelloController from "./hello_controller"
+application.register("hello", HelloController)
+
+import LiveDashboardController from "./live_dashboard_controller"
+application.register("live-dashboard", LiveDashboardController)
+
+import LocalTimeController from "./local_time_controller"
+application.register("local-time", LocalTimeController)
+
+import MobileMenuController from "./mobile_menu_controller"
+application.register("mobile-menu", MobileMenuController)
+
+import ProviderFormController from "./provider_form_controller"
+application.register("provider-form", ProviderFormController)
+
+import RepositorySelectorController from "./repository_selector_controller"
+application.register("repository-selector", RepositorySelectorController)
+
+import SortableController from "./sortable_controller"
+application.register("sortable", SortableController)
+
+import TestAgentController from "./test_agent_controller"
+application.register("test-agent", TestAgentController)
+
+import TooltipController from "./tooltip_controller"
+application.register("tooltip", TooltipController)
