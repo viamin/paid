@@ -23,6 +23,9 @@ Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI
 When working on a GitHub issue:
 
 - **Read all comments** - Always read the entire comment thread on an issue before starting work. Important context, clarifications, and decisions are often in the comments.
+- **Use explicit dependency wording when blocking auto-pick** - Paid's dependency parser recognizes phrases like `Depends on #123` and `Depends on owner/repo#123`, including cross-repo references. A plain mention like `owner/repo#123` is not enough to block auto-pick.
+- **Cross-project dependency blocking is text-driven, not GitHub-native** - For Paid issues, write explicit dependency lines in the issue body/comments if the issue must stay blocked on upstream work. Paid currently uses its own parsed dependency records, not GitHub's native cross-repo dependency graph, for auto-pick eligibility.
+- **External dependencies stay blocked conservatively** - If an issue depends on `owner/repo#123` in a repo that is not also synced into the same Paid account, the dependency remains external and auto-pick will keep treating the issue as blocked until the dependency text is removed or the external reference is resolved through sync.
 
 ## Development Commands
 
@@ -106,6 +109,7 @@ Key architectural decisions are documented in `docs/rdrs/` (Recommendation Decis
 **All LLM calls must go through `agent_harness`** — never call AI provider APIs directly (e.g., no raw Faraday/HTTP calls to `api.anthropic.com` or `api.openai.com`). The `agent_harness` gem is the single interface for all LLM interactions in the application. The secrets proxy (`SecretsProxyController`) exists only to forward authenticated requests from containers — it is infrastructure, not an application-level LLM interface.
 
 Provider-specific execution behavior belongs in `agent_harness`, not scattered across Paid. If a provider needs special flags, error classification, rate-limit parsing, or message interpretation, prefer adding that support upstream in `agent-harness` and track Paid follow-up work against that upstream issue. Favor failing loudly over papering over provider-specific failures in Paid with ad hoc output parsing that can turn real execution errors into apparent success.
+Avoid introducing new provider-specific CLI command strings or shell wrappers in Paid when the behavior should live in `agent-harness`.
 
 ### Directory Structure
 
