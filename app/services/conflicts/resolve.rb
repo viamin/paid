@@ -138,7 +138,7 @@ module Conflicts
         return { success: false, error: "conflicts" }
       end
 
-      push_success = push_rebased_branch(git_ops, rebase_run, base_run)
+      push_success = push_rebased_branch(git_ops, rebase_run)
       { success: push_success, error: push_success ? nil : "push_failed" }
     rescue StandardError => e
       Rails.logger.warn(
@@ -158,7 +158,7 @@ module Conflicts
       )
     end
 
-    def push_rebased_branch(git_ops, rebase_run, base_run)
+    def push_rebased_branch(git_ops, rebase_run)
       # After rebase the remote branch already exists with pre-rebase history,
       # so a regular push will be rejected. Use force-with-lease to safely
       # update the remote branch with the rebased commits.
@@ -168,7 +168,6 @@ module Conflicts
       Rails.logger.warn(
         message: "conflicts.resolve.push_failed_after_rebase",
         agent_run_id: rebase_run.id,
-        base_run_id: base_run.id,
         error: e.message
       )
       false

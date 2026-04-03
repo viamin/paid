@@ -72,7 +72,27 @@ module Workflows
         timeout_seconds: timeout_seconds
       )
 
-      # Step 3: Detect conflicts between successful runs
+      # Step 3: Optionally aggregate branches into a single PR.
+      # Default to the project-level setting (returned by the capacity check)
+      # when the caller does not explicitly pass aggregate_pr.
+      aggregate = if input.key?(:aggregate_pr)
+        input[:aggregate_pr]
+      else
+        capacity.fetch(:pr_aggregation_enabled, false)
+      end
+      parent_issue_id = input[:parent_issue_id]
+
+      aggregated_pr = nil
+      if aggregate && results.any? { |r| r[:success] }
+        aggregated_pr = aggregate_branches_and_create_pr(
+          project_id: project_id,
+          parent_issue_id: parent_issue_id,
+          results: results,
+          parent_wf_id: parent_wf_id
+        )
+      end
+
+      # Step 4: Detect conflicts between successful runs
       completed = results.count { |r| r[:success] }
       failed = results.count { |r| r[:success] == false }
 
@@ -87,10 +107,11 @@ module Workflows
         total: sub_tasks.size,
         completed: completed,
         failed: failed,
-        has_conflicts: conflict_result[:has_conflicts]
+        has_conflicts: conflict_result[:has_conflicts],
+        aggregated_pr: aggregated_pr&.dig(:pull_request_url)
       )
 
-      {
+      output = {
         success: failed == 0,
         total: sub_tasks.size,
         completed: completed,
@@ -98,6 +119,8 @@ module Workflows
         results: results,
         conflicts: conflict_result
       }
+      output[:aggregated_pr] = aggregated_pr if aggregated_pr
+      output
     end
 
     private
@@ -212,6 +235,52 @@ module Workflows
       all_results
     end
 
+    # Aggregates branches from completed sub-tasks into a single feature branch
+    # and creates a combined PR. Called when aggregate_pr is true and at least
+    # one sub-task succeeded.
+    def aggregate_branches_and_create_pr(project_id:, parent_issue_id:, results:, parent_wf_id:)
+      timestamp = Temporalio::Workflow.now.to_i
+      safe_id = parent_wf_id.to_s.parameterize[0, 60]
+      feature_branch = "feature/aggregated-#{safe_id}-#{timestamp}"
+
+      # Step 1: Merge sub-task branches into feature branch
+      aggregate_result = run_activity(
+        Activities::AggregateBranchesActivity,
+        {
+          project_id: project_id,
+          results: results,
+          feature_branch_name: feature_branch
+        },
+        timeout: 120
+      )
+
+      return nil if aggregate_result[:merged_branches].empty?
+
+      # Step 2: Create aggregated PR
+      run_activity(
+        Activities::CreateAggregatedPullRequestActivity,
+        {
+          project_id: project_id,
+          parent_issue_id: parent_issue_id,
+          feature_branch: aggregate_result[:feature_branch],
+          merged_branches: aggregate_result[:merged_branches],
+          failed_merges: aggregate_result[:failed_merges],
+          results: results
+        },
+        timeout: 60
+      )
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "parallel_execution.aggregation_failed",
+        project_id: project_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      nil
+    end
+
     # Detects and attempts to resolve conflicts between successful parallel runs.
     # Only checks runs that completed successfully and produced agent_run_ids.
     # Returns a summary of conflict detection and resolution outcomes.
@@ -229,14 +298,19 @@ module Workflows
       )
 
       unless detection[:has_conflicts]
-        return detection.merge(resolution: nil)
+        return detection.merge(
+          detection_failed: false,
+          requires_manual_review: false,
+          resolution: nil,
+          error: nil
+        )
       end
 
       # If detection failed and produced no usable conflict information,
       # require manual review without attempting resolution.
       if detection[:detection_failed] &&
          (detection[:conflicting_pairs].nil? || detection[:conflicting_pairs].empty?)
-        return detection.merge(resolution: nil)
+        return detection.merge(resolution: nil, error: nil)
       end
 
       resolution = run_activity(
@@ -247,7 +321,8 @@ module Workflows
 
       detection.merge(
         resolution: resolution,
-        requires_manual_review: resolution[:requires_manual_review] || detection[:requires_manual_review]
+        requires_manual_review: resolution[:requires_manual_review] || detection[:requires_manual_review],
+        error: nil
       )
     rescue Temporalio::Error::CanceledError
       raise

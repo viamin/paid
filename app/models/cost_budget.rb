@@ -2,6 +2,7 @@
 
 class CostBudget < ApplicationRecord
   BUDGET_TYPES = %w[daily monthly per_run].freeze
+  ENFORCEMENT_MODES = %w[alert hard_stop].freeze
 
   attr_accessor :limit_dollars
 
@@ -15,11 +16,14 @@ class CostBudget < ApplicationRecord
     unless: -> { errors.include?(:limit_dollars) }
   validates :current_usage_cents, numericality: { greater_than_or_equal_to: 0 }
   validates :alert_threshold_percent, numericality: { greater_than: 0, less_than_or_equal_to: 100 }
+  validates :enforcement_mode, presence: true, inclusion: { in: ENFORCEMENT_MODES }
+  validates :grace_buffer_percent, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
 
   scope :daily, -> { where(budget_type: "daily") }
   scope :monthly, -> { where(budget_type: "monthly") }
   scope :per_run, -> { where(budget_type: "per_run") }
   scope :exceeded, -> { where("current_usage_cents >= limit_cents") }
+  scope :hard_stop, -> { where(enforcement_mode: "hard_stop") }
   scope :active_period, lambda {
     now = Time.current
     daily_start = now.beginning_of_day
@@ -35,8 +39,20 @@ class CostBudget < ApplicationRecord
     )
   }
 
+  def hard_stop?
+    enforcement_mode == "hard_stop"
+  end
+
+  def effective_limit_cents
+    (limit_cents * (100 + grace_buffer_percent) / 100.0).round
+  end
+
   def exceeded?
     current_usage_cents >= limit_cents
+  end
+
+  def hard_stop_exceeded?
+    current_usage_cents >= effective_limit_cents
   end
 
   def usage_percent

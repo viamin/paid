@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_02_082402) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_02_162737) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -141,10 +141,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_082402) do
     t.text "error_message"
     t.string "final_provider", limit: 50
     t.string "goal", limit: 50, default: "create_pr", null: false
+    t.jsonb "guardrail_context"
+    t.string "guardrail_violation_type", limit: 50
     t.bigint "issue_id"
     t.integer "iterations", default: 0
     t.jsonb "mcp_server_snapshot", default: [], null: false
     t.string "parent_workflow_id", limit: 255
+    t.datetime "paused_at"
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
     t.bigint "project_id", null: false
@@ -174,6 +177,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_082402) do
     t.datetime "updated_at", null: false
     t.string "worktree_path", limit: 500
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
+    t.index ["guardrail_violation_type"], name: "index_agent_runs_on_guardrail_violation_type", where: "(guardrail_violation_type IS NOT NULL)"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
@@ -713,6 +717,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_082402) do
     t.string "owner_reviewer_login"
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
+    t.boolean "pr_aggregation_enabled", default: false, null: false
     t.string "repo", null: false
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false

@@ -50,7 +50,7 @@ module Projects
     end
 
     def cost_budget_params
-      params.require(:cost_budget).permit(:budget_type, :limit_dollars, :alert_threshold_percent)
+      params.require(:cost_budget).permit(:budget_type, :limit_dollars, :alert_threshold_percent, :enforcement_mode, :grace_buffer_percent)
     end
   end
 end

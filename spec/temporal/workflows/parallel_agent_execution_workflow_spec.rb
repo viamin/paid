@@ -280,6 +280,145 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     end
   end
 
+  describe "PR aggregation" do
+    before do
+      stub_temporal_workflow
+      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+      stub_no_conflicts
+    end
+
+    it "skips aggregation when aggregate_pr is false" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+
+      result = workflow.execute(two_task_input.merge(aggregate_pr: false))
+
+      expect(result[:aggregated_pr]).to be_nil
+    end
+
+    it "skips aggregation when aggregate_pr is not provided and project setting is off" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+
+      result = workflow.execute(two_task_input)
+
+      expect(result[:aggregated_pr]).to be_nil
+    end
+
+    it "defaults to project setting when aggregate_pr is not provided" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckProjectRunCapacityActivity, anything, timeout: 30)
+        .and_return(full_capacity_result.merge(pr_aggregation_enabled: true))
+      stub_successful_futures(count: 2)
+
+      pr_result = { pull_request_url: "https://github.com/test/repo/pull/99", pull_request_number: 99 }
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .and_return(feature_branch: "feature/aggregated-test", merged_branches: [ "b-1" ], failed_merges: [])
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CreateAggregatedPullRequestActivity, anything, timeout: 60)
+        .and_return(pr_result)
+
+      result = workflow.execute(two_task_input)
+
+      expect(result[:aggregated_pr]).to eq(pr_result)
+    end
+
+    it "calls aggregation activities when aggregate_pr is true" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+
+      aggregate_result = {
+        feature_branch: "feature/aggregated-test",
+        merged_branches: [ "branch-1", "branch-2" ],
+        failed_merges: []
+      }
+      pr_result = {
+        pull_request_url: "https://github.com/test/repo/pull/99",
+        pull_request_number: 99
+      }
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .and_return(aggregate_result)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CreateAggregatedPullRequestActivity, anything, timeout: 60)
+        .and_return(pr_result)
+
+      result = workflow.execute(two_task_input.merge(aggregate_pr: true))
+
+      expect(result[:aggregated_pr]).to eq(pr_result)
+    end
+
+    it "skips aggregation when no sub-tasks succeeded" do
+      stub_full_capacity
+      stub_mixed_futures
+
+      # Override to make all fail
+      error = StandardError.new("Agent execution failed")
+      failure = Struct.new(:done?, :failure?, :failure, :result, keyword_init: true)
+        .new("done?": true, "failure?": true, failure: error, result: nil)
+      all_done = Struct.new(:wait).new(nil)
+      allow(Temporalio::Workflow::Future).to receive_messages(new: failure, try_all_of: all_done)
+
+      result = workflow.execute(two_task_input.merge(aggregate_pr: true))
+
+      expect(result[:aggregated_pr]).to be_nil
+    end
+
+    it "skips PR creation when no branches were merged" do
+      stub_full_capacity
+      stub_successful_futures(count: 1)
+
+      aggregate_result = {
+        feature_branch: "feature/aggregated-test",
+        merged_branches: [],
+        failed_merges: [ { branch: "branch-1", error: "conflict" } ]
+      }
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .and_return(aggregate_result)
+
+      result = workflow.execute(
+        project_id: 1,
+        sub_tasks: [ { issue_id: 10 } ],
+        aggregate_pr: true
+      )
+
+      expect(result[:aggregated_pr]).to be_nil
+    end
+
+    it "handles aggregation failure gracefully" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .and_raise(StandardError, "GitHub API error")
+
+      result = workflow.execute(two_task_input.merge(aggregate_pr: true))
+
+      expect(result[:aggregated_pr]).to be_nil
+      expect(result[:success]).to be true
+      expect(result[:completed]).to eq(2)
+    end
+
+    it "re-raises cancellation errors during aggregation" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .and_raise(Temporalio::Error::CanceledError, "workflow canceled")
+
+      expect {
+        workflow.execute(two_task_input.merge(aggregate_pr: true))
+      }.to raise_error(Temporalio::Error::CanceledError)
+    end
+  end
+
   private
 
   def stub_temporal_workflow
@@ -292,7 +431,8 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       .with(Activities::DetectConflictsActivity, anything, timeout: 120)
       .and_return(
         has_conflicts: false, conflicting_pairs: [], files_by_run: [],
-        total_runs_checked: 0, detection_failed: false, failed_run_ids: [], requires_manual_review: false
+        total_runs_checked: 0, detection_failed: false, failed_run_ids: [], requires_manual_review: false,
+        error: nil
       )
   end
 
@@ -329,7 +469,8 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
   def full_capacity_result
     {
       has_capacity: true, available_slots: 5, project_active_count: 0,
-      max_parallel_per_project: 5, user_active_count: 0, max_concurrent_runs: 10
+      max_parallel_per_project: 5, user_active_count: 0, max_concurrent_runs: 10,
+      pr_aggregation_enabled: false
     }
   end
 

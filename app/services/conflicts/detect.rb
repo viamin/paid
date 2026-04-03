@@ -49,7 +49,8 @@ module Conflicts
         project_id: @project_id,
         detection_failed: @diff_failures.any?,
         failed_run_ids: @diff_failures,
-        requires_manual_review: @diff_failures.any?
+        requires_manual_review: @diff_failures.any?,
+        error: nil
       }
     end
 
@@ -206,7 +207,8 @@ module Conflicts
         project_id: @project_id,
         detection_failed: false,
         failed_run_ids: [],
-        requires_manual_review: false
+        requires_manual_review: false,
+        error: nil
       }
     end
 
@@ -219,7 +221,8 @@ module Conflicts
         project_id: @project_id,
         detection_failed: true,
         failed_run_ids: @diff_failures,
-        requires_manual_review: true
+        requires_manual_review: true,
+        error: nil
       }
     end
   end
