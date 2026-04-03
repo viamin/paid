@@ -444,6 +444,9 @@ RSpec.describe Providers::TestAgent do
 
     context "when copilot is missing from an outdated agent image" do
       let(:provider_record) { create(:provider, user: user, provider_key: "copilot", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      # NOTE: The double-quote characters inside these single-quoted Ruby strings are plain literal
+      # `"`, not backslash-escaped. Ruby single quotes only treat `\\` and `\'` as escape sequences,
+      # so `"` here is just a regular character and matches the regex in translate_known_provider_errors.
       let(:execution_result) do
         Containers::Provision::Result.failure(
           error: 'OCI runtime exec failed: exec failed: unable to start container process: exec: "github-copilot-cli": executable file not found in $PATH',
