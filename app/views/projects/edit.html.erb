@@ -389,7 +389,8 @@
                   <%= form.select :security_severity_threshold,
                     Issue::SEVERITY_ORDER.map { |severity| [severity.titleize, severity] },
                     {},
-                    class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+                    class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+                    disabled: !@project.auto_scan_security? %>
                 </div>
                 <p class="mt-1 text-xs text-gray-500">
                   Lower-severity alerts stay visible in GitHub, but Paid will only create issues for alerts at or above this level.
