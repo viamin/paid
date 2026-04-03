@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class CollectorRun < ApplicationRecord
-  STATUSES = %w[pending running completed failed stale].freeze
+  STATUSES = %w[pending running completed failed stale skipped].freeze
 
   belongs_to :project_version
 
@@ -14,6 +14,7 @@ class CollectorRun < ApplicationRecord
   scope :completed, -> { where(status: "completed") }
   scope :failed, -> { where(status: "failed") }
   scope :running, -> { where(status: "running") }
+  scope :skipped, -> { where(status: "skipped") }
 
   def mark_running!
     update!(
@@ -44,6 +45,17 @@ class CollectorRun < ApplicationRecord
       completed_at: now,
       duration_ms: started_at ? ((now - started_at) * 1000).to_i : nil,
       error_message: error
+    )
+  end
+
+  def mark_skipped!(reason:)
+    now = Time.current
+    update!(
+      status: "skipped",
+      completed_at: now,
+      duration_ms: started_at ? ((now - started_at) * 1000).to_i : nil,
+      artifacts_count: 0,
+      error_message: reason
     )
   end
 end

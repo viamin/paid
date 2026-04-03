@@ -7,7 +7,7 @@ module Knowledge
 
       def collect
         output = read_routes_output
-        return [] if output.blank?
+        skip!(skip_reason) if output.blank?
 
         parse_expanded_output(output).map do |route|
           build_artifact(route)
@@ -20,12 +20,32 @@ module Knowledge
 
       private
 
+      def skip_reason
+        if options[:routes_file].present?
+          return "routes_file not found or empty (#{options[:routes_file]})"
+        end
+
+        return "repository path not available" if resolve_repo_path.nil?
+
+        unless repo_file_exists?("config/routes.rb")
+          return "not a Rails project (no config/routes.rb)"
+        end
+
+        unless repo_file_exists?("bin/rails")
+          return "bin/rails binstub not found — cannot generate routes"
+        end
+
+        "routes output was blank after running bin/rails routes"
+      end
+
       def read_routes_output
-        # Check for an explicit routes file path (e.g. passed via options).
-        # This is an absolute path — used directly without repo path resolution.
+        # When an explicit routes file path is provided (e.g. via options),
+        # use it directly. If the file doesn't exist, return nil so the
+        # caller skip!s — silently falling back to `bin/rails routes` would
+        # be surprising when the caller intended a specific file.
         routes_file = options[:routes_file]
-        if routes_file && File.exist?(routes_file)
-          return File.read(routes_file)
+        if routes_file
+          return File.exist?(routes_file) ? File.read(routes_file) : nil
         end
 
         # Generate routes by running the rails command directly.
@@ -33,9 +53,11 @@ module Knowledge
       end
 
       def generate_routes_output
+        # Guard: if no repo path is available, repo_file_exists? would fall
+        # back to process-relative paths, producing incorrect results.
+        return nil unless resolve_repo_path
+
         # Guard: skip non-Rails repos that lack a routes file or rails binstub.
-        # This check runs before the containerized? gate so that non-Rails
-        # repos return [] in any mode instead of raising.
         unless repo_file_exists?(SCOPE_PATH) && repo_file_exists?("bin/rails")
           return nil
         end

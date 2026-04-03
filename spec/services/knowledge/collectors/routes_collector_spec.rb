@@ -111,10 +111,8 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
       end
 
-      it "returns empty array for non-Rails repos" do
-        allow(failing_collector).to receive(:repo_file_exists?).and_return(false)
-
-        expect(failing_collector.collect).to eq([])
+      it "raises SkipCollector" do
+        expect { failing_collector.collect }.to raise_error(Knowledge::SkipCollector)
       end
     end
 
@@ -126,13 +124,19 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         allow(File).to receive(:read).with(fixture_file).and_return("")
       end
 
-      it "returns empty array" do
-        expect(collector.collect).to eq([])
+      it "raises SkipCollector" do
+        expect { collector.collect }.to raise_error(Knowledge::SkipCollector)
       end
     end
 
     context "when generating routes via command in container" do
-      let(:container_runner) { instance_double(Knowledge::ContainerizedRunner, host_repo_dir: "/tmp/repo") }
+      let(:container_runner) do
+        instance_double(
+          Knowledge::ContainerizedRunner,
+          host_repo_dir: "/tmp/repo",
+          options: { workspace_mount: "/workspace" }
+        )
+      end
       let(:command_collector) do
         described_class.new(
           project: project,
@@ -166,22 +170,26 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         expect { command_collector.collect }.to raise_error(RuntimeError, "Command failed")
       end
 
-      it "returns empty array when config/routes.rb is missing" do
+      it "raises SkipCollector when config/routes.rb is missing" do
         allow(command_collector).to receive(:repo_file_exists?)
           .with("config/routes.rb").and_return(false)
         allow(command_collector).to receive(:repo_file_exists?)
           .with("bin/rails").and_return(true)
 
-        expect(command_collector.collect).to eq([])
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::SkipCollector, /not a Rails project/
+        )
       end
 
-      it "returns empty array when bin/rails binstub is missing" do
+      it "raises SkipCollector when bin/rails binstub is missing" do
         allow(command_collector).to receive(:repo_file_exists?)
           .with("config/routes.rb").and_return(true)
         allow(command_collector).to receive(:repo_file_exists?)
           .with("bin/rails").and_return(false)
 
-        expect(command_collector.collect).to eq([])
+        expect { command_collector.collect }.to raise_error(
+          Knowledge::SkipCollector, /bin\/rails binstub not found/
+        )
       end
     end
 
@@ -191,23 +199,27 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
           project: project,
           project_version: project_version,
           collector_run: collector_run,
-          options: {}
+          options: { scan_path: "/tmp/fake-repo" }
         )
       end
 
-      it "returns empty array when Rails indicators are absent" do
+      it "raises SkipCollector when Rails indicators are absent" do
         allow(non_container_collector).to receive(:repo_file_exists?).and_return(false)
 
-        expect(non_container_collector.collect).to eq([])
+        expect { non_container_collector.collect }.to raise_error(
+          Knowledge::SkipCollector, /not a Rails project/
+        )
       end
 
-      it "returns empty array when only config/routes.rb is present" do
+      it "raises SkipCollector when only config/routes.rb is present" do
         allow(non_container_collector).to receive(:repo_file_exists?)
           .with("config/routes.rb").and_return(true)
         allow(non_container_collector).to receive(:repo_file_exists?)
           .with("bin/rails").and_return(false)
 
-        expect(non_container_collector.collect).to eq([])
+        expect { non_container_collector.collect }.to raise_error(
+          Knowledge::SkipCollector, /bin\/rails binstub not found/
+        )
       end
 
       it "raises when Rails indicators are present" do
@@ -215,6 +227,20 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
         expect { non_container_collector.collect }.to raise_error(
           RuntimeError, /requires containerized mode/
+        )
+      end
+
+      it "raises SkipCollector when repo path is nil" do
+        collector_no_path = described_class.new(
+          project: project,
+          project_version: project_version,
+          collector_run: collector_run,
+          options: {}
+        )
+        allow(collector_no_path).to receive(:resolve_repo_path).and_return(nil)
+
+        expect { collector_no_path.collect }.to raise_error(
+          Knowledge::SkipCollector, /repository path not available/
         )
       end
     end
