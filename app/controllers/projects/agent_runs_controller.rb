@@ -222,29 +222,40 @@ module Projects
     def terminate
       authorize @agent_run
 
-      unless @agent_run.paused?
-        redirect_to project_agent_run_path(@project, @agent_run),
-          alert: "Only paused runs can be terminated."
-        return
-      end
+      terminated = false
 
-      begin
-        AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
-      rescue StandardError => e
-        Rails.logger.error(
-          message: "agent_execution.terminate_failed",
-          agent_run_id: @agent_run.id,
-          error_class: e.class.name,
-          error_message: e.message
+      @agent_run.with_lock do
+        @agent_run.reload
+
+        unless @agent_run.paused?
+          redirect_to project_agent_run_path(@project, @agent_run),
+            alert: "The agent run state changed and could not be terminated."
+          return
+        end
+
+        guardrail_type = @agent_run.guardrail_violation_type
+        @agent_run.update!(
+          status: "cancelled",
+          completed_at: Time.current,
+          paused_at: nil,
+          error_message: "Terminated after guardrail violation: #{guardrail_type}",
+          duration_seconds: @agent_run.duration
         )
-        redirect_to project_agent_run_path(@project, @agent_run),
-          alert: "Failed to terminate the agent run. Please try again."
-        return
+        terminated = true
       end
 
-      guardrail_type = @agent_run.guardrail_violation_type
-      @agent_run.update!(paused_at: nil)
-      @agent_run.fail!(error: "Terminated after guardrail violation: #{guardrail_type}")
+      if terminated
+        begin
+          AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
+        rescue StandardError => e
+          Rails.logger.error(
+            message: "agent_execution.terminate_cleanup_failed",
+            agent_run_id: @agent_run.id,
+            error_class: e.class.name,
+            error_message: e.message
+          )
+        end
+      end
 
       redirect_to project_agent_run_path(@project, @agent_run),
         notice: "Agent run terminated."

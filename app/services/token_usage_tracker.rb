@@ -141,18 +141,30 @@ class TokenUsageTracker
       reason: result[:reason]
     )
 
-    begin
-      AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
-    rescue => e
-      Rails.logger.error(
-        message: "cost_budget.hard_stop_cancel_failed",
-        agent_run_id: agent_run.id,
-        reason: result[:reason],
-        error_class: e.class.name,
-        error_message: e.message
-      )
-    ensure
-      agent_run.fail!(error: "Budget enforcement: #{result[:reason]}")
+    violation_result = Guardrails::ViolationHandler.call(
+      agent_run: agent_run,
+      violation_type: "cost_limit",
+      details: result[:reason],
+      metrics: { budget_reason: result[:reason] }
+    )
+
+    # If pause succeeded, the run is now paused for user review.
+    # If pause failed (run already finished/paused), fall back to
+    # the original cancel-and-fail behavior.
+    unless violation_result.paused?
+      begin
+        AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
+      rescue => e
+        Rails.logger.error(
+          message: "cost_budget.hard_stop_cancel_failed",
+          agent_run_id: agent_run.id,
+          reason: result[:reason],
+          error_class: e.class.name,
+          error_message: e.message
+        )
+      ensure
+        agent_run.fail!(error: "Budget enforcement: #{result[:reason]}") unless agent_run.finished?
+      end
     end
   end
   private_class_method :enforce_hard_stop_budgets

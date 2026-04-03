@@ -95,7 +95,10 @@ module Guardrails
         agent_run_id: agent_run.id,
         project_id: agent_run.project_id,
         violation_type: violation_type,
-        details: details
+        details: details,
+        triggered_at: context[:triggered_at],
+        metrics: context[:metrics],
+        recommended_action: context[:recommended_action]
       )
     end
 

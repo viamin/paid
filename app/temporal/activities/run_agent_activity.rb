@@ -115,7 +115,15 @@ module Activities
         providers.each_with_index do |provider_candidate, index|
           # Check if the project's execution time limit has been exceeded
           if max_execution_seconds && agent_run.started_at && (Time.current - agent_run.started_at).to_i >= max_execution_seconds
-            timeout_error = "Execution time limit of #{max_execution_seconds}s exceeded"
+            violation_result = Guardrails::ViolationHandler.call(
+              agent_run: agent_run,
+              violation_type: "time_limit",
+              details: "Execution time limit of #{max_execution_seconds}s exceeded",
+              metrics: { max_execution_seconds: max_execution_seconds, elapsed_seconds: (Time.current - agent_run.started_at).to_i }
+            )
+            unless violation_result.paused?
+              timeout_error = "Execution time limit of #{max_execution_seconds}s exceeded"
+            end
             break
           end
 
@@ -216,13 +224,21 @@ module Activities
               )
             end
           rescue InfiniteLoopError => e
-            agent_run.log!("system", "Infinite loop detected: #{e.message}",
-              metadata: { detection_reason: e.message })
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop")
             last_error = "infinite_loop"
-            agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
             logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message)
+
+            result = Guardrails::ViolationHandler.call(
+              agent_run: agent_run,
+              violation_type: "loop_detected",
+              details: e.message,
+              metrics: { detection_reason: e.message }
+            )
+            unless result.paused?
+              agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
+            end
+
             raise Temporalio::Error::ApplicationError.new(
               "Infinite loop detected: #{e.message}",
               type: "InfiniteLoopDetected",
