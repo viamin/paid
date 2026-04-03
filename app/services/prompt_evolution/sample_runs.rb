@@ -4,15 +4,16 @@ module PromptEvolution
   # Samples recently completed agent runs with quality metrics to evaluate
   # current prompt effectiveness and identify improvement opportunities.
   #
-  # Stratifies samples by project and goal type to ensure representative
-  # coverage. Calculates aggregate performance statistics from quality metrics
-  # per prompt version and flags underperforming prompts for evolution.
+  # Stratifies samples by project, goal type, and quality outcome
+  # (above/below threshold) to ensure representative coverage. Calculates
+  # aggregate performance statistics from quality metrics per prompt version
+  # and flags underperforming prompts for evolution.
   #
   # @example
   #   result = PromptEvolution::SampleRuns.call(sample_size: 50, days: 14)
   #   result.samples            # => [{ agent_run: ..., prompt_version: ..., ... }, ...]
   #   result.prompt_stats       # => { prompt_version_id => { avg_score: 0.82, ... } }
-  #   result.evolution_candidates # => [{ prompt_version: ..., reason: "..." }, ...]
+  #   result.evolution_candidates # => [{ prompt_version: ..., reasons: ["..."] }, ...]
   class SampleRuns
     Result = Struct.new(:samples, :prompt_stats, :evolution_candidates, keyword_init: true)
 
@@ -20,6 +21,7 @@ module PromptEvolution
     DEFAULT_DAYS = 14
     QUALITY_THRESHOLD = 0.7
     MIN_RUNS_FOR_EVALUATION = 5
+    MAX_RUNS_TO_FETCH = 10_000
 
     attr_reader :sample_size, :days, :project_id
 
@@ -59,8 +61,12 @@ module PromptEvolution
     end
 
     def stratified_sample(runs)
-      run_rows = runs.pluck(:id, :project_id, :goal)
-      grouped = run_rows.group_by { |_id, project_id, goal| [ project_id, goal ] }
+      run_rows = runs
+        .limit(MAX_RUNS_TO_FETCH)
+        .pluck(:id, :project_id, :goal, "quality_metrics.composite_score")
+      grouped = run_rows.group_by do |_id, project_id, goal, score|
+        [ project_id, goal, quality_bucket(score) ]
+      end
       return AgentRun.none if grouped.empty?
 
       per_stratum = [ sample_size / grouped.size, 1 ].max
@@ -69,6 +75,12 @@ module PromptEvolution
       end
 
       AgentRun.where(id: sampled_ids.shuffle.first(sample_size))
+    end
+
+    def quality_bucket(score)
+      return :unknown unless score
+
+      score >= QUALITY_THRESHOLD ? :above_threshold : :below_threshold
     end
 
     def collect_sample_data(runs)
@@ -90,7 +102,7 @@ module PromptEvolution
 
     def calculate_prompt_stats(samples)
       by_version = samples.group_by { |s| s[:prompt_version]&.id }
-      by_version.compact.transform_values do |version_samples|
+      by_version.reject { |prompt_version_id, _| prompt_version_id.nil? }.transform_values do |version_samples|
         scores = version_samples.filter_map { |s| s[:composite_score] }
         costs = version_samples.filter_map { |s| s[:cost_cents] }
         durations = version_samples.filter_map { |s| s[:duration_seconds] }

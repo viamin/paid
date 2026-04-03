@@ -117,27 +117,26 @@ RSpec.describe PromptEvolution::SampleRuns do
     end
 
     it "does not bias selection toward the first strata when strata exceed sample size" do
-      strata_projects = Array.new(5) { create(:project) }
+      strata_projects = Array.new(10) { create(:project) }
 
       strata_projects.each_with_index do |strata_project, index|
-        %w[create_pr create_issue].each do |goal|
-          create_completed_run(
-            project: strata_project,
-            goal: goal,
-            completed_at: (index + 1).days.ago
-          )
-        end
+        create_completed_run(
+          project: strata_project,
+          goal: "create_pr",
+          completed_at: (index + 1).days.ago
+        )
       end
 
       # Run multiple times to verify later strata can be selected
       all_selected_project_ids = Set.new
-      5.times do
-        result = described_class.call(sample_size: 5, days: 14)
+      10.times do
+        result = described_class.call(sample_size: 3, days: 14)
         result.samples.each { |s| all_selected_project_ids << s[:project].id }
       end
 
-      # With shuffling, we expect more than just the first few projects to appear
-      expect(all_selected_project_ids.size).to be > 2
+      # With shuffling, projects beyond the first 3 must appear at least once.
+      # Without randomization, only the first 3 strata would ever be selected.
+      expect(all_selected_project_ids.size).to be > 3
     end
 
     it "respects sample_size limit" do
