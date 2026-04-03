@@ -48,6 +48,7 @@ module Providers
     INSTALLATION_ERROR_PATTERNS = [
       /command not found/i,
       /No such file or directory/i,
+      /executable file not found in \$PATH/i,
       /not installed/i
     ].freeze
     TIMEOUT_ERROR_PATTERNS = [
@@ -294,6 +295,11 @@ module Providers
       command = CONTAINER_COMMANDS[provider.provider_key]
       raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}" unless command
 
+      # GitHub Copilot intentionally stays on Paid's container-exec path for now.
+      # agent-harness 0.5.6 expects a different Copilot binary/flag contract
+      # (`copilot -p ...`) than the CLI we install in paid-agent
+      # (`github-copilot-cli what-the-shell ...`), so invoking Copilot through
+      # the harness here would be incorrect until that upstream support aligns.
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
       return provider.direct_outbound_exec_command(command_prefix: command, prompt: PROMPT) if provider.requires_direct_outbound?
@@ -360,6 +366,10 @@ module Providers
       return "Paid is not configured with a Google API key for containerized Gemini runs." if message.match?(/API key not configured for google/i)
       if message.match?(/API key not configured for openai/i)
         return "Paid is not configured with an OpenAI API key for containerized OpenAI-backed runs (Codex or OpenCode)."
+      end
+
+      if message.match?(/exec:\s*"github-copilot-cli": executable file not found in \$PATH/i)
+        return "GitHub Copilot CLI is missing from the agent container. Rebuild the paid-agent image to install the fixed Copilot CLI package."
       end
 
       if message.match?(/Missing agent run ID/i) && message.match?(%r{/api/proxy/openai/}i)

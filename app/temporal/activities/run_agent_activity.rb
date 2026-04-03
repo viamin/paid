@@ -13,6 +13,12 @@ module Activities
     # knows how to run. Currently Claude CLI, Codex CLI, Cursor agent CLI,
     # Gemini CLI, Kilocode CLI, OpenCode CLI, GitHub Copilot CLI, and Aider CLI
     # are installed in the agent Docker container (docker/agent/Dockerfile).
+    #
+    # Copilot remains hardcoded here for now instead of delegating to
+    # agent-harness because the installed Copilot CLI and the harness's
+    # built-in GithubCopilot provider are not yet aligned on binary name and
+    # invocation shape. Paid installs `github-copilot-cli`, while
+    # agent-harness 0.5.6 expects `copilot -p ...`.
     # Actual container execution is
     # gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS — providers
     # not in that set are filtered out upstream (UserSetting, ProvidersController)

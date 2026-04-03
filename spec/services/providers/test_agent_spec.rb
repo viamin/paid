@@ -442,6 +442,33 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when copilot is missing from an outdated agent image" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "copilot", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: 'OCI runtime exec failed: exec failed: unable to start container process: exec: "github-copilot-cli": executable file not found in $PATH',
+          stdout: "",
+          stderr: 'OCI runtime exec failed: exec failed: unable to start container process: exec: "github-copilot-cli": executable file not found in $PATH',
+          exit_code: 126
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "github_copilot")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "returns a concise installation error" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:installation)
+        expect(result.message).to eq("GitHub Copilot CLI is missing from the agent container. Rebuild the paid-agent image to install the fixed Copilot CLI package.")
+      end
+    end
+
     context "when opencode is tested" do
       let(:provider_record) { create(:provider, user: user, provider_key: "opencode", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 
