@@ -150,14 +150,12 @@ class ProvidersController < ApplicationController
     end
     attrs = params.require(:provider).permit(*permitted, config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ] })
 
-    # Convert permitted config to a plain Hash so re-assignment into the
-    # ActionController::Parameters bag does not lose the permitted flag
-    # (assigning a plain Hash back wraps it as unpermitted, which raises
-    # UnfilteredParameters when the params are later consumed by the model).
+    # Convert config to a plain Hash and slice to only the relevant provider_key,
+    # avoiding stale config from previously visible form fields.
+    # The final .to_h.merge returns a plain Hash (not ActionController::Parameters),
+    # which prevents UnfilteredParameters when consumed by the model.
     config = attrs[:config]&.to_h || {}
 
-    # Keep only the config sub-key relevant to the selected provider_key
-    # to avoid accumulating stale config from previously visible form fields.
     provider_key = attrs[:provider_key].presence || @provider&.provider_key
     config = config.slice(provider_key) if provider_key.present?
 

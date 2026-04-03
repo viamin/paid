@@ -192,7 +192,7 @@ class Provider < ApplicationRecord
     model_id = kilocode_model_id
     raise ArgumentError, "Missing KiloCode model id for provider #{id || provider_key}" if model_id.blank?
 
-    api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(kilocode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
+    api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(kilocode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["anthropic"])
     base_url = api_config[:base_url]
 
     JSON.pretty_generate(
