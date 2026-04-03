@@ -25,6 +25,7 @@ dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
   "bin/dev starting pid=$$ ppid=$PPID tty=$(dev_supervisor_tty) term=${TERM:-} cwd=$PWD"
 
 DEV_SUPERVISOR_EXIT_SNAPSHOT_TAKEN=0
+DEV_SUPERVISOR_MONITOR_PID=""
 
 dev_supervisor_snapshot_once() {
   local label="$1"
@@ -47,6 +48,10 @@ dev_supervisor_handle_signal() {
 
 dev_supervisor_handle_exit() {
   local exit_code="$1"
+  if [ -n "${DEV_SUPERVISOR_MONITOR_PID:-}" ] && kill -0 "$DEV_SUPERVISOR_MONITOR_PID" >/dev/null 2>&1; then
+    kill "$DEV_SUPERVISOR_MONITOR_PID" >/dev/null 2>&1 || true
+    wait "$DEV_SUPERVISOR_MONITOR_PID" 2>/dev/null || true
+  fi
   dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
     "bin/dev exiting code=${exit_code} pid=$$ ppid=$PPID tty=$(dev_supervisor_tty) term=${TERM:-}"
   if [ "$exit_code" -ne 0 ]; then
@@ -102,7 +107,13 @@ fi
 
 dev_supervisor_snapshot_state "bin-dev-before-start"
 
+dev_supervisor_monitor_overmind "$$" "bin-dev-monitor" &
+DEV_SUPERVISOR_MONITOR_PID=$!
+dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
+  "started overmind monitor pid=${DEV_SUPERVISOR_MONITOR_PID}"
+
 if dev_supervisor_run_overmind overmind start -f Procfile.dev -F "$(dev_supervisor_tmux_config)" "$@" \
+  > >(tee -a "$(dev_supervisor_overmind_log)") \
   2> >(tee -a "$(dev_supervisor_overmind_log)" >&2); then
   :
 else
