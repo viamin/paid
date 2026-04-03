@@ -177,7 +177,7 @@ RSpec.describe PromptEvolution::SampleRuns do
       stats = result.prompt_stats[prompt_version.id]
 
       expect(stats[:run_count]).to eq(3)
-      expect(stats[:avg_score]).to eq(0.8)
+      expect(stats[:avg_score]).to be_within(1e-10).of(0.8)
       expect(stats[:min_score]).to eq(0.7)
       expect(stats[:max_score]).to eq(0.9)
       expect(stats[:median_score]).to eq(0.8)

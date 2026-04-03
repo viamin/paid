@@ -110,7 +110,7 @@ module PromptEvolution
         {
           prompt_version: version_samples.first[:prompt_version],
           run_count: version_samples.size,
-          avg_score: scores.any? ? (scores.sum / scores.size).round(4) : nil,
+          avg_score: scores.any? ? (scores.sum / scores.size).to_f : nil,
           min_score: scores.min,
           max_score: scores.max,
           median_score: median(scores),
@@ -128,13 +128,13 @@ module PromptEvolution
 
         reasons = []
         if version_stats[:avg_score] < QUALITY_THRESHOLD
-          reasons << "avg quality score #{version_stats[:avg_score]} below threshold #{QUALITY_THRESHOLD}"
+          reasons << "avg quality score #{version_stats[:avg_score].round(4)} below threshold #{QUALITY_THRESHOLD}"
         end
 
         goal_stats = version_stats[:goal_breakdown]
         goal_stats.each do |goal, gstats|
           if gstats[:avg_score] && gstats[:avg_score] < QUALITY_THRESHOLD
-            reasons << "#{goal} avg score #{gstats[:avg_score]} below threshold"
+            reasons << "#{goal} avg score #{gstats[:avg_score].round(4)} below threshold"
           end
         end
 
@@ -154,7 +154,7 @@ module PromptEvolution
         scores = goal_samples.filter_map { |s| s[:composite_score] }
         {
           run_count: goal_samples.size,
-          avg_score: scores.any? ? (scores.sum / scores.size).round(4) : nil
+          avg_score: scores.any? ? (scores.sum / scores.size).to_f : nil
         }
       end
     end
