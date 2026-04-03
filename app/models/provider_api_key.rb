@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "set"
+
 class ProviderApiKey < ApplicationRecord
   belongs_to :user
   has_many :providers, dependent: :restrict_with_error

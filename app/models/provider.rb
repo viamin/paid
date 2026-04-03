@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "base64"
+require "set"
 require "shellwords"
 
 class Provider < ApplicationRecord
@@ -10,9 +11,14 @@ class Provider < ApplicationRecord
   # Upstream API providers supported by direct-outbound CLI tools (OpenCode,
   # KiloCode). Each entry maps a slug to its base URL and the ProviderApiKey
   # service type required for authentication.
+  # Each entry carries an adapter hint so config generators can distinguish
+  # OpenAI-compatible endpoints from providers with a native SDK (Anthropic).
+  # The opencode_npm / kilocode_api keys default to the openai-compatible
+  # adapter and are overridden only for Anthropic.
   DIRECT_OUTBOUND_API_PROVIDERS = {
     "openrouter" => { label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", service_type: "openrouter" },
-    "anthropic" => { label: "Anthropic", base_url: "https://api.anthropic.com/v1", service_type: "anthropic" },
+    "anthropic" => { label: "Anthropic", base_url: "https://api.anthropic.com", service_type: "anthropic",
+                     opencode_npm: "@ai-sdk/anthropic", kilocode_api: "anthropic" },
     "openai" => { label: "OpenAI", base_url: "https://api.openai.com/v1", service_type: "openai" },
     "inception" => { label: "InceptionLabs", base_url: "https://api.inceptionlabs.ai/v1", service_type: "inception" },
     "deepseek" => { label: "DeepSeek", base_url: "https://api.deepseek.com/v1", service_type: "deepseek" },
@@ -164,17 +170,18 @@ class Provider < ApplicationRecord
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
 
+    npm_adapter = api_config[:opencode_npm] || "@ai-sdk/openai-compatible"
+    provider_options = { "apiKey" => provider_api_key&.api_key.to_s }
+    provider_options["baseURL"] = api_config[:base_url] if npm_adapter == "@ai-sdk/openai-compatible"
+
     JSON.pretty_generate(
       {
         "$schema" => "https://opencode.ai/config.json",
         "provider" => {
           provider_id => {
-            "npm" => "@ai-sdk/openai-compatible",
+            "npm" => npm_adapter,
             "name" => display_name,
-            "options" => {
-              "baseURL" => api_config[:base_url],
-              "apiKey" => provider_api_key&.api_key.to_s
-            },
+            "options" => provider_options,
             "models" => {
               model_id => {
                 "name" => model_id
@@ -193,18 +200,17 @@ class Provider < ApplicationRecord
     raise ArgumentError, "Missing KiloCode model id for provider #{id || provider_key}" if model_id.blank?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(kilocode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["anthropic"])
-    base_url = api_config[:base_url]
+    api_adapter = api_config[:kilocode_api] || "openai-compatible"
+    provider_options = { "apiKey" => provider_api_key&.api_key.to_s }
+    provider_options["baseURL"] = api_config[:base_url] if api_adapter == "openai-compatible"
 
     JSON.pretty_generate(
       {
         "provider" => {
           provider_id => {
-            "api" => "openai-compatible",
+            "api" => api_adapter,
             "name" => display_name,
-            "options" => {
-              "baseURL" => base_url,
-              "apiKey" => provider_api_key&.api_key.to_s
-            },
+            "options" => provider_options,
             "models" => {
               model_id => {
                 "name" => model_id
