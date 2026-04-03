@@ -50,7 +50,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
       expect(File.exist?(stale_tmux_socket)).to be(false)
       expect(File.exist?(File.join(dir, "log", "dev-update", "tmux.log"))).to be(true)
-      expect(Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*bin-dev-before-start.log"))).not_to be_empty
+      assert_before_start_snapshot(dir)
     end
   end
 
@@ -110,12 +110,29 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "captures an exit snapshot when overmind start fails" do
+    Dir.mktmpdir("dev", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_exit_status: 1)
+
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "SKIP_DEV_CLEANUP" => "1",
+        "OVERMIND_SOCKET" => ".overmind.sock"
+      }
+      stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*bin-dev-overmind-start-failed.log"))).not_to be_empty
+      expect(Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*bin-dev-exit-1.log"))).not_to be_empty
+    end
+  end
+
   def write_executable(path, contents)
     File.write(path, contents)
     FileUtils.chmod("+x", path)
   end
 
-  def prepare_script_fixture(dir, overmind_running: false, overmind_process_dead: false, tmux_pane_dead: false)
+  def prepare_script_fixture(dir, overmind_running: false, overmind_process_dead: false, tmux_pane_dead: false, start_exit_status: 0)
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
     FileUtils.mkdir_p(File.join(dir, "config"))
@@ -156,7 +173,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
           start)
             touch "#{dir}/overmind-start-ran"
             touch "#{dir}/overmind-running"
-            exit 0
+            exit #{start_exit_status}
             ;;
           quit)
             touch "#{dir}/overmind-quit-ran"
@@ -207,5 +224,14 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     UNIXServer.open(path) { |server| server.close }
     expect(File.socket?(path)).to be(true)
     path
+  end
+
+  def assert_before_start_snapshot(dir)
+    diagnostics = Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*bin-dev-before-start.log"))
+    expect(diagnostics).not_to be_empty
+
+    snapshot = File.read(diagnostics.first)
+    expect(snapshot).to include("== shell context ==")
+    expect(snapshot).not_to include("rg: not found")
   end
 end
