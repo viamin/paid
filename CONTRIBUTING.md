@@ -1,89 +1,167 @@
 # Contributing to Paid
 
-Thank you for your interest in contributing to Paid! This guide covers development setup, code style, and how to submit changes.
+Thank you for your interest in contributing to Paid.
 
-## Development Setup
+Paid is a Rails 8 application that orchestrates AI agents to plan work, execute changes in isolated containers, and open pull requests. This guide covers the contributor workflow: how to get set up, how to make changes safely, and what to run before opening a PR.
 
-### Prerequisites
+For product overview and full local environment details, see [README.md](README.md). For architecture and coding conventions, start with:
 
-- Ruby 3.4+
-- PostgreSQL 16+
-- Node.js 20+ and Yarn
-- Docker and Docker Compose (for Temporal and agent containers)
+- [docs/LLM_STYLE_GUIDE.md](docs/LLM_STYLE_GUIDE.md)
+- [docs/STYLE_GUIDE.md](docs/STYLE_GUIDE.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/AGENT_SYSTEM.md](docs/AGENT_SYSTEM.md)
+- [docs/DATA_MODEL.md](docs/DATA_MODEL.md)
 
-### Getting Started
+## Before You Start
+
+- Read the full issue thread before starting work. Important decisions often live in comments.
+- Never commit directly to `main`. Create a feature branch and open a pull request.
+- Use Yarn, not npm. The repo is pinned to `yarn@1.22.22`.
+- Do not commit build artifacts or tool caches.
+- All application-level LLM usage must go through `agent_harness`; do not add direct provider API calls in app code.
+
+## Development Options
+
+There are three supported ways to work on Paid:
+
+1. Docker Compose
+2. Dev Container / Codespaces
+3. Local host development
+
+### Option 1: Docker Compose
+
+This is the easiest way to get the full stack running.
 
 ```bash
-# Clone the repository
 git clone <repo-url> && cd paid
+cp .env.example .env
+docker compose up --build
+```
 
-# Install Ruby dependencies
+On first boot, wait for the `web` service to finish `bin/setup` before using the app.
+
+By default, the checked-in Compose stack starts:
+
+- PostgreSQL
+- Temporal
+- Temporal UI
+- Temporal admin tools
+- Qdrant
+- the Rails web app
+- the Temporal worker
+
+The `agent-image` and `agent-test` services are profile-gated and do not start unless explicitly requested.
+
+### Option 2: Dev Container / Codespaces
+
+If you use VS Code Dev Containers or GitHub Codespaces, the repository includes a ready-to-use `.devcontainer/` setup.
+
+If commit signing is not configured automatically in the container, run:
+
+```bash
+bash .devcontainer/enable-commit-signing.sh
+```
+
+### Option 3: Local Host Development
+
+Prerequisites:
+
+- Ruby 3.4+
+- Bundler 2.7.2
+- PostgreSQL 16+
+- Node.js 22.x
+- Yarn 1.22.22
+- Docker Engine
+
+If you use `asdf`, the repo pins tool versions in `.tool-versions`.
+
+For local development, start PostgreSQL, Temporal, and Qdrant first, then run:
+
+```bash
 gem install bundler:2.7.2
-bundle install
-
-# Install JavaScript dependencies
-yarn install
-
-# Review environment configuration
-# NOTE: bin/dev uses Foreman with --env /dev/null, which disables
-# automatic .env loading. Export variables in your shell instead,
-# or use direnv or another shell env loader to load them before running bin/dev.
-cp .env.example .env  # Use as a reference for required variables
-
-# Prepare the database
-bin/rails db:prepare
-
-# Build frontend assets
-yarn build && yarn build:css
-
-# Export any needed env vars, then start the development server
+bin/setup
 bin/dev
 ```
 
-### Running with Docker Compose
+`bin/setup` is the preferred setup path. It does more than install dependencies:
 
-For the full environment including Temporal:
+- configures git hooks
+- installs Ruby and JavaScript dependencies
+- prepares the database
+- checks Qdrant connectivity
+- builds the `paid-agent:latest` image
+- cleans up stale local dev state
+
+If Docker is unavailable, setup is incomplete.
+
+## Environment Notes
+
+`bin/dev` uses Overmind and starts the Rails server, JS watcher, CSS watcher, and Temporal worker together.
+
+The default dev runner does not rely on automatic `.env` loading. Treat `.env.example` as a reference, and load required environment variables in your shell, dev container, or Compose configuration.
+
+Common local endpoints:
+
+- Rails app: <http://localhost:3000>
+- Temporal UI: <http://localhost:8080>
+- Qdrant: <http://localhost:6333>
+
+## Daily Workflow
+
+Create a feature branch from `main`:
 
 ```bash
-docker compose up
+git checkout -b fix/short-description
 ```
 
-This starts PostgreSQL, Temporal, Temporal UI, the Rails app, and the Temporal worker process.
+Make your changes, add or update tests, then run the relevant checks before you open a PR.
 
-## Running Tests
+If you need to work on multiple branches at once, prefer `git worktree` instead of stashing and switching.
+
+## Testing and Checks
+
+Useful commands:
 
 ```bash
-# Run the full test suite
 bin/rspec
-
-# Run a specific test file
-bin/rspec spec/models/project_spec.rb
-
-# Run a specific test by line number
-bin/rspec spec/models/project_spec.rb:42
-
-# Run tests matching a pattern
-bin/rspec --tag focus
+bin/rubocop
+bin/brakeman
+bin/bundler-audit
+bin/lint
+bin/ci
 ```
 
-The test suite uses:
-
-- **RSpec** for test framework
-- **Factory Bot** for test data
-- **WebMock** for HTTP stubbing
-- **SimpleCov** for coverage (target: 80%+)
-
-### Before Submitting
-
-Ensure all checks pass:
+Examples:
 
 ```bash
-bin/rspec                    # Tests pass
-bin/rubocop                  # No linting issues
-bin/brakeman                 # No security warnings
+bin/rspec spec/models/project_spec.rb
+bin/rspec spec/models/project_spec.rb:42
+bin/lint --changed
+bin/lint --staged
 ```
 
-Or run everything at once:
+The test suite and tooling currently use:
+
+- RSpec
+- Factory Bot
+- WebMock
+- SimpleCov with an 80% minimum coverage target
+- RuboCop (`rubocop-rails-omakase` + `rubocop-rspec`)
+- ESLint
+- markdownlint
+- ShellCheck
+- Brakeman
+- bundler-audit
+
+Before submitting a change, run the checks appropriate for your edits. In most cases, that means at least:
+
+```bash
+bin/rspec
+bin/lint --changed
+bin/brakeman
+```
+
+If you want the broader CI-style pass, run:
 
 ```bash
 bin/ci
@@ -91,122 +169,87 @@ bin/ci
 
 ## Code Style
 
-Paid follows the [rubocop-rails-omakase](https://github.com/rails/rubocop-rails-omakase) style guide (StandardRB-based). Key conventions:
+Paid follows `rubocop-rails-omakase` and the repo style guides. A few conventions matter especially often:
 
-- `frozen_string_literal: true` at the top of all Ruby files
-- Maximum line length: 120 characters
-- Classes target ~100 lines, methods target ~5 lines
-- Maximum 4 parameters per method
+- Put `# frozen_string_literal: true` at the top of Ruby files.
+- Prefer small classes and short methods.
+- Keep controllers thin and push business logic into services.
+- Service objects use [Servo](https://github.com/martinstreicher/servo) with verb-noun naming such as `AgentRuns::Create` or `Projects::Import`.
+- Use structured JSON logging with consistent component names.
+- Use Yarn commands for JavaScript dependencies.
+- Use `rails generate migration` to create migrations; do not create migration files manually.
+- Add foreign keys and indexes for new relational data.
+- Never edit `db/schema.rb` directly.
 
-### Service Objects
+When adding orchestration or automation code, keep the mechanics in code and delegate semantic judgment to AI systems where appropriate. See [docs/LLM_STYLE_GUIDE.md](docs/LLM_STYLE_GUIDE.md) for the project-specific rules.
 
-Business logic lives in service objects using [Servo](https://github.com/martinstreicher/servo), organized with verb-noun naming:
+## Commits
 
-```ruby
-# app/services/agent_runs/execute.rb
-module AgentRuns
-  class Execute < Servo::Base
-    # ...
-  end
-end
+This repository enforces Conventional Commits through the local `commit-msg` git hook installed by `bin/setup`.
+
+Examples:
+
+```bash
+git commit -m "feat: add prompt version comparison UI"
+git commit -m "fix(agent-runs): persist provider error details"
+git commit -m "docs: clarify docker compose setup"
 ```
 
-### Logging
+Allowed commit types:
 
-Use structured JSON logging with consistent component names:
+- `feat`
+- `fix`
+- `docs`
+- `style`
+- `refactor`
+- `perf`
+- `test`
+- `build`
+- `ci`
+- `chore`
+- `revert`
 
-```ruby
-Rails.logger.info(
-  message: "agent_execution.started",
-  agent_run_id: agent_run.id,
-  project_id: project.id
-)
-```
+Use `!` or a `BREAKING CHANGE:` footer for breaking changes.
 
-### Database Conventions
+## Pull Requests
 
-- UUIDs for external-facing IDs, bigints for internal foreign keys
-- Always add foreign key constraints and index foreign keys
-- Use migrations, never edit `db/schema.rb` directly
+When opening a PR:
 
-## Submitting Changes
+- keep it focused on one concern
+- explain what changed and why
+- link the related issue when applicable
+- include tests for behavior changes
+- make sure checks pass before requesting review
 
-1. **Create a branch** from `main`:
+Please do not bypass hooks or disable failing checks. Fix forward instead.
 
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
+## Architecture Pointers
 
-2. **Make your changes** following the code style above
+Key directories you will work in most often:
 
-3. **Write tests** for new functionality
-
-4. **Run checks**:
-
-   ```bash
-   bin/rspec && bin/rubocop && bin/brakeman
-   ```
-
-5. **Commit** with a clear message:
-
-   ```bash
-   git commit -m "feat: add widget support to projects"
-   ```
-
-6. **Push and open a PR** against `main`
-
-### Commit Message Format
-
-Use conventional commit prefixes:
-
-- `feat:` New features
-- `fix:` Bug fixes
-- `docs:` Documentation changes
-- `style:` Formatting-only changes
-- `refactor:` Code changes that neither fix bugs nor add features
-- `perf:` Performance improvements
-- `test:` Adding or updating tests
-- `build:` Build tooling or dependencies
-- `ci:` CI workflow changes
-- `chore:` Maintenance tasks that don't modify src or test files
-- `revert:` Reverting prior commits
-
-Use `!` (for example, `feat!:`) or a `BREAKING CHANGE:` footer for breaking changes.
-
-This repository enforces commit message format with a local `commit-msg` git hook.
-
-### PR Guidelines
-
-- Keep PRs focused on a single concern
-- Include a clear description of what and why
-- Reference related issues (e.g., `Closes #42`)
-- Ensure CI passes before requesting review
-
-## Architecture
-
-For architectural context, see:
-
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design overview
-- [DATA_MODEL.md](docs/DATA_MODEL.md) - Database schema and RBAC
-- [AGENT_SYSTEM.md](docs/AGENT_SYSTEM.md) - Temporal workflows and agent execution
-- [RDRs](docs/rdrs/) - Recommendation Decision Records for all major decisions
-
-### Key Directories
-
-```
+```text
 app/
-├── controllers/           # Thin controllers (Pundit-authorized)
-├── models/                # ActiveRecord models with validations and scopes
-├── services/              # Business logic (Servo service objects)
+├── controllers/           # Thin controllers
+├── models/                # ActiveRecord models
+├── services/              # Business logic and integrations
+├── jobs/                  # GoodJob background jobs
 ├── temporal/
 │   ├── workflows/         # Temporal workflow definitions
 │   └── activities/        # Temporal activity implementations
-├── views/                 # ERB templates with Hotwire
-└── policies/              # Pundit authorization policies
+├── policies/              # Pundit authorization policies
+└── views/                 # ERB views with Hotwire
 ```
+
+Helpful docs:
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the system overview
+- [docs/AGENT_SYSTEM.md](docs/AGENT_SYSTEM.md) for agent execution and Temporal
+- [docs/DATA_MODEL.md](docs/DATA_MODEL.md) for schema and RBAC
+- [docs/rdrs/](docs/rdrs/) for major design decisions
+- [docs/ROADMAP.md](docs/ROADMAP.md) for planned work
 
 ## Getting Help
 
-- Open an issue for bugs or feature requests
-- Check [ROADMAP.md](docs/ROADMAP.md) for planned work
-- Review existing [RDRs](docs/rdrs/) before proposing architectural changes
+- Open an issue for bugs or feature requests.
+- Review existing RDRs before proposing major architectural changes.
+- If you are unsure whether a change belongs in Paid or upstream in `agent-harness`, ask early. Provider-specific execution behavior generally belongs upstream.
