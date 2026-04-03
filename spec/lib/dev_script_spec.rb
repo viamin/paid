@@ -72,7 +72,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
 
   it "exits cleanly when overmind is already running and healthy" do
     Dir.mktmpdir("dev", exec_tmpdir) do |dir|
-      script_path = prepare_script_fixture(dir, overmind_running: true, tmux_pane_dead: false)
+      script_path = prepare_script_fixture(dir, overmind: { running: true }, tmux: { pane_dead: false })
 
       env = {
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
@@ -92,7 +92,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
 
   it "restarts an unhealthy overmind session with dead processes from overmind status" do
     Dir.mktmpdir("dev", exec_tmpdir) do |dir|
-      script_path = prepare_script_fixture(dir, overmind_running: true, overmind_process_dead: true, tmux_pane_dead: false)
+      script_path = prepare_script_fixture(dir, overmind: { running: true, process_dead: true }, tmux: { pane_dead: false })
 
       env = {
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
@@ -112,7 +112,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
 
   it "captures an exit snapshot when overmind start fails" do
     Dir.mktmpdir("dev", exec_tmpdir) do |dir|
-      script_path = prepare_script_fixture(dir, start_exit_status: 1)
+      script_path = prepare_script_fixture(dir, overmind: { start_exit_status: 1 })
 
       env = {
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
@@ -132,7 +132,11 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     FileUtils.chmod("+x", path)
   end
 
-  def prepare_script_fixture(dir, overmind_running: false, overmind_process_dead: false, tmux_pane_dead: false, start_exit_status: 0)
+  def prepare_script_fixture(dir, overmind: {}, tmux: {})
+    overmind_running = overmind.fetch(:running, false)
+    overmind_process_dead = overmind.fetch(:process_dead, false)
+    tmux_pane_dead = tmux.fetch(:pane_dead, false)
+    start_exit_status = overmind.fetch(:start_exit_status, 0)
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
     FileUtils.mkdir_p(File.join(dir, "config"))
