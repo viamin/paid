@@ -26,5 +26,13 @@ FactoryBot.define do
       completed_at { Time.current }
       error_message { "Something went wrong" }
     end
+
+    trait :skipped do
+      status { "skipped" }
+      started_at { 5.seconds.ago }
+      completed_at { Time.current }
+      artifacts_count { 0 }
+      error_message { "tool not available" }
+    end
   end
 end
