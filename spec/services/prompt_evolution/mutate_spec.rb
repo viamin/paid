@@ -179,7 +179,7 @@ RSpec.describe PromptEvolution::Mutate do
       described_class.call(prompt: prompt, sample_outputs: samples)
 
       expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including("Successful Runs", "Good output", "Failed Runs", "Bad output"),
+        a_string_including("### Successful Runs", "Good output", "### Failed Runs", "Bad output"),
         hash_including(provider: :claude)
       )
     end
@@ -381,6 +381,34 @@ RSpec.describe PromptEvolution::Mutate do
       mutations = described_class.call(prompt: prompt, options: { mutation_count: 2 })
 
       expect(mutations.size).to eq(2)
+    end
+
+    it "rejects mutations missing variables extracted from template when variables metadata is empty" do
+      prompt_no_vars_metadata = create(:prompt, :global)
+      prompt_no_vars_metadata.create_version!(template: "Do {{task}} for {{repo}}", variables: [])
+
+      response = JSON.generate("mutations" => [ { "template" => "Do {{task}} only",
+                                     "strategy" => "simplification",
+                                     "reasoning" => "test", "expected_improvement" => "test" } ])
+      allow(harness_response).to receive(:output).and_return(response)
+
+      mutations = described_class.call(prompt: prompt_no_vars_metadata)
+
+      expect(mutations).to be_empty
+    end
+
+    it "accepts mutations preserving variables extracted from template when variables metadata is empty" do
+      prompt_no_vars_metadata = create(:prompt, :global)
+      prompt_no_vars_metadata.create_version!(template: "Do {{task}} for {{repo}}", variables: [])
+
+      response = JSON.generate("mutations" => [ { "template" => "Complete {{task}} in {{repo}} carefully",
+                                     "strategy" => "expansion",
+                                     "reasoning" => "test", "expected_improvement" => "test" } ])
+      allow(harness_response).to receive(:output).and_return(response)
+
+      mutations = described_class.call(prompt: prompt_no_vars_metadata)
+
+      expect(mutations.size).to eq(1)
     end
 
     it "rejects mutations exceeding max template length" do

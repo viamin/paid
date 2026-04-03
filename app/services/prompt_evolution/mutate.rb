@@ -98,7 +98,8 @@ module PromptEvolution
       raw = response.error.to_s
       return nil if raw.blank?
 
-      redact(raw.truncate(MAX_ERROR_OUTPUT, omission: " [truncated]"))
+      # Redact before truncating to avoid splitting secrets mid-match
+      redact(raw).truncate(MAX_ERROR_OUTPUT, omission: " [truncated]")
     end
 
     def redact(text)
@@ -113,13 +114,13 @@ module PromptEvolution
 
         ## Current Prompt Template
         ```
-        #{redact(current_template)}
+        #{current_template}
         ```
 
         #{variables_section}
-        #{redact(system_prompt_section)}
+        #{system_prompt_section}
         #{performance_section}
-        #{redact(sample_outputs_section)}
+        #{sample_outputs_section}
         #{strategies_section}
 
         ## Instructions
@@ -134,7 +135,8 @@ module PromptEvolution
     end
 
     def current_template
-      @prompt.current_version.template.truncate(MAX_TEMPLATE_INPUT, omission: "\n[truncated]")
+      # Redact before truncating to avoid splitting secrets mid-match
+      redact(@prompt.current_version.template).truncate(MAX_TEMPLATE_INPUT, omission: "\n[truncated]")
     end
 
     def variable_names
@@ -169,7 +171,9 @@ module PromptEvolution
       sp = @prompt.current_version.system_prompt
       return "" if sp.blank?
 
-      "## System Prompt\n```\n#{sp.truncate(MAX_TEMPLATE_INPUT, omission: "\n[truncated]")}\n```\n"
+      # Redact before truncating to avoid splitting secrets mid-match
+      safe_sp = redact(sp).truncate(MAX_TEMPLATE_INPUT, omission: "\n[truncated]")
+      "## System Prompt\n```\n#{safe_sp}\n```\n"
     end
 
     def performance_section
@@ -228,12 +232,12 @@ module PromptEvolution
       section = "## Sample Outputs\n"
 
       if successes.any?
-        section += "\n### Successful Runs (score > 0.8)\n"
+        section += "\n### Successful Runs\n"
         successes.each_with_index { |s, i| section += "#{i + 1}. #{s}\n" }
       end
 
       if failures.any?
-        section += "\n### Failed Runs (score < 0.5)\n"
+        section += "\n### Failed Runs\n"
         failures.each_with_index { |s, i| section += "#{i + 1}. #{s}\n" }
       end
 
@@ -243,7 +247,8 @@ module PromptEvolution
     def truncated_samples(samples)
       return [] if samples.blank?
 
-      samples.first(MAX_SAMPLES).map { |s| s.to_s.truncate(MAX_SAMPLE_OUTPUT, omission: " [truncated]") }
+      # Redact before truncating to avoid splitting secrets mid-match
+      samples.first(MAX_SAMPLES).map { |s| redact(s.to_s).truncate(MAX_SAMPLE_OUTPUT, omission: " [truncated]") }
     end
 
     def strategies_section
@@ -319,10 +324,25 @@ module PromptEvolution
     end
 
     def valid_variables?(template)
-      required = variable_names
+      required = required_variable_names
       return true if required.empty?
 
-      required.all? { |var| template.include?("{{#{var.delete_prefix('{{').delete_suffix('}}')}}}") }
+      generated_variables = extract_template_variables(template)
+      required.all? { |var| generated_variables.include?(var) }
+    end
+
+    def required_variable_names
+      names = variable_names
+      return names if names.any?
+
+      # Fall back to extracting {{...}} placeholders from the current template
+      extract_template_variables(@prompt.current_version.template.to_s)
+    end
+
+    def extract_template_variables(template)
+      return [] if template.blank?
+
+      template.scan(/\{\{\s*([^{}]+?)\s*\}\}/).flatten.map(&:strip).reject(&:blank?).uniq
     end
   end
 end
