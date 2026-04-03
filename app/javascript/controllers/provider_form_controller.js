@@ -50,8 +50,6 @@ function loadDirectOutboundApiProviderServiceTypes() {
   return {}
 }
 
-const DIRECT_OUTBOUND_API_PROVIDER_SERVICE_TYPES = loadDirectOutboundApiProviderServiceTypes()
-
 // Provider keys that use dynamic api_provider selection.
 const DYNAMIC_API_PROVIDER_KEYS = new Set(["opencode", "kilocode"])
 
@@ -177,7 +175,10 @@ export default class extends Controller {
     // the selected api_provider dropdown.
     if (DYNAMIC_API_PROVIDER_KEYS.has(providerKey)) {
       const apiProvider = this.currentDirectOutboundApiProvider(providerKey)
-      return DIRECT_OUTBOUND_API_PROVIDER_SERVICE_TYPES[apiProvider] || null
+      // Compute at runtime rather than module-load time so that the mapping
+      // is correct even when the first page load didn't include the provider form
+      // (Turbo navigation doesn't reload JS modules).
+      return loadDirectOutboundApiProviderServiceTypes()[apiProvider] || null
     }
 
     // Returns null for unknown/unmapped providers (e.g. copilot), which causes

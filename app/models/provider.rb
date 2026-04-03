@@ -26,7 +26,7 @@ class Provider < ApplicationRecord
   OPENCODE_DEFAULT_API_PROVIDER = "openrouter"
 
   KILOCODE_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
-  KILOCODE_DEFAULT_API_PROVIDER = "openrouter"
+  KILOCODE_DEFAULT_API_PROVIDER = "anthropic"
 
   belongs_to :user
   belongs_to :provider_api_key, optional: true
