@@ -125,8 +125,12 @@ RSpec.describe ProviderSupport do
       expect(described_class.api_service_type_for("claude")).to eq("anthropic")
     end
 
-    it "returns openrouter for opencode" do
-      expect(described_class.api_service_type_for("opencode")).to eq("openrouter")
+    it "returns nil for opencode (dynamic, depends on api_provider)" do
+      expect(described_class.api_service_type_for("opencode")).to be_nil
+    end
+
+    it "returns nil for kilocode (dynamic, depends on api_provider)" do
+      expect(described_class.api_service_type_for("kilocode")).to be_nil
     end
 
     it "returns openai for codex" do

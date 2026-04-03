@@ -148,9 +148,18 @@ class ProvidersController < ApplicationController
     if action_name == "create"
       permitted.push(:provider_key, :auth_type, :provider_api_key_id)
     end
-    attrs = params.require(:provider).permit(*permitted, config: { opencode: [ :api_provider, :model ] })
-    attrs[:config] = attrs[:config].to_h if attrs[:config].respond_to?(:to_h)
-    attrs
+    attrs = params.require(:provider).permit(*permitted, config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ] })
+
+    # Convert config to a plain Hash and slice to only the relevant provider_key,
+    # avoiding stale config from previously visible form fields.
+    # The final .to_h.merge returns a plain Hash (not ActionController::Parameters),
+    # which prevents UnfilteredParameters when consumed by the model.
+    config = attrs[:config]&.to_h || {}
+
+    provider_key = attrs[:provider_key].presence || @provider&.provider_key
+    config = config.slice(provider_key) if provider_key.present?
+
+    attrs.to_h.merge("config" => config)
   end
 
   def load_provider_options
@@ -337,6 +346,12 @@ class ProvidersController < ApplicationController
   end
 
   def compatible_api_key_for_provider?(api_key:, provider_key:)
+    # OpenCode and KiloCode support multiple API key types depending on the
+    # selected api_provider, so check against all compatible service types.
+    if %w[opencode kilocode].include?(provider_key)
+      return Provider::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_key.api_service_type)
+    end
+
     api_key.api_service_type == Provider.api_service_type_for(provider_key)
   end
 

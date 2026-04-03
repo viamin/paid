@@ -20,12 +20,38 @@ function loadProviderApiServiceType() {
     codex: "openai",
     aider: "anthropic",
     gemini: "google",
-    opencode: "openrouter",
-    kilocode: "anthropic",
   }
 }
 
 const PROVIDER_API_SERVICE_TYPE = loadProviderApiServiceType()
+
+// OpenCode and KiloCode support multiple upstream API providers, each with its
+// own API key type. The mapping is derived from data-service-type attributes on
+// the <option> elements rendered by the backend (Provider::DIRECT_OUTBOUND_API_PROVIDERS),
+// keeping the backend as the single source of truth.
+function loadDirectOutboundApiProviderServiceTypes() {
+  const selects = document.querySelectorAll(
+    "[data-provider-form-target='directOutboundApiProviderSelect']"
+  )
+  for (const select of selects) {
+    const mapping = {}
+    let found = false
+    for (const option of select.options) {
+      const serviceType = option.dataset?.serviceType
+      if (option.value && serviceType) {
+        mapping[option.value] = serviceType
+        found = true
+      }
+    }
+    if (found) return mapping
+  }
+
+  // Fallback if backend has not yet rendered the options (e.g. no provider form on page).
+  return {}
+}
+
+// Provider keys that use dynamic api_provider selection.
+const DYNAMIC_API_PROVIDER_KEYS = new Set(["opencode", "kilocode"])
 
 export default class extends Controller {
   static values = {
@@ -41,6 +67,8 @@ export default class extends Controller {
     "providerSelect",
     "apiKeyOption",
     "opencodeSettings",
+    "kilocodeSettings",
+    "directOutboundApiProviderSelect",
   ]
 
   connect() {
@@ -87,11 +115,19 @@ export default class extends Controller {
     const providerKey = this.currentProviderKey()
     const isApiKey = this.providerApiKeyMode()
     const showOpenCodeSettings = isApiKey && providerKey === "opencode"
+    const showKiloCodeSettings = isApiKey && providerKey === "kilocode"
 
     this.opencodeSettingsTargets.forEach((el) => {
       el.hidden = !showOpenCodeSettings
       el.querySelectorAll("select, input").forEach((control) => {
         control.disabled = !showOpenCodeSettings
+      })
+    })
+
+    this.kilocodeSettingsTargets.forEach((el) => {
+      el.hidden = !showKiloCodeSettings
+      el.querySelectorAll("select, input").forEach((control) => {
+        control.disabled = !showKiloCodeSettings
       })
     })
 
@@ -134,10 +170,28 @@ export default class extends Controller {
 
   requiredApiServiceTypeFor(providerKey) {
     if (!providerKey) return null
+
+    // OpenCode and KiloCode determine their required API key type from
+    // the selected api_provider dropdown.
+    if (DYNAMIC_API_PROVIDER_KEYS.has(providerKey)) {
+      const apiProvider = this.currentDirectOutboundApiProvider(providerKey)
+      // Compute at runtime rather than module-load time so that the mapping
+      // is correct even when the first page load didn't include the provider form
+      // (Turbo navigation doesn't reload JS modules).
+      return loadDirectOutboundApiProviderServiceTypes()[apiProvider] || null
+    }
+
     // Returns null for unknown/unmapped providers (e.g. copilot), which causes
     // refreshApiKeyOptions to hide all API key options — the correct behavior
     // since those providers have no compatible API key type.
     return PROVIDER_API_SERVICE_TYPE[providerKey] || null
+  }
+
+  currentDirectOutboundApiProvider(providerKey) {
+    const select = this.directOutboundApiProviderSelectTargets.find(
+      (el) => el.dataset.providerKey === providerKey
+    )
+    return select?.value || "openrouter"
   }
 
   currentProviderKey() {

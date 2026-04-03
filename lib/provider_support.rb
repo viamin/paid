@@ -142,24 +142,28 @@ module ProviderSupport
     "anthropic" => "Anthropic",
     "openai" => "OpenAI",
     "openrouter" => "OpenRouter",
-    "google" => "Google AI"
+    "google" => "Google AI",
+    "inception" => "InceptionLabs",
+    "deepseek" => "DeepSeek",
+    "mistral" => "Mistral",
+    "xai" => "xAI"
   }.freeze
 
   # Maps each provider key to the upstream API service type its CLI tool
-  # communicates with. Used to determine which ProviderApiKey records are
-  # compatible with a given provider.
+  # communicates with. Providers with a single, fixed API key type are listed
+  # here. Providers that support multiple upstream API providers (opencode,
+  # kilocode) determine their required key type dynamically — see
+  # Provider#required_api_service_type.
   #
-  # Providers NOT listed here (e.g. copilot) have no compatible API key type,
-  # meaning they can only be used with subscription auth. Copilot CLI uses
-  # GitHub's own authentication, not a third-party API key.
+  # Providers NOT listed here (e.g. copilot, opencode, kilocode) either have
+  # no compatible API key type (subscription-only) or resolve their required
+  # key type dynamically based on a user-chosen api_provider.
   PROVIDER_API_SERVICE_TYPE = {
     "claude" => "anthropic",
     "cursor" => "anthropic",
     "codex" => "openai",
     "aider" => "anthropic",
-    "gemini" => "google",
-    "opencode" => "openrouter",
-    "kilocode" => "anthropic"
+    "gemini" => "google"
   }.freeze
 
   # Maps provider keys to their upstream proxy API key name (used by
