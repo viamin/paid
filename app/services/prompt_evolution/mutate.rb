@@ -24,6 +24,7 @@ module PromptEvolution
     MAX_MUTATION_COUNT = 5
     MIN_MUTATION_COUNT = 1
     MAX_GENERATED_TEMPLATE_LENGTH = 50_000
+    MAX_ERROR_OUTPUT = 500
 
     STRATEGIES = %w[refinement restructuring simplification expansion].freeze
 
@@ -76,8 +77,8 @@ module PromptEvolution
         Rails.logger.warn(
           message: "prompt_evolution.mutate_unsuccessful_response",
           prompt_id: @prompt.id,
-          exit_code: response.respond_to?(:exit_code) ? response.exit_code : nil,
-          error_output: response.respond_to?(:error_output) ? response.error_output : nil
+          exit_code: response.exit_code,
+          error_detail: truncated_error(response)
         )
         return nil
       end
@@ -91,6 +92,13 @@ module PromptEvolution
         error: e.message
       )
       nil
+    end
+
+    def truncated_error(response)
+      raw = response.error.to_s
+      return nil if raw.blank?
+
+      redact(raw.truncate(MAX_ERROR_OUTPUT, omission: " [truncated]"))
     end
 
     def redact(text)
@@ -116,10 +124,9 @@ module PromptEvolution
 
         ## Instructions
         Generate exactly #{@mutation_count} improved prompt variant(s). Each variant must:
-        1. Preserve all template variables (#{variable_names.join(', ')}) — use the exact {{variable_name}} syntax
-        2. Be a complete, standalone prompt template (not a diff or partial edit)
-        3. Apply one of the requested strategies: #{@strategies.join(', ')}
-        4. Address specific weaknesses identified in the performance data
+        #{variables_preservation_instruction}- Be a complete, standalone prompt template (not a diff or partial edit)
+        - Apply one of the requested strategies: #{@strategies.join(', ')}
+        - Address specific weaknesses identified in the performance data
 
         Respond with ONLY valid JSON in this exact format (no markdown fences, no explanation):
         {"mutations":[{"template":"improved prompt text","strategy":"one of #{@strategies.join('/')}","reasoning":"what problem this addresses","expected_improvement":"why this should perform better"}]}
@@ -142,6 +149,13 @@ module PromptEvolution
         normalized = name.to_s.strip
         normalized if normalized.present?
       end
+    end
+
+    def variables_preservation_instruction
+      names = variable_names
+      return "" if names.empty?
+
+      "- Preserve all template variables (#{names.join(', ')}) — use the exact {{variable_name}} syntax\n        "
     end
 
     def variables_section
@@ -199,9 +213,15 @@ module PromptEvolution
       modes
     end
 
+    def sample_outputs_for(key)
+      return nil unless @sample_outputs.respond_to?(:[])
+
+      @sample_outputs[key] || @sample_outputs[key.to_s]
+    end
+
     def sample_outputs_section
-      successes = truncated_samples(@sample_outputs[:successes])
-      failures = truncated_samples(@sample_outputs[:failures])
+      successes = truncated_samples(sample_outputs_for(:successes))
+      failures = truncated_samples(sample_outputs_for(:failures))
 
       return "" if successes.empty? && failures.empty?
 

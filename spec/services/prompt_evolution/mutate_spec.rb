@@ -7,7 +7,7 @@ RSpec.describe PromptEvolution::Mutate do
   let(:current_version) { prompt.current_version }
 
   let(:valid_llm_response) do
-    {
+    JSON.generate(
       "mutations" => [
         {
           "template" => "Improved prompt for {{title}}",
@@ -16,11 +16,11 @@ RSpec.describe PromptEvolution::Mutate do
           "expected_improvement" => "Should reduce iteration count"
         }
       ]
-    }.to_json
+    )
   end
 
   let(:multi_mutation_response) do
-    {
+    JSON.generate(
       "mutations" => [
         {
           "template" => "Refined prompt for {{title}}",
@@ -41,7 +41,7 @@ RSpec.describe PromptEvolution::Mutate do
           "expected_improvement" => "Less confusion"
         }
       ]
-    }.to_json
+    )
   end
 
   let(:harness_response) { instance_double(AgentHarness::Response, success?: true, output: valid_llm_response) }
@@ -184,6 +184,17 @@ RSpec.describe PromptEvolution::Mutate do
       )
     end
 
+    it "supports string-keyed sample outputs" do
+      samples = { "successes" => [ "String-keyed output" ], "failures" => [ "String-keyed failure" ] }
+
+      described_class.call(prompt: prompt, sample_outputs: samples)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("String-keyed output", "String-keyed failure"),
+        hash_including(provider: :claude)
+      )
+    end
+
     it "truncates long sample outputs" do
       samples = { successes: [ "x" * 5000 ] }
 
@@ -210,11 +221,24 @@ RSpec.describe PromptEvolution::Mutate do
 
   describe "error handling" do
     it "returns empty array when LLM response fails" do
-      allow(harness_response).to receive(:success?).and_return(false)
+      allow(harness_response).to receive_messages(success?: false, exit_code: 1, error: nil)
 
       mutations = described_class.call(prompt: prompt)
 
       expect(mutations).to eq([])
+    end
+
+    it "truncates and redacts error output in log messages" do
+      long_error = "x" * 1000
+      failed_response = instance_double(AgentHarness::Response, success?: false, exit_code: 1, error: long_error)
+      allow(AgentHarness).to receive(:send_message).and_return(failed_response)
+
+      expect(Rails.logger).to receive(:warn).with(hash_including(
+        message: "prompt_evolution.mutate_unsuccessful_response",
+        error_detail: a_string_matching(/\[truncated\]/)
+      ))
+
+      described_class.call(prompt: prompt)
     end
 
     it "returns empty array when AgentHarness raises" do
@@ -260,8 +284,8 @@ RSpec.describe PromptEvolution::Mutate do
 
   describe "mutation validation" do
     it "rejects mutations with blank templates" do
-      response = { "mutations" => [ { "template" => "", "strategy" => "refinement",
-                                     "reasoning" => "test", "expected_improvement" => "test" } ] }.to_json
+      response = JSON.generate("mutations" => [ { "template" => "", "strategy" => "refinement",
+                                     "reasoning" => "test", "expected_improvement" => "test" } ])
       allow(harness_response).to receive(:output).and_return(response)
 
       mutations = described_class.call(prompt: prompt)
@@ -270,8 +294,8 @@ RSpec.describe PromptEvolution::Mutate do
     end
 
     it "rejects mutations with invalid strategy" do
-      response = { "mutations" => [ { "template" => "Good template {{title}}", "strategy" => "invalid",
-                                     "reasoning" => "test", "expected_improvement" => "test" } ] }.to_json
+      response = JSON.generate("mutations" => [ { "template" => "Good template {{title}}", "strategy" => "invalid",
+                                     "reasoning" => "test", "expected_improvement" => "test" } ])
       allow(harness_response).to receive(:output).and_return(response)
 
       mutations = described_class.call(prompt: prompt)
@@ -283,8 +307,8 @@ RSpec.describe PromptEvolution::Mutate do
       prompt_with_vars = create(:prompt, :global)
       prompt_with_vars.create_version!(template: "Do {{task}} for {{repo}}", variables: %w[task repo])
 
-      response = { "mutations" => [ { "template" => "Do {{task}} only", "strategy" => "simplification",
-                                     "reasoning" => "test", "expected_improvement" => "test" } ] }.to_json
+      response = JSON.generate("mutations" => [ { "template" => "Do {{task}} only", "strategy" => "simplification",
+                                     "reasoning" => "test", "expected_improvement" => "test" } ])
       allow(harness_response).to receive(:output).and_return(response)
 
       mutations = described_class.call(prompt: prompt_with_vars)
@@ -296,10 +320,10 @@ RSpec.describe PromptEvolution::Mutate do
       prompt_with_vars = create(:prompt, :global)
       prompt_with_vars.create_version!(template: "Do {{task}} for {{repo}}", variables: %w[task repo])
 
-      response = { "mutations" => [ { "template" => "Complete {{task}} in {{repo}} with care",
+      response = JSON.generate("mutations" => [ { "template" => "Complete {{task}} in {{repo}} with care",
                                      "strategy" => "expansion",
                                      "reasoning" => "test",
-                                     "expected_improvement" => "test" } ] }.to_json
+                                     "expected_improvement" => "test" } ])
       allow(harness_response).to receive(:output).and_return(response)
 
       mutations = described_class.call(prompt: prompt_with_vars)
@@ -315,10 +339,10 @@ RSpec.describe PromptEvolution::Mutate do
         variables: [ { "name" => "task" }, { "name" => "repo" } ]
       )
 
-      response = { "mutations" => [ { "template" => "Complete {{task}} in {{repo}} carefully",
+      response = JSON.generate("mutations" => [ { "template" => "Complete {{task}} in {{repo}} carefully",
                                     "strategy" => "expansion",
                                     "reasoning" => "test",
-                                    "expected_improvement" => "test" } ] }.to_json
+                                    "expected_improvement" => "test" } ])
       allow(harness_response).to receive(:output).and_return(response)
 
       mutations = described_class.call(prompt: prompt_with_hash_vars)
@@ -334,10 +358,10 @@ RSpec.describe PromptEvolution::Mutate do
         variables: [ { "name" => "task" }, { "name" => "repo" } ]
       )
 
-      response = { "mutations" => [ { "template" => "Do {{task}} only",
+      response = JSON.generate("mutations" => [ { "template" => "Do {{task}} only",
                                     "strategy" => "simplification",
                                     "reasoning" => "test",
-                                    "expected_improvement" => "test" } ] }.to_json
+                                    "expected_improvement" => "test" } ])
       allow(harness_response).to receive(:output).and_return(response)
 
       mutations = described_class.call(prompt: prompt_with_hash_vars)
@@ -346,12 +370,12 @@ RSpec.describe PromptEvolution::Mutate do
     end
 
     it "truncates mutations to the requested count" do
-      many_mutations = {
+      many_mutations = JSON.generate(
         "mutations" => 6.times.map do |i|
           { "template" => "Variant #{i} for {{title}}", "strategy" => "refinement",
             "reasoning" => "test", "expected_improvement" => "test" }
         end
-      }.to_json
+      )
       allow(harness_response).to receive(:output).and_return(many_mutations)
 
       mutations = described_class.call(prompt: prompt, options: { mutation_count: 2 })
@@ -360,8 +384,8 @@ RSpec.describe PromptEvolution::Mutate do
     end
 
     it "rejects mutations exceeding max template length" do
-      response = { "mutations" => [ { "template" => "x" * 50_001, "strategy" => "expansion",
-                                     "reasoning" => "test", "expected_improvement" => "test" } ] }.to_json
+      response = JSON.generate("mutations" => [ { "template" => "x" * 50_001, "strategy" => "expansion",
+                                     "reasoning" => "test", "expected_improvement" => "test" } ])
       allow(harness_response).to receive(:output).and_return(response)
 
       mutations = described_class.call(prompt: prompt)
@@ -405,20 +429,42 @@ RSpec.describe PromptEvolution::Mutate do
     end
 
     it "only returns mutations for the requested strategies" do
-      mixed_response = {
+      mixed_response = JSON.generate(
         "mutations" => [
           { "template" => "Refined {{title}}", "strategy" => "refinement",
             "reasoning" => "test", "expected_improvement" => "test" },
           { "template" => "Expanded {{title}}", "strategy" => "expansion",
             "reasoning" => "test", "expected_improvement" => "test" }
         ]
-      }.to_json
+      )
       allow(harness_response).to receive(:output).and_return(mixed_response)
 
       mutations = described_class.call(prompt: prompt, options: { strategies: %w[refinement] })
 
       expect(mutations.size).to eq(1)
       expect(mutations.first.strategy).to eq("refinement")
+    end
+  end
+
+  describe "variable preservation instruction" do
+    it "omits variable preservation instruction when there are no variables" do
+      described_class.call(prompt: prompt)
+
+      expect(AgentHarness).to have_received(:send_message) do |prompt_text, **_opts|
+        expect(prompt_text).not_to include("Preserve all template variables")
+      end
+    end
+
+    it "includes variable preservation instruction when variables exist" do
+      prompt_with_vars = create(:prompt, :global)
+      prompt_with_vars.create_version!(template: "Do {{task}} for {{repo}}", variables: %w[task repo])
+
+      described_class.call(prompt: prompt_with_vars)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("Preserve all template variables (task, repo)"),
+        hash_including(provider: :claude)
+      )
     end
   end
 
