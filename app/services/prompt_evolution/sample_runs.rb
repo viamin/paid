@@ -164,7 +164,7 @@ module PromptEvolution
 
       sorted = values.sort
       mid = sorted.size / 2
-      sorted.size.odd? ? sorted[mid] : ((sorted[mid - 1] + sorted[mid]) / 2.0).round(4)
+      sorted.size.odd? ? sorted[mid].to_f : (sorted[mid - 1] + sorted[mid]) / 2.0
     end
   end
 end
