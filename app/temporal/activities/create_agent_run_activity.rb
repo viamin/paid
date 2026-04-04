@@ -148,7 +148,9 @@ module Activities
       if agent_run.queued?
         refresh_queued_run_provider!(agent_run)
         agent_run.update!(status: "pending")
-      elsif agent_run.status != "pending"
+      elsif agent_run.status == "pending"
+        refresh_queued_run_provider!(agent_run)
+      else
         # "pending" is expected — ProcessRunQueueJob claims runs (queued→pending)
         # before starting the workflow. Only warn for truly unexpected statuses.
         logger.warn(
