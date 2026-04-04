@@ -291,6 +291,9 @@ module Workflows
       end
 
       workflow_id = "draft-followup-#{agent_run[:agent_run_id]}"
+      claim_result = run_activity(Activities::ClaimQueuedAgentRunActivity,
+        { agent_run_id: agent_run[:agent_run_id], workflow_id: workflow_id }, timeout: 30)
+      return unless claim_result[:claimed]
 
       Temporalio::Workflow.start_child_workflow(
         Workflows::AgentExecutionWorkflow,

@@ -291,6 +291,10 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(workflow).to receive(:run_activity)
         .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 1), timeout: 30)
         .and_return({ agent_run_id: 123, queued: true })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ClaimQueuedAgentRunActivity,
+          { agent_run_id: 123, workflow_id: "draft-followup-123" }, timeout: 30)
+        .and_return({ claimed: true, agent_run_id: 123 })
 
       workflow.send(:handle_pr_trigger, project_id,
         draft_pr_data(current_draft_review_count: 1, triggers: [ { type: "ci_failure" } ]))
@@ -299,6 +303,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 1), timeout: 30)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ClaimQueuedAgentRunActivity,
+          { agent_run_id: 123, workflow_id: "draft-followup-123" }, timeout: 30)
       expect_draft_followup_child_started(agent_run_id: 123, expected_count: 1)
     end
 
@@ -329,6 +336,25 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 2), timeout: 30)
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+    end
+
+    it "does not start a draft followup child when the queued run was claimed elsewhere first" do
+      stub_draft_followup_capacity(has_capacity: true)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 3), timeout: 30)
+        .and_return({ agent_run_id: 789, queued: true })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ClaimQueuedAgentRunActivity,
+          { agent_run_id: 789, workflow_id: "draft-followup-789" }, timeout: 30)
+        .and_return({ claimed: false })
+
+      workflow.send(:handle_pr_trigger, project_id,
+        draft_pr_data(current_draft_review_count: 3, triggers: [ { type: "review_threads" } ]))
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ClaimQueuedAgentRunActivity,
+          { agent_run_id: 789, workflow_id: "draft-followup-789" }, timeout: 30)
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
