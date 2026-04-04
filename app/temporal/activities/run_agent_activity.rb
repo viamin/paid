@@ -478,14 +478,16 @@ module Activities
       result = with_periodic_heartbeat("executing", provider, agent_run: agent_run) do
         container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout, env: command_env)
       end
+      stdout = normalize_output_text(result[:stdout])
+      stderr = normalize_output_text(result[:stderr])
 
       if result.success?
-        output_present = result[:stdout].present? || result[:stderr].present?
+        output_present = stdout.present? || stderr.present?
         agent_run.log!("system", "Agent execution succeeded with #{provider}")
         return { pre_agent_sha: pre_agent_sha, output_present: output_present }
       end
 
-      output = (result[:stderr].presence || result[:stdout]).to_s.strip
+      output = (stderr.presence || stdout).to_s.strip
       rate_limit_output = strip_prompt_echo(output, prompt)
 
       # Check if this is a rate limit error

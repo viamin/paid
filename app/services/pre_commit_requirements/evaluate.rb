@@ -82,7 +82,7 @@ module PreCommitRequirements
       error_output = execution_error_output(e)
       { passed: false, output: error_output.truncate(10_000) }
     rescue Containers::Provision::Error => e
-      { passed: false, output: e.message.to_s.truncate(10_000) }
+      { passed: false, output: normalize_output_text(e.message).truncate(10_000) }
     end
 
     def attempt_auto_fix(requirement)
@@ -108,7 +108,8 @@ module PreCommitRequirements
         error_output = execution_error_output(e)
         return { passed: false, output: "Auto-fix failed: #{error_output}".truncate(10_000), auto_fixed: false }
       rescue Containers::Provision::Error => e
-        return { passed: false, output: "Auto-fix failed: #{e.message}".truncate(10_000), auto_fixed: false }
+        error_message = normalize_output_text(e.message)
+        return { passed: false, output: "Auto-fix failed: #{error_message}".truncate(10_000), auto_fixed: false }
       end
 
       { passed: false, output: "Auto-fix exhausted after #{MAX_AUTO_FIX_ATTEMPTS} attempts", auto_fixed: false }
@@ -121,22 +122,26 @@ module PreCommitRequirements
     # Extracts stdout, stderr, and exit_code from an ExecutionError for
     # richer diagnostic output than e.message alone.
     def execution_error_output(error)
-      parts = [ error.stdout.to_s, error.stderr.to_s ].reject(&:blank?)
+      parts = [ normalize_output_text(error.stdout), normalize_output_text(error.stderr) ].reject(&:blank?)
       output = parts.join("\n")
       return output if output.present?
 
-      error.exit_code ? "Command exited with code #{error.exit_code}" : error.message.to_s
+      error.exit_code ? "Command exited with code #{error.exit_code}" : normalize_output_text(error.message)
     end
 
     def container_result_output(result)
-      stdout = result[:stdout].to_s
-      stderr = result[:stderr].to_s
+      stdout = normalize_output_text(result[:stdout])
+      stderr = normalize_output_text(result[:stderr])
 
       combined = [ stdout, stderr ].reject(&:blank?).join("\n")
       return combined if combined.present?
 
       exit_code = result[:exit_code]
       exit_code ? "Command exited with code #{exit_code}" : ""
+    end
+
+    def normalize_output_text(text)
+      text.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "\uFFFD")
     end
 
     def log_result(requirement, result)
