@@ -72,7 +72,18 @@ module Workflows
         timeout_seconds: timeout_seconds
       )
 
-      # Step 3: Optionally aggregate branches into a single PR.
+      # Step 3: Detect and resolve conflicts between successful runs.
+      # This must happen before PR aggregation so that any rebased branches
+      # are reflected in the aggregated feature branch/PR.
+      completed = results.count { |r| r[:success] }
+      failed = results.count { |r| r[:success] == false }
+
+      conflict_result = detect_and_resolve_conflicts(
+        results: results,
+        project_id: project_id
+      )
+
+      # Step 4: Optionally aggregate branches into a single PR.
       # Default to the project-level setting (returned by the capacity check)
       # when the caller does not explicitly pass aggregate_pr.
       aggregate = if input.key?(:aggregate_pr)
@@ -92,16 +103,13 @@ module Workflows
         )
       end
 
-      # Step 4: Return aggregate results
-      completed = results.count { |r| r[:success] }
-      failed = results.count { |r| r[:success] == false }
-
       Temporalio::Workflow.logger.info(
         message: "parallel_execution.completed",
         project_id: project_id,
         total: sub_tasks.size,
         completed: completed,
         failed: failed,
+        has_conflicts: conflict_result[:has_conflicts],
         aggregated_pr: aggregated_pr&.dig(:pull_request_url)
       )
 
@@ -110,7 +118,8 @@ module Workflows
         total: sub_tasks.size,
         completed: completed,
         failed: failed,
-        results: results
+        results: results,
+        conflicts: conflict_result
       }
       output[:aggregated_pr] = aggregated_pr if aggregated_pr
       output
@@ -272,6 +281,87 @@ module Workflows
         error: e.message
       )
       nil
+    end
+
+    # Detects and attempts to resolve conflicts between successful parallel runs.
+    # Only checks runs that completed successfully and produced agent_run_ids.
+    # Returns a summary of conflict detection and resolution outcomes.
+    def detect_and_resolve_conflicts(results:, project_id:)
+      successful_run_ids = results
+        .select { |r| r[:success] && r[:agent_run_id] }
+        .map { |r| r[:agent_run_id] }
+
+      return no_conflicts_result(project_id: project_id, runs_checked: successful_run_ids.size) if successful_run_ids.size < 2
+
+      detection = run_activity(
+        Activities::DetectConflictsActivity,
+        { agent_run_ids: successful_run_ids, project_id: project_id },
+        timeout: 120
+      )
+
+      unless detection[:has_conflicts]
+        return detection.merge(
+          detection_failed: false,
+          requires_manual_review: false,
+          resolution: nil,
+          error: nil
+        )
+      end
+
+      # If detection failed and produced no usable conflict information,
+      # require manual review without attempting resolution.
+      if detection[:detection_failed] &&
+         (detection[:conflicting_pairs].nil? || detection[:conflicting_pairs].empty?)
+        return detection.merge(resolution: nil, error: nil)
+      end
+
+      resolution = run_activity(
+        Activities::ResolveConflictsActivity,
+        { detection_result: detection, project_id: project_id, strategy: "auto_rebase" },
+        timeout: 300
+      )
+
+      detection.merge(
+        resolution: resolution,
+        requires_manual_review: resolution[:requires_manual_review] || detection[:requires_manual_review],
+        error: nil
+      )
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "parallel_execution.conflict_detection_failed",
+        project_id: project_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      {
+        has_conflicts: true,
+        conflicting_pairs: [],
+        files_by_run: [],
+        total_runs_checked: 0,
+        project_id: project_id,
+        detection_failed: true,
+        failed_run_ids: [],
+        requires_manual_review: true,
+        resolution: nil,
+        error: e.message
+      }
+    end
+
+    def no_conflicts_result(project_id: nil, runs_checked: 0)
+      {
+        has_conflicts: false,
+        conflicting_pairs: [],
+        files_by_run: [],
+        total_runs_checked: runs_checked,
+        project_id: project_id,
+        detection_failed: false,
+        failed_run_ids: [],
+        requires_manual_review: false,
+        resolution: nil,
+        error: nil
+      }
     end
 
     # Launches a batch of child workflows in parallel and waits for all to complete.
