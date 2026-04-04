@@ -3,8 +3,30 @@
 # This file is copied to spec/ when you run 'rails generate rspec:install'
 require "spec_helper"
 ENV["RAILS_ENV"] ||= "test"
-ENV["DATABASE_URL"] = "sqlite3::memory:"
-# require_relative "../config/environment"
+require_relative "../config/environment"
+
+def ensure_test_assets!
+  required_assets = %w[application.css application.js]
+  builds_path = Rails.root.join("app/assets/builds")
+  missing_assets = required_assets.reject { |asset| builds_path.join(asset).exist? }
+  return if missing_assets.empty?
+
+  warn "[WARN] Missing built assets for test run: #{missing_assets.join(", ")}. Building assets..."
+
+  commands = [
+    [ "yarn", "build" ],
+    [ "yarn", "build:css" ]
+  ]
+
+  commands.each do |command|
+    next if system(*command, exception: false)
+
+    abort "Failed to build test assets with `#{command.join(" ")}`"
+  end
+end
+
+ensure_test_assets!
+
 # Prevent database truncation if the environment is production
 abort("The Rails environment is running in production mode!") if Rails.env.production?
 require "rspec/rails"
@@ -22,8 +44,7 @@ database_available = begin
   ActiveRecord::Migration.maintain_test_schema!
   true
 rescue ActiveRecord::PendingMigrationError => e
-    warn "[WARN] Pending migrations: #{e.message}"
-    false
+  abort e.to_s.strip
 rescue ActiveRecord::ConnectionNotEstablished => e
   if ENV["ALLOW_DBLESS_SPECS"] == "true"
     warn "[WARN] ActiveRecord::ConnectionNotEstablished during test schema maintenance: #{e.message}. " \
