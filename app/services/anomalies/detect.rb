@@ -55,7 +55,7 @@ module Anomalies
     end
 
     def refresh_baselines?(baselines)
-      return true if baselines.empty? || baselines.size < ProjectBaseline::METRIC_NAMES.size
+      return true if baselines.empty?
 
       baselines.any? do |baseline|
         baseline.last_calculated_at.nil? || baseline.last_calculated_at < BASELINE_REFRESH_INTERVAL.ago
@@ -65,6 +65,7 @@ module Anomalies
     def metric_value_for(metric_name)
       case metric_name
       when "tokens_total"
+        return nil if agent_run.tokens_input.nil? && agent_run.tokens_output.nil?
         (agent_run.tokens_input || 0) + (agent_run.tokens_output || 0)
       when "duration_seconds"
         agent_run.duration_seconds

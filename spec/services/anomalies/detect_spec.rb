@@ -169,6 +169,32 @@ RSpec.describe Anomalies::Detect do
       end
     end
 
+    context "with partial baseline set (fewer than all metrics)" do
+      before do
+        # Only create baselines for two metrics, simulating metrics that never
+        # reach MIN_SAMPLE_SIZE. Baselines are fresh.
+        %w[tokens_total duration_seconds].each do |metric_name|
+          create(:project_baseline,
+            project: project,
+            metric_name: metric_name,
+            last_calculated_at: 1.hour.ago)
+        end
+      end
+
+      it "does not force a baseline refresh on every detection" do
+        agent_run = create(:agent_run, :completed,
+          project: project,
+          tokens_input: 10_000,
+          tokens_output: 5_000,
+          duration_seconds: 600,
+          iterations: 5,
+          cost_cents: 150)
+
+        expect(Anomalies::UpdateBaseline).not_to receive(:call)
+        described_class.call(agent_run)
+      end
+    end
+
     context "with stale baselines" do
       let(:stale_baseline) do
         create(:project_baseline,
@@ -206,6 +232,47 @@ RSpec.describe Anomalies::Detect do
 
         expect { described_class.call(agent_run) }
           .to change { stale_baseline.reload.last_calculated_at }
+      end
+    end
+
+    context "when tokens are nil" do
+      before do
+        [ 14_000, 15_000, 15_500, 16_000, 14_500, 15_000 ].each_with_index do |tokens, i|
+          create(:agent_run, :completed,
+            project: project,
+            tokens_input: tokens * 2 / 3,
+            tokens_output: tokens / 3,
+            duration_seconds: 550 + (i * 20),
+            iterations: 4 + (i % 3),
+            cost_cents: 140 + (i * 5))
+        end
+      end
+
+      it "skips tokens_total detection when both token fields are nil" do
+        run_without_tokens = create(:agent_run, :completed,
+          project: project,
+          tokens_input: nil,
+          tokens_output: nil,
+          duration_seconds: 600,
+          iterations: 5,
+          cost_cents: 150)
+
+        anomalies = described_class.call(run_without_tokens)
+        expect(anomalies.map(&:metric_name)).not_to include("tokens_total")
+      end
+
+      it "detects tokens_total when only one token field is present" do
+        run_with_partial_tokens = create(:agent_run, :completed,
+          project: project,
+          tokens_input: 500_000,
+          tokens_output: nil,
+          duration_seconds: 600,
+          iterations: 5,
+          cost_cents: 150)
+
+        anomalies = described_class.call(run_with_partial_tokens)
+        token_anomaly = anomalies.find { |a| a.metric_name == "tokens_total" }
+        expect(token_anomaly).to be_present
       end
     end
 
