@@ -9,7 +9,8 @@ class AgentRunAnomaly < ApplicationRecord
 
   validates :anomaly_type, presence: true, inclusion: { in: ANOMALY_TYPES }
   validates :severity, presence: true, inclusion: { in: SEVERITIES }
-  validates :metric_name, presence: true, inclusion: { in: ProjectBaseline::METRIC_NAMES }
+  validates :metric_name, presence: true, inclusion: { in: ProjectBaseline::METRIC_NAMES },
+    uniqueness: { scope: :agent_run_id }
   validates :metric_value, :baseline_mean, :baseline_standard_deviation, :deviation_factor, presence: true
   validate :project_matches_agent_run
 

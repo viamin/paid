@@ -9,12 +9,26 @@ RSpec.describe AgentRunAnomaly do
   end
 
   describe "validations" do
+    subject(:agent_run_anomaly) { build(:agent_run_anomaly) }
+
     it { is_expected.to validate_presence_of(:anomaly_type) }
     it { is_expected.to validate_inclusion_of(:anomaly_type).in_array(described_class::ANOMALY_TYPES) }
     it { is_expected.to validate_presence_of(:severity) }
     it { is_expected.to validate_inclusion_of(:severity).in_array(described_class::SEVERITIES) }
     it { is_expected.to validate_presence_of(:metric_name) }
     it { is_expected.to validate_inclusion_of(:metric_name).in_array(ProjectBaseline::METRIC_NAMES) }
+    it { is_expected.to validate_uniqueness_of(:metric_name).scoped_to(:agent_run_id) }
+  end
+
+  describe "factory" do
+    it "uses the agent run project when callers override only the agent run" do
+      agent_run = create(:agent_run, :completed, :with_metrics)
+
+      anomaly = build(:agent_run_anomaly, agent_run: agent_run)
+
+      expect(anomaly.project).to eq(agent_run.project)
+      expect(anomaly).to be_valid
+    end
   end
 
   describe "scopes" do
