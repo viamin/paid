@@ -60,6 +60,11 @@ RSpec.describe "Worker pool load behavior", type: :model do
   end
 
   describe "database connection pool sizing" do
+    before do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("RAILS_MAX_THREADS", 3).and_return("3")
+    end
+
     it "has sufficient pool size for web threads plus job threads in async_server mode" do
       skip "only applies to in-process GoodJob execution" unless Rails.application.config.good_job.execution_mode == :async_server
 
@@ -112,6 +117,13 @@ RSpec.describe "Worker pool load behavior", type: :model do
   end
 
   describe "Temporal worker configuration" do
+    before do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("TEMPORAL_WORKFLOW_SLOTS", "20").and_return("20")
+      allow(ENV).to receive(:fetch).with("TEMPORAL_ACTIVITY_SLOTS", "4").and_return("4")
+      allow(ENV).to receive(:fetch).with("TEMPORAL_LOCAL_ACTIVITY_SLOTS", "4").and_return("4")
+    end
+
     it "has sensible default slot ratios" do
       workflow_slots = ENV.fetch("TEMPORAL_WORKFLOW_SLOTS", "20").to_i
       activity_slots = ENV.fetch("TEMPORAL_ACTIVITY_SLOTS", "4").to_i
@@ -139,6 +151,11 @@ RSpec.describe "Worker pool load behavior", type: :model do
   end
 
   describe "shutdown behavior" do
+    before do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("TEMPORAL_GRACEFUL_SHUTDOWN_PERIOD", "30").and_return("30")
+    end
+
     it "configures GoodJob shutdown timeout less than container stop timeout" do
       shutdown_timeout = Rails.application.config.good_job.shutdown_timeout
       # Docker default stop timeout is 30s; GoodJob should finish before that
