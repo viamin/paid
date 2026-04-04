@@ -145,6 +145,21 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       expect(result[:failed]).to eq(1)
     end
 
+    it "treats paused child workflows as incomplete failures" do
+      stub_full_capacity
+      paused = Struct.new(:done?, :failure?, :failure, :result, keyword_init: true)
+        .new("done?": true, "failure?": false, failure: nil, result: { success: false, paused: true, agent_run_id: 42 })
+      all_done = Struct.new(:wait).new(nil)
+      allow(Temporalio::Workflow::Future).to receive_messages(new: paused, try_all_of: all_done)
+
+      result = workflow.execute({ project_id: 1, sub_tasks: [ { issue_id: 10 } ] })
+
+      expect(result[:success]).to be false
+      expect(result[:completed]).to eq(0)
+      expect(result[:failed]).to eq(1)
+      expect(result[:results]).to contain_exactly(include(issue_id: 10, success: false, paused: true, agent_run_id: 42))
+    end
+
     it "batches sub-tasks based on available slots" do
       capacity_call_count = stub_incremental_capacity
       stub_successful_futures(count: 3)
@@ -291,6 +306,21 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       result = workflow.execute(two_task_input.merge(aggregate_pr: true))
 
       expect(result[:aggregated_pr]).to be_nil
+    end
+
+    it "skips aggregation when the only child result is paused" do
+      stub_full_capacity
+      paused = Struct.new(:done?, :failure?, :failure, :result, keyword_init: true)
+        .new("done?": true, "failure?": false, failure: nil, result: { success: false, paused: true, agent_run_id: 42 })
+      all_done = Struct.new(:wait).new(nil)
+      allow(Temporalio::Workflow::Future).to receive_messages(new: paused, try_all_of: all_done)
+
+      result = workflow.execute(
+        { project_id: 1, sub_tasks: [ { issue_id: 10 } ], aggregate_pr: true }
+      )
+
+      expect(result[:aggregated_pr]).to be_nil
+      expect(result[:results]).to contain_exactly(include(issue_id: 10, success: false, paused: true))
     end
 
     it "skips PR creation when no branches were merged" do

@@ -176,7 +176,7 @@ module Workflows
           retry_policy: RUN_AGENT_RETRY_POLICY)
 
         if agent_result[:paused]
-          return { success: true, paused: true, agent_run_id: agent_run_id }
+          return { success: false, paused: true, agent_run_id: agent_run_id }
         end
 
         unless agent_result[:success]
@@ -302,6 +302,10 @@ module Workflows
         # backoff). Per-attempt timeout is 120s; schedule_to_close_timeout caps total wall
         # time per cleanup activity at 5 minutes to prevent the ensure block from stalling.
         # Failures are logged but do not mask the primary workflow outcome.
+        #
+        # Guardrail pauses preserve the persisted AgentRun state and violation context for
+        # user review, but resume! re-queues a fresh execution rather than reusing the
+        # in-flight runtime artifacts from the interrupted attempt.
         #
         # When the agent step completed successfully but the workflow failed for an
         # unknown reason (e.g. push or PR creation failure), retain the container

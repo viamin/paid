@@ -591,7 +591,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       result = workflow.execute(input)
 
-      expect(result).to include(success: true, paused: true, agent_run_id: 42)
+      expect(result).to include(success: false, paused: true, agent_run_id: 42)
       expect(called_activities).not_to include(Activities::MarkAgentRunCompleteActivity)
       expect(called_activities).not_to include(Activities::MarkAgentRunFailedActivity)
     end
