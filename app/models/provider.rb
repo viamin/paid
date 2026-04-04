@@ -473,9 +473,9 @@ class Provider < ApplicationRecord
       errors.add(:config, "must include a supported OpenCode API provider")
     end
 
-    # Model ID is only required when direct-outbound routing is intended
-    # (i.e. a supported api_provider is configured). Providers without a
-    # model fall back to the non-direct-outbound path via the secrets proxy.
+    if opencode_model_id.blank?
+      errors.add(:config, "must include an OpenCode model id")
+    end
   end
 
   def kilocode_api_key_config_must_be_valid
@@ -486,9 +486,9 @@ class Provider < ApplicationRecord
       errors.add(:config, "must include a supported KiloCode API provider")
     end
 
-    # Direct-outbound routing is only used when a model ID is configured.
-    # Providers without a model fall back to the non-direct-outbound path
-    # via Kilo's own gateway.
+    if kilocode_model_id.blank?
+      errors.add(:config, "must include a KiloCode model id")
+    end
   end
 
   def required_api_service_type
