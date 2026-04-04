@@ -81,10 +81,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_062147) do
 
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.integer "default_max_tokens_per_run", default: 10000000, null: false
     t.string "name", null: false
     t.string "slug", null: false
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+  end
+
+  create_table "agent_run_anomalies", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.string "anomaly_type", limit: 50, null: false
+    t.float "baseline_mean", null: false
+    t.float "baseline_standard_deviation", null: false
+    t.datetime "created_at", null: false
+    t.float "deviation_factor", null: false
+    t.text "message"
+    t.string "metric_name", limit: 50, null: false
+    t.float "metric_value", null: false
+    t.bigint "project_id", null: false
+    t.string "severity", limit: 20, null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "metric_name"], name: "index_agent_run_anomalies_on_agent_run_id_and_metric_name", unique: true
+    t.index ["agent_run_id"], name: "index_agent_run_anomalies_on_agent_run_id"
+    t.index ["anomaly_type"], name: "index_agent_run_anomalies_on_anomaly_type"
+    t.index ["project_id", "created_at"], name: "index_agent_run_anomalies_on_project_id_and_created_at"
+    t.index ["project_id"], name: "index_agent_run_anomalies_on_project_id"
   end
 
   create_table "agent_run_logs", force: :cascade do |t|
@@ -142,10 +163,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_062147) do
     t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
     t.string "goal", limit: 50, default: "create_pr", null: false
+    t.jsonb "guardrail_context"
+    t.string "guardrail_violation_type", limit: 50
     t.bigint "issue_id"
     t.integer "iterations", default: 0
     t.jsonb "mcp_server_snapshot", default: [], null: false
     t.string "parent_workflow_id", limit: 255
+    t.datetime "paused_at"
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
     t.bigint "project_id", null: false
@@ -168,17 +192,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_062147) do
     t.string "status", limit: 50, default: "pending", null: false
     t.string "temporal_run_id", limit: 255
     t.string "temporal_workflow_id", limit: 255
+    t.string "token_limit_status", limit: 50
     t.integer "tokens_input", default: 0
     t.integer "tokens_output", default: 0
     t.string "trigger_type", limit: 50, default: "automatic", null: false
     t.datetime "updated_at", null: false
     t.string "worktree_path", limit: 500
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
+    t.index ["guardrail_violation_type"], name: "index_agent_runs_on_guardrail_violation_type", where: "(guardrail_violation_type IS NOT NULL)"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -630,6 +657,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_062147) do
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
   end
 
+  create_table "project_baselines", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "last_calculated_at"
+    t.float "mean", default: 0.0, null: false
+    t.string "metric_name", limit: 50, null: false
+    t.float "p95", default: 0.0, null: false
+    t.bigint "project_id", null: false
+    t.integer "sample_count", default: 0, null: false
+    t.float "standard_deviation", default: 0.0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "metric_name"], name: "index_project_baselines_on_project_id_and_metric_name", unique: true
+    t.index ["project_id"], name: "index_project_baselines_on_project_id"
+  end
+
   create_table "project_mcp_servers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "mcp_server_definition_id", null: false
@@ -705,6 +746,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_062147) do
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_execution_seconds", default: 1800, null: false
     t.integer "max_pr_followup_runs", default: 8, null: false
+    t.integer "max_tokens_per_run"
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
@@ -717,6 +759,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_062147) do
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
     t.string "security_severity_threshold", default: "high", null: false
+    t.integer "token_limit_warning_threshold", default: 80, null: false
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false
@@ -1006,6 +1049,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_062147) do
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
+  add_foreign_key "agent_run_anomalies", "agent_runs"
+  add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
@@ -1043,6 +1088,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_062147) do
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
+  add_foreign_key "project_baselines", "projects"
   add_foreign_key "project_mcp_servers", "mcp_server_definitions"
   add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"
