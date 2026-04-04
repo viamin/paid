@@ -79,6 +79,29 @@ RSpec.describe Anomalies::UpdateBaseline do
         baseline = project.project_baselines.find_by(metric_name: "tokens_total")
         expect(baseline.p95).to be > baseline.mean
       end
+
+      it "includes runs with partial token metrics in the token baseline" do
+        project.agent_runs.delete_all
+        [
+          [ 5_000, nil ],
+          [ nil, 2_000 ],
+          [ 7_000, 3_000 ],
+          [ 8_000, nil ],
+          [ nil, 4_000 ],
+          [ 6_000, 1_000 ]
+        ].each do |tokens_input, tokens_output|
+          create(:agent_run, :completed,
+            project: project,
+            tokens_input: tokens_input,
+            tokens_output: tokens_output)
+        end
+
+        described_class.call(project)
+
+        baseline = project.project_baselines.find_by(metric_name: "tokens_total")
+        expect(baseline.sample_count).to eq(6)
+        expect(baseline.mean).to be_within(0.1).of(6000.0)
+      end
     end
 
     context "with old runs outside lookback window" do

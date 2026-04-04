@@ -5,6 +5,7 @@ module Anomalies
     # Default z-score thresholds for anomaly severity.
     WARNING_THRESHOLD = 2.0
     CRITICAL_THRESHOLD = 3.0
+    BASELINE_REFRESH_INTERVAL = 24.hours
 
     attr_reader :agent_run
 
@@ -18,7 +19,7 @@ module Anomalies
 
     def call
       baselines = project.project_baselines.to_a
-      if baselines.empty?
+      if refresh_baselines?(baselines)
         Anomalies::UpdateBaseline.call(project, exclude_run: agent_run)
         baselines = project.project_baselines.reload.to_a
       end
@@ -53,6 +54,14 @@ module Anomalies
       agent_run.project
     end
 
+    def refresh_baselines?(baselines)
+      return true if baselines.empty? || baselines.size < ProjectBaseline::METRIC_NAMES.size
+
+      baselines.any? do |baseline|
+        baseline.last_calculated_at.nil? || baseline.last_calculated_at < BASELINE_REFRESH_INTERVAL.ago
+      end
+    end
+
     def metric_value_for(metric_name)
       case metric_name
       when "tokens_total"
@@ -80,12 +89,7 @@ module Anomalies
     end
 
     def record_anomaly(metric_name, value, baseline, deviation, severity)
-      anomaly = AgentRunAnomaly.find_or_initialize_by(
-        agent_run: agent_run,
-        metric_name: metric_name
-      )
-
-      anomaly.assign_attributes(
+      attrs = {
         project: project,
         anomaly_type: anomaly_type(deviation),
         severity: severity,
@@ -94,10 +98,24 @@ module Anomalies
         baseline_standard_deviation: baseline.standard_deviation,
         deviation_factor: deviation.abs,
         message: build_message(metric_name, value, baseline, deviation, severity)
-      )
+      }
 
-      anomaly.save!
-      anomaly
+      retries = 0
+      begin
+        anomaly = AgentRunAnomaly.find_or_initialize_by(
+          agent_run: agent_run,
+          metric_name: metric_name
+        )
+        anomaly.update!(attrs)
+        anomaly
+      rescue ActiveRecord::RecordNotUnique
+        retries += 1
+        raise if retries > 1
+
+        AgentRunAnomaly.find_by!(agent_run: agent_run, metric_name: metric_name).tap do |anomaly|
+          anomaly.update!(attrs)
+        end
+      end
     end
 
     def build_message(metric_name, value, baseline, deviation, severity)

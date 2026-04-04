@@ -45,7 +45,7 @@ module Anomalies
       case metric_name
       when "tokens_total"
         runs
-          .where.not(tokens_input: nil, tokens_output: nil)
+          .where("tokens_input IS NOT NULL OR tokens_output IS NOT NULL")
           .pluck(:tokens_input, :tokens_output)
           .map { |tokens_input, tokens_output| (tokens_input || 0) + (tokens_output || 0) }
       when "duration_seconds"
