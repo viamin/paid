@@ -21,6 +21,49 @@ then
 fi
 
 dev_supervisor_prepare_logging
+dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
+  "bin/dev starting pid=$$ ppid=$PPID tty=$(dev_supervisor_tty) term=${TERM:-} cwd=$PWD"
+
+DEV_SUPERVISOR_EXIT_SNAPSHOT_TAKEN=0
+DEV_SUPERVISOR_MONITOR_PID=""
+
+dev_supervisor_snapshot_once() {
+  local label="$1"
+  if [ "${DEV_SUPERVISOR_EXIT_SNAPSHOT_TAKEN:-0}" -eq 1 ]; then
+    return 0
+  fi
+
+  DEV_SUPERVISOR_EXIT_SNAPSHOT_TAKEN=1
+  dev_supervisor_snapshot_state "$label"
+}
+
+dev_supervisor_handle_signal() {
+  local signal="$1"
+  dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
+    "bin/dev received signal ${signal} pid=$$ ppid=$PPID tty=$(dev_supervisor_tty) term=${TERM:-}"
+  dev_supervisor_snapshot_once "bin-dev-signal-${signal,,}"
+  trap - "$signal"
+  kill -s "$signal" "$$"
+}
+
+dev_supervisor_handle_exit() {
+  local exit_code="$1"
+  if [ -n "${DEV_SUPERVISOR_MONITOR_PID:-}" ] && kill -0 "$DEV_SUPERVISOR_MONITOR_PID" >/dev/null 2>&1; then
+    kill "$DEV_SUPERVISOR_MONITOR_PID" >/dev/null 2>&1 || true
+    wait "$DEV_SUPERVISOR_MONITOR_PID" 2>/dev/null || true
+  fi
+  dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
+    "bin/dev exiting code=${exit_code} pid=$$ ppid=$PPID tty=$(dev_supervisor_tty) term=${TERM:-}"
+  if [ "$exit_code" -ne 0 ]; then
+    dev_supervisor_snapshot_once "bin-dev-exit-${exit_code}"
+  fi
+}
+
+trap 'dev_supervisor_handle_exit $?' EXIT
+trap 'dev_supervisor_handle_signal HUP' HUP
+trap 'dev_supervisor_handle_signal INT' INT
+trap 'dev_supervisor_handle_signal TERM' TERM
+trap 'dev_supervisor_handle_signal QUIT' QUIT
 
 if [ -S "$OVERMIND_SOCKET" ]; then
   if ! status_output="$(dev_supervisor_overmind_status_output)"; then
@@ -64,7 +107,13 @@ fi
 
 dev_supervisor_snapshot_state "bin-dev-before-start"
 
+dev_supervisor_monitor_overmind "$$" "bin-dev-monitor" &
+DEV_SUPERVISOR_MONITOR_PID=$!
+dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
+  "started overmind monitor pid=${DEV_SUPERVISOR_MONITOR_PID}"
+
 if dev_supervisor_run_overmind overmind start -f Procfile.dev -F "$(dev_supervisor_tmux_config)" "$@" \
+  > >(tee -a "$(dev_supervisor_overmind_log)") \
   2> >(tee -a "$(dev_supervisor_overmind_log)" >&2); then
   :
 else

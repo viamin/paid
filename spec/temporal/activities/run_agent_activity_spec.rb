@@ -128,7 +128,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     it "includes upstream sandbox bypass flags for codex" do
       cmd = described_class::AGENT_COMMANDS["codex"]
-      expect(cmd).to start_with("codex", "exec", "--full-auto", "--sandbox", "none")
+      expect(cmd).to start_with("codex", "exec", "--dangerously-bypass-approvals-and-sandbox")
       expect(cmd).to include("--")
     end
 
@@ -247,11 +247,12 @@ RSpec.describe Activities::RunAgentActivity do
       )
       command = activity.send(:build_command, context, "say 'hi'")
       script = command[2]
+      codex_command = described_class::AGENT_COMMANDS.fetch("codex").join(" ")
 
       expect(command[0..1]).to eq(%w[sh -c])
       expect(script).to include('if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]')
       expect(script).to include("-u OPENAI_API_KEY")
-      expect(script).to include("codex exec --full-auto --sandbox none --")
+      expect(script).to include(codex_command)
       expect(command[3]).to eq("--")
       expect(command[4]).to eq("say 'hi'")
     end
@@ -335,6 +336,23 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "#build_provider_order" do
+    it "preserves routing-key fallback entries for agent-type runs" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      opencode_provider = create_opencode_provider_entry(
+        user: user,
+        api_key: api_key,
+        name: "Kimi K2.5",
+        model: "moonshotai/kimi-k2-0905"
+      )
+      user.settings.update!(fallback_enabled: true, fallback_providers: [ opencode_provider.routing_key ])
+
+      providers = activity.send(:build_provider_order, agent_run, user.settings)
+
+      expect(providers).to eq([ "claude_code", opencode_provider.routing_key ])
+    end
+  end
+
   def build_opencode_context(user)
     api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
     provider = create_opencode_provider_entry(user: user, api_key: api_key, name: nil, model: "moonshotai/kimi-k2-0905")
@@ -345,6 +363,28 @@ RSpec.describe Activities::RunAgentActivity do
       command_prefix: described_class::AGENT_COMMANDS["opencode"],
       user: user
     )
+  end
+
+  def expect_opencode_fallback_execution(opencode_provider)
+    call_count = 0
+    expect(container_service).to receive(:execute).twice do |command, **opts|
+      call_count += 1
+      if call_count == 1
+        rate_limit_failure
+      else
+        expect(command[0..1]).to eq(%w[sh -lc])
+        expect(command[2]).to include('printf \'%s\' "$PAID_OPENCODE_CONFIG_B64" | base64 -d')
+        expect(command[2]).to include('opencode run "$1"')
+        expect(opts[:env]).to include("PAID_OPENCODE_CONFIG_B64")
+        exec_success
+      end
+    end
+
+    result = activity.execute(agent_run_id: agent_run.id)
+
+    expect(result[:success]).to be true
+    expect(result[:final_provider]).to eq(opencode_provider.routing_key)
+    expect(agent_run.reload.final_provider).to eq(opencode_provider.routing_key)
   end
 
   def create_opencode_provider_entry(user:, api_key:, name:, model:)
@@ -857,6 +897,20 @@ RSpec.describe Activities::RunAgentActivity do
         labels = activity.send(:provider_attempt_labels, [ kimi.routing_key, opus.routing_key ], agent_run, user)
 
         expect(labels).to eq([ "Kimi K2.5", "Opus via OpenCode" ])
+      end
+
+      it "executes routing-key fallbacks with the provider entry config intact" do
+        allow(ProviderSupport).to receive(:container_executable_provider_keys).and_return(%w[claude cursor aider opencode])
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+        opencode_provider = create_opencode_provider_entry(
+          user: user,
+          api_key: api_key,
+          name: "Kimi K2.5",
+          model: "moonshotai/kimi-k2-0905"
+        )
+        user.settings.update!(fallback_enabled: true, fallback_providers: [ opencode_provider.routing_key ])
+
+        expect_opencode_fallback_execution(opencode_provider)
       end
 
       it "marks run as rate_limited when all providers are already rate limited in ProviderState" do

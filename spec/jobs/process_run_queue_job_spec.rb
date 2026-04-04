@@ -112,6 +112,27 @@ RSpec.describe ProcessRunQueueJob do
       expect(auto.reload.status).to eq("queued")
     end
 
+    it "starts an older queued manual run before a later auto-continue followup" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 1)
+      manual = create(:agent_run, :queued, :manual, project: project, created_at: 2.minutes.ago)
+      followup_issue = create(:issue, project: project)
+      auto_continue = create(:agent_run, :queued, :automatic, :existing_pr,
+        project: project, issue: followup_issue, created_at: 1.minute.ago)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids).to eq([ manual.id ])
+      expect(manual.reload.status).to eq("pending")
+      expect(auto_continue.reload.status).to eq("queued")
+    end
+
     it "marks run as failed and continues when workflow start fails" do
       failing_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
       good_run = create(:agent_run, :queued, created_at: 1.minute.ago)
