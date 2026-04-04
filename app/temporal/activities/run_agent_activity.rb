@@ -519,10 +519,10 @@ module Activities
     def normalize_output_text(value)
       return "" if value.nil?
 
-      text = value.to_s.delete("\x00")
-      return text if text.encoding == Encoding::UTF_8 && text.valid_encoding?
+      text = value.to_s
+      return text.delete("\x00") if text.encoding == Encoding::UTF_8 && text.valid_encoding?
 
-      text.dup.force_encoding(Encoding::UTF_8).scrub
+      text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
     end
 
     # Attempts to parse a rate limit reset time from the output.
