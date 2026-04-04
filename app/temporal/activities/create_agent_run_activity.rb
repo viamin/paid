@@ -14,8 +14,8 @@ module Activities
       project_id = input[:project_id]
       issue_id = input[:issue_id]
       custom_prompt = input[:custom_prompt]
-      agent_type = input.fetch(:agent_type, "claude_code")
       provider_id = input[:provider_id]
+      agent_type = resolve_agent_type(input[:agent_type], provider_id)
       goal = input.fetch(:goal, "create_pr")
       source_pull_request_number = input[:source_pull_request_number]
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
@@ -117,10 +117,40 @@ module Activities
 
     private
 
+    def resolve_agent_type(requested_agent_type, provider_id)
+      provider = Provider.find_by(id: provider_id) if provider_id.present?
+      return Provider.agent_type_for(provider.provider_key) if provider
+
+      requested_agent_type || "claude_code"
+    end
+
+    def default_provider_for(project)
+      owner = project.effective_owner
+      return unless owner
+
+      settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+      return Provider.ensure_default_for(owner) unless settings
+
+      Provider.for_identifier(settings.user, settings.default_provider_identifier) || Provider.ensure_default_for(settings.user)
+    end
+
+    def refresh_queued_run_provider!(agent_run)
+      return unless agent_run.automatic?
+
+      provider = default_provider_for(agent_run.project)
+      return unless provider
+
+      agent_run.update!(
+        provider: provider,
+        agent_type: Provider.agent_type_for(provider.provider_key)
+      )
+    end
+
     def resume_queued_run(agent_run_id)
       agent_run = AgentRun.find(agent_run_id)
 
       if agent_run.queued?
+        refresh_queued_run_provider!(agent_run)
         agent_run.update!(status: "pending")
       elsif agent_run.status != "pending"
         # "pending" is expected — ProcessRunQueueJob claims runs (queued→pending)
