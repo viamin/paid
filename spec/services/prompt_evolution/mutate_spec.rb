@@ -411,6 +411,34 @@ RSpec.describe PromptEvolution::Mutate do
       expect(mutations.size).to eq(1)
     end
 
+    it "rejects mutations that only preserve variables with spaced placeholder syntax" do
+      prompt_no_vars_metadata = create(:prompt, :global)
+      prompt_no_vars_metadata.create_version!(template: "Do {{task}} for {{repo}}", variables: [])
+
+      response = JSON.generate("mutations" => [ { "template" => "Complete {{ task }} in {{ repo }} carefully",
+                                     "strategy" => "expansion",
+                                     "reasoning" => "test", "expected_improvement" => "test" } ])
+      allow(harness_response).to receive(:output).and_return(response)
+
+      mutations = described_class.call(prompt: prompt_no_vars_metadata)
+
+      expect(mutations).to be_empty
+    end
+
+    it "rejects mutations missing template placeholders not listed in metadata" do
+      prompt_with_partial_metadata = create(:prompt, :global)
+      prompt_with_partial_metadata.create_version!(template: "Do {{task}} for {{repo}}", variables: [ "task" ])
+
+      response = JSON.generate("mutations" => [ { "template" => "Do {{task}} only",
+                                     "strategy" => "simplification",
+                                     "reasoning" => "test", "expected_improvement" => "test" } ])
+      allow(harness_response).to receive(:output).and_return(response)
+
+      mutations = described_class.call(prompt: prompt_with_partial_metadata)
+
+      expect(mutations).to be_empty
+    end
+
     it "rejects mutations exceeding max template length" do
       response = JSON.generate("mutations" => [ { "template" => "x" * 50_001, "strategy" => "expansion",
                                      "reasoning" => "test", "expected_improvement" => "test" } ])
@@ -476,7 +504,10 @@ RSpec.describe PromptEvolution::Mutate do
 
   describe "variable preservation instruction" do
     it "omits variable preservation instruction when there are no variables" do
-      described_class.call(prompt: prompt)
+      prompt_without_vars = create(:prompt, :global)
+      prompt_without_vars.create_version!(template: "Do the work", variables: [])
+
+      described_class.call(prompt: prompt_without_vars)
 
       expect(AgentHarness).to have_received(:send_message) do |prompt_text, **_opts|
         expect(prompt_text).not_to include("Preserve all template variables")
@@ -491,6 +522,30 @@ RSpec.describe PromptEvolution::Mutate do
 
       expect(AgentHarness).to have_received(:send_message).with(
         a_string_including("Preserve all template variables (task, repo)"),
+        hash_including(provider: :claude)
+      )
+    end
+
+    it "includes inferred template variables when metadata is empty" do
+      prompt_no_vars_metadata = create(:prompt, :global)
+      prompt_no_vars_metadata.create_version!(template: "Do {{task}} for {{repo}}", variables: [])
+
+      described_class.call(prompt: prompt_no_vars_metadata)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("Preserve all template variables (task, repo)", "## Template Variables\ntask, repo"),
+        hash_including(provider: :claude)
+      )
+    end
+
+    it "includes the union of metadata and template variables" do
+      prompt_with_partial_metadata = create(:prompt, :global)
+      prompt_with_partial_metadata.create_version!(template: "Do {{task}} for {{repo}}", variables: [ "task" ])
+
+      described_class.call(prompt: prompt_with_partial_metadata)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including("Preserve all template variables (task, repo)", "## Template Variables\ntask, repo"),
         hash_including(provider: :claude)
       )
     end

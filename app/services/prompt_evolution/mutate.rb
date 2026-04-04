@@ -154,14 +154,14 @@ module PromptEvolution
     end
 
     def variables_preservation_instruction
-      names = variable_names
+      names = required_variable_names
       return "" if names.empty?
 
       "- Preserve all template variables (#{names.join(', ')}) — use the exact {{variable_name}} syntax\n        "
     end
 
     def variables_section
-      names = variable_names
+      names = required_variable_names
       return "" if names.empty?
 
       "## Template Variables\n#{names.join(', ')}\n"
@@ -327,16 +327,14 @@ module PromptEvolution
       required = required_variable_names
       return true if required.empty?
 
-      generated_variables = extract_template_variables(template)
-      required.all? { |var| generated_variables.include?(var) }
+      required.all? { |var| template.include?("{{#{var}}}") }
     end
 
     def required_variable_names
-      names = variable_names
-      return names if names.any?
+      metadata_names = variable_names
+      template_names = extract_template_variables(@prompt.current_version.template.to_s)
 
-      # Fall back to extracting {{...}} placeholders from the current template
-      extract_template_variables(@prompt.current_version.template.to_s)
+      (metadata_names + template_names).uniq
     end
 
     def extract_template_variables(template)
