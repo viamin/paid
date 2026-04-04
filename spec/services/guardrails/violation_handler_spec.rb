@@ -131,6 +131,25 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(Turbo::StreamsChannel).not_to have_received(:broadcast_prepend_to)
     end
 
+    it "records cleanup failure details in the stored context" do
+      allow(AgentRuns::Cancel).to receive(:call).and_raise(StandardError, "Temporal RPC error")
+
+      result = described_class.call(
+        agent_run: agent_run,
+        violation_type: "cost_limit",
+        details: "Budget exceeded"
+      )
+
+      expect(result.paused?).to be true
+
+      cleanup = agent_run.reload.guardrail_context["execution_cleanup"]
+      expect(cleanup).to include(
+        "status" => "cancel_failed",
+        "error_class" => "StandardError",
+        "error_message" => "Temporal RPC error"
+      )
+    end
+
     it "does not pause a non-running agent run" do
       agent_run.update!(status: "completed", completed_at: Time.current)
 

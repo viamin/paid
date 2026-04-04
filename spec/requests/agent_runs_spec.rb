@@ -1057,6 +1057,7 @@ RSpec.describe "AgentRuns" do
       it "re-queues a paused run and enqueues ProcessRunQueueJob" do
         agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
           guardrail_violation_type: "time_limit", temporal_workflow_id: "workflow-123", temporal_run_id: "run-123")
+        allow(AgentRuns::Cancel).to receive(:call)
 
         expect {
           post resume_project_agent_run_path(project, agent_run)
@@ -1064,6 +1065,7 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         expect(flash[:notice]).to eq("Agent run resumed and re-queued.")
+        expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
 
         agent_run.reload
         expect(agent_run.status).to eq("queued")
@@ -1080,6 +1082,24 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(project_agent_run_path(project, agent_run))
         expect(flash[:alert]).to eq("Only paused runs can be resumed.")
+      end
+
+      it "does not resume when the previous workflow cannot be cancelled" do
+        agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
+          guardrail_violation_type: "time_limit", temporal_workflow_id: "workflow-123", temporal_run_id: "run-123")
+        allow(AgentRuns::Cancel).to receive(:call).and_raise(StandardError, "Temporal RPC error")
+
+        expect {
+          post resume_project_agent_run_path(project, agent_run)
+        }.not_to have_enqueued_job(ProcessRunQueueJob)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:alert]).to eq("Unable to resume until the previous execution is cancelled. Please try again.")
+
+        agent_run.reload
+        expect(agent_run.status).to eq("paused")
+        expect(agent_run.temporal_workflow_id).to eq("workflow-123")
+        expect(agent_run.temporal_run_id).to eq("run-123")
       end
     end
   end

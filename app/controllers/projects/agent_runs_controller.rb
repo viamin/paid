@@ -213,6 +213,20 @@ module Projects
         return
       end
 
+      begin
+        cancel_in_flight_execution_for_resume!
+      rescue StandardError => e
+        Rails.logger.error(
+          message: "agent_execution.resume_cancel_failed",
+          agent_run_id: @agent_run.id,
+          error_class: e.class.name,
+          error_message: e.message
+        )
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Unable to resume until the previous execution is cancelled. Please try again."
+        return
+      end
+
       resumed = @agent_run.resume!
       unless resumed
         redirect_to project_agent_run_path(@project, @agent_run),
@@ -437,6 +451,13 @@ module Projects
       return nil if params[:pull_request_id].blank?
 
       @project.issues.pull_requests_only.find_by(id: params[:pull_request_id])
+    end
+
+    def cancel_in_flight_execution_for_resume!
+      return if @agent_run.temporal_workflow_id.blank?
+
+      AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
+      @agent_run.reload
     end
 
     def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil, trigger_type: "manual")

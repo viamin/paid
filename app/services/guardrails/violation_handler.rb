@@ -35,7 +35,7 @@ module Guardrails
       return already_handled_result(context) unless paused
 
       log_violation(context)
-      stop_in_flight_execution
+      context = persist_execution_cleanup(context, stop_in_flight_execution)
 
       # Dashboard alert is handled by LiveDashboardBroadcastJob (triggered by
       # the status change callback) to avoid duplicate notifications.
@@ -105,6 +105,7 @@ module Guardrails
 
     def stop_in_flight_execution
       AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
+      { status: "cancelled", attempted_at: Time.current.iso8601 }
     rescue => e
       Rails.logger.error(
         message: "guardrails.violation_pause_cancel_failed",
@@ -113,6 +114,18 @@ module Guardrails
         error_class: e.class.name,
         error_message: e.message
       )
+      {
+        status: "cancel_failed",
+        attempted_at: Time.current.iso8601,
+        error_class: e.class.name,
+        error_message: e.message
+      }
+    end
+
+    def persist_execution_cleanup(context, cleanup_result)
+      updated_context = context.merge(execution_cleanup: cleanup_result)
+      agent_run.update_columns(guardrail_context: updated_context, updated_at: Time.current)
+      updated_context
     end
 
     class Result
