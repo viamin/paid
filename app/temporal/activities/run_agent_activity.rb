@@ -16,7 +16,7 @@ module Activities
     #
     # Copilot remains hardcoded here for now instead of delegating to
     # agent-harness because the installed Copilot CLI and the harness's
-    # built-in GithubCopilot provider are not yet aligned on binary name and
+    # built-in GitHub Copilot provider are not yet aligned on binary name and
     # invocation shape. Paid installs `github-copilot-cli`, while
     # agent-harness 0.5.6 expects `copilot -p ...`.
     # Actual container execution is

@@ -295,11 +295,10 @@ module Providers
       command = CONTAINER_COMMANDS[provider.provider_key]
       raise UnsupportedProviderError, "Unsupported provider: #{provider.provider_key}" unless command
 
-      # GitHub Copilot intentionally stays on Paid's container-exec path for now.
-      # agent-harness 0.5.6 expects a different Copilot binary/flag contract
-      # (`copilot -p ...`) than the CLI we install in paid-agent
-      # (`github-copilot-cli what-the-shell ...`), so invoking Copilot through
-      # the harness here would be incorrect until that upstream support aligns.
+      # This method only builds the container-exec command after that path has
+      # already been selected elsewhere. For Copilot on this path, preserve the
+      # installed CLI contract (`github-copilot-cli --message ...`) rather
+      # than applying any harness-specific invocation shape.
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
       return provider.direct_outbound_exec_command(command_prefix: command, prompt: PROMPT) if provider.requires_direct_outbound?
