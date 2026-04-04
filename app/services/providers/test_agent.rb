@@ -296,8 +296,8 @@ module Providers
 
       return codex_test_command if provider.provider_key == "codex"
       return gemini_test_command if provider.provider_key == "gemini"
+      return provider.direct_outbound_exec_command(command_prefix: command, prompt: PROMPT) if provider.requires_direct_outbound?
       return kilocode_test_command if provider.provider_key == "kilocode"
-      return provider.direct_outbound_exec_command(command_prefix: command, prompt: PROMPT) if provider.provider_key == "opencode" && provider.requires_direct_outbound?
 
       command + [ PROMPT ]
     end

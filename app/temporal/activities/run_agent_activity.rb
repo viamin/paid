@@ -20,7 +20,7 @@ module Activities
     AGENT_COMMANDS = {
       "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
-      "codex" => %w[codex exec --full-auto --sandbox none --],
+      "codex" => %w[codex exec --dangerously-bypass-approvals-and-sandbox --],
       "gemini" => %w[gemini -y -p],
       "kilocode" => %w[kilo run --auto],
       "opencode" => %w[opencode run],
@@ -315,17 +315,20 @@ module Activities
           providers.concat(user_settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true))
         end
       else
-        fallback_providers = user_settings.fallback_priority_for(
-          primary_provider: canonical_provider(agent_run.agent_type),
-          identifiers: true
-        ).map do |identifier|
-          Provider.for_identifier(user_settings.user, identifier)&.provider_key || identifier
-        end
-        providers = self.class.provider_order(
-          agent_type: agent_run.agent_type,
-          fallback_enabled: user_settings.fallback_enabled,
-          fallback_providers: fallback_providers
-        )
+        providers =
+          if user_settings.fallback_enabled
+            fallback_providers = user_settings.fallback_priority_for(
+              primary_provider: canonical_provider(agent_run.agent_type),
+              identifiers: true
+            )
+            deduplicate_provider_candidates(
+              primary_provider: agent_run.agent_type,
+              fallback_providers: fallback_providers,
+              user: user_settings.user
+            )
+          else
+            [ agent_run.agent_type ].select { |provider| self.class::AGENT_COMMANDS.key?(provider) }
+          end
       end
 
       @rate_limit_fallback_keys = UserSetting.rate_limit_fallback_providers(user_settings.user).to_set
@@ -667,6 +670,30 @@ module Activities
       return @provider_entry_cache[cache_key] if @provider_entry_cache.key?(cache_key)
 
       @provider_entry_cache[cache_key] = Provider.for_identifier(user, provider_candidate)
+    end
+
+    def deduplicate_provider_candidates(primary_provider:, fallback_providers:, user:)
+      providers = [ primary_provider ]
+      seen = Set.new([ canonical_provider_candidate(primary_provider, user) ])
+
+      Array(fallback_providers).each do |provider_candidate|
+        canonical_candidate = canonical_provider_candidate(provider_candidate, user)
+        next if seen.include?(canonical_candidate)
+
+        seen << canonical_candidate
+        providers << provider_candidate
+      end
+
+      providers.select do |provider_candidate|
+        self.class::AGENT_COMMANDS.key?(provider_command_key(provider_candidate, nil, user))
+      end
+    end
+
+    def canonical_provider_candidate(provider_candidate, user)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return provider_entry.provider_key if provider_entry
+
+      canonical_provider(provider_candidate)
     end
 
     # Returns a per-entry identifier suitable for persisting in

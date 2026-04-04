@@ -166,6 +166,50 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "logs trigger context passed from the activity" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      stdout, stderr, status = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "full",
+          "DEV_UPDATE_PROJECT_ID" => "12",
+          "DEV_UPDATE_PR_NUMBER" => "42",
+          "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb\nbin/dev",
+          "DEV_UPDATE_RESTART_TRIGGER_FILES" => "bin/dev"),
+        script_path,
+        "--full",
+        chdir: dir
+      )
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect_trigger_context_log(dir)
+    end
+  end
+
+  it "upgrades lightweight mode to full restart when restart-worthy files are provided" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      stdout, stderr, status = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+          "DEV_UPDATE_CHANGED_FILES" => "bin/dev\napp/models/user.rb"),
+        script_path,
+        "--lightweight",
+        chdir: dir
+      )
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Restart-worthy files were provided with a lightweight request; upgrading to full restart.")
+      expect(updater_log).to include("Starting full restart update...")
+      expect(updater_log).not_to include("Lightweight update complete. Rails will autoload changes.")
+    end
+  end
+
   it "passes a startup cleanup grace period to bin/setup during full restart" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, capture_startup_cleanup_grace_period_in_dev: true)
@@ -241,6 +285,26 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
 
   def read_updater_log(dir)
     File.read(File.join(dir, "log", "dev-update", "dev-update.log"))
+  end
+
+  def expect_trigger_context_log(dir)
+    updater_log = read_updater_log(dir)
+    expect(updater_log).to include("Trigger source: Activities::TriggerDevEnvironmentUpdateActivity")
+    expect(updater_log).to include("Requested mode: full")
+    expect(updater_log).to include("Project ID: 12")
+    expect(updater_log).to include("PR number: 42")
+    expect(updater_log).to include("Changed files: app/models/user.rb,bin/dev")
+    expect(updater_log).to include("Restart trigger files: bin/dev")
+  end
+
+  def trigger_context_env(dir, overrides = {})
+    poll_env.merge(
+      {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_TRIGGER_SOURCE" => "Activities::TriggerDevEnvironmentUpdateActivity"
+      }.merge(overrides)
+    )
   end
 
   def wait_for_dev_start_log(dir)
