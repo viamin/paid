@@ -72,8 +72,8 @@ RSpec.describe PreCommitRequirements::Evaluate do
       let(:binary_failure_result) do
         Containers::Provision::Result.failure(
           error: "check failed",
-          stdout: "bad \xFF stdout".b,
-          stderr: "bad \xFE stderr".b,
+          stdout: "bad \xFF stdout\x00".b,
+          stderr: "bad \xFE stderr\x00".b,
           exit_code: 1
         )
       end
@@ -128,7 +128,7 @@ RSpec.describe PreCommitRequirements::Evaluate do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
         allow(agent_run).to receive(:execute_in_container)
           .and_raise(Containers::Provision::ExecutionError.new(
-            "command failed", exit_code: 1, stdout: "bad \xFF stdout".b, stderr: "bad \xFE stderr".b
+            "command failed", exit_code: 1, stdout: "bad \xFF stdout\x00".b, stderr: "bad \xFE stderr\x00".b
           ))
       end
 
@@ -174,7 +174,7 @@ RSpec.describe PreCommitRequirements::Evaluate do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
         allow(agent_run).to receive(:execute_in_container)
-          .and_raise(Containers::Provision::ProvisionError.new("timed out \xFF".b))
+          .and_raise(Containers::Provision::ProvisionError.new("timed out \xFF\x00".b))
       end
 
       it "normalizes the fallback error message" do
@@ -282,7 +282,7 @@ RSpec.describe PreCommitRequirements::Evaluate do
         create(:pre_commit_requirement, :with_auto_fix, account: account, name: "lint", command: "bin/lint")
         allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
         allow(agent_run).to receive(:execute_in_container).with("bin/lint -a", stream: false)
-          .and_raise(Containers::Provision::ProvisionError.new("fix crashed \xFF".b))
+          .and_raise(Containers::Provision::ProvisionError.new("fix crashed \xFF\x00".b))
       end
 
       it "normalizes the auto-fix fallback message" do
