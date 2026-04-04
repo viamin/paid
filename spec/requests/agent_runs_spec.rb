@@ -1124,6 +1124,34 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.error_message).to include("cost_limit")
       end
 
+      it "uses the persisted violation context when the guardrail type column is blank" do
+        agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
+          guardrail_violation_type: nil, guardrail_context: { "violation_type" => "time_limit" })
+        allow(AgentRuns::Cancel).to receive(:call)
+
+        post terminate_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+
+        agent_run.reload
+        expect(agent_run.status).to eq("cancelled")
+        expect(agent_run.error_message).to eq("Terminated after guardrail violation: time_limit")
+      end
+
+      it "falls back to unknown when no guardrail type is stored" do
+        agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
+          guardrail_violation_type: nil, guardrail_context: {})
+        allow(AgentRuns::Cancel).to receive(:call)
+
+        post terminate_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+
+        agent_run.reload
+        expect(agent_run.status).to eq("cancelled")
+        expect(agent_run.error_message).to eq("Terminated after guardrail violation: unknown")
+      end
+
       it "rejects non-paused runs" do
         agent_run = create(:agent_run, :completed, project: project)
 

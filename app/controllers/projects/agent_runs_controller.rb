@@ -257,7 +257,7 @@ module Projects
           return
         end
 
-        guardrail_type = @agent_run.guardrail_violation_type
+        guardrail_type = termination_guardrail_type(@agent_run)
         @agent_run.update!(
           status: "cancelled",
           completed_at: Time.current,
@@ -708,6 +708,12 @@ module Projects
         matches = enabled_retry_providers.select { |entry| entry.provider_key == identifier }
         matches.find(&:subscription?) || matches.first
       end
+    end
+
+    def termination_guardrail_type(agent_run)
+      agent_run.guardrail_violation_type.presence ||
+        agent_run.guardrail_context&.dig("violation_type").presence ||
+        "unknown"
     end
 
     def available_run_provider_options
