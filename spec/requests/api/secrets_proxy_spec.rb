@@ -510,6 +510,25 @@ RSpec.describe "Api::SecretsProxy" do
       end
     end
 
+    context "when the UserSetting still has the inherited global default" do
+      before do
+        project.update!(max_tokens_per_run: nil)
+        project.account.update!(default_max_tokens_per_run: 6_000)
+        project.created_by.settings
+      end
+
+      it "uses the account default for rate limiting" do
+        agent_run.update!(tokens_input: 4_000, tokens_output: 2_000)
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:too_many_requests)
+        expect(JSON.parse(response.body)["token_limit"]).to eq(6_000)
+      end
+    end
+
     context "when agent run is within token limit" do
       let(:agent_run) do
         create(:agent_run, :running, project: project,
@@ -522,6 +541,73 @@ RSpec.describe "Api::SecretsProxy" do
           headers: valid_headers
 
         expect(response).to have_http_status(:ok)
+      end
+    end
+
+    context "when project has a custom max_tokens_per_run" do
+      before do
+        project.update!(max_tokens_per_run: 50_000)
+      end
+
+      it "returns 429 when usage exceeds the project limit" do
+        agent_run.update!(tokens_input: 40_000, tokens_output: 20_000)
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:too_many_requests)
+        body = JSON.parse(response.body)
+        expect(body["token_limit"]).to eq(50_000)
+      end
+
+      it "marks the run exceeded when the proxy rejects at the hard limit" do
+        agent_run.update!(tokens_input: 40_000, tokens_output: 20_000, token_limit_status: "ok")
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:too_many_requests)
+        expect(agent_run.reload.token_limit_status).to eq("exceeded")
+      end
+
+      it "allows the request when within the project limit" do
+        agent_run.update!(tokens_input: 10_000, tokens_output: 5_000)
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      it "returns 429 when usage equals the project limit" do
+        agent_run.update!(tokens_input: 30_000, tokens_output: 20_000)
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:too_many_requests)
+      end
+    end
+
+    context "when usage is near the warning threshold" do
+      before do
+        project.update!(max_tokens_per_run: 100_000, token_limit_warning_threshold: 80)
+        agent_run.update!(tokens_input: 60_000, tokens_output: 25_000)
+      end
+
+      it "sets warning headers on the response" do
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:ok)
+        expect(response.headers["X-Token-Limit-Warning"]).to eq("true")
+        expect(response.headers["X-Token-Usage"]).to eq("85000")
+        expect(response.headers["X-Token-Limit"]).to eq("100000")
       end
     end
   end

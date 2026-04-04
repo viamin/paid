@@ -93,6 +93,31 @@
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
           <%= number_with_delimiter((agent_run.tokens_input || 0) + (agent_run.tokens_output || 0)) %>
         </dd>
+        <% limit = agent_run.effective_max_tokens_per_run %>
+        <% if limit && limit > 0 %>
+          <% total_tokens = agent_run.total_tokens || 0 %>
+          <% ratio = total_tokens.to_f / limit %>
+          <% raw_percent = (ratio * 100).round(1) %>
+          <% bar_percent = [raw_percent, 100].min %>
+          <% warning_ratio = agent_run.project.token_limit_warning_threshold / 100.0 %>
+          <% limit_exceeded = ratio >= 1.0 %>
+          <% limit_warning = !limit_exceeded && ratio >= warning_ratio %>
+          <div class="mt-2">
+            <div class="flex items-center justify-between text-xs text-gray-500">
+              <span><%= raw_percent %>% of limit</span>
+              <span><%= number_with_delimiter(limit) %></span>
+            </div>
+            <div class="mt-1 h-2 w-full rounded-full bg-gray-200">
+              <div class="h-2 rounded-full <%= limit_exceeded ? 'bg-red-500' : limit_warning ? 'bg-yellow-500' : 'bg-green-500' %>"
+                   style="width: <%= bar_percent %>%"></div>
+            </div>
+            <% if limit_exceeded %>
+              <p class="mt-1 text-xs font-medium text-red-600">Limit exceeded</p>
+            <% elsif limit_warning %>
+              <p class="mt-1 text-xs font-medium text-yellow-600">Approaching limit</p>
+            <% end %>
+          </div>
+        <% end %>
       </div>
 
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
@@ -201,34 +226,43 @@
     </div>
   <% end %>
 
-  <% if agent_run.status == "timeout" %>
-    <div class="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-      <h2 class="text-sm font-semibold text-yellow-800">Execution Timed Out</h2>
-      <p class="mt-1 text-sm text-yellow-700">
-        This run exceeded the maximum execution time of <strong><%= agent_run.project.max_execution_seconds %>s</strong>.
-        <% if agent_run.error_message.present? %>
-          <br><span class="text-yellow-600"><%= agent_run.error_message %></span>
+<% if agent_run.token_limit_exceeded? %>
+  <div class="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
+    <h2 class="text-sm font-semibold text-red-800">Token Limit Exceeded</h2>
+    <p class="mt-1 text-sm text-red-700">
+      This agent run was stopped because it exceeded the configured token limit
+      of <%= number_with_delimiter(agent_run.effective_max_tokens_per_run) %> tokens.
+      Total tokens used: <strong><%= number_with_delimiter(agent_run.total_tokens) %></strong>.
+    </p>
+  </div>
+<% elsif agent_run.status == "timeout" %>
+  <div class="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+    <h2 class="text-sm font-semibold text-yellow-800">Execution Timed Out</h2>
+    <p class="mt-1 text-sm text-yellow-700">
+      This run exceeded the maximum execution time of <strong><%= agent_run.project.max_execution_seconds %>s</strong>.
+      <% if agent_run.error_message.present? %>
+        <br><span class="text-yellow-600"><%= agent_run.error_message %></span>
+      <% end %>
+    </p>
+  </div>
+<% elsif agent_run.rate_limited? %>
+  <div class="mt-6 rounded-lg border border-orange-200 bg-orange-50 p-4">
+    <h2 class="text-sm font-semibold text-orange-800">Rate Limited</h2>
+    <p class="mt-1 text-sm text-orange-700">
+      The provider hit a rate limit.
+      <% if agent_run.rate_limited_until.present? %>
+        <br>Expected reset: <strong><%= local_time(agent_run.rate_limited_until) %></strong>
+        <% if agent_run.rate_limited_until > Time.current %>
+          (<%= distance_of_time_in_words(Time.current, agent_run.rate_limited_until) %> remaining)
+        <% else %>
+          (reset time has passed)
         <% end %>
-      </p>
-    </div>
-  <% elsif agent_run.rate_limited? %>
-    <div class="mt-6 rounded-lg border border-orange-200 bg-orange-50 p-4">
-      <h2 class="text-sm font-semibold text-orange-800">Rate Limited</h2>
-      <p class="mt-1 text-sm text-orange-700">
-        The provider hit a rate limit.
-        <% if agent_run.rate_limited_until.present? %>
-          <br>Expected reset: <strong><%= local_time(agent_run.rate_limited_until) %></strong>
-          <% if agent_run.rate_limited_until > Time.current %>
-            (<%= distance_of_time_in_words(Time.current, agent_run.rate_limited_until) %> remaining)
-          <% else %>
-            (reset time has passed)
-          <% end %>
-        <% end %>
-        <% if agent_run.error_message.present? %>
-          <br><span class="text-orange-600"><%= agent_run.error_message %></span>
-        <% end %>
-      </p>
-    </div>
+      <% end %>
+      <% if agent_run.error_message.present? %>
+        <br><span class="text-orange-600"><%= agent_run.error_message %></span>
+      <% end %>
+    </p>
+  </div>
   <% elsif agent_run.auth_expired? %>
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
       <h2 class="text-sm font-semibold text-amber-800">Authentication Expired</h2>
