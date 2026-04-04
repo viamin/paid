@@ -58,6 +58,8 @@ module Activities
         issue_id: issue_id
       )
 
+      ProcessRunQueueJob.perform_later
+
       { agent_run_id: agent_run.id, queued: true }
     end
 
