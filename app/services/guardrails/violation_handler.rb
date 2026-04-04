@@ -32,7 +32,7 @@ module Guardrails
       context = build_violation_context
       paused = agent_run.pause!(violation_type: violation_type, context: context)
 
-      return already_handled_result unless paused
+      return already_handled_result(context) unless paused
 
       log_violation(context)
       stop_in_flight_execution
@@ -130,21 +130,25 @@ module Guardrails
     end
 
     class AlreadyHandledResult
+      attr_reader :violation_type, :context
+
+      def initialize(paused:, violation_type:, context:)
+        @paused = paused
+        @violation_type = violation_type
+        @context = context
+      end
+
       def paused?
-        false
-      end
-
-      def violation_type
-        nil
-      end
-
-      def context
-        nil
+        @paused
       end
     end
 
-    def already_handled_result
-      AlreadyHandledResult.new
+    def already_handled_result(context)
+      AlreadyHandledResult.new(
+        paused: agent_run.paused?,
+        violation_type: agent_run.guardrail_violation_type || violation_type,
+        context: agent_run.guardrail_context || context
+      )
     end
   end
 end

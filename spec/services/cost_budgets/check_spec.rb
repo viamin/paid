@@ -97,6 +97,28 @@ RSpec.describe CostBudgets::Check do
       expect(agent_run.guardrail_violation_type).to eq("cost_limit")
     end
 
+    it "does not overwrite a run that was already paused by another guardrail" do
+      create(:cost_budget, :hard_stop, :daily, project: project,
+        limit_cents: 100, current_usage_cents: 90,
+        period_started_at: Time.current.beginning_of_day)
+
+      violation_result = instance_double(Guardrails::ViolationHandler::Result, paused?: false)
+      allow(Guardrails::ViolationHandler).to receive(:call) do
+        agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "time_limit")
+        violation_result
+      end
+
+      TokenUsageTracker.track(
+        agent_run: agent_run,
+        usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 }
+      )
+
+      agent_run.reload
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("time_limit")
+      expect(AgentRuns::Cancel).not_to have_received(:call)
+    end
+
     it "respects grace buffer before cancelling" do
       create(:cost_budget, :hard_stop, :daily, project: project,
         limit_cents: 1_800, current_usage_cents: 0,

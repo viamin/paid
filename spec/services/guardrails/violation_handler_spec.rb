@@ -153,7 +153,8 @@ RSpec.describe Guardrails::ViolationHandler do
         details: "Budget exceeded"
       )
 
-      expect(result.paused?).to be false
+      expect(result.paused?).to be true
+      expect(result.violation_type).to eq("loop_detected")
       expect(agent_run.reload.guardrail_violation_type).to eq("loop_detected")
     end
 

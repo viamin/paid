@@ -120,7 +120,7 @@ module Activities
               details: "Execution time limit of #{max_execution_seconds}s exceeded",
               metrics: { max_execution_seconds: max_execution_seconds, elapsed_seconds: (Time.current - agent_run.started_at).to_i }
             )
-            return paused_result(agent_run_id) if violation_result.paused?
+            return paused_result(agent_run_id) if violation_result.paused? || agent_run.paused?
 
             timeout_error = "Execution time limit of #{max_execution_seconds}s exceeded"
             break
@@ -233,7 +233,7 @@ module Activities
               details: e.message,
               metrics: { detection_reason: e.message }
             )
-            return paused_result(agent_run_id) if result.paused?
+            return paused_result(agent_run_id) if result.paused? || agent_run.paused?
 
             agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
 

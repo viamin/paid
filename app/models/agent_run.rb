@@ -450,6 +450,9 @@ class AgentRun < ApplicationRecord
 
       update!(
         status: "queued",
+        started_at: nil,
+        completed_at: nil,
+        duration_seconds: nil,
         paused_at: nil,
         guardrail_violation_type: nil,
         guardrail_context: nil,

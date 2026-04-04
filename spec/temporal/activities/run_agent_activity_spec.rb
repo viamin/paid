@@ -1085,5 +1085,47 @@ RSpec.describe Activities::RunAgentActivity do
       expect(agent_run.guardrail_violation_type).to eq("time_limit")
       expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
     end
+
+    it "returns a paused result when the run was already paused by another guardrail" do
+      project.update!(max_execution_seconds: 60)
+      agent_run.update!(started_at: 2.minutes.ago, status: "running")
+
+      violation_result = instance_double(Guardrails::ViolationHandler::Result, paused?: false)
+      allow(Guardrails::ViolationHandler).to receive(:call) do
+        agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "cost_limit")
+        violation_result
+      end
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      agent_run.reload
+      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("cost_limit")
+    end
+  end
+
+  describe "loop guardrail handling" do
+    before do
+      allow(container_service).to receive(:execute).and_return(exec_success)
+      allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+    end
+
+    it "returns a paused result when the run was already paused during loop handling" do
+      allow(activity).to receive(:run_agent_with_provider).and_raise(described_class::InfiniteLoopError, "loop detected")
+
+      violation_result = instance_double(Guardrails::ViolationHandler::Result, paused?: false)
+      allow(Guardrails::ViolationHandler).to receive(:call) do
+        agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "cost_limit")
+        violation_result
+      end
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      agent_run.reload
+      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("cost_limit")
+    end
   end
 end

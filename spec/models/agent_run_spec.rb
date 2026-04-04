@@ -1794,12 +1794,21 @@ RSpec.describe AgentRun do
     it "transitions a paused run back to queued" do
       agent_run = create(:agent_run, :running)
       agent_run.pause!(violation_type: "loop_detected", context: { details: "test" })
-      agent_run.update!(temporal_workflow_id: "workflow-123", temporal_run_id: "run-123")
+      agent_run.update!(
+        temporal_workflow_id: "workflow-123",
+        temporal_run_id: "run-123",
+        started_at: 10.minutes.ago,
+        completed_at: 5.minutes.ago,
+        duration_seconds: 300
+      )
 
       expect(agent_run.resume!).to be true
 
       agent_run.reload
       expect(agent_run.status).to eq("queued")
+      expect(agent_run.started_at).to be_nil
+      expect(agent_run.completed_at).to be_nil
+      expect(agent_run.duration_seconds).to be_nil
       expect(agent_run.paused_at).to be_nil
       expect(agent_run.guardrail_violation_type).to be_nil
       expect(agent_run.guardrail_context).to be_nil

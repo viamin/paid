@@ -148,10 +148,10 @@ class TokenUsageTracker
       metrics: { budget_reason: result[:reason] }
     )
 
-    # If pause succeeded, the run is now paused for user review.
-    # If pause failed (run already finished/paused), fall back to
-    # the original cancel-and-fail behavior.
-    unless violation_result.paused?
+    # If pause succeeded, or another guardrail already paused the run before
+    # this handler returned, preserve the paused state for user review.
+    # Otherwise fall back to the original cancel-and-fail behavior.
+    unless violation_result.paused? || agent_run.paused?
       begin
         AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
       rescue => e
