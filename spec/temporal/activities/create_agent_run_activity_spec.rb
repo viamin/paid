@@ -49,6 +49,16 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(result[:provider_attempt_count]).to eq(1)
     end
 
+    it "derives agent_type from provider_id when only a provider is supplied" do
+      provider = create(:provider, user: project.created_by, provider_key: "cursor")
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: provider.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.provider).to eq(provider)
+      expect(agent_run.agent_type).to eq("cursor")
+    end
+
     it "persists the goal when provided" do
       result = activity.execute(
         project_id: project.id,
@@ -346,6 +356,50 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
         expect(result[:agent_run_id]).to eq(pending_run.id)
         expect(pending_run.reload.status).to eq("pending")
+      end
+
+      it "refreshes automatic queued runs to the current primary provider before starting" do
+        claude_provider = project.created_by.providers.find_by!(provider_key: "claude")
+        codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+        queued_run = create(
+          :agent_run,
+          :queued,
+          project: project,
+          issue: issue,
+          trigger_type: "automatic",
+          provider: claude_provider,
+          agent_type: "claude_code"
+        )
+        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+
+        activity.execute(agent_run_id: queued_run.id, project_id: project.id)
+
+        queued_run.reload
+        expect(queued_run.status).to eq("pending")
+        expect(queued_run.provider).to eq(codex_provider)
+        expect(queued_run.agent_type).to eq("codex")
+      end
+
+      it "preserves manual queued runs when resuming" do
+        claude_provider = project.created_by.providers.find_by!(provider_key: "claude")
+        codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+        queued_run = create(
+          :agent_run,
+          :queued,
+          project: project,
+          issue: issue,
+          trigger_type: "manual",
+          provider: claude_provider,
+          agent_type: "claude_code"
+        )
+        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+
+        activity.execute(agent_run_id: queued_run.id, project_id: project.id)
+
+        queued_run.reload
+        expect(queued_run.status).to eq("pending")
+        expect(queued_run.provider).to eq(claude_provider)
+        expect(queued_run.agent_type).to eq("claude_code")
       end
     end
   end

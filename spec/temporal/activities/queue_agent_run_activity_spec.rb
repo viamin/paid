@@ -6,7 +6,8 @@ RSpec.describe Activities::QueueAgentRunActivity do
   include ActiveJob::TestHelper
 
   let(:activity) { described_class.new }
-  let(:project) { create(:project) }
+  let(:user) { create(:user) }
+  let(:project) { create(:project, account: user.account, created_by: user) }
   let(:issue) { create(:issue, project: project) }
 
   describe "#execute" do
@@ -34,6 +35,7 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.project).to eq(project)
       expect(agent_run.issue).to eq(issue)
       expect(agent_run.agent_type).to eq("claude_code")
+      expect(agent_run.provider).to eq(user.providers.find_by!(provider_key: "claude"))
     end
 
     it "accepts a custom agent_type" do
@@ -41,6 +43,28 @@ RSpec.describe Activities::QueueAgentRunActivity do
 
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.agent_type).to eq("aider")
+      expect(agent_run.provider_id).to be_nil
+    end
+
+    it "derives agent_type from provider_id when only a provider is supplied" do
+      codex_provider = user.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, provider_id: codex_provider.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.provider).to eq(codex_provider)
+      expect(agent_run.agent_type).to eq("codex")
+    end
+
+    it "uses the configured primary provider when agent type is omitted" do
+      codex_provider = user.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
+      user.settings.update!(default_agent_provider: codex_provider.routing_key)
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.provider).to eq(codex_provider)
+      expect(agent_run.agent_type).to eq("codex")
     end
 
     it "stores custom_prompt and source_pull_request_number" do
