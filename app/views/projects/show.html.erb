@@ -183,6 +183,13 @@
     <%= render "projects/agent_runs", project: @project, recent_agent_runs: @recent_agent_runs %>
 
     <%= render "projects/knowledge", project: @project, collector_runs: @collector_runs, failed_collector_runs: @latest_failed_collector_runs %>
+
+    <% if @project.auto_merge_enabled? %>
+      <%= render "projects/recent_merged_pull_requests",
+                 project: @project,
+                 pull_requests: @recent_merged_pull_requests,
+                 closed_issues_by_number: @merged_pull_request_closed_issues_by_number %>
+    <% end %>
   </div>
 
 </div>

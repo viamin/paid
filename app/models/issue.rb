@@ -126,6 +126,19 @@ class Issue < ApplicationRecord
     body.to_s.scan(/(?<!\w)#(\d+)/).flatten.map(&:to_i).uniq
   end
 
+  def closing_referenced_issue_numbers
+    @closing_referenced_issue_numbers ||= parse_closing_references
+  end
+
+  def closed_issue(referenced_issues_by_number = {})
+    closing_referenced_issue_numbers.each do |github_number|
+      issue = referenced_issues_by_number[github_number]
+      return issue if issue.present?
+    end
+
+    parent_issue
+  end
+
   def has_associated_pull_requests?
     if sub_issues.loaded?
       sub_issues.any?(&:is_pull_request?)
@@ -234,6 +247,35 @@ class Issue < ApplicationRecord
   end
 
   private
+
+  CLOSING_KEYWORD_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b/i
+  CLOSING_REF_RE = /\G\s*(?:,\s*)?(?:and\s+)?(?:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)|(?<!\w))#(\d+)/
+
+  # Parses closing issue references that immediately follow a closing keyword,
+  # consuming only chained references (separated by "," or "and"). Stops at the
+  # first non-reference token so that e.g. "Closes #12, related to #14" only
+  # returns [12].
+  def parse_closing_references
+    return [] if body.blank?
+
+    numbers = []
+    text = body.to_s
+    text.scan(CLOSING_KEYWORD_RE) do
+      pos = Regexp.last_match.end(0)
+      # Skip optional colon after keyword (e.g. "Fixes: #123", "Closes: #123")
+      pos += 1 if text[pos] == ":"
+      while (m = CLOSING_REF_RE.match(text, pos))
+        owner, repo, number = m[1], m[2], m[3]
+        same_repo_reference =
+          (owner.blank? || owner.casecmp?(project.owner)) &&
+          (repo.blank? || repo.casecmp?(project.repo))
+
+        numbers << number.to_i if same_repo_reference
+        pos = m.end(0)
+      end
+    end
+    numbers.uniq
+  end
 
   def parent_issue_belongs_to_same_project
     return if parent_issue.project_id == project_id
