@@ -565,6 +565,33 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when the provider returns a binary encoded rate limit message" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "Command exited with code 1",
+          stdout: "You're out of extra usage \xB7 resets 8am (UTC)\n".b,
+          stderr: "",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "normalizes the output before classification" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(result.message).to eq("You're out of extra usage � resets 8am (UTC)")
+      end
+    end
+
     context "when container provisioning surfaces an authentication-style message" do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 
@@ -582,6 +609,33 @@ RSpec.describe Providers::TestAgent do
         expect(result).not_to be_success
         expect(result.error_type).to eq(:connection)
         expect(result.message).to eq("Invalid API key")
+      end
+    end
+
+    context "when the container response falls back to a binary encoded error message" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "Invalid API key \xFF".b,
+          stdout: "",
+          stderr: "",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "normalizes response.error before classification" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:authentication)
+        expect(result.message).to eq("Invalid API key �")
       end
     end
 
@@ -622,6 +676,26 @@ RSpec.describe Providers::TestAgent do
         expect(result).not_to be_success
         expect(result.error_type).to eq(:connection)
         expect(result.message).to eq("Connection refused")
+      end
+    end
+
+    context "when a generic container error message is binary encoded" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+        stub_insert_all
+        allow(test_run).to receive(:with_container)
+          .and_raise(Containers::Provision::ProvisionError, "Connection refused \xFF".b)
+      end
+
+      it "normalizes the rescued exception message" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:connection)
+        expect(result.message).to eq("Connection refused �")
       end
     end
 
@@ -688,6 +762,25 @@ RSpec.describe Providers::TestAgent do
         expect(result).not_to be_success
         expect(result.error_type).to eq(:unexpected)
         expect(result.message).to eq("Something went wrong")
+      end
+    end
+
+    context "when an unexpected error message is binary encoded" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "gemini")
+        allow(AgentRun).to receive(:insert_all!)
+          .and_raise(RuntimeError, "Something went wrong \xFF".b)
+      end
+
+      it "normalizes the rescued exception message" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:unexpected)
+        expect(result.message).to eq("Something went wrong �")
       end
     end
   end

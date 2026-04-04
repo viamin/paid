@@ -68,6 +68,29 @@ RSpec.describe PreCommitRequirements::Evaluate do
       end
     end
 
+    context "with binary encoded command output" do
+      let(:binary_failure_result) do
+        Containers::Provision::Result.failure(
+          error: "check failed",
+          stdout: "bad \xFF stdout".b,
+          stderr: "bad \xFE stderr".b,
+          exit_code: 1
+        )
+      end
+
+      before do
+        create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint", failure_behavior: "block")
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(binary_failure_result)
+      end
+
+      it "normalizes output before joining stdout and stderr" do
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:passed]).to be false
+        expect(result[:results].first[:output]).to eq("bad \uFFFD stdout\nbad \uFFFD stderr")
+      end
+    end
+
     context "with a failing warn-only check" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint", failure_behavior: "warn")
@@ -100,6 +123,23 @@ RSpec.describe PreCommitRequirements::Evaluate do
       end
     end
 
+    context "with a binary encoded container execution error" do
+      before do
+        create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
+        allow(agent_run).to receive(:execute_in_container)
+          .and_raise(Containers::Provision::ExecutionError.new(
+            "command failed", exit_code: 1, stdout: "bad \xFF stdout".b, stderr: "bad \xFE stderr".b
+          ))
+      end
+
+      it "normalizes the error output" do
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:passed]).to be false
+        expect(result[:results].first[:output]).to eq("bad \uFFFD stdout\nbad \uFFFD stderr")
+      end
+    end
+
     context "with a container execution error without stdout/stderr" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
@@ -127,6 +167,21 @@ RSpec.describe PreCommitRequirements::Evaluate do
 
         expect(result[:passed]).to be false
         expect(result[:results].first[:output]).to include("timed out")
+      end
+    end
+
+    context "with a binary encoded container error message" do
+      before do
+        create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")
+        allow(agent_run).to receive(:execute_in_container)
+          .and_raise(Containers::Provision::ProvisionError.new("timed out \xFF".b))
+      end
+
+      it "normalizes the fallback error message" do
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result[:passed]).to be false
+        expect(result[:results].first[:output]).to eq("timed out \uFFFD")
       end
     end
 
@@ -219,6 +274,23 @@ RSpec.describe PreCommitRequirements::Evaluate do
         expect(check[:passed]).to be false
         expect(check[:output]).to include("Auto-fix failed")
         expect(check[:output]).to include("fix error detail")
+      end
+    end
+
+    context "with auto-fix that raises a binary encoded container error" do
+      before do
+        create(:pre_commit_requirement, :with_auto_fix, account: account, name: "lint", command: "bin/lint")
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint", stream: false).and_return(failure_result)
+        allow(agent_run).to receive(:execute_in_container).with("bin/lint -a", stream: false)
+          .and_raise(Containers::Provision::ProvisionError.new("fix crashed \xFF".b))
+      end
+
+      it "normalizes the auto-fix fallback message" do
+        result = described_class.call(agent_run: agent_run)
+
+        check = result[:results].first
+        expect(check[:passed]).to be false
+        expect(check[:output]).to eq("Auto-fix failed: fix crashed \uFFFD")
       end
     end
   end
