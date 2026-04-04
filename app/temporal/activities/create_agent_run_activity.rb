@@ -130,7 +130,7 @@ module Activities
       Provider.for_identifier(settings.user, settings.default_provider_identifier) || Provider.ensure_default_for(settings.user)
     end
 
-    def refresh_queued_run_provider!(agent_run)
+    def refresh_automatic_run_provider!(agent_run)
       return unless agent_run.automatic?
 
       provider = default_provider_for(agent_run.project)
@@ -146,13 +146,14 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
 
       if agent_run.queued?
-        refresh_queued_run_provider!(agent_run)
+        refresh_automatic_run_provider!(agent_run)
         agent_run.update!(status: "pending")
       elsif agent_run.status == "pending"
-        refresh_queued_run_provider!(agent_run)
+        refresh_automatic_run_provider!(agent_run)
       else
-        # "pending" is expected — ProcessRunQueueJob claims runs (queued→pending)
-        # before starting the workflow. Only warn for truly unexpected statuses.
+        # "queued" and "pending" are the expected statuses here; ProcessRunQueueJob
+        # may claim runs (queued->pending) before starting the workflow. Only warn
+        # for truly unexpected statuses.
         logger.warn(
           message: "agent_execution.resume_queued_run_unexpected_status",
           agent_run_id: agent_run.id,
