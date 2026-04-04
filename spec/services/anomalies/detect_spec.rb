@@ -308,5 +308,40 @@ RSpec.describe Anomalies::Detect do
         expect(existing_anomaly.reload.metric_value).to eq(300_000.0)
       end
     end
+
+    context "when a baseline has zero standard deviation" do
+      before do
+        create(:project_baseline,
+          project: project,
+          metric_name: "tokens_total",
+          mean: 15_000,
+          standard_deviation: 0,
+          sample_count: 6,
+          p95: 15_000,
+          last_calculated_at: 1.hour.ago)
+      end
+
+      it "detects an anomaly when the current value differs from the baseline mean" do
+        agent_run = create(:agent_run, :completed,
+          project: project,
+          tokens_input: 20_000,
+          tokens_output: 0)
+
+        anomaly = described_class.call(agent_run).find { |record| record.metric_name == "tokens_total" }
+
+        expect(anomaly).to be_present
+        expect(anomaly.severity).to eq("critical")
+        expect(anomaly.anomaly_type).to eq("high_value")
+      end
+
+      it "skips anomaly creation when the current value matches the baseline mean" do
+        agent_run = create(:agent_run, :completed,
+          project: project,
+          tokens_input: 10_000,
+          tokens_output: 5_000)
+
+        expect(described_class.call(agent_run)).to be_empty
+      end
+    end
   end
 end

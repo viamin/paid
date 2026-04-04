@@ -31,12 +31,13 @@ module Anomalies
       ProjectBaseline::METRIC_NAMES.each do |metric_name|
         baseline = baselines[metric_name]
         next unless baseline
-        next if baseline.standard_deviation.zero?
 
         value = metric_value_for(metric_name)
         next if value.nil?
 
-        deviation = (value - baseline.mean) / baseline.standard_deviation
+        deviation = deviation_for(value, baseline)
+        next if deviation.nil?
+
         severity = classify_severity(deviation)
         next unless severity
 
@@ -93,6 +94,13 @@ module Anomalies
 
     def anomaly_type(deviation)
       deviation.positive? ? "high_value" : "low_value"
+    end
+
+    def deviation_for(value, baseline)
+      return (value - baseline.mean) / baseline.standard_deviation unless baseline.standard_deviation.zero?
+      return if value == baseline.mean
+
+      value > baseline.mean ? Float::INFINITY : -Float::INFINITY
     end
 
     def record_anomaly(data)
