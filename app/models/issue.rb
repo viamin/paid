@@ -266,10 +266,11 @@ class Issue < ApplicationRecord
       pos += 1 if text[pos] == ":"
       while (m = CLOSING_REF_RE.match(text, pos))
         owner, repo, number = m[1], m[2], m[3]
-        unless (owner.present? && !owner.casecmp?(project.owner)) ||
-               (repo.present? && !repo.casecmp?(project.repo))
-          numbers << number.to_i
-        end
+        same_repo_reference =
+          (owner.blank? || owner.casecmp?(project.owner)) &&
+          (repo.blank? || repo.casecmp?(project.repo))
+
+        numbers << number.to_i if same_repo_reference
         pos = m.end(0)
       end
     end
