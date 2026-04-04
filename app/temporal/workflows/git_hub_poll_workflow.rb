@@ -278,21 +278,26 @@ module Workflows
         expected_draft_review_count: pr_data[:current_draft_review_count]
       }
 
+      agent_run = run_activity(Activities::QueueAgentRunActivity,
+        { project_id: project_id, issue_id: issue_id,
+          source_pull_request_number: pr_number }.merge(draft_input), timeout: 30)
+
       unless capacity[:has_capacity]
-        run_activity(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: issue_id,
-            source_pull_request_number: pr_number }.merge(draft_input), timeout: 30)
         return
       end
 
-      timestamp = Temporalio::Workflow.now.to_i
-      workflow_id = "draft-followup-#{project_id}-#{pr_number}-#{timestamp}"
+      unless agent_run[:queued]
+        return
+      end
+
+      workflow_id = "draft-followup-#{agent_run[:agent_run_id]}"
 
       Temporalio::Workflow.start_child_workflow(
         Workflows::AgentExecutionWorkflow,
         {
           project_id: project_id,
           issue_id: issue_id,
+          agent_run_id: agent_run[:agent_run_id],
           source_pull_request_number: pr_number,
           count_toward_draft_review_round: draft_input[:count_toward_draft_review_round],
           expected_draft_review_count: draft_input[:expected_draft_review_count]
