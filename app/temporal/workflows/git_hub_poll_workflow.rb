@@ -294,16 +294,14 @@ module Workflows
       capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
 
       draft_input = {
-        issue_id: issue_id,
+        count_toward_draft_review_round: true,
         expected_draft_review_count: pr_data[:current_draft_review_count]
       }
 
       unless capacity[:has_capacity]
         run_activity(Activities::QueueAgentRunActivity,
           { project_id: project_id, issue_id: issue_id,
-            source_pull_request_number: pr_number }, timeout: 30)
-
-        run_activity(Activities::RecordDraftReviewActivity, draft_input, timeout: 30)
+            source_pull_request_number: pr_number }.merge(draft_input), timeout: 30)
         return
       end
 
@@ -315,13 +313,13 @@ module Workflows
         {
           project_id: project_id,
           issue_id: issue_id,
-          source_pull_request_number: pr_number
+          source_pull_request_number: pr_number,
+          count_toward_draft_review_round: draft_input[:count_toward_draft_review_round],
+          expected_draft_review_count: draft_input[:expected_draft_review_count]
         },
         id: workflow_id,
         parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
       )
-
-      run_activity(Activities::RecordDraftReviewActivity, draft_input, timeout: 30)
     end
 
     def start_pr_followup_workflow(project_id, pr_data)
