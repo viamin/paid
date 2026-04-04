@@ -1128,4 +1128,26 @@ RSpec.describe Activities::RunAgentActivity do
       expect(agent_run.guardrail_violation_type).to eq("cost_limit")
     end
   end
+
+  describe "paused run protection after provider exhaustion" do
+    before do
+      allow(container_service).to receive(:execute).and_return(exec_failure)
+      allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+    end
+
+    it "preserves paused state when a guardrail paused the run during provider execution" do
+      # Simulate a cost budget guardrail pausing the run during execution
+      allow(container_service).to receive(:execute) do
+        agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "cost_limit")
+        exec_failure
+      end
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      agent_run.reload
+      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("cost_limit")
+    end
+  end
 end

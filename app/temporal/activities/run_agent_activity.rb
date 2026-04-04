@@ -268,6 +268,12 @@ module Activities
           rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
         end
 
+        # If a guardrail (e.g., cost budget enforcement from TokenUsageTracker)
+        # paused the run during execution, preserve the paused state instead of
+        # overwriting it with a terminal status.
+        agent_run.reload
+        return paused_result(agent_run_id) if agent_run.paused?
+
         # All providers exhausted. Timeout takes precedence over rate_limited
         # because it indicates an actual execution attempt that should trigger
         # ProcessRunQueueJob to re-schedule work.
