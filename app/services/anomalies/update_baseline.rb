@@ -81,7 +81,6 @@ module Anomalies
         retries += 1
         raise if retries > 1
 
-        baseline = project.project_baselines.find_by!(metric_name: metric_name)
         retry
       end
     end

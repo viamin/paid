@@ -2,6 +2,7 @@
 
 class AnomalyDetectionJob < ApplicationJob
   queue_as :default
+  discard_on ActiveRecord::RecordNotFound
 
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)

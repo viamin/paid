@@ -23,5 +23,12 @@ RSpec.describe AnomalyDetectionJob do
 
       expect(Anomalies::Detect).not_to have_received(:call)
     end
+
+    it "discards missing agent runs" do
+      allow(Anomalies::Detect).to receive(:call)
+
+      expect { described_class.perform_now(-1) }.not_to raise_error
+      expect(Anomalies::Detect).not_to have_received(:call)
+    end
   end
 end
