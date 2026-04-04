@@ -40,7 +40,13 @@ module Anomalies
         severity = classify_severity(deviation)
         next unless severity
 
-        anomalies << record_anomaly(metric_name, value, baseline, deviation, severity)
+        anomalies << record_anomaly({
+          metric_name: metric_name,
+          value: value,
+          baseline: baseline,
+          deviation: deviation,
+          severity: severity
+        })
       end
 
       log_anomalies(anomalies) if anomalies.any?
@@ -89,23 +95,23 @@ module Anomalies
       deviation.positive? ? "high_value" : "low_value"
     end
 
-    def record_anomaly(metric_name, value, baseline, deviation, severity)
+    def record_anomaly(data)
       attrs = {
         project: project,
-        anomaly_type: anomaly_type(deviation),
-        severity: severity,
-        metric_value: value,
-        baseline_mean: baseline.mean,
-        baseline_standard_deviation: baseline.standard_deviation,
-        deviation_factor: deviation.abs,
-        message: build_message(metric_name, value, baseline, deviation, severity)
+        anomaly_type: anomaly_type(data[:deviation]),
+        severity: data[:severity],
+        metric_value: data[:value],
+        baseline_mean: data[:baseline].mean,
+        baseline_standard_deviation: data[:baseline].standard_deviation,
+        deviation_factor: data[:deviation].abs,
+        message: build_message(data)
       }
 
       retries = 0
       begin
         anomaly = AgentRunAnomaly.find_or_initialize_by(
           agent_run: agent_run,
-          metric_name: metric_name
+          metric_name: data[:metric_name]
         )
         anomaly.update!(attrs)
         anomaly
@@ -113,17 +119,17 @@ module Anomalies
         retries += 1
         raise if retries > 1
 
-        AgentRunAnomaly.find_by!(agent_run: agent_run, metric_name: metric_name).tap do |anomaly|
+        AgentRunAnomaly.find_by!(agent_run: agent_run, metric_name: data[:metric_name]).tap do |anomaly|
           anomaly.update!(attrs)
         end
       end
     end
 
-    def build_message(metric_name, value, baseline, deviation, severity)
-      direction = deviation.positive? ? "above" : "below"
-      "#{severity.capitalize}: #{metric_name} (#{value.round(1)}) is " \
-        "#{deviation.abs.round(1)} standard deviations #{direction} the baseline " \
-        "(mean: #{baseline.mean.round(1)}, stddev: #{baseline.standard_deviation.round(1)})"
+    def build_message(data)
+      direction = data[:deviation].positive? ? "above" : "below"
+      "#{data[:severity].capitalize}: #{data[:metric_name]} (#{data[:value].round(1)}) is " \
+        "#{data[:deviation].abs.round(1)} standard deviations #{direction} the baseline " \
+        "(mean: #{data[:baseline].mean.round(1)}, stddev: #{data[:baseline].standard_deviation.round(1)})"
     end
 
     def log_anomalies(anomalies)

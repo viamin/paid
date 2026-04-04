@@ -21,7 +21,7 @@ module Anomalies
 
     def call
       runs = completed_runs
-      return if runs.count < MIN_SAMPLE_SIZE
+      return if runs.limit(MIN_SAMPLE_SIZE).count < MIN_SAMPLE_SIZE
 
       ProjectBaseline::METRIC_NAMES.each do |metric_name|
         values = extract_values(runs, metric_name)
