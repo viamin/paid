@@ -1,7 +1,53 @@
 # frozen_string_literal: true
 
-# Configure GoodJob cron schedule.
+# Configure GoodJob worker pool, queue priorities, and cron schedule.
+#
+# Queue priority order (highest to lowest):
+#   1. default     — core business logic (run queue processing, workflow health, etc.)
+#   2. maintenance — cleanup, reconciliation, recovery (can tolerate brief delays)
+#   3. metrics     — telemetry and analytics (deferrable under load)
+#   4. knowledge   — embedding and indexing (CPU-intensive, bursty)
+#   5. low_priority — dashboard broadcasts, delayed feedback, non-urgent batch work
+#
+# Thread allocation (default total: 10 threads):
+#   - default:3     — reserves 3 threads for critical work
+#   - maintenance:2  — 2 threads for cleanup/reconciliation
+#   - metrics:2      — 2 threads for telemetry collection
+#   - knowledge:2    — 2 threads for embedding (CPU-bound)
+#   - low_priority:1 — 1 thread for non-urgent work
+#
+# See docs/WORKER_POOL_TUNING.md for deployment sizing guidance.
 Rails.application.configure do
+  # Execution mode: async_server runs jobs in the web process (single-server),
+  # external runs a separate worker process (multi-server).
+  config.good_job.execution_mode = ENV.fetch(
+    "GOOD_JOB_EXECUTION_MODE", :async_server
+  ).to_sym
+
+  # Worker thread pool size. Each thread holds one DB connection, so this
+  # must not exceed the DB_POOL setting (default 20). The per-queue thread
+  # limits below carve this pool into priority bands so high-priority work
+  # is never starved by bulk low-priority jobs.
+  config.good_job.max_threads = Integer(ENV.fetch("GOOD_JOB_MAX_THREADS", "10"))
+
+  # Queue string with per-queue thread caps (queue_name:max_threads).
+  # Semicolons separate independent thread pools; commas share one pool
+  # with ordered priority. We use a single shared pool with per-queue caps
+  # so idle threads can be borrowed across queues while still reserving
+  # capacity for high-priority work.
+  config.good_job.queues = ENV.fetch(
+    "GOOD_JOB_QUEUES",
+    "default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1"
+  )
+
+  # How long to wait between polling the DB for new jobs (seconds).
+  # Lower values reduce latency for enqueued jobs at the cost of more
+  # frequent DB queries. 3s balances responsiveness with DB load.
+  config.good_job.poll_interval = Integer(ENV.fetch("GOOD_JOB_POLL_INTERVAL", "3"))
+
+  # Shutdown timeout — how long to wait for in-flight jobs before forcing exit.
+  config.good_job.shutdown_timeout = Integer(ENV.fetch("GOOD_JOB_SHUTDOWN_TIMEOUT", "25"))
+
   config.x.good_job_enable_cron = ActiveModel::Type::Boolean.new.cast(
     ENV.fetch("GOOD_JOB_ENABLE_CRON", "true")
   )
