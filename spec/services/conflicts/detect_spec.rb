@@ -15,14 +15,25 @@ RSpec.describe Conflicts::Detect do
       expect(result[:requires_manual_review]).to be false
     end
 
-    it "returns no conflicts when runs have no git context" do
+    it "requires manual review when runs have no diff inputs or metadata" do
       project = create(:project)
-      run_a = create(:agent_run, :completed, project: project)
-      run_b = create(:agent_run, :completed, project: project)
+      run_a = create(:agent_run, :completed, project: project,
+        branch_name: "paid/missing-sha-a",
+        base_commit_sha: nil,
+        result_commit_sha: nil,
+        container_id: nil)
+      run_b = create(:agent_run, :completed, project: project,
+        branch_name: "paid/missing-sha-b",
+        base_commit_sha: nil,
+        result_commit_sha: nil,
+        container_id: nil)
 
       result = described_class.call(agent_run_ids: [ run_a.id, run_b.id ])
 
-      expect(result[:has_conflicts]).to be false
+      expect(result[:has_conflicts]).to be true
+      expect(result[:detection_failed]).to be true
+      expect(result[:failed_run_ids]).to contain_exactly(run_a.id, run_b.id)
+      expect(result[:requires_manual_review]).to be true
     end
 
     context "with git-tracked runs" do
@@ -100,6 +111,32 @@ RSpec.describe Conflicts::Detect do
         )
 
         expect(result[:has_conflicts]).to be true
+      end
+
+      it "includes runs with missing SHAs and falls back to metadata" do
+        run_a = create(:agent_run, :completed, project: project,
+          branch_name: "paid/metadata-a",
+          base_commit_sha: nil,
+          result_commit_sha: nil,
+          container_id: nil)
+        create(:agent_run_phase, agent_run: run_a,
+          phase_key: "execute", phase_group: "agent",
+          metadata: { "changed_files" => [ "src/app.rb" ] })
+
+        run_b = create_run(result_sha: "b" * 40, changed_files: [ "src/app.rb" ])
+
+        allow(WorktreeService).to receive(:new).and_raise(StandardError, "no repo")
+
+        result = described_class.call(
+          agent_run_ids: [ run_a.id, run_b.id ],
+          project_id: project.id
+        )
+
+        expect(result[:has_conflicts]).to be true
+        expect(result[:conflicting_pairs]).to contain_exactly(
+          { runs: [ run_a.id, run_b.id ], files: [ "src/app.rb" ] }
+        )
+        expect(result[:failed_run_ids]).to be_empty
       end
 
       it "skips runs where base and result SHAs are identical" do

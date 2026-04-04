@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "set"
+
 module Conflicts
   # Detects file-level conflicts between parallel agent run branches.
   #
@@ -61,8 +63,6 @@ module Conflicts
         .completed
         .where(id: @agent_run_ids)
         .where.not(branch_name: nil)
-        .where.not(base_commit_sha: nil)
-        .where.not(result_commit_sha: nil)
 
       scope = scope.where(project_id: @project_id) if @project_id
 
@@ -91,6 +91,14 @@ module Conflicts
     # the run is recorded as a diff failure so the caller can require
     # manual review instead of silently reporting no conflicts.
     def changed_files_for_run(run)
+      if run.base_commit_sha.blank? || run.result_commit_sha.blank?
+        files = diff_files_from_metadata(run)
+        return files if files.any?
+
+        @diff_failures << run.id
+        return Set.new
+      end
+
       return Set.new if run.base_commit_sha == run.result_commit_sha
 
       files = diff_files_from_container(run)
