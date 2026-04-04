@@ -6,6 +6,7 @@ RSpec.describe ApplicationJob do
   let(:expected_queue_assignments) do
     {
       default: %w[
+        AnomalyDetectionJob
         DiagnoseErrorJob
         EnqueueKnowledgeCollectionJob
         GithubTokenValidationJob
