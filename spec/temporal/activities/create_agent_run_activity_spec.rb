@@ -358,6 +358,28 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(pending_run.reload.status).to eq("pending")
       end
 
+      it "refreshes automatic pending runs to the current primary provider before starting" do
+        claude_provider = project.created_by.providers.find_by!(provider_key: "claude")
+        codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
+        pending_run = create(
+          :agent_run,
+          project: project,
+          issue: issue,
+          status: "pending",
+          trigger_type: "automatic",
+          provider: claude_provider,
+          agent_type: "claude_code"
+        )
+        project.created_by.settings.update!(default_agent_provider: codex_provider.routing_key)
+
+        activity.execute(agent_run_id: pending_run.id, project_id: project.id)
+
+        pending_run.reload
+        expect(pending_run.status).to eq("pending")
+        expect(pending_run.provider).to eq(codex_provider)
+        expect(pending_run.agent_type).to eq("codex")
+      end
+
       it "refreshes automatic queued runs to the current primary provider before starting" do
         claude_provider = project.created_by.providers.find_by!(provider_key: "claude")
         codex_provider = create(:provider, user: project.created_by, provider_key: "codex")
