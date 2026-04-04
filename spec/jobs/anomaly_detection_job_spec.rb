@@ -24,6 +24,15 @@ RSpec.describe AnomalyDetectionJob do
       expect(Anomalies::Detect).not_to have_received(:call)
     end
 
+    it "skips finished runs that are not completed" do
+      failed_run = create(:agent_run, :failed, project: project)
+      allow(Anomalies::Detect).to receive(:call)
+
+      described_class.perform_now(failed_run.id)
+
+      expect(Anomalies::Detect).not_to have_received(:call)
+    end
+
     it "discards missing agent runs" do
       allow(Anomalies::Detect).to receive(:call)
 
