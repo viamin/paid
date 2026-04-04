@@ -7,8 +7,9 @@ module Api
     before_action :check_rate_limit
 
     # Default maximum tokens per agent run before rate limiting kicks in.
-    # Overridden by UserSetting#max_tokens_per_run at runtime.
-    DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
+    # Canonical value lives on AgentRun::DEFAULT_MAX_TOKENS_PER_RUN;
+    # this alias keeps existing references working.
+    DEFAULT_MAX_TOKENS_PER_RUN = AgentRun::DEFAULT_MAX_TOKENS_PER_RUN
 
     # POST /api/proxy/anthropic/*path
     def anthropic
@@ -50,9 +51,25 @@ module Api
 
     def check_rate_limit
       limit = resolve_max_tokens_per_run
-      return unless @agent_run.total_tokens > limit
+      current_tokens = @agent_run.total_tokens
 
-      render json: { error: "Token limit exceeded for this agent run" }, status: :too_many_requests
+      if current_tokens >= limit
+        mark_token_limit_exceeded!(current_tokens:, limit:)
+        render json: {
+          error: "Token limit exceeded for this agent run",
+          token_usage: current_tokens,
+          token_limit: limit
+        }, status: :too_many_requests
+        return
+      end
+
+      warning_threshold = @agent_run.project.token_limit_warning_threshold
+      warning_at = (limit * warning_threshold / 100.0).floor
+      if current_tokens >= warning_at
+        response.set_header("X-Token-Usage", current_tokens.to_s)
+        response.set_header("X-Token-Limit", limit.to_s)
+        response.set_header("X-Token-Limit-Warning", "true")
+      end
     end
 
     def proxy_request(base_url:, auth_header:, api_key:)
@@ -157,10 +174,34 @@ module Api
     end
 
     def resolve_max_tokens_per_run
-      @max_tokens_per_run ||= begin
-        settings = AgentRuns::UserSettingsResolver.call(project: @agent_run.project, strict: false)
-        settings&.max_tokens_per_run || DEFAULT_MAX_TOKENS_PER_RUN
+      @max_tokens_per_run ||= @agent_run.effective_max_tokens_per_run
+    end
+
+    def mark_token_limit_exceeded!(current_tokens:, limit:)
+      status_changed = false
+
+      @agent_run.with_lock do
+        next if @agent_run.token_limit_status == "exceeded"
+
+        @agent_run.token_limit_status = "exceeded"
+        @agent_run.save!
+        status_changed = true
+        @agent_run.log!(
+          "system",
+          "Token limit exceeded: #{current_tokens} of #{limit} tokens used. " \
+          "Agent will be stopped after the current operation completes.",
+          metadata: { type: "token_limit_exceeded" }
+        )
       end
+
+      return unless status_changed
+
+      Rails.logger.warn(
+        message: "agent_execution.token_limit_exceeded",
+        agent_run_id: @agent_run.id,
+        current_tokens: current_tokens,
+        hard_limit: limit
+      )
     end
 
     def log_error(message, error)
