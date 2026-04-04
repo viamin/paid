@@ -56,7 +56,7 @@ RSpec.describe TokenUsageTracker do
 
       described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
 
-      expect(AgentRuns::UserSettingsResolver).to have_received(:call).once.with(project: project, strict: false)
+      expect(AgentRuns::UserSettingsResolver).to have_received(:call).once.with(project: project, strict: false, create: false)
     end
 
     it "creates a metric log entry" do

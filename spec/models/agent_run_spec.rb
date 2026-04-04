@@ -556,6 +556,16 @@ RSpec.describe AgentRun do
 
         expect(agent_run.effective_max_tokens_per_run).to eq(2_000_000)
       end
+
+      it "preserves an explicit user override at the global default value" do
+        project = create(:project, max_tokens_per_run: nil)
+        project.account.update!(default_max_tokens_per_run: 2_000_000)
+        user_setting = project.created_by.settings
+        user_setting.update!(default_branch: "develop", max_tokens_per_run: AgentRun::DEFAULT_MAX_TOKENS_PER_RUN)
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_tokens_per_run).to eq(AgentRun::DEFAULT_MAX_TOKENS_PER_RUN)
+      end
     end
 
     describe "#token_limit_usage_ratio" do

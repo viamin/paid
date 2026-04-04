@@ -848,14 +848,19 @@ class AgentRun < ApplicationRecord
   end
 
   # Treat the auto-created user setting's global default as "inherit" so the
-  # account default still applies unless the user has a meaningful override.
+  # account default still applies unless the user has explicitly confirmed an
+  # override. A later save of the settings row is the durable signal we have
+  # that the persisted default value was intentionally kept by the user.
   def explicit_user_max_tokens_per_run
-    max_tokens_per_run =
-      AgentRuns::UserSettingsResolver.call(project: project, strict: false)&.max_tokens_per_run
-    return nil if max_tokens_per_run.blank?
-    return nil if max_tokens_per_run == DEFAULT_MAX_TOKENS_PER_RUN
+    user_setting = AgentRuns::UserSettingsResolver.call(project: project, strict: false, create: false)
+    return nil unless user_setting
 
-    max_tokens_per_run
+    max_tokens_per_run = user_setting.max_tokens_per_run
+    return nil if max_tokens_per_run.blank?
+    return max_tokens_per_run if max_tokens_per_run != DEFAULT_MAX_TOKENS_PER_RUN
+    return max_tokens_per_run if user_setting.updated_at > user_setting.created_at
+
+    nil
   end
 
   def just_finished?
