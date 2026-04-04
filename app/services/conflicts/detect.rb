@@ -94,13 +94,11 @@ module Conflicts
     # the run is recorded as a diff failure so the caller can require
     # manual review instead of silently reporting no conflicts.
     def changed_files_for_run(run)
-      if run.base_commit_sha.blank? || run.result_commit_sha.blank?
-        files = diff_files_from_metadata(run)
-        return files if files.any?
+      files = diff_files_from_metadata(run)
+      return files if files.any?
 
-        @diff_failures << run.id
-        return Set.new
-      end
+      return Set.new if no_change_run?(run)
+      return missing_sha_failure(run) if run.base_commit_sha.blank? || run.result_commit_sha.blank?
 
       return Set.new if run.base_commit_sha == run.result_commit_sha
 
@@ -172,7 +170,7 @@ module Conflicts
     def prepare_worktree_service(project_id, worktree_service)
       return if @prepared_worktree_project_ids.include?(project_id)
 
-      worktree_service.ensure_cloned(max_fetch_age: 2.minutes)
+      worktree_service.ensure_cloned
       @prepared_worktree_project_ids << project_id
     end
 
@@ -207,6 +205,18 @@ module Conflicts
         agent_run_id: run.id,
         error: e.message
       )
+      Set.new
+    end
+
+    def no_change_run?(run)
+      run.status == "completed" &&
+        run.result_commit_sha.blank? &&
+        run.pull_request_url.blank? &&
+        run.created_issue_url.blank?
+    end
+
+    def missing_sha_failure(run)
+      @diff_failures << run.id
       Set.new
     end
 

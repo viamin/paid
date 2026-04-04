@@ -113,25 +113,20 @@ module Conflicts
 
       return manual_fallback(pair, "runs_not_found") unless base_run && rebase_run && base_run.id != rebase_run.id
 
-      # Attempt rebase via the container if still available
       if rebase_run.container_id.present?
         rebase_result = attempt_rebase_in_container(rebase_run, base_run)
-        if rebase_result[:success]
-          return {
-            runs: run_ids,
-            files: files,
-            resolved: true,
-            action: :rebased,
-            rebased_run_id: rebase_run.id,
-            base_run_id: base_run.id
-          }
-        end
+        return successful_rebase_result(run_ids, files, rebase_run.id, base_run.id) if rebase_result[:success]
 
-        return manual_fallback(pair, rebase_result[:error] || "rebase_failed")
+        return manual_fallback(pair, "push_failed") if rebase_result[:error] == "push_failed"
       end
 
-      # Rebase failed or container unavailable — fall back
-      manual_fallback(pair, "rebase_failed")
+      host_rebase_result = attempt_rebase_in_worktree(rebase_run, base_run)
+      return successful_rebase_result(run_ids, files, rebase_run.id, base_run.id) if host_rebase_result[:success]
+
+      error_reason = host_rebase_result[:error]
+      error_reason = "rebase_failed" if %w[no_branch no_project].include?(error_reason)
+
+      manual_fallback(pair, error_reason || "rebase_failed")
     end
 
     def attempt_rebase_in_container(rebase_run, base_run)
@@ -169,6 +164,37 @@ module Conflicts
       )
     end
 
+    def attempt_rebase_in_worktree(rebase_run, base_run)
+      return { success: false, error: "no_branch" } if rebase_run.branch_name.blank? || base_run.branch_name.blank?
+      return { success: false, error: "no_project" } unless rebase_run.project
+
+      worktree_service = WorktreeService.new(rebase_run.project)
+      rebased_sha = nil
+
+      worktree_service.with_temporary_worktree(rebase_run.branch_name) do |worktree_path|
+        worktree_service.run_worktree_command(worktree_path, "rebase", "origin/#{base_run.branch_name}")
+        worktree_service.run_worktree_command(
+          worktree_path,
+          "push",
+          "--force-with-lease=refs/heads/#{rebase_run.branch_name}",
+          "origin",
+          "HEAD:#{rebase_run.branch_name}"
+        )
+        rebased_sha = worktree_service.run_worktree_command(worktree_path, "rev-parse", "HEAD").strip
+      end
+
+      rebase_run.update!(result_commit_sha: rebased_sha) if rebased_sha.present?
+      { success: true, error: nil }
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "conflicts.resolve.host_rebase_failed",
+        agent_run_id: rebase_run.id,
+        base_run_id: base_run.id,
+        error: e.message
+      )
+      { success: false, error: classify_host_rebase_error(e) }
+    end
+
     def push_rebased_branch(git_ops, rebase_run)
       # After rebase the remote branch already exists with pre-rebase history,
       # so a regular push will be rejected. Use force-with-lease to safely
@@ -182,6 +208,13 @@ module Conflicts
         error: e.message
       )
       false
+    end
+
+    def classify_host_rebase_error(error)
+      message = error.message.to_s
+      return "push_failed" if message.include?("force-with-lease") || message.include?("git push")
+
+      "rebase_failed"
     end
 
     def mark_for_rerun(pair)
@@ -226,6 +259,17 @@ module Conflicts
         action: :manual,
         reason: reason,
         message: manual_fallback_message(pair, reason)
+      }
+    end
+
+    def successful_rebase_result(run_ids, files, rebased_run_id, base_run_id)
+      {
+        runs: run_ids,
+        files: files,
+        resolved: true,
+        action: :rebased,
+        rebased_run_id: rebased_run_id,
+        base_run_id: base_run_id
       }
     end
 

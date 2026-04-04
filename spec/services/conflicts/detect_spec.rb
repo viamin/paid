@@ -43,7 +43,7 @@ RSpec.describe Conflicts::Detect do
 
       before do
         allow(WorktreeService).to receive(:new).and_return(default_worktree_service)
-        allow(default_worktree_service).to receive(:ensure_cloned).with(max_fetch_age: 2.minutes)
+        allow(default_worktree_service).to receive(:ensure_cloned)
         allow(default_worktree_service).to receive(:run_repo_command).and_raise(StandardError, "no repo")
       end
 
@@ -146,6 +146,26 @@ RSpec.describe Conflicts::Detect do
         expect(result[:failed_run_ids]).to be_empty
       end
 
+      it "treats completed runs without PRs or commits as no-change runs" do
+        run_a = create(:agent_run, :completed, project: project,
+          branch_name: "paid/no-change-a",
+          base_commit_sha: nil,
+          result_commit_sha: nil,
+          pull_request_url: nil,
+          created_issue_url: nil,
+          container_id: nil)
+        run_b = create_run(result_sha: "b" * 40, changed_files: [ "src/app.rb" ])
+
+        result = described_class.call(
+          agent_run_ids: [ run_a.id, run_b.id ],
+          project_id: project.id
+        )
+
+        expect(result[:has_conflicts]).to be false
+        expect(result[:detection_failed]).to be false
+        expect(result[:failed_run_ids]).to be_empty
+      end
+
       it "skips runs where base and result SHAs are identical" do
         no_change_run = create(:agent_run, :completed, project: project,
           branch_name: "paid/no-change", base_commit_sha: base_sha, result_commit_sha: base_sha)
@@ -233,7 +253,7 @@ RSpec.describe Conflicts::Detect do
         bare_project = create(:project)
         worktree_svc = instance_double(WorktreeService)
         allow(WorktreeService).to receive(:new).with(bare_project).and_return(worktree_svc)
-        allow(worktree_svc).to receive(:ensure_cloned).with(max_fetch_age: 2.minutes)
+        allow(worktree_svc).to receive(:ensure_cloned)
 
         run_a = create(:agent_run, :completed, project: bare_project,
           branch_name: "paid/bare-a", base_commit_sha: base_sha,
@@ -254,7 +274,7 @@ RSpec.describe Conflicts::Detect do
         bare_project = create(:project)
         worktree_svc = instance_double(WorktreeService)
         allow(WorktreeService).to receive(:new).with(bare_project).and_return(worktree_svc)
-        allow(worktree_svc).to receive(:ensure_cloned).with(max_fetch_age: 2.minutes)
+        allow(worktree_svc).to receive(:ensure_cloned)
 
         run_a = create(:agent_run, :completed, project: bare_project,
           branch_name: "paid/bare-a", base_commit_sha: base_sha,
@@ -272,7 +292,7 @@ RSpec.describe Conflicts::Detect do
 
         described_class.call(agent_run_ids: [ run_a.id, run_b.id ], project_id: bare_project.id)
 
-        expect(worktree_svc).to have_received(:ensure_cloned).with(max_fetch_age: 2.minutes).once
+        expect(worktree_svc).to have_received(:ensure_cloned).once
       end
     end
   end

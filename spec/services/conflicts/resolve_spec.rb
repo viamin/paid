@@ -90,10 +90,14 @@ RSpec.describe Conflicts::Resolve do
       it "falls back to manual when container is unavailable" do
         run_a = create(:agent_run, :completed, project: project, completed_at: 10.minutes.ago)
         run_b = create(:agent_run, :completed, project: project, completed_at: 5.minutes.ago, container_id: nil)
+        worktree_service = instance_double(WorktreeService)
         detection = {
           has_conflicts: true,
           conflicting_pairs: [ { runs: [ run_a.id, run_b.id ], files: [ "src/app.rb" ] } ]
         }
+
+        allow(WorktreeService).to receive(:new).with(project).and_return(worktree_service)
+        allow(worktree_service).to receive(:with_temporary_worktree).and_raise(WorktreeService::Error, "rebase failed")
 
         result = described_class.call(detection_result: detection, project_id: project.id, strategy: :auto_rebase)
 
@@ -101,6 +105,24 @@ RSpec.describe Conflicts::Resolve do
         expect(result[:resolutions].first[:action]).to eq(:manual)
         expect(result[:resolutions].first[:reason]).to eq("rebase_failed")
         expect(result[:resolutions].first[:message]).to include("could not be rebased cleanly")
+      end
+
+      it "rebases via a host worktree when the container is unavailable" do
+        run_a = create(:agent_run, :completed, project: project,
+          completed_at: 10.minutes.ago, branch_name: "paid/feature-a-abc")
+        run_b = create(:agent_run, :completed, project: project,
+          completed_at: 5.minutes.ago, container_id: nil, branch_name: "paid/feature-b-def")
+        stub_successful_host_rebase(project, base_branch: run_a.branch_name, rebase_branch: run_b.branch_name)
+
+        result = described_class.call(
+          detection_result: conflict_detection(run_a.id, run_b.id),
+          project_id: project.id,
+          strategy: :auto_rebase
+        )
+
+        expect(result[:resolved]).to be true
+        expect(result[:resolutions].first[:action]).to eq(:rebased)
+        expect(run_b.reload.result_commit_sha).to eq("f" * 40)
       end
 
       it "resolves via rebase when rebase succeeds" do
@@ -192,6 +214,28 @@ RSpec.describe Conflicts::Resolve do
     allow(Containers::GitOperations).to receive(:new).and_return(mock_git_ops)
     allow(mock_git_ops).to receive(:rebase_onto).with(branch_name).and_return(true)
     allow(mock_git_ops).to receive(:push_force_with_lease).and_raise(StandardError, "push rejected")
+  end
+
+  def stub_successful_host_rebase(project, base_branch:, rebase_branch:, sha: "f" * 40)
+    worktree_service = instance_double(WorktreeService)
+
+    allow(WorktreeService).to receive(:new).with(project).and_return(worktree_service)
+    allow(worktree_service).to receive(:with_temporary_worktree).with(rebase_branch).and_yield("/tmp/rebase-worktree")
+    allow(worktree_service).to receive(:run_worktree_command)
+      .with("/tmp/rebase-worktree", "rebase", "origin/#{base_branch}")
+      .and_return("")
+    allow(worktree_service).to receive(:run_worktree_command)
+      .with(
+        "/tmp/rebase-worktree",
+        "push",
+        "--force-with-lease=refs/heads/#{rebase_branch}",
+        "origin",
+        "HEAD:#{rebase_branch}"
+      )
+      .and_return("")
+    allow(worktree_service).to receive(:run_worktree_command)
+      .with("/tmp/rebase-worktree", "rev-parse", "HEAD")
+      .and_return(sha)
   end
 
   def conflict_detection(run_a_id, run_b_id)
