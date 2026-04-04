@@ -28,6 +28,7 @@ class AgentRun < ApplicationRecord
   has_one :worktree, dependent: :nullify
   has_one :model_selection, dependent: :destroy
   has_one :decision_record, dependent: :nullify
+  has_many :agent_run_anomalies, dependent: :destroy
 
   attr_readonly :mcp_server_snapshot
 
@@ -37,6 +38,7 @@ class AgentRun < ApplicationRecord
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_finished?
+  after_commit :enqueue_anomaly_detection, on: :update, if: :just_finished?
   after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
   after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
 
@@ -919,6 +921,10 @@ class AgentRun < ApplicationRecord
   def enqueue_quality_metrics_collection
     QualityMetricsCollectionJob.perform_later(id)
     HumanFeedbackCollectionJob.set(wait: 5.minutes).perform_later(id) if successful?
+  end
+
+  def enqueue_anomaly_detection
+    AnomalyDetectionJob.perform_later(id)
   end
 
   def just_started_running?
