@@ -1,14 +1,15 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  STATUSES = %w[queued pending running completed failed cancelled timeout retried auth_expired rate_limited].freeze
+  STATUSES = %w[queued pending running paused completed failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   GOALS = %w[create_pr create_issue review].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
-  UNFINISHED_STATUSES = %w[queued pending running].freeze
+  UNFINISHED_STATUSES = %w[queued pending running paused].freeze
+  GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
@@ -68,6 +69,7 @@ class AgentRun < ApplicationRecord
   validates :provider_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :stale_requeue_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :token_limit_status, inclusion: { in: TOKEN_LIMIT_STATUSES }, allow_nil: true
+  validates :guardrail_violation_type, inclusion: { in: GUARDRAIL_VIOLATION_TYPES }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :provider_belongs_to_project_owner, if: -> { provider.present? }
   validate :has_prompt_source, on: :create
@@ -82,6 +84,7 @@ class AgentRun < ApplicationRecord
   scope :timeout, -> { where(status: "timeout") }
   scope :retried, -> { where(status: "retried") }
   scope :auth_expired, -> { where(status: "auth_expired") }
+  scope :paused, -> { where(status: "paused") }
   scope :rate_limited, -> { where(status: "rate_limited") }
   scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
@@ -451,6 +454,45 @@ class AgentRun < ApplicationRecord
     )
   end
 
+  def pause!(violation_type:, context: nil)
+    with_lock do
+      reload
+      return false unless running?
+
+      update!(
+        status: "paused",
+        paused_at: Time.current,
+        guardrail_violation_type: violation_type,
+        guardrail_context: context
+      )
+      true
+    end
+  end
+
+  def paused?
+    status == "paused"
+  end
+
+  def resume!
+    with_lock do
+      reload
+      return false unless paused?
+
+      update!(
+        status: "queued",
+        started_at: nil,
+        completed_at: nil,
+        duration_seconds: nil,
+        paused_at: nil,
+        guardrail_violation_type: nil,
+        guardrail_context: nil,
+        temporal_workflow_id: nil,
+        temporal_run_id: nil
+      )
+      true
+    end
+  end
+
   def cancel!
     update!(
       status: "cancelled",
@@ -519,7 +561,7 @@ class AgentRun < ApplicationRecord
   def log!(type, content, metadata: nil)
     agent_run_logs.create!(
       log_type: type,
-      content: content.to_s.delete("\x00"),
+      content: normalize_log_content(content),
       metadata: metadata
     )
   end
@@ -746,6 +788,13 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def normalize_log_content(content)
+    text = content.to_s
+    return text.delete("\x00") if text.encoding == Encoding::UTF_8 && text.valid_encoding?
+
+    text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
+  end
 
   def logs_text(log_type:, limit:)
     agent_run_logs

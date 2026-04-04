@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_02_082402) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_04_161335) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -86,6 +86,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_082402) do
     t.string "slug", null: false
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+  end
+
+  create_table "agent_run_anomalies", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.string "anomaly_type", limit: 50, null: false
+    t.float "baseline_mean", null: false
+    t.float "baseline_standard_deviation", null: false
+    t.datetime "created_at", null: false
+    t.float "deviation_factor", null: false
+    t.text "message"
+    t.string "metric_name", limit: 50, null: false
+    t.float "metric_value", null: false
+    t.bigint "project_id", null: false
+    t.string "severity", limit: 20, null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "metric_name"], name: "index_agent_run_anomalies_on_agent_run_id_and_metric_name", unique: true
+    t.index ["agent_run_id"], name: "index_agent_run_anomalies_on_agent_run_id"
+    t.index ["anomaly_type"], name: "index_agent_run_anomalies_on_anomaly_type"
+    t.index ["project_id", "created_at"], name: "index_agent_run_anomalies_on_project_id_and_created_at"
+    t.index ["project_id"], name: "index_agent_run_anomalies_on_project_id"
   end
 
   create_table "agent_run_logs", force: :cascade do |t|
@@ -181,8 +201,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_082402) do
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])))"
+    t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -634,6 +655,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_082402) do
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
   end
 
+  create_table "project_baselines", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "last_calculated_at"
+    t.float "mean", default: 0.0, null: false
+    t.string "metric_name", limit: 50, null: false
+    t.float "p95", default: 0.0, null: false
+    t.bigint "project_id", null: false
+    t.integer "sample_count", default: 0, null: false
+    t.float "standard_deviation", default: 0.0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "metric_name"], name: "index_project_baselines_on_project_id_and_metric_name", unique: true
+    t.index ["project_id"], name: "index_project_baselines_on_project_id"
+  end
+
   create_table "project_mcp_servers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "mcp_server_definition_id", null: false
@@ -1012,6 +1047,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_082402) do
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
+  add_foreign_key "agent_run_anomalies", "agent_runs"
+  add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
@@ -1049,6 +1086,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_082402) do
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
+  add_foreign_key "project_baselines", "projects"
   add_foreign_key "project_mcp_servers", "mcp_server_definitions"
   add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"

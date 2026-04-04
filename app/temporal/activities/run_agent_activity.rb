@@ -13,6 +13,12 @@ module Activities
     # knows how to run. Currently Claude CLI, Codex CLI, Cursor agent CLI,
     # Gemini CLI, Kilocode CLI, OpenCode CLI, GitHub Copilot CLI, and Aider CLI
     # are installed in the agent Docker container (docker/agent/Dockerfile).
+    #
+    # Copilot remains hardcoded here for now instead of delegating to
+    # agent-harness because the installed Copilot CLI and the harness's
+    # built-in GitHub Copilot provider are not yet aligned on binary name and
+    # invocation shape. Paid installs `github-copilot-cli`, while
+    # agent-harness 0.5.6 expects `copilot -p ...`.
     # Actual container execution is
     # gated by ProviderSupport::CONTAINER_EXECUTABLE_PROVIDER_KEYS — providers
     # not in that set are filtered out upstream (UserSetting, ProvidersController)
@@ -98,7 +104,6 @@ module Activities
 
         pre_agent_sha = nil
         last_error = nil
-        last_attempted_provider = nil
         last_attempted_label = nil
         timeout_error = nil
         rate_limit_reset_at = nil
@@ -109,6 +114,14 @@ module Activities
         providers.each_with_index do |provider_candidate, index|
           # Check if the project's execution time limit has been exceeded
           if max_execution_seconds && agent_run.started_at && (Time.current - agent_run.started_at).to_i >= max_execution_seconds
+            violation_result = Guardrails::ViolationHandler.call(
+              agent_run: agent_run,
+              violation_type: "time_limit",
+              details: "Execution time limit of #{max_execution_seconds}s exceeded",
+              metrics: { max_execution_seconds: max_execution_seconds, elapsed_seconds: (Time.current - agent_run.started_at).to_i }
+            )
+            return paused_result(agent_run_id) if violation_result.paused? || agent_run.paused?
+
             timeout_error = "Execution time limit of #{max_execution_seconds}s exceeded"
             break
           end
@@ -143,7 +156,6 @@ module Activities
           end
 
           begin
-            last_attempted_provider = provider
             last_attempted_label = attempt_label
             provider_result = run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
@@ -210,13 +222,21 @@ module Activities
               )
             end
           rescue InfiniteLoopError => e
-            agent_run.log!("system", "Infinite loop detected: #{e.message}",
-              metadata: { detection_reason: e.message })
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop")
             last_error = "infinite_loop"
-            agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
             logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message)
+
+            result = Guardrails::ViolationHandler.call(
+              agent_run: agent_run,
+              violation_type: "loop_detected",
+              details: e.message,
+              metrics: { detection_reason: e.message }
+            )
+            return paused_result(agent_run_id) if result.paused? || agent_run.paused?
+
+            agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
+
             raise Temporalio::Error::ApplicationError.new(
               "Infinite loop detected: #{e.message}",
               type: "InfiniteLoopDetected",
@@ -247,6 +267,12 @@ module Activities
           end
           rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
         end
+
+        # If a guardrail (e.g., cost budget enforcement from TokenUsageTracker)
+        # paused the run during execution, preserve the paused state instead of
+        # overwriting it with a terminal status.
+        agent_run.reload
+        return paused_result(agent_run_id) if agent_run.paused?
 
         # All providers exhausted. Timeout takes precedence over rate_limited
         # because it indicates an actual execution attempt that should trigger
@@ -288,6 +314,16 @@ module Activities
     CommandContext = Struct.new(:provider_candidate, :provider, :command_prefix, :user, keyword_init: true)
 
     private
+
+    def paused_result(agent_run_id)
+      {
+        agent_run_id: agent_run_id,
+        success: false,
+        paused: true,
+        has_changes: false,
+        output_present: false
+      }
+    end
 
     # Resolves user settings for the agent run by finding the appropriate user.
     # Tries the project creator first, then falls back to the account's owner member.
@@ -450,10 +486,11 @@ module Activities
       end
 
       output = (result[:stderr].presence || result[:stdout]).to_s.strip
+      rate_limit_output = strip_prompt_echo(output, prompt)
 
       # Check if this is a rate limit error
-      if rate_limit_error?(output)
-        reset_at = parse_rate_limit_reset(output)
+      if rate_limit_error?(rate_limit_output)
+        reset_at = parse_rate_limit_reset(rate_limit_output)
         raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
       end
 
@@ -480,6 +517,42 @@ module Activities
       return false if output.blank?
 
       RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+    end
+
+    def strip_prompt_echo(output, prompt)
+      output = normalize_output_text(output)
+      prompt = normalize_output_text(prompt)
+
+      return output if output.blank? || prompt.blank?
+
+      sanitized_output = output.gsub(prompt, "")
+      prompt_lines = prompt.each_line.map { |line| normalize_output_line(line, strip_prompt_prefixes: true) }.reject(&:blank?).to_set
+
+      sanitized_output.each_line.filter_map do |line|
+        normalized_line = normalize_output_line(line, strip_prompt_prefixes: true)
+        next if normalized_line.blank? || prompt_lines.include?(normalized_line)
+
+        line.rstrip
+      end.join("\n").strip
+    end
+
+    def normalize_output_line(line, strip_prompt_prefixes: false)
+      normalized_line = line.to_s.strip
+      if strip_prompt_prefixes
+        normalized_line = normalized_line.sub(/\A(?:user|assistant|system)\s*[:|-]?\s*/i, "")
+        normalized_line = normalized_line.sub(/\A(?:>\s*)+/, "")
+      end
+
+      normalized_line.gsub(/\s+/, " ")
+    end
+
+    def normalize_output_text(value)
+      return "" if value.nil?
+
+      text = value.to_s
+      return text.delete("\x00") if text.encoding == Encoding::UTF_8 && text.valid_encoding?
+
+      text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
     end
 
     # Attempts to parse a rate limit reset time from the output.

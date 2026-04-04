@@ -189,7 +189,7 @@ class Project < ApplicationRecord
       .to_set
   end
 
-  # Returns the set of PR numbers that have any active (queued/pending/running) agent run,
+  # Returns the set of PR numbers that have any unfinished (queued/pending/running/paused) agent run,
   # used to suppress "Quick Run" when a run is already in progress (unique index would reject it).
   def pr_numbers_with_active_runs
     agent_runs

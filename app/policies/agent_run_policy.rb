@@ -33,6 +33,14 @@ class AgentRunPolicy < ApplicationPolicy
     run_agent?
   end
 
+  def resume?
+    run_agent?
+  end
+
+  def terminate?
+    run_agent?
+  end
+
   private
 
   def run_agent?

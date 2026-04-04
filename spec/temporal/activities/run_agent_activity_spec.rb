@@ -535,6 +535,24 @@ RSpec.describe Activities::RunAgentActivity do
         )
       end
 
+      def expect_prompt_echo_to_fail_without_rate_limit!(prompt:, output:)
+        allow(agent_run).to receive(:effective_prompt).and_return(prompt)
+        allow(container_service).to receive(:execute).and_return(output)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.error_message).to include("All providers exhausted")
+        expect(agent_run.error_message).not_to include("rate limited")
+
+        provider_state = user.provider_states.find_by(provider_name: "claude")
+        expect(provider_state&.rate_limited_until).to be_nil
+      end
+
       before do
         allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
         allow(container_service).to receive(:execute).and_return(rate_limit_output)
@@ -557,6 +575,56 @@ RSpec.describe Activities::RunAgentActivity do
         }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
 
         expect(agent_run.reload.status).to eq("rate_limited")
+      end
+
+      it "marks the agent run as rate_limited when provider output is binary encoded" do
+        binary_rate_limit_output = Containers::Provision::Result.failure(
+          error: "rate limit",
+          stdout: "",
+          stderr: "You're out of extra usage \xB7 resets 5am (UTC)".b,
+          exit_code: 1
+        )
+        allow(container_service).to receive(:execute).and_return(binary_rate_limit_output)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.rate_limited_until).to be_present
+        expect(agent_run.error_message).to include("rate limited")
+      end
+
+      it "does not classify echoed prompt text as a rate limit" do
+        echoed_prompt = <<~PROMPT
+          Investigate why the secrets proxy returns 429 for token usage limits.
+          Confirm whether the provider itself is actually rate limited.
+        PROMPT
+        prompt_echo_output = Containers::Provision::Result.failure(
+          error: "killed", stdout: "", stderr: echoed_prompt, exit_code: 137
+        )
+
+        expect_prompt_echo_to_fail_without_rate_limit!(prompt: echoed_prompt, output: prompt_echo_output)
+      end
+
+      it "ignores prompt echoes wrapped in common prefixes" do
+        echoed_prompt = <<~PROMPT
+          Investigate why the secrets proxy returns 429 for token usage limits.
+          Confirm whether the provider itself is actually rate limited.
+        PROMPT
+        prefixed_prompt_echo_output = Containers::Provision::Result.failure(
+          error: "killed",
+          stdout: "",
+          stderr: <<~OUTPUT,
+            user
+            > Investigate why the secrets proxy returns 429 for token usage limits.
+            > Confirm whether the provider itself is actually rate limited.
+          OUTPUT
+          exit_code: 137
+        )
+
+        expect_prompt_echo_to_fail_without_rate_limit!(prompt: echoed_prompt, output: prefixed_prompt_echo_output)
       end
     end
 
@@ -1003,17 +1071,83 @@ RSpec.describe Activities::RunAgentActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "times out when execution time limit is exceeded" do
+    it "pauses when execution time limit is exceeded" do
       project.update!(max_execution_seconds: 60)
       agent_run.update!(started_at: 2.minutes.ago, status: "running")
 
-      expect {
-        activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError)
+      allow(AgentRuns::Cancel).to receive(:call)
+
+      result = activity.execute(agent_run_id: agent_run.id)
 
       agent_run.reload
-      expect(agent_run.status).to eq("timeout")
-      expect(agent_run.error_message).to include("Execution time limit")
+      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("time_limit")
+      expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
+    end
+
+    it "returns a paused result when the run was already paused by another guardrail" do
+      project.update!(max_execution_seconds: 60)
+      agent_run.update!(started_at: 2.minutes.ago, status: "running")
+
+      violation_result = instance_double(Guardrails::ViolationHandler::Result, paused?: false)
+      allow(Guardrails::ViolationHandler).to receive(:call) do
+        agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "cost_limit")
+        violation_result
+      end
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      agent_run.reload
+      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("cost_limit")
+    end
+  end
+
+  describe "loop guardrail handling" do
+    before do
+      allow(container_service).to receive(:execute).and_return(exec_success)
+      allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+    end
+
+    it "returns a paused result when the run was already paused during loop handling" do
+      allow(activity).to receive(:run_agent_with_provider).and_raise(described_class::InfiniteLoopError, "loop detected")
+
+      violation_result = instance_double(Guardrails::ViolationHandler::Result, paused?: false)
+      allow(Guardrails::ViolationHandler).to receive(:call) do
+        agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "cost_limit")
+        violation_result
+      end
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      agent_run.reload
+      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("cost_limit")
+    end
+  end
+
+  describe "paused run protection after provider exhaustion" do
+    before do
+      allow(container_service).to receive(:execute).and_return(exec_failure)
+      allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+    end
+
+    it "preserves paused state when a guardrail paused the run during provider execution" do
+      # Simulate a cost budget guardrail pausing the run during execution
+      allow(container_service).to receive(:execute) do
+        agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "cost_limit")
+        exec_failure
+      end
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      agent_run.reload
+      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("cost_limit")
     end
   end
 end
