@@ -104,7 +104,6 @@ module Activities
 
         pre_agent_sha = nil
         last_error = nil
-        last_attempted_provider = nil
         last_attempted_label = nil
         timeout_error = nil
         rate_limit_reset_at = nil
@@ -121,9 +120,9 @@ module Activities
               details: "Execution time limit of #{max_execution_seconds}s exceeded",
               metrics: { max_execution_seconds: max_execution_seconds, elapsed_seconds: (Time.current - agent_run.started_at).to_i }
             )
-            unless violation_result.paused?
-              timeout_error = "Execution time limit of #{max_execution_seconds}s exceeded"
-            end
+            return paused_result(agent_run_id) if violation_result.paused?
+
+            timeout_error = "Execution time limit of #{max_execution_seconds}s exceeded"
             break
           end
 
@@ -157,7 +156,6 @@ module Activities
           end
 
           begin
-            last_attempted_provider = provider
             last_attempted_label = attempt_label
             provider_result = run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
@@ -235,9 +233,9 @@ module Activities
               details: e.message,
               metrics: { detection_reason: e.message }
             )
-            unless result.paused?
-              agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
-            end
+            return paused_result(agent_run_id) if result.paused?
+
+            agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
 
             raise Temporalio::Error::ApplicationError.new(
               "Infinite loop detected: #{e.message}",
@@ -310,6 +308,16 @@ module Activities
     CommandContext = Struct.new(:provider_candidate, :provider, :command_prefix, :user, keyword_init: true)
 
     private
+
+    def paused_result(agent_run_id)
+      {
+        agent_run_id: agent_run_id,
+        success: false,
+        paused: true,
+        has_changes: false,
+        output_present: false
+      }
+    end
 
     # Resolves user settings for the agent run by finding the appropriate user.
     # Tries the project creator first, then falls back to the account's owner member.

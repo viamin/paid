@@ -1791,23 +1791,26 @@ RSpec.describe AgentRun do
   end
 
   describe "#resume!" do
-    it "transitions a paused run back to running" do
+    it "transitions a paused run back to queued" do
       agent_run = create(:agent_run, :running)
       agent_run.pause!(violation_type: "loop_detected", context: { details: "test" })
+      agent_run.update!(temporal_workflow_id: "workflow-123", temporal_run_id: "run-123")
 
-      agent_run.resume!
+      expect(agent_run.resume!).to be true
 
       agent_run.reload
-      expect(agent_run.status).to eq("running")
+      expect(agent_run.status).to eq("queued")
       expect(agent_run.paused_at).to be_nil
       expect(agent_run.guardrail_violation_type).to be_nil
       expect(agent_run.guardrail_context).to be_nil
+      expect(agent_run.temporal_workflow_id).to be_nil
+      expect(agent_run.temporal_run_id).to be_nil
     end
 
     it "does not resume a non-paused run" do
       agent_run = create(:agent_run, :running)
 
-      agent_run.resume!
+      expect(agent_run.resume!).to be false
 
       expect(agent_run.reload.status).to eq("running")
     end

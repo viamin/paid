@@ -175,6 +175,10 @@ module Workflows
           heartbeat_timeout: 120,
           retry_policy: RUN_AGENT_RETRY_POLICY)
 
+        if agent_result[:paused]
+          return { success: true, paused: true, agent_run_id: agent_run_id }
+        end
+
         unless agent_result[:success]
           raise Temporalio::Error::ApplicationError.new(
             "Agent execution failed",

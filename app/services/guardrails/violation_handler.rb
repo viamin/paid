@@ -35,6 +35,7 @@ module Guardrails
       return already_handled_result unless paused
 
       log_violation(context)
+      stop_in_flight_execution
 
       # Dashboard alert is handled by LiveDashboardBroadcastJob (triggered by
       # the status change callback) to avoid duplicate notifications.
@@ -99,6 +100,18 @@ module Guardrails
         triggered_at: context[:triggered_at],
         metrics: context[:metrics],
         recommended_action: context[:recommended_action]
+      )
+    end
+
+    def stop_in_flight_execution
+      AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
+    rescue => e
+      Rails.logger.error(
+        message: "guardrails.violation_pause_cancel_failed",
+        agent_run_id: agent_run.id,
+        violation_type: violation_type,
+        error_class: e.class.name,
+        error_message: e.message
       )
     end
 

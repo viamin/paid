@@ -6,6 +6,10 @@ RSpec.describe Guardrails::ViolationHandler do
   describe ".call" do
     let(:agent_run) { create(:agent_run, :running) }
 
+    before do
+      allow(AgentRuns::Cancel).to receive(:call)
+    end
+
     it "pauses the agent run on loop detection" do
       result = described_class.call(
         agent_run: agent_run,
@@ -18,6 +22,7 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(agent_run.reload.status).to eq("paused")
       expect(agent_run.guardrail_violation_type).to eq("loop_detected")
       expect(agent_run.paused_at).to be_present
+      expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
     end
 
     it "pauses the agent run on token limit violation" do
@@ -112,14 +117,16 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(log.content).to include("5 consecutive identical outputs")
     end
 
-    it "does not broadcast directly (delegates to LiveDashboardBroadcastJob)" do
+    it "does not broadcast directly and enqueues the dashboard alert pipeline" do
       allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
 
-      described_class.call(
-        agent_run: agent_run,
-        violation_type: "cost_limit",
-        details: "Budget exceeded"
-      )
+      expect {
+        described_class.call(
+          agent_run: agent_run,
+          violation_type: "cost_limit",
+          details: "Budget exceeded"
+        )
+      }.to have_enqueued_job(LiveDashboardBroadcastJob).at_least(:once)
 
       expect(Turbo::StreamsChannel).not_to have_received(:broadcast_prepend_to)
     end

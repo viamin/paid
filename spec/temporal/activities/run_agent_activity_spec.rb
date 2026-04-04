@@ -1071,17 +1071,19 @@ RSpec.describe Activities::RunAgentActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "times out when execution time limit is exceeded" do
+    it "pauses when execution time limit is exceeded" do
       project.update!(max_execution_seconds: 60)
       agent_run.update!(started_at: 2.minutes.ago, status: "running")
 
-      expect {
-        activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError)
+      allow(AgentRuns::Cancel).to receive(:call)
+
+      result = activity.execute(agent_run_id: agent_run.id)
 
       agent_run.reload
-      expect(agent_run.status).to eq("timeout")
-      expect(agent_run.error_message).to include("Execution time limit")
+      expect(result).to include(success: false, paused: true, agent_run_id: agent_run.id)
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("time_limit")
+      expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
     end
   end
 end

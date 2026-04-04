@@ -446,14 +446,17 @@ class AgentRun < ApplicationRecord
   def resume!
     with_lock do
       reload
-      return unless paused?
+      return false unless paused?
 
       update!(
-        status: "running",
+        status: "queued",
         paused_at: nil,
         guardrail_violation_type: nil,
-        guardrail_context: nil
+        guardrail_context: nil,
+        temporal_workflow_id: nil,
+        temporal_run_id: nil
       )
+      true
     end
   end
 

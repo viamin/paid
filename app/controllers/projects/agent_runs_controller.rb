@@ -213,10 +213,20 @@ module Projects
         return
       end
 
-      @agent_run.resume!
+      resumed = @agent_run.resume!
+      unless resumed
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "The agent run state changed and could not be resumed."
+        return
+      end
+
+      ProcessRunQueueJob.perform_later
 
       redirect_to project_agent_run_path(@project, @agent_run),
-        notice: "Agent run resumed."
+        notice: "Agent run resumed and re-queued."
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to project_agent_run_path(@project, @agent_run),
+        alert: "Another agent run is already queued or in progress for this target."
     end
 
     def terminate
