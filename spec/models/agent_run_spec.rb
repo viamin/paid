@@ -1303,7 +1303,7 @@ RSpec.describe AgentRun do
 
   describe "constants" do
     it "defines valid STATUSES" do
-      expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout retried auth_expired rate_limited])
+      expect(described_class::STATUSES).to eq(%w[queued pending running paused completed failed cancelled timeout retried auth_expired rate_limited])
     end
 
     it "defines valid AGENT_TYPES" do
@@ -1764,6 +1764,102 @@ RSpec.describe AgentRun do
       expect {
         agent_run.update!(branch_name: "feature/test")
       }.not_to have_enqueued_job(ContainerMetricsCollectionJob)
+    end
+  end
+
+  describe "#pause!" do
+    it "transitions a running run to paused with violation context" do
+      agent_run = create(:agent_run, :running)
+      context = { violation_type: "loop_detected", details: "test" }
+
+      agent_run.pause!(violation_type: "loop_detected", context: context)
+
+      agent_run.reload
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.paused_at).to be_present
+      expect(agent_run.guardrail_violation_type).to eq("loop_detected")
+      expect(agent_run.guardrail_context).to eq(context.deep_stringify_keys)
+    end
+
+    it "does not pause a non-running run" do
+      agent_run = create(:agent_run, :completed)
+
+      agent_run.pause!(violation_type: "loop_detected")
+
+      expect(agent_run.reload.status).to eq("completed")
+    end
+  end
+
+  describe "#resume!" do
+    it "transitions a paused run back to queued" do
+      agent_run = create(:agent_run, :running)
+      agent_run.pause!(violation_type: "loop_detected", context: { details: "test" })
+      agent_run.update!(
+        temporal_workflow_id: "workflow-123",
+        temporal_run_id: "run-123",
+        started_at: 10.minutes.ago,
+        completed_at: 5.minutes.ago,
+        duration_seconds: 300
+      )
+
+      expect(agent_run.resume!).to be true
+
+      agent_run.reload
+      expect(agent_run.status).to eq("queued")
+      expect(agent_run.started_at).to be_nil
+      expect(agent_run.completed_at).to be_nil
+      expect(agent_run.duration_seconds).to be_nil
+      expect(agent_run.paused_at).to be_nil
+      expect(agent_run.guardrail_violation_type).to be_nil
+      expect(agent_run.guardrail_context).to be_nil
+      expect(agent_run.temporal_workflow_id).to be_nil
+      expect(agent_run.temporal_run_id).to be_nil
+    end
+
+    it "does not resume a non-paused run" do
+      agent_run = create(:agent_run, :running)
+
+      expect(agent_run.resume!).to be false
+
+      expect(agent_run.reload.status).to eq("running")
+    end
+  end
+
+  describe "#paused?" do
+    it "returns true for paused runs" do
+      agent_run = build(:agent_run, status: "paused")
+
+      expect(agent_run.paused?).to be true
+    end
+
+    it "returns false for running runs" do
+      agent_run = build(:agent_run, status: "running")
+
+      expect(agent_run.paused?).to be false
+    end
+  end
+
+  describe "guardrail_violation_type validation" do
+    it "accepts valid violation types" do
+      AgentRun::GUARDRAIL_VIOLATION_TYPES.each do |type|
+        agent_run = build(:agent_run, guardrail_violation_type: type)
+        agent_run.valid?
+        expect(agent_run.errors[:guardrail_violation_type]).to be_empty
+      end
+    end
+
+    it "rejects invalid violation types" do
+      agent_run = build(:agent_run, guardrail_violation_type: "invalid_type")
+
+      expect(agent_run).not_to be_valid
+      expect(agent_run.errors[:guardrail_violation_type]).to be_present
+    end
+
+    it "allows nil violation type" do
+      agent_run = build(:agent_run, guardrail_violation_type: nil)
+      agent_run.valid?
+
+      expect(agent_run.errors[:guardrail_violation_type]).to be_empty
     end
   end
 end

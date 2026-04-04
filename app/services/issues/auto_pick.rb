@@ -11,7 +11,7 @@ module Issues
   #
   # Selection criteria:
   # - Open, non-PR issues with all dependencies satisfied
-  # - No existing active (queued/pending/running) agent run
+  # - No existing unfinished (queued/pending/running/paused) agent run
   # - Not labeled with excluded labels (planning, research, waiting,
   #   tracking, epic)
   # - Not a parent/tracking issue (has sub-issues)
