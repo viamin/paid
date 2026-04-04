@@ -172,6 +172,21 @@ class WorktreeService
     end
   end
 
+  # Run a git command inside an existing worktree path.
+  #
+  # @param worktree_path [String] Path to the checked-out worktree
+  # @param args [Array<String>] Git arguments
+  # @return [String] stdout from the command
+  def run_worktree_command(worktree_path, *args)
+    run_git(*args, chdir: worktree_path)
+  rescue Errno::ENOENT => e
+    if !Dir.exist?(worktree_path)
+      raise Error, "Worktree directory missing: #{worktree_path}"
+    else
+      raise Error, "Failed to execute git (missing executable or spawn error): #{e.message}"
+    end
+  end
+
   # Get the current commit SHA of the default branch.
   #
   # @return [String] The 40-character SHA
@@ -228,6 +243,41 @@ class WorktreeService
     end
 
     run_git("worktree", "prune", chdir: project_repo_path, raise_on_error: false)
+  end
+
+  # Creates a short-lived worktree for host-side maintenance operations
+  # like rebasing a branch after the original agent container is gone.
+  #
+  # @param branch_name [String] Remote branch to check out
+  # @yieldparam worktree_path [String] Path to the temporary worktree
+  # @return [Object] the block result
+  def with_temporary_worktree(branch_name)
+    ensure_cloned
+
+    temp_branch = "paid-conflict/#{SecureRandom.hex(6)}"
+    temp_path = File.join(worktrees_path, "paid-conflict-#{SecureRandom.hex(6)}")
+
+    @mutex.synchronize do
+      FileUtils.mkdir_p(worktrees_path)
+      run_git(
+        "worktree", "add", "--force", "-B", temp_branch, temp_path, "origin/#{branch_name}",
+        chdir: project_repo_path
+      )
+    end
+
+    yield temp_path
+  ensure
+    @mutex.synchronize do
+      if defined?(temp_path) && temp_path.present? && Dir.exist?(temp_path)
+        run_git("worktree", "remove", temp_path, "--force", chdir: project_repo_path, raise_on_error: false)
+      end
+
+      if defined?(temp_branch) && temp_branch.present?
+        run_git("branch", "-D", temp_branch, chdir: project_repo_path, raise_on_error: false)
+      end
+
+      run_git("worktree", "prune", chdir: project_repo_path, raise_on_error: false)
+    end
   end
 
   private

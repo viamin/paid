@@ -86,6 +86,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     it "accepts sub_task with only custom_prompt" do
       stub_full_capacity
       stub_successful_futures(count: 1)
+      stub_no_conflicts
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
 
       result = workflow.execute({ project_id: 1, sub_tasks: [ { custom_prompt: "do something" } ] })
@@ -126,6 +127,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     it "launches child workflows and collects results" do
       stub_full_capacity
       stub_successful_futures(count: 2)
+      stub_no_conflicts
 
       result = workflow.execute(two_task_input)
 
@@ -137,6 +139,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     it "reports failures from child workflows" do
       stub_full_capacity
       stub_mixed_futures
+      stub_no_conflicts
 
       result = workflow.execute(two_task_input)
 
@@ -163,6 +166,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     it "batches sub-tasks based on available slots" do
       capacity_call_count = stub_incremental_capacity
       stub_successful_futures(count: 3)
+      stub_no_conflicts
 
       result = workflow.execute(three_task_input)
 
@@ -173,6 +177,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     it "marks remaining tasks as no_capacity when capacity runs out" do
       stub_capacity_then_exhausted
       stub_successful_futures(count: 1)
+      stub_no_conflicts
 
       result = workflow.execute(two_task_input)
 
@@ -189,6 +194,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       # so batch 1 should only launch 1 task.
       stub_shrinking_capacity
       stub_successful_futures(count: 3)
+      stub_no_conflicts
 
       result = workflow.execute(three_task_input)
 
@@ -201,6 +207,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       # Capacity returns 1 slot so tasks are batched one at a time
       stub_incremental_capacity
       stub_successful_futures(count: 3)
+      stub_no_conflicts
 
       # Simulate time passing beyond the deadline after first batch completes
       now = Time.now
@@ -220,12 +227,80 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       deadline_exceeded = result[:results].select { |r| r[:error] == "deadline_exceeded" }
       expect(deadline_exceeded).not_to be_empty
     end
+
+    it "includes conflict detection results with consistent schema" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+      stub_no_conflicts
+
+      result = workflow.execute(two_task_input)
+
+      conflicts = result[:conflicts]
+      expect(conflicts).to be_a(Hash)
+      expect(conflicts[:has_conflicts]).to be false
+      expect(conflicts[:detection_failed]).to be false
+      expect(conflicts[:requires_manual_review]).to be false
+      expect(conflicts[:resolution]).to be_nil
+    end
+
+    it "detects conflicts between successful runs with consistent schema" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+      stub_conflict_detected_and_unresolved
+
+      result = workflow.execute(two_task_input)
+
+      conflicts = result[:conflicts]
+      expect(conflicts[:has_conflicts]).to be true
+      expect(conflicts[:detection_failed]).to be false
+      expect(conflicts[:requires_manual_review]).to be true
+      expect(conflicts[:resolution][:requires_manual_review]).to be true
+    end
+
+    it "attempts resolution when detection partially failed but found conflicts" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+      stub_partial_detection_failure_with_conflicts
+
+      result = workflow.execute(two_task_input)
+
+      conflicts = result[:conflicts]
+      expect(conflicts[:has_conflicts]).to be true
+      expect(conflicts[:detection_failed]).to be true
+      expect(conflicts[:resolution]).not_to be_nil
+      expect(conflicts[:requires_manual_review]).to be true
+    end
+
+    it "skips resolution when detection failed with no conflict data" do
+      stub_full_capacity
+      stub_successful_futures(count: 2)
+      stub_total_detection_failure
+
+      result = workflow.execute(two_task_input)
+
+      conflicts = result[:conflicts]
+      expect(conflicts[:has_conflicts]).to be true
+      expect(conflicts[:detection_failed]).to be true
+      expect(conflicts[:resolution]).to be_nil
+    end
+
+    it "returns project_id in no_conflicts_result when fewer than 2 successful runs" do
+      stub_full_capacity
+      stub_mixed_futures
+      stub_no_conflicts
+
+      result = workflow.execute(two_task_input)
+
+      expect(result[:conflicts][:project_id]).to eq(1)
+      expect(result[:conflicts][:total_runs_checked]).to eq(1)
+    end
   end
 
   describe "PR aggregation" do
     before do
       stub_temporal_workflow
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+      stub_no_conflicts
     end
 
     it "skips aggregation when aggregate_pr is false" do
@@ -382,6 +457,42 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
     allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, info: workflow_info)
   end
 
+  def stub_no_conflicts
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120) do |_, input, timeout:|
+        {
+          project_id: input.is_a?(Hash) ? input[:project_id] : nil,
+          has_conflicts: false,
+          conflicting_pairs: [],
+          files_by_run: [],
+          total_runs_checked: input.is_a?(Hash) ? Array(input[:agent_run_ids]).size : 0,
+          detection_failed: false,
+          failed_run_ids: [],
+          requires_manual_review: false,
+          resolution: nil,
+          error: nil
+        }
+      end
+  end
+
+  def stub_conflict_detected_and_unresolved
+    detection = {
+      has_conflicts: true,
+      conflicting_pairs: [ { runs: [ 42, 43 ], files: [ "src/app.rb" ] } ],
+      files_by_run: [ { agent_run_id: 42, files: [ "src/app.rb" ] }, { agent_run_id: 43, files: [ "src/app.rb" ] } ], total_runs_checked: 2,
+      detection_failed: false, failed_run_ids: [], requires_manual_review: false
+    }
+    resolution = {
+      resolved: false, strategy: :auto_rebase,
+      resolutions: [ { runs: [ 42, 43 ], files: [ "src/app.rb" ], resolved: false, action: :manual } ],
+      requires_manual_review: true
+    }
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120).and_return(detection)
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::ResolveConflictsActivity, anything, timeout: 300).and_return(resolution)
+  end
+
   def stub_no_capacity
     allow(workflow).to receive(:run_activity)
       .with(Activities::CheckProjectRunCapacityActivity, anything, timeout: 30)
@@ -409,11 +520,17 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
   end
 
   def stub_successful_futures(count:)
-    future = Struct.new(:done?, :failure?, :failure, :result, keyword_init: true)
-      .new("done?": true, "failure?": false, failure: nil, result: { success: true, agent_run_id: 42 })
+    raise ArgumentError, "count must be positive" unless count.positive?
 
+    index = 0
+    future_class = Struct.new(:done?, :failure?, :failure, :result, keyword_init: true)
     all_done = Struct.new(:wait).new(nil)
-    allow(Temporalio::Workflow::Future).to receive_messages(new: future, try_all_of: all_done)
+    allow(Temporalio::Workflow::Future).to receive(:new) do
+      agent_run_id = 42 + index
+      index += 1
+      future_class.new("done?": true, "failure?": false, failure: nil, result: { success: true, agent_run_id: agent_run_id })
+    end
+    allow(Temporalio::Workflow::Future).to receive(:try_all_of).and_return(all_done)
   end
 
   def stub_mixed_futures
@@ -475,6 +592,34 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
             max_parallel_per_project: 3, user_active_count: 3, max_concurrent_runs: 10 }
         end
       end
+  end
+
+  def stub_partial_detection_failure_with_conflicts
+    detection = {
+      has_conflicts: true,
+      conflicting_pairs: [ { runs: [ 42, 43 ], files: [ "src/app.rb" ] } ],
+      files_by_run: [ { agent_run_id: 42, files: [ "src/app.rb" ] }, { agent_run_id: 43, files: [ "src/app.rb" ] } ],
+      total_runs_checked: 2,
+      detection_failed: true, failed_run_ids: [ 44 ], requires_manual_review: true
+    }
+    resolution = {
+      resolved: false, strategy: :auto_rebase,
+      resolutions: [ { runs: [ 42, 43 ], files: [ "src/app.rb" ], resolved: false, action: :manual } ],
+      requires_manual_review: true
+    }
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120).and_return(detection)
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::ResolveConflictsActivity, anything, timeout: 300).and_return(resolution)
+  end
+
+  def stub_total_detection_failure
+    detection = {
+      has_conflicts: true, conflicting_pairs: [], files_by_run: [], total_runs_checked: 2,
+      detection_failed: true, failed_run_ids: [ 42, 43 ], requires_manual_review: true
+    }
+    allow(workflow).to receive(:run_activity)
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120).and_return(detection)
   end
 
   def two_task_input
