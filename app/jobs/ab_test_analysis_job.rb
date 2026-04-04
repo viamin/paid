@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class AbTestAnalysisJob < ApplicationJob
-  queue_as :default
+  queue_as :metrics
 
   def perform(ab_test_id)
     ab_test = AbTest.find(ab_test_id)
