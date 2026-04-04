@@ -33,24 +33,11 @@ class TokenUsageTracker
 
       if update_aggregates
         agent_run.with_lock do
-           # Increment counters and compute token limit status atomically
-           agent_run.increment(:tokens_input, tokens_input)
-           agent_run.increment(:tokens_output, tokens_output)
-           agent_run.increment(:cost_cents, cost_cents)
-           # Determine new token limit status before persisting
-           hard_limit = agent_run.effective_max_tokens_per_run
-           warning_threshold = agent_run.project.token_limit_warning_threshold
-           warning_at = (hard_limit * warning_threshold / 100.0).floor
-           current_tokens = agent_run.tokens_input.to_i + agent_run.tokens_output.to_i
-           new_status = if current_tokens >= hard_limit
-                          "exceeded"
-           elsif current_tokens >= warning_at
-                          "warning"
-           else
-                          "ok"
-           end
-           agent_run.token_limit_status = new_status
-           agent_run.save!
+          agent_run.increment(:tokens_input, tokens_input)
+          agent_run.increment(:tokens_output, tokens_output)
+          agent_run.increment(:cost_cents, cost_cents)
+          agent_run.save!
+          check_token_limits(agent_run)
         end
 
         agent_run.project.increment_metrics!(

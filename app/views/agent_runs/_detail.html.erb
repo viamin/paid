@@ -223,7 +223,6 @@
     </div>
   <% end %>
 
-<<<<<<< HEAD
 <% if agent_run.token_limit_exceeded? %>
   <div class="mt-6 rounded-lg border border-red-200 bg-red-50 p-4">
     <h2 class="text-sm font-semibold text-red-800">Token Limit Exceeded</h2>
@@ -252,19 +251,15 @@
         <br>Expected reset: <strong><%= local_time(agent_run.rate_limited_until) %></strong>
         <% if agent_run.rate_limited_until > Time.current %>
           (<%= distance_of_time_in_words(Time.current, agent_run.rate_limited_until) %> remaining)
+        <% else %>
+          (reset time has passed)
         <% end %>
+      <% end %>
+      <% if agent_run.error_message.present? %>
+        <br><span class="text-orange-600"><%= agent_run.error_message %></span>
       <% end %>
     </p>
   </div>
-<% end %>
-            (reset time has passed)
-          <% end %>
-        <% end %>
-        <% if agent_run.error_message.present? %>
-          <br><span class="text-orange-600"><%= agent_run.error_message %></span>
-        <% end %>
-      </p>
-    </div>
   <% elsif agent_run.auth_expired? %>
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
       <h2 class="text-sm font-semibold text-amber-800">Authentication Expired</h2>
