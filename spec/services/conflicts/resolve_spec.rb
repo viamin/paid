@@ -100,7 +100,7 @@ RSpec.describe Conflicts::Resolve do
         expect(result[:resolved]).to be false
         expect(result[:resolutions].first[:action]).to eq(:manual)
         expect(result[:resolutions].first[:reason]).to eq("rebase_failed")
-        expect(result[:resolutions].first[:message]).to include("rebased cleanly")
+        expect(result[:resolutions].first[:message]).to include("could not be rebased cleanly")
       end
 
       it "resolves via rebase when rebase succeeds" do
@@ -129,6 +129,22 @@ RSpec.describe Conflicts::Resolve do
 
         expect(result[:resolved]).to be false
         expect(result[:resolutions].first[:action]).to eq(:manual)
+      end
+
+      it "reports push_failed when the rebased branch cannot be pushed" do
+        run_a = create(:agent_run, :completed, project: project,
+          completed_at: 10.minutes.ago, branch_name: "paid/feature-a-abc")
+        run_b = create(:agent_run, :completed, project: project,
+          completed_at: 5.minutes.ago, container_id: "ctr-123", branch_name: "paid/feature-b-def")
+        stub_rebase_with_failed_push(run_a.branch_name)
+        detection = conflict_detection(run_a.id, run_b.id)
+
+        result = described_class.call(detection_result: detection, project_id: project.id, strategy: :auto_rebase)
+
+        expect(result[:resolved]).to be false
+        expect(result[:resolutions].first[:action]).to eq(:manual)
+        expect(result[:resolutions].first[:reason]).to eq("push_failed")
+        expect(result[:resolutions].first[:message]).to include("could not be pushed")
       end
     end
 
@@ -167,6 +183,15 @@ RSpec.describe Conflicts::Resolve do
     mock_git_ops = instance_double(Containers::GitOperations)
     allow(Containers::GitOperations).to receive(:new).and_return(mock_git_ops)
     allow(mock_git_ops).to receive(:rebase_onto).with(branch_name).and_return(false)
+  end
+
+  def stub_rebase_with_failed_push(branch_name)
+    mock_container = instance_double(Containers::Provision)
+    allow(Containers::Provision).to receive(:reconnect).and_return(mock_container)
+    mock_git_ops = instance_double(Containers::GitOperations)
+    allow(Containers::GitOperations).to receive(:new).and_return(mock_git_ops)
+    allow(mock_git_ops).to receive(:rebase_onto).with(branch_name).and_return(true)
+    allow(mock_git_ops).to receive(:push_force_with_lease).and_raise(StandardError, "push rejected")
   end
 
   def conflict_detection(run_a_id, run_b_id)

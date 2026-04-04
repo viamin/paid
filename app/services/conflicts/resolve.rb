@@ -126,6 +126,8 @@ module Conflicts
             base_run_id: base_run.id
           }
         end
+
+        return manual_fallback(pair, rebase_result[:error] || "rebase_failed")
       end
 
       # Rebase failed or container unavailable — fall back
@@ -234,6 +236,8 @@ module Conflicts
       case reason.to_s
       when "runs_not_found"
         "Auto-rebase could not be completed because one or more runs could not be found#{run_context}. Manual review is required."
+      when "push_failed"
+        "Auto-rebase completed locally but the rebased branch could not be pushed#{run_context}. Manual review is required."
       when "rebase_failed"
         "Auto-rebase could not be completed because the conflicting branches could not be rebased cleanly#{run_context}. Manual review is required."
       else

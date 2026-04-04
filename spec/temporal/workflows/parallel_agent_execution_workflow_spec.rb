@@ -429,12 +429,20 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
 
   def stub_no_conflicts
     allow(workflow).to receive(:run_activity)
-      .with(Activities::DetectConflictsActivity, anything, timeout: 120)
-      .and_return(
-        has_conflicts: false, conflicting_pairs: [], files_by_run: [],
-        total_runs_checked: 0, detection_failed: false, failed_run_ids: [], requires_manual_review: false,
-        error: nil
-      )
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120) do |_, input, timeout:|
+        {
+          project_id: input.is_a?(Hash) ? input[:project_id] : nil,
+          has_conflicts: false,
+          conflicting_pairs: [],
+          files_by_run: [],
+          total_runs_checked: input.is_a?(Hash) ? Array(input[:agent_run_ids]).size : 0,
+          detection_failed: false,
+          failed_run_ids: [],
+          requires_manual_review: false,
+          resolution: nil,
+          error: nil
+        }
+      end
   end
 
   def stub_conflict_detected_and_unresolved
@@ -482,11 +490,13 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
   end
 
   def stub_successful_futures(count:)
+    raise ArgumentError, "count must be positive" unless count.positive?
+
     index = 0
     future_class = Struct.new(:done?, :failure?, :failure, :result, keyword_init: true)
     all_done = Struct.new(:wait).new(nil)
     allow(Temporalio::Workflow::Future).to receive(:new) do
-      agent_run_id = 42 + (index % count)
+      agent_run_id = 42 + index
       index += 1
       future_class.new("done?": true, "failure?": false, failure: nil, result: { success: true, agent_run_id: agent_run_id })
     end
