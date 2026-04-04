@@ -345,6 +345,7 @@ module Workflows
             issue_id: child[:issue_id],
             workflow_id: child[:workflow_id],
             success: result[:success] || false,
+            paused: result[:paused] || false,
             agent_run_id: result[:agent_run_id]
           }
         end
