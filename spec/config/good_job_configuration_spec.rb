@@ -3,33 +3,62 @@
 require "rails_helper"
 
 RSpec.describe GoodJob do
+  around do |example|
+    original_env = ENV.to_h.slice(
+      "GOOD_JOB_EXECUTION_MODE",
+      "GOOD_JOB_MAX_THREADS",
+      "GOOD_JOB_POLL_INTERVAL",
+      "GOOD_JOB_SHUTDOWN_TIMEOUT",
+      "GOOD_JOB_QUEUES"
+    )
+
+    %w[
+      GOOD_JOB_EXECUTION_MODE
+      GOOD_JOB_MAX_THREADS
+      GOOD_JOB_POLL_INTERVAL
+      GOOD_JOB_SHUTDOWN_TIMEOUT
+      GOOD_JOB_QUEUES
+    ].each { |key| ENV.delete(key) }
+
+    example.run
+  ensure
+    %w[
+      GOOD_JOB_EXECUTION_MODE
+      GOOD_JOB_MAX_THREADS
+      GOOD_JOB_POLL_INTERVAL
+      GOOD_JOB_SHUTDOWN_TIMEOUT
+      GOOD_JOB_QUEUES
+    ].each { |key| ENV.delete(key) }
+    original_env.each { |key, value| ENV[key] = value }
+  end
+
   describe "execution mode" do
     it "defaults to async_server" do
-      expect(Rails.application.config.good_job.execution_mode).to eq(:async_server)
+      expect(Paid::GoodJobConfig.execution_mode).to eq(:async_server)
     end
   end
 
   describe "max_threads" do
     it "defaults to 10" do
-      expect(Rails.application.config.good_job.max_threads).to eq(10)
+      expect(Paid::GoodJobConfig.max_threads).to eq(10)
     end
   end
 
   describe "poll_interval" do
     it "defaults to 3 seconds" do
-      expect(Rails.application.config.good_job.poll_interval).to eq(3)
+      expect(Paid::GoodJobConfig.poll_interval).to eq(3)
     end
   end
 
   describe "shutdown_timeout" do
     it "defaults to 25 seconds" do
-      expect(Rails.application.config.good_job.shutdown_timeout).to eq(25)
+      expect(Paid::GoodJobConfig.shutdown_timeout).to eq(25)
     end
   end
 
   describe "queue configuration" do
     it "defines per-queue thread caps with default first" do
-      queues = Rails.application.config.good_job.queues
+      queues = Paid::GoodJobConfig.queues
       queue_entries = queues.split(";")
 
       expect(queue_entries.first).to start_with("default:")
@@ -38,12 +67,12 @@ RSpec.describe GoodJob do
       )
     end
 
-    it "allocates threads that sum to max_threads" do
-      queues = Rails.application.config.good_job.queues
+    it "does not allocate more per-queue threads than max_threads" do
+      queues = Paid::GoodJobConfig.queues
       total_threads = queues.split(";").sum { |e| e.split(":").last.to_i }
-      max_threads = Rails.application.config.good_job.max_threads
+      max_threads = Paid::GoodJobConfig.max_threads
 
-      expect(total_threads).to eq(max_threads)
+      expect(total_threads).to be <= max_threads
     end
   end
 

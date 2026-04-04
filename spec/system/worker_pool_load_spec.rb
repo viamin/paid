@@ -34,7 +34,7 @@ RSpec.describe "Worker pool load behavior", type: :model do
       end
     end
 
-    it "processes higher-priority queues before lower-priority ones" do
+    it "lists queue pools in configured order" do
       queue_order = Rails.application.config.good_job.queues
         .split(";")
         .map { |entry| entry.split(":").first }
@@ -60,7 +60,9 @@ RSpec.describe "Worker pool load behavior", type: :model do
   end
 
   describe "database connection pool sizing" do
-    it "has sufficient pool size for web threads plus job threads" do
+    it "has sufficient pool size for web threads plus job threads in async_server mode" do
+      skip "only applies to in-process GoodJob execution" unless Rails.application.config.good_job.execution_mode == :async_server
+
       db_pool = ActiveRecord::Base.connection_pool.size
       good_job_threads = Rails.application.config.good_job.max_threads
       rails_threads = ENV.fetch("RAILS_MAX_THREADS", 3).to_i

@@ -13,7 +13,7 @@ GoodJob processes background jobs using a thread pool backed by PostgreSQL.
 |---|---|---|
 | `GOOD_JOB_EXECUTION_MODE` | `async_server` | `async_server` (in-process) or `external` (dedicated worker) |
 | `GOOD_JOB_MAX_THREADS` | `10` | Worker thread pool size |
-| `GOOD_JOB_QUEUES` | `default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1` | Per-queue thread caps (semicolons separate pools) |
+| `GOOD_JOB_QUEUES` | `default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1` | Per-queue thread caps (semicolons create independent pools) |
 | `GOOD_JOB_POLL_INTERVAL` | `3` | Seconds between DB polls for new jobs |
 | `GOOD_JOB_SHUTDOWN_TIMEOUT` | `25` | Seconds to wait for in-flight jobs during shutdown |
 | `GOOD_JOB_ENABLE_CRON` | `true` | Enable cron-scheduled jobs |
@@ -36,7 +36,8 @@ The thread pool size (`GOOD_JOB_MAX_THREADS`) determines maximum job concurrency
 Each thread holds one database connection, so this value must not exceed `DB_POOL`.
 
 The default configuration uses per-queue thread caps (semicolons in the queue string)
-so that high-priority queues are never starved by bulk low-priority work:
+to create independent pools. That reserves capacity for critical queues so
+bulk low-priority work cannot starve them:
 
 | Queue | Threads | Purpose |
 |---|---|---|
@@ -95,8 +96,8 @@ RAILS_MAX_THREADS=3
 
 # GoodJob (in-process)
 GOOD_JOB_EXECUTION_MODE=async_server
-GOOD_JOB_MAX_THREADS=5
-GOOD_JOB_QUEUES=default:2;maintenance:1;metrics:1;knowledge:1;low_priority:0
+GOOD_JOB_MAX_THREADS=6
+GOOD_JOB_QUEUES=default:2;maintenance:1;metrics:1;knowledge:1;low_priority:1
 GOOD_JOB_POLL_INTERVAL=5
 
 # Temporal worker
