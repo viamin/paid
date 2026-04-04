@@ -174,6 +174,16 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       }
     end
 
+    def expected_draft_queue_input(count:)
+      {
+        project_id: project_id,
+        issue_id: 10,
+        source_pull_request_number: 42,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: count
+      }
+    end
+
     def stub_draft_followup_capacity(has_capacity:)
       allow(workflow).to receive(:run_activity)
         .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
@@ -259,16 +269,13 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "routes draft phase triggers to draft followup workflow" do
-    allow(Temporalio::Workflow).to receive(:start_child_workflow)
-    allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
-    stub_draft_followup_capacity(has_capacity: true)
->>>>>>> origin/main
+      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
+      stub_draft_followup_capacity(has_capacity: true)
 
       workflow.send(:handle_pr_trigger, project_id,
         draft_pr_data(current_draft_review_count: 1, triggers: [ { type: "ci_failure" } ]))
 
       expect(workflow).to have_received(:run_activity)
-<<<<<<< HEAD
         .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
       expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
         Workflows::AgentExecutionWorkflow,
@@ -281,11 +288,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         ),
         hash_including(parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON)
       )
-=======
-        .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 }, timeout: 30)
-      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
->>>>>>> origin/main
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
     end
 
     it "queues draft followup runs without incrementing draft review count yet" do
@@ -297,13 +301,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(
           Activities::QueueAgentRunActivity,
-          hash_including(
-            project_id: project_id,
-            issue_id: 10,
-            source_pull_request_number: 42,
-            count_toward_draft_review_round: true,
-            expected_draft_review_count: 4
-          ),
+          expected_draft_queue_input(count: 4),
           timeout: 30
         )
       expect(workflow).not_to have_received(:run_activity)
@@ -344,9 +342,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "defers review request and dispatches followup when other triggers present" do
-      allow(workflow).to receive(:run_activity)
-        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
-        .and_return({ queued: true })
+      stub_draft_followup_capacity(has_capacity: false)
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
@@ -364,8 +360,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 }, timeout: 30)
+        .with(Activities::QueueAgentRunActivity, expected_draft_queue_input(count: 1), timeout: 30)
     end
 
     it "does not start followup workflow when review_bot_review_pending is the only trigger" do
