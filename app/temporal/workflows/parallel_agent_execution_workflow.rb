@@ -289,7 +289,7 @@ module Workflows
         .select { |r| r[:success] && r[:agent_run_id] }
         .map { |r| r[:agent_run_id] }
 
-      return no_conflicts_result(project_id: project_id) if successful_run_ids.size < 2
+      return no_conflicts_result(project_id: project_id, runs_checked: successful_run_ids.size) if successful_run_ids.size < 2
 
       detection = run_activity(
         Activities::DetectConflictsActivity,
@@ -347,12 +347,12 @@ module Workflows
       }
     end
 
-    def no_conflicts_result(project_id: nil)
+    def no_conflicts_result(project_id: nil, runs_checked: 0)
       {
         has_conflicts: false,
         conflicting_pairs: [],
         files_by_run: [],
-        total_runs_checked: 0,
+        total_runs_checked: runs_checked,
         project_id: project_id,
         detection_failed: false,
         failed_run_ids: [],

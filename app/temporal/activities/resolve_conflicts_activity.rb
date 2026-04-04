@@ -23,7 +23,7 @@ module Activities
     def execute(input)
       detection_result = input.fetch(:detection_result)
       project_id = input.fetch(:project_id)
-      strategy = input.fetch(:strategy, "auto_rebase")
+      strategy = normalize_strategy(input[:strategy])
 
       logger.info(
         message: "conflicts.resolve.started",
@@ -35,7 +35,7 @@ module Activities
       result = Conflicts::Resolve.call(
         detection_result: detection_result,
         project_id: project_id,
-        strategy: strategy.to_sym
+        strategy: strategy
       )
 
       logger.info(
@@ -47,6 +47,16 @@ module Activities
       )
 
       result
+    end
+
+    private
+
+    def normalize_strategy(value)
+      strategy = value
+      strategy = "auto_rebase" if strategy.nil? || (strategy.is_a?(String) && strategy.blank?)
+      return strategy.to_sym if strategy.is_a?(String) || strategy.is_a?(Symbol)
+
+      raise ArgumentError, "strategy must be a String or Symbol"
     end
   end
 end

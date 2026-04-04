@@ -189,6 +189,7 @@ RSpec.describe Conflicts::Detect do
         bare_project = create(:project)
         worktree_svc = instance_double(WorktreeService)
         allow(WorktreeService).to receive(:new).with(bare_project).and_return(worktree_svc)
+        allow(worktree_svc).to receive(:ensure_cloned).with(max_fetch_age: 2.minutes)
 
         run_a = create(:agent_run, :completed, project: bare_project,
           branch_name: "paid/bare-a", base_commit_sha: base_sha,
@@ -203,6 +204,31 @@ RSpec.describe Conflicts::Detect do
           .with("diff", "--name-only", base_sha, "c" * 40).and_return(files_b)
 
         [ run_a, run_b ]
+      end
+
+      it "ensures the bare repo is cloned before diffing" do
+        bare_project = create(:project)
+        worktree_svc = instance_double(WorktreeService)
+        allow(WorktreeService).to receive(:new).with(bare_project).and_return(worktree_svc)
+        allow(worktree_svc).to receive(:ensure_cloned).with(max_fetch_age: 2.minutes)
+
+        run_a = create(:agent_run, :completed, project: bare_project,
+          branch_name: "paid/bare-a", base_commit_sha: base_sha,
+          result_commit_sha: "b" * 40, container_id: nil)
+        allow(worktree_svc).to receive(:run_repo_command)
+          .with("diff", "--name-only", base_sha, "b" * 40)
+          .and_return("src/app.rb\n")
+
+        run_b = create(:agent_run, :completed, project: bare_project,
+          branch_name: "paid/bare-b", base_commit_sha: base_sha,
+          result_commit_sha: "c" * 40, container_id: nil)
+        allow(worktree_svc).to receive(:run_repo_command)
+          .with("diff", "--name-only", base_sha, "c" * 40)
+          .and_return("src/other.rb\n")
+
+        described_class.call(agent_run_ids: [ run_a.id, run_b.id ], project_id: bare_project.id)
+
+        expect(worktree_svc).to have_received(:ensure_cloned).with(max_fetch_age: 2.minutes).twice
       end
     end
   end

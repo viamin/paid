@@ -136,6 +136,7 @@ module Conflicts
       return Set.new unless run.project
 
       worktree_service = WorktreeService.new(run.project)
+      worktree_service.ensure_cloned(max_fetch_age: 2.minutes)
       output = worktree_service.run_repo_command(
         "diff", "--name-only", run.base_commit_sha, run.result_commit_sha
       )

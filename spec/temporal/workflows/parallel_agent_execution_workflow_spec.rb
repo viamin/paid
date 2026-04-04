@@ -277,6 +277,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       result = workflow.execute(two_task_input)
 
       expect(result[:conflicts][:project_id]).to eq(1)
+      expect(result[:conflicts][:total_runs_checked]).to eq(1)
     end
   end
 
@@ -481,11 +482,15 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
   end
 
   def stub_successful_futures(count:)
-    future = Struct.new(:done?, :failure?, :failure, :result, keyword_init: true)
-      .new("done?": true, "failure?": false, failure: nil, result: { success: true, agent_run_id: 42 })
-
+    index = 0
+    future_class = Struct.new(:done?, :failure?, :failure, :result, keyword_init: true)
     all_done = Struct.new(:wait).new(nil)
-    allow(Temporalio::Workflow::Future).to receive_messages(new: future, try_all_of: all_done)
+    allow(Temporalio::Workflow::Future).to receive(:new) do
+      agent_run_id = 42 + (index % count)
+      index += 1
+      future_class.new("done?": true, "failure?": false, failure: nil, result: { success: true, agent_run_id: agent_run_id })
+    end
+    allow(Temporalio::Workflow::Future).to receive(:try_all_of).and_return(all_done)
   end
 
   def stub_mixed_futures

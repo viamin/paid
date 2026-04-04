@@ -39,11 +39,7 @@ module Conflicts
     def initialize(detection_result:, project_id:, strategy: :auto_rebase)
       @detection_result = detection_result
       @project_id = project_id
-      @strategy = strategy.to_sym
-
-      unless STRATEGIES.include?(@strategy)
-        raise ArgumentError, "Unknown strategy: #{@strategy}. Must be one of: #{STRATEGIES.join(", ")}"
-      end
+      @strategy = normalize_strategy(strategy)
     end
 
     def call
@@ -72,6 +68,19 @@ module Conflicts
     end
 
     private
+
+    def normalize_strategy(strategy)
+      candidate = strategy
+      candidate = :auto_rebase if candidate.nil? || (candidate.is_a?(String) && candidate.blank?)
+      unless candidate.is_a?(String) || candidate.is_a?(Symbol)
+        raise ArgumentError, "strategy must be a String or Symbol"
+      end
+
+      normalized = candidate.to_sym
+      return normalized if STRATEGIES.include?(normalized)
+
+      raise ArgumentError, "Unknown strategy: #{normalized}. Must be one of: #{STRATEGIES.join(", ")}"
+    end
 
     def resolve_conflicts
       @detection_result[:conflicting_pairs].map do |pair|

@@ -22,6 +22,24 @@ RSpec.describe Conflicts::Resolve do
       }.to raise_error(ArgumentError, /Unknown strategy/)
     end
 
+    it "defaults nil strategy to auto_rebase" do
+      detection = { has_conflicts: false, conflicting_pairs: [] }
+
+      result = described_class.call(detection_result: detection, project_id: 1, strategy: nil)
+
+      expect(result[:resolved]).to be true
+      expect(result[:strategy]).to eq(:auto_rebase)
+    end
+
+    it "raises a clear error for invalid strategy types" do
+      expect {
+        described_class.call(
+          detection_result: { has_conflicts: true, conflicting_pairs: [] },
+          project_id: 1, strategy: []
+        )
+      }.to raise_error(ArgumentError, /strategy must be a String or Symbol/)
+    end
+
     context "with :manual strategy" do
       it "flags all pairs for manual review" do
         detection = {

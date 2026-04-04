@@ -36,6 +36,19 @@ RSpec.describe Activities::ResolveConflictsActivity do
         detection_result: detection, project_id: 1, strategy: :auto_rebase
       )
     end
+
+    it "defaults nil strategy to auto_rebase" do
+      detection = { has_conflicts: false, conflicting_pairs: [] }
+      allow(Conflicts::Resolve).to receive(:call)
+        .with(detection_result: detection, project_id: 1, strategy: :auto_rebase)
+        .and_return(resolved: true, strategy: :auto_rebase, resolutions: [], project_id: 1)
+
+      activity.execute({ detection_result: detection, project_id: 1, strategy: nil })
+
+      expect(Conflicts::Resolve).to have_received(:call).with(
+        detection_result: detection, project_id: 1, strategy: :auto_rebase
+      )
+    end
   end
 
   private
