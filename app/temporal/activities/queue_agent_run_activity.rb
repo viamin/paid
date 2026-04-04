@@ -8,7 +8,7 @@ module Activities
       project_id = input[:project_id]
       issue_id = input[:issue_id]
       custom_prompt = input[:custom_prompt]
-      agent_type = input.fetch(:agent_type, "claude_code")
+      requested_agent_type = input[:agent_type]
       provider_id = input[:provider_id]
       source_pull_request_number = input[:source_pull_request_number]
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
@@ -16,6 +16,13 @@ module Activities
 
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
+      provider_id, agent_type = resolve_provider_selection(
+        project: project,
+        requested_agent_type: requested_agent_type,
+        requested_provider_id: provider_id,
+        agent_type_provided: input.key?(:agent_type),
+        provider_id_provided: input.key?(:provider_id)
+      )
 
       # Use a transaction with row-level locking to prevent duplicate
       # queued/active runs for the same issue or PR under concurrency.
@@ -66,10 +73,47 @@ module Activities
         issue_id: issue_id
       )
 
+      ProcessRunQueueJob.perform_later
+
       { agent_run_id: agent_run.id, queued: true }
     end
 
     private
+
+    def resolve_provider_selection(project:, requested_agent_type:, requested_provider_id:, agent_type_provided:, provider_id_provided:)
+      if provider_id_provided || agent_type_provided
+        provider = provider_for_id(requested_provider_id)
+        resolved_agent_type =
+          if provider
+            Provider.agent_type_for(provider.provider_key)
+          else
+            requested_agent_type || "claude_code"
+          end
+
+        return [ requested_provider_id, resolved_agent_type ]
+      end
+
+      provider = default_provider_for(project)
+      return [ provider&.id, Provider.agent_type_for(provider.provider_key) ] if provider
+
+      [ nil, "claude_code" ]
+    end
+
+    def default_provider_for(project)
+      owner = project.effective_owner
+      return unless owner
+
+      settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
+      return Provider.ensure_default_for(owner) unless settings
+
+      Provider.for_identifier(settings.user, settings.default_provider_identifier) || Provider.ensure_default_for(settings.user)
+    end
+
+    def provider_for_id(provider_id)
+      return if provider_id.blank?
+
+      Provider.find_by(id: provider_id)
+    end
 
     # Returns nil for custom-prompt-only runs (no issue or PR) intentionally:
     # custom prompts are unique by definition and cannot be meaningfully deduplicated.
