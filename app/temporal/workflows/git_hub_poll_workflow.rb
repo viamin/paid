@@ -270,34 +270,36 @@ module Workflows
     def start_draft_followup_workflow(project_id, pr_data)
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
+      capacity = run_activity(Activities::CheckRunCapacityActivity,
+        { project_id: project_id }, timeout: 30)
 
       draft_input = {
         count_toward_draft_review_round: true,
         expected_draft_review_count: pr_data[:current_draft_review_count]
       }
 
-    unless capacity[:has_capacity]
-      run_activity(Activities::QueueAgentRunActivity,
-        { project_id: project_id, issue_id: issue_id,
-          source_pull_request_number: pr_number }.merge(draft_input), timeout: 30)
-      return
-    end
+      unless capacity[:has_capacity]
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: issue_id,
+            source_pull_request_number: pr_number }.merge(draft_input), timeout: 30)
+        return
+      end
 
-    timestamp = Temporalio::Workflow.now.to_i
-    workflow_id = "draft-followup-#{project_id}-#{pr_number}-#{timestamp}"
+      timestamp = Temporalio::Workflow.now.to_i
+      workflow_id = "draft-followup-#{project_id}-#{pr_number}-#{timestamp}"
 
-    Temporalio::Workflow.start_child_workflow(
-      Workflows::AgentExecutionWorkflow,
-      {
-        project_id: project_id,
-        issue_id: issue_id,
-        source_pull_request_number: pr_number,
-        count_toward_draft_review_round: draft_input[:count_toward_draft_review_round],
-        expected_draft_review_count: draft_input[:expected_draft_review_count]
-      },
-      id: workflow_id,
-      parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
-    )
+      Temporalio::Workflow.start_child_workflow(
+        Workflows::AgentExecutionWorkflow,
+        {
+          project_id: project_id,
+          issue_id: issue_id,
+          source_pull_request_number: pr_number,
+          count_toward_draft_review_round: draft_input[:count_toward_draft_review_round],
+          expected_draft_review_count: draft_input[:expected_draft_review_count]
+        },
+        id: workflow_id,
+        parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+      )
     end
 
     def start_pr_followup_workflow(project_id, pr_data)
