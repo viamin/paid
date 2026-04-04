@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class QualityMetricsCollectionJob < ApplicationJob
-  queue_as :default
+  queue_as :metrics
 
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)

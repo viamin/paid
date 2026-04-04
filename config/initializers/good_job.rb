@@ -1,10 +1,81 @@
 # frozen_string_literal: true
 
-# Configure GoodJob cron schedule.
+module Paid
+  module GoodJobConfig
+    module_function
+
+    def execution_mode(env = ENV)
+      env.fetch("GOOD_JOB_EXECUTION_MODE", :async_server).to_sym
+    end
+
+    def max_threads(env = ENV)
+      Integer(env.fetch("GOOD_JOB_MAX_THREADS", "10"))
+    end
+
+    def queues(env = ENV)
+      env.fetch(
+        "GOOD_JOB_QUEUES",
+        "default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1"
+      )
+    end
+
+    def poll_interval(env = ENV)
+      Integer(env.fetch("GOOD_JOB_POLL_INTERVAL", "3"))
+    end
+
+    def shutdown_timeout(env = ENV)
+      Integer(env.fetch("GOOD_JOB_SHUTDOWN_TIMEOUT", "25"))
+    end
+
+    def enable_cron(env = ENV)
+      ActiveModel::Type::Boolean.new.cast(env.fetch("GOOD_JOB_ENABLE_CRON", "true"))
+    end
+  end
+end
+
+# Configure GoodJob worker pools, queue roles, and cron schedule.
+#
+# Queue priority order (highest to lowest):
+#   1. default     — core business logic (run queue processing, workflow health, etc.)
+#   2. maintenance — cleanup, reconciliation, recovery (can tolerate brief delays)
+#   3. metrics     — telemetry and analytics (deferrable under load)
+#   4. knowledge   — embedding and indexing (CPU-intensive, bursty)
+#   5. low_priority — dashboard broadcasts, delayed feedback, non-urgent batch work
+#
+# Thread allocation (default total: 10 threads):
+#   - default:3     — reserves 3 threads for critical work
+#   - maintenance:2  — 2 threads for cleanup/reconciliation
+#   - metrics:2      — 2 threads for telemetry collection
+#   - knowledge:2    — 2 threads for embedding (CPU-bound)
+#   - low_priority:1 — 1 thread for non-urgent work
+#
+# See docs/WORKER_POOL_TUNING.md for deployment sizing guidance.
 Rails.application.configure do
-  config.x.good_job_enable_cron = ActiveModel::Type::Boolean.new.cast(
-    ENV.fetch("GOOD_JOB_ENABLE_CRON", "true")
-  )
+  # Execution mode: async_server runs jobs in the web process (single-server),
+  # external runs a separate worker process (multi-server).
+  config.good_job.execution_mode = Paid::GoodJobConfig.execution_mode
+
+  # Worker thread pool size. Each thread holds one DB connection, so this
+  # must not exceed the DB_POOL setting (default 20). The per-queue thread
+  # limits below carve this pool into priority bands so high-priority work
+  # is never starved by bulk low-priority jobs.
+  config.good_job.max_threads = Paid::GoodJobConfig.max_threads
+
+  # Queue string with per-queue thread caps (queue_name:max_threads).
+  # Semicolons create independent queue pools with fixed capacity, which is
+  # exactly what we want here: each queue keeps its own reserved budget and
+  # low-priority bursts cannot consume threads needed by default work.
+  config.good_job.queues = Paid::GoodJobConfig.queues
+
+  # How long to wait between polling the DB for new jobs (seconds).
+  # Lower values reduce latency for enqueued jobs at the cost of more
+  # frequent DB queries. 3s balances responsiveness with DB load.
+  config.good_job.poll_interval = Paid::GoodJobConfig.poll_interval
+
+  # Shutdown timeout — how long to wait for in-flight jobs before forcing exit.
+  config.good_job.shutdown_timeout = Paid::GoodJobConfig.shutdown_timeout
+
+  config.x.good_job_enable_cron = Paid::GoodJobConfig.enable_cron
   config.good_job.enable_cron = config.x.good_job_enable_cron
 
   config.good_job.cron = {
