@@ -12,7 +12,7 @@ RSpec.describe Activities::ResolveConflictsActivity do
     it "delegates to Conflicts::Resolve service" do
       resolution = build_resolution(resolved: false, requires_manual_review: true)
       allow(Conflicts::Resolve).to receive(:call)
-        .with(detection_result: detection_with_conflicts, project_id: 42, strategy: :manual)
+        .with(detection_result: detection_with_conflicts, project_id: 42, strategy: "manual")
         .and_return(resolution)
 
       result = activity.execute({
@@ -26,27 +26,27 @@ RSpec.describe Activities::ResolveConflictsActivity do
     it "defaults to auto_rebase strategy" do
       detection = { has_conflicts: false, conflicting_pairs: [] }
       allow(Conflicts::Resolve).to receive(:call)
-        .with(detection_result: detection, project_id: 1, strategy: :auto_rebase)
+        .with(detection_result: detection, project_id: 1, strategy: nil)
         .and_return(resolved: true, strategy: :auto_rebase, resolutions: [], project_id: 1)
 
       result = activity.execute({ detection_result: detection, project_id: 1 })
 
       expect(result[:resolved]).to be true
       expect(Conflicts::Resolve).to have_received(:call).with(
-        detection_result: detection, project_id: 1, strategy: :auto_rebase
+        detection_result: detection, project_id: 1, strategy: nil
       )
     end
 
     it "defaults nil strategy to auto_rebase" do
       detection = { has_conflicts: false, conflicting_pairs: [] }
       allow(Conflicts::Resolve).to receive(:call)
-        .with(detection_result: detection, project_id: 1, strategy: :auto_rebase)
+        .with(detection_result: detection, project_id: 1, strategy: nil)
         .and_return(resolved: true, strategy: :auto_rebase, resolutions: [], project_id: 1)
 
       activity.execute({ detection_result: detection, project_id: 1, strategy: nil })
 
       expect(Conflicts::Resolve).to have_received(:call).with(
-        detection_result: detection, project_id: 1, strategy: :auto_rebase
+        detection_result: detection, project_id: 1, strategy: nil
       )
     end
   end

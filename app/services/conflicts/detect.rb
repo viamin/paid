@@ -27,6 +27,8 @@ module Conflicts
     def initialize(agent_run_ids:, project_id: nil)
       @agent_run_ids = agent_run_ids
       @project_id = project_id
+      @worktree_services = {}
+      @prepared_worktree_project_ids = Set.new
     end
 
     def call
@@ -61,6 +63,7 @@ module Conflicts
     def load_completed_runs
       scope = AgentRun
         .completed
+        .includes(:agent_run_phases, :project)
         .where(id: @agent_run_ids)
         .where.not(branch_name: nil)
 
@@ -143,8 +146,7 @@ module Conflicts
     def diff_files_from_bare_repo(run)
       return Set.new unless run.project
 
-      worktree_service = WorktreeService.new(run.project)
-      worktree_service.ensure_cloned(max_fetch_age: 2.minutes)
+      worktree_service = worktree_service_for(run.project)
       output = worktree_service.run_repo_command(
         "diff", "--name-only", run.base_commit_sha, run.result_commit_sha
       )
@@ -157,6 +159,21 @@ module Conflicts
         error: e.message
       )
       Set.new
+    end
+
+    def worktree_service_for(project)
+      @worktree_services[project.id] ||= begin
+        worktree_service = WorktreeService.new(project)
+        prepare_worktree_service(project.id, worktree_service)
+        worktree_service
+      end
+    end
+
+    def prepare_worktree_service(project_id, worktree_service)
+      return if @prepared_worktree_project_ids.include?(project_id)
+
+      worktree_service.ensure_cloned(max_fetch_age: 2.minutes)
+      @prepared_worktree_project_ids << project_id
     end
 
     # Falls back to extracting changed files from any phase metadata.

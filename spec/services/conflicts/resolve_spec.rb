@@ -83,6 +83,8 @@ RSpec.describe Conflicts::Resolve do
 
         expect(result[:resolved]).to be false
         expect(result[:resolutions].first[:action]).to eq(:manual)
+        expect(result[:resolutions].first[:reason]).to eq("runs_not_found")
+        expect(result[:resolutions].first[:message]).to include("could not be found")
       end
 
       it "falls back to manual when container is unavailable" do
@@ -97,6 +99,8 @@ RSpec.describe Conflicts::Resolve do
 
         expect(result[:resolved]).to be false
         expect(result[:resolutions].first[:action]).to eq(:manual)
+        expect(result[:resolutions].first[:reason]).to eq("rebase_failed")
+        expect(result[:resolutions].first[:message]).to include("rebased cleanly")
       end
 
       it "resolves via rebase when rebase succeeds" do

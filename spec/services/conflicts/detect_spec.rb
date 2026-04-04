@@ -39,6 +39,13 @@ RSpec.describe Conflicts::Detect do
     context "with git-tracked runs" do
       let(:project) { create(:project) }
       let(:base_sha) { "a" * 40 }
+      let(:default_worktree_service) { instance_double(WorktreeService) }
+
+      before do
+        allow(WorktreeService).to receive(:new).and_return(default_worktree_service)
+        allow(default_worktree_service).to receive(:ensure_cloned).with(max_fetch_age: 2.minutes)
+        allow(default_worktree_service).to receive(:run_repo_command).and_raise(StandardError, "no repo")
+      end
 
       def create_run(result_sha:, changed_files:)
         run = create(:agent_run, :completed, project: project,
@@ -265,7 +272,7 @@ RSpec.describe Conflicts::Detect do
 
         described_class.call(agent_run_ids: [ run_a.id, run_b.id ], project_id: bare_project.id)
 
-        expect(worktree_svc).to have_received(:ensure_cloned).with(max_fetch_age: 2.minutes).twice
+        expect(worktree_svc).to have_received(:ensure_cloned).with(max_fetch_age: 2.minutes).once
       end
     end
   end

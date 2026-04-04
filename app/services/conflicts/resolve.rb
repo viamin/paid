@@ -222,8 +222,23 @@ module Conflicts
         files: pair[:files],
         resolved: false,
         action: :manual,
-        message: "Auto-rebase failed: #{reason}"
+        reason: reason,
+        message: manual_fallback_message(pair, reason)
       }
+    end
+
+    def manual_fallback_message(pair, reason)
+      run_ids = Array(pair[:runs]).compact
+      run_context = run_ids.any? ? " for runs #{run_ids.join(', ')}" : ""
+
+      case reason.to_s
+      when "runs_not_found"
+        "Auto-rebase could not be completed because one or more runs could not be found#{run_context}. Manual review is required."
+      when "rebase_failed"
+        "Auto-rebase could not be completed because the conflicting branches could not be rebased cleanly#{run_context}. Manual review is required."
+      else
+        "Auto-rebase could not be completed#{run_context}. Manual review is required."
+      end
     end
 
     def log_resolution_result(resolutions, all_resolved)
