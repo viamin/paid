@@ -563,6 +563,7 @@ RSpec.describe AgentRun do
         project = build(:project, max_tokens_per_run: 1_000_000)
         agent_run =
           build(:agent_run, project: project, tokens_input: 400_000, tokens_output: 100_000)
+
         expect(agent_run.token_limit_usage_ratio).to eq(0.5)
       end
     end

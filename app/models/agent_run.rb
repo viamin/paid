@@ -363,12 +363,8 @@ class AgentRun < ApplicationRecord
   end
 
   # Returns the fraction of the token limit consumed (0.0–1.0+).
-  # Returns nil if the resolved limit is explicitly disabled with 0.
   def token_limit_usage_ratio
-    limit = effective_max_tokens_per_run
-    return nil if limit.zero?
-
-    total_tokens.to_f / limit
+    total_tokens.to_f / effective_max_tokens_per_run
   end
 
   def resource_summary
