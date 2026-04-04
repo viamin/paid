@@ -570,7 +570,7 @@ RSpec.describe Providers::TestAgent do
       let(:execution_result) do
         Containers::Provision::Result.failure(
           error: "Command exited with code 1",
-          stdout: "You're out of extra usage \xB7 resets 8am (UTC)\n".b,
+          stdout: "You're out of extra usage \xB7 resets 8am (UTC)\x00\n".b,
           stderr: "",
           exit_code: 1
         )
@@ -616,7 +616,7 @@ RSpec.describe Providers::TestAgent do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
       let(:execution_result) do
         Containers::Provision::Result.failure(
-          error: "Invalid API key \xFF".b,
+          error: "Invalid API key \xFF\x00".b,
           stdout: "",
           stderr: "",
           exit_code: 1
@@ -687,7 +687,7 @@ RSpec.describe Providers::TestAgent do
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
         stub_insert_all
         allow(test_run).to receive(:with_container)
-          .and_raise(Containers::Provision::ProvisionError, "Connection refused \xFF".b)
+          .and_raise(Containers::Provision::ProvisionError, "Connection refused \xFF\x00".b)
       end
 
       it "normalizes the rescued exception message" do
@@ -772,7 +772,7 @@ RSpec.describe Providers::TestAgent do
         allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
           container_executable_provider_key?: true, harness_provider_key_for: "gemini")
         allow(AgentRun).to receive(:insert_all!)
-          .and_raise(RuntimeError, "Something went wrong \xFF".b)
+          .and_raise(RuntimeError, "Something went wrong \xFF\x00".b)
       end
 
       it "normalizes the rescued exception message" do
