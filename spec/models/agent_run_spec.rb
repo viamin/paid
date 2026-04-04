@@ -532,10 +532,37 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#effective_max_tokens_per_run" do
+      it "returns the project override when set" do
+        project = create(:project, max_tokens_per_run: 500_000)
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_tokens_per_run).to eq(500_000)
+      end
+
+      it "uses an explicit user setting override when the project has none" do
+        project = create(:project, max_tokens_per_run: nil)
+        project.created_by.settings.update!(max_tokens_per_run: 750_000)
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_tokens_per_run).to eq(750_000)
+      end
+
+      it "falls back to the account default when the user setting is just the inherited global default" do
+        project = create(:project, max_tokens_per_run: nil)
+        project.account.update!(default_max_tokens_per_run: 2_000_000)
+        project.created_by.settings
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_tokens_per_run).to eq(2_000_000)
+      end
+    end
+
     describe "#token_limit_usage_ratio" do
       it "returns the ratio of tokens used to limit" do
         project = build(:project, max_tokens_per_run: 1_000_000)
-        agent_run = build(:agent_run, project: project, tokens_input: 400_000, tokens_output: 100_000)
+        agent_run =
+          build(:agent_run, project: project, tokens_input: 400_000, tokens_output: 100_000)
         expect(agent_run.token_limit_usage_ratio).to eq(0.5)
       end
     end

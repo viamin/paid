@@ -139,6 +139,14 @@ RSpec.describe TokenUsageTracker do
       project.update!(max_tokens_per_run: 10_000, token_limit_warning_threshold: 80)
     end
 
+    it "persists the agent run once when token_limit_status changes" do
+      allow(agent_run).to receive(:save!).and_call_original
+
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+
+      expect(agent_run).to have_received(:save!).once
+    end
+
     it "sets token_limit_status to ok when below warning threshold" do
       described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 1000 })
       expect(agent_run.reload.token_limit_status).to eq("ok")
@@ -201,6 +209,20 @@ RSpec.describe TokenUsageTracker do
       it "marks exceeded when usage reaches the UserSetting limit" do
         described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 2000 })
         expect(agent_run.reload.token_limit_status).to eq("exceeded")
+      end
+    end
+
+    context "when the UserSetting still has the inherited global default" do
+      before do
+        project.update!(max_tokens_per_run: nil)
+        project.account.update!(default_max_tokens_per_run: 6_000)
+        project.created_by.settings
+      end
+
+      it "uses the account default for status transitions" do
+        described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 2000 })
+
+        expect(agent_run.reload.token_limit_status).to eq("warning")
       end
     end
   end

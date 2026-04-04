@@ -510,6 +510,25 @@ RSpec.describe "Api::SecretsProxy" do
       end
     end
 
+    context "when the UserSetting still has the inherited global default" do
+      before do
+        project.update!(max_tokens_per_run: nil)
+        project.account.update!(default_max_tokens_per_run: 6_000)
+        project.created_by.settings
+      end
+
+      it "uses the account default for rate limiting" do
+        agent_run.update!(tokens_input: 4_000, tokens_output: 2_000)
+
+        post "/api/proxy/anthropic/v1/messages",
+          params: {}.to_json,
+          headers: valid_headers
+
+        expect(response).to have_http_status(:too_many_requests)
+        expect(JSON.parse(response.body)["token_limit"]).to eq(6_000)
+      end
+    end
+
     context "when agent run is within token limit" do
       let(:agent_run) do
         create(:agent_run, :running, project: project,

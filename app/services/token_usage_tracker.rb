@@ -36,8 +36,8 @@ class TokenUsageTracker
           agent_run.increment(:tokens_input, tokens_input)
           agent_run.increment(:tokens_output, tokens_output)
           agent_run.increment(:cost_cents, cost_cents)
+          apply_token_limit_status(agent_run)
           agent_run.save!
-          check_token_limits(agent_run)
         end
 
         agent_run.project.increment_metrics!(
@@ -67,7 +67,7 @@ class TokenUsageTracker
   # Evaluates the agent run's cumulative token usage against project limits
   # and updates the token_limit_status field. Logs warnings at the soft
   # threshold and records "exceeded" at the hard limit.
-  def self.check_token_limits(agent_run)
+  def self.apply_token_limit_status(agent_run)
     hard_limit = agent_run.effective_max_tokens_per_run
     warning_threshold = agent_run.project.token_limit_warning_threshold
     warning_at = (hard_limit * warning_threshold / 100.0).floor
@@ -85,7 +85,7 @@ class TokenUsageTracker
 
     return if new_status == previous_status
 
-    agent_run.update!(token_limit_status: new_status)
+    agent_run.token_limit_status = new_status
 
     if new_status == "warning" && previous_status != "warning"
       agent_run.log!(
@@ -117,7 +117,7 @@ class TokenUsageTracker
       )
     end
   end
-  private_class_method :check_token_limits
+  private_class_method :apply_token_limit_status
 
   # Thread-safe in-memory cache of LlmModel records keyed by model_id string.
   # Avoids a DB query per tracked request in the high-volume proxy path.

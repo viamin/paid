@@ -357,16 +357,16 @@ class AgentRun < ApplicationRecord
   # → global default. Matches the enforcement logic in SecretsProxyController.
   def effective_max_tokens_per_run
     project.max_tokens_per_run ||
-      AgentRuns::UserSettingsResolver.call(project: project, strict: false)&.max_tokens_per_run ||
+      explicit_user_max_tokens_per_run ||
       project.account.default_max_tokens_per_run ||
       DEFAULT_MAX_TOKENS_PER_RUN
   end
 
   # Returns the fraction of the token limit consumed (0.0–1.0+).
-  # Returns nil if no limit is configured.
+  # Returns nil if the resolved limit is explicitly disabled with 0.
   def token_limit_usage_ratio
     limit = effective_max_tokens_per_run
-    return nil if limit.nil? || limit.zero?
+    return nil if limit.zero?
 
     total_tokens.to_f / limit
   end
@@ -847,6 +847,17 @@ class AgentRun < ApplicationRecord
       .update_all(last_agent_run_at: created_at, updated_at: Time.current)
   end
 
+  # Treat the auto-created user setting's global default as "inherit" so the
+  # account default still applies unless the user has a meaningful override.
+  def explicit_user_max_tokens_per_run
+    max_tokens_per_run =
+      AgentRuns::UserSettingsResolver.call(project: project, strict: false)&.max_tokens_per_run
+    return nil if max_tokens_per_run.blank?
+    return nil if max_tokens_per_run == DEFAULT_MAX_TOKENS_PER_RUN
+
+    max_tokens_per_run
+  end
+
   def just_finished?
     previous_changes.key?("status") && finished?
   end
@@ -859,6 +870,8 @@ class AgentRun < ApplicationRecord
   def just_started_running?
     previous_changes.key?("status") && status == "running"
   end
+
+  private :explicit_user_max_tokens_per_run
 
   def just_timed_out_issue_goal?
     previous_changes.key?("status") && status == "timeout" && create_issue_goal?
