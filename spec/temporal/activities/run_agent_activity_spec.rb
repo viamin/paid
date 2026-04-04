@@ -535,6 +535,24 @@ RSpec.describe Activities::RunAgentActivity do
         )
       end
 
+      def expect_prompt_echo_to_fail_without_rate_limit!(prompt:, output:)
+        allow(agent_run).to receive(:effective_prompt).and_return(prompt)
+        allow(container_service).to receive(:execute).and_return(output)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.error_message).to include("All providers exhausted")
+        expect(agent_run.error_message).not_to include("rate limited")
+
+        provider_state = user.provider_states.find_by(provider_name: "claude")
+        expect(provider_state&.rate_limited_until).to be_nil
+      end
+
       before do
         allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
         allow(container_service).to receive(:execute).and_return(rate_limit_output)
@@ -557,6 +575,37 @@ RSpec.describe Activities::RunAgentActivity do
         }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
 
         expect(agent_run.reload.status).to eq("rate_limited")
+      end
+
+      it "does not classify echoed prompt text as a rate limit" do
+        echoed_prompt = <<~PROMPT
+          Investigate why the secrets proxy returns 429 for token usage limits.
+          Confirm whether the provider itself is actually rate limited.
+        PROMPT
+        prompt_echo_output = Containers::Provision::Result.failure(
+          error: "killed", stdout: "", stderr: echoed_prompt, exit_code: 137
+        )
+
+        expect_prompt_echo_to_fail_without_rate_limit!(prompt: echoed_prompt, output: prompt_echo_output)
+      end
+
+      it "ignores prompt echoes wrapped in common prefixes" do
+        echoed_prompt = <<~PROMPT
+          Investigate why the secrets proxy returns 429 for token usage limits.
+          Confirm whether the provider itself is actually rate limited.
+        PROMPT
+        prefixed_prompt_echo_output = Containers::Provision::Result.failure(
+          error: "killed",
+          stdout: "",
+          stderr: <<~OUTPUT,
+            user
+            > Investigate why the secrets proxy returns 429 for token usage limits.
+            > Confirm whether the provider itself is actually rate limited.
+          OUTPUT
+          exit_code: 137
+        )
+
+        expect_prompt_echo_to_fail_without_rate_limit!(prompt: echoed_prompt, output: prefixed_prompt_echo_output)
       end
     end
 
