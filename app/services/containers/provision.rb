@@ -252,13 +252,15 @@ module Containers
             last_activity_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           end
 
+          normalized_chunk = normalize_output_chunk(chunk)
+
           case stream_type
           when :stdout
-            stdout_buffer << chunk
-            log_output(:stdout, chunk) if stream
+            stdout_buffer << normalized_chunk
+            log_output(:stdout, normalized_chunk) if stream
           when :stderr
-            stderr_buffer << chunk
-            log_output(:stderr, chunk) if stream
+            stderr_buffer << normalized_chunk
+            log_output(:stderr, normalized_chunk) if stream
           end
         end
 
@@ -1187,6 +1189,21 @@ module Containers
       return if content.blank?
 
       agent_run.log!(type.to_s, content)
+    end
+
+    def normalize_output_chunk(chunk)
+      text = chunk.to_s
+
+      if text.encoding == Encoding::UTF_8 && text.valid_encoding?
+        return text unless text.include?("\x00")
+
+        return text.delete("\x00")
+      end
+
+      normalized_text = text.dup.force_encoding(Encoding::UTF_8).scrub
+      return normalized_text unless normalized_text.include?("\x00")
+
+      normalized_text.delete("\x00")
     end
 
     def log_partial_output(stdout_buffer, stderr_buffer)

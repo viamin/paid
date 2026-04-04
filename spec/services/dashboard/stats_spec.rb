@@ -425,7 +425,8 @@ RSpec.describe Dashboard::Stats do
       let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
       let(:provider_entry) do
         create(:provider, :api_key, user: owner, provider_key: "opencode",
-          provider_api_key: api_key, name: "Opencode Kimi K2")
+          provider_api_key: api_key, name: "Opencode Kimi K2",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
       end
 
       before do
@@ -449,14 +450,16 @@ RSpec.describe Dashboard::Stats do
       let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
       let(:deleted_provider_routing_key) do
         provider = create(:provider, :api_key, user: owner, provider_key: "opencode",
-          provider_api_key: api_key, name: "Deleted Provider Entry 1")
+          provider_api_key: api_key, name: "Deleted Provider Entry 1",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
         routing_key = provider.routing_key
         provider.destroy!
         routing_key
       end
       let(:other_deleted_provider_routing_key) do
         provider = create(:provider, :api_key, user: owner, provider_key: "opencode",
-          provider_api_key: api_key, name: "Deleted Provider Entry 2")
+          provider_api_key: api_key, name: "Deleted Provider Entry 2",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
         routing_key = provider.routing_key
         provider.destroy!
         routing_key
@@ -481,11 +484,13 @@ RSpec.describe Dashboard::Stats do
       let(:second_api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
       let!(:first_provider_entry) do
         create(:provider, :api_key, user: owner, provider_key: "opencode",
-          provider_api_key: first_api_key, name: "Shared Label")
+          provider_api_key: first_api_key, name: "Shared Label",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
       end
       let!(:second_provider_entry) do
         create(:provider, :api_key, user: owner, provider_key: "opencode",
-          provider_api_key: second_api_key, name: "Shared Label", fallback_role: "rate_limit_fallback")
+          provider_api_key: second_api_key, name: "Shared Label", fallback_role: "rate_limit_fallback",
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } })
       end
 
       before do

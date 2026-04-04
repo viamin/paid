@@ -491,7 +491,7 @@ class AgentRun < ApplicationRecord
   def log!(type, content, metadata: nil)
     agent_run_logs.create!(
       log_type: type,
-      content: content.to_s.delete("\x00"),
+      content: normalize_log_content(content),
       metadata: metadata
     )
   end
@@ -724,6 +724,13 @@ class AgentRun < ApplicationRecord
     return if expected_draft_review_count.present?
 
     errors.add(:expected_draft_review_count, "is required when counting toward draft review rounds")
+  end
+
+  def normalize_log_content(content)
+    text = content.to_s
+    return text.delete("\x00") if text.encoding == Encoding::UTF_8 && text.valid_encoding?
+
+    text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
   end
 
   def logs_text(log_type:, limit:)
