@@ -84,38 +84,53 @@ module Activities
         return escalate_trigger(issue)
       end
 
+      blocking_review_methods = project.blocking_review_methods
+      review_based_methods = blocking_review_methods & %w[copilot manual]
+      ci_review_required = blocking_review_methods.include?("ci_action")
       skip_comment_signals = project.max_draft_review_rounds.zero?
       unresolved_threads = nil
       human_triggers = []
-      review_bot_triggers = []
+      required_review_triggers = []
       reviews = nil
+      checks = nil
 
       # Draft exit still requires an explicitly clean bot review even when
       # other draft comment signals are skipped.
       if skip_comment_signals
-        reviews = fetch_reviews(client, project, issue)
-        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads)
+        reviews = fetch_reviews(client, project, issue) if review_based_methods.any?
+        if ci_review_required
+          pr_data ||= fetch_pr_data(client, project, issue)
+          checks = fetch_check_runs(client, project, pr_data)
+        end
+        required_review_triggers = check_required_review_methods(project, issue,
+          reviews: reviews, unresolved_threads: unresolved_threads, checks: checks)
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
         human_triggers = human_review_thread_triggers(project, unresolved_threads)
 
         if human_triggers.blank?
-          reviews = fetch_reviews(client, project, issue)
-          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads)
+          reviews = fetch_reviews(client, project, issue) if review_based_methods.any?
+          if ci_review_required
+            pr_data ||= fetch_pr_data(client, project, issue)
+            checks = fetch_check_runs(client, project, pr_data)
+          end
+          required_review_triggers = check_required_review_methods(project, issue,
+            reviews: reviews, unresolved_threads: unresolved_threads, checks: checks)
         end
       end
 
       # review_bot_review_pending is non-blocking: it requests a review but
       # should not prevent evaluation of CI, comments, or changes_requested.
-      pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
-      blocking_triggers = (review_bot_triggers || []).reject { |t| t[:type] == "review_bot_review_pending" }
+      pending_triggers = (required_review_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
+      blocking_triggers = (required_review_triggers || []).reject { |t| t[:type] == "review_bot_review_pending" }
       all_triggers = blocking_triggers + (human_triggers || [])
+      append_generic_review_bot_thread_triggers!(all_triggers, unresolved_threads)
 
       # Only fetch PR data and check runs if blocking review triggers aren't enough.
       if all_triggers.empty?
         pr_data ||= fetch_pr_data(client, project, issue)
-        checks = fetch_check_runs(client, project, pr_data)
+        checks ||= fetch_check_runs(client, project, pr_data)
         ci_triggers = ci_failure_triggers(checks || [])
         all_triggers.concat(ci_triggers)
       end
@@ -280,8 +295,10 @@ module Activities
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
       triggers.concat(ci_failure_triggers(checks))
-      triggers.concat(check_review_bot_status(reviews, unresolved_threads))
+      triggers.concat(check_required_review_methods(project, issue,
+        reviews: reviews, unresolved_threads: unresolved_threads, checks: checks))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
+      append_generic_review_bot_thread_triggers!(triggers, unresolved_threads)
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
@@ -396,18 +413,18 @@ module Activities
       [ { type: "review_threads", details: "#{trusted_threads.size} unresolved thread(s)" } ]
     end
 
-    def review_bot_review_status(reviews)
+    def review_bot_review_status(reviews, provider_key:)
       return :unknown if reviews.nil?
 
-      bot_reviews = reviews.select { |r| review_bot?(r[:user_login]) }
+      bot_reviews = reviews.select { |r| review_bot?(r[:user_login], provider_key: provider_key) }
       return :no_review if bot_reviews.empty?
 
       latest = bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
       REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
     end
 
-    def check_review_bot_status(reviews, unresolved_threads)
-      status = review_bot_review_status(reviews)
+    def check_review_bot_status(reviews, unresolved_threads, provider_key:)
+      status = review_bot_review_status(reviews, provider_key: provider_key)
 
       case status
       when :clean
@@ -422,7 +439,7 @@ module Activities
         if unresolved_threads.nil?
           [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
         else
-          bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
+          bot_thread_triggers = review_bot_thread_triggers(unresolved_threads, provider_key: provider_key)
           if bot_thread_triggers.any?
             triggers = [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
             triggers << { type: "review_bot_comments", details: "Latest review bot review generated comments" }
@@ -435,20 +452,47 @@ module Activities
           end
         end
       when :unknown
-        review_bot_thread_triggers(unresolved_threads)
+        review_bot_thread_triggers(unresolved_threads, provider_key: provider_key)
       end
     end
 
-    def review_bot_thread_triggers(unresolved_threads)
+    def review_bot_thread_triggers(unresolved_threads, provider_key:)
       return [] if unresolved_threads.nil?
 
       review_bot_threads = unresolved_threads.select do |thread|
-        thread[:comments].any? { |c| review_bot?(c[:author]) }
+        thread[:comments].any? { |c| review_bot?(c[:author], provider_key: provider_key) }
       end
 
       return [] if review_bot_threads.empty?
 
       [ { type: "review_bot_threads", details: "#{review_bot_threads.size} unresolved review bot thread(s)" } ]
+    end
+
+    def check_required_review_methods(project, issue, reviews:, unresolved_threads:, checks:)
+      triggers = []
+
+      project.blocking_review_methods.each do |method|
+        case method
+        when "copilot"
+          triggers.concat(check_review_bot_status(reviews, unresolved_threads, provider_key: "copilot"))
+        when "paid_agent"
+          next if paid_agent_review_completed?(project, issue)
+
+          triggers << { type: "review_bot_review_pending", details: "Paid review agent has not completed a review yet" }
+        when "ci_action"
+          pending_actions = pending_ci_review_actions(project, checks)
+          next if pending_actions.empty?
+
+          triggers << { type: "review_bot_review_pending",
+                        details: "CI review action still pending: #{pending_actions.join(', ')}" }
+        when "manual"
+          next if manual_review_completed?(project, issue, reviews)
+
+          triggers << { type: "review_bot_review_pending", details: "Manual review has not been completed yet" }
+        end
+      end
+
+      triggers
     end
 
     def check_conversation_comments(client, project, issue, last_run)
@@ -553,8 +597,90 @@ module Activities
 
     # --- Helpers ---
 
-    def review_bot?(login)
+    def review_bot?(login, provider_key: nil)
+      return ProviderSupport.provider_bot_username_for?(provider_key, login) if provider_key.present?
+
       ProviderSupport.provider_bot_username?(login)
+    end
+
+    def related_completed_runs(project, issue)
+      project.agent_runs
+        .where(
+          "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+          pr_num: issue.github_number
+        )
+        .completed
+    end
+
+    def last_completed_code_run(project, issue)
+      related_completed_runs(project, issue)
+        .where.not(goal: "review")
+        .order(completed_at: :desc)
+        .first
+    end
+
+    def paid_agent_review_completed?(project, issue)
+      baseline = last_completed_code_run(project, issue)&.completed_at
+      latest_review_run = related_completed_runs(project, issue)
+        .where(goal: "review")
+        .order(completed_at: :desc)
+        .first
+
+      return false unless latest_review_run&.completed_at
+
+      baseline.nil? || latest_review_run.completed_at >= baseline
+    end
+
+    def manual_review_completed?(project, issue, reviews)
+      return false if reviews.nil?
+
+      baseline = last_completed_code_run(project, issue)&.completed_at
+      trusted_reviews = reviews.select do |review|
+        project.trusted_github_user?(review[:user_login]) && !bot_user?(review[:user_login])
+      end
+
+      trusted_reviews.any? do |review|
+        submitted_at = review[:submitted_at]
+        submitted_at.present? && (baseline.nil? || submitted_at >= baseline)
+      end
+    end
+
+    def pending_ci_review_actions(project, checks)
+      names = project.ci_review_action_names
+      return [] if names.empty?
+      return names if checks.blank?
+
+      names.reject do |name|
+        latest_check_for_review_action(checks, name)&.dig(:conclusion).present?
+      end
+    end
+
+    def latest_check_for_review_action(checks, action_name)
+      matches = checks.select do |check|
+        check[:name].to_s.casecmp?(action_name)
+      end
+
+      matches.max_by { |check| check[:started_at] || check[:completed_at] || Time.at(0) }
+    end
+
+    def append_generic_review_bot_thread_triggers!(triggers, unresolved_threads)
+      return if triggers.any? { |trigger| trigger[:type] == "review_bot_threads" }
+
+      triggers.concat(non_copilot_review_bot_thread_triggers(unresolved_threads))
+    end
+
+    def non_copilot_review_bot_thread_triggers(unresolved_threads)
+      return [] if unresolved_threads.nil?
+
+      review_bot_threads = unresolved_threads.select do |thread|
+        thread[:comments].any? do |comment|
+          review_bot?(comment[:author]) && !review_bot?(comment[:author], provider_key: "copilot")
+        end
+      end
+
+      return [] if review_bot_threads.empty?
+
+      [ { type: "review_bot_threads", details: "#{review_bot_threads.size} unresolved review bot thread(s)" } ]
     end
 
     def extract_actionable_labels(triggers)

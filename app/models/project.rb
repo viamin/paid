@@ -417,7 +417,37 @@ class Project < ApplicationRecord
     effective_review_settings.dig("methods", method.to_s) || {}
   end
 
+  def blocking_review_methods
+    return [ "copilot" ] if legacy_review_settings?
+    return [] unless review_enabled?
+    return [] unless wait_for_reviews?
+
+    enabled_review_methods
+  end
+
+  def requested_review_methods
+    return [ "copilot" ] if legacy_review_settings?
+    return [] unless review_enabled?
+
+    enabled_review_methods & %w[copilot paid_agent]
+  end
+
+  def ci_review_action_names
+    return [] unless review_enabled?
+    return [] unless review_method_enabled?(:ci_action)
+
+    Array(review_method_config(:ci_action)["action_name"]).filter_map(&:presence)
+  end
+
   private
+
+  def legacy_review_settings?
+    raw_review_settings = review_settings
+    raw_review_settings = raw_review_settings.to_h if raw_review_settings.respond_to?(:to_h)
+    raw_review_settings = raw_review_settings.deep_stringify_keys if raw_review_settings.respond_to?(:deep_stringify_keys)
+
+    raw_review_settings.blank?
+  end
 
   def auto_pick_just_enabled?
     saved_change_to_auto_pick_enabled? && auto_pick_enabled?
