@@ -2,7 +2,56 @@
 
 require "rails_helper"
 
-RSpec.describe "Worker pool load behavior", type: :model do
+RSpec.describe "Worker pool load behavior" do
+  around do |example|
+    original_env = ENV.to_h.slice(
+      "GOOD_JOB_EXECUTION_MODE",
+      "GOOD_JOB_MAX_THREADS",
+      "GOOD_JOB_POLL_INTERVAL",
+      "GOOD_JOB_SHUTDOWN_TIMEOUT",
+      "GOOD_JOB_QUEUES"
+    )
+    good_job = Rails.application.config.good_job
+    original_config = {
+      execution_mode: good_job.execution_mode,
+      max_threads: good_job.max_threads,
+      poll_interval: good_job.poll_interval,
+      shutdown_timeout: good_job.shutdown_timeout,
+      queues: good_job.queues
+    }
+
+    %w[
+      GOOD_JOB_EXECUTION_MODE
+      GOOD_JOB_MAX_THREADS
+      GOOD_JOB_POLL_INTERVAL
+      GOOD_JOB_SHUTDOWN_TIMEOUT
+      GOOD_JOB_QUEUES
+    ].each { |key| ENV.delete(key) }
+
+    good_job.execution_mode = Paid::GoodJobConfig.execution_mode
+    good_job.max_threads = Paid::GoodJobConfig.max_threads
+    good_job.poll_interval = Paid::GoodJobConfig.poll_interval
+    good_job.shutdown_timeout = Paid::GoodJobConfig.shutdown_timeout
+    good_job.queues = Paid::GoodJobConfig.queues
+
+    example.run
+  ensure
+    %w[
+      GOOD_JOB_EXECUTION_MODE
+      GOOD_JOB_MAX_THREADS
+      GOOD_JOB_POLL_INTERVAL
+      GOOD_JOB_SHUTDOWN_TIMEOUT
+      GOOD_JOB_QUEUES
+    ].each { |key| ENV.delete(key) }
+    original_env.each { |key, value| ENV[key] = value }
+
+    good_job.execution_mode = original_config[:execution_mode]
+    good_job.max_threads = original_config[:max_threads]
+    good_job.poll_interval = original_config[:poll_interval]
+    good_job.shutdown_timeout = original_config[:shutdown_timeout]
+    good_job.queues = original_config[:queues]
+  end
+
   describe "GoodJob queue prioritization" do
     {
       ProcessRunQueueJob => "default",
