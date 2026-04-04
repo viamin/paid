@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_02_162737) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_04_062147) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -81,7 +81,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_162737) do
 
   create_table "accounts", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.integer "default_max_tokens_per_run", default: 10000000, null: false
     t.string "name", null: false
     t.string "slug", null: false
     t.datetime "updated_at", null: false
@@ -131,6 +130,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_162737) do
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "container_retained_until"
     t.integer "cost_cents", default: 0
+    t.boolean "count_toward_draft_review_round", default: false, null: false
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
@@ -139,15 +139,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_162737) do
     t.string "diagnosis_status", limit: 50
     t.integer "duration_seconds"
     t.text "error_message"
+    t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
     t.string "goal", limit: 50, default: "create_pr", null: false
-    t.jsonb "guardrail_context"
-    t.string "guardrail_violation_type", limit: 50
     t.bigint "issue_id"
     t.integer "iterations", default: 0
     t.jsonb "mcp_server_snapshot", default: [], null: false
     t.string "parent_workflow_id", limit: 255
-    t.datetime "paused_at"
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
     t.bigint "project_id", null: false
@@ -170,19 +168,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_162737) do
     t.string "status", limit: 50, default: "pending", null: false
     t.string "temporal_run_id", limit: 255
     t.string "temporal_workflow_id", limit: 255
-    t.string "token_limit_status", limit: 50
     t.integer "tokens_input", default: 0
     t.integer "tokens_output", default: 0
     t.string "trigger_type", limit: 50, default: "automatic", null: false
     t.datetime "updated_at", null: false
     t.string "worktree_path", limit: 500
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
-    t.index ["guardrail_violation_type"], name: "index_agent_runs_on_guardrail_violation_type", where: "(guardrail_violation_type IS NOT NULL)"
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
-    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying])::text[])))"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -709,7 +705,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_162737) do
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_execution_seconds", default: 1800, null: false
     t.integer "max_pr_followup_runs", default: 8, null: false
-    t.integer "max_tokens_per_run"
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
@@ -722,7 +717,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_02_162737) do
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
     t.string "security_severity_threshold", default: "high", null: false
-    t.integer "token_limit_warning_threshold", default: 80, null: false
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false
     t.datetime "updated_at", null: false

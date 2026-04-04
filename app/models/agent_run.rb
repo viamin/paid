@@ -59,6 +59,7 @@ class AgentRun < ApplicationRecord
   validates :cost_cents, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :duration_seconds, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :source_pull_request_number, numericality: { greater_than: 0 }, allow_nil: true
+  validates :expected_draft_review_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
   validates :auth_provider, length: { maximum: 50 }
   validates :diagnosis_status, inclusion: { in: %w[in_progress processing completed failed] }, allow_nil: true
   validates :diagnosis_issue_url, length: { maximum: 500 }
@@ -68,6 +69,7 @@ class AgentRun < ApplicationRecord
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :provider_belongs_to_project_owner, if: -> { provider.present? }
   validate :has_prompt_source, on: :create
+  validate :draft_review_round_tracking_is_consistent
 
   scope :by_status, ->(status) { where(status: status) }
   scope :queued, -> { where(status: "queued") }
@@ -716,6 +718,13 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def draft_review_round_tracking_is_consistent
+    return unless count_toward_draft_review_round?
+    return if expected_draft_review_count.present?
+
+    errors.add(:expected_draft_review_count, "is required when counting toward draft review rounds")
+  end
 
   def logs_text(log_type:, limit:)
     agent_run_logs

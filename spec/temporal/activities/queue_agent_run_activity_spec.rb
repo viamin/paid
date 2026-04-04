@@ -41,6 +41,19 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.source_pull_request_number).to eq(42)
     end
 
+    it "persists draft review round tracking metadata" do
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 2
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.count_toward_draft_review_round).to be(true)
+      expect(agent_run.expected_draft_review_count).to eq(2)
+    end
+
     it "works without an issue" do
       result = activity.execute(
         project_id: project.id,
@@ -70,6 +83,22 @@ RSpec.describe Activities::QueueAgentRunActivity do
 
         expect(result[:agent_run_id]).to eq(existing.id)
         expect(result[:duplicate]).to be true
+      end
+
+      it "merges draft review round tracking into an existing duplicate run" do
+        existing = create(:agent_run, :queued, project: project, issue: issue)
+
+        result = activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          count_toward_draft_review_round: true,
+          expected_draft_review_count: 5
+        )
+
+        expect(result[:agent_run_id]).to eq(existing.id)
+        expect(result[:duplicate]).to be true
+        expect(existing.reload.count_toward_draft_review_round).to be(true)
+        expect(existing.expected_draft_review_count).to eq(5)
       end
 
       it "returns existing run when a queued run exists for the same PR" do

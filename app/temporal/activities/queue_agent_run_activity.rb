@@ -11,6 +11,8 @@ module Activities
       agent_type = input.fetch(:agent_type, "claude_code")
       provider_id = input[:provider_id]
       source_pull_request_number = input[:source_pull_request_number]
+      count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
+      expected_draft_review_count = input[:expected_draft_review_count]
 
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
@@ -31,6 +33,8 @@ module Activities
             agent_type: agent_type,
             custom_prompt: custom_prompt,
             source_pull_request_number: source_pull_request_number,
+            count_toward_draft_review_round: count_toward_draft_review_round,
+            expected_draft_review_count: expected_draft_review_count,
             status: "queued"
           )
           [ run, false ]
@@ -42,6 +46,10 @@ module Activities
       end
 
       if duplicate
+        merge_draft_review_round_tracking!(agent_run,
+          count_toward_draft_review_round: count_toward_draft_review_round,
+          expected_draft_review_count: expected_draft_review_count)
+
         logger.info(
           message: "concurrency.duplicate_run_skipped",
           agent_run_id: agent_run.id,
@@ -72,6 +80,17 @@ module Activities
       elsif source_pull_request_number
         scope.where(source_pull_request_number: source_pull_request_number).first
       end
+    end
+
+    def merge_draft_review_round_tracking!(agent_run, count_toward_draft_review_round:, expected_draft_review_count:)
+      return unless count_toward_draft_review_round
+      return if agent_run.count_toward_draft_review_round? &&
+        agent_run.expected_draft_review_count.present?
+
+      agent_run.update!(
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: expected_draft_review_count
+      )
     end
   end
 end

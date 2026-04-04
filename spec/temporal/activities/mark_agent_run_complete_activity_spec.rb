@@ -42,6 +42,26 @@ RSpec.describe Activities::MarkAgentRunCompleteActivity do
         .to have_enqueued_job(ProcessRunQueueJob)
     end
 
+    it "increments draft_review_count for successful tracked no-change draft followups" do
+      issue = create(:issue, :pull_request, project: project, pr_review_phase: "draft", draft_review_count: 1)
+      agent_run = create(:agent_run, :running, project: project, issue: issue,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 1)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.draft_review_count).to eq(2)
+    end
+
+    it "does not increment draft_review_count for untracked runs" do
+      issue = create(:issue, :pull_request, project: project, pr_review_phase: "draft", draft_review_count: 1)
+      agent_run = create(:agent_run, :running, project: project, issue: issue)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.draft_review_count).to eq(1)
+    end
+
     it "raises ActiveRecord::RecordNotFound for invalid agent_run_id" do
       expect {
         activity.execute(agent_run_id: -1)
