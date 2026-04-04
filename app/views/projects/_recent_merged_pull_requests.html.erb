@@ -1,0 +1,63 @@
+<div class="mt-8">
+  <h2 class="text-lg font-medium text-gray-900">Recently Merged PRs</h2>
+  <p class="mt-1 text-sm text-gray-500">Merged pull requests cached locally for projects with auto-merge enabled. Issue links come from cached closing references or Paid's parent-issue relationship; rows are ordered by latest synced GitHub activity.</p>
+
+  <% if pull_requests.any? %>
+    <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">PR</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Linked Issue</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Last GitHub Activity</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% pull_requests.each do |pull_request| %>
+              <% closed_issue = pull_request.closed_issue(closed_issues_by_number) %>
+              <tr id="<%= dom_id(pull_request, :recent_merge) %>">
+                <td class="px-4 py-3 text-sm text-gray-900">
+                  <div class="flex flex-col gap-1">
+                    <div>
+                      <%= link_to "##{pull_request.github_number}",
+                            pull_request.github_url,
+                            target: "_blank",
+                            rel: "noopener noreferrer",
+                            class: "font-medium text-indigo-600 hover:text-indigo-900" %>
+                    </div>
+                    <div class="text-gray-600"><%= pull_request.title %></div>
+                  </div>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-900">
+                  <% if closed_issue.present? %>
+                    <div class="flex flex-col gap-1">
+                      <div>
+                        <%= link_to "##{closed_issue.github_number}",
+                              closed_issue.github_url,
+                              target: "_blank",
+                              rel: "noopener noreferrer",
+                              class: "font-medium text-indigo-600 hover:text-indigo-900" %>
+                      </div>
+                      <div class="text-gray-600"><%= closed_issue.title %></div>
+                    </div>
+                  <% else %>
+                    <span class="text-gray-400">Unknown</span>
+                  <% end %>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-600">
+                  <%= local_time(pull_request.github_updated_at, format: :short) %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  <% else %>
+    <div class="mt-4 rounded-lg border-2 border-dashed border-gray-300 p-8 text-center">
+      <h3 class="text-sm font-semibold text-gray-900">No recently merged PRs</h3>
+      <p class="mt-1 text-sm text-gray-500">Merged pull requests will appear here once they are synced from GitHub.</p>
+    </div>
+  <% end %>
+</div>
