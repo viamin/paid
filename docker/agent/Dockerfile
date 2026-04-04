@@ -160,7 +160,10 @@ RUN npm install -g --ignore-scripts @kilocode/cli@7.1.3
 # NOTE: End-to-end execution depends on agent-harness build_command support (agent-harness#32).
 RUN npm install -g --ignore-scripts opencode-ai@1.3.2
 
-RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.0
+# NOTE: @githubnext/github-copilot-cli@0.1.0 publishes a broken package that
+# declares the github-copilot-cli bin without shipping the target file,
+# producing an OCI "executable file not found in $PATH" failure at runtime.
+RUN npm install -g --ignore-scripts @githubnext/github-copilot-cli@0.1.36
 
 # Install Cursor agent CLI
 # Pin the install script checksum for reproducible builds and supply-chain security.

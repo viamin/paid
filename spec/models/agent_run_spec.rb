@@ -751,6 +751,16 @@ RSpec.describe AgentRun do
         expect(log).to be_persisted
       end
 
+      it "scrubs invalid UTF-8 content before persisting" do
+        agent_run = create(:agent_run)
+
+        log = agent_run.log!("stdout", "bad \xFF output".b)
+
+        expect(log.content).to eq("bad � output")
+        expect(log.content.encoding).to eq(Encoding::UTF_8)
+        expect(log.content).to be_valid_encoding
+      end
+
       it "raises error for invalid log type" do
         agent_run = create(:agent_run)
 
