@@ -146,30 +146,10 @@ module Workflows
       )
     end
 
-    # When at capacity, queues an AgentRun record (no child workflow). ProcessRunQueueJob
-    # will start the workflow when a slot opens. This asymmetry is intentional: queued
-    # runs don't need workflow-level monitoring since the DB record tracks their state.
-    def start_agent_workflow(project_id, issue_id, prefix: "agent", source_pull_request_number: nil)
-      capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
-
-      unless capacity[:has_capacity]
-        queue_input = { project_id: project_id, issue_id: issue_id }
-        queue_input[:source_pull_request_number] = source_pull_request_number if source_pull_request_number
-        run_activity(Activities::QueueAgentRunActivity, queue_input, timeout: 30)
-        return
-      end
-
-      workflow_id = "#{prefix}-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
-
-      child_input = { project_id: project_id, issue_id: issue_id }
-      child_input[:source_pull_request_number] = source_pull_request_number if source_pull_request_number
-
-      Temporalio::Workflow.start_child_workflow(
-        Workflows::AgentExecutionWorkflow,
-        child_input,
-        id: workflow_id,
-        parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
-      )
+    def start_agent_workflow(project_id, issue_id, source_pull_request_number: nil)
+      queue_input = { project_id: project_id, issue_id: issue_id }
+      queue_input[:source_pull_request_number] = source_pull_request_number if source_pull_request_number
+      run_activity(Activities::QueueAgentRunActivity, queue_input, timeout: 30)
     end
 
     def handle_pr_scan_results(scan_result, project_id)
@@ -291,44 +271,20 @@ module Workflows
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
 
-      capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
-
       draft_input = {
         issue_id: issue_id,
         expected_draft_review_count: pr_data[:current_draft_review_count]
       }
 
-      unless capacity[:has_capacity]
-        run_activity(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: issue_id,
-            source_pull_request_number: pr_number }, timeout: 30)
-
-        run_activity(Activities::RecordDraftReviewActivity, draft_input, timeout: 30)
-        return
-      end
-
-      timestamp = Temporalio::Workflow.now.to_i
-      workflow_id = "draft-followup-#{project_id}-#{pr_number}-#{timestamp}"
-
-      Temporalio::Workflow.start_child_workflow(
-        Workflows::AgentExecutionWorkflow,
-        {
-          project_id: project_id,
-          issue_id: issue_id,
-          source_pull_request_number: pr_number
-        },
-        id: workflow_id,
-        parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
-      )
-
+      run_activity(Activities::QueueAgentRunActivity,
+        { project_id: project_id, issue_id: issue_id,
+          source_pull_request_number: pr_number }, timeout: 30)
       run_activity(Activities::RecordDraftReviewActivity, draft_input, timeout: 30)
     end
 
     def start_pr_followup_workflow(project_id, pr_data)
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
-
-      capacity = run_activity(Activities::CheckRunCapacityActivity, { project_id: project_id }, timeout: 10)
 
       followup_input = {
         project_id: project_id,
@@ -337,29 +293,9 @@ module Workflows
         expected_followup_count: pr_data[:current_followup_count]
       }
 
-      unless capacity[:has_capacity]
-        run_activity(Activities::QueueAgentRunActivity,
-          { project_id: project_id, issue_id: issue_id,
-            source_pull_request_number: pr_number }, timeout: 30)
-
-        run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
-        return
-      end
-
-      timestamp = Temporalio::Workflow.now.to_i
-      workflow_id = "pr-followup-#{project_id}-#{pr_number}-#{timestamp}"
-
-      Temporalio::Workflow.start_child_workflow(
-        Workflows::AgentExecutionWorkflow,
-        {
-          project_id: project_id,
-          issue_id: issue_id,
-          source_pull_request_number: pr_number
-        },
-        id: workflow_id,
-        parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
-      )
-
+      run_activity(Activities::QueueAgentRunActivity,
+        { project_id: project_id, issue_id: issue_id,
+          source_pull_request_number: pr_number }, timeout: 30)
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
     end
   end
