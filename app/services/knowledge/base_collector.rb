@@ -31,6 +31,10 @@ module Knowledge
 
     private
 
+    def skip!(reason)
+      raise SkipCollector, reason
+    end
+
     def container_runner
       options[:container_runner]
     end
@@ -39,11 +43,12 @@ module Knowledge
       container_runner.present?
     end
 
+    # Returns the repo path suitable for passing to commands executed via
+    # run_command. In containerized mode this is the container workspace
+    # mount (where the repo was seeded), not the host tmpdir.
     def resolve_repo_path
       if containerized?
-        # Use host repo dir for direct file access — the same directory is
-        # bind-mounted into the container at workspace_mount.
-        container_runner.host_repo_dir
+        container_runner.options[:workspace_mount]
       elsif options[:scan_path]
         options[:scan_path]
       elsif project.respond_to?(:worktrees)
@@ -53,17 +58,33 @@ module Knowledge
       end
     end
 
-    # Reads a file from the repo. In containerized mode, reads from the
-    # host-side clone (bind-mounted into the container).
+    # Reads a file from the repo. In containerized mode reads from the
+    # host-side clone so Ruby file I/O works without a container exec.
+    # Raises SkipCollector when no repo path is available to prevent
+    # falling back to process-relative paths.
     def read_repo_file(relative_path)
-      full_path = File.join(resolve_repo_path.to_s, relative_path)
-      File.read(full_path)
+      base = host_repo_path
+      skip!("repository path not available") if base.blank?
+      File.read(File.join(base.to_s, relative_path))
     end
 
-    # Checks if a file exists in the repo.
+    # Checks if a file exists in the repo. Returns false when no repo
+    # path is available to prevent falling back to process-relative paths.
     def repo_file_exists?(relative_path)
-      full_path = File.join(resolve_repo_path.to_s, relative_path)
-      File.exist?(full_path)
+      base = host_repo_path
+      return false if base.blank?
+      File.exist?(File.join(base.to_s, relative_path))
+    end
+
+    # Returns the host-side repo path for direct file I/O. In
+    # containerized mode this is the host tmpdir clone; otherwise
+    # it falls back to resolve_repo_path.
+    def host_repo_path
+      if containerized?
+        container_runner.host_repo_dir
+      else
+        resolve_repo_path
+      end
     end
 
     def default_repo_path

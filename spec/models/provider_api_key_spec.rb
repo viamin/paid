@@ -52,6 +52,22 @@ RSpec.describe ProviderApiKey do
       expect(api_key.compatible_with?("copilot")).to be(false)
       expect(api_key.compatible_with?("unknown")).to be(false)
     end
+
+    context "with dynamic API provider keys (opencode, kilocode)" do
+      it "returns true when service type is in DIRECT_OUTBOUND_SERVICE_TYPES" do
+        Provider::DIRECT_OUTBOUND_SERVICE_TYPES.each do |service_type|
+          key = build(:provider_api_key, api_service_type: service_type)
+          expect(key.compatible_with?("opencode")).to be(true), "expected #{service_type} to be compatible with opencode"
+          expect(key.compatible_with?("kilocode")).to be(true), "expected #{service_type} to be compatible with kilocode"
+        end
+      end
+
+      it "returns false for unsupported service types" do
+        key = build(:provider_api_key, api_service_type: "google")
+        expect(key.compatible_with?("opencode")).to be(false)
+        expect(key.compatible_with?("kilocode")).to be(false)
+      end
+    end
   end
 
   describe "#display_api_service_type" do

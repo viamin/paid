@@ -33,12 +33,24 @@ class TokenUsageTracker
 
       if update_aggregates
         agent_run.with_lock do
-          agent_run.increment(:tokens_input, tokens_input)
-          agent_run.increment(:tokens_output, tokens_output)
-          agent_run.increment(:cost_cents, cost_cents)
-          agent_run.save!
-
-          check_token_limits(agent_run)
+           # Increment counters and compute token limit status atomically
+           agent_run.increment(:tokens_input, tokens_input)
+           agent_run.increment(:tokens_output, tokens_output)
+           agent_run.increment(:cost_cents, cost_cents)
+           # Determine new token limit status before persisting
+           hard_limit = agent_run.effective_max_tokens_per_run
+           warning_threshold = agent_run.project.token_limit_warning_threshold
+           warning_at = (hard_limit * warning_threshold / 100.0).floor
+           current_tokens = agent_run.tokens_input.to_i + agent_run.tokens_output.to_i
+           new_status = if current_tokens >= hard_limit
+                          "exceeded"
+           elsif current_tokens >= warning_at
+                          "warning"
+           else
+                          "ok"
+           end
+           agent_run.token_limit_status = new_status
+           agent_run.save!
         end
 
         agent_run.project.increment_metrics!(
@@ -57,6 +69,12 @@ class TokenUsageTracker
         request_type: request_type
       }.to_json, metadata: { type: "token_usage" })
     end
+
+    # Enforce hard-stop budgets *after* the transaction commits so that:
+    # 1. Row locks from the usage write are already released
+    # 2. External side-effects (Temporal cancel, container cleanup) don't
+    #    run inside a transaction — a failure won't roll back recorded usage
+    enforce_hard_stop_budgets(agent_run) if update_aggregates && cost_cents.positive?
   end
 
   # Evaluates the agent run's cumulative token usage against project limits
@@ -174,4 +192,37 @@ class TokenUsageTracker
     end
   end
   private_class_method :update_cost_budgets
+
+  # Checks hard_stop budgets after recording usage. If any budget is
+  # exceeded, cancels the running agent to enforce the cost limit.
+  # Short-circuits when the project has no hard-stop budgets to avoid
+  # unnecessary queries on every token-tracking request.
+  def self.enforce_hard_stop_budgets(agent_run)
+    return unless AgentRun.where(id: agent_run.id, status: "running").exists?
+    return unless agent_run.project.cost_budgets.hard_stop.exists?
+
+    result = CostBudgets::Check.call(agent_run.project, agent_run: agent_run)
+    return if result[:allowed]
+
+    Rails.logger.warn(
+      message: "cost_budget.hard_stop_enforced",
+      agent_run_id: agent_run.id,
+      reason: result[:reason]
+    )
+
+    begin
+      AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
+    rescue => e
+      Rails.logger.error(
+        message: "cost_budget.hard_stop_cancel_failed",
+        agent_run_id: agent_run.id,
+        reason: result[:reason],
+        error_class: e.class.name,
+        error_message: e.message
+      )
+    ensure
+      agent_run.fail!(error: "Budget enforcement: #{result[:reason]}")
+    end
+  end
+  private_class_method :enforce_hard_stop_budgets
 end

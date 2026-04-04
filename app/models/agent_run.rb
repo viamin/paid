@@ -341,7 +341,7 @@ class AgentRun < ApplicationRecord
   end
 
   def total_tokens
-    tokens_input + tokens_output
+    tokens_input.to_i + tokens_output.to_i
   end
 
   def token_limit_exceeded?

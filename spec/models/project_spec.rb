@@ -25,6 +25,12 @@ RSpec.describe Project do
     it { is_expected.to validate_numericality_of(:poll_interval_seconds).is_greater_than_or_equal_to(60) }
     it { is_expected.to validate_numericality_of(:max_tokens_per_run).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(2_147_483_647).allow_nil }
     it { is_expected.to validate_numericality_of(:token_limit_warning_threshold).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(100) }
+    it { is_expected.to validate_numericality_of(:max_execution_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(86_400) }
+
+    it "defaults max_execution_seconds to 1800" do
+      project = build(:project)
+      expect(project.max_execution_seconds).to eq(1800)
+    end
 
     it "validates knowledge_status inclusion" do
       project = build(:project)

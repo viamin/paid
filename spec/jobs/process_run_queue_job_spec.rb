@@ -112,6 +112,27 @@ RSpec.describe ProcessRunQueueJob do
       expect(auto.reload.status).to eq("queued")
     end
 
+    it "starts an older queued manual run before a later auto-continue followup" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 1)
+      manual = create(:agent_run, :queued, :manual, project: project, created_at: 2.minutes.ago)
+      followup_issue = create(:issue, project: project)
+      auto_continue = create(:agent_run, :queued, :automatic, :existing_pr,
+        project: project, issue: followup_issue, created_at: 1.minute.ago)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids).to eq([ manual.id ])
+      expect(manual.reload.status).to eq("pending")
+      expect(auto_continue.reload.status).to eq("queued")
+    end
+
     it "marks run as failed and continues when workflow start fails" do
       failing_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
       good_run = create(:agent_run, :queued, created_at: 1.minute.ago)
@@ -308,6 +329,28 @@ RSpec.describe ProcessRunQueueJob do
 
         expect(manual_run.reload.status).to eq("pending")
       end
+    end
+
+    it "fails a budget-blocked run without consuming capacity or counting as a failure" do
+      blocked_project = create(:project)
+      user = blocked_project.created_by
+      user.settings.update!(max_concurrent_runs: 2)
+      create(:cost_budget, :hard_stop, :daily, project: blocked_project,
+        limit_cents: 100, current_usage_cents: 200,
+        period_started_at: Time.current.beginning_of_day)
+
+      unblocked_project = create(:project, account: blocked_project.account, created_by: user)
+
+      blocked_run = create(:agent_run, :queued, project: blocked_project, created_at: 2.minutes.ago)
+      normal_run = create(:agent_run, :queued, project: unblocked_project, created_at: 1.minute.ago)
+
+      expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+      described_class.new.perform
+
+      expect(blocked_run.reload.status).to eq("failed")
+      expect(blocked_run.error_message).to include("Budget enforcement")
+      expect(normal_run.reload.status).to eq("pending")
     end
 
     it "includes workflow input fields from the agent run" do

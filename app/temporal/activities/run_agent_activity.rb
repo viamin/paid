@@ -20,7 +20,7 @@ module Activities
     AGENT_COMMANDS = {
       "claude_code" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
       "claude" => %w[claude --print --output-format=text --dangerously-skip-permissions -p],
-      "codex" => %w[codex exec --full-auto --sandbox none --],
+      "codex" => %w[codex exec --dangerously-bypass-approvals-and-sandbox --],
       "gemini" => %w[gemini -y -p],
       "kilocode" => %w[kilo run --auto],
       "opencode" => %w[opencode run],
@@ -104,7 +104,15 @@ module Activities
         rate_limit_reset_at = nil
         skipped_rate_limited_count = 0
 
+        max_execution_seconds = agent_run.project.max_execution_seconds
+
         providers.each_with_index do |provider_candidate, index|
+          # Check if the project's execution time limit has been exceeded
+          if max_execution_seconds && agent_run.started_at && (Time.current - agent_run.started_at).to_i >= max_execution_seconds
+            timeout_error = "Execution time limit of #{max_execution_seconds}s exceeded"
+            break
+          end
+
           # Skip routing keys whose provider entry has been deleted — attempting
           # execution would fail with "Unsupported provider" and leak internal
           # identifiers in user-visible error messages.
@@ -201,6 +209,19 @@ module Activities
                 agent_run_id: agent_run.id
               )
             end
+          rescue InfiniteLoopError => e
+            agent_run.log!("system", "Infinite loop detected: #{e.message}",
+              metadata: { detection_reason: e.message })
+            record_provider_failure(user_settings, provider_state_name, provider_states)
+            agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop")
+            last_error = "infinite_loop"
+            agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
+            logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message)
+            raise Temporalio::Error::ApplicationError.new(
+              "Infinite loop detected: #{e.message}",
+              type: "InfiniteLoopDetected",
+              non_retryable: true
+            )
           rescue ProviderTimeoutError => e
             last_error = "timeout"
             timeout_error ||= e.message
@@ -263,6 +284,7 @@ module Activities
 
     class ProviderExecutionError < StandardError; end
     class ProviderTimeoutError < StandardError; end
+    class InfiniteLoopError < StandardError; end
     CommandContext = Struct.new(:provider_candidate, :provider, :command_prefix, :user, keyword_init: true)
 
     private
@@ -293,17 +315,20 @@ module Activities
           providers.concat(user_settings.fallback_priority_for(primary_provider: agent_run.provider.routing_key, identifiers: true))
         end
       else
-        fallback_providers = user_settings.fallback_priority_for(
-          primary_provider: canonical_provider(agent_run.agent_type),
-          identifiers: true
-        ).map do |identifier|
-          Provider.for_identifier(user_settings.user, identifier)&.provider_key || identifier
-        end
-        providers = self.class.provider_order(
-          agent_type: agent_run.agent_type,
-          fallback_enabled: user_settings.fallback_enabled,
-          fallback_providers: fallback_providers
-        )
+        providers =
+          if user_settings.fallback_enabled
+            fallback_providers = user_settings.fallback_priority_for(
+              primary_provider: canonical_provider(agent_run.agent_type),
+              identifiers: true
+            )
+            deduplicate_provider_candidates(
+              primary_provider: agent_run.agent_type,
+              fallback_providers: fallback_providers,
+              user: user_settings.user
+            )
+          else
+            [ agent_run.agent_type ].select { |provider| self.class::AGENT_COMMANDS.key?(provider) }
+          end
       end
 
       @rate_limit_fallback_keys = UserSetting.rate_limit_fallback_providers(user_settings.user).to_set
@@ -394,6 +419,16 @@ module Activities
       else
         user_settings&.agent_timeout_seconds || agent_timeout
       end
+
+      # Cap timeout by the project's max execution time limit.
+      # Uses started_at to compute remaining budget so the limit covers
+      # the full run, not just a single provider attempt.
+      max_exec = agent_run.project.max_execution_seconds
+      if max_exec && agent_run.started_at
+        remaining = (max_exec - (Time.current - agent_run.started_at).to_i).clamp(1, max_exec)
+        effective_timeout = [ effective_timeout, remaining ].min
+      end
+
       effective_idle_timeout = if agent_run.create_issue_goal?
         user_settings&.issue_goal_idle_timeout_seconds || DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
       elsif agent_run.review_goal?
@@ -404,7 +439,7 @@ module Activities
       # checkpoint heartbeats at provider attempt boundaries (lines 106, 129).
       # Provider calls can run for many minutes, so without periodic
       # heartbeats the 120s heartbeat_timeout would fire mid-execution.
-      result = with_periodic_heartbeat("executing", provider) do
+      result = with_periodic_heartbeat("executing", provider, agent_run: agent_run) do
         container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout, env: command_env)
       end
 
@@ -431,6 +466,13 @@ module Activities
       else "wall_clock"
       end
       raise ProviderTimeoutError, "#{timeout_type}_timeout: #{e.message}"
+    end
+
+    # Checks if the agent run is stuck in an infinite loop by analyzing
+    # recent output logs. Raises InfiniteLoopError if a loop is detected.
+    def check_infinite_loop!(agent_run)
+      result = AgentRuns::DetectInfiniteLoop.call(agent_run: agent_run)
+      raise InfiniteLoopError, result.reason if result.loop_detected?
     end
 
     # Checks if the output indicates a rate limit error.
@@ -485,7 +527,7 @@ module Activities
     # configured on the workflow side, giving plenty of margin.
     HEARTBEAT_INTERVAL = 30
 
-    def with_periodic_heartbeat(*details, interval: HEARTBEAT_INTERVAL)
+    def with_periodic_heartbeat(*details, interval: HEARTBEAT_INTERVAL, agent_run: nil)
       context = Temporalio::Activity::Context.current_or_nil
       return yield unless context
 
@@ -514,13 +556,21 @@ module Activities
       end
 
       canceled = false
+      interrupted = false
       begin
         # Periodically heartbeat while the worker thread is still running.
         until worker.join(interval)
           begin
             context.heartbeat(*details)
+            check_infinite_loop!(agent_run) if agent_run
           rescue Temporalio::Error::CanceledError
             canceled = true
+            raise
+          rescue InfiniteLoopError
+            # Mark as interrupted so the ensure block terminates the
+            # worker instead of joining it (which would re-raise the
+            # worker's Interrupt and mask InfiniteLoopError).
+            interrupted = true
             raise
           rescue StandardError
             # Best-effort; next iteration will retry.
@@ -540,6 +590,28 @@ module Activities
             # Last resort if the thread is stuck in an uninterruptible call.
             worker.kill if worker.alive?
           end
+        elsif interrupted
+          # Worker is still running — send Interrupt so the container
+          # stops, then wait briefly for cleanup.
+          #
+          # NOTE: Thread.raise(Interrupt) is a best-effort signal here.
+          # Containers::Provision#execute uses a watchdog that stops the
+          # container to unblock blocking I/O (Thread.raise is unreliable
+          # with Excon's blocking reads). For infinite-loop termination
+          # the container exec has typically already produced output and
+          # returned, so the Interrupt suffices. If the exec is mid-stream,
+          # the container's own wall-clock timeout will eventually stop it.
+          # A more robust approach would accept a cancellation proc to
+          # directly stop the container; tracked for future improvement.
+          worker.raise(Interrupt) if worker.alive?
+          # Poll instead of worker.join — Interrupt inherits from
+          # SignalException (not StandardError), so Thread#join can
+          # propagate it to the calling thread and mask the
+          # InfiniteLoopError already in flight. Thread#value has the
+          # same issue. Polling with alive? avoids both problems.
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+          sleep(0.05) while worker.alive? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+          worker.kill if worker.alive?
         else
           worker.join
         end
@@ -547,8 +619,10 @@ module Activities
 
       # Thread#value re-raises the original exception with its backtrace
       # intact, unlike manual capture-and-reraise which replaces the
-      # backtrace with this method's call site.
-      worker.value
+      # backtrace with this method's call site. Skip when the worker was
+      # intentionally interrupted (infinite loop) — re-raising the
+      # Interrupt would mask the InfiniteLoopError already propagating.
+      worker.value unless interrupted
     end
 
     def build_command(command_context, prompt)
@@ -596,6 +670,30 @@ module Activities
       return @provider_entry_cache[cache_key] if @provider_entry_cache.key?(cache_key)
 
       @provider_entry_cache[cache_key] = Provider.for_identifier(user, provider_candidate)
+    end
+
+    def deduplicate_provider_candidates(primary_provider:, fallback_providers:, user:)
+      providers = [ primary_provider ]
+      seen = Set.new([ canonical_provider_candidate(primary_provider, user) ])
+
+      Array(fallback_providers).each do |provider_candidate|
+        canonical_candidate = canonical_provider_candidate(provider_candidate, user)
+        next if seen.include?(canonical_candidate)
+
+        seen << canonical_candidate
+        providers << provider_candidate
+      end
+
+      providers.select do |provider_candidate|
+        self.class::AGENT_COMMANDS.key?(provider_command_key(provider_candidate, nil, user))
+      end
+    end
+
+    def canonical_provider_candidate(provider_candidate, user)
+      provider_entry = provider_entry_for(provider_candidate, user)
+      return provider_entry.provider_key if provider_entry
+
+      canonical_provider(provider_candidate)
     end
 
     # Returns a per-entry identifier suitable for persisting in

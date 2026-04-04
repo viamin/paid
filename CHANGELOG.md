@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.15.0](https://github.com/viamin/paid/compare/v0.14.2...v0.15.0) (2026-04-03)
+
+
+### Features
+
+* **guardrails:** add execution time limits for agent runs ([#703](https://github.com/viamin/paid/issues/703)) ([#762](https://github.com/viamin/paid/issues/762)) ([3cb8b79](https://github.com/viamin/paid/commit/3cb8b791131d7258073d567a8dd845bfb7a66a91))
+
+
+### Bug Fixes
+
+* 692: fix(knowledge): distinguish 'tool unavailable' from 'no results' in collector runs ([#751](https://github.com/viamin/paid/issues/751)) ([ced21ca](https://github.com/viamin/paid/commit/ced21cafdb1dfeaebd3a47bbb0a9ae699ea9100f))
+* 694: feat(orchestration): implement PlanningWorkflow for feature decomposition ([#752](https://github.com/viamin/paid/issues/752)) ([19700bf](https://github.com/viamin/paid/commit/19700bf7131aad3544811df85f45b59125764f19))
+* 699: feat(orchestration): aggregated PR creation for multi-agent features ([#759](https://github.com/viamin/paid/issues/759)) ([074179a](https://github.com/viamin/paid/commit/074179afef1fbcc18764247ab68fc842cb4b6c09))
+* 700: feat(guardrails): implement infinite loop detection for agent runs ([#757](https://github.com/viamin/paid/issues/757)) ([dd025c7](https://github.com/viamin/paid/commit/dd025c740a945bf0b147e96db6af6be38adf81f0))
+* 702: feat(guardrails): enforce cost limits per project with hard stop ([#763](https://github.com/viamin/paid/issues/763)) ([ca567e2](https://github.com/viamin/paid/commit/ca567e249e1b711d2bbc4d45e1d59673c42a14db))
+* 756: Clicking timeframe buttons on dashboard resets page scroll position ([#764](https://github.com/viamin/paid/issues/764)) ([c3471e3](https://github.com/viamin/paid/commit/c3471e3406c7c4efcd42e0913bf66c56140db4e2))
+* **dashboard:** show resolved provider names ([#775](https://github.com/viamin/paid/issues/775)) ([9aa912e](https://github.com/viamin/paid/commit/9aa912e8ba48f98811cb88f7713614acf14d14bc))
+* **dev:** add supervisor diagnostics for overmind shutdowns ([3e8f3cf](https://github.com/viamin/paid/commit/3e8f3cf5ac7cc256d23209339f66ee8599adfc86))
+* **dev:** add supervisor diagnostics for overmind shutdowns ([f504eae](https://github.com/viamin/paid/commit/f504eae9d54d5bafcf895afa15f720aba5b9f114))
+* **dev:** force temporal worker shutdown after grace period ([4cd7174](https://github.com/viamin/paid/commit/4cd7174babe4a12ff93a3118e6a9c7c2a04428ed))
+* **dev:** force temporal worker shutdown after grace period ([3eaf0b1](https://github.com/viamin/paid/commit/3eaf0b123ea0306832aff4511943a76fb5a670ac))
+* **dev:** harden auto-update overmind recovery ([9c3a44c](https://github.com/viamin/paid/commit/9c3a44c0403e1c7916ab3c9a9484349ed59f8fd7))
+* **dev:** harden auto-update overmind recovery ([0d0b7c3](https://github.com/viamin/paid/commit/0d0b7c32a51521920d4142109b4e87a542ac2e2e))
+
+## [0.14.2](https://github.com/viamin/paid/compare/v0.14.1...v0.14.2) (2026-04-02)
+
+
+### Bug Fixes
+
+* 685: Add time range filters to metrics and category/status filters to performance section ([#747](https://github.com/viamin/paid/issues/747)) ([52f95c6](https://github.com/viamin/paid/commit/52f95c6626e66a74b4a9c56b9510de705679ab79))
+* 689: Make tables horizontally scrollable on mobile devices ([#748](https://github.com/viamin/paid/issues/748)) ([1289066](https://github.com/viamin/paid/commit/1289066233e8f375b74425840893759dd9e0ffd1))
+* 690: feat(knowledge): install ruby-maat gem and wire up ChurnHotspotCollector ([#750](https://github.com/viamin/paid/issues/750)) ([d5cc546](https://github.com/viamin/paid/commit/d5cc546f9115c8acb9404f128d02deaf23cc36d0))
+* 691: fix(knowledge): RoutesCollector reads a file that nothing generates ([#749](https://github.com/viamin/paid/issues/749)) ([ded1b6d](https://github.com/viamin/paid/commit/ded1b6de4000a8611f56e2cb2beb3fd7811c2721))
+* 695: feat(orchestration): create sub-issues in GitHub from decomposed plan ([#753](https://github.com/viamin/paid/issues/753)) ([7bd8ad9](https://github.com/viamin/paid/commit/7bd8ad9b05dd15de7b42013594db26539fb7241b))
+* 696: feat(orchestration): parallel AgentExecutionWorkflow invocation ([#755](https://github.com/viamin/paid/issues/755)) ([0c8b164](https://github.com/viamin/paid/commit/0c8b164af1c287c38080710013c55db739664e2e))
+* **knowledge:** show specific error details when collection fails ([#746](https://github.com/viamin/paid/issues/746)) ([478e283](https://github.com/viamin/paid/commit/478e28304c8ea537fe696d1a79e8f94c784c44bb))
+
 ## [0.14.1](https://github.com/viamin/paid/compare/v0.14.0...v0.14.1) (2026-04-02)
 
 
