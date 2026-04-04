@@ -577,6 +577,25 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.reload.status).to eq("rate_limited")
       end
 
+      it "marks the agent run as rate_limited when provider output is binary encoded" do
+        binary_rate_limit_output = Containers::Provision::Result.failure(
+          error: "rate limit",
+          stdout: "",
+          stderr: "You're out of extra usage \xB7 resets 5am (UTC)".b,
+          exit_code: 1
+        )
+        allow(container_service).to receive(:execute).and_return(binary_rate_limit_output)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.rate_limited_until).to be_present
+        expect(agent_run.error_message).to include("rate limited")
+      end
+
       it "does not classify echoed prompt text as a rate limit" do
         echoed_prompt = <<~PROMPT
           Investigate why the secrets proxy returns 429 for token usage limits.

@@ -490,6 +490,9 @@ module Activities
     end
 
     def strip_prompt_echo(output, prompt)
+      output = normalize_output_text(output)
+      prompt = normalize_output_text(prompt)
+
       return output if output.blank? || prompt.blank?
 
       sanitized_output = output.gsub(prompt, "")
@@ -511,6 +514,15 @@ module Activities
       end
 
       normalized_line.gsub(/\s+/, " ")
+    end
+
+    def normalize_output_text(value)
+      return "" if value.nil?
+
+      text = value.to_s.delete("\x00")
+      return text if text.encoding == Encoding::UTF_8 && text.valid_encoding?
+
+      text.dup.force_encoding(Encoding::UTF_8).scrub
     end
 
     # Attempts to parse a rate limit reset time from the output.
