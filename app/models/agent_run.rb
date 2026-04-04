@@ -489,7 +489,7 @@ class AgentRun < ApplicationRecord
   def log!(type, content, metadata: nil)
     agent_run_logs.create!(
       log_type: type,
-      content: content.to_s.delete("\x00"),
+      content: normalize_log_content(content),
       metadata: metadata
     )
   end
@@ -716,6 +716,13 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def normalize_log_content(content)
+    text = content.to_s.delete("\x00")
+    return text if text.encoding == Encoding::UTF_8 && text.valid_encoding?
+
+    text.dup.force_encoding(Encoding::UTF_8).scrub
+  end
 
   def logs_text(log_type:, limit:)
     agent_run_logs
