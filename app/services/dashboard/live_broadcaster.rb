@@ -83,7 +83,9 @@ module Dashboard
     def alert_content
       case agent_run.status
       when "paused"
-        violation = agent_run.guardrail_violation_type&.tr("_", " ") || "guardrail violation"
+        violation_type = agent_run.guardrail_violation_type.presence ||
+          agent_run.guardrail_context&.[]("violation_type").presence
+        violation = violation_type&.tr("_", " ") || "guardrail violation"
         [ "warning", "Agent run paused for #{agent_run.project.full_name}: #{violation}. Review and resume or terminate." ]
       when "failed"
         error_detail = agent_run.error_message.presence&.then { |msg| ": #{msg.truncate(100)}" }

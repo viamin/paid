@@ -75,5 +75,25 @@ RSpec.describe Dashboard::LiveBroadcaster do
         )
       )
     end
+
+    it "falls back to guardrail context when the violation type column is blank" do
+      agent_run.update!(
+        status: "paused",
+        paused_at: Time.current,
+        guardrail_violation_type: nil,
+        guardrail_context: { "violation_type" => "cost_limit" }
+      )
+
+      described_class.call(account: account, agent_run: agent_run.reload)
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to).with(
+        [ account, :live_dashboard ],
+        hash_including(
+          locals: hash_including(
+            message: a_string_including("cost limit")
+          )
+        )
+      )
+    end
   end
 end

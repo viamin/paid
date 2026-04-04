@@ -124,7 +124,7 @@ module Guardrails
 
     def persist_execution_cleanup(context, cleanup_result)
       updated_context = context.merge(execution_cleanup: cleanup_result)
-      agent_run.update_columns(guardrail_context: updated_context, updated_at: Time.current)
+      agent_run.update!(guardrail_context: updated_context)
       updated_context
     end
 
