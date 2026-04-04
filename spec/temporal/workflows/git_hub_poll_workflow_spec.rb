@@ -105,26 +105,28 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     before do
       allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
-        .and_return({ has_capacity: true })
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
-      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
     end
 
-    it "starts execute_agent child workflow with ABANDON parent close policy" do
+    it "queues execute_agent runs instead of starting them directly" do
       detection = { action: "execute_agent", issue_id: 10 }
 
       workflow.send(:handle_detection, detection, project_id)
 
-      expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
-        Workflows::AgentExecutionWorkflow,
-        hash_including(project_id: project_id, issue_id: 10),
-        hash_including(parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON)
-      )
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, { project_id: project_id, issue_id: 10 }, timeout: 30)
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
     it "starts PlanningWorkflow for start_planning action" do
       detection = { action: "start_planning", issue_id: 20 }
+
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
+        .and_return({ has_capacity: true })
+      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
 
       workflow.send(:handle_detection, detection, project_id)
 
@@ -164,6 +166,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     before do
       allow(workflow).to receive(:run_activity).and_return({})
+      allow(Temporalio::Workflow).to receive(:start_child_workflow)
     end
 
     it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
@@ -240,11 +243,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "routes draft phase triggers to draft followup workflow" do
-      allow(Temporalio::Workflow).to receive(:start_child_workflow)
-      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
-        .and_return({ has_capacity: true })
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
@@ -255,20 +256,15 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
-      expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
-        Workflows::AgentExecutionWorkflow,
-        hash_including(project_id: project_id, issue_id: 10, source_pull_request_number: 42),
-        hash_including(parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON)
-      )
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 }, timeout: 30)
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
     it "routes ready phase triggers to PR followup workflow" do
-      allow(Temporalio::Workflow).to receive(:start_child_workflow)
-      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
-        .and_return({ has_capacity: true })
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "ready",
@@ -279,12 +275,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
-      expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
-        Workflows::AgentExecutionWorkflow,
-        hash_including(project_id: project_id, issue_id: 10, source_pull_request_number: 42),
-        hash_including(parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON)
-      )
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 }, timeout: 30)
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
     it "routes review_bot_review_pending to RequestReviewActivity with copilot" do
@@ -302,11 +295,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "defers review request and dispatches followup when other triggers present" do
-      allow(Temporalio::Workflow).to receive(:start_child_workflow)
-      allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
-        .and_return({ has_capacity: true })
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
@@ -323,7 +314,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: array_including(Activities::RequestReviewActivity::COPILOT_LOGIN)), timeout: anything)
-      expect(Temporalio::Workflow).to have_received(:start_child_workflow)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 }, timeout: 30)
     end
 
     it "does not start followup workflow when review_bot_review_pending is the only trigger" do
