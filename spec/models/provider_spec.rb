@@ -133,6 +133,28 @@ RSpec.describe Provider do
       expect(provider).not_to be_valid
       expect(provider.errors[:provider_api_key]).to include("is not supported for this provider; use subscription authentication instead")
     end
+
+    it "requires a model id for kilocode api_key providers" do
+      api_key = create(:provider_api_key, user: provider.user, api_service_type: "inception")
+      provider.auth_type = "api_key"
+      provider.provider_api_key = api_key
+      provider.provider_key = "kilocode"
+      provider.config = { "kilocode" => { "api_provider" => "inception", "model" => "" } }
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:config]).to include("must include a KiloCode model id")
+    end
+
+    it "requires a model id for opencode api_key providers" do
+      api_key = create(:provider_api_key, user: provider.user, api_service_type: "openrouter")
+      provider.auth_type = "api_key"
+      provider.provider_api_key = api_key
+      provider.provider_key = "opencode"
+      provider.config = { "opencode" => { "api_provider" => "openrouter", "model" => "" } }
+
+      expect(provider).not_to be_valid
+      expect(provider.errors[:config]).to include("must include an OpenCode model id")
+    end
   end
 
   describe "scopes" do

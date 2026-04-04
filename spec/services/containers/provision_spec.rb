@@ -1063,6 +1063,29 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "when command output contains invalid UTF-8 bytes" do
+      let(:invalid_chunk) { "bad \xFF output\n".b }
+
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stdout, invalid_chunk) if block
+          [ [ invalid_chunk ], [], 0 ]
+        end
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+      end
+
+      it "scrubs output before buffering and logging" do
+        allow(agent_run).to receive(:log!)
+
+        result = service.execute("echo 'hello'")
+
+        expect(agent_run).to have_received(:log!).with("stdout", "bad � output\n")
+        expect(result).to be_success
+        expect(result[:stdout]).to eq("bad � output\n")
+        expect(result[:stdout]).to be_valid_encoding
+      end
+    end
+
     context "when command times out" do
       before do
         allow(mock_container).to receive(:exec) do
