@@ -280,6 +280,52 @@ RSpec.describe "Providers" do
       expect(provider.opencode_model_id).to eq("moonshotai/kimi-k2-0905")
     end
 
+    it "rejects kilocode API-key providers without a model id" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "inception")
+
+      post providers_path, params: {
+        provider: {
+          provider_key: "kilocode",
+          auth_type: "api_key",
+          provider_api_key_id: api_key.id,
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true,
+          config: {
+            kilocode: {
+              api_provider: "inception",
+              model: ""
+            }
+          }
+        }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("must include a KiloCode model id")
+    end
+
+    it "rejects opencode API-key providers without a model id" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+
+      post providers_path, params: {
+        provider: {
+          provider_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key_id: api_key.id,
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true,
+          config: {
+            opencode: {
+              api_provider: "openrouter",
+              model: ""
+            }
+          }
+        }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("must include an OpenCode model id")
+    end
+
     it "creates an aider provider successfully" do
       post providers_path, params: { provider: { provider_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
