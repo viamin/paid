@@ -9,7 +9,8 @@ FactoryBot.define do
     status { "stopped" }
 
     after(:build) do
-      if UserSetting.where.not(allowed_service_images: nil).none?
+      admin_user_ids = AccountMembership.where(role: [ :admin, :owner ]).select(:user_id)
+      unless UserSetting.where(user_id: admin_user_ids).where.not(allowed_service_images: nil).exists?
         user_setting = create(:user_setting)
         user_setting.user.add_role(:admin, user_setting.user.account)
       end

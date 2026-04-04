@@ -23,6 +23,8 @@ RSpec.describe Project do
     it { is_expected.to validate_presence_of(:github_id) }
     it { is_expected.to validate_uniqueness_of(:github_id).scoped_to(:account_id) }
     it { is_expected.to validate_numericality_of(:poll_interval_seconds).is_greater_than_or_equal_to(60) }
+    it { is_expected.to validate_numericality_of(:max_tokens_per_run).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(2_147_483_647).allow_nil }
+    it { is_expected.to validate_numericality_of(:token_limit_warning_threshold).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(100) }
     it { is_expected.to validate_numericality_of(:max_execution_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(86_400) }
 
     it "defaults max_execution_seconds to 1800" do
@@ -177,6 +179,31 @@ RSpec.describe Project do
 
         expect(project.label_mappings["planning"]).to eq("paid:planning")
         expect(project.label_mappings["new_stage"]).to eq("custom:new")
+      end
+    end
+
+    describe "#project_level_max_tokens_per_run" do
+      it "returns the project override when set" do
+        project = build(:project, max_tokens_per_run: 500_000)
+        expect(project.project_level_max_tokens_per_run).to eq(500_000)
+      end
+
+      it "falls back to account default when project override is nil" do
+        project = create(:project, max_tokens_per_run: nil)
+        project.account.update!(default_max_tokens_per_run: 2_000_000)
+        expect(project.project_level_max_tokens_per_run).to eq(2_000_000)
+      end
+    end
+
+    describe "#token_limit_warning_at" do
+      it "returns 80% of the effective limit by default" do
+        project = build(:project, max_tokens_per_run: 1_000_000)
+        expect(project.token_limit_warning_at).to eq(800_000)
+      end
+
+      it "respects a custom warning threshold" do
+        project = build(:project, max_tokens_per_run: 1_000_000, token_limit_warning_threshold: 90)
+        expect(project.token_limit_warning_at).to eq(900_000)
       end
     end
 

@@ -1,15 +1,18 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
-  STATUSES = %w[queued pending running completed failed cancelled timeout retried auth_expired rate_limited].freeze
+  STATUSES = %w[queued pending running paused completed failed cancelled timeout retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode api].freeze
   GOALS = %w[create_pr create_issue review].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
   ACTIVE_STATUSES = %w[pending running].freeze
   FINISHED_STATUSES = %w[completed failed cancelled timeout retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
-  UNFINISHED_STATUSES = %w[queued pending running].freeze
+  UNFINISHED_STATUSES = %w[queued pending running paused].freeze
+  GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
+  TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
+  DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
 
   belongs_to :project
   belongs_to :issue, optional: true
@@ -67,6 +70,8 @@ class AgentRun < ApplicationRecord
   validates :final_provider, length: { maximum: 50 }
   validates :provider_switches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :stale_requeue_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :token_limit_status, inclusion: { in: TOKEN_LIMIT_STATUSES }, allow_nil: true
+  validates :guardrail_violation_type, inclusion: { in: GUARDRAIL_VIOLATION_TYPES }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :provider_belongs_to_project_owner, if: -> { provider.present? }
   validate :has_prompt_source, on: :create
@@ -81,6 +86,7 @@ class AgentRun < ApplicationRecord
   scope :timeout, -> { where(status: "timeout") }
   scope :retried, -> { where(status: "retried") }
   scope :auth_expired, -> { where(status: "auth_expired") }
+  scope :paused, -> { where(status: "paused") }
   scope :rate_limited, -> { where(status: "rate_limited") }
   scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
@@ -340,7 +346,34 @@ class AgentRun < ApplicationRecord
   end
 
   def total_tokens
-    tokens_input + tokens_output
+    tokens_input.to_i + tokens_output.to_i
+  end
+
+  def token_limit_exceeded?
+    token_limit_status == "exceeded"
+  end
+
+  def token_limit_warning?
+    token_limit_status == "warning"
+  end
+
+  # Resolves the effective max tokens per run for this agent run using the
+  # full resolution chain: project override → user settings → account default
+  # → global default. Memoized per AgentRun instance so hot paths like token
+  # tracking and detail rendering do not repeat user-settings resolution.
+  def effective_max_tokens_per_run
+    return @effective_max_tokens_per_run if defined?(@effective_max_tokens_per_run)
+
+    @effective_max_tokens_per_run =
+      project.max_tokens_per_run ||
+      explicit_user_max_tokens_per_run ||
+      project.account.default_max_tokens_per_run ||
+      DEFAULT_MAX_TOKENS_PER_RUN
+  end
+
+  # Returns the fraction of the token limit consumed (0.0–1.0+).
+  def token_limit_usage_ratio
+    total_tokens.to_f / effective_max_tokens_per_run
   end
 
   def resource_summary
@@ -421,6 +454,45 @@ class AgentRun < ApplicationRecord
       error_message: error,
       duration_seconds: duration
     )
+  end
+
+  def pause!(violation_type:, context: nil)
+    with_lock do
+      reload
+      return false unless running?
+
+      update!(
+        status: "paused",
+        paused_at: Time.current,
+        guardrail_violation_type: violation_type,
+        guardrail_context: context
+      )
+      true
+    end
+  end
+
+  def paused?
+    status == "paused"
+  end
+
+  def resume!
+    with_lock do
+      reload
+      return false unless paused?
+
+      update!(
+        status: "queued",
+        started_at: nil,
+        completed_at: nil,
+        duration_seconds: nil,
+        paused_at: nil,
+        guardrail_violation_type: nil,
+        guardrail_context: nil,
+        temporal_workflow_id: nil,
+        temporal_run_id: nil
+      )
+      true
+    end
   end
 
   def cancel!
@@ -826,6 +898,22 @@ class AgentRun < ApplicationRecord
       .update_all(last_agent_run_at: created_at, updated_at: Time.current)
   end
 
+  # Treat the auto-created user setting's global default as "inherit" so the
+  # account default still applies unless the user has explicitly confirmed an
+  # override. A later save of the settings row is the durable signal we have
+  # that the persisted default value was intentionally kept by the user.
+  def explicit_user_max_tokens_per_run
+    user_setting = AgentRuns::UserSettingsResolver.call(project: project, strict: false, create: false)
+    return nil unless user_setting
+
+    max_tokens_per_run = user_setting.max_tokens_per_run
+    return nil if max_tokens_per_run.blank?
+    return max_tokens_per_run if max_tokens_per_run != DEFAULT_MAX_TOKENS_PER_RUN
+    return max_tokens_per_run if user_setting.updated_at > user_setting.created_at
+
+    nil
+  end
+
   def just_finished?
     previous_changes.key?("status") && finished?
   end
@@ -842,6 +930,8 @@ class AgentRun < ApplicationRecord
   def just_started_running?
     previous_changes.key?("status") && status == "running"
   end
+
+  private :explicit_user_max_tokens_per_run
 
   def just_timed_out_issue_goal?
     previous_changes.key?("status") && status == "timeout" && create_issue_goal?

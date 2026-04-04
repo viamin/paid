@@ -1050,6 +1050,119 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/:id/resume" do
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "re-queues a paused run and enqueues ProcessRunQueueJob" do
+        agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
+          guardrail_violation_type: "time_limit", temporal_workflow_id: "workflow-123", temporal_run_id: "run-123")
+        allow(AgentRuns::Cancel).to receive(:call)
+
+        expect {
+          post resume_project_agent_run_path(project, agent_run)
+        }.to have_enqueued_job(ProcessRunQueueJob)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:notice]).to eq("Agent run resumed and re-queued.")
+        expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("queued")
+        expect(agent_run.paused_at).to be_nil
+        expect(agent_run.guardrail_violation_type).to be_nil
+        expect(agent_run.temporal_workflow_id).to be_nil
+        expect(agent_run.temporal_run_id).to be_nil
+      end
+
+      it "rejects non-paused runs" do
+        agent_run = create(:agent_run, :running, project: project)
+
+        post resume_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:alert]).to eq("Only paused runs can be resumed.")
+      end
+
+      it "does not resume when the previous workflow cannot be cancelled" do
+        agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
+          guardrail_violation_type: "time_limit", temporal_workflow_id: "workflow-123", temporal_run_id: "run-123")
+        allow(AgentRuns::Cancel).to receive(:call).and_raise(StandardError, "Temporal RPC error")
+
+        expect {
+          post resume_project_agent_run_path(project, agent_run)
+        }.not_to have_enqueued_job(ProcessRunQueueJob)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:alert]).to eq("Unable to resume until the previous execution is cancelled. Please try again.")
+
+        agent_run.reload
+        expect(agent_run.status).to eq("paused")
+        expect(agent_run.temporal_workflow_id).to eq("workflow-123")
+        expect(agent_run.temporal_run_id).to eq("run-123")
+      end
+    end
+  end
+
+  describe "POST /projects/:project_id/agent_runs/:id/terminate" do
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "cancels a paused run without marking it failed" do
+        agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
+          guardrail_violation_type: "cost_limit")
+        allow(AgentRuns::Cancel).to receive(:call)
+
+        post terminate_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:notice]).to eq("Agent run terminated.")
+        expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("cancelled")
+        expect(agent_run.error_message).to include("cost_limit")
+      end
+
+      it "uses the persisted violation context when the guardrail type column is blank" do
+        agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
+          guardrail_violation_type: nil, guardrail_context: { "violation_type" => "time_limit" })
+        allow(AgentRuns::Cancel).to receive(:call)
+
+        post terminate_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+
+        agent_run.reload
+        expect(agent_run.status).to eq("cancelled")
+        expect(agent_run.error_message).to eq("Terminated after guardrail violation: time_limit")
+      end
+
+      it "falls back to unknown when no guardrail type is stored" do
+        agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
+          guardrail_violation_type: nil, guardrail_context: {})
+        allow(AgentRuns::Cancel).to receive(:call)
+
+        post terminate_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+
+        agent_run.reload
+        expect(agent_run.status).to eq("cancelled")
+        expect(agent_run.error_message).to eq("Terminated after guardrail violation: unknown")
+      end
+
+      it "rejects non-paused runs" do
+        agent_run = create(:agent_run, :completed, project: project)
+
+        post terminate_project_agent_run_path(project, agent_run)
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:alert]).to eq("The agent run state changed and could not be terminated.")
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/:id/retry" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

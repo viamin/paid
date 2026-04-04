@@ -19,6 +19,8 @@ class Account < ApplicationRecord
   validates :name, presence: true
   validates :slug, presence: true, uniqueness: true,
     format: { with: /\A[a-z0-9-]+\z/, message: "can only contain lowercase letters, numbers, and hyphens" }
+  validates :default_max_tokens_per_run,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 2_147_483_647 }
 
   before_validation :generate_slug, on: :create
 

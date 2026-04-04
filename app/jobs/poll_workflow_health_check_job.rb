@@ -15,7 +15,15 @@
 #
 # Scheduled via GoodJob cron every 5 minutes.
 class PollWorkflowHealthCheckJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
   queue_as :maintenance
+
+  good_job_control_concurrency_with(
+    total_limit: 1,
+    enqueue_limit: 1,
+    key: "poll_workflow_health_check"
+  )
 
   def perform
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)

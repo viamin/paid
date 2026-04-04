@@ -108,6 +108,11 @@ class Project < ApplicationRecord
   validates :security_severity_threshold, inclusion: { in: Issue::SEVERITY_ORDER }
   validates :code_scanning_interval_hours, numericality: { greater_than_or_equal_to: 24 }
   validates :knowledge_status, inclusion: { in: KNOWLEDGE_STATUSES }
+  validates :max_tokens_per_run,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 2_147_483_647 },
+    allow_nil: true
+  validates :token_limit_warning_threshold,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_execution_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 }
   validate :allowed_github_usernames_not_empty
   validate :agent_co_author_trailer_is_single_line
@@ -186,7 +191,7 @@ class Project < ApplicationRecord
       .to_set
   end
 
-  # Returns the set of PR numbers that have any active (queued/pending/running) agent run,
+  # Returns the set of PR numbers that have any unfinished (queued/pending/running/paused) agent run,
   # used to suppress "Quick Run" when a run is already in progress (unique index would reject it).
   def pr_numbers_with_active_runs
     agent_runs
@@ -244,6 +249,19 @@ class Project < ApplicationRecord
     return false if login.blank?
 
     allowed_github_usernames.any? { |allowed| allowed.downcase == login.downcase }
+  end
+
+  # Returns the effective token limit per agent run at the project/account level.
+  # Resolution: project override → account default.
+  # NOTE: For full resolution (including user settings and global default),
+  # use AgentRun#effective_max_tokens_per_run instead.
+  def project_level_max_tokens_per_run
+    max_tokens_per_run || account.default_max_tokens_per_run
+  end
+
+  # Returns the absolute token count at which a warning should be emitted.
+  def token_limit_warning_at
+    (project_level_max_tokens_per_run * token_limit_warning_threshold / 100.0).floor
   end
 
   def increment_metrics!(cost_cents:, tokens_used:)
