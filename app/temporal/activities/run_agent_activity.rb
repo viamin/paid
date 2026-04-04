@@ -450,10 +450,11 @@ module Activities
       end
 
       output = (result[:stderr].presence || result[:stdout]).to_s.strip
+      rate_limit_output = strip_prompt_echo(output, prompt)
 
       # Check if this is a rate limit error
-      if rate_limit_error?(output)
-        reset_at = parse_rate_limit_reset(output)
+      if rate_limit_error?(rate_limit_output)
+        reset_at = parse_rate_limit_reset(rate_limit_output)
         raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
       end
 
@@ -480,6 +481,30 @@ module Activities
       return false if output.blank?
 
       RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+    end
+
+    def strip_prompt_echo(output, prompt)
+      return output if output.blank? || prompt.blank?
+
+      sanitized_output = output.gsub(prompt, "")
+      prompt_lines = prompt.each_line.map { |line| normalize_output_line(line, strip_prompt_prefixes: true) }.reject(&:blank?).to_set
+
+      sanitized_output.each_line.filter_map do |line|
+        normalized_line = normalize_output_line(line, strip_prompt_prefixes: true)
+        next if normalized_line.blank? || prompt_lines.include?(normalized_line)
+
+        line.rstrip
+      end.join("\n").strip
+    end
+
+    def normalize_output_line(line, strip_prompt_prefixes: false)
+      normalized_line = line.to_s.strip
+      if strip_prompt_prefixes
+        normalized_line = normalized_line.sub(/\A(?:user|assistant|system)\s*[:|-]?\s*/i, "")
+        normalized_line = normalized_line.sub(/\A(?:>\s*)+/, "")
+      end
+
+      normalized_line.gsub(/\s+/, " ")
     end
 
     # Attempts to parse a rate limit reset time from the output.
