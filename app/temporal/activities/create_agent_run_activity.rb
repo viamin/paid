@@ -18,6 +18,8 @@ module Activities
       provider_id = input[:provider_id]
       goal = input.fetch(:goal, "create_pr")
       source_pull_request_number = input[:source_pull_request_number]
+      count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
+      expected_draft_review_count = input[:expected_draft_review_count]
 
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
@@ -60,6 +62,8 @@ module Activities
         goal: goal,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pull_request_number,
+        count_toward_draft_review_round: count_toward_draft_review_round,
+        expected_draft_review_count: expected_draft_review_count,
         prompt_version: prompt_version,
         status: "pending"
       }

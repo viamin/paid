@@ -162,6 +162,22 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }
 
+    def draft_pr_data(current_draft_review_count:, triggers:)
+      {
+        issue_id: 10,
+        pr_number: 42,
+        phase: "draft",
+        current_draft_review_count: current_draft_review_count,
+        triggers: triggers
+      }
+    end
+
+    def stub_draft_followup_capacity(has_capacity:)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
+        .and_return({ has_capacity: has_capacity })
+    end
+
     before do
       allow(workflow).to receive(:run_activity).and_return({})
     end
@@ -242,25 +258,46 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     it "routes draft phase triggers to draft followup workflow" do
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.now)
-      allow(workflow).to receive(:run_activity)
-        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
-        .and_return({ has_capacity: true })
+      stub_draft_followup_capacity(has_capacity: true)
 
-      pr_data = {
-        issue_id: 10, pr_number: 42, phase: "draft",
-        current_draft_review_count: 1,
-        triggers: [ { type: "ci_failure" } ]
-      }
-
-      workflow.send(:handle_pr_trigger, project_id, pr_data)
+      workflow.send(:handle_pr_trigger, project_id,
+        draft_pr_data(current_draft_review_count: 1, triggers: [ { type: "ci_failure" } ]))
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
       expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
         Workflows::AgentExecutionWorkflow,
-        hash_including(project_id: project_id, issue_id: 10, source_pull_request_number: 42),
+        hash_including(
+          project_id: project_id,
+          issue_id: 10,
+          source_pull_request_number: 42,
+          count_toward_draft_review_round: true,
+          expected_draft_review_count: 1
+        ),
         hash_including(parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON)
       )
+    end
+
+    it "queues draft followup runs without incrementing draft review count yet" do
+      stub_draft_followup_capacity(has_capacity: false)
+
+      workflow.send(:handle_pr_trigger, project_id,
+        draft_pr_data(current_draft_review_count: 4, triggers: [ { type: "ci_failure" } ]))
+
+      expect(workflow).to have_received(:run_activity)
+        .with(
+          Activities::QueueAgentRunActivity,
+          hash_including(
+            project_id: project_id,
+            issue_id: 10,
+            source_pull_request_number: 42,
+            count_toward_draft_review_round: true,
+            expected_draft_review_count: 4
+          ),
+          timeout: 30
+        )
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordDraftReviewActivity, anything, timeout: anything)
     end
 
     it "routes ready phase triggers to PR followup workflow" do

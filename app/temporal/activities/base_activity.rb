@@ -93,6 +93,24 @@ module Activities
       )
     end
 
+    def record_draft_review_round_if_needed(agent_run)
+      return unless agent_run.count_toward_draft_review_round?
+      return unless agent_run.issue_id.present?
+      unless agent_run.expected_draft_review_count.present?
+        logger.warn(
+          message: "pr_review.missing_expected_draft_review_count",
+          agent_run_id: agent_run.id,
+          issue_id: agent_run.issue_id
+        )
+        return
+      end
+
+      Activities::RecordDraftReviewActivity.new.execute(
+        issue_id: agent_run.issue_id,
+        expected_draft_review_count: agent_run.expected_draft_review_count
+      )
+    end
+
     def track_phase(agent_run_id:, phase_key:, phase_group:, agent_run: nil, metadata: {}, started_at: Time.current)
       status = "completed"
       result = yield

@@ -86,6 +86,30 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
         .to have_enqueued_job(ProcessRunQueueJob)
     end
 
+    it "increments draft_review_count for successful tracked draft followups" do
+      issue.update!(pr_review_phase: "draft", draft_review_count: 2)
+      agent_run.update!(
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 2
+      )
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.draft_review_count).to eq(3)
+    end
+
+    it "does not double-count tracked draft followups on retry" do
+      issue.update!(pr_review_phase: "draft", draft_review_count: 2)
+      agent_run.update!(
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 2
+      )
+
+      2.times { activity.execute(agent_run_id: agent_run.id) }
+
+      expect(issue.reload.draft_review_count).to eq(3)
+    end
+
     it "handles comment failure gracefully" do
       allow(github_client).to receive(:add_comment)
         .and_raise(GithubClient::ApiError.new("forbidden", status: 403))
@@ -107,6 +131,14 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
 
         expect(agent_run.reload.status).to eq("completed")
       end
+    end
+
+    it "does not increment draft_review_count for untracked runs" do
+      issue.update!(pr_review_phase: "draft", draft_review_count: 2)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.draft_review_count).to eq(2)
     end
   end
 end

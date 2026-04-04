@@ -61,6 +61,29 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
+    it "persists draft review round tracking metadata when provided" do
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 3
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.count_toward_draft_review_round).to be(true)
+      expect(agent_run.expected_draft_review_count).to eq(3)
+    end
+
+    it "requires expected_draft_review_count when tracking draft review rounds" do
+      expect {
+        activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          count_toward_draft_review_round: true
+        )
+      }.to raise_error(ActiveRecord::RecordInvalid, /Expected draft review count is required/)
+    end
+
     it "defaults goal to create_pr when not provided" do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
