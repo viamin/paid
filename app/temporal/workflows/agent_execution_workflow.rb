@@ -237,10 +237,10 @@ module Workflows
             complete_result = run_activity(Activities::CompleteExistingPrRunActivity,
               { agent_run_id: agent_run_id }, timeout: 60)
 
-            # New commits invalidate prior bot feedback, so request a fresh
-            # Copilot review for any still-active PR phase.
+            # New commits invalidate prior automated feedback, so request fresh
+            # configured reviews for any still-active PR phase.
             if complete_result[:pr_review_phase].in?(%w[draft restarted ready escalated])
-              request_copilot_review(project_id, source_pull_request_number)
+              request_configured_reviews(project_id, source_pull_request_number)
             end
 
             # Draft a decision record for existing PR changes (best-effort)
@@ -254,8 +254,8 @@ module Workflows
             run_activity(Activities::UpdateIssueWithPrActivity,
               { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
 
-            # Step 8: Request Copilot review on the new draft PR (best-effort)
-            request_copilot_review(project_id, pr_result[:pull_request_number])
+            # Step 8: Request configured reviews on the new draft PR (best-effort)
+            request_configured_reviews(project_id, pr_result[:pull_request_number])
 
             # Step 9: Draft a decision record (best-effort)
             draft_decision_record(agent_run_id)
@@ -274,10 +274,11 @@ module Workflows
               { agent_run_id: agent_run_id, reason: "no_changes" }, timeout: 30)
           end
 
-          # Still request Copilot review for existing PR runs: the previous
-          # run may have pushed a fix that Copilot hasn't reviewed yet.
+          # Still request configured reviews for existing PR runs: the previous
+          # run may have pushed a fix that the configured reviewers have not
+          # seen yet.
           if source_pull_request_number
-            request_copilot_review(project_id, source_pull_request_number)
+            request_configured_reviews(project_id, source_pull_request_number)
           end
         end
 
@@ -424,19 +425,45 @@ module Workflows
       cause.is_a?(Temporalio::Error::ApplicationError) && cause.type == "StalePullRequest"
     end
 
-    def request_copilot_review(project_id, pr_number)
+    def request_configured_reviews(project_id, pr_number)
       return unless pr_number
 
-      run_activity(Activities::RequestReviewActivity,
-        { project_id: project_id, pr_number: pr_number,
-          reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
+      review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
+        { project_id: project_id }, timeout: 30, retry_policy: NO_RETRY)
+
+      Array(review_plan[:requested_review_methods]).each do |method|
+        request_review_method(project_id, pr_number, method)
+      end
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
       Temporalio::Workflow.logger.warn(
-        message: "agent_execution.copilot_review_request_failed",
+        message: "agent_execution.request_configured_reviews_failed",
         project_id: project_id,
         pr_number: pr_number,
+        error: e.message
+      )
+    end
+
+    def request_review_method(project_id, pr_number, method)
+      case method
+      when "copilot"
+        run_activity(Activities::RequestReviewActivity,
+          { project_id: project_id, pr_number: pr_number,
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
+      when "paid_agent"
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, source_pull_request_number: pr_number, goal: "review" },
+          timeout: 30)
+      end
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.request_review_method_failed",
+        project_id: project_id,
+        pr_number: pr_number,
+        review_method: method,
         error: e.message
       )
     end

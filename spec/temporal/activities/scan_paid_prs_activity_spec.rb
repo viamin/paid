@@ -1250,6 +1250,152 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent is the configured blocking review method" do
+      before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "wait_for_reviews" => true,
+            "methods" => {
+              "paid_agent" => { "enabled" => true }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+      end
+
+      it "waits for a completed review-goal run before advancing" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+
+      it "treats a newer completed review-goal run as satisfying the review gate" do
+        create(:agent_run, :completed, project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        create(:agent_run, :with_review, project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago, review_posted_at: 1.hour.ago)
+
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+    end
+
+    context "when manual review is the configured blocking review method" do
+      before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "wait_for_reviews" => true,
+            "methods" => {
+              "manual" => { "enabled" => true }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+      end
+
+      it "waits for a trusted human review before advancing" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+
+      it "accepts a trusted human review as satisfying the gate" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "viamin", state: "COMMENTED", body: "Looks good",
+              submitted_at: Time.current }
+          ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+    end
+
+    context "when ci_action is the configured blocking review method" do
+      before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "wait_for_reviews" => true,
+            "methods" => {
+              "ci_action" => { "enabled" => true, "action_name" => "codex-review" }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+      end
+
+      it "waits for the named review action to complete" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+
+      it "treats a completed named review action as satisfying the gate" do
+        stub_github_for_pr(
+          checks: [
+            { name: "ci", conclusion: "success" },
+            { name: "codex-review", conclusion: "success", completed_at: Time.current }
+          ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+    end
+
     # --- Ready phase scanning ---
 
     context "when owner has approved the PR" do

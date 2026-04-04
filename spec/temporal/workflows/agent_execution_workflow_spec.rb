@@ -324,7 +324,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::PushBranchActivity" then {}
         when "Activities::ResolveReviewThreadsActivity" then {}
         when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: pr_review_phase }
+        when "Activities::ResolvePrReviewPlanActivity" then { requested_review_methods: [ "copilot", "paid_agent" ] }
         when "Activities::RequestReviewActivity" then {}
+        when "Activities::QueueAgentRunActivity" then {}
         when "Activities::CleanupContainerActivity" then {}
         when "Activities::CleanupServicesActivity" then {}
         when "Activities::CleanupWorktreeActivity" then {}
@@ -333,7 +335,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
-    it "re-requests Copilot review after pushing commits to a ready PR" do
+    it "re-requests configured reviews after pushing commits to a ready PR" do
       stub_existing_pr_followup(pr_review_phase: "ready")
 
       workflow.execute(input)
@@ -343,15 +345,33 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
           { project_id: 1, pr_number: 42,
             reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
           timeout: 60)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: 1, source_pull_request_number: 42, goal: "review" },
+          timeout: 30)
     end
 
-    it "does not request Copilot review after pushing commits to a merged PR" do
+    it "does not request configured reviews after pushing commits to a merged PR" do
       stub_existing_pr_followup(pr_review_phase: "merged")
 
       workflow.execute(input)
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, any_args)
+    end
+
+    it "still queues paid_agent review when copilot request fails" do
+      stub_existing_pr_followup(pr_review_phase: "ready")
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
+        .and_raise(StandardError, "copilot unavailable")
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: 1, source_pull_request_number: 42, goal: "review" },
+          timeout: 30)
     end
   end
 
@@ -374,7 +394,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::PreparePrPromptActivity" then {}
         when "Activities::RunAgentActivity" then { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
+        when "Activities::ResolvePrReviewPlanActivity" then { requested_review_methods: [ "copilot", "paid_agent" ] }
         when "Activities::RequestReviewActivity" then {}
+        when "Activities::QueueAgentRunActivity" then {}
         when "Activities::CleanupContainerActivity" then {}
         when "Activities::CleanupServicesActivity" then {}
         when "Activities::CleanupWorktreeActivity" then {}
@@ -383,7 +405,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
-    it "requests Copilot review even when agent makes no changes on existing PR" do
+    it "requests configured reviews even when agent makes no changes on existing PR" do
       stub_no_changes_followup
 
       workflow.execute(input)
@@ -393,6 +415,10 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
           { project_id: 1, pr_number: 42,
             reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
           timeout: 60)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: 1, source_pull_request_number: 42, goal: "review" },
+          timeout: 30)
     end
   end
 

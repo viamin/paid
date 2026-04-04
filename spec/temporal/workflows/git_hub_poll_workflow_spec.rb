@@ -280,7 +280,11 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
-    it "routes review_bot_review_pending to RequestReviewActivity with copilot" do
+    it "requests configured reviews when review_bot_review_pending is the only trigger" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
+        .and_return({ requested_review_methods: [ "copilot", "paid_agent" ] })
+
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
         current_draft_review_count: 0,
@@ -290,8 +294,13 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
+      expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, source_pull_request_number: 42, goal: "review" }, timeout: 30)
     end
 
     it "defers review request and dispatches followup when other triggers present" do
@@ -331,6 +340,28 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+    end
+
+    it "still queues paid_agent review when copilot request fails" do
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
+        .and_return({ requested_review_methods: [ "copilot", "paid_agent" ] })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
+        .and_raise(StandardError, "copilot unavailable")
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, source_pull_request_number: 42, goal: "review" }, timeout: 30)
     end
 
     it "triggers dev environment update after successful merge" do

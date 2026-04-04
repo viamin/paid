@@ -170,7 +170,7 @@ module Workflows
       elsif trigger_types.include?("owner_approved")
         handle_owner_approved(project_id, pr_data)
       elsif trigger_types.include?("review_bot_review_pending")
-        handle_review_bot_review_pending(project_id, pr_data, trigger_types)
+        handle_review_method_pending(project_id, pr_data, trigger_types)
       elsif pr_data[:phase].in?(%w[draft restarted])
         start_draft_followup_workflow(project_id, pr_data)
       else
@@ -205,18 +205,16 @@ module Workflows
         log_key: "pr_review.request_owner_review_failed")
     end
 
-    def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
+    def handle_review_method_pending(project_id, pr_data, trigger_types)
       # If there are other triggers besides review_bot_review_pending, a followup
-      # agent will run and push changes. Defer the Copilot review request to the
-      # AgentExecutionWorkflow so Copilot reviews the fixed code, not the pre-fix
-      # state. When review_bot_review_pending is the only trigger, request
+      # agent will run and push changes. Defer automated review requests to the
+      # AgentExecutionWorkflow so reviewers inspect the fixed code, not the
+      # pre-fix state. When review_bot_review_pending is the only trigger, request
       # immediately since no followup will run.
       other_triggers = trigger_types - [ "review_bot_review_pending" ]
 
       if other_triggers.empty?
-        request_review(project_id, pr_data[:pr_number],
-          [ Activities::RequestReviewActivity::COPILOT_LOGIN ],
-          log_key: "pr_review.request_review_bot_review_failed")
+        request_configured_reviews(project_id, pr_data[:pr_number])
         return
       end
 
@@ -238,6 +236,47 @@ module Workflows
         message: log_key,
         project_id: project_id,
         pr_number: pr_number,
+        error: e.message
+      )
+    end
+
+    def request_configured_reviews(project_id, pr_number)
+      review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
+        { project_id: project_id }, timeout: 30)
+
+      Array(review_plan[:requested_review_methods]).each do |method|
+        request_review_method(project_id, pr_number, method)
+      end
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "pr_review.request_configured_reviews_failed",
+        project_id: project_id,
+        pr_number: pr_number,
+        error: e.message
+      )
+    end
+
+    def request_review_method(project_id, pr_number, method)
+      case method
+      when "copilot"
+        request_review(project_id, pr_number,
+          [ Activities::RequestReviewActivity::COPILOT_LOGIN ],
+          log_key: "pr_review.request_copilot_review_failed")
+      when "paid_agent"
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, source_pull_request_number: pr_number, goal: "review" },
+          timeout: 30)
+      end
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "pr_review.request_review_method_failed",
+        project_id: project_id,
+        pr_number: pr_number,
+        review_method: method,
         error: e.message
       )
     end

@@ -11,6 +11,7 @@ module Activities
       requested_agent_type = input[:agent_type]
       provider_id = input[:provider_id]
       source_pull_request_number = input[:source_pull_request_number]
+      goal = input.fetch(:goal, "create_pr")
 
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
@@ -36,6 +37,7 @@ module Activities
             issue: issue,
             provider_id: provider_id,
             agent_type: agent_type,
+            goal: goal,
             custom_prompt: custom_prompt,
             source_pull_request_number: source_pull_request_number,
             status: "queued"

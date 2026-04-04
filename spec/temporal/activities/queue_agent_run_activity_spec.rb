@@ -91,6 +91,18 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.custom_prompt).to eq("Do something")
     end
 
+    it "stores a custom goal for queued review runs" do
+      result = activity.execute(
+        project_id: project.id,
+        source_pull_request_number: 42,
+        goal: "review"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.goal).to eq("review")
+      expect(agent_run.source_pull_request_number).to eq(42)
+    end
+
     context "when a duplicate run exists" do
       it "returns existing run when a queued run exists for the same issue" do
         existing = create(:agent_run, :queued, project: project, issue: issue)
