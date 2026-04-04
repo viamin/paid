@@ -354,9 +354,13 @@ class AgentRun < ApplicationRecord
 
   # Resolves the effective max tokens per run for this agent run using the
   # full resolution chain: project override → user settings → account default
-  # → global default. Matches the enforcement logic in SecretsProxyController.
+  # → global default. Memoized per AgentRun instance so hot paths like token
+  # tracking and detail rendering do not repeat user-settings resolution.
   def effective_max_tokens_per_run
-    project.max_tokens_per_run ||
+    return @effective_max_tokens_per_run if defined?(@effective_max_tokens_per_run)
+
+    @effective_max_tokens_per_run =
+      project.max_tokens_per_run ||
       explicit_user_max_tokens_per_run ||
       project.account.default_max_tokens_per_run ||
       DEFAULT_MAX_TOKENS_PER_RUN

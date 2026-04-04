@@ -19,6 +19,7 @@ class TokenUsageTracker
     request_type  = usage.fetch(:request_type, nil).presence || "agent"
     metadata      = usage.fetch(:metadata, nil).presence || {}
     cost_cents    = calculate_cost(tokens_input, tokens_output, llm_model: llm_model)
+    resolved_hard_limit = agent_run.effective_max_tokens_per_run if update_aggregates
 
     ActiveRecord::Base.transaction do
       record_per_request_usage(
@@ -36,7 +37,7 @@ class TokenUsageTracker
           agent_run.increment(:tokens_input, tokens_input)
           agent_run.increment(:tokens_output, tokens_output)
           agent_run.increment(:cost_cents, cost_cents)
-          apply_token_limit_status(agent_run)
+          apply_token_limit_status(agent_run, hard_limit: resolved_hard_limit)
           agent_run.save!
         end
 
@@ -67,8 +68,7 @@ class TokenUsageTracker
   # Evaluates the agent run's cumulative token usage against project limits
   # and updates the token_limit_status field. Logs warnings at the soft
   # threshold and records "exceeded" at the hard limit.
-  def self.apply_token_limit_status(agent_run)
-    hard_limit = agent_run.effective_max_tokens_per_run
+  def self.apply_token_limit_status(agent_run, hard_limit:)
     warning_threshold = agent_run.project.token_limit_warning_threshold
     warning_at = (hard_limit * warning_threshold / 100.0).floor
     current_tokens = agent_run.total_tokens

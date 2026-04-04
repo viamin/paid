@@ -48,6 +48,17 @@ RSpec.describe TokenUsageTracker do
       }.to change { project.reload.total_cost_cents }.by(1800)
     end
 
+    it "resolves the per-run token limit once per tracking call" do
+      project.update!(max_tokens_per_run: nil)
+      project.created_by.settings.update!(max_tokens_per_run: 5_000)
+      allow(AgentRuns::UserSettingsResolver).to receive(:call).and_call_original
+      allow(described_class).to receive(:enforce_hard_stop_budgets)
+
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+
+      expect(AgentRuns::UserSettingsResolver).to have_received(:call).once.with(project: project, strict: false)
+    end
+
     it "creates a metric log entry" do
       expect {
         described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
