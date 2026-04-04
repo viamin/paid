@@ -93,6 +93,16 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.expected_draft_review_count).to eq(2)
     end
 
+    it "requires expected_draft_review_count when tracking draft review rounds" do
+      expect {
+        activity.execute(
+          project_id: project.id,
+          issue_id: issue.id,
+          count_toward_draft_review_round: true
+        )
+      }.to raise_error(ArgumentError, /expected_draft_review_count is required/)
+    end
+
     it "works without an issue" do
       result = activity.execute(
         project_id: project.id,
