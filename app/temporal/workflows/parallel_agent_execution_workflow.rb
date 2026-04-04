@@ -72,7 +72,18 @@ module Workflows
         timeout_seconds: timeout_seconds
       )
 
-      # Step 3: Optionally aggregate branches into a single PR.
+      # Step 3: Detect and resolve conflicts between successful runs.
+      # This must happen before PR aggregation so that any rebased branches
+      # are reflected in the aggregated feature branch/PR.
+      completed = results.count { |r| r[:success] }
+      failed = results.count { |r| r[:success] == false }
+
+      conflict_result = detect_and_resolve_conflicts(
+        results: results,
+        project_id: project_id
+      )
+
+      # Step 4: Optionally aggregate branches into a single PR.
       # Default to the project-level setting (returned by the capacity check)
       # when the caller does not explicitly pass aggregate_pr.
       aggregate = if input.key?(:aggregate_pr)
@@ -91,15 +102,6 @@ module Workflows
           parent_wf_id: parent_wf_id
         )
       end
-
-      # Step 4: Detect conflicts between successful runs
-      completed = results.count { |r| r[:success] }
-      failed = results.count { |r| r[:success] == false }
-
-      conflict_result = detect_and_resolve_conflicts(
-        results: results,
-        project_id: project_id
-      )
 
       Temporalio::Workflow.logger.info(
         message: "parallel_execution.completed",

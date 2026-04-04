@@ -167,7 +167,12 @@ module Conflicts
         changed_files = metadata["changed_files"] || metadata[:changed_files]
         next unless changed_files.is_a?(Array)
 
-        files.merge(changed_files)
+        normalized_files = changed_files.filter_map do |path|
+          normalized_path = path.to_s.strip
+          normalized_path unless normalized_path.blank?
+        end
+
+        files.merge(normalized_files)
       end
 
       files
