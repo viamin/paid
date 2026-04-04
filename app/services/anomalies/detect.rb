@@ -24,6 +24,7 @@ module Anomalies
         baselines = project.project_baselines.reload.to_a
       end
 
+      baselines = baselines.reject { |baseline| stale_baseline?(baseline) }
       baselines = baselines.index_by(&:metric_name)
       return [] if baselines.empty?
 
@@ -65,8 +66,12 @@ module Anomalies
       return true if baselines.empty?
 
       baselines.any? do |baseline|
-        baseline.last_calculated_at.nil? || baseline.last_calculated_at < BASELINE_REFRESH_INTERVAL.ago
+        stale_baseline?(baseline)
       end
+    end
+
+    def stale_baseline?(baseline)
+      baseline.last_calculated_at.nil? || baseline.last_calculated_at < BASELINE_REFRESH_INTERVAL.ago
     end
 
     def metric_value_for(metric_name)

@@ -233,6 +233,32 @@ RSpec.describe Anomalies::Detect do
         expect { described_class.call(agent_run) }
           .to change { stale_baseline.reload.last_calculated_at }
       end
+
+      it "skips detection when stale baselines cannot be refreshed" do
+        project.project_baselines.delete_all
+        project.agent_runs.delete_all
+
+        create(:project_baseline,
+          project: project,
+          metric_name: "tokens_total",
+          mean: 1_000,
+          standard_deviation: 10,
+          sample_count: 6,
+          p95: 1_100,
+          last_calculated_at: 2.days.ago)
+
+        4.times { |i| create(:agent_run, :completed, project: project,
+          tokens_input: 1_000 + i, tokens_output: 500 + i, completed_at: 1.day.ago) }
+
+        agent_run = create(:agent_run, :completed,
+          project: project,
+          tokens_input: 50_000,
+          tokens_output: 25_000,
+          completed_at: Time.current)
+
+        expect(described_class.call(agent_run)).to be_empty
+        expect(AgentRunAnomaly.where(agent_run: agent_run)).to be_empty
+      end
     end
 
     context "when tokens are nil" do
