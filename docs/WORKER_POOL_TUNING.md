@@ -174,7 +174,7 @@ DB_POOL=50
 
 ## Tuning Methodology
 
-1. **Profile under load**: Run the load test specs (`spec/system/worker_pool_load_spec.rb`) to establish baseline throughput.
+1. **Validate configuration first**: Run the worker pool validation specs (`spec/system/worker_pool_load_spec.rb`) to confirm the expected thread and slot limits are configured correctly.
 2. **Identify the bottleneck**: Check if jobs are waiting in queue (increase threads) or if the database is saturated (reduce threads, add read replicas).
-3. **Adjust incrementally**: Change one variable at a time and measure the impact on queue latency.
+3. **Adjust incrementally**: Change one variable at a time and measure the impact on queue latency and throughput using runtime monitoring or a dedicated load test.
 4. **Monitor connection usage**: `SELECT count(*) FROM pg_stat_activity` should stay well below `max_connections`.
