@@ -125,7 +125,7 @@ module Activities
       pending_triggers = (required_review_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
       blocking_triggers = (required_review_triggers || []).reject { |t| t[:type] == "review_bot_review_pending" }
       all_triggers = blocking_triggers + (human_triggers || [])
-      append_generic_review_bot_thread_triggers!(all_triggers, unresolved_threads)
+      append_generic_review_bot_thread_triggers!(all_triggers, unresolved_threads) if blocking_review_methods.include?("paid_agent")
 
       # Only fetch PR data and check runs if blocking review triggers aren't enough.
       if all_triggers.empty?
@@ -298,7 +298,7 @@ module Activities
       triggers.concat(check_required_review_methods(project, issue,
         reviews: reviews, unresolved_threads: unresolved_threads, checks: checks))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
-      append_generic_review_bot_thread_triggers!(triggers, unresolved_threads)
+      append_generic_review_bot_thread_triggers!(triggers, unresolved_threads) if blocking_review_methods.include?("paid_agent")
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
