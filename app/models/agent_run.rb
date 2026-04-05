@@ -795,9 +795,22 @@ class AgentRun < ApplicationRecord
 
   def draft_review_round_tracking_is_consistent
     return unless count_toward_draft_review_round?
-    return if expected_draft_review_count.present?
 
-    errors.add(:expected_draft_review_count, "is required when counting toward draft review rounds")
+    if expected_draft_review_count.blank?
+      errors.add(:expected_draft_review_count, "is required when counting toward draft review rounds")
+    end
+
+    # Validate that runs marked for draft counting are valid draft followup runs
+    # to prevent accidental manual runs from being counted
+    return unless issue_id.present? && source_pull_request_number.present?
+
+    unless issue&.is_pull_request? && issue&.draft_phase?
+      errors.add(:count_toward_draft_review_round, "can only be true for draft PR pull request runs")
+    end
+
+    unless trigger_type == "automatic"
+      errors.add(:count_toward_draft_review_round, "can only be true for automatic trigger types")
+    end
   end
 
   def normalize_log_content(content)
