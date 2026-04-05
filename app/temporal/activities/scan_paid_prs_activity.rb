@@ -290,6 +290,7 @@ module Activities
       pr_data ||= fetch_pr_data(client, project, issue)
       checks ||= fetch_check_runs(client, project, pr_data)
       reviews ||= fetch_reviews(client, project, issue)
+      blocking_review_methods = project.blocking_review_methods
       triggers = []
 
       unresolved_threads = fetch_unresolved_threads(client, project, issue)

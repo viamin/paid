@@ -662,6 +662,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when PR is in draft phase with Claude review threads" do
       before do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "wait_for_reviews" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true }
+          }
+        })
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -692,6 +699,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when PR is in draft phase with Claude Code review threads" do
       before do
+        project.update!(review_settings: {
+          "enabled" => true,
+          "wait_for_reviews" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true }
+          }
+        })
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -1759,95 +1773,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not append generic review bot thread triggers for draft PRs" do
-        create(:issue, :pull_request,
-          project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
-          pr_review_phase: "draft",
-          draft_review_count: 0)
-        
-        stub_github_for_pr(
-          checks: [ { name: "ci", conclusion: "success" } ],
-          reviews: [],
-          review_threads: [
-            {
-              is_resolved: false,
-              comments: [
-                { author: "claude-code[bot]", body: "Some comment from Claude Code" }
-              ]
-            }
-          ]
-        )
+        create_paid_pr(pr_review_phase: "draft", draft_review_count: 0)
 
-        result = activity.execute(project_id: project.id)
-
-        trigger = result[:prs_to_trigger].first
-        trigger_types = trigger[:triggers].map { |t| t[:type] }
-        # Project only supports manual reviews, so no review_bot_threads should be triggered
-        expect(trigger_types).not_to include("review_bot_threads")
+        expect(trigger_types_for_non_copilot_review_threads).not_to include("review_bot_threads")
       end
 
       it "does not append generic review bot thread triggers for ready PRs" do
-        create(:issue, :pull_request,
-          project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
-          pr_review_phase: "ready")
-        
-        stub_github_for_pr(
-          checks: [ { name: "ci", conclusion: "success" } ],
-          reviews: [],
-          review_threads: [
-            {
-              is_resolved: false,
-              comments: [
-                { author: "claude-code[bot]", body: "Some comment from Claude Code" }
-              ]
-            }
-          ]
-        )
+        create_paid_pr(pr_review_phase: "ready")
 
-        result = activity.execute(project_id: project.id)
-
-        trigger = result[:prs_to_trigger].first
-        trigger_types = trigger[:triggers].map { |t| t[:type] }
-        # Project only supports manual reviews, so no review_bot_threads should be triggered
-        expect(trigger_types).not_to include("review_bot_threads")
+        expect(trigger_types_for_non_copilot_review_threads).not_to include("review_bot_threads")
       end
     end
 
     context "when project is configured with only ci_action review method" do
       before do
-        project.update!(
-          ci_review_action_names: [ "codex-review" ],
-          review_settings: ci_action_review_settings("codex-review")
-        )
+        project.update!(review_settings: ci_action_review_settings("codex-review"))
       end
 
       it "does not append generic review bot thread triggers" do
-        create(:issue, :pull_request,
-          project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
-          pr_review_phase: "draft",
-          draft_review_count: 0)
-        
-        stub_github_for_pr(
-          checks: [ { name: "ci", conclusion: "success" } ],
-          reviews: [],
-          review_threads: [
-            {
-              is_resolved: false,
-              comments: [
-                { author: "claude-code[bot]", body: "Some comment from Claude Code" }
-              ]
-            }
-          ]
-        )
+        create_paid_pr(pr_review_phase: "draft", draft_review_count: 0)
 
-        result = activity.execute(project_id: project.id)
-
-        trigger = result[:prs_to_trigger].first
-        trigger_types = trigger[:triggers].map { |t| t[:type] }
-        # Project only supports ci_action reviews, so no review_bot_threads should be triggered
-        expect(trigger_types).not_to include("review_bot_threads")
+        expect(trigger_types_for_non_copilot_review_threads).not_to include("review_bot_threads")
       end
     end
 
@@ -1865,31 +1811,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does append generic review bot thread triggers" do
-        create(:issue, :pull_request,
-          project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ],
-          pr_review_phase: "draft",
-          draft_review_count: 0)
-        
-        stub_github_for_pr(
-          checks: [ { name: "ci", conclusion: "success" } ],
-          reviews: [],
-          review_threads: [
-            {
-              is_resolved: false,
-              comments: [
-                { author: "claude-code[bot]", body: "Some comment from Claude Code" }
-              ]
-            }
-          ]
-        )
+        create_paid_pr(pr_review_phase: "draft", draft_review_count: 0)
 
-        result = activity.execute(project_id: project.id)
-
-        trigger = result[:prs_to_trigger].first
-        trigger_types = trigger[:triggers].map { |t| t[:type] }
-        # Project supports paid_agent reviews, so review_bot_threads should be triggered for non-copilot bots
-        expect(trigger_types).to include("review_bot_threads")
+        expect(trigger_types_for_non_copilot_review_threads).to include("review_bot_threads")
       end
     end
 
@@ -1957,6 +1881,35 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   def default_clean_copilot_review
     [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
         body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago } ]
+  end
+
+  def create_paid_pr(pr_review_phase:, draft_review_count: nil)
+    attributes = {
+      project: project,
+      github_number: 42,
+      labels: [ "paid-generated", "paid-automation" ],
+      pr_review_phase: pr_review_phase
+    }
+    attributes[:draft_review_count] = draft_review_count unless draft_review_count.nil?
+
+    create(:issue, :pull_request, **attributes)
+  end
+
+  def trigger_types_for_non_copilot_review_threads
+    stub_github_for_pr(
+      checks: [ { name: "ci", conclusion: "success" } ],
+      reviews: [],
+      review_threads: [
+        {
+          is_resolved: false,
+          comments: [
+            { author: "claude-code[bot]", body: "Some comment from Claude Code" }
+          ]
+        }
+      ]
+    )
+
+    activity.execute(project_id: project.id).dig(:prs_to_trigger, 0, :triggers).map { |trigger| trigger[:type] }
   end
 
   def ci_action_review_settings(action_name = "codex-review")
