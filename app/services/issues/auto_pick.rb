@@ -255,13 +255,15 @@ module Issues
 
       review_limited = if @project.max_draft_review_rounds.positive?
         base.where(pr_review_phase: "escalated")
-          .or(base.where("draft_review_count >= ?", @project.max_draft_review_rounds))
       else
         base.none
       end
 
       followup_limited = if @project.max_pr_followup_runs.positive?
-        base.where("pr_followup_count >= ?", @project.max_pr_followup_runs)
+        base
+          .where(pr_review_phase: "ready")
+          .where("labels @> ?::jsonb", [ @project.generated_label_name, PAID_READY_LABEL ].to_json)
+          .where("pr_followup_count >= ?", @project.max_pr_followup_runs)
       else
         base.none
       end

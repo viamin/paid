@@ -158,7 +158,7 @@ module Activities
         # manual / ci_action. Those methods cannot be kicked off by
         # request_configured_reviews, so emitting only a pending trigger
         # here would create a no-op workflow pass instead of deferring.
-        if pending_triggers.any? && auto_requestable_review_method_pending?(project)
+        if pending_triggers.any? && all_blocking_review_methods_auto_requestable?(project)
           triggers = pending_triggers
           log_triggers(project, issue, triggers)
           return draft_trigger_payload(issue, triggers)
@@ -681,8 +681,9 @@ module Activities
       matches.max_by { |check| check[:started_at] || check[:completed_at] || Time.at(0) }
     end
 
-    def auto_requestable_review_method_pending?(project)
-      (project.requested_review_methods & %w[copilot paid_agent]).any?
+    def all_blocking_review_methods_auto_requestable?(project)
+      project.blocking_review_methods.present? &&
+        (project.blocking_review_methods - project.requested_review_methods).empty?
     end
 
     def append_generic_review_bot_thread_triggers!(triggers, unresolved_threads)

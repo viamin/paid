@@ -626,6 +626,33 @@ RSpec.describe Issues::AutoPick do
         expect(result.issue).to eq(issue)
       end
 
+      it "still blocks auto-pick when a ready PR hit the draft cap but is not escalated" do
+        project.update!(max_draft_review_rounds: 3)
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          pr_review_phase: "ready",
+          draft_review_count: 3)
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
+      it "still blocks auto-pick when followup rounds are exhausted outside paid-ready ready state" do
+        project.update!(max_pr_followup_runs: 2)
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          labels: [ "paid-generated" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 2)
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
       it "picks an issue when a PR is in needs_input state" do
         create(:issue, :pull_request, :needs_input, project: project)
         issue = create(:issue, project: project)

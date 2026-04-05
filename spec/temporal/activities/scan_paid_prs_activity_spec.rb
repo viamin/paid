@@ -1417,6 +1417,41 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when draft review mixes auto-requestable and manual gates" do
+      before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "wait_for_reviews" => true,
+            "methods" => {
+              "paid_agent" => { "enabled" => true },
+              "manual" => { "enabled" => true }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+      end
+
+      it "does not emit a pending-only trigger when review signals for manual gating are unavailable" do
+        allow(github_client).to receive_messages(
+          pull_request: OpenStruct.new(draft: true, head: OpenStruct.new(sha: "abc123"), mergeable: true, user: OpenStruct.new(login: "viamin")),
+          check_runs_for_ref: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          issue_comments: []
+        )
+        allow(github_client).to receive(:pull_request_reviews)
+          .and_raise(GithubClient::Error, "reviews unavailable")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "when ci_action is the configured blocking review method" do
       before do
         project.update!(
