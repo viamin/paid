@@ -240,12 +240,19 @@ module Workflows
       )
     end
 
+    # TODO(#823): Remove patch guard after pre-fix review-dispatch histories continue-as-new.
     def dispatch_configured_reviews(project_id, pr_number)
-      review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
-        { project_id: project_id }, timeout: 30)
+      if Temporalio::Workflow.patched("dispatch-configured-pr-reviews-v1")
+        review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
+          { project_id: project_id }, timeout: 30)
 
-      Array(review_plan[:dispatchable_review_methods]).each do |method|
-        request_review_method(project_id, pr_number, method, review_plan)
+        Array(review_plan[:dispatchable_review_methods]).each do |method|
+          request_review_method(project_id, pr_number, method, review_plan)
+        end
+      else
+        request_review(project_id, pr_number,
+          [ Activities::RequestReviewActivity::COPILOT_LOGIN ],
+          log_key: "pr_review.request_review_bot_review_failed")
       end
     rescue Temporalio::Error::CanceledError
       raise

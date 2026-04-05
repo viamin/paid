@@ -289,6 +289,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "requests configured reviews when review_bot_review_pending is the only trigger" do
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(true)
       allow(workflow).to receive(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
         .and_return({ dispatchable_review_methods: [ "copilot", "paid_agent" ],
@@ -340,6 +341,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     it "does not start followup workflow when review_bot_review_pending is the only trigger" do
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(false)
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
@@ -354,6 +356,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     it "still queues paid_agent review when copilot request fails" do
       allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(true)
       allow(workflow).to receive(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
         .and_return({ dispatchable_review_methods: [ "copilot", "paid_agent" ],
@@ -379,6 +382,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     it "skips paid_agent review when the plan cannot resolve a provider" do
       logger = instance_spy(Logger)
       allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(true)
       allow(workflow).to receive(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
         .and_return({ dispatchable_review_methods: [ "paid_agent" ],
@@ -395,6 +399,20 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         review_method: "paid_agent",
         error: "paid_agent review requested without a resolved provider"
       ))
+    end
+
+    it "uses the legacy copilot-only review path when the patch is not applied" do
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(false)
+
+      workflow.send(:handle_pr_trigger, project_id, review_bot_pending_pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: 60)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: 30)
     end
 
     it "triggers dev environment update after successful merge" do

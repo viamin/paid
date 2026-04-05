@@ -425,14 +425,21 @@ module Workflows
       cause.is_a?(Temporalio::Error::ApplicationError) && cause.type == "StalePullRequest"
     end
 
+    # TODO(#823): Remove patch guard after pre-fix review-dispatch histories continue-as-new.
     def dispatch_configured_reviews(project_id, pr_number)
       return unless pr_number
 
-      review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
-        { project_id: project_id }, timeout: 30, retry_policy: NO_RETRY)
+      if Temporalio::Workflow.patched("dispatch-configured-pr-reviews-v1")
+        review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
+          { project_id: project_id }, timeout: 30, retry_policy: NO_RETRY)
 
-      Array(review_plan[:dispatchable_review_methods]).each do |method|
-        request_review_method(project_id, pr_number, method, review_plan)
+        Array(review_plan[:dispatchable_review_methods]).each do |method|
+          request_review_method(project_id, pr_number, method, review_plan)
+        end
+      else
+        run_activity(Activities::RequestReviewActivity,
+          { project_id: project_id, pr_number: pr_number,
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
       end
     rescue Temporalio::Error::CanceledError
       raise

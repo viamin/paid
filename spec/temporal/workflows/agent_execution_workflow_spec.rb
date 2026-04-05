@@ -360,6 +360,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
 
     it "re-requests configured reviews after pushing commits to a ready PR" do
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(true)
       stub_existing_pr_followup(pr_review_phase: "ready")
 
       workflow.execute(input)
@@ -386,6 +387,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
 
     it "still queues paid_agent review when copilot request fails" do
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(true)
       stub_existing_pr_followup(pr_review_phase: "ready")
       allow(workflow).to receive(:run_activity)
         .with(Activities::RequestReviewActivity, anything, timeout: anything)
@@ -402,7 +404,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
     it "skips paid_agent review when the plan cannot resolve a provider" do
       logger = instance_spy(Logger)
-      allow(Temporalio::Workflow).to receive_messages(logger: logger, patched: true)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(true)
       stub_existing_pr_followup_with_review_plan(
         dispatchable_review_methods: [ "paid_agent" ],
         paid_agent_review_provider_id: nil,
@@ -420,6 +423,23 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         review_method: "paid_agent",
         error: "paid_agent review requested without a resolved provider"
       ))
+    end
+
+    it "uses the legacy copilot-only review path when the patch is not applied" do
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(false)
+      stub_existing_pr_followup(pr_review_phase: "ready")
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, anything, timeout: anything, retry_policy: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: 1, pr_number: 42,
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
+          timeout: 60)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: 30)
     end
   end
 

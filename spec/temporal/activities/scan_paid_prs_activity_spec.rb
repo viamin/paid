@@ -1301,6 +1301,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           draft_review_count: 0)
       end
 
+      it "still checks unresolved threads when draft comment signals are skipped" do
+        project.update!(max_draft_review_rounds: 0)
+        create(:agent_run, :completed, project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        create(:agent_run, :with_review, project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago, review_posted_at: 1.hour.ago,
+          review_url: "https://github.com/example/repo/pull/42#pullrequestreview-123")
+
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+
       it "waits for a completed review-goal run before advancing" do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success" } ],

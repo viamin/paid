@@ -98,6 +98,7 @@ module Activities
       # other draft comment signals are skipped.
       if skip_comment_signals
         reviews = review_based_methods.any? ? fetch_reviews(client, project, issue) : []
+        unresolved_threads = fetch_unresolved_threads(client, project, issue) if blocking_review_methods.include?("paid_agent")
         if ci_review_required
           pr_data ||= fetch_pr_data(client, project, issue)
           checks = fetch_check_runs(client, project, pr_data)
