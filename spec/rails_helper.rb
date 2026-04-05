@@ -4,7 +4,26 @@
 require "spec_helper"
 ENV["RAILS_ENV"] ||= "test"
 require_relative "../config/environment"
-# Asset build fallback removed to prevent test aborts when Yarn is unavailable. Rails boot now proceeds without invoking `yarn build`.
+
+def ensure_test_assets!
+  required_assets = %w[application.css application.js]
+  builds_path = Rails.root.join("app/assets/builds")
+  missing_assets = required_assets.reject { |asset| builds_path.join(asset).exist? }
+  return if missing_assets.empty?
+
+  warn "[WARN] Missing built assets for test run: #{missing_assets.join(", ")}. Building assets..."
+
+  [
+    [ "yarn", "build" ],
+    [ "yarn", "build:css" ]
+  ].each do |command|
+    next if system(*command, exception: false)
+
+    abort "Failed to build test assets with `#{command.join(" ")}`"
+  end
+end
+
+ensure_test_assets!
 
 # Prevent database truncation if the environment is production
 abort("The Rails environment is running in production mode!") if Rails.env.production?
