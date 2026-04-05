@@ -132,7 +132,7 @@ module Providers
         process_container_response(response)
       end
 
-      clear_provider_state_if_healthy! if result.success?
+      update_provider_state!(result)
       result
     rescue NotContainerExecutableError
       Result.new(success: false, error_type: :installation,
@@ -273,15 +273,83 @@ module Providers
         ENV["#{provider_name.to_s.upcase}_API_KEY"].present?
     end
 
-    def clear_provider_state_if_healthy!
-      provider_names = [ provider.state_key ]
-      if provider.subscription? || provider.state_key == provider.provider_key
-        provider_names << provider.provider_key
+    def update_provider_state!(result)
+      if result.success?
+        clear_provider_state_if_healthy!
+      elsif result.error_type == :rate_limited
+        persist_rate_limited_state!(result.message)
       end
+    end
 
-      provider_names.uniq.each do |provider_name|
+    def clear_provider_state_if_healthy!
+      provider_state_names.each do |provider_name|
         provider.user.provider_states.find_by(provider_name: provider_name)&.record_success!
       end
+    end
+
+    def persist_rate_limited_state!(message)
+      reset_at = parse_rate_limit_reset(message)
+
+      provider_state_names.each do |provider_name|
+        provider.user.provider_states.find_or_create_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
+      end
+    rescue ActiveRecord::RecordNotUnique
+      provider_state_names.each do |provider_name|
+        provider.user.provider_states.find_by!(provider_name: provider_name).mark_rate_limited!(reset_at: reset_at)
+      end
+    end
+
+    def provider_state_names
+      names = [ provider.state_key ]
+      if provider.subscription? || provider.state_key == provider.provider_key
+        names << provider.provider_key
+      end
+
+      names.uniq
+    end
+
+    def parse_rate_limit_reset(message)
+      if (match = message.to_s.match(/retry.?after:?\s*(\d+)/i))
+        match[1].to_i.seconds.from_now
+      elsif (match = message.to_s.match(/reset.?at:?\s*(\d+)/i))
+        reset_time = Time.at(match[1].to_i)
+        reset_time > Time.current ? reset_time : 1.hour.from_now
+      elsif (match = message.to_s.match(/resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i))
+        hour = match[1].to_i
+        minute = (match[2] || "0").to_i
+        period = match[3].downcase
+
+        hour = if period == "am"
+          hour == 12 ? 0 : hour
+        else
+          hour == 12 ? 12 : hour + 12
+        end
+
+        reset_time = Time.current.utc.change(hour: hour, min: minute, sec: 0)
+        reset_time += 1.day if reset_time <= Time.current.utc
+        reset_time
+      elsif (match = message.to_s.match(/resets?\s+([A-Za-z]{3})\s+(\d{1,2}),\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i))
+        month = Date::ABBR_MONTHNAMES.index(match[1].capitalize)
+        day = match[2].to_i
+        hour = match[3].to_i
+        minute = (match[4] || "0").to_i
+        period = match[5].downcase
+
+        hour = if period == "am"
+          hour == 12 ? 0 : hour
+        else
+          hour == 12 ? 12 : hour + 12
+        end
+
+        year = Time.current.utc.year
+        reset_time = Time.utc(year, month, day, hour, minute, 0)
+        reset_time = Time.utc(year + 1, month, day, hour, minute, 0) if reset_time <= Time.current.utc
+        reset_time
+      else
+        1.hour.from_now
+      end
+    rescue StandardError
+      1.hour.from_now
     end
 
     def container_test_context

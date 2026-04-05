@@ -32,7 +32,7 @@
       </thead>
       <tbody class="divide-y divide-gray-200 bg-white">
         <% @providers.each do |provider| %>
-          <tr>
+          <tr data-controller="test-agent" data-test-agent-url-value="<%= test_agent_provider_path(provider) %>">
             <td class="px-4 py-3 text-sm font-medium text-gray-900">
               <%= provider.display_name %>
             </td>
@@ -51,7 +51,7 @@
                 <%= provider.enabled_for_fallback? ? "Enabled" : "Disabled" %>
               <% end %>
             </td>
-            <td class="px-4 py-3 text-sm">
+            <td data-test-agent-target="status" class="px-4 py-3 text-sm">
               <% state = @provider_states[provider.state_key] %>
               <% state ||= @provider_states[provider.provider_key] if provider.subscription? %>
               <% if state&.rate_limited? %>
@@ -70,7 +70,7 @@
               <% end %>
             </td>
             <td class="px-4 py-3 text-right text-sm">
-              <div data-controller="test-agent" data-test-agent-url-value="<%= test_agent_provider_path(provider) %>" class="inline">
+              <div class="inline">
                 <button data-test-agent-target="button" data-action="test-agent#test" type="button" class="font-medium text-emerald-600 hover:text-emerald-500">Test Agent</button>
                 <div data-test-agent-target="result"></div>
               </div>
