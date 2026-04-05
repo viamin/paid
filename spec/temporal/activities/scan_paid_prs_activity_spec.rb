@@ -1248,6 +1248,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger]).to eq([])
       end
+
+      it "returns ready_for_owner for ci_action-only review gates when the action succeeds" do
+        project.update!(review_settings: ci_action_review_settings)
+
+        stub_github_for_pr(
+          checks: [
+            { name: "ci", conclusion: "success" },
+            { name: "codex-review", conclusion: "success", completed_at: Time.current }
+          ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("ready_for_owner")
+      end
     end
 
     context "when paid_agent is the configured blocking review method" do
@@ -1297,6 +1316,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+
+      it "keeps waiting when the latest completed review-goal run never posted a review" do
+        create(:agent_run, :completed, project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        create(:agent_run, :completed, project: project, source_pull_request_number: 42,
+          goal: "review", completed_at: 1.hour.ago, review_posted_at: nil)
+
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |trigger| trigger[:type] })
+          .to eq([ "review_bot_review_pending" ])
       end
     end
 
@@ -1771,5 +1809,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   def default_clean_copilot_review
     [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
         body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago } ]
+  end
+
+  def ci_action_review_settings(action_name = "codex-review")
+    {
+      "enabled" => true,
+      "wait_for_reviews" => true,
+      "methods" => {
+        "ci_action" => { "enabled" => true, "action_name" => action_name }
+      }
+    }
   end
 end

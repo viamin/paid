@@ -97,7 +97,7 @@ module Activities
       # Draft exit still requires an explicitly clean bot review even when
       # other draft comment signals are skipped.
       if skip_comment_signals
-        reviews = fetch_reviews(client, project, issue) if review_based_methods.any?
+        reviews = review_based_methods.any? ? fetch_reviews(client, project, issue) : []
         if ci_review_required
           pr_data ||= fetch_pr_data(client, project, issue)
           checks = fetch_check_runs(client, project, pr_data)
@@ -623,6 +623,7 @@ module Activities
       baseline = last_completed_code_run(project, issue)&.completed_at
       latest_review_run = related_completed_runs(project, issue)
         .where(goal: "review")
+        .where.not(review_posted_at: nil)
         .order(completed_at: :desc)
         .first
 
