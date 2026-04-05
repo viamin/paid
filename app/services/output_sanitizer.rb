@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module OutputSanitizer
   def normalize_output_text(text)
     normalized_text = text.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "\uFFFD")
