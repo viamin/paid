@@ -214,7 +214,7 @@ module Workflows
       other_triggers = trigger_types - [ "review_bot_review_pending" ]
 
       if other_triggers.empty?
-        request_configured_reviews(project_id, pr_data[:pr_number])
+        dispatch_configured_reviews(project_id, pr_data[:pr_number])
         return
       end
 
@@ -240,18 +240,18 @@ module Workflows
       )
     end
 
-    def request_configured_reviews(project_id, pr_number)
+    def dispatch_configured_reviews(project_id, pr_number)
       review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
         { project_id: project_id }, timeout: 30)
 
-      Array(review_plan[:requested_review_methods]).each do |method|
+      Array(review_plan[:dispatchable_review_methods]).each do |method|
         request_review_method(project_id, pr_number, method)
       end
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
       Temporalio::Workflow.logger.warn(
-        message: "pr_review.request_configured_reviews_failed",
+        message: "pr_review.dispatch_configured_reviews_failed",
         project_id: project_id,
         pr_number: pr_number,
         error: e.message

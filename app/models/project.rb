@@ -425,7 +425,10 @@ class Project < ApplicationRecord
     enabled_review_methods
   end
 
-  def requested_review_methods
+  # These are the review methods Paid can actively start from a workflow.
+  # External checks (`ci_action`) and human reviews (`manual`) are observed
+  # by the scanner, but they are not dispatched by Paid itself.
+  def dispatchable_review_methods
     return [ "copilot" ] if legacy_review_settings?
     return [] unless review_enabled?
 

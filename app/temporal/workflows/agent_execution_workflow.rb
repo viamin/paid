@@ -240,7 +240,7 @@ module Workflows
             # New commits invalidate prior automated feedback, so request fresh
             # configured reviews for any still-active PR phase.
             if complete_result[:pr_review_phase].in?(%w[draft restarted ready escalated])
-              request_configured_reviews(project_id, source_pull_request_number)
+              dispatch_configured_reviews(project_id, source_pull_request_number)
             end
 
             # Draft a decision record for existing PR changes (best-effort)
@@ -255,7 +255,7 @@ module Workflows
               { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
 
             # Step 8: Request configured reviews on the new draft PR (best-effort)
-            request_configured_reviews(project_id, pr_result[:pull_request_number])
+            dispatch_configured_reviews(project_id, pr_result[:pull_request_number])
 
             # Step 9: Draft a decision record (best-effort)
             draft_decision_record(agent_run_id)
@@ -278,7 +278,7 @@ module Workflows
           # run may have pushed a fix that the configured reviewers have not
           # seen yet.
           if source_pull_request_number
-            request_configured_reviews(project_id, source_pull_request_number)
+            dispatch_configured_reviews(project_id, source_pull_request_number)
           end
         end
 
@@ -425,20 +425,20 @@ module Workflows
       cause.is_a?(Temporalio::Error::ApplicationError) && cause.type == "StalePullRequest"
     end
 
-    def request_configured_reviews(project_id, pr_number)
+    def dispatch_configured_reviews(project_id, pr_number)
       return unless pr_number
 
       review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
         { project_id: project_id }, timeout: 30, retry_policy: NO_RETRY)
 
-      Array(review_plan[:requested_review_methods]).each do |method|
+      Array(review_plan[:dispatchable_review_methods]).each do |method|
         request_review_method(project_id, pr_number, method)
       end
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
       Temporalio::Workflow.logger.warn(
-        message: "agent_execution.request_configured_reviews_failed",
+        message: "agent_execution.dispatch_configured_reviews_failed",
         project_id: project_id,
         pr_number: pr_number,
         error: e.message

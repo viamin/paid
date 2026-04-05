@@ -766,30 +766,31 @@ RSpec.describe Project do
       end
     end
 
-    describe "#requested_review_methods" do
+    describe "#dispatchable_review_methods" do
       it "defaults to copilot for legacy projects with reviews unset" do
         project = build(:project)
 
-        expect(project.requested_review_methods).to eq([ "copilot" ])
+        expect(project.dispatchable_review_methods).to eq([ "copilot" ])
       end
 
       it "returns empty when reviews are explicitly disabled" do
         project = build(:project, review_settings: { "enabled" => false })
 
-        expect(project.requested_review_methods).to eq([])
+        expect(project.dispatchable_review_methods).to eq([])
       end
 
-      it "returns only auto-requestable enabled methods" do
+      it "returns only workflow-dispatchable enabled methods" do
         project = build(:project, review_settings: {
           "enabled" => true,
           "methods" => {
             "copilot" => { "enabled" => true },
             "paid_agent" => { "enabled" => true },
+            "ci_action" => { "enabled" => true, "action_name" => "codex-review" },
             "manual" => { "enabled" => true }
           }
         })
 
-        expect(project.requested_review_methods).to contain_exactly("copilot", "paid_agent")
+        expect(project.dispatchable_review_methods).to contain_exactly("copilot", "paid_agent")
       end
     end
 

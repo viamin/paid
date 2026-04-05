@@ -324,7 +324,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::PushBranchActivity" then {}
         when "Activities::ResolveReviewThreadsActivity" then {}
         when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: pr_review_phase }
-        when "Activities::ResolvePrReviewPlanActivity" then { requested_review_methods: [ "copilot", "paid_agent" ] }
+        when "Activities::ResolvePrReviewPlanActivity" then { dispatchable_review_methods: [ "copilot", "paid_agent" ] }
         when "Activities::RequestReviewActivity" then {}
         when "Activities::QueueAgentRunActivity" then {}
         when "Activities::CleanupContainerActivity" then {}
@@ -394,7 +394,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::PreparePrPromptActivity" then {}
         when "Activities::RunAgentActivity" then { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
-        when "Activities::ResolvePrReviewPlanActivity" then { requested_review_methods: [ "copilot", "paid_agent" ] }
+        when "Activities::ResolvePrReviewPlanActivity" then { dispatchable_review_methods: [ "copilot", "paid_agent" ] }
         when "Activities::RequestReviewActivity" then {}
         when "Activities::QueueAgentRunActivity" then {}
         when "Activities::CleanupContainerActivity" then {}

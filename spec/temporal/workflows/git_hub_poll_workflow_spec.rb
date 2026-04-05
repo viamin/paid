@@ -283,7 +283,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     it "requests configured reviews when review_bot_review_pending is the only trigger" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
-        .and_return({ requested_review_methods: [ "copilot", "paid_agent" ] })
+        .and_return({ dispatchable_review_methods: [ "copilot", "paid_agent" ] })
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
@@ -346,7 +346,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
       allow(workflow).to receive(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
-        .and_return({ requested_review_methods: [ "copilot", "paid_agent" ] })
+        .and_return({ dispatchable_review_methods: [ "copilot", "paid_agent" ] })
       allow(workflow).to receive(:run_activity)
         .with(Activities::RequestReviewActivity, anything, timeout: anything)
         .and_raise(StandardError, "copilot unavailable")
