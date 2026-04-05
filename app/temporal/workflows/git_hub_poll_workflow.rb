@@ -292,6 +292,9 @@ module Workflows
           return
         end
 
+        # Queue a dedicated review-goal run on the configured Codex review provider.
+        # That workflow posts the GitHub review itself; it does not reuse the project's
+        # default coding provider or fall back to Paid's generic create_pr path.
         run_activity(Activities::QueueAgentRunActivity,
           { project_id: project_id, source_pull_request_number: pr_number, goal: "review",
             provider_id: provider_id, agent_type: agent_type },

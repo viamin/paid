@@ -372,7 +372,7 @@ module Activities
     def fetch_check_runs(client, project, pr_data)
       return [] unless pr_data
 
-      client.check_runs_for_ref(project.full_name, pr_data.head.sha)
+      latest_check_runs(client.check_runs_for_ref(project.full_name, pr_data.head.sha))
     rescue GithubClient::Error => e
       logger.warn(
         message: "pr_scanner.ci_check_failed",
@@ -383,7 +383,7 @@ module Activities
     end
 
     def ci_failure_triggers(project, checks)
-      completed = checks.select { |c| c[:conclusion].present? }
+      completed = latest_check_runs(checks).select { |c| c[:conclusion].present? }
       return [] if completed.empty?
 
       failed = completed.select { |c| terminal_ci_failure_conclusion?(c[:conclusion]) }
@@ -699,6 +699,13 @@ module Activities
       end
 
       matches.max_by { |check| check[:started_at] || check[:completed_at] || Time.at(0) }
+    end
+
+    def latest_check_runs(checks)
+      checks
+        .group_by { |check| check[:name].to_s.downcase }
+        .transform_values { |runs| runs.max_by { |check| check[:started_at] || check[:completed_at] || Time.at(0) } }
+        .values
     end
 
     def append_generic_review_bot_thread_triggers!(triggers, unresolved_threads)

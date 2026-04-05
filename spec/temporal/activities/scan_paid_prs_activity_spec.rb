@@ -1536,6 +1536,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           { type: "ci_failure", details: [ "codex-review" ] }
         ])
       end
+
+      it "ignores historical failed review-action runs after a successful retry" do
+        stub_github_for_pr(
+          checks: [
+            { name: "ci", conclusion: "success", completed_at: 3.minutes.ago },
+            { name: "codex-review", conclusion: "failure", completed_at: 2.minutes.ago },
+            { name: "codex-review", conclusion: "success", completed_at: 1.minute.ago }
+          ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
+      end
     end
 
     # --- Ready phase scanning ---
