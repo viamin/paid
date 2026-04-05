@@ -200,6 +200,10 @@ RSpec.describe ProviderSupport do
       expect(described_class.provider_bot_username?("claude-code[bot]")).to be true
     end
 
+    it "returns true for known codex bot usernames" do
+      expect(described_class.provider_bot_username?("chatgpt-codex-connector")).to be true
+    end
+
     it "is case-insensitive" do
       expect(described_class.provider_bot_username?("Claude[bot]")).to be true
       expect(described_class.provider_bot_username?("COPILOT")).to be true
@@ -218,6 +222,10 @@ RSpec.describe ProviderSupport do
   describe ".provider_bot_username_for?" do
     it "returns true when login matches the specified provider" do
       expect(described_class.provider_bot_username_for?("claude", "claude[bot]")).to be true
+    end
+
+    it "matches the Codex reviewer login from issue #837" do
+      expect(described_class.provider_bot_username_for?("codex", "chatgpt-codex-connector")).to be true
     end
 
     it "returns false when login matches a different provider" do

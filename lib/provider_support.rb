@@ -188,6 +188,10 @@ module ProviderSupport
     "claude" => %w[
       claude[bot]
       claude-code[bot]
+    ].freeze,
+    "codex" => %w[
+      chatgpt-codex-connector
+      chatgpt-codex-connector[bot]
     ].freeze
   }.freeze
 

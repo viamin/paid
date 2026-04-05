@@ -140,6 +140,39 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(ProcessRunQueueJob).not_to have_been_enqueued
       end
 
+      it "allows a review run while a create_pr run for the same PR is still unfinished" do
+        create(:agent_run, :running, project: project,
+          source_pull_request_number: 42, goal: "create_pr")
+
+        result = activity.execute(
+          project_id: project.id,
+          source_pull_request_number: 42,
+          goal: "review"
+        )
+
+        expect(result[:queued]).to be true
+        expect(result[:duplicate]).to be_nil
+
+        review_run = AgentRun.find(result[:agent_run_id])
+        expect(review_run.goal).to eq("review")
+        expect(review_run.source_pull_request_number).to eq(42)
+      end
+
+      it "still deduplicates review runs for the same PR and goal" do
+        existing = create(:agent_run, :queued, project: project,
+          source_pull_request_number: 42, goal: "review")
+
+        result = activity.execute(
+          project_id: project.id,
+          source_pull_request_number: 42,
+          goal: "review"
+        )
+
+        expect(result[:agent_run_id]).to eq(existing.id)
+        expect(result[:duplicate]).to be true
+        expect(ProcessRunQueueJob).not_to have_been_enqueued
+      end
+
       it "allows queueing when no active/queued run exists for the issue" do
         create(:agent_run, :completed, project: project, issue: issue)
 
