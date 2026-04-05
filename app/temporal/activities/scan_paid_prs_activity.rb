@@ -126,7 +126,8 @@ module Activities
       pending_triggers = (required_review_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
       blocking_triggers = (required_review_triggers || []).reject { |t| t[:type] == "review_bot_review_pending" }
       all_triggers = blocking_triggers + (human_triggers || [])
-      append_generic_review_bot_thread_triggers!(all_triggers, unresolved_threads)
+      append_generic_review_bot_thread_triggers!(all_triggers, unresolved_threads,
+        blocking_review_methods: blocking_review_methods)
 
       # Only fetch PR data and check runs if blocking review triggers aren't enough.
       if all_triggers.empty?
@@ -138,7 +139,7 @@ module Activities
 
       # Only fetch conversation comments if still no triggers.
       if all_triggers.empty? && !skip_comment_signals
-        last_run = last_completed_run(project, issue)
+        last_run = last_completed_code_run(project, issue)
         all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
 
         # Only check changes_requested if still no triggers.
@@ -304,7 +305,7 @@ module Activities
     # --- Shared detection logic ---
 
     def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil)
-      last_run = last_completed_run(project, issue)
+      last_run = last_completed_code_run(project, issue)
       pr_data ||= fetch_pr_data(client, project, issue)
       checks ||= fetch_check_runs(client, project, pr_data)
       reviews ||= fetch_reviews(client, project, issue)
@@ -316,7 +317,8 @@ module Activities
       triggers.concat(check_required_review_methods(project, issue,
         reviews: reviews, unresolved_threads: unresolved_threads, checks: checks))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
-      append_generic_review_bot_thread_triggers!(triggers, unresolved_threads)
+      append_generic_review_bot_thread_triggers!(triggers, unresolved_threads,
+        blocking_review_methods: project.blocking_review_methods)
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
@@ -356,17 +358,6 @@ module Activities
 
     def followup_limit_reached?(project, issue)
       issue.pr_followup_count >= project.max_pr_followup_runs
-    end
-
-    def last_completed_run(project, issue)
-      project.agent_runs
-        .where(
-          "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
-          pr_num: issue.github_number
-        )
-        .completed
-        .order(completed_at: :desc)
-        .first
     end
 
     def fetch_pr_data(client, project, issue)
@@ -673,7 +664,10 @@ module Activities
 
       trusted_reviews.any? do |review|
         submitted_at = review[:submitted_at]
-        submitted_at.present? && (baseline.nil? || submitted_at >= baseline)
+        next false unless submitted_at.present?
+        next false if review[:state] == "CHANGES_REQUESTED"
+
+        baseline.nil? || submitted_at >= baseline
       end
     end
 
@@ -700,7 +694,8 @@ module Activities
         (project.blocking_review_methods - project.requested_review_methods).empty?
     end
 
-    def append_generic_review_bot_thread_triggers!(triggers, unresolved_threads)
+    def append_generic_review_bot_thread_triggers!(triggers, unresolved_threads, blocking_review_methods:)
+      return if blocking_review_methods.blank?
       return if triggers.any? { |trigger| trigger[:type] == "review_bot_threads" }
 
       triggers.concat(non_copilot_review_bot_thread_triggers(unresolved_threads))

@@ -387,6 +387,47 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a review-only run finishes after the last code run" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          goal: "review", completed_at: 30.minutes.ago)
+      end
+
+      it "still detects trusted conversation comments since the last code run" do
+        comment = OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "Please address the follow-up edge case in the scanner logic",
+          created_at: 1.hour.ago
+        )
+        stub_github_for_pr(issue_comments: [ comment ])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("conversation_comments")
+      end
+
+      it "still detects changes_requested since the last code run" do
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: 1.hour.ago }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("changes_requested")
+      end
+    end
+
     context "when actionable labels are present" do
       before do
         project.update!(pr_action_labels: [ "paid-rework" ])
@@ -1463,6 +1504,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
       end
 
+      it "does not treat changes_requested as satisfying the manual gate" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "Needs fixes",
+              submitted_at: Time.current }
+          ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] })
+          .to include("changes_requested", "review_bot_review_pending")
+      end
+
       it "does not treat trusted provider bots as manual reviewers" do
         project.update!(allowed_github_usernames: %w[viamin chatgpt-codex-connector])
         stub_github_for_pr(
@@ -1552,6 +1610,45 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when wait_for_reviews is disabled" do
+      before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "wait_for_reviews" => false,
+            "methods" => {
+              "paid_agent" => { "enabled" => true }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+      end
+
+      it "does not let unresolved paid-agent bot threads block draft exit" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Please update this branch", path: "app/model.rb", line: 10,
+                            author: "chatgpt-codex-connector" } ]
+            }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "ready_for_owner" ])
       end
     end
 
