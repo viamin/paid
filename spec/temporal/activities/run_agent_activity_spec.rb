@@ -907,6 +907,7 @@ RSpec.describe Activities::RunAgentActivity do
       it "reclassifies timeout output that contains quota errors as rate limited" do
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
           agent_run.log!("stderr", "Error: Free tier limit reached. Please upgrade to a paid plan to continue using the service.")
+          3.times { |index| agent_run.log!("stdout", "still waiting on provider chunk #{index}") }
           raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
         end
 
@@ -922,7 +923,7 @@ RSpec.describe Activities::RunAgentActivity do
 
       it "does not reclassify timeouts when recent output only mentions rate limits conversationally" do
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
-          agent_run.log!("stdout", "I should add retry handling for rate limits after this refactor.")
+          agent_run.log!("stdout", "Document how to handle a service overloaded response and a server at capacity banner in the retry guide.")
           raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
         end
 
