@@ -91,8 +91,8 @@ RSpec.configure do |config|
   # Include ActiveSupport time helpers (freeze_time, travel_to, etc.)
   config.include ActiveSupport::Testing::TimeHelpers
 
-  config.before(:context, type: :request) { ensure_test_assets! }
-  config.before(:context, type: :system) { ensure_test_assets! }
+  config.before(:context, type: :request) { ensure_test_assets! if database_available }
+  config.before(:context, type: :system) { ensure_test_assets! if database_available }
 
   # Reset memoized provider support data between tests
   config.after do
