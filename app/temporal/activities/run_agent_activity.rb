@@ -69,11 +69,9 @@ module Activities
       /(?:rate.?limit|usage limit)\s+(?:exceeded|reached|hit)/i,
       /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
       /exhausted(?:\s+your)?\s+capacity/i,
-      /(?:server|system)\s+(?:at\s+)?capacity/i,
-      /(?:server|api|service)\s+overloaded/i,
       /out of (?:extra )?usage/i
     ].freeze
-    TIMEOUT_OUTPUT_LOG_SCAN_LIMIT = 2
+    TIMEOUT_OUTPUT_LOG_SCAN_LIMIT = 50
     TIMEOUT_OUTPUT_CHAR_LIMIT = 2_000
 
     # Default timeouts used when per-user settings are unavailable.
@@ -592,16 +590,24 @@ module Activities
     def recent_timeout_output(agent_run, since:, prompt:)
       return "" if since.blank?
 
-      output = agent_run.agent_run_logs
+      chunks = []
+      remaining = TIMEOUT_OUTPUT_CHAR_LIMIT
+
+      agent_run.agent_run_logs
         .where(log_type: %w[stdout stderr])
         .where("created_at >= ?", since)
         .order(created_at: :desc, id: :desc)
         .limit(TIMEOUT_OUTPUT_LOG_SCAN_LIMIT)
         .pluck(:content)
-        .reverse
-        .join("\n")
+        .each do |content|
+          break if remaining <= 0
 
-      strip_prompt_echo(output, prompt).last(TIMEOUT_OUTPUT_CHAR_LIMIT).to_s.strip
+          chunk = content.to_s.last(remaining)
+          chunks << chunk
+          remaining -= chunk.length
+        end
+
+      strip_prompt_echo(chunks.reverse.join("\n"), prompt).strip
     end
 
     # Attempts to parse a rate limit reset time from the output.
