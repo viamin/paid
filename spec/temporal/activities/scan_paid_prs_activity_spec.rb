@@ -1499,6 +1499,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
       end
+
+      it "keeps waiting when the latest named review action failed" do
+        stub_github_for_pr(
+          checks: [
+            { name: "ci", conclusion: "success" },
+            { name: "codex-review", conclusion: "failure", completed_at: Time.current }
+          ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers]).to eq([
+          { type: "review_bot_review_pending",
+            details: "CI review action still pending: codex-review" }
+        ])
+      end
     end
 
     # --- Ready phase scanning ---

@@ -132,7 +132,7 @@ module Activities
       if all_triggers.empty?
         pr_data ||= fetch_pr_data(client, project, issue)
         checks ||= fetch_check_runs(client, project, pr_data)
-        ci_triggers = ci_failure_triggers(checks || [])
+        ci_triggers = ci_failure_triggers(project, checks || [])
         all_triggers.concat(ci_triggers)
       end
 
@@ -296,7 +296,7 @@ module Activities
 
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
-      triggers.concat(ci_failure_triggers(checks))
+      triggers.concat(ci_failure_triggers(project, checks))
       triggers.concat(check_required_review_methods(project, issue,
         reviews: reviews, unresolved_threads: unresolved_threads, checks: checks))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
@@ -375,11 +375,13 @@ module Activities
       []
     end
 
-    def ci_failure_triggers(checks)
+    def ci_failure_triggers(project, checks)
       completed = checks.select { |c| c[:conclusion].present? }
       return [] if completed.empty?
 
+      review_action_names = project.ci_review_action_names.map(&:downcase)
       failed = completed.select { |c| %w[failure cancelled timed_out action_required stale].include?(c[:conclusion]) }
+        .reject { |c| review_action_names.include?(c[:name].to_s.downcase) }
       return [] if failed.empty?
 
       [ { type: "ci_failure", details: failed.map { |c| c[:name] } } ]
@@ -670,7 +672,8 @@ module Activities
       return names if checks.blank?
 
       names.reject do |name|
-        latest_check_for_review_action(checks, name)&.dig(:conclusion).present?
+        conclusion = latest_check_for_review_action(checks, name)&.dig(:conclusion)
+        %w[success neutral skipped].include?(conclusion)
       end
     end
 
