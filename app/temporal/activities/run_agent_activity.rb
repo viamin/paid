@@ -48,6 +48,7 @@ module Activities
       /too many requests/i,
       /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
+      /free tier limit reached/i,
       /exhausted.*capacity/i,
       /(?:server|system)\s+(?:at\s+)?capacity/i,
       /(?:server|api|service)\s+overloaded/i,
@@ -449,6 +450,7 @@ module Activities
 
       agent_run.log!("system", "Starting #{provider} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
+      execution_started_at = Time.current
 
       effective_timeout = if agent_run.create_issue_goal?
         user_settings&.issue_goal_timeout_seconds || DEFAULT_ISSUE_GOAL_TIMEOUT
@@ -497,6 +499,12 @@ module Activities
       # Other execution error
       raise ProviderExecutionError, "Agent exited with code #{result[:exit_code]}: #{output.truncate(500)}"
     rescue Containers::Provision::TimeoutError => e
+      timeout_output = recent_provider_output(agent_run, since: execution_started_at, prompt: prompt)
+      if rate_limit_error?(timeout_output)
+        reset_at = parse_rate_limit_reset(timeout_output)
+        raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
+      end
+
       timeout_type = case e
       when Containers::Provision::StartupTimeoutError then "startup"
       when Containers::Provision::IdleTimeoutError then "idle"
@@ -553,6 +561,19 @@ module Activities
       return text.delete("\x00") if text.encoding == Encoding::UTF_8 && text.valid_encoding?
 
       text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
+    end
+
+    def recent_provider_output(agent_run, since:, prompt:)
+      return "" if since.blank?
+
+      output = agent_run.agent_run_logs
+        .where(log_type: %w[stdout stderr])
+        .where("created_at >= ?", since)
+        .order(:created_at, :id)
+        .pluck(:content)
+        .join("\n")
+
+      strip_prompt_echo(output, prompt)
     end
 
     # Attempts to parse a rate limit reset time from the output.
