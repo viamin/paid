@@ -271,6 +271,9 @@ module Workflows
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
       draft_input = {
+        project_id: project_id,
+        issue_id: issue_id,
+        source_pull_request_number: pr_number,
         count_toward_draft_review_round: true,
         expected_draft_review_count: pr_data[:current_draft_review_count]
       }
@@ -289,39 +292,7 @@ module Workflows
         return
       end
 
-      capacity = run_activity(Activities::CheckRunCapacityActivity,
-        { project_id: project_id }, timeout: 30)
-
-      agent_run = run_activity(Activities::QueueAgentRunActivity,
-        { project_id: project_id, issue_id: issue_id,
-          source_pull_request_number: pr_number }.merge(draft_input), timeout: 30)
-
-      unless capacity[:has_capacity]
-        return
-      end
-
-      unless agent_run[:queued]
-        return
-      end
-
-      workflow_id = "draft-followup-#{agent_run[:agent_run_id]}"
-      claim_result = run_activity(Activities::ClaimQueuedAgentRunActivity,
-        { agent_run_id: agent_run[:agent_run_id], workflow_id: workflow_id }, timeout: 30)
-      return unless claim_result[:claimed]
-
-      Temporalio::Workflow.start_child_workflow(
-        Workflows::AgentExecutionWorkflow,
-        {
-          project_id: project_id,
-          issue_id: issue_id,
-          agent_run_id: agent_run[:agent_run_id],
-          source_pull_request_number: pr_number,
-          count_toward_draft_review_round: draft_input[:count_toward_draft_review_round],
-          expected_draft_review_count: draft_input[:expected_draft_review_count]
-        },
-        id: workflow_id,
-        parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
-      )
+      run_activity(Activities::QueueAgentRunActivity, draft_input, timeout: 30)
     end
 
     def start_pr_followup_workflow(project_id, pr_data)
