@@ -53,6 +53,21 @@ RSpec.describe Activities::MarkAgentRunCompleteActivity do
       expect(issue.reload.draft_review_count).to eq(2)
     end
 
+    it "records the draft round before completing the run" do
+      issue = create(:issue, :pull_request, project: project, pr_review_phase: "draft", draft_review_count: 1)
+      agent_run = create(:agent_run, :running, project: project, issue: issue,
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 1)
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+
+      expect(agent_run).to receive(:complete!).ordered.and_wrap_original do |method, *args|
+        expect(issue.reload.draft_review_count).to eq(2)
+        method.call(*args)
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     it "does not increment draft_review_count for untracked runs" do
       issue = create(:issue, :pull_request, project: project, pr_review_phase: "draft", draft_review_count: 1)
       agent_run = create(:agent_run, :running, project: project, issue: issue)

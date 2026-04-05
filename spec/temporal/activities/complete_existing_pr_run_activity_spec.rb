@@ -110,6 +110,22 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       expect(issue.reload.draft_review_count).to eq(3)
     end
 
+    it "records the draft round before transitioning the run out of its active state" do
+      issue.update!(pr_review_phase: "draft", draft_review_count: 2)
+      agent_run.update!(
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: 2
+      )
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+
+      expect(agent_run).to receive(:complete!).ordered.and_wrap_original do |method, **kwargs|
+        expect(issue.reload.draft_review_count).to eq(3)
+        method.call(**kwargs)
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     it "handles comment failure gracefully" do
       allow(github_client).to receive(:add_comment)
         .and_raise(GithubClient::ApiError.new("forbidden", status: 403))

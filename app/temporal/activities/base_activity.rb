@@ -94,15 +94,23 @@ module Activities
     end
 
     def record_draft_review_round_if_needed(agent_run)
+      # Legacy fallback: if this is a draft followup that was running when the deployment happened,
+      # it won't have count_toward_draft_review_round=true set. We can detect this case by checking
+      # if it's a draft followup run without the new tracking columns but with expected count available.
+      if !agent_run.count_toward_draft_review_round? && agent_run.expected_draft_review_count.blank?
+        # Check if this looks like a legacy draft followup that should count toward review rounds
+        if agent_run.issue_id.present? && agent_run.issue&.is_pull_request? &&
+           agent_run.issue&.draft_phase? && agent_run.source_pull_request_number.present? &&
+           agent_run.trigger_type == "automatic" && agent_run.status.in?(%w[completed failed cancelled timeout])
+          # This is a legacy draft followup - treat it as if it should count
+          agent_run.update!(count_toward_draft_review_round: true)
+        end
+      end
       return unless agent_run.count_toward_draft_review_round?
       return unless agent_run.issue_id.present?
-      unless agent_run.expected_draft_review_count.present?
-        logger.warn(
-          message: "pr_review.missing_expected_draft_review_count",
-          agent_run_id: agent_run.id,
-          issue_id: agent_run.issue_id
-        )
-        return
+      if agent_run.expected_draft_review_count.blank?
+        raise ArgumentError,
+          "agent_run #{agent_run.id} is tracking a draft review round without expected_draft_review_count"
       end
 
       Activities::RecordDraftReviewActivity.new.execute(
