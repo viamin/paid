@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class StyleGuideExtractionJob < ApplicationJob
-  queue_as :default
+  queue_as :knowledge
 
   discard_on ActiveRecord::RecordNotFound
 

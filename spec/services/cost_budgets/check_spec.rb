@@ -46,8 +46,8 @@ RSpec.describe CostBudgets::Check do
         usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 }
       )
 
-      expect(agent_run.reload.status).to eq("failed")
-      expect(agent_run.error_message).to include("Budget enforcement")
+      expect(agent_run.reload.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("cost_limit")
       expect(AgentRuns::Cancel).to have_received(:call).with(
         agent_run: agent_run, skip_status_update: true
       )
@@ -62,8 +62,8 @@ RSpec.describe CostBudgets::Check do
         usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 }
       )
 
-      expect(agent_run.reload.status).to eq("failed")
-      expect(agent_run.error_message).to include("Budget enforcement")
+      expect(agent_run.reload.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("cost_limit")
     end
 
     it "does not cancel when alert-mode budget is exceeded" do
@@ -81,7 +81,7 @@ RSpec.describe CostBudgets::Check do
       expect(AgentRuns::Cancel).not_to have_received(:call)
     end
 
-    it "still marks run failed when Cancel raises" do
+    it "keeps the run paused when execution cancellation fails" do
       create(:cost_budget, :hard_stop, :daily, project: project,
         limit_cents: 100, current_usage_cents: 90,
         period_started_at: Time.current.beginning_of_day)
@@ -93,8 +93,30 @@ RSpec.describe CostBudgets::Check do
         usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 }
       )
 
-      expect(agent_run.reload.status).to eq("failed")
-      expect(agent_run.error_message).to include("Budget enforcement")
+      expect(agent_run.reload.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("cost_limit")
+    end
+
+    it "does not overwrite a run that was already paused by another guardrail" do
+      create(:cost_budget, :hard_stop, :daily, project: project,
+        limit_cents: 100, current_usage_cents: 90,
+        period_started_at: Time.current.beginning_of_day)
+
+      violation_result = instance_double(Guardrails::ViolationHandler::Result, paused?: false)
+      allow(Guardrails::ViolationHandler).to receive(:call) do
+        agent_run.update!(status: "paused", paused_at: Time.current, guardrail_violation_type: "time_limit")
+        violation_result
+      end
+
+      TokenUsageTracker.track(
+        agent_run: agent_run,
+        usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 }
+      )
+
+      agent_run.reload
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.guardrail_violation_type).to eq("time_limit")
+      expect(AgentRuns::Cancel).not_to have_received(:call)
     end
 
     it "respects grace buffer before cancelling" do

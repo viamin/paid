@@ -44,6 +44,14 @@ FactoryBot.define do
       error_message { "An error occurred during execution" }
     end
 
+    trait :paused do
+      status { "paused" }
+      started_at { 5.minutes.ago }
+      paused_at { Time.current }
+      guardrail_violation_type { "loop_detected" }
+      guardrail_context { { violation_type: "loop_detected", details: "5 consecutive identical outputs" } }
+    end
+
     trait :cancelled do
       status { "cancelled" }
       started_at { 5.minutes.ago }

@@ -14,7 +14,15 @@
 #
 # Scheduled via GoodJob cron every 5 minutes.
 class StaleRunDetectorJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
   queue_as :maintenance
+
+  good_job_control_concurrency_with(
+    total_limit: 1,
+    enqueue_limit: 1,
+    key: "stale_run_detector"
+  )
 
   # Extra buffer beyond agent_timeout before declaring a running run stale.
   # Accounts for container provisioning, git clone, push, and PR creation.

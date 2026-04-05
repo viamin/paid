@@ -104,7 +104,6 @@ module Activities
 
         pre_agent_sha = nil
         last_error = nil
-        last_attempted_provider = nil
         last_attempted_label = nil
         timeout_error = nil
         rate_limit_reset_at = nil
@@ -115,6 +114,14 @@ module Activities
         providers.each_with_index do |provider_candidate, index|
           # Check if the project's execution time limit has been exceeded
           if max_execution_seconds && agent_run.started_at && (Time.current - agent_run.started_at).to_i >= max_execution_seconds
+            violation_result = Guardrails::ViolationHandler.call(
+              agent_run: agent_run,
+              violation_type: "time_limit",
+              details: "Execution time limit of #{max_execution_seconds}s exceeded",
+              metrics: { max_execution_seconds: max_execution_seconds, elapsed_seconds: (Time.current - agent_run.started_at).to_i }
+            )
+            return paused_result(agent_run_id) if violation_result.paused? || agent_run.paused?
+
             timeout_error = "Execution time limit of #{max_execution_seconds}s exceeded"
             break
           end
@@ -149,7 +156,6 @@ module Activities
           end
 
           begin
-            last_attempted_provider = provider
             last_attempted_label = attempt_label
             provider_result = run_agent_with_provider(agent_run, provider_candidate, prompt, user_settings)
             pre_agent_sha = provider_result.fetch(:pre_agent_sha)
@@ -216,13 +222,21 @@ module Activities
               )
             end
           rescue InfiniteLoopError => e
-            agent_run.log!("system", "Infinite loop detected: #{e.message}",
-              metadata: { detection_reason: e.message })
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop")
             last_error = "infinite_loop"
-            agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
             logger.warn(message: "agent_execution.infinite_loop_detected", agent_run_id: agent_run.id, reason: e.message)
+
+            result = Guardrails::ViolationHandler.call(
+              agent_run: agent_run,
+              violation_type: "loop_detected",
+              details: e.message,
+              metrics: { detection_reason: e.message }
+            )
+            return paused_result(agent_run_id) if result.paused? || agent_run.paused?
+
+            agent_run.fail!(error: "Infinite loop detected: #{e.message}") unless agent_run.finished?
+
             raise Temporalio::Error::ApplicationError.new(
               "Infinite loop detected: #{e.message}",
               type: "InfiniteLoopDetected",
@@ -253,6 +267,12 @@ module Activities
           end
           rate_limit_reset_at = reset_candidates.min if reset_candidates.any?
         end
+
+        # If a guardrail (e.g., cost budget enforcement from TokenUsageTracker)
+        # paused the run during execution, preserve the paused state instead of
+        # overwriting it with a terminal status.
+        agent_run.reload
+        return paused_result(agent_run_id) if agent_run.paused?
 
         # All providers exhausted. Timeout takes precedence over rate_limited
         # because it indicates an actual execution attempt that should trigger
@@ -294,6 +314,16 @@ module Activities
     CommandContext = Struct.new(:provider_candidate, :provider, :command_prefix, :user, keyword_init: true)
 
     private
+
+    def paused_result(agent_run_id)
+      {
+        agent_run_id: agent_run_id,
+        success: false,
+        paused: true,
+        has_changes: false,
+        output_present: false
+      }
+    end
 
     # Resolves user settings for the agent run by finding the appropriate user.
     # Tries the project creator first, then falls back to the account's owner member.
@@ -665,7 +695,15 @@ module Activities
       # backtrace with this method's call site. Skip when the worker was
       # intentionally interrupted (infinite loop) — re-raising the
       # Interrupt would mask the InfiniteLoopError already propagating.
-      worker.value unless interrupted
+      begin
+        result = worker.value
+      rescue => e
+        # Preserve original backtrace but prepend caller location for better debugging
+        e.set_backtrace(caller + e.backtrace)
+        raise e
+      else
+        result
+      end unless interrupted
     end
 
     def build_command(command_context, prompt)
