@@ -48,6 +48,17 @@ RSpec.describe TokenUsageTracker do
       }.to change { project.reload.total_cost_cents }.by(1800)
     end
 
+    it "resolves the per-run token limit once per tracking call" do
+      project.update!(max_tokens_per_run: nil)
+      project.created_by.settings.update!(max_tokens_per_run: 5_000)
+      allow(AgentRuns::UserSettingsResolver).to receive(:call).and_call_original
+      allow(described_class).to receive(:enforce_hard_stop_budgets)
+
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
+
+      expect(AgentRuns::UserSettingsResolver).to have_received(:call).once.with(project: project, strict: false, create: false)
+    end
+
     it "creates a metric log entry" do
       expect {
         described_class.track(agent_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
@@ -130,6 +141,99 @@ RSpec.describe TokenUsageTracker do
         )
 
         expect(budget.reload.current_usage_cents).to eq(0)
+      end
+    end
+  end
+
+  describe "token limit checking" do
+    before do
+      project.update!(max_tokens_per_run: 10_000, token_limit_warning_threshold: 80)
+    end
+
+    it "persists the agent run once when token_limit_status changes" do
+      allow(agent_run).to receive(:save!).and_call_original
+
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+
+      expect(agent_run).to have_received(:save!).once
+    end
+
+    it "sets token_limit_status to ok when below warning threshold" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 1000 })
+      expect(agent_run.reload.token_limit_status).to eq("ok")
+    end
+
+    it "sets token_limit_status to warning when at or above warning threshold" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      expect(agent_run.reload.token_limit_status).to eq("warning")
+    end
+
+    it "sets token_limit_status to exceeded when at or above hard limit" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
+      expect(agent_run.reload.token_limit_status).to eq("exceeded")
+    end
+
+    it "logs a warning when crossing the soft threshold" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      log = agent_run.agent_run_logs.find_by(log_type: "system")
+      expect(log.content).to include("Token usage warning")
+      expect(log.metadata).to eq({ "type" => "token_limit_warning" })
+    end
+
+    it "logs an exceeded message when crossing the hard limit" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 7000, tokens_output: 4000 })
+      log = agent_run.agent_run_logs.where(log_type: "system").last
+      expect(log.content).to include("Token limit exceeded")
+      expect(log.metadata).to eq({ "type" => "token_limit_exceeded" })
+    end
+
+    it "does not check limits when update_aggregates is false" do
+      described_class.track(
+        agent_run: agent_run,
+        usage: { tokens_input: 7000, tokens_output: 4000 },
+        update_aggregates: false
+      )
+      expect(agent_run.reload.token_limit_status).to be_nil
+    end
+
+    it "transitions from warning to exceeded as usage grows" do
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 5000, tokens_output: 3000 })
+      expect(agent_run.reload.token_limit_status).to eq("warning")
+
+      described_class.track(agent_run: agent_run, usage: { tokens_input: 2000, tokens_output: 1000 })
+      expect(agent_run.reload.token_limit_status).to eq("exceeded")
+    end
+
+    context "when a UserSetting overrides max_tokens_per_run" do
+      before do
+        project.update!(max_tokens_per_run: nil)
+        user = project.created_by
+        user_setting = user.settings
+        user_setting.update!(max_tokens_per_run: 5_000)
+      end
+
+      it "uses the UserSetting limit for status transitions" do
+        described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 1500 })
+        expect(agent_run.reload.token_limit_status).to eq("warning")
+      end
+
+      it "marks exceeded when usage reaches the UserSetting limit" do
+        described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 2000 })
+        expect(agent_run.reload.token_limit_status).to eq("exceeded")
+      end
+    end
+
+    context "when the UserSetting still has the inherited global default" do
+      before do
+        project.update!(max_tokens_per_run: nil)
+        project.account.update!(default_max_tokens_per_run: 6_000)
+        project.created_by.settings
+      end
+
+      it "uses the account default for status transitions" do
+        described_class.track(agent_run: agent_run, usage: { tokens_input: 3000, tokens_output: 2000 })
+
+        expect(agent_run.reload.token_limit_status).to eq("warning")
       end
     end
   end

@@ -19,6 +19,7 @@ class TokenUsageTracker
     request_type  = usage.fetch(:request_type, nil).presence || "agent"
     metadata      = usage.fetch(:metadata, nil).presence || {}
     cost_cents    = calculate_cost(tokens_input, tokens_output, llm_model: llm_model)
+    resolved_hard_limit = agent_run.effective_max_tokens_per_run if update_aggregates
 
     ActiveRecord::Base.transaction do
       record_per_request_usage(
@@ -36,6 +37,7 @@ class TokenUsageTracker
           agent_run.increment(:tokens_input, tokens_input)
           agent_run.increment(:tokens_output, tokens_output)
           agent_run.increment(:cost_cents, cost_cents)
+          apply_token_limit_status(agent_run, hard_limit: resolved_hard_limit)
           agent_run.save!
         end
 
@@ -62,6 +64,60 @@ class TokenUsageTracker
     #    run inside a transaction — a failure won't roll back recorded usage
     enforce_hard_stop_budgets(agent_run) if update_aggregates && cost_cents.positive?
   end
+
+  # Evaluates the agent run's cumulative token usage against project limits
+  # and updates the token_limit_status field. Logs warnings at the soft
+  # threshold and records "exceeded" at the hard limit.
+  def self.apply_token_limit_status(agent_run, hard_limit:)
+    warning_threshold = agent_run.project.token_limit_warning_threshold
+    warning_at = (hard_limit * warning_threshold / 100.0).floor
+    current_tokens = agent_run.total_tokens
+
+    new_status = if current_tokens >= hard_limit
+      "exceeded"
+    elsif current_tokens >= warning_at
+      "warning"
+    else
+      "ok"
+    end
+
+    previous_status = agent_run.token_limit_status
+
+    return if new_status == previous_status
+
+    agent_run.token_limit_status = new_status
+
+    if new_status == "warning" && previous_status != "warning"
+      agent_run.log!(
+        "system",
+        "Token usage warning: #{current_tokens} of #{hard_limit} tokens used " \
+        "(#{(current_tokens * 100.0 / hard_limit).round(1)}%). " \
+        "Run will be stopped at #{hard_limit} tokens.",
+        metadata: { type: "token_limit_warning" }
+      )
+      Rails.logger.warn(
+        message: "agent_execution.token_limit_warning",
+        agent_run_id: agent_run.id,
+        current_tokens: current_tokens,
+        hard_limit: hard_limit,
+        usage_percent: (current_tokens * 100.0 / hard_limit).round(1)
+      )
+    elsif new_status == "exceeded"
+      agent_run.log!(
+        "system",
+        "Token limit exceeded: #{current_tokens} of #{hard_limit} tokens used. " \
+        "Agent will be stopped after the current operation completes.",
+        metadata: { type: "token_limit_exceeded" }
+      )
+      Rails.logger.warn(
+        message: "agent_execution.token_limit_exceeded",
+        agent_run_id: agent_run.id,
+        current_tokens: current_tokens,
+        hard_limit: hard_limit
+      )
+    end
+  end
+  private_class_method :apply_token_limit_status
 
   # Thread-safe in-memory cache of LlmModel records keyed by model_id string.
   # Avoids a DB query per tracked request in the high-volume proxy path.
@@ -141,18 +197,30 @@ class TokenUsageTracker
       reason: result[:reason]
     )
 
-    begin
-      AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
-    rescue => e
-      Rails.logger.error(
-        message: "cost_budget.hard_stop_cancel_failed",
-        agent_run_id: agent_run.id,
-        reason: result[:reason],
-        error_class: e.class.name,
-        error_message: e.message
-      )
-    ensure
-      agent_run.fail!(error: "Budget enforcement: #{result[:reason]}")
+    violation_result = Guardrails::ViolationHandler.call(
+      agent_run: agent_run,
+      violation_type: "cost_limit",
+      details: result[:reason],
+      metrics: { budget_reason: result[:reason] }
+    )
+
+    # If pause succeeded, or another guardrail already paused the run before
+    # this handler returned, preserve the paused state for user review.
+    # Otherwise fall back to the original cancel-and-fail behavior.
+    unless violation_result.paused? || agent_run.paused?
+      begin
+        AgentRuns::Cancel.call(agent_run: agent_run, skip_status_update: true)
+      rescue => e
+        Rails.logger.error(
+          message: "cost_budget.hard_stop_cancel_failed",
+          agent_run_id: agent_run.id,
+          reason: result[:reason],
+          error_class: e.class.name,
+          error_message: e.message
+        )
+      ensure
+        agent_run.fail!(error: "Budget enforcement: #{result[:reason]}") unless agent_run.finished?
+      end
     end
   end
   private_class_method :enforce_hard_stop_budgets

@@ -29,6 +29,8 @@ RSpec.describe Account do
       expect(account.errors[:slug]).to include("can only contain lowercase letters, numbers, and hyphens")
     end
 
+    it { is_expected.to validate_numericality_of(:default_max_tokens_per_run).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(2_147_483_647) }
+
     it "allows valid slug formats" do
       account = build(:account, slug: "valid-slug-123")
       expect(account).to be_valid

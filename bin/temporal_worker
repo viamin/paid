@@ -27,9 +27,21 @@ workflow_slots = ENV.fetch("TEMPORAL_WORKFLOW_SLOTS", "20").to_i
 activity_slots = ENV.fetch("TEMPORAL_ACTIVITY_SLOTS", "4").to_i
 local_activity_slots = ENV.fetch("TEMPORAL_LOCAL_ACTIVITY_SLOTS", activity_slots.to_s).to_i
 activity_task_polls = ENV.fetch("TEMPORAL_MAX_CONCURRENT_ACTIVITY_TASK_POLLS", activity_slots.to_s).to_i
+workflow_task_polls = ENV.fetch("TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASK_POLLS", workflow_slots.to_s).to_i
+
+db_pool = ENV.fetch("DB_POOL") { ENV.fetch("RAILS_MAX_THREADS", "20") }.to_i
+min_required_pool = activity_slots + local_activity_slots + 2 # +2 for heartbeat/polling
 
 puts "Temporal concurrency: workflows=#{workflow_slots} activities=#{activity_slots} " \
-     "local_activities=#{local_activity_slots} activity_polls=#{activity_task_polls}"
+     "local_activities=#{local_activity_slots} activity_polls=#{activity_task_polls} " \
+     "workflow_polls=#{workflow_task_polls}"
+
+if db_pool < min_required_pool
+  warn "WARNING: DB_POOL (#{db_pool}) is less than the recommended minimum " \
+       "(#{min_required_pool}) for activity_slots=#{activity_slots} + " \
+       "local_activity_slots=#{local_activity_slots}. " \
+       "Increase DB_POOL or reduce activity concurrency to avoid connection exhaustion."
+end
 
 shutdown_cancellation, request_shutdown = Temporalio::Cancellation.new
 shutdown_state_mutex = Mutex.new
@@ -49,6 +61,7 @@ worker = Temporalio::Worker.new(
     local_activity_slots: local_activity_slots
   ),
   max_concurrent_activity_task_polls: activity_task_polls,
+  max_concurrent_workflow_task_polls: workflow_task_polls,
   graceful_shutdown_period: graceful_shutdown
 )
 
