@@ -270,13 +270,27 @@ module Workflows
     def start_draft_followup_workflow(project_id, pr_data)
       issue_id = pr_data[:issue_id]
       pr_number = pr_data[:pr_number]
-      capacity = run_activity(Activities::CheckRunCapacityActivity,
-        { project_id: project_id }, timeout: 30)
-
       draft_input = {
         count_toward_draft_review_round: true,
         expected_draft_review_count: pr_data[:current_draft_review_count]
       }
+
+      # TODO(#220): Remove patch guard after all workflows that can replay the
+      # legacy draft followup command sequence have continued-as-new.
+      unless Temporalio::Workflow.patched("draft-followup-direct-start-v1")
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: issue_id,
+            source_pull_request_number: pr_number }, timeout: 30)
+        run_activity(Activities::RecordDraftReviewActivity,
+          {
+            issue_id: issue_id,
+            expected_draft_review_count: pr_data[:current_draft_review_count]
+          }, timeout: 30)
+        return
+      end
+
+      capacity = run_activity(Activities::CheckRunCapacityActivity,
+        { project_id: project_id }, timeout: 30)
 
       agent_run = run_activity(Activities::QueueAgentRunActivity,
         { project_id: project_id, issue_id: issue_id,

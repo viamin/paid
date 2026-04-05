@@ -211,6 +211,9 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     before do
       allow(workflow).to receive(:run_activity).and_return({})
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("draft-followup-direct-start-v1")
+        .and_return(true)
     end
 
     it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
@@ -307,6 +310,28 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::ClaimQueuedAgentRunActivity,
           { agent_run_id: 123, workflow_id: "draft-followup-123" }, timeout: 30)
       expect_draft_followup_child_started(agent_run_id: 123, expected_count: 1)
+    end
+
+    it "replays the legacy draft followup command sequence before the patch" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("draft-followup-direct-start-v1")
+        .and_return(false)
+
+      workflow.send(:handle_pr_trigger, project_id,
+        draft_pr_data(current_draft_review_count: 1, triggers: [ { type: "ci_failure" } ]))
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 },
+          timeout: 30)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordDraftReviewActivity,
+          { issue_id: 10, expected_draft_review_count: 1 }, timeout: 30)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckRunCapacityActivity, anything, timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ClaimQueuedAgentRunActivity, anything, timeout: anything)
+      expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
     it "queues draft followup runs without incrementing draft review count yet" do
