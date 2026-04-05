@@ -1366,7 +1366,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers].map { |trigger| trigger[:type] })
-          .to eq([ "review_bot_review_pending" ])
+          .to eq([ "paid_agent_review_threads" ])
       end
 
       it "ignores unresolved threads from a different review run" do

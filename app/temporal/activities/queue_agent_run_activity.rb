@@ -28,7 +28,7 @@ module Activities
       # Falls back to DB unique indexes (RecordNotUnique) as a safety net
       # for races between concurrent activity executions.
       agent_run, duplicate = AgentRun.transaction do
-        existing = find_existing_run(project, issue, source_pull_request_number)
+        existing = find_existing_run(project, issue, source_pull_request_number, goal)
         if existing
           [ existing, true ]
         else
@@ -45,7 +45,7 @@ module Activities
           [ run, false ]
         end
       rescue ActiveRecord::RecordNotUnique
-        existing = find_existing_run(project, issue, source_pull_request_number)
+        existing = find_existing_run(project, issue, source_pull_request_number, goal)
         raise unless existing
         [ existing, true ]
       end
@@ -111,12 +111,12 @@ module Activities
 
     # Returns nil for custom-prompt-only runs (no issue or PR) intentionally:
     # custom prompts are unique by definition and cannot be meaningfully deduplicated.
-    def find_existing_run(project, issue, source_pull_request_number)
+    def find_existing_run(project, issue, source_pull_request_number, goal)
       scope = project.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).lock("FOR UPDATE")
       if issue
         scope.where(issue: issue).first
       elsif source_pull_request_number
-        scope.where(source_pull_request_number: source_pull_request_number).first
+        scope.where(source_pull_request_number: source_pull_request_number, goal: goal).first
       end
     end
   end

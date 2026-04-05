@@ -354,6 +354,26 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
+    it "queues a followup run instead of dispatching reviews for paid_agent review threads" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 1,
+        triggers: [ { type: "paid_agent_review_threads" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: 10, source_pull_request_number: 42 }, timeout: 30)
+    end
+
     it "still queues paid_agent review when copilot request fails" do
       allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
       allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(true)

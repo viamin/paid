@@ -478,9 +478,15 @@ module Activities
         when "copilot"
           triggers.concat(check_review_bot_status(reviews, unresolved_threads, provider_key: "copilot"))
         when "paid_agent"
-          next if paid_agent_review_completed?(project, issue, unresolved_threads)
-
-          triggers << { type: "review_bot_review_pending", details: "Paid review agent has not completed a review yet" }
+          case paid_agent_review_status(project, issue, unresolved_threads)
+          when :completed
+            next
+          when :followup_required
+            triggers << { type: "paid_agent_review_threads",
+                          details: "Paid review agent left unresolved review comments" }
+          else
+            triggers << { type: "review_bot_review_pending", details: "Paid review agent has not completed a review yet" }
+          end
         when "ci_action"
           pending_actions = pending_ci_review_actions(project, checks)
           next if pending_actions.empty?
@@ -621,7 +627,7 @@ module Activities
         .first
     end
 
-    def paid_agent_review_completed?(project, issue, unresolved_threads)
+    def paid_agent_review_status(project, issue, unresolved_threads)
       baseline = last_completed_code_run(project, issue)&.completed_at
       latest_review_run = related_completed_runs(project, issue)
         .where(goal: "review")
@@ -629,17 +635,16 @@ module Activities
         .order(completed_at: :desc)
         .first
 
-      return false unless latest_review_run&.completed_at
+      return :pending unless latest_review_run&.completed_at
 
-      return false unless baseline.nil? || latest_review_run.completed_at >= baseline
+      return :pending unless baseline.nil? || latest_review_run.completed_at >= baseline
 
-      paid_agent_review_threads_resolved?(latest_review_run, unresolved_threads)
+      return :pending if latest_review_run.review_url.blank? || unresolved_threads.nil?
+
+      paid_agent_review_threads_resolved?(latest_review_run, unresolved_threads) ? :completed : :followup_required
     end
 
     def paid_agent_review_threads_resolved?(review_run, unresolved_threads)
-      return false if review_run.review_url.blank?
-      return false if unresolved_threads.nil?
-
       unresolved_threads.none? do |thread|
         thread[:comments].any? { |comment| comment[:review_url] == review_run.review_url }
       end
