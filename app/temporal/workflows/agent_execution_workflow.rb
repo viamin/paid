@@ -454,6 +454,17 @@ module Workflows
       when "paid_agent"
         provider_id = review_plan[:paid_agent_review_provider_id]
         agent_type = review_plan[:paid_agent_review_agent_type]
+        unless provider_id.present? && agent_type.present?
+          Temporalio::Workflow.logger.warn(
+            message: "agent_execution.request_review_method_skipped",
+            project_id: project_id,
+            pr_number: pr_number,
+            review_method: method,
+            error: "paid_agent review requested without a resolved provider"
+          )
+          return
+        end
+
         run_activity(Activities::QueueAgentRunActivity,
           { project_id: project_id, source_pull_request_number: pr_number, goal: "review",
             provider_id: provider_id, agent_type: agent_type },

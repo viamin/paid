@@ -337,6 +337,28 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
+    def stub_existing_pr_followup_with_review_plan(review_plan)
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, provider_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
+        when "Activities::PreparePrPromptActivity" then {}
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::ResolveReviewThreadsActivity" then {}
+        when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: "ready" }
+        when "Activities::ResolvePrReviewPlanActivity" then review_plan
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        else {}
+        end
+      end
+    end
+
     it "re-requests configured reviews after pushing commits to a ready PR" do
       stub_existing_pr_followup(pr_review_phase: "ready")
 
@@ -376,6 +398,28 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
           { project_id: 1, source_pull_request_number: 42, goal: "review",
             provider_id: 99, agent_type: "codex" },
           timeout: 30)
+    end
+
+    it "skips paid_agent review when the plan cannot resolve a provider" do
+      logger = instance_spy(Logger)
+      allow(Temporalio::Workflow).to receive_messages(logger: logger, patched: true)
+      stub_existing_pr_followup_with_review_plan(
+        dispatchable_review_methods: [ "paid_agent" ],
+        paid_agent_review_provider_id: nil,
+        paid_agent_review_agent_type: nil
+      )
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: 30)
+      expect(logger).to have_received(:warn).with(hash_including(
+        message: "agent_execution.request_review_method_skipped",
+        project_id: 1,
+        pr_number: 42,
+        review_method: "paid_agent",
+        error: "paid_agent review requested without a resolved provider"
+      ))
     end
   end
 

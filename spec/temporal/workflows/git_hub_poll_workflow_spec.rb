@@ -169,6 +169,14 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
     end
 
+    def review_bot_pending_pr_data
+      {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending" } ]
+      }
+    end
+
     it "routes ready_for_owner to MarkPrReadyActivity and RequestReviewActivity" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::MarkPrReadyActivity, anything, timeout: anything)
@@ -366,6 +374,27 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::QueueAgentRunActivity,
           { project_id: project_id, source_pull_request_number: 42, goal: "review",
             provider_id: 99, agent_type: "codex" }, timeout: 30)
+    end
+
+    it "skips paid_agent review when the plan cannot resolve a provider" do
+      logger = instance_spy(Logger)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
+        .and_return({ dispatchable_review_methods: [ "paid_agent" ],
+                      paid_agent_review_provider_id: nil, paid_agent_review_agent_type: nil })
+
+      workflow.send(:handle_pr_trigger, project_id, review_bot_pending_pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: 30)
+      expect(logger).to have_received(:warn).with(hash_including(
+        message: "pr_review.request_review_method_skipped",
+        project_id: project_id,
+        pr_number: 42,
+        review_method: "paid_agent",
+        error: "paid_agent review requested without a resolved provider"
+      ))
     end
 
     it "triggers dev environment update after successful merge" do
