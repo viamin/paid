@@ -1474,6 +1474,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].first[:triggers].map { |trigger| trigger[:type] })
           .to eq([ "review_bot_review_pending" ])
       end
+
+      it "keeps waiting when the review posted before the freshness baseline" do
+        issue = Issue.find_by!(project: project, github_number: 42)
+        issue.update!(github_updated_at: 20.minutes.ago)
+
+        create(:agent_run, :completed, project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        create(:agent_run, :with_review, project: project, source_pull_request_number: 42,
+          completed_at: 10.minutes.ago, review_posted_at: 30.minutes.ago)
+
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |trigger| trigger[:type] })
+          .to eq([ "review_bot_review_pending" ])
+      end
     end
 
     context "when manual review is the configured blocking review method" do
@@ -1817,6 +1839,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             { name: "codex-review", conclusion: "success", created_at: 20.minutes.ago,
               started_at: 19.minutes.ago, completed_at: 18.minutes.ago },
             { name: "codex-review", conclusion: nil, status: "queued", created_at: 5.minutes.ago }
+          ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+
+      it "keeps waiting when the latest named review action was skipped" do
+        stub_github_for_pr(
+          checks: [
+            { name: "ci", conclusion: "success" },
+            { name: "codex-review", conclusion: "skipped", completed_at: Time.current }
           ],
           reviews: [],
           review_threads: []

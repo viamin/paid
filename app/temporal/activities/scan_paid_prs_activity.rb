@@ -649,12 +649,12 @@ module Activities
       latest_review_run = related_completed_runs(project, issue)
         .where(goal: "review")
         .where.not(review_posted_at: nil)
-        .order(completed_at: :desc)
+        .order(review_posted_at: :desc, completed_at: :desc)
         .first
 
-      return false unless latest_review_run&.completed_at
+      return false unless latest_review_run&.review_posted_at
 
-      baseline.nil? || latest_review_run.completed_at >= baseline
+      baseline.nil? || latest_review_run.review_posted_at >= baseline
     end
 
     def manual_review_completed?(project, issue, reviews, pr_data: nil)
@@ -684,7 +684,8 @@ module Activities
       return names if checks.blank?
 
       names.reject do |name|
-        latest_check_for_review_action(checks, name)&.dig(:conclusion).present?
+        conclusion = latest_check_for_review_action(checks, name)&.dig(:conclusion)
+        conclusion.present? && conclusion != "skipped"
       end
     end
 
