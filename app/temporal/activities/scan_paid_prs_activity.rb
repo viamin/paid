@@ -89,6 +89,7 @@ module Activities
       review_based_methods = blocking_review_methods & %w[copilot manual]
       review_fetch_required = review_based_methods.any? || !skip_comment_signals
       ci_review_required = blocking_review_methods.include?("ci_action")
+      review_freshness_required = (blocking_review_methods & %w[manual paid_agent]).any?
       unresolved_threads = nil
       human_triggers = []
       required_review_triggers = []
@@ -98,26 +99,28 @@ module Activities
       # Draft exit still requires an explicitly clean bot review even when
       # other draft comment signals are skipped.
       if skip_comment_signals
+        pr_data ||= fetch_pr_data(client, project, issue) if review_freshness_required
         reviews = review_based_methods.any? ? fetch_reviews(client, project, issue) : []
         if ci_review_required
           pr_data ||= fetch_pr_data(client, project, issue)
           checks = fetch_check_runs(client, project, pr_data)
         end
         required_review_triggers = check_required_review_methods(project, issue,
-          reviews: reviews, unresolved_threads: unresolved_threads, checks: checks)
+          reviews: reviews, unresolved_threads: unresolved_threads, checks: checks, pr_data: pr_data)
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
         human_triggers = human_review_thread_triggers(project, unresolved_threads)
 
         if human_triggers.blank?
+          pr_data ||= fetch_pr_data(client, project, issue) if review_freshness_required
           reviews = fetch_reviews(client, project, issue) if review_based_methods.any?
           if ci_review_required
             pr_data ||= fetch_pr_data(client, project, issue)
             checks = fetch_check_runs(client, project, pr_data)
           end
           required_review_triggers = check_required_review_methods(project, issue,
-            reviews: reviews, unresolved_threads: unresolved_threads, checks: checks)
+            reviews: reviews, unresolved_threads: unresolved_threads, checks: checks, pr_data: pr_data)
         end
       end
 
@@ -315,7 +318,7 @@ module Activities
 
       triggers.concat(ci_failure_triggers(checks))
       triggers.concat(check_required_review_methods(project, issue,
-        reviews: reviews, unresolved_threads: unresolved_threads, checks: checks))
+        reviews: reviews, unresolved_threads: unresolved_threads, checks: checks, pr_data: pr_data))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       append_generic_review_bot_thread_triggers!(triggers, unresolved_threads,
         blocking_review_methods: project.blocking_review_methods)
@@ -478,7 +481,7 @@ module Activities
       [ { type: "review_bot_threads", details: "#{review_bot_threads.size} unresolved review bot thread(s)" } ]
     end
 
-    def check_required_review_methods(project, issue, reviews:, unresolved_threads:, checks:)
+    def check_required_review_methods(project, issue, reviews:, unresolved_threads:, checks:, pr_data: nil)
       triggers = []
 
       project.blocking_review_methods.each do |method|
@@ -487,7 +490,7 @@ module Activities
           triggers.concat(check_review_bot_status(reviews, unresolved_threads,
             provider_key: "copilot", review_method: method))
         when "paid_agent"
-          next if paid_agent_review_completed?(project, issue)
+          next if paid_agent_review_completed?(project, issue, pr_data: pr_data)
 
           triggers << {
             type: "review_bot_review_pending",
@@ -504,7 +507,7 @@ module Activities
             details: "CI review action still pending: #{pending_actions.join(', ')}"
           }
         when "manual"
-          next if manual_review_completed?(project, issue, reviews)
+          next if manual_review_completed?(project, issue, reviews, pr_data: pr_data)
 
           triggers << {
             type: "review_bot_review_pending",
@@ -641,8 +644,8 @@ module Activities
         .first
     end
 
-    def paid_agent_review_completed?(project, issue)
-      baseline = last_completed_code_run(project, issue)&.completed_at
+    def paid_agent_review_completed?(project, issue, pr_data: nil)
+      baseline = review_freshness_baseline(project, issue, pr_data: pr_data)
       latest_review_run = related_completed_runs(project, issue)
         .where(goal: "review")
         .where.not(review_posted_at: nil)
@@ -654,10 +657,10 @@ module Activities
       baseline.nil? || latest_review_run.completed_at >= baseline
     end
 
-    def manual_review_completed?(project, issue, reviews)
+    def manual_review_completed?(project, issue, reviews, pr_data: nil)
       return false if reviews.nil?
 
-      baseline = last_completed_code_run(project, issue)&.completed_at
+      baseline = review_freshness_baseline(project, issue, pr_data: pr_data)
       trusted_reviews = reviews.select do |review|
         project.trusted_github_user?(review[:user_login]) && !bot_user?(review[:user_login])
       end
@@ -698,8 +701,18 @@ module Activities
         (project.blocking_review_methods - project.requested_review_methods).empty?
     end
 
+    def review_freshness_baseline(project, issue, pr_data: nil)
+      last_run = last_completed_code_run(project, issue)
+      return issue.github_updated_at unless last_run
+
+      current_head_sha = pr_data&.head&.sha
+      return issue.github_updated_at if current_head_sha.present? && last_run.result_commit_sha != current_head_sha
+
+      last_run.completed_at
+    end
+
     def append_generic_review_bot_thread_triggers!(triggers, unresolved_threads, blocking_review_methods:)
-      return if blocking_review_methods.blank?
+      return unless blocking_review_methods.include?("paid_agent")
       return if triggers.any? { |trigger| trigger[:type] == "review_bot_threads" }
 
       triggers.concat(non_copilot_review_bot_thread_triggers(unresolved_threads))

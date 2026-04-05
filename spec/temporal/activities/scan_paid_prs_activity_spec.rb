@@ -703,6 +703,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when PR is in draft phase with Claude review threads" do
       before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "wait_for_reviews" => true,
+            "methods" => {
+              "paid_agent" => { "enabled" => true }
+            }
+          }
+        )
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -733,6 +742,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when PR is in draft phase with Claude Code review threads" do
       before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "wait_for_reviews" => true,
+            "methods" => {
+              "paid_agent" => { "enabled" => true }
+            }
+          }
+        )
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -763,6 +781,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when PR is in draft phase with Codex review threads" do
       before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "wait_for_reviews" => true,
+            "methods" => {
+              "paid_agent" => { "enabled" => true }
+            }
+          }
+        )
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -1390,7 +1417,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "treats a newer completed review-goal run as satisfying the review gate" do
         create(:agent_run, :completed, project: project, source_pull_request_number: 42,
-          completed_at: 2.hours.ago)
+          completed_at: 2.hours.ago, result_commit_sha: "abc123")
         create(:agent_run, :with_review, project: project, source_pull_request_number: 42,
           completed_at: 1.hour.ago, review_posted_at: 1.hour.ago)
 
@@ -1413,6 +1440,29 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           goal: "review", completed_at: 1.hour.ago, review_posted_at: nil)
 
         stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |trigger| trigger[:type] })
+          .to eq([ "review_bot_review_pending" ])
+      end
+
+      it "keeps waiting after the PR head advances beyond the last completed code run" do
+        issue = Issue.find_by!(project: project, github_number: 42)
+        issue.update!(github_updated_at: 20.minutes.ago)
+
+        create(:agent_run, :completed, project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago, result_commit_sha: "oldsha")
+        create(:agent_run, :with_review, project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago, review_posted_at: 1.hour.ago)
+
+        stub_github_for_pr(
+          head_sha: "newsha",
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [],
           review_threads: []
@@ -1502,6 +1552,49 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+
+      it "keeps waiting after new commits land past the last completed code run" do
+        issue = Issue.find_by!(project: project, github_number: 42)
+        issue.update!(github_updated_at: 20.minutes.ago)
+
+        create(:agent_run, :completed, project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago, result_commit_sha: "oldsha")
+
+        stub_github_for_pr(
+          head_sha: "newsha",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "viamin", state: "COMMENTED", body: "Reviewed before the latest push",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+
+      it "does not block manual-only review gates on unrelated provider bot threads" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Please update this branch", path: "app/model.rb", line: 10,
+                            author: "chatgpt-codex-connector" } ]
+            }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
 
       it "does not treat a dismissed latest review as satisfying the manual gate" do
@@ -2079,23 +2172,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     mergeable: true,
     draft: false,
     author_login: "someone-else",
+    head_sha: "abc123",
+    pr_updated_at: nil,
     checks: [ { name: "ci", conclusion: "success" } ],
     review_threads: [],
     issue_comments: [],
     reviews: default_clean_copilot_review
   )
     pr_data = OpenStruct.new(
-      head: OpenStruct.new(sha: "abc123"),
+      head: OpenStruct.new(sha: head_sha),
       mergeable: mergeable,
       draft: draft,
-      user: OpenStruct.new(login: author_login)
+      user: OpenStruct.new(login: author_login),
+      updated_at: pr_updated_at
     )
 
     allow(github_client).to receive(:pull_request)
       .with(project.full_name, 42)
       .and_return(pr_data)
     allow(github_client).to receive(:check_runs_for_ref)
-      .with(project.full_name, "abc123")
+      .with(project.full_name, head_sha)
       .and_return(checks)
     allow(github_client).to receive(:review_threads)
       .with(project.full_name, 42)
