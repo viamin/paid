@@ -8,6 +8,22 @@ require_relative "../config/environment"
 abort("The Rails environment is running in production mode!") if Rails.env.production?
 require "rspec/rails"
 
+def ensure_test_assets_compiled!
+  builds_dir = File.expand_path("../app/assets/builds", __dir__)
+  required_assets = %w[application.css application.js]
+
+  return if required_assets.all? { |asset| File.exist?(File.join(builds_dir, asset)) }
+
+  env = {
+    "YARN_CACHE_FOLDER" => File.expand_path("../.yarn-cache", __dir__)
+  }
+
+  abort "Failed to build test JavaScript assets" unless system(env, "yarn", "build")
+  abort "Failed to build test CSS assets" unless system(env, "yarn", "build:css")
+end
+
+ensure_test_assets_compiled!
+
 # Add additional requires below this line. Rails is not loaded until this point!
 
 # Requires supporting ruby files with custom matchers and macros, etc,

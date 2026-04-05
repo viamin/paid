@@ -166,7 +166,7 @@ module Activities
 
         # If we couldn't fetch PR data, don't prematurely advance the phase.
         return nil if pr_data.nil?
-        return nil if reviews.nil?
+        return nil if review_based_methods.any? && reviews.nil?
 
         # Once the needed signals were fetched successfully, any blocking
         # review gate must still prevent draft exit, including manual and
