@@ -160,6 +160,28 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "review request patch guard" do
+    let(:project_id) { 1 }
+
+    before do
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+      allow(workflow).to receive(:run_activity)
+    end
+
+    it "preserves the legacy copilot request path when the patch is disabled" do
+      allow(Temporalio::Workflow).to receive(:patched).with("request-configured-pr-reviews-v1").and_return(false)
+
+      workflow.send(:request_configured_reviews, project_id, 42)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: project_id, pr_number: 42,
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, any_args)
+    end
+  end
+
   describe "#handle_pr_trigger" do
     let(:workflow) { described_class.new }
     let(:project_id) { 1 }
@@ -281,6 +303,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
 
     it "requests configured reviews when review_bot_review_pending is the only trigger" do
+      allow(Temporalio::Workflow).to receive(:patched).with("request-configured-pr-reviews-v1").and_return(true)
       allow(workflow).to receive(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
         .and_return({ requested_review_methods: [ "copilot", "paid_agent" ] })
@@ -330,6 +353,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     it "does not start followup workflow when review_bot_review_pending is the only trigger" do
       allow(Temporalio::Workflow).to receive(:start_child_workflow)
+      allow(Temporalio::Workflow).to receive(:patched).with("request-configured-pr-reviews-v1").and_return(false)
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
@@ -344,6 +368,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     it "still queues paid_agent review when copilot request fails" do
       allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+      allow(Temporalio::Workflow).to receive(:patched).with("request-configured-pr-reviews-v1").and_return(true)
       allow(workflow).to receive(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
         .and_return({ requested_review_methods: [ "copilot", "paid_agent" ] })
@@ -362,6 +387,27 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
           { project_id: project_id, source_pull_request_number: 42, goal: "review" }, timeout: 30)
+    end
+
+    it "requests only the still-pending auto-review methods" do
+      allow(Temporalio::Workflow).to receive(:patched).with("request-configured-pr-reviews-v1").and_return(true)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
+        .and_return({ requested_review_methods: [ "paid_agent" ] })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending", review_method: "paid_agent" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, source_pull_request_number: 42, goal: "review" }, timeout: 30)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
     end
 
     it "triggers dev environment update after successful merge" do

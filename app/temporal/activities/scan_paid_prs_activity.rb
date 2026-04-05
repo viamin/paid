@@ -84,10 +84,11 @@ module Activities
         return escalate_trigger(issue)
       end
 
+      skip_comment_signals = project.max_draft_review_rounds.zero?
       blocking_review_methods = project.blocking_review_methods
       review_based_methods = blocking_review_methods & %w[copilot manual]
+      review_fetch_required = review_based_methods.any? || !skip_comment_signals
       ci_review_required = blocking_review_methods.include?("ci_action")
-      skip_comment_signals = project.max_draft_review_rounds.zero?
       unresolved_threads = nil
       human_triggers = []
       required_review_triggers = []
@@ -166,7 +167,7 @@ module Activities
 
         # If we couldn't fetch PR data, don't prematurely advance the phase.
         return nil if pr_data.nil?
-        return nil if review_based_methods.any? && reviews.nil?
+        return nil if review_fetch_required && reviews.nil?
 
         # Once the needed signals were fetched successfully, any blocking
         # review gate must still prevent draft exit, including manual and
@@ -495,17 +496,28 @@ module Activities
         when "paid_agent"
           next if paid_agent_review_completed?(project, issue)
 
-          triggers << { type: "review_bot_review_pending", details: "Paid review agent has not completed a review yet" }
+          triggers << {
+            type: "review_bot_review_pending",
+            review_method: method,
+            details: "Paid review agent has not completed a review yet"
+          }
         when "ci_action"
           pending_actions = pending_ci_review_actions(project, checks)
           next if pending_actions.empty?
 
-          triggers << { type: "review_bot_review_pending",
-                        details: "CI review action still pending: #{pending_actions.join(', ')}" }
+          triggers << {
+            type: "review_bot_review_pending",
+            review_method: method,
+            details: "CI review action still pending: #{pending_actions.join(', ')}"
+          }
         when "manual"
           next if manual_review_completed?(project, issue, reviews)
 
-          triggers << { type: "review_bot_review_pending", details: "Manual review has not been completed yet" }
+          triggers << {
+            type: "review_bot_review_pending",
+            review_method: method,
+            details: "Manual review has not been completed yet"
+          }
         end
       end
 

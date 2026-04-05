@@ -214,7 +214,7 @@ module Workflows
       other_triggers = trigger_types - [ "review_bot_review_pending" ]
 
       if other_triggers.empty?
-        request_configured_reviews(project_id, pr_data[:pr_number])
+        request_pending_reviews(project_id, pr_data[:pr_number], pr_data[:triggers])
         return
       end
 
@@ -240,11 +240,27 @@ module Workflows
       )
     end
 
-    def request_configured_reviews(project_id, pr_number)
+    def request_pending_reviews(project_id, pr_number, triggers)
+      pending_methods = Array(triggers)
+        .select { |trigger| trigger[:type] == "review_bot_review_pending" }
+        .filter_map { |trigger| trigger[:review_method] }
+        .uniq
+
+      return request_configured_reviews(project_id, pr_number) if pending_methods.empty?
+
+      request_configured_reviews(project_id, pr_number, requested_methods: pending_methods)
+    end
+
+    def request_configured_reviews(project_id, pr_number, requested_methods: nil)
+      return request_legacy_copilot_review(project_id, pr_number) unless Temporalio::Workflow.patched("request-configured-pr-reviews-v1")
+
       review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
         { project_id: project_id }, timeout: 30)
 
-      Array(review_plan[:requested_review_methods]).each do |method|
+      methods = Array(review_plan[:requested_review_methods])
+      methods &= Array(requested_methods) if requested_methods.present?
+
+      methods.each do |method|
         request_review_method(project_id, pr_number, method)
       end
     rescue Temporalio::Error::CanceledError
@@ -256,6 +272,12 @@ module Workflows
         pr_number: pr_number,
         error: e.message
       )
+    end
+
+    def request_legacy_copilot_review(project_id, pr_number)
+      request_review(project_id, pr_number,
+        [ Activities::RequestReviewActivity::COPILOT_LOGIN ],
+        log_key: "pr_review.request_review_bot_review_failed")
     end
 
     def request_review_method(project_id, pr_number, method)

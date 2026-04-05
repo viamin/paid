@@ -1314,6 +1314,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+        expect(result[:prs_to_trigger].first[:triggers].first[:review_method]).to eq("paid_agent")
       end
 
       it "treats a newer completed review-goal run as satisfying the review gate" do
@@ -1386,6 +1387,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "does not emit a no-op pending trigger when review fetch fails" do
+        allow(github_client).to receive_messages(
+          pull_request: OpenStruct.new(draft: true, head: OpenStruct.new(sha: "abc123"), mergeable: true, user: OpenStruct.new(login: "viamin")),
+          check_runs_for_ref: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          issue_comments: []
+        )
+        allow(github_client).to receive(:pull_request_reviews)
+          .and_raise(GithubClient::Error, "reviews unavailable")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "keeps the draft blocked when review fetch fails and changes_requested cannot be evaluated" do
+        project.update!(max_draft_review_rounds: 1)
         allow(github_client).to receive_messages(
           pull_request: OpenStruct.new(draft: true, head: OpenStruct.new(sha: "abc123"), mergeable: true, user: OpenStruct.new(login: "viamin")),
           check_runs_for_ref: [ { name: "ci", conclusion: "success" } ],

@@ -422,6 +422,24 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "configured review request patch guard" do
+    before do
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: false)
+      allow(workflow).to receive(:run_activity)
+    end
+
+    it "preserves the legacy copilot request path when the patch is disabled" do
+      workflow.send(:request_configured_reviews, 1, 42)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: 1, pr_number: 42,
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, any_args)
+    end
+  end
+
   describe "ensure block cleanup and janitor enqueue" do
     let(:input) { { project_id: 1, issue_id: 1 } }
 

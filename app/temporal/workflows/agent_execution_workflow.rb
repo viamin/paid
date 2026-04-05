@@ -427,6 +427,7 @@ module Workflows
 
     def request_configured_reviews(project_id, pr_number)
       return unless pr_number
+      return request_legacy_copilot_review(project_id, pr_number) unless Temporalio::Workflow.patched("request-configured-pr-reviews-v1")
 
       review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
         { project_id: project_id }, timeout: 30, retry_policy: NO_RETRY)
@@ -464,6 +465,21 @@ module Workflows
         project_id: project_id,
         pr_number: pr_number,
         review_method: method,
+        error: e.message
+      )
+    end
+
+    def request_legacy_copilot_review(project_id, pr_number)
+      run_activity(Activities::RequestReviewActivity,
+        { project_id: project_id, pr_number: pr_number,
+          reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.copilot_review_request_failed",
+        project_id: project_id,
+        pr_number: pr_number,
         error: e.message
       )
     end
