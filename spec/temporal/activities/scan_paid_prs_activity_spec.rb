@@ -1403,6 +1403,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].first[:triggers].map { |trigger| trigger[:type] })
           .to eq([ "review_bot_review_pending" ])
       end
+
+      it "keeps the gate blocked when paid review threads cannot be fetched" do
+        create_paid_review_baseline(review_url: "https://github.com/example/repo/pull/42#pullrequestreview-123")
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+        allow(github_client).to receive(:review_threads)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error, "GitHub review threads API unavailable")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers]).to eq([
+          { type: "review_gate_blocked", details: "Paid review agent status could not be verified" }
+        ])
+      end
     end
 
     context "when manual review is the configured blocking review method" do
@@ -1433,7 +1452,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_gate_blocked" ])
       end
 
       it "accepts a trusted human review as satisfying the gate" do
@@ -1481,7 +1500,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
-        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_gate_blocked" ])
       end
 
       it "treats a completed named review action as satisfying the gate" do
@@ -1514,7 +1533,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers]).to eq([
-          { type: "review_bot_review_pending",
+          { type: "review_gate_blocked",
             details: "CI review action still pending: codex-review" }
         ])
       end

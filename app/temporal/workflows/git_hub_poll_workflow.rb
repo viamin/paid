@@ -171,6 +171,8 @@ module Workflows
         handle_owner_approved(project_id, pr_data)
       elsif trigger_types.include?("review_bot_review_pending")
         handle_review_method_pending(project_id, pr_data, trigger_types)
+      elsif passive_review_gate_only?(trigger_types)
+        nil
       elsif pr_data[:phase].in?(%w[draft restarted])
         start_draft_followup_workflow(project_id, pr_data)
       else
@@ -211,7 +213,7 @@ module Workflows
       # AgentExecutionWorkflow so reviewers inspect the fixed code, not the
       # pre-fix state. When review_bot_review_pending is the only trigger, request
       # immediately since no followup will run.
-      other_triggers = trigger_types - [ "review_bot_review_pending" ]
+      other_triggers = trigger_types - [ "review_bot_review_pending", Activities::ScanPaidPrsActivity::PASSIVE_REVIEW_GATE_TRIGGER ]
 
       if other_triggers.empty?
         dispatch_configured_reviews(project_id, pr_data[:pr_number])
@@ -238,6 +240,11 @@ module Workflows
         pr_number: pr_number,
         error: e.message
       )
+    end
+
+    def passive_review_gate_only?(trigger_types)
+      trigger_types.present? &&
+        (trigger_types - [ Activities::ScanPaidPrsActivity::PASSIVE_REVIEW_GATE_TRIGGER ]).empty?
     end
 
     # TODO(#823): Remove patch guard after pre-fix review-dispatch histories continue-as-new.

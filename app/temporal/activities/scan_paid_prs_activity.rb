@@ -21,6 +21,7 @@ module Activities
     MIN_COMMENT_LENGTH = 20
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
+    PASSIVE_REVIEW_GATE_TRIGGER = "review_gate_blocked"
 
     def execute(input)
       project_id = input[:project_id]
@@ -124,7 +125,12 @@ module Activities
       # review_bot_review_pending is non-blocking: it requests a review but
       # should not prevent evaluation of CI, comments, or changes_requested.
       pending_triggers = (required_review_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
-      blocking_triggers = (required_review_triggers || []).reject { |t| t[:type] == "review_bot_review_pending" }
+      passive_review_gate_triggers = (required_review_triggers || []).select do |trigger|
+        trigger[:type] == PASSIVE_REVIEW_GATE_TRIGGER
+      end
+      blocking_triggers = (required_review_triggers || []).reject do |trigger|
+        [ "review_bot_review_pending", PASSIVE_REVIEW_GATE_TRIGGER ].include?(trigger[:type])
+      end
       all_triggers = blocking_triggers + (human_triggers || [])
       append_generic_review_bot_thread_triggers!(all_triggers, unresolved_threads) if blocking_review_methods.include?("paid_agent")
 
@@ -155,8 +161,8 @@ module Activities
 
         # A draft PR is only ready to leave draft after the latest review-bot
         # review is explicitly clean. Resolved threads alone are not enough.
-        if pending_triggers.any?
-          triggers = pending_triggers
+        if pending_triggers.any? || passive_review_gate_triggers.any?
+          triggers = passive_review_gate_triggers + pending_triggers
           log_triggers(project, issue, triggers)
           return draft_trigger_payload(issue, triggers)
         end
@@ -172,6 +178,7 @@ module Activities
       end
 
       # Re-add pending triggers so the workflow can request the review.
+      all_triggers.concat(passive_review_gate_triggers)
       all_triggers.concat(pending_triggers)
 
       triggers = all_triggers
@@ -486,6 +493,9 @@ module Activities
           when :followup_required
             triggers << { type: "paid_agent_review_threads",
                           details: "Paid review agent left unresolved review comments" }
+          when :blocked
+            triggers << { type: PASSIVE_REVIEW_GATE_TRIGGER,
+                          details: "Paid review agent status could not be verified" }
           else
             triggers << { type: "review_bot_review_pending", details: "Paid review agent has not completed a review yet" }
           end
@@ -493,12 +503,12 @@ module Activities
           pending_actions = pending_ci_review_actions(project, checks)
           next if pending_actions.empty?
 
-          triggers << { type: "review_bot_review_pending",
+          triggers << { type: PASSIVE_REVIEW_GATE_TRIGGER,
                         details: "CI review action still pending: #{pending_actions.join(', ')}" }
         when "manual"
           next if manual_review_completed?(project, issue, reviews)
 
-          triggers << { type: "review_bot_review_pending", details: "Manual review has not been completed yet" }
+          triggers << { type: PASSIVE_REVIEW_GATE_TRIGGER, details: "Manual review has not been completed yet" }
         end
       end
 
@@ -641,7 +651,7 @@ module Activities
 
       return :pending unless baseline.nil? || latest_review_run.completed_at >= baseline
 
-      return :pending if latest_review_run.review_url.blank? || unresolved_threads.nil?
+      return :blocked if latest_review_run.review_url.blank? || unresolved_threads.nil?
 
       paid_agent_review_threads_resolved?(latest_review_run, unresolved_threads) ? :completed : :followup_required
     end
