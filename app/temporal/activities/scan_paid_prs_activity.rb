@@ -148,12 +148,29 @@ module Activities
       end
 
       if all_triggers.empty?
+        # If a draft PR is still waiting on an automatically requestable
+        # review method (copilot / paid_agent), emit that pending trigger
+        # even when later signal fetches fail. Otherwise an unrelated GitHub
+        # reviews API failure can suppress the review request entirely and
+        # stall the PR in draft forever.
+        #
+        # Do not do this for non-requestable blocking methods such as
+        # manual / ci_action. Those methods cannot be kicked off by
+        # request_configured_reviews, so emitting only a pending trigger
+        # here would create a no-op workflow pass instead of deferring.
+        if pending_triggers.any? && auto_requestable_review_method_pending?(project)
+          triggers = pending_triggers
+          log_triggers(project, issue, triggers)
+          return draft_trigger_payload(issue, triggers)
+        end
+
         # If we couldn't fetch PR data, don't prematurely advance the phase.
         return nil if pr_data.nil?
         return nil if reviews.nil?
 
-        # A draft PR is only ready to leave draft after the latest review-bot
-        # review is explicitly clean. Resolved threads alone are not enough.
+        # Once the needed signals were fetched successfully, any blocking
+        # review gate must still prevent draft exit, including manual and
+        # ci_action methods that cannot be auto-requested here.
         if pending_triggers.any?
           triggers = pending_triggers
           log_triggers(project, issue, triggers)
@@ -662,6 +679,10 @@ module Activities
       end
 
       matches.max_by { |check| check[:started_at] || check[:completed_at] || Time.at(0) }
+    end
+
+    def auto_requestable_review_method_pending?(project)
+      (project.requested_review_methods & %w[copilot paid_agent]).any?
     end
 
     def append_generic_review_bot_thread_triggers!(triggers, unresolved_threads)

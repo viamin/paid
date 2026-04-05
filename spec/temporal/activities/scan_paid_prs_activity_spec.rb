@@ -1300,6 +1300,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
 
+      it "still returns a pending review trigger when the PR reviews API fails" do
+        allow(github_client).to receive_messages(
+          pull_request: OpenStruct.new(draft: true, head: OpenStruct.new(sha: "abc123"), mergeable: true, user: OpenStruct.new(login: "viamin")),
+          check_runs_for_ref: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          issue_comments: []
+        )
+        allow(github_client).to receive(:pull_request_reviews)
+          .and_raise(GithubClient::Error, "copilot quota exhausted")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+
       it "treats a newer completed review-goal run as satisfying the review gate" do
         create(:agent_run, :completed, project: project, source_pull_request_number: 42,
           completed_at: 2.hours.ago)
@@ -1367,6 +1383,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+
+      it "does not emit a no-op pending trigger when review fetch fails" do
+        allow(github_client).to receive_messages(
+          pull_request: OpenStruct.new(draft: true, head: OpenStruct.new(sha: "abc123"), mergeable: true, user: OpenStruct.new(login: "viamin")),
+          check_runs_for_ref: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          issue_comments: []
+        )
+        allow(github_client).to receive(:pull_request_reviews)
+          .and_raise(GithubClient::Error, "reviews unavailable")
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
       end
 
       it "accepts a trusted human review as satisfying the gate" do

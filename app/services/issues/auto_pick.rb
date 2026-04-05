@@ -210,9 +210,12 @@ module Issues
     # (leveraging the GIN labels index) instead of loading PR records into Ruby:
     #
     # Blocking rules:
-    # - failed PRs always block (need investigation)
-    # - in_progress PRs block unless fully handed off (paid-generated +
-    #   paid-ready labels and out of draft/restarted phase)
+    # - PRs still actively progressing block new issue pickup
+    # - PRs waiting on user interaction should not block auto-pick
+    #   (for example, escalated draft-review exhaustion or exhausted
+    #   paid-ready followup limits)
+    # - failed PRs still block unless they are clearly stalled on one of
+    #   those user-interaction gates
     def project_has_prs_needing_attention?
       base = Issue.where(
         project: @project,
@@ -221,19 +224,51 @@ module Issues
         paid_state: %w[in_progress failed]
       )
 
-      # Failed PRs always block — check first for a fast short-circuit.
-      return true if base.where(paid_state: "failed").exists?
+      actionable = base.where.not(id: prs_waiting_on_user_interaction.select(:id))
 
       # In-progress PRs block unless handed off: both labels present and
       # not in a draft/restarted review phase.
-      handed_off = base
+      handed_off = actionable
         .where(paid_state: "in_progress")
         .where("labels @> ?::jsonb", [ @project.generated_label_name, PAID_READY_LABEL ].to_json)
         .where.not(pr_review_phase: %w[draft restarted])
 
-      base.where(paid_state: "in_progress")
+      actionable.where(paid_state: "failed").exists? ||
+        actionable.where(paid_state: "in_progress")
         .where.not(id: handed_off)
         .exists?
+    end
+
+    # PRs in these states are effectively waiting on a human rather than
+    # making forward progress:
+    # - draft review rounds exhausted and escalated to owner review
+    # - paid-ready PR followup limit exhausted
+    # - explicit needs_input state
+    #
+    # These should not block auto-pick from consuming spare capacity.
+    def prs_waiting_on_user_interaction
+      base = Issue.where(
+        project: @project,
+        is_pull_request: true,
+        github_state: "open"
+      )
+
+      review_limited = if @project.max_draft_review_rounds.positive?
+        base.where(pr_review_phase: "escalated")
+          .or(base.where("draft_review_count >= ?", @project.max_draft_review_rounds))
+      else
+        base.none
+      end
+
+      followup_limited = if @project.max_pr_followup_runs.positive?
+        base.where("pr_followup_count >= ?", @project.max_pr_followup_runs)
+      else
+        base.none
+      end
+
+      needs_input = base.where(paid_state: "needs_input")
+
+      review_limited.or(followup_limited).or(needs_input)
     end
 
     def eligible_issue_scope

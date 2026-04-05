@@ -597,6 +597,58 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
+      it "picks an issue when an escalated PR has exhausted draft review rounds" do
+        project.update!(max_draft_review_rounds: 3)
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          pr_review_phase: "escalated",
+          draft_review_count: 3)
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "picks an issue when a paid-ready PR has exhausted followup rounds" do
+        project.update!(max_pr_followup_runs: 2)
+        create(:issue, :pull_request, :in_progress,
+          project: project,
+          labels: [ "paid-generated", "paid-ready" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 2)
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "picks an issue when a PR is in needs_input state" do
+        create(:issue, :pull_request, :needs_input, project: project)
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "still returns nil when a failed PR is not user-blocked" do
+        create(:issue, :pull_request, :failed,
+          project: project,
+          pr_review_phase: "draft",
+          draft_review_count: 1,
+          pr_followup_count: 0)
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
       it "returns nil when open PRs already need attention even if a run is already active" do
         pr = create(:issue, :pull_request, :in_progress, project: project)
         create(:agent_run, :running, project: project, issue: pr)
