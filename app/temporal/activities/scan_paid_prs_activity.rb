@@ -112,7 +112,7 @@ module Activities
         human_triggers = human_review_thread_triggers(project, unresolved_threads)
 
         if human_triggers.blank?
-          reviews = fetch_reviews(client, project, issue) if review_based_methods.any?
+          reviews = review_based_methods.any? ? fetch_reviews(client, project, issue) : []
           if ci_review_required
             pr_data ||= fetch_pr_data(client, project, issue)
             checks = fetch_check_runs(client, project, pr_data)
