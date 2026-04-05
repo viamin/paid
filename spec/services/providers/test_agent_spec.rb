@@ -105,6 +105,95 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when claude returns a rate limit error from the container runtime path" do
+      let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "Rate limit exceeded",
+          stdout: "",
+          stderr: "Rate limit exceeded. Retry after 120",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "persists the provider rate limit state" do
+        freeze_time do
+          result = described_class.call(provider: provider)
+
+          expect(result).not_to be_success
+          expect(result.error_type).to eq(:rate_limited)
+
+          provider_state = user.provider_states.find_by!(provider_name: "claude")
+          expect(provider_state.rate_limited_until).to be_within(1.second).of(120.seconds.from_now)
+        end
+      end
+    end
+
+    context "when claude returns a capacity-exhausted message from the container runtime path" do
+      let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "exit 1",
+          stdout: "",
+          stderr: "You have exhausted your capacity on this model.",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "classifies the result as rate limited and persists provider state" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(user.provider_states.find_by!(provider_name: "claude")).to be_rate_limited
+      end
+    end
+
+    context "when claude returns the current subscription limit wording" do
+      let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "exit 1",
+          stdout: "",
+          stderr: "You've hit your limit · resets Apr 6, 10pm (UTC)",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "classifies the result as rate limited and parses the reset time" do
+        travel_to Time.utc(2026, 4, 5, 12, 0, 0) do
+          result = described_class.call(provider: provider)
+
+          expect(result).not_to be_success
+          expect(result.error_type).to eq(:rate_limited)
+
+          provider_state = user.provider_states.find_by!(provider_name: "claude")
+          expect(provider_state.rate_limited_until).to eq(Time.utc(2026, 4, 6, 22, 0, 0))
+        end
+      end
+    end
+
     context "when codex has a Paid-managed OpenAI API key configured" do
       let(:provider_record) { create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false) }
       let(:health_result) { { name: :codex, status: "ok", message: "All checks passed", latency_ms: 12 } }
@@ -161,6 +250,65 @@ RSpec.describe Providers::TestAgent do
         expect(result).not_to be_success
         expect(result.error_type).to eq(:authentication)
         expect(result.message).to eq("café auth")
+      end
+    end
+
+    context "when a stale codex provider state exists and a harness health check succeeds" do
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "codex")
+        stub_proxy_api_key(:openai, "sk-test-key")
+        allow(AgentHarness).to receive(:check_provider).and_return(name: :codex, status: "ok", message: "All checks passed", latency_ms: 12)
+      end
+
+      it "clears the stale provider state" do
+        codex_provider = create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false)
+        provider_state = create(
+          :provider_state,
+          :rate_limited,
+          :circuit_half_open,
+          user: user,
+          provider_name: "codex"
+        )
+
+        result = described_class.call(provider: codex_provider)
+
+        expect(result).to be_success
+
+        provider_state.reload
+        expect(provider_state.failure_count).to eq(0)
+        expect(provider_state.circuit_state).to eq("closed")
+        expect(provider_state.circuit_opened_at).to be_nil
+        expect(provider_state.rate_limited_until).to be_nil
+      end
+    end
+
+    context "when codex returns a rate limit error from the harness path" do
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "codex")
+        stub_proxy_api_key(:openai, "sk-test-key")
+      end
+
+      it "persists the provider rate limit state using the absolute reset timestamp" do
+        travel_to Time.utc(2026, 4, 5, 12, 0, 0) do
+          codex_provider = create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false)
+          reset_at = Time.utc(2026, 4, 6, 10, 0, 0)
+          allow(AgentHarness).to receive(:check_provider).and_return(
+            name: :codex,
+            status: "error",
+            message: "Rate limit exceeded. Reset at: #{reset_at.to_i}",
+            latency_ms: 12
+          )
+
+          result = described_class.call(provider: codex_provider)
+
+          expect(result).not_to be_success
+          expect(result.error_type).to eq(:rate_limited)
+
+          provider_state = user.provider_states.find_by!(provider_name: "codex")
+          expect(provider_state.rate_limited_until).to eq(reset_at)
+        end
       end
     end
 

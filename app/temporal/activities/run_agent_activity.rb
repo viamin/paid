@@ -48,6 +48,9 @@ module Activities
       /too many requests/i,
       /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
+      /free tier limit reached/i,
+      /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
+      /exhausted\s+your\s+capacity/i,
       /exhausted.*capacity/i,
       /(?:server|system)\s+(?:at\s+)?capacity/i,
       /(?:server|api|service)\s+overloaded/i,
@@ -576,6 +579,23 @@ module Activities
 
         reset_time = Time.current.utc.change(hour: hour, min: minute, sec: 0)
         reset_time += 1.day if reset_time <= Time.current.utc
+        reset_time
+      elsif (match = output.match(/resets?\s+([A-Za-z]{3})\s+(\d{1,2}),\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i))
+        month = Date::ABBR_MONTHNAMES.index(match[1].capitalize)
+        day = match[2].to_i
+        hour = match[3].to_i
+        minute = (match[4] || "0").to_i
+        period = match[5].downcase
+
+        hour = if period == "am"
+          hour == 12 ? 0 : hour
+        else
+          hour == 12 ? 12 : hour + 12
+        end
+
+        year = Time.current.utc.year
+        reset_time = Time.utc(year, month, day, hour, minute, 0)
+        reset_time = Time.utc(year + 1, month, day, hour, minute, 0) if reset_time <= Time.current.utc
         reset_time
       else
         1.hour.from_now
