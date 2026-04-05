@@ -676,6 +676,19 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
+      it "still returns nil when a failed escalated PR needs operator attention" do
+        project.update!(max_draft_review_rounds: 3)
+        create(:issue, :pull_request, :failed,
+          project: project,
+          pr_review_phase: "escalated",
+          draft_review_count: 3)
+        create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_nil
+      end
+
       it "returns nil when open PRs already need attention even if a run is already active" do
         pr = create(:issue, :pull_request, :in_progress, project: project)
         create(:agent_run, :running, project: project, issue: pr)

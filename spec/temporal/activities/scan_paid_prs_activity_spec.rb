@@ -1462,6 +1462,62 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
       end
+
+      it "does not treat trusted provider bots as manual reviewers" do
+        project.update!(allowed_github_usernames: %w[viamin chatgpt-codex-connector])
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED", body: "Looks good",
+              submitted_at: Time.current }
+          ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+    end
+
+    context "when copilot is the only remaining pending review method" do
+      before do
+        project.update!(
+          review_settings: {
+            "enabled" => true,
+            "wait_for_reviews" => true,
+            "methods" => {
+              "copilot" => { "enabled" => true },
+              "paid_agent" => { "enabled" => true }
+            }
+          }
+        )
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        create(:agent_run, :completed, project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        create(:agent_run, :with_review, project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago, review_posted_at: 1.hour.ago)
+      end
+
+      it "tags the pending trigger with the copilot review method" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first[:triggers].first
+        expect(trigger[:type]).to eq("review_bot_review_pending")
+        expect(trigger[:review_method]).to eq("copilot")
+      end
     end
 
     context "when draft review mixes auto-requestable and manual gates" do

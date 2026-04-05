@@ -441,25 +441,26 @@ module Activities
       REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
     end
 
-    def check_review_bot_status(reviews, unresolved_threads, provider_key:)
+    def check_review_bot_status(reviews, unresolved_threads, provider_key:, review_method: provider_key)
       status = review_bot_review_status(reviews, provider_key: provider_key)
 
       case status
       when :clean
         []
       when :no_review
-        [ { type: "review_bot_review_pending", details: "No review bot review found" } ]
+        [ { type: "review_bot_review_pending", review_method: review_method, details: "No review bot review found" } ]
       when :has_comments
         # When unresolved_threads is nil, threads were either never fetched
         # (e.g. the skip_comment_signals path) or the API call failed. We
         # cannot tell whether bot threads are truly resolved, so treat the
         # status as pending to avoid prematurely advancing the PR.
         if unresolved_threads.nil?
-          [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
+          [ { type: "review_bot_review_pending", review_method: review_method, details: "Latest review bot review was not clean" } ]
         else
           bot_thread_triggers = review_bot_thread_triggers(unresolved_threads, provider_key: provider_key)
           if bot_thread_triggers.any?
-            triggers = [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
+            triggers = [ { type: "review_bot_review_pending", review_method: review_method,
+                           details: "Latest review bot review was not clean" } ]
             triggers << { type: "review_bot_comments", details: "Latest review bot review generated comments" }
             triggers.concat(bot_thread_triggers)
             triggers
@@ -492,7 +493,8 @@ module Activities
       project.blocking_review_methods.each do |method|
         case method
         when "copilot"
-          triggers.concat(check_review_bot_status(reviews, unresolved_threads, provider_key: "copilot"))
+          triggers.concat(check_review_bot_status(reviews, unresolved_threads,
+            provider_key: "copilot", review_method: method))
         when "paid_agent"
           next if paid_agent_review_completed?(project, issue)
 
@@ -727,6 +729,7 @@ module Activities
 
     def bot_user?(login)
       return true if login.blank?
+      return true if ProviderSupport.provider_bot_username?(login)
 
       normalized = login.downcase
       return true if normalized.end_with?("[bot]", "-bot")
