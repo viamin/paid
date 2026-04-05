@@ -382,19 +382,12 @@ class Project < ApplicationRecord
     )
   end
 
-  def review_settings=(value)
-    @effective_review_settings = nil
-    super
-  end
-
   def effective_review_settings
-    return @effective_review_settings if defined?(@effective_review_settings) && @effective_review_settings
-
     rs = review_settings
     rs = rs.is_a?(Hash) ? rs : {}
     rs = rs.deep_stringify_keys if rs.respond_to?(:deep_stringify_keys)
 
-    @effective_review_settings = DEFAULT_REVIEW_SETTINGS.deep_merge(rs)
+    DEFAULT_REVIEW_SETTINGS.deep_merge(rs)
   end
 
   def review_enabled?
