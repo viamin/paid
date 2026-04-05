@@ -435,6 +435,27 @@ class Project < ApplicationRecord
     enabled_review_methods & %w[copilot paid_agent]
   end
 
+  def paid_agent_review_provider
+    owner = effective_owner
+    return unless owner&.persisted?
+    return unless ProviderSupport.container_executable_provider_key?("codex")
+
+    owner.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
+  rescue ActiveRecord::RecordNotUnique
+    owner.providers.find_by!(provider_key: "codex", auth_type: "subscription")
+  end
+
+  def paid_agent_review_agent_type
+    provider = paid_agent_review_provider
+    return unless provider
+
+    Provider.agent_type_for(provider.provider_key)
+  end
+
+  def paid_agent_review_provider_id
+    paid_agent_review_provider&.id
+  end
+
   def ci_review_action_names
     return [] unless review_enabled?
     return [] unless review_method_enabled?(:ci_action)

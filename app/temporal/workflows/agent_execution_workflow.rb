@@ -432,7 +432,7 @@ module Workflows
         { project_id: project_id }, timeout: 30, retry_policy: NO_RETRY)
 
       Array(review_plan[:dispatchable_review_methods]).each do |method|
-        request_review_method(project_id, pr_number, method)
+        request_review_method(project_id, pr_number, method, review_plan)
       end
     rescue Temporalio::Error::CanceledError
       raise
@@ -445,15 +445,18 @@ module Workflows
       )
     end
 
-    def request_review_method(project_id, pr_number, method)
+    def request_review_method(project_id, pr_number, method, review_plan)
       case method
       when "copilot"
         run_activity(Activities::RequestReviewActivity,
           { project_id: project_id, pr_number: pr_number,
             reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
       when "paid_agent"
+        provider_id = review_plan[:paid_agent_review_provider_id]
+        agent_type = review_plan[:paid_agent_review_agent_type]
         run_activity(Activities::QueueAgentRunActivity,
-          { project_id: project_id, source_pull_request_number: pr_number, goal: "review" },
+          { project_id: project_id, source_pull_request_number: pr_number, goal: "review",
+            provider_id: provider_id, agent_type: agent_type },
           timeout: 30)
       end
     rescue Temporalio::Error::CanceledError

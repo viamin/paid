@@ -381,6 +381,9 @@ class GithubClient
                     path
                     line
                     author { login }
+                    pullRequestReview {
+                      url
+                    }
                   }
                 }
               }
@@ -398,7 +401,13 @@ class GithubClient
         id: thread["id"],
         is_resolved: thread["isResolved"],
         comments: (thread.dig("comments", "nodes") || []).map do |c|
-          { body: c["body"], path: c["path"], line: c["line"], author: c.dig("author", "login") }
+          {
+            body: c["body"],
+            path: c["path"],
+            line: c["line"],
+            author: c.dig("author", "login"),
+            review_url: c.dig("pullRequestReview", "url")
+          }
         end
       }
     end

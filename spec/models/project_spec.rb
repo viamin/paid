@@ -794,6 +794,25 @@ RSpec.describe Project do
       end
     end
 
+    describe "#paid_agent_review_provider" do
+      it "creates and returns a codex provider for the project owner" do
+        project = create(:project)
+
+        provider = project.paid_agent_review_provider
+
+        expect(provider).to be_present
+        expect(provider.provider_key).to eq("codex")
+        expect(provider.user).to eq(project.effective_owner)
+      end
+
+      it "reuses an existing codex provider" do
+        project = create(:project)
+        existing = create(:provider, user: project.effective_owner, provider_key: "codex")
+
+        expect(project.paid_agent_review_provider).to eq(existing)
+      end
+    end
+
     describe "#ci_review_action_names" do
       it "returns configured ci action name when enabled" do
         project = build(:project, review_settings: {

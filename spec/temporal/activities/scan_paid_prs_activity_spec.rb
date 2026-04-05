@@ -1318,12 +1318,45 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         create(:agent_run, :completed, project: project, source_pull_request_number: 42,
           completed_at: 2.hours.ago)
         create(:agent_run, :with_review, project: project, source_pull_request_number: 42,
-          completed_at: 1.hour.ago, review_posted_at: 1.hour.ago)
+          completed_at: 1.hour.ago, review_posted_at: 1.hour.ago,
+          review_url: "https://github.com/example/repo/pull/42#pullrequestreview-123")
 
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [],
           review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+
+      it "keeps waiting when the latest paid review still has unresolved inline comments" do
+        create_paid_review_baseline(review_url: "https://github.com/example/repo/pull/42#pullrequestreview-123")
+
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: [ build_review_thread(review_url: "https://github.com/example/repo/pull/42#pullrequestreview-123") ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |trigger| trigger[:type] })
+          .to eq([ "review_bot_review_pending" ])
+      end
+
+      it "ignores unresolved threads from a different review run" do
+        create_paid_review_baseline(review_url: "https://github.com/example/repo/pull/42#pullrequestreview-123")
+
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: [ build_review_thread(review_url: "https://github.com/example/repo/pull/42#pullrequestreview-999",
+            body: "Older unresolved thread") ]
         )
 
         result = activity.execute(project_id: project.id)
@@ -1893,6 +1926,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     attributes[:draft_review_count] = draft_review_count unless draft_review_count.nil?
 
     create(:issue, :pull_request, **attributes)
+  end
+
+  def create_paid_review_baseline(review_url:)
+    create(:agent_run, :completed, project: project, source_pull_request_number: 42,
+      completed_at: 2.hours.ago)
+    create(:agent_run, :with_review, project: project, source_pull_request_number: 42,
+      completed_at: 1.hour.ago, review_posted_at: 1.hour.ago, review_url: review_url)
+  end
+
+  def build_review_thread(review_url:, body: "Please address this")
+    {
+      is_resolved: false,
+      comments: [
+        {
+          author: "project-owner",
+          body: body,
+          review_url: review_url
+        }
+      ]
+    }
   end
 
   def trigger_types_for_non_copilot_review_threads

@@ -283,7 +283,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     it "requests configured reviews when review_bot_review_pending is the only trigger" do
       allow(workflow).to receive(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
-        .and_return({ dispatchable_review_methods: [ "copilot", "paid_agent" ] })
+        .and_return({ dispatchable_review_methods: [ "copilot", "paid_agent" ],
+                      paid_agent_review_provider_id: 99, paid_agent_review_agent_type: "codex" })
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
@@ -300,7 +301,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, source_pull_request_number: 42, goal: "review" }, timeout: 30)
+          { project_id: project_id, source_pull_request_number: 42, goal: "review",
+            provider_id: 99, agent_type: "codex" }, timeout: 30)
     end
 
     it "defers review request and dispatches followup when other triggers present" do
@@ -346,7 +348,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
       allow(workflow).to receive(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
-        .and_return({ dispatchable_review_methods: [ "copilot", "paid_agent" ] })
+        .and_return({ dispatchable_review_methods: [ "copilot", "paid_agent" ],
+                      paid_agent_review_provider_id: 99, paid_agent_review_agent_type: "codex" })
       allow(workflow).to receive(:run_activity)
         .with(Activities::RequestReviewActivity, anything, timeout: anything)
         .and_raise(StandardError, "copilot unavailable")
@@ -361,7 +364,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, source_pull_request_number: 42, goal: "review" }, timeout: 30)
+          { project_id: project_id, source_pull_request_number: 42, goal: "review",
+            provider_id: 99, agent_type: "codex" }, timeout: 30)
     end
 
     it "triggers dev environment update after successful merge" do

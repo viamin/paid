@@ -862,6 +862,7 @@ RSpec.describe GithubClient do
                           comments: {
                             nodes: [
                               { body: "Fix this", path: "app/model.rb", line: 10, author: { login: "reviewer" } }
+                              .merge(pullRequestReview: { url: "https://github.com/owner/repo/pull/42#pullrequestreview-1" })
                             ]
                           }
                         },
@@ -894,6 +895,7 @@ RSpec.describe GithubClient do
         expect(result.first[:comments].first[:path]).to eq("app/model.rb")
         expect(result.first[:comments].first[:line]).to eq(10)
         expect(result.first[:comments].first[:author]).to eq("reviewer")
+        expect(result.first[:comments].first[:review_url]).to eq("https://github.com/owner/repo/pull/42#pullrequestreview-1")
 
         expect(result.last[:is_resolved]).to be true
       end

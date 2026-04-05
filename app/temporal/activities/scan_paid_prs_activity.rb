@@ -477,7 +477,7 @@ module Activities
         when "copilot"
           triggers.concat(check_review_bot_status(reviews, unresolved_threads, provider_key: "copilot"))
         when "paid_agent"
-          next if paid_agent_review_completed?(project, issue)
+          next if paid_agent_review_completed?(project, issue, unresolved_threads)
 
           triggers << { type: "review_bot_review_pending", details: "Paid review agent has not completed a review yet" }
         when "ci_action"
@@ -620,7 +620,7 @@ module Activities
         .first
     end
 
-    def paid_agent_review_completed?(project, issue)
+    def paid_agent_review_completed?(project, issue, unresolved_threads)
       baseline = last_completed_code_run(project, issue)&.completed_at
       latest_review_run = related_completed_runs(project, issue)
         .where(goal: "review")
@@ -630,7 +630,18 @@ module Activities
 
       return false unless latest_review_run&.completed_at
 
-      baseline.nil? || latest_review_run.completed_at >= baseline
+      return false unless baseline.nil? || latest_review_run.completed_at >= baseline
+
+      paid_agent_review_threads_resolved?(latest_review_run, unresolved_threads)
+    end
+
+    def paid_agent_review_threads_resolved?(review_run, unresolved_threads)
+      return false if review_run.review_url.blank?
+      return false if unresolved_threads.nil?
+
+      unresolved_threads.none? do |thread|
+        thread[:comments].any? { |comment| comment[:review_url] == review_run.review_url }
+      end
     end
 
     def manual_review_completed?(project, issue, reviews)

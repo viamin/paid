@@ -324,7 +324,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::PushBranchActivity" then {}
         when "Activities::ResolveReviewThreadsActivity" then {}
         when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: pr_review_phase }
-        when "Activities::ResolvePrReviewPlanActivity" then { dispatchable_review_methods: [ "copilot", "paid_agent" ] }
+        when "Activities::ResolvePrReviewPlanActivity"
+          { dispatchable_review_methods: [ "copilot", "paid_agent" ],
+            paid_agent_review_provider_id: 99, paid_agent_review_agent_type: "codex" }
         when "Activities::RequestReviewActivity" then {}
         when "Activities::QueueAgentRunActivity" then {}
         when "Activities::CleanupContainerActivity" then {}
@@ -347,7 +349,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
           timeout: 60)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: 1, source_pull_request_number: 42, goal: "review" },
+          { project_id: 1, source_pull_request_number: 42, goal: "review",
+            provider_id: 99, agent_type: "codex" },
           timeout: 30)
     end
 
@@ -370,7 +373,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: 1, source_pull_request_number: 42, goal: "review" },
+          { project_id: 1, source_pull_request_number: 42, goal: "review",
+            provider_id: 99, agent_type: "codex" },
           timeout: 30)
     end
   end
@@ -394,7 +398,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::PreparePrPromptActivity" then {}
         when "Activities::RunAgentActivity" then { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
-        when "Activities::ResolvePrReviewPlanActivity" then { dispatchable_review_methods: [ "copilot", "paid_agent" ] }
+        when "Activities::ResolvePrReviewPlanActivity"
+          { dispatchable_review_methods: [ "copilot", "paid_agent" ],
+            paid_agent_review_provider_id: 99, paid_agent_review_agent_type: "codex" }
         when "Activities::RequestReviewActivity" then {}
         when "Activities::QueueAgentRunActivity" then {}
         when "Activities::CleanupContainerActivity" then {}
@@ -417,7 +423,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
           timeout: 60)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: 1, source_pull_request_number: 42, goal: "review" },
+          { project_id: 1, source_pull_request_number: 42, goal: "review",
+            provider_id: 99, agent_type: "codex" },
           timeout: 30)
     end
   end
