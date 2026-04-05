@@ -105,6 +105,95 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when claude returns a rate limit error from the container runtime path" do
+      let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "Rate limit exceeded",
+          stdout: "",
+          stderr: "Rate limit exceeded. Retry after 120",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "persists the provider rate limit state" do
+        freeze_time do
+          result = described_class.call(provider: provider)
+
+          expect(result).not_to be_success
+          expect(result.error_type).to eq(:rate_limited)
+
+          provider_state = user.provider_states.find_by!(provider_name: "claude")
+          expect(provider_state.rate_limited_until).to be_within(1.second).of(120.seconds.from_now)
+        end
+      end
+    end
+
+    context "when claude returns a capacity-exhausted message from the container runtime path" do
+      let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "exit 1",
+          stdout: "",
+          stderr: "You have exhausted your capacity on this model.",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "classifies the result as rate limited and persists provider state" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:rate_limited)
+        expect(user.provider_states.find_by!(provider_name: "claude")).to be_rate_limited
+      end
+    end
+
+    context "when claude returns the current subscription limit wording" do
+      let(:provider_record) { user.providers.find_or_create_by!(provider_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
+      let(:execution_result) do
+        Containers::Provision::Result.failure(
+          error: "exit 1",
+          stdout: "",
+          stderr: "You've hit your limit · resets Apr 6, 10pm (UTC)",
+          exit_code: 1
+        )
+      end
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "claude")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+      end
+
+      it "classifies the result as rate limited and parses the reset time" do
+        travel_to Time.utc(2026, 4, 5, 12, 0, 0) do
+          result = described_class.call(provider: provider)
+
+          expect(result).not_to be_success
+          expect(result.error_type).to eq(:rate_limited)
+
+          provider_state = user.provider_states.find_by!(provider_name: "claude")
+          expect(provider_state.rate_limited_until).to eq(Time.utc(2026, 4, 6, 22, 0, 0))
+        end
+      end
+    end
+
     context "when codex has a Paid-managed OpenAI API key configured" do
       let(:provider_record) { create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false) }
       let(:health_result) { { name: :codex, status: "ok", message: "All checks passed", latency_ms: 12 } }
