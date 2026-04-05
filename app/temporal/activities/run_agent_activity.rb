@@ -49,12 +49,32 @@ module Activities
       /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
       /free tier limit reached/i,
+      /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
+      /exhausted\s+your\s+capacity/i,
       /exhausted.*capacity/i,
       /(?:server|system)\s+(?:at\s+)?capacity/i,
       /(?:server|api|service)\s+overloaded/i,
       /out of (?:extra )?usage/i,
       /usage limit/i
     ].freeze
+
+    # Timeout reclassification is intentionally stricter than generic
+    # execution-failure classification because streamed stdout/stderr can
+    # contain ordinary agent prose that mentions rate limiting.
+    TIMEOUT_RATE_LIMIT_PATTERNS = [
+      /too many requests/i,
+      /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
+      /quota exceeded/i,
+      /free tier limit reached/i,
+      /(?:rate.?limit|usage limit)\s+(?:exceeded|reached|hit)/i,
+      /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
+      /exhausted(?:\s+your)?\s+capacity/i,
+      /(?:server|system)\s+(?:at\s+)?capacity/i,
+      /(?:server|api|service)\s+overloaded/i,
+      /out of (?:extra )?usage/i
+    ].freeze
+    TIMEOUT_OUTPUT_LOG_SCAN_LIMIT = 2
+    TIMEOUT_OUTPUT_CHAR_LIMIT = 2_000
 
     # Default timeouts used when per-user settings are unavailable.
     # Runtime code resolves per-user values via UserSetting.
@@ -499,8 +519,8 @@ module Activities
       # Other execution error
       raise ProviderExecutionError, "Agent exited with code #{result[:exit_code]}: #{output.truncate(500)}"
     rescue Containers::Provision::TimeoutError => e
-      timeout_output = recent_provider_output(agent_run, since: execution_started_at, prompt: prompt)
-      if rate_limit_error?(timeout_output)
+      timeout_output = recent_timeout_output(agent_run, since: execution_started_at, prompt: prompt)
+      if timeout_rate_limit_error?(timeout_output)
         reset_at = parse_rate_limit_reset(timeout_output)
         raise ProviderRateLimitError.new("Rate limited by #{provider}", reset_at: reset_at)
       end
@@ -525,6 +545,12 @@ module Activities
       return false if output.blank?
 
       RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
+    end
+
+    def timeout_rate_limit_error?(output)
+      return false if output.blank?
+
+      TIMEOUT_RATE_LIMIT_PATTERNS.any? { |pattern| output.match?(pattern) }
     end
 
     def strip_prompt_echo(output, prompt)
@@ -563,17 +589,19 @@ module Activities
       text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
     end
 
-    def recent_provider_output(agent_run, since:, prompt:)
+    def recent_timeout_output(agent_run, since:, prompt:)
       return "" if since.blank?
 
       output = agent_run.agent_run_logs
         .where(log_type: %w[stdout stderr])
         .where("created_at >= ?", since)
-        .order(:created_at, :id)
+        .order(created_at: :desc, id: :desc)
+        .limit(TIMEOUT_OUTPUT_LOG_SCAN_LIMIT)
         .pluck(:content)
+        .reverse
         .join("\n")
 
-      strip_prompt_echo(output, prompt)
+      strip_prompt_echo(output, prompt).last(TIMEOUT_OUTPUT_CHAR_LIMIT).to_s.strip
     end
 
     # Attempts to parse a rate limit reset time from the output.
@@ -602,6 +630,23 @@ module Activities
 
         reset_time = Time.current.utc.change(hour: hour, min: minute, sec: 0)
         reset_time += 1.day if reset_time <= Time.current.utc
+        reset_time
+      elsif (match = output.match(/resets?\s+([A-Za-z]{3})\s+(\d{1,2}),\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i))
+        month = Date::ABBR_MONTHNAMES.index(match[1].capitalize)
+        day = match[2].to_i
+        hour = match[3].to_i
+        minute = (match[4] || "0").to_i
+        period = match[5].downcase
+
+        hour = if period == "am"
+          hour == 12 ? 0 : hour
+        else
+          hour == 12 ? 12 : hour + 12
+        end
+
+        year = Time.current.utc.year
+        reset_time = Time.utc(year, month, day, hour, minute, 0)
+        reset_time = Time.utc(year + 1, month, day, hour, minute, 0) if reset_time <= Time.current.utc
         reset_time
       else
         1.hour.from_now
