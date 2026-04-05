@@ -1519,7 +1519,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
       end
 
-      it "keeps waiting when the latest named review action failed" do
+      it "surfaces a failed named review action as an actionable CI failure" do
         stub_github_for_pr(
           checks: [
             { name: "ci", conclusion: "success" },
@@ -1533,8 +1533,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers]).to eq([
-          { type: "review_gate_blocked",
-            details: "CI review action still pending: codex-review" }
+          { type: "ci_failure", details: [ "codex-review" ] }
         ])
       end
     end

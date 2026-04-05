@@ -386,9 +386,7 @@ module Activities
       completed = checks.select { |c| c[:conclusion].present? }
       return [] if completed.empty?
 
-      review_action_names = project.ci_review_action_names.map(&:downcase)
-      failed = completed.select { |c| %w[failure cancelled timed_out action_required stale].include?(c[:conclusion]) }
-        .reject { |c| review_action_names.include?(c[:name].to_s.downcase) }
+      failed = completed.select { |c| terminal_ci_failure_conclusion?(c[:conclusion]) }
       return [] if failed.empty?
 
       [ { type: "ci_failure", details: failed.map { |c| c[:name] } } ]
@@ -683,8 +681,16 @@ module Activities
 
       names.reject do |name|
         conclusion = latest_check_for_review_action(checks, name)&.dig(:conclusion)
-        %w[success neutral skipped].include?(conclusion)
+        ci_review_action_terminal_conclusion?(conclusion)
       end
+    end
+
+    def ci_review_action_terminal_conclusion?(conclusion)
+      %w[success neutral skipped].include?(conclusion) || terminal_ci_failure_conclusion?(conclusion)
+    end
+
+    def terminal_ci_failure_conclusion?(conclusion)
+      %w[failure cancelled timed_out action_required stale].include?(conclusion)
     end
 
     def latest_check_for_review_action(checks, action_name)
