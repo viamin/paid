@@ -920,6 +920,23 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
       end
 
+      it "does not reclassify timeouts when recent output only mentions rate limits conversationally" do
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          agent_run.log!("stdout", "I should add retry handling for rate limits after this refactor.")
+          raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+          .and have_enqueued_job(ProcessRunQueueJob)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("idle_timeout")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("timeout")
+      end
+
       it "preserves timeout handling when the timeout happens before provider execution starts" do
         allow(activity).to receive(:augment_prompt_for_goal)
           .and_raise(Containers::Provision::TimeoutError, "took too long before exec")
