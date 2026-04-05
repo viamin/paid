@@ -144,6 +144,26 @@ RSpec.describe Providers::TestAgent do
       end
     end
 
+    context "when agent-harness returns valid UTF-8 bytes tagged as binary" do
+      let(:provider_record) { create(:provider, user: user, provider_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false) }
+      let(:health_result) { { name: :codex, status: "error", message: "caf\xC3\xA9 auth".b, latency_ms: 12 } }
+
+      before do
+        allow(ProviderSupport).to receive_messages(supported_provider_key?: true,
+          container_executable_provider_key?: true, harness_provider_key_for: "codex")
+        stub_proxy_api_key(:openai, "sk-test-key")
+        allow(AgentHarness).to receive(:check_provider).and_return(health_result)
+      end
+
+      it "preserves the original UTF-8 text before classifying the failure" do
+        result = described_class.call(provider: provider)
+
+        expect(result).not_to be_success
+        expect(result.error_type).to eq(:authentication)
+        expect(result.message).to eq("café auth")
+      end
+    end
+
     context "when gemini has a Paid-managed Google API key configured" do
       let(:provider_record) { create(:provider, user: user, provider_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
       let(:health_result) { { name: :gemini, status: "ok", message: "All checks passed", latency_ms: 12 } }
