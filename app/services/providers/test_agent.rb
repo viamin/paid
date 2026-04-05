@@ -361,10 +361,7 @@ module Providers
         .strip
     end
 
-    def normalize_output_text(text)
-      normalized_text = text.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "\uFFFD")
-      normalized_text.delete("\u0000")
-    end
+    include OutputSanitizer
 
     def translate_known_provider_errors(message)
       return "Paid is not configured with a Google API key for containerized Gemini runs." if message.match?(/API key not configured for google/i)

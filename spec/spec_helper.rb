@@ -3,7 +3,7 @@
 if ENV.fetch("COVERAGE", "true") != "false"
   require "simplecov"
   SimpleCov.start "rails" do
-    minimum_coverage 0
+    minimum_coverage 80
     add_filter "/spec/"
     add_filter "/config/"
     add_filter "/vendor/"

@@ -548,14 +548,7 @@ module Activities
       normalized_line.gsub(/\s+/, " ")
     end
 
-    def normalize_output_text(value)
-      return "" if value.nil?
-
-      text = value.to_s
-      return text.delete("\x00") if text.encoding == Encoding::UTF_8 && text.valid_encoding?
-
-      text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
-    end
+    include OutputSanitizer
 
     # Attempts to parse a rate limit reset time from the output.
     # Falls back to 1 hour from now if not parseable.
