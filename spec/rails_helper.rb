@@ -6,10 +6,12 @@ ENV["RAILS_ENV"] ||= "test"
 require_relative "../config/environment"
 
 def ensure_test_assets!
+  return if defined?(@test_assets_ensured) && @test_assets_ensured
+
   required_assets = %w[application.css application.js]
   builds_path = Rails.root.join("app/assets/builds")
   missing_assets = required_assets.reject { |asset| builds_path.join(asset).exist? }
-  return if missing_assets.empty?
+  return @test_assets_ensured = true if missing_assets.empty?
 
   warn "[WARN] Missing built assets for test run: #{missing_assets.join(", ")}. Building assets..."
 
@@ -21,9 +23,8 @@ def ensure_test_assets!
 
     abort "Failed to build test assets with `#{command.join(" ")}`"
   end
+  @test_assets_ensured = true
 end
-
-ensure_test_assets!
 
 # Prevent database truncation if the environment is production
 abort("The Rails environment is running in production mode!") if Rails.env.production?
@@ -89,6 +90,9 @@ RSpec.configure do |config|
 
   # Include ActiveSupport time helpers (freeze_time, travel_to, etc.)
   config.include ActiveSupport::Testing::TimeHelpers
+
+  config.before(:context, type: :request) { ensure_test_assets! }
+  config.before(:context, type: :system) { ensure_test_assets! }
 
   # Reset memoized provider support data between tests
   config.after do
