@@ -35,6 +35,7 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_numericality_of(:tokens_output).is_greater_than_or_equal_to(0).allow_nil }
     it { is_expected.to validate_numericality_of(:cost_cents).is_greater_than_or_equal_to(0).allow_nil }
     it { is_expected.to validate_numericality_of(:duration_seconds).is_greater_than_or_equal_to(0).allow_nil }
+    it { is_expected.to validate_inclusion_of(:token_limit_status).in_array(described_class::TOKEN_LIMIT_STATUSES).allow_nil }
 
     describe "issue project validation" do
       it "allows issue from the same project" do
@@ -509,6 +510,71 @@ RSpec.describe AgentRun do
         agent_run = build(:agent_run, tokens_input: 1000, tokens_output: 500)
 
         expect(agent_run.total_tokens).to eq(1500)
+      end
+    end
+
+    describe "#token_limit_exceeded?" do
+      it "returns true when token_limit_status is exceeded" do
+        agent_run = build(:agent_run, token_limit_status: "exceeded")
+        expect(agent_run.token_limit_exceeded?).to be true
+      end
+
+      it "returns false when token_limit_status is warning" do
+        agent_run = build(:agent_run, token_limit_status: "warning")
+        expect(agent_run.token_limit_exceeded?).to be false
+      end
+    end
+
+    describe "#token_limit_warning?" do
+      it "returns true when token_limit_status is warning" do
+        agent_run = build(:agent_run, token_limit_status: "warning")
+        expect(agent_run.token_limit_warning?).to be true
+      end
+    end
+
+    describe "#effective_max_tokens_per_run" do
+      it "returns the project override when set" do
+        project = create(:project, max_tokens_per_run: 500_000)
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_tokens_per_run).to eq(500_000)
+      end
+
+      it "uses an explicit user setting override when the project has none" do
+        project = create(:project, max_tokens_per_run: nil)
+        project.created_by.settings.update!(max_tokens_per_run: 750_000)
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_tokens_per_run).to eq(750_000)
+      end
+
+      it "falls back to the account default when the user setting is just the inherited global default" do
+        project = create(:project, max_tokens_per_run: nil)
+        project.account.update!(default_max_tokens_per_run: 2_000_000)
+        project.created_by.settings
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_tokens_per_run).to eq(2_000_000)
+      end
+
+      it "preserves an explicit user override at the global default value" do
+        project = create(:project, max_tokens_per_run: nil)
+        project.account.update!(default_max_tokens_per_run: 2_000_000)
+        user_setting = project.created_by.settings
+        user_setting.update!(default_branch: "develop", max_tokens_per_run: AgentRun::DEFAULT_MAX_TOKENS_PER_RUN)
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_max_tokens_per_run).to eq(AgentRun::DEFAULT_MAX_TOKENS_PER_RUN)
+      end
+    end
+
+    describe "#token_limit_usage_ratio" do
+      it "returns the ratio of tokens used to limit" do
+        project = build(:project, max_tokens_per_run: 1_000_000)
+        agent_run =
+          build(:agent_run, project: project, tokens_input: 400_000, tokens_output: 100_000)
+
+        expect(agent_run.token_limit_usage_ratio).to eq(0.5)
       end
     end
 
@@ -1303,7 +1369,7 @@ RSpec.describe AgentRun do
 
   describe "constants" do
     it "defines valid STATUSES" do
-      expect(described_class::STATUSES).to eq(%w[queued pending running completed failed cancelled timeout retried auth_expired rate_limited])
+      expect(described_class::STATUSES).to eq(%w[queued pending running paused completed failed cancelled timeout retried auth_expired rate_limited])
     end
 
     it "defines valid AGENT_TYPES" do
@@ -1764,6 +1830,102 @@ RSpec.describe AgentRun do
       expect {
         agent_run.update!(branch_name: "feature/test")
       }.not_to have_enqueued_job(ContainerMetricsCollectionJob)
+    end
+  end
+
+  describe "#pause!" do
+    it "transitions a running run to paused with violation context" do
+      agent_run = create(:agent_run, :running)
+      context = { violation_type: "loop_detected", details: "test" }
+
+      agent_run.pause!(violation_type: "loop_detected", context: context)
+
+      agent_run.reload
+      expect(agent_run.status).to eq("paused")
+      expect(agent_run.paused_at).to be_present
+      expect(agent_run.guardrail_violation_type).to eq("loop_detected")
+      expect(agent_run.guardrail_context).to eq(context.deep_stringify_keys)
+    end
+
+    it "does not pause a non-running run" do
+      agent_run = create(:agent_run, :completed)
+
+      agent_run.pause!(violation_type: "loop_detected")
+
+      expect(agent_run.reload.status).to eq("completed")
+    end
+  end
+
+  describe "#resume!" do
+    it "transitions a paused run back to queued" do
+      agent_run = create(:agent_run, :running)
+      agent_run.pause!(violation_type: "loop_detected", context: { details: "test" })
+      agent_run.update!(
+        temporal_workflow_id: "workflow-123",
+        temporal_run_id: "run-123",
+        started_at: 10.minutes.ago,
+        completed_at: 5.minutes.ago,
+        duration_seconds: 300
+      )
+
+      expect(agent_run.resume!).to be true
+
+      agent_run.reload
+      expect(agent_run.status).to eq("queued")
+      expect(agent_run.started_at).to be_nil
+      expect(agent_run.completed_at).to be_nil
+      expect(agent_run.duration_seconds).to be_nil
+      expect(agent_run.paused_at).to be_nil
+      expect(agent_run.guardrail_violation_type).to be_nil
+      expect(agent_run.guardrail_context).to be_nil
+      expect(agent_run.temporal_workflow_id).to be_nil
+      expect(agent_run.temporal_run_id).to be_nil
+    end
+
+    it "does not resume a non-paused run" do
+      agent_run = create(:agent_run, :running)
+
+      expect(agent_run.resume!).to be false
+
+      expect(agent_run.reload.status).to eq("running")
+    end
+  end
+
+  describe "#paused?" do
+    it "returns true for paused runs" do
+      agent_run = build(:agent_run, status: "paused")
+
+      expect(agent_run.paused?).to be true
+    end
+
+    it "returns false for running runs" do
+      agent_run = build(:agent_run, status: "running")
+
+      expect(agent_run.paused?).to be false
+    end
+  end
+
+  describe "guardrail_violation_type validation" do
+    it "accepts valid violation types" do
+      AgentRun::GUARDRAIL_VIOLATION_TYPES.each do |type|
+        agent_run = build(:agent_run, guardrail_violation_type: type)
+        agent_run.valid?
+        expect(agent_run.errors[:guardrail_violation_type]).to be_empty
+      end
+    end
+
+    it "rejects invalid violation types" do
+      agent_run = build(:agent_run, guardrail_violation_type: "invalid_type")
+
+      expect(agent_run).not_to be_valid
+      expect(agent_run.errors[:guardrail_violation_type]).to be_present
+    end
+
+    it "allows nil violation type" do
+      agent_run = build(:agent_run, guardrail_violation_type: nil)
+      agent_run.valid?
+
+      expect(agent_run.errors[:guardrail_violation_type]).to be_empty
     end
   end
 end

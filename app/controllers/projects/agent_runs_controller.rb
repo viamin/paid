@@ -7,7 +7,7 @@ module Projects
     NoRunnableProviderError = Class.new(StandardError)
 
     before_action :set_project
-    before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error ]
+    before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate ]
 
     def index
       authorize @project, :show?
@@ -204,6 +204,87 @@ module Projects
         notice: "Error diagnosis started. You'll see the result shortly."
     end
 
+    def resume
+      authorize @agent_run
+
+      unless @agent_run.paused?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Only paused runs can be resumed."
+        return
+      end
+
+      begin
+        cancel_in_flight_execution_for_resume!
+      rescue StandardError => e
+        Rails.logger.error(
+          message: "agent_execution.resume_cancel_failed",
+          agent_run_id: @agent_run.id,
+          error_class: e.class.name,
+          error_message: e.message
+        )
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Unable to resume until the previous execution is cancelled. Please try again."
+        return
+      end
+
+      resumed = @agent_run.resume!
+      unless resumed
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "The agent run state changed and could not be resumed."
+        return
+      end
+
+      ProcessRunQueueJob.perform_later
+
+      redirect_to project_agent_run_path(@project, @agent_run),
+        notice: "Agent run resumed and re-queued."
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to project_agent_run_path(@project, @agent_run),
+        alert: "Another agent run is already queued or in progress for this target."
+    end
+
+    def terminate
+      authorize @agent_run
+
+      terminated = false
+
+      @agent_run.with_lock do
+        @agent_run.reload
+
+        unless @agent_run.paused?
+          redirect_to project_agent_run_path(@project, @agent_run),
+            alert: "The agent run state changed and could not be terminated."
+          return
+        end
+
+        guardrail_type = termination_guardrail_type(@agent_run)
+        @agent_run.update!(
+          status: "cancelled",
+          completed_at: Time.current,
+          paused_at: nil,
+          error_message: "Terminated after guardrail violation: #{guardrail_type}",
+          duration_seconds: @agent_run.duration
+        )
+        terminated = true
+      end
+
+      if terminated
+        begin
+          AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
+        rescue StandardError => e
+          Rails.logger.error(
+            message: "agent_execution.terminate_cleanup_failed",
+            agent_run_id: @agent_run.id,
+            error_class: e.class.name,
+            error_message: e.message
+          )
+        end
+      end
+
+      redirect_to project_agent_run_path(@project, @agent_run),
+        notice: "Agent run terminated."
+    end
+
     def retry
       authorize @agent_run
 
@@ -370,6 +451,13 @@ module Projects
       return nil if params[:pull_request_id].blank?
 
       @project.issues.pull_requests_only.find_by(id: params[:pull_request_id])
+    end
+
+    def cancel_in_flight_execution_for_resume!
+      return if @agent_run.temporal_workflow_id.blank?
+
+      AgentRuns::Cancel.call(agent_run: @agent_run, skip_status_update: true)
+      @agent_run.reload
     end
 
     def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil, trigger_type: "manual")
@@ -620,6 +708,12 @@ module Projects
         matches = enabled_retry_providers.select { |entry| entry.provider_key == identifier }
         matches.find(&:subscription?) || matches.first
       end
+    end
+
+    def termination_guardrail_type(agent_run)
+      agent_run.guardrail_violation_type.presence ||
+        agent_run.guardrail_context&.dig("violation_type").presence ||
+        "unknown"
     end
 
     def available_run_provider_options

@@ -41,17 +41,37 @@ env:
   secret:
     - RAILS_MASTER_KEY
   clear:
-    # Run GoodJob in-process for single-server deployments.
-    # When you start using multiple servers, split job processing to a dedicated worker (see the job server block above).
-    # GOOD_JOB_EXECUTION_MODE: async
+    # Run GoodJob in-process for single-server deployments (async_server).
+    # For multi-server, use "external" and run a dedicated GoodJob worker process.
+    # GOOD_JOB_EXECUTION_MODE: async_server
 
-    # Set number of job worker threads for GoodJob (default: 5)
-    # GOOD_JOB_MAX_THREADS: 5
+    # GoodJob worker thread pool size (default: 10). Must not exceed DB_POOL.
+    # GOOD_JOB_MAX_THREADS: 10
 
-    # Set number of cores available to the application on each server (default: 1).
+    # Per-queue thread caps (semicolons separate pools).
+    # GOOD_JOB_QUEUES: default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1
+
+    # GoodJob DB polling interval in seconds (default: 3).
+    # GOOD_JOB_POLL_INTERVAL: 3
+
+    # GoodJob graceful shutdown timeout in seconds (default: 25).
+    # GOOD_JOB_SHUTDOWN_TIMEOUT: 25
+
+    # Set number of Puma worker processes (default: 1, "auto" for one per CPU).
     # WEB_CONCURRENCY: 2
 
-    # Match this to any external database server to configure Active Record correctly
+    # Puma threads per worker (default: 3).
+    # RAILS_MAX_THREADS: 3
+
+    # Database connection pool size (default: 20). Must be >= RAILS_MAX_THREADS
+    # and accommodate GoodJob threads when running in async_server mode.
+    # DB_POOL: 20
+
+    # Temporal worker concurrency — see docs/WORKER_POOL_TUNING.md for sizing.
+    # TEMPORAL_WORKFLOW_SLOTS: 20
+    # TEMPORAL_ACTIVITY_SLOTS: 4
+
+    # Match this to any external database server to configure Active Record correctly.
     # Use paid-db for a db accessory server on same machine via local kamal docker network.
     # DB_HOST: 192.168.0.2
 

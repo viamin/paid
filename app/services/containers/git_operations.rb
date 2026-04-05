@@ -381,6 +381,29 @@ module Containers
       true
     end
 
+    # Force-pushes the current branch using --force-with-lease.
+    #
+    # Used after a successful rebase when the remote branch already exists
+    # and needs to be updated with the rebased history. Uses force-with-lease
+    # to prevent overwriting concurrent changes.
+    #
+    # @return [String] the result commit SHA
+    # @raise [PushError] when the push fails
+    def push_force_with_lease
+      validate_branch_name!
+
+      expected_remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
+      result = push_with_lease(expected_remote_sha)
+
+      raise PushError, "Force push failed: #{error_with_stderr(result)}" if result.failure?
+
+      sha = head_sha
+      agent_run.update!(result_commit_sha: sha)
+      agent_run.worktree&.mark_pushed!
+
+      sha
+    end
+
     private
 
     def rebase_conflict?(result)

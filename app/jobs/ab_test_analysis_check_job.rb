@@ -2,7 +2,7 @@
 
 # Cron job that enqueues analysis for each running A/B test with sufficient samples.
 class AbTestAnalysisCheckJob < ApplicationJob
-  queue_as :default
+  queue_as :metrics
 
   def perform
     AbTest.running.find_each do |ab_test|
