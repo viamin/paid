@@ -223,30 +223,6 @@ module ApplicationHelper
     Knowledge::Redaction::Redactor.call(text: message).clean_text
   end
 
-  def application_stylesheet_tag
-    safe_asset_tag do
-      stylesheet_link_tag("application", "data-turbo-track": "reload")
-    end
-  end
-
-  def application_javascript_tag
-    safe_asset_tag do
-      javascript_include_tag("application", "data-turbo-track": "reload", type: "module")
-    end
-  end
-
-  private
-
-  def safe_asset_tag
-    yield
-  rescue Propshaft::MissingAssetError => error
-    Rails.logger.warn(
-      message: "application_helper.missing_asset",
-      error: error.message
-    )
-    raise unless Rails.env.test?
-  end
-
   def create_pr_context(run)
     if run.issue.present?
       prefix = run.issue.is_pull_request? ? "PR" : "Issue"

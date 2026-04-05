@@ -440,9 +440,12 @@ class Project < ApplicationRecord
     return unless owner&.persisted?
     return unless ProviderSupport.container_executable_provider_key?("codex")
 
-    owner.providers.find_or_create_by!(provider_key: "codex", auth_type: "subscription")
-  rescue ActiveRecord::RecordNotUnique
-    owner.providers.find_by!(provider_key: "codex", auth_type: "subscription")
+    settings = AgentRuns::UserSettingsResolver.call(project: self, strict: false)
+    return unless settings
+
+    settings.provider_priority(identifiers: true)
+      .filter_map { |identifier| Provider.for_identifier(settings.user, identifier) }
+      .find { |provider| provider.provider_key == "codex" }
   end
 
   def paid_agent_review_agent_type

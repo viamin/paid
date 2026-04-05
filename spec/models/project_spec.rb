@@ -795,21 +795,37 @@ RSpec.describe Project do
     end
 
     describe "#paid_agent_review_provider" do
-      it "creates and returns a codex provider for the project owner" do
+      it "returns the configured codex provider from the owner's provider priority" do
         project = create(:project)
+        codex_api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openai")
+        codex = create(:provider, user: project.effective_owner, provider_key: "codex",
+          auth_type: "api_key", provider_api_key: codex_api_key)
+        project.effective_owner.settings.update!(
+          default_agent_provider: codex.routing_key,
+          fallback_providers: []
+        )
 
         provider = project.paid_agent_review_provider
 
-        expect(provider).to be_present
-        expect(provider.provider_key).to eq("codex")
-        expect(provider.user).to eq(project.effective_owner)
+        expect(provider).to eq(codex)
       end
 
-      it "reuses an existing codex provider" do
+      it "returns the configured fallback codex provider when another provider is primary" do
         project = create(:project)
-        existing = create(:provider, user: project.effective_owner, provider_key: "codex")
+        cursor = create(:provider, user: project.effective_owner, provider_key: "cursor")
+        codex = create(:provider, user: project.effective_owner, provider_key: "codex")
+        project.effective_owner.settings.update!(
+          default_agent_provider: cursor.routing_key,
+          fallback_providers: [ codex.routing_key ]
+        )
 
-        expect(project.paid_agent_review_provider).to eq(existing)
+        expect(project.paid_agent_review_provider).to eq(codex)
+      end
+
+      it "returns nil when the owner has no configured codex provider" do
+        project = create(:project)
+
+        expect(project.paid_agent_review_provider).to be_nil
       end
     end
 
