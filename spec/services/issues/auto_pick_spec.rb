@@ -676,17 +676,45 @@ RSpec.describe Issues::AutoPick do
         expect(result).to be_nil
       end
 
-      it "still returns nil when a failed escalated PR needs operator attention" do
+      it "picks an issue when a failed escalated PR needs operator attention" do
         project.update!(max_draft_review_rounds: 3)
         create(:issue, :pull_request, :failed,
           project: project,
           pr_review_phase: "escalated",
           draft_review_count: 3)
-        create(:issue, project: project)
+        issue = create(:issue, project: project)
 
         result = described_class.new(project).call
 
-        expect(result).to be_nil
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "picks an issue when a failed paid-ready PR exhausted followup rounds" do
+        project.update!(max_pr_followup_runs: 2)
+        create(:issue, :pull_request, :failed,
+          project: project,
+          labels: [ "paid-generated", "paid-ready" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 2)
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
+      end
+
+      it "picks an issue when a failed PR is in needs_input" do
+        create(:issue, :pull_request, :failed,
+          project: project,
+          paid_state: "needs_input")
+        issue = create(:issue, project: project)
+
+        result = described_class.new(project).call
+
+        expect(result).to be_a(AgentRun)
+        expect(result.issue).to eq(issue)
       end
 
       it "returns nil when open PRs already need attention even if a run is already active" do

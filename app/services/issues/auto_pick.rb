@@ -252,16 +252,15 @@ module Issues
         is_pull_request: true,
         github_state: "open"
       )
-      non_failed = base.where.not(paid_state: "failed")
 
       review_limited = if @project.max_draft_review_rounds.positive?
-        non_failed.where(pr_review_phase: "escalated")
+        base.where(pr_review_phase: "escalated")
       else
         base.none
       end
 
       followup_limited = if @project.max_pr_followup_runs.positive?
-        non_failed
+        base
           .where(pr_review_phase: "ready")
           .where("labels @> ?::jsonb", [ @project.generated_label_name, PAID_READY_LABEL ].to_json)
           .where("pr_followup_count >= ?", @project.max_pr_followup_runs)
@@ -269,7 +268,7 @@ module Issues
         base.none
       end
 
-      needs_input = non_failed.where(paid_state: "needs_input")
+      needs_input = base.where(paid_state: "needs_input")
 
       review_limited.or(followup_limited).or(needs_input)
     end
