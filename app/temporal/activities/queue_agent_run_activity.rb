@@ -35,6 +35,9 @@ module Activities
       agent_run, duplicate = AgentRun.transaction do
         existing = find_existing_run(project, issue, source_pull_request_number)
         if existing
+          merge_draft_review_round_tracking!(existing,
+            count_toward_draft_review_round: count_toward_draft_review_round,
+            expected_draft_review_count: expected_draft_review_count)
           [ existing, true ]
         else
           run = AgentRun.create!(
@@ -53,14 +56,15 @@ module Activities
       rescue ActiveRecord::RecordNotUnique
         existing = find_existing_run(project, issue, source_pull_request_number)
         raise unless existing
+
+        merge_draft_review_round_tracking!(existing,
+          count_toward_draft_review_round: count_toward_draft_review_round,
+          expected_draft_review_count: expected_draft_review_count)
+
         [ existing, true ]
       end
 
       if duplicate
-        merge_draft_review_round_tracking!(agent_run,
-          count_toward_draft_review_round: count_toward_draft_review_round,
-          expected_draft_review_count: expected_draft_review_count)
-
         logger.info(
           message: "concurrency.duplicate_run_skipped",
           agent_run_id: agent_run.id,
