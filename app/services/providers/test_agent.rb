@@ -192,7 +192,7 @@ module Providers
 
     def process_harness_result(result)
       status = result[:status].to_s
-      message = result[:message].presence || "Provider health check returned no message"
+      message = normalize_output_text(result[:message]).presence || "Provider health check returned no message"
 
       if status == "ok"
         Result.new(success: true, error_type: nil, message: "Agent is healthy")
