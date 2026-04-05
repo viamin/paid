@@ -1,12 +1,8 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["button", "result"]
+  static targets = ["button", "result", "status"]
   static values = { url: String }
-
-  disconnect() {
-    this.clearDismissTimer()
-  }
 
   async test() {
     this.showLoading()
@@ -57,7 +53,7 @@ export default class extends Controller {
       if (response.status === 429) {
         const retryData = await response.json()
         if (!this.element.isConnected) return
-        this.showError("rate_limited", retryData.message || "Please wait before testing again.")
+        this.showError("test_cooldown", retryData.message || "Please wait before testing again.")
         return
       }
 
@@ -82,7 +78,6 @@ export default class extends Controller {
   }
 
   showLoading() {
-    this.clearDismissTimer()
     this.buttonTarget.disabled = true
     this.buttonTarget.textContent = "Testing..."
     this.resultTarget.innerHTML = `
@@ -98,6 +93,7 @@ export default class extends Controller {
 
   showSuccess(message) {
     this.resetButton()
+    this.showAvailableStatus()
     this.resultTarget.innerHTML = `
       <span role="status" class="inline-flex items-center gap-1 rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
         <svg class="h-3 w-3" aria-hidden="true" focusable="false" fill="currentColor" viewBox="0 0 20 20">
@@ -106,11 +102,13 @@ export default class extends Controller {
         ${this.escapeHtml(message)}
       </span>
     `
-    this.autoDismiss()
   }
 
   showError(errorType, message) {
     this.resetButton()
+    if (errorType === "rate_limited") {
+      this.showRateLimitedStatus(message)
+    }
     const troubleshooting = this.troubleshootingFor(errorType)
     this.resultTarget.innerHTML = `
       <div role="alert" class="mt-1 rounded-md bg-red-50 px-2 py-1">
@@ -133,6 +131,7 @@ export default class extends Controller {
       timeout: "The agent did not respond in time. Ensure the agent container has sufficient resources and is not in a crash loop.",
       installation: "The provider CLI is not installed in the agent container. Verify the container image includes this provider and that it is on the PATH.",
       rate_limited: "The provider rejected the request due to usage or rate limits. Check the message above for the provider's reset or quota details.",
+      test_cooldown: "This button has a short local cooldown to avoid stacking duplicate test requests. The provider status has not changed.",
       unexpected: "An unexpected error occurred. Check the agent logs for more details."
     }
     return messages[errorType] || messages.unexpected
@@ -143,20 +142,29 @@ export default class extends Controller {
     this.buttonTarget.textContent = "Test Agent"
   }
 
-  autoDismiss() {
-    this.clearDismissTimer()
-    this.dismissTimer = window.setTimeout(() => {
-      if (this.hasResultTarget) {
-        this.resultTarget.innerHTML = ""
-      }
-    }, 10000)
+  showAvailableStatus() {
+    if (!this.hasStatusTarget) return
+
+    this.statusTarget.innerHTML = `
+      <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+        Available
+      </span>
+    `
   }
 
-  clearDismissTimer() {
-    if (this.dismissTimer) {
-      window.clearTimeout(this.dismissTimer)
-      this.dismissTimer = null
-    }
+  showRateLimitedStatus(message) {
+    if (!this.hasStatusTarget) return
+
+    const resetDetails = message && /resets?|retry.?after|reset.?at/i.test(message)
+      ? `<p class="mt-1 text-xs text-gray-500">${this.escapeHtml(message)}</p>`
+      : ""
+
+    this.statusTarget.innerHTML = `
+      <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">
+        Rate Limited
+      </span>
+      ${resetDetails}
+    `
   }
 
   escapeHtml(text) {
