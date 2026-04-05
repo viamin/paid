@@ -239,7 +239,11 @@ module ApplicationHelper
 
   def safe_asset_tag
     yield
-  rescue Propshaft::MissingAssetError
+  rescue Propshaft::MissingAssetError => error
+    Rails.logger.warn(
+      message: "application_helper.missing_asset",
+      error: error.message
+    )
     raise unless Rails.env.test?
   end
 
