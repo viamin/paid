@@ -662,10 +662,14 @@ module Activities
         project.trusted_github_user?(review[:user_login]) && !bot_user?(review[:user_login])
       end
 
-      trusted_reviews.any? do |review|
+      latest_by_user = trusted_reviews
+        .group_by { |review| review[:user_login]&.downcase }
+        .transform_values { |user_reviews| user_reviews.max_by { |review| review[:submitted_at] || Time.at(0) } }
+
+      latest_by_user.values.any? do |review|
         submitted_at = review[:submitted_at]
         next false unless submitted_at.present?
-        next false if review[:state] == "CHANGES_REQUESTED"
+        next false unless %w[APPROVED COMMENTED].include?(review[:state])
 
         baseline.nil? || submitted_at >= baseline
       end
@@ -686,7 +690,7 @@ module Activities
         check[:name].to_s.casecmp?(action_name)
       end
 
-      matches.max_by { |check| check[:started_at] || check[:completed_at] || Time.at(0) }
+      matches.max_by { |check| check[:created_at] || check[:started_at] || check[:completed_at] || Time.at(0) }
     end
 
     def all_blocking_review_methods_auto_requestable?(project)

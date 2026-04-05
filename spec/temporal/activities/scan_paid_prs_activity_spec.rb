@@ -1504,6 +1504,24 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
       end
 
+      it "does not treat a dismissed latest review as satisfying the manual gate" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "viamin", state: "COMMENTED", body: "Looks good",
+              submitted_at: 10.minutes.ago },
+            { id: 2, user_login: "viamin", state: "DISMISSED", body: "Dismissed as stale",
+              submitted_at: Time.current }
+          ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+
       it "does not treat changes_requested as satisfying the manual gate" do
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success" } ],
@@ -1697,6 +1715,24 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
+      end
+
+      it "keeps waiting when a newer rerun is queued without start timestamps yet" do
+        stub_github_for_pr(
+          checks: [
+            { name: "ci", conclusion: "success" },
+            { name: "codex-review", conclusion: "success", created_at: 20.minutes.ago,
+              started_at: 19.minutes.ago, completed_at: 18.minutes.ago },
+            { name: "codex-review", conclusion: nil, status: "queued", created_at: 5.minutes.ago }
+          ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
       end
     end
 
