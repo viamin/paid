@@ -101,7 +101,7 @@ module Activities
         # Check if this looks like a legacy draft followup that should count toward review rounds
         if agent_run.issue_id.present? && agent_run.issue&.is_pull_request? &&
            agent_run.issue&.draft_phase? && agent_run.source_pull_request_number.present? &&
-           agent_run.trigger_type == "automatic" && agent_run.status.in?(%w[completed failed cancelled timeout])
+           agent_run.trigger_type == "automatic" && %w[completed failed cancelled timeout].include?(agent_run.status)
           # This is a legacy draft followup - treat it as if it should count
           agent_run.update!(count_toward_draft_review_round: true)
         end
@@ -112,6 +112,13 @@ module Activities
         raise ArgumentError,
           "agent_run #{agent_run.id} is tracking a draft review round without expected_draft_review_count"
       end
+
+      # Only count successful runs toward draft review rounds
+      # Check if we're in a successful context - this provides defense in depth
+      # since the calling activities should only invoke this on successful paths
+      return if agent_run.status == "failed"
+      return if agent_run.status == "cancelled"
+      return if agent_run.status == "timeout"
 
       Activities::RecordDraftReviewActivity.new.execute(
         issue_id: agent_run.issue_id,
