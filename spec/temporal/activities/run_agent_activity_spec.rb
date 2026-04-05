@@ -904,6 +904,36 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.final_provider).to be_nil
       end
 
+      it "reclassifies timeout output that contains quota errors as rate limited" do
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          agent_run.log!("stderr", "Error: Free tier limit reached. Please upgrade to a paid plan to continue using the service.")
+          raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
+      it "preserves timeout handling when the timeout happens before provider execution starts" do
+        allow(activity).to receive(:augment_prompt_for_goal)
+          .and_raise(Containers::Provision::TimeoutError, "took too long before exec")
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+          .and have_enqueued_job(ProcessRunQueueJob)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to include("wall_clock_timeout")
+      end
+
       it "raises AllProvidersExhausted when all fallbacks fail" do
         allow(container_service).to receive(:execute).and_return(exec_failure)
 
