@@ -1018,31 +1018,47 @@ module Activities
           -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
           -H "X-Proxy-Token: $PROXY_TOKEN"
 
-        # Post a review with inline comments
+        # Post a review with inline comments.
+        # IMPORTANT: Do NOT pass review JSON inline with -d '...'. Review bodies
+        # and suggestion blocks will contain newlines and quotes that can break
+        # shell quoting and produce invalid JSON.
         # Note: "side" must be "RIGHT" (new code) or "LEFT" (deleted code) for inline comments.
+        review_json=$(mktemp)
+        pr_comment_json=$(mktemp)
+        trap 'rm -f "$review_json" "$pr_comment_json"' EXIT
+        cat > "$review_json" <<'REVIEW_JSON'
+        {
+          "body": "Overall summary of the review",
+          "event": "COMMENT",
+          "comments": [
+            {
+              "path": "file.rb",
+              "line": 10,
+              "side": "RIGHT",
+              "body": "Review comment on this line"
+            }
+          ]
+        }
+        REVIEW_JSON
         curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/reviews" \\
           -H "Content-Type: application/json" \\
           -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
           -H "X-Proxy-Token: $PROXY_TOKEN" \\
-          -d '{
-            "body": "Overall summary of the review",
-            "event": "COMMENT",
-            "comments": [
-              {
-                "path": "file.rb",
-                "line": 10,
-                "side": "RIGHT",
-                "body": "Review comment on this line"
-              }
-            ]
-          }'
+          --data-binary @"$review_json"
 
-        # Post a standalone comment on the PR (optional, supplementary only)
+        # Post a standalone comment on the PR (optional, supplementary only).
+        cat > "$pr_comment_json" <<'PR_COMMENT_JSON'
+        {
+          "body": "Summary review comment"
+        }
+        PR_COMMENT_JSON
         curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/#{repo}/issues/#{pr_number}/comments" \\
           -H "Content-Type: application/json" \\
           -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
           -H "X-Proxy-Token: $PROXY_TOKEN" \\
-          -d '{"body": "Summary review comment"}'
+          --data-binary @"$pr_comment_json"
+        trap - EXIT
+        rm -f "$review_json" "$pr_comment_json"
         ```
 
         IMPORTANT: You MUST post at least one PR review via the `/pulls/#{pr_number}/reviews`

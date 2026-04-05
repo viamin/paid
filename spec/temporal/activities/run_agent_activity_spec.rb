@@ -797,6 +797,34 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
+    context "when goal is review" do
+      let(:agent_run) do
+        create(:agent_run, :review_goal, :with_git_context,
+          project: project, container_id: "abc123")
+      end
+
+      before do
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+      end
+
+      it "instructs the agent to post review payloads from temp files" do
+        expect(container_service).to receive(:execute) do |command, **_opts|
+          prompt = command.last
+
+          expect(prompt).to include('review_json=$(mktemp)')
+          expect(prompt).to include('pr_comment_json=$(mktemp)')
+          expect(prompt).to include(%(trap 'rm -f "$review_json" "$pr_comment_json"' EXIT))
+          expect(prompt).to include('--data-binary @"$review_json"')
+          expect(prompt).to include('--data-binary @"$pr_comment_json"')
+          expect(prompt).not_to include(%("$GITHUB_API_URL/repos/#{project.full_name}/pulls/#{agent_run.source_pull_request_number}/reviews" \\\n          -H "Content-Type: application/json" \\\n          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\\n          -H "X-Proxy-Token: $PROXY_TOKEN" \\\n          -d '))
+          exec_success
+        end
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
     context "when goal is create_pr" do
       it "uses the default agent timeout without idle_timeout" do
         project.update!(max_execution_seconds: 86_400)
