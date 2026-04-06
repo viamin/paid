@@ -69,6 +69,7 @@ module Activities
       /exhausted(?: +your)? +capacity/i,
       /out of (?:extra )?usage/i
     ].freeze
+    TIMEOUT_RATE_LIMIT_LOG_LIMIT = 200
 
     # Default timeouts used when per-user settings are unavailable.
     # Runtime code resolves per-user values via UserSetting.
@@ -584,10 +585,21 @@ module Activities
       chunks = agent_run.agent_run_logs
         .where(log_type: %w[stdout stderr])
         .where("created_at >= ?", since)
-        .order(created_at: :asc, id: :asc)
+        .order(created_at: :desc, id: :desc)
+        .limit(TIMEOUT_RATE_LIMIT_LOG_LIMIT)
         .pluck(:content)
 
-      strip_prompt_echo(chunks.join("\n"), prompt).strip
+      recent_chunks = []
+      chunks.each do |chunk|
+        chunk_output = strip_prompt_echo(chunk, prompt)
+        chunk_output = chunk_output.strip
+        next if chunk_output.blank?
+
+        recent_chunks << chunk_output
+        return recent_chunks.reverse.join("\n") if timeout_rate_limit_error?(chunk_output)
+      end
+
+      recent_chunks.reverse.join("\n")
     end
 
     # Attempts to parse a rate limit reset time from the output.
