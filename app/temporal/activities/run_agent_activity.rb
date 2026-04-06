@@ -69,7 +69,6 @@ module Activities
       /exhausted(?: +your)? +capacity/i,
       /out of (?:extra )?usage/i
     ].freeze
-    TIMEOUT_RATE_LIMIT_LOG_LIMIT = 200
 
     # Default timeouts used when per-user settings are unavailable.
     # Runtime code resolves per-user values via UserSetting.
@@ -586,7 +585,6 @@ module Activities
         .where(log_type: %w[stdout stderr])
         .where("created_at >= ?", since)
         .order(created_at: :desc, id: :desc)
-        .limit(TIMEOUT_RATE_LIMIT_LOG_LIMIT)
         .pluck(:content)
 
       normalized_chunks = chunks.filter_map do |chunk|
