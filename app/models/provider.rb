@@ -23,7 +23,9 @@ class Provider < ApplicationRecord
     "inception" => { label: "InceptionLabs", base_url: "https://api.inceptionlabs.ai/v1", service_type: "inception" },
     "deepseek" => { label: "DeepSeek", base_url: "https://api.deepseek.com/v1", service_type: "deepseek" },
     "mistral" => { label: "Mistral", base_url: "https://api.mistral.ai/v1", service_type: "mistral" },
-    "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai" }
+    "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai" },
+    "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai" },
+    "zai_coding" => { label: "z.ai (Coding Plan)", base_url: "https://api.z.ai/api/coding/paas/v4", service_type: "zai_coding" }
   }.freeze
 
   DIRECT_OUTBOUND_SERVICE_TYPES = DIRECT_OUTBOUND_API_PROVIDERS.values.map { |c| c[:service_type] }.to_set.freeze
