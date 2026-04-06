@@ -142,7 +142,8 @@ module Api
 
       @agent_run.update!(
         review_posted_at: @agent_run.review_posted_at || Time.current,
-        review_url: body["html_url"]
+        review_url: body["html_url"],
+        result_commit_sha: @agent_run.result_commit_sha || body["commit_id"]
       )
 
       log_info("github_proxy.review_created",

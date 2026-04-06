@@ -172,6 +172,7 @@ FactoryBot.define do
       started_at { 10.minutes.ago }
       completed_at { Time.current }
       duration_seconds { 600 }
+      result_commit_sha { "abc123" }
       review_url { "https://github.com/example/repo/pull/10#pullrequestreview-123456" }
       review_posted_at { Time.current }
     end

@@ -646,6 +646,7 @@ module Activities
 
     def paid_agent_review_completed?(project, issue, pr_data: nil)
       baseline = review_freshness_baseline(project, issue, pr_data: pr_data)
+      current_head_sha = pr_data&.head&.sha
       latest_review_run = related_completed_runs(project, issue)
         .where(goal: "review")
         .where.not(review_posted_at: nil)
@@ -653,6 +654,7 @@ module Activities
         .first
 
       return false unless latest_review_run&.review_posted_at
+      return false if current_head_sha.present? && latest_review_run.result_commit_sha != current_head_sha
 
       baseline.nil? || latest_review_run.review_posted_at >= baseline
     end
@@ -661,6 +663,7 @@ module Activities
       return false if reviews.nil?
 
       baseline = review_freshness_baseline(project, issue, pr_data: pr_data)
+      current_head_sha = pr_data&.head&.sha
       trusted_reviews = reviews.select do |review|
         project.trusted_github_user?(review[:user_login]) && !bot_user?(review[:user_login])
       end
@@ -673,6 +676,7 @@ module Activities
         submitted_at = review[:submitted_at]
         next false unless submitted_at.present?
         next false unless %w[APPROVED COMMENTED].include?(review[:state])
+        next false if current_head_sha.present? && review[:commit_id] != current_head_sha
 
         baseline.nil? || submitted_at >= baseline
       end
@@ -704,10 +708,7 @@ module Activities
 
     def review_freshness_baseline(project, issue, pr_data: nil)
       last_run = last_completed_code_run(project, issue)
-      return issue.github_updated_at unless last_run
-
-      current_head_sha = pr_data&.head&.sha
-      return issue.github_updated_at if current_head_sha.present? && last_run.result_commit_sha != current_head_sha
+      return nil unless last_run
 
       last_run.completed_at
     end

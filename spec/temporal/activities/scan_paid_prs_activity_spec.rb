@@ -1480,11 +1480,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         issue.update!(github_updated_at: 20.minutes.ago)
 
         create(:agent_run, :completed, project: project, source_pull_request_number: 42,
-          completed_at: 2.hours.ago)
+          completed_at: 20.minutes.ago, result_commit_sha: "abc123")
         create(:agent_run, :with_review, project: project, source_pull_request_number: 42,
-          completed_at: 10.minutes.ago, review_posted_at: 30.minutes.ago)
+          completed_at: 10.minutes.ago, review_posted_at: 30.minutes.ago, result_commit_sha: "abc123")
 
         stub_github_for_pr(
+          head_sha: "abc123",
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [],
           review_threads: []
@@ -1495,6 +1496,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers].map { |trigger| trigger[:type] })
           .to eq([ "review_bot_review_pending" ])
+      end
+
+      it "keeps a paid-agent review fresh across comment-only PR updates when the head is unchanged" do
+        issue = Issue.find_by!(project: project, github_number: 42)
+        issue.update!(github_updated_at: 5.minutes.ago)
+
+        create(:agent_run, :completed, project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago, result_commit_sha: "abc123")
+        create(:agent_run, :with_review, project: project, source_pull_request_number: 42,
+          completed_at: 20.minutes.ago, review_posted_at: 20.minutes.ago, result_commit_sha: "abc123")
+
+        stub_github_for_pr(
+          head_sha: "abc123",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
       end
     end
 
@@ -1565,7 +1588,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [
             { id: 1, user_login: "viamin", state: "COMMENTED", body: "Looks good",
-              submitted_at: Time.current }
+              submitted_at: Time.current, commit_id: "abc123" }
           ],
           review_threads: []
         )
@@ -1588,7 +1611,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           checks: [ { name: "ci", conclusion: "success" } ],
           reviews: [
             { id: 1, user_login: "viamin", state: "COMMENTED", body: "Reviewed before the latest push",
-              submitted_at: 1.hour.ago }
+              submitted_at: 1.hour.ago, commit_id: "oldsha" }
           ],
           review_threads: []
         )
@@ -1597,6 +1620,29 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(result[:prs_to_trigger].size).to eq(1)
         expect(result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }).to eq([ "review_bot_review_pending" ])
+      end
+
+      it "keeps a manual review fresh across comment-only PR updates when the head is unchanged" do
+        issue = Issue.find_by!(project: project, github_number: 42)
+        issue.update!(github_updated_at: 5.minutes.ago)
+
+        create(:agent_run, :completed, project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago, result_commit_sha: "abc123")
+
+        stub_github_for_pr(
+          head_sha: "abc123",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "viamin", state: "COMMENTED", body: "Still looks good",
+              submitted_at: 30.minutes.ago, commit_id: "abc123" }
+          ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("ready_for_owner")
       end
 
       it "does not block manual-only review gates on unrelated provider bot threads" do

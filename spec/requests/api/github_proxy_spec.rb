@@ -164,6 +164,7 @@ RSpec.describe "Api::GithubProxy" do
         id: 999,
         body: "Review summary",
         html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-999",
+        commit_id: "abc123def456",
         state: "commented"
       }.to_json
     end
@@ -189,6 +190,7 @@ RSpec.describe "Api::GithubProxy" do
       agent_run.reload
       expect(agent_run.review_posted_at).to be_present
       expect(agent_run.review_url).to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-999")
+      expect(agent_run.result_commit_sha).to eq("abc123def456")
     end
 
     it "does not track review_posted_at when PR number does not match" do
