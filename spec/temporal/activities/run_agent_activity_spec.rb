@@ -941,7 +941,7 @@ RSpec.describe Activities::RunAgentActivity do
       it "reclassifies timeout output as rate limited even when the quota message appears before later output" do
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
           agent_run.log!("stderr", "Free tier limit reached. Please upgrade for higher usage.")
-          60.times { |index| agent_run.log!("stdout", "provider still warming up: #{index}") }
+          250.times { |index| agent_run.log!("stdout", "provider still warming up: #{index}") }
           raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
         end
 
