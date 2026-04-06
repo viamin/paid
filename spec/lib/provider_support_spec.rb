@@ -115,7 +115,9 @@ RSpec.describe ProviderSupport do
         "anthropic" => "Anthropic",
         "openai" => "OpenAI",
         "openrouter" => "OpenRouter",
-        "google" => "Google AI"
+        "google" => "Google AI",
+        "zai" => "z.ai",
+        "zai_coding" => "z.ai (Coding Plan)"
       )
     end
   end
