@@ -62,17 +62,13 @@ module Activities
     # execution-failure classification because streamed stdout/stderr can
     # contain ordinary agent prose that mentions rate limiting.
     TIMEOUT_RATE_LIMIT_PATTERNS = [
-      /too many requests/i,
-      /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
       /free tier limit reached/i,
-      /(?:rate.?limit|usage limit)\s+(?:exceeded|reached|hit)/i,
-      /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
-      /exhausted(?:\s+your)?\s+capacity/i,
+      /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
+      /(?:you'?ve|you have) +hit +your +limit/i,
+      /exhausted(?: +your)? +capacity/i,
       /out of (?:extra )?usage/i
     ].freeze
-    TIMEOUT_OUTPUT_LOG_SCAN_LIMIT = 50
-    TIMEOUT_OUTPUT_CHAR_LIMIT = 2_000
 
     # Default timeouts used when per-user settings are unavailable.
     # Runtime code resolves per-user values via UserSetting.
@@ -585,24 +581,13 @@ module Activities
     def recent_timeout_output(agent_run, since:, prompt:)
       return "" if since.blank?
 
-      chunks = []
-      remaining = TIMEOUT_OUTPUT_CHAR_LIMIT
-
-      agent_run.agent_run_logs
+      chunks = agent_run.agent_run_logs
         .where(log_type: %w[stdout stderr])
         .where("created_at >= ?", since)
-        .order(created_at: :desc, id: :desc)
-        .limit(TIMEOUT_OUTPUT_LOG_SCAN_LIMIT)
+        .order(created_at: :asc, id: :asc)
         .pluck(:content)
-        .each do |content|
-          break if remaining <= 0
 
-          chunk = content.to_s.last(remaining)
-          chunks << chunk
-          remaining -= chunk.length
-        end
-
-      strip_prompt_echo(chunks.reverse.join("\n"), prompt).strip
+      strip_prompt_echo(chunks.join("\n"), prompt).strip
     end
 
     # Attempts to parse a rate limit reset time from the output.
