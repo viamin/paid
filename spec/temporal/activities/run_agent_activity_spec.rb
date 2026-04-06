@@ -955,6 +955,23 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
       end
 
+      it "reclassifies timeout output as rate limited when the quota signal spans chunk boundaries" do
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          agent_run.log!("stderr", "Free tier")
+          agent_run.log!("stderr", " limit reached while processing request")
+          raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
+        end
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All providers exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.providers_attempted.first["error_type"]).to eq("rate_limited")
+      end
+
       it "does not reclassify timeouts when recent output only mentions rate limits conversationally" do
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
           agent_run.log!("stdout", "Document how to handle a service overloaded response and a server at capacity banner in the retry guide.")
