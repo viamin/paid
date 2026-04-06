@@ -141,19 +141,19 @@ module Providers
       Result.new(success: false, error_type: :unexpected,
         message: "Provider #{provider.provider_key} is not recognized by the agent harness")
     rescue MissingProjectContextError => e
-      Result.new(success: false, error_type: :unexpected, message: e.message)
+      Result.new(success: false, error_type: :unexpected, message: normalize_output_text(e.message))
     rescue Containers::Provision::TimeoutError => e
-      Result.new(success: false, error_type: :timeout, message: e.message)
+      Result.new(success: false, error_type: :timeout, message: normalize_output_text(e.message))
     rescue Containers::Provision::Error => e
-      Result.new(success: false, error_type: :connection, message: e.message)
+      Result.new(success: false, error_type: :connection, message: normalize_output_text(e.message))
     rescue StandardError => e
       Rails.logger.error(
         message: "providers.test_agent.unexpected_error",
         provider_key: provider&.provider_key,
         error_class: e.class.name,
-        error_message: e.message
+        error_message: normalize_output_text(e.message)
       )
-      Result.new(success: false, error_type: :unexpected, message: e.message)
+      Result.new(success: false, error_type: :unexpected, message: normalize_output_text(e.message))
     end
 
     private
@@ -192,7 +192,7 @@ module Providers
 
     def process_harness_result(result)
       status = result[:status].to_s
-      message = result[:message].presence || "Provider health check returned no message"
+      message = normalize_output_text(result[:message]).presence || "Provider health check returned no message"
 
       if status == "ok"
         Result.new(success: true, error_type: nil, message: "Agent is healthy")
@@ -207,7 +207,9 @@ module Providers
 
     def process_container_response(response)
       unless response.success?
-        raw_message = response[:stderr].presence || response[:stdout].presence || response.error
+        stderr = normalize_output_text(response[:stderr])
+        stdout = normalize_output_text(response[:stdout])
+        raw_message = stderr.presence || stdout.presence || normalize_output_text(response.error)
         message = extract_user_facing_error(raw_message)
         error_type = classify_failed_response(raw_message.presence || message)
 
@@ -218,7 +220,7 @@ module Providers
         )
       end
 
-      output = response[:stdout].to_s.strip
+      output = normalize_output_text(response[:stdout]).strip
 
       if output == EXPECTED_OUTPUT
         Result.new(success: true, error_type: nil, message: "Agent is healthy")
@@ -420,14 +422,14 @@ module Providers
     end
 
     def sanitize_error_message(error_message)
-      error_message.to_s
+      normalize_output_text(error_message)
         .dup
-        .force_encoding(Encoding::UTF_8)
-        .scrub
         .gsub(ANSI_ESCAPE_PATTERN, "")
         .delete("\u0000")
         .strip
     end
+
+    include OutputSanitizer
 
     def translate_known_provider_errors(message)
       return "Paid is not configured with a Google API key for containerized Gemini runs." if message.match?(/API key not configured for google/i)
