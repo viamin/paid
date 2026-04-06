@@ -467,6 +467,23 @@ RSpec.describe Activities::RunAgentActivity do
         )).to exist
       end
 
+      it "succeeds when provider output is binary encoded" do
+        binary_success = Containers::Provision::Result.success(
+          stdout: "Done \xFF".b,
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(binary_success)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(result[:final_provider]).to eq("claude_code")
+        expect(agent_run.reload.final_provider).to eq("claude_code")
+        expect(agent_run.providers_attempted.map { |attempt| attempt["provider"] }).to eq([ "claude_code" ])
+      end
+
       it "returns has_changes: false when container check fails" do
         allow(git_ops).to receive(:has_changes_since?).and_raise(StandardError, "container gone")
 
