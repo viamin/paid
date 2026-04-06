@@ -589,17 +589,14 @@ module Activities
         .limit(TIMEOUT_RATE_LIMIT_LOG_LIMIT)
         .pluck(:content)
 
-      recent_chunks = []
-      chunks.each do |chunk|
-        chunk_output = strip_prompt_echo(chunk, prompt)
-        chunk_output = chunk_output.strip
-        next if chunk_output.blank?
+      normalized_chunks = chunks.filter_map do |chunk|
+        stripped = strip_prompt_echo(chunk, prompt).strip
+        next if stripped.blank?
 
-        recent_chunks << chunk_output
-        return recent_chunks.reverse.join("\n") if timeout_rate_limit_error?(chunk_output)
+        stripped
       end
 
-      recent_chunks.reverse.join("\n")
+      normalized_chunks.reverse.join(" ")
     end
 
     # Attempts to parse a rate limit reset time from the output.
