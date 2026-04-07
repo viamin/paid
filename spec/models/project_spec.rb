@@ -747,6 +747,48 @@ RSpec.describe Project do
       end
     end
 
+    describe "#review_bot_request_login" do
+      it "returns nil when no review method is enabled" do
+        project = build(:project, review_settings: { "enabled" => false })
+        expect(project.review_bot_request_login).to be_nil
+      end
+
+      it "returns copilot login when copilot is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "copilot" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_login).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
+      end
+
+      it "returns codex login when only codex is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_login).to eq(Activities::RequestReviewActivity::CODEX_LOGIN)
+      end
+
+      it "prefers copilot over codex when both are enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "copilot" => { "enabled" => true },
+            "codex" => { "enabled" => true }
+          }
+        })
+        expect(project.review_bot_request_login).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
+      end
+
+      it "returns nil for enabled methods with no bot account" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "manual" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_login).to be_nil
+      end
+    end
+
     describe "#review_method_config" do
       it "returns merged config for a method" do
         project = build(:project, review_settings: {
