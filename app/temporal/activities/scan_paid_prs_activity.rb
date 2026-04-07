@@ -644,21 +644,22 @@ module Activities
     end
 
     def check_conversation_comments(client, project, issue, last_run)
-      comments = client.issue_comments(project.full_name, issue.github_number)
+      comments = client.recent_issue_comments(project.full_name, issue.github_number)
       cutoff = last_run&.completed_at
 
-      relevant = comments.select do |c|
-        login = c.user&.login
-        next false if bot_user?(login)
-        next false unless project.trusted_github_user?(login)
-        next false if cutoff && c.created_at <= cutoff
-        next false if system_generated_comment?(c.body)
-        next false if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
+      relevant = comments.filter_map do |c|
+        break if cutoff && c.created_at && c.created_at <= cutoff
 
-        true
+        login = c.user&.login
+        next if bot_user?(login)
+        next unless project.trusted_github_user?(login)
+        next if system_generated_comment?(c.body)
+        next if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
+
+        c
       end
 
-      return [] if relevant.empty?
+      return [] if relevant.nil? || relevant.empty?
 
       [ { type: "conversation_comments", details: "#{relevant.size} new comment(s)" } ]
     rescue GithubClient::Error => e
