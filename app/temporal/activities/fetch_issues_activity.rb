@@ -14,18 +14,23 @@ module Activities
       return { issues: [], project_id: project_id, project_missing: true } unless project
 
       client = project.github_token.client
+      incremental = project.last_issue_sync_at.present?
+      sync_started_at = Time.current
 
-      github_issues, truncated = fetch_all_issues(client, project.full_name)
+      github_issues, truncated = fetch_all_issues(client, project.full_name, since: project.last_issue_sync_at)
 
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
       parse_issue_relationships(project, synced_issues) if synced_issues.any?
-      closed_count = close_stale_issues(project, github_issues, truncated: truncated)
+      closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
+
+      project.touch_last_issue_sync_at(sync_started_at)
 
       logger.info(
         message: "github_sync.fetch_issues",
         project_id: project.id,
         issue_count: synced_issues.size,
-        closed_count: closed_count
+        closed_count: closed_count,
+        incremental: incremental
       )
 
       { issues: synced_issues, project_id: project_id }
@@ -46,13 +51,13 @@ module Activities
     # even when the page cap is reached in busy repos.
     # Returns [issues, truncated] where truncated is true if the
     # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
-    def fetch_all_issues(client, repo_full_name)
-      fetch_issues_for_label(client, repo_full_name, nil, sort: :updated)
+    def fetch_all_issues(client, repo_full_name, since: nil)
+      fetch_issues_for_label(client, repo_full_name, nil, sort: :updated, since: since)
     end
 
     # Returns [issues, truncated] where truncated is true when the
     # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
-    def fetch_issues_for_label(client, repo_full_name, label, sort: nil)
+    def fetch_issues_for_label(client, repo_full_name, label, sort: nil, since: nil)
       issues = []
       page = 1
       truncated = false
@@ -65,6 +70,13 @@ module Activities
           page: page
         }
         opts[:sort] = sort if sort
+        if since
+          opts[:since] = since.iso8601
+          # Incremental fetches must request all states so that issues closed
+          # on GitHub since the last sync are captured and their local
+          # github_state is updated via sync_issue.
+          opts[:state] = "all"
+        end
 
         page_issues = client.issues(repo_full_name, **opts)
 
@@ -249,16 +261,24 @@ module Activities
       nil
     end
 
-    def close_stale_issues(project, github_issues, truncated: false)
+    def close_stale_issues(project, github_issues, truncated: false, incremental: false)
       # When the fetch was truncated by the DEFAULT_MAX_PAGES cap, the fetched list
       # is not an authoritative snapshot. Closing issues not in this list
       # would incorrectly close still-open GitHub issues that were beyond
       # the page limit. Skip stale-closure entirely in this case.
-      if truncated
+      #
+      # Incremental fetches (with `since`) only return recently-updated issues,
+      # not all open issues, so the result set is not exhaustive. However, any
+      # issue whose state changed to closed on GitHub will appear in the
+      # incremental results (because closing updates `updated_at`), so
+      # sync_issue will set its github_state to "closed" via the normal path.
+      # Skip the bulk stale-closure pass to avoid false positives.
+      if truncated || incremental
+        reason = truncated ? "fetch_truncated" : "incremental_fetch"
         logger.warn(
           message: "github_sync.stale_closure_skipped",
           project_id: project.id,
-          reason: "fetch_truncated"
+          reason: reason
         )
         return 0
       end
