@@ -720,8 +720,8 @@ RSpec.describe GithubClient do
         result = client.check_runs_for_ref(repo, ref)
 
         expect(result).to eq([
-          { name: "rspec", conclusion: "failure", started_at: "2024-01-01T00:00:00Z", completed_at: "2024-01-01T00:01:00Z" },
-          { name: "rubocop", conclusion: "success", started_at: "2024-01-01T00:00:00Z", completed_at: nil }
+          { name: "rspec", conclusion: "failure", started_at: Time.zone.parse("2024-01-01T00:00:00Z"), completed_at: Time.zone.parse("2024-01-01T00:01:00Z") },
+          { name: "rubocop", conclusion: "success", started_at: Time.zone.parse("2024-01-01T00:00:00Z"), completed_at: nil }
         ])
       end
     end

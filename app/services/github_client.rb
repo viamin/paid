@@ -305,7 +305,14 @@ class GithubClient
         )
       end
 
-      all_check_runs.map { |cr| { name: cr.name, conclusion: cr.conclusion, started_at: cr.started_at, completed_at: cr.completed_at } }
+      all_check_runs.map do |cr|
+        {
+          name: cr.name,
+          conclusion: cr.conclusion,
+          started_at: parse_check_run_timestamp(cr.started_at),
+          completed_at: parse_check_run_timestamp(cr.completed_at)
+        }
+      end
     end
   end
 
@@ -859,6 +866,15 @@ class GithubClient
 
     parse_timestamp(header)
   rescue ArgumentError
+    nil
+  end
+
+  def parse_check_run_timestamp(value)
+    return nil if value.nil?
+    return value if value.is_a?(Time)
+
+    Time.zone.parse(value.to_s)
+  rescue ArgumentError, TypeError
     nil
   end
 
