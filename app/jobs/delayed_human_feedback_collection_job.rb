@@ -39,9 +39,15 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
       .where.not(
         id: recently_polled_agent_run_ids
       )
+      .includes(project: :github_token)
+
+    # Check rate limit once per token before enqueuing any runs, so we
+    # don't enqueue more work than the remaining budget can support.
+    skipped_token_ids = rate_limited_token_ids(agent_runs)
 
     agent_runs.find_each do |agent_run|
-      if rate_limit_exceeded?(agent_run)
+      token_id = agent_run.project&.github_token&.id
+      if token_id && skipped_token_ids.include?(token_id)
         Rails.logger.info(
           message: "delayed_human_feedback.skipped_rate_limited",
           agent_run_id: agent_run.id
@@ -55,16 +61,22 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
 
   private
 
-  # Returns true when the GitHub token for this run's project is near its
-  # rate limit, signaling we should skip enqueuing to avoid burning through
-  # the remaining budget.
-  def rate_limit_exceeded?(agent_run)
-    client = agent_run.project&.github_token&.client
-    return false unless client
+  # Returns the set of GithubToken IDs whose rate limit is below threshold.
+  # Queries distinct tokens referenced by the sweep scope, then checks each
+  # once — avoiding per-run N+1 API calls and gating the entire sweep by
+  # token budget up front.
+  def rate_limited_token_ids(agent_runs)
+    token_ids = agent_runs
+      .joins(project: :github_token)
+      .select("github_tokens.id")
+      .distinct
+      .pluck("github_tokens.id")
 
-    client.rate_limit_low?(threshold: RATE_LIMIT_THRESHOLD)
-  rescue GithubClient::Error
-    false
+    GithubToken.where(id: token_ids).filter_map do |github_token|
+      github_token.id if github_token.client.rate_limit_low?(threshold: RATE_LIMIT_THRESHOLD)
+    rescue GithubClient::Error
+      nil
+    end.to_set
   end
 
   # Only considers metadata->>'last_polled_at'; metrics without this field are

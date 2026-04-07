@@ -120,6 +120,23 @@ RSpec.describe DelayedHumanFeedbackCollectionJob do
       }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
     end
 
+    it "skips all runs sharing a rate-limited token in a single check" do
+      project = create(:project)
+      run1 = create(:agent_run, :completed, project: project)
+      run2 = create(:agent_run, :completed, project: project)
+      run1.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+      run2.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+
+      allow(github_client).to receive(:rate_limit_low?).and_return(true)
+
+      expect {
+        described_class.new.perform
+      }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
+
+      # Token is checked once per sweep, not once per run
+      expect(github_client).to have_received(:rate_limit_low?).once
+    end
+
     it "enqueues runs when the GitHub token rate limit is sufficient" do
       run = create(:agent_run, :completed)
       run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
