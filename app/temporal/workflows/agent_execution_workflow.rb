@@ -477,7 +477,7 @@ module Workflows
       raise
     rescue => e
       Temporalio::Workflow.logger.warn(
-        message: "agent_execution.copilot_review_request_failed",
+        message: "agent_execution.review_bot_request_failed",
         project_id: project_id,
         pr_number: pr_number,
         error: e.message

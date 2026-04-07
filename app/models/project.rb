@@ -449,6 +449,25 @@ class Project < ApplicationRecord
     Array(review_method_config(:ci_action)["action_name"]).filter_map(&:presence)
   end
 
+  # Returns the GitHub login Paid should request to trigger a review-bot
+  # review on a PR, or nil if no automated review method is enabled. Copilot
+  # takes precedence when multiple bots are enabled; codex is used when
+  # copilot is disabled because it does not auto-review draft PRs and
+  # requires an explicit @-mention (see RequestReviewActivity).
+  #
+  # Returns nil when reviews are globally disabled via
+  # review_settings["enabled"], even if an individual method sub-flag is
+  # left enabled. Without this guard, RequestReviewActivity's nil-reviewers
+  # fallback (driven by AgentExecutionWorkflow after every agent run)
+  # would request bot reviews on projects that have opted out of review.
+  def review_bot_request_login
+    return nil unless review_enabled?
+    return Activities::RequestReviewActivity::COPILOT_LOGIN if review_method_enabled?("copilot")
+    return Activities::RequestReviewActivity::CODEX_LOGIN if review_method_enabled?("codex")
+
+    nil
+  end
+
   private
 
   def legacy_review_settings?

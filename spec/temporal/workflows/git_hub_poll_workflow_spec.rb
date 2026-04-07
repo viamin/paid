@@ -348,11 +348,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           hash_including(goal: "review"), timeout: anything)
     end
 
-    it "requests all configured reviews when review_bot_review_pending has no review_method" do
+    it "is a no-op when review_bot_review_pending has no review_method (legacy triggers)" do
       allow(Temporalio::Workflow).to receive(:patched).with("request-configured-pr-reviews-v1").and_return(true)
-      allow(workflow).to receive(:run_activity)
-        .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
-        .and_return({ requested_review_methods: [ "copilot" ] })
 
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
@@ -362,12 +359,12 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
-      # With no review_method filter, all plan methods are requested
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::RequestReviewActivity,
-          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: anything)
+      # Legacy triggers without review_method are a no-op to preserve replay
+      # determinism for in-flight workflows.
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, anything, anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, anything)
     end
 
     it "defers review request and dispatches followup when other triggers present" do
@@ -423,7 +420,8 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
         current_draft_review_count: 0,
-        triggers: [ { type: "review_bot_review_pending" } ]
+        triggers: [ { type: "review_bot_review_pending", review_method: "copilot" },
+                     { type: "review_bot_review_pending", review_method: "paid_agent" } ]
       }
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)

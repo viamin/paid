@@ -14,6 +14,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   end
   let(:github_client) { instance_double(GithubClient) }
 
+  # Scanner tests that exercise the ":no_review → emit review_bot_review_pending"
+  # path need the project to have a requestable review bot configured. Without
+  # it, the scanner correctly returns no triggers (there is no bot to request).
+  def enable_copilot_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "copilot" => { "enabled" => true } }
+    })
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
   end
@@ -980,8 +990,35 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when no requestable review bot is configured and no reviews exist" do
+      before do
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "does not emit a review_bot_review_pending trigger that nothing can satisfy" do
+        # Regression: previously the scanner emitted a pending trigger with
+        # request_login=nil, which the workflow then skipped via the
+        # `if login; request_review(...); end` guard in
+        # handle_review_bot_review_pending, wedging the PR in draft forever.
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending")
+      end
+    end
+
     context "when no review bot review exists and CI is green" do
       before do
+        enable_copilot_review!
         project.update!(owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -1050,6 +1087,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when no review bot review exists and CI is failing" do
       before do
+        enable_copilot_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -1372,6 +1410,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when max_draft_review_rounds is zero (skip draft phase)" do
       before do
+        enable_copilot_review!
         project.update!(max_draft_review_rounds: 0, owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,

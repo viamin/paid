@@ -136,7 +136,7 @@ module Activities
       blocking_triggers = (required_review_triggers || []).reject { |t| t[:type] == "review_bot_review_pending" }
       all_triggers = blocking_triggers + (human_triggers || [])
       append_generic_review_bot_thread_triggers!(all_triggers, unresolved_threads,
-        blocking_review_methods: blocking_review_methods)
+        blocking_review_methods: blocking_review_methods, threads_skipped: skip_comment_signals)
 
       # Only fetch PR data and check runs if blocking review triggers aren't enough.
       if all_triggers.empty?
@@ -461,12 +461,11 @@ module Activities
     end
 
     # Returns the login that should be explicitly requested for a review-bot
-    # review, or nil if the configured bot auto-reviews (e.g. Codex via GitHub
-    # App) and no explicit request is needed.
+    # review, or nil when no enabled review method has a bot that accepts
+    # explicit review requests. See Project#review_bot_request_login for the
+    # precedence rules.
     def review_bot_request_login(project)
-      return Activities::RequestReviewActivity::COPILOT_LOGIN if project.review_method_enabled?("copilot")
-
-      nil
+      project.review_bot_request_login
     end
 
     # Review-bot logins that post feedback as a single top-level review body
@@ -488,8 +487,19 @@ module Activities
       when :clean
         []
       when :no_review
-        login = review_bot_request_login(project) if project
-        [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        # Only emit a pending trigger when a requestable review bot is
+        # configured. When login is nil — reviews globally disabled, or
+        # only non-bot review methods (e.g. manual) are enabled — there is
+        # no bot that could satisfy the trigger, so emitting it would wedge
+        # the draft scanner in a perpetual "waiting for bot review" state
+        # with no path out (handle_review_bot_review_pending skips the
+        # RequestReviewActivity call when login is nil).
+        login = project && review_bot_request_login(project)
+        if login
+          [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        else
+          []
+        end
       when :has_comments
         # When unresolved_threads is nil, threads were either never fetched
         # (e.g. the skip_comment_signals path) or the API call failed. We
@@ -816,17 +826,22 @@ module Activities
       last_run.completed_at
     end
 
-    def append_generic_review_bot_thread_triggers!(triggers, unresolved_threads, blocking_review_methods:)
+    def append_generic_review_bot_thread_triggers!(triggers, unresolved_threads, blocking_review_methods:, threads_skipped: false)
       return unless blocking_review_methods.include?("paid_agent")
       return if triggers.any? { |trigger| trigger[:type] == "review_bot_threads" }
 
-      triggers.concat(non_copilot_review_bot_thread_triggers(unresolved_threads))
+      triggers.concat(non_copilot_review_bot_thread_triggers(unresolved_threads, threads_skipped: threads_skipped))
     end
 
-    def non_copilot_review_bot_thread_triggers(unresolved_threads)
-      # Fail closed: when thread state is unavailable (nil), we cannot confirm
-      # that paid-agent threads are resolved, so emit a blocking trigger to
-      # prevent the draft from advancing prematurely.
+    def non_copilot_review_bot_thread_triggers(unresolved_threads, threads_skipped: false)
+      # When thread fetching was intentionally skipped (e.g. max_draft_review_rounds
+      # is 0), unresolved_threads is nil by design — not because of a fetch failure.
+      # Do not emit a blocking trigger in that case.
+      return [] if threads_skipped
+
+      # Fail closed: when thread state is unavailable (nil) due to an actual
+      # fetch failure, we cannot confirm that paid-agent threads are resolved,
+      # so emit a blocking trigger to prevent the draft from advancing prematurely.
       if unresolved_threads.nil?
         return [ { type: "review_bot_threads",
                    details: "Thread state unavailable — blocking until threads can be checked" } ]

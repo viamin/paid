@@ -246,7 +246,12 @@ module Workflows
         .filter_map { |trigger| trigger[:review_method] }
         .uniq
 
-      return request_configured_reviews(project_id, pr_number) if pending_methods.empty?
+      # Legacy triggers emitted before the review_method field was added lack
+      # a method key, so pending_methods will be empty. Firing a full
+      # request_configured_reviews here would change the activity sequence for
+      # in-flight workflows and cause non-determinism during replay. Return
+      # early to preserve the original no-op behavior for those histories.
+      return if pending_methods.empty?
 
       request_configured_reviews(project_id, pr_number, requested_methods: pending_methods)
     end
