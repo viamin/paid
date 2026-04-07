@@ -74,18 +74,18 @@ module Workflows
     # staleness checks are skipped when budget is low.
     # TODO(#872): Remove patch guard after all pre-v872 workflows have continued-as-new
     def maybe_run_non_critical_activities(project_id)
-      return unless Temporalio::Workflow.patched("add-rate-limit-budget-v1")
+      if Temporalio::Workflow.patched("add-rate-limit-budget-v1")
+        rate_limit = run_activity(Activities::CheckRateLimitActivity,
+          { project_id: project_id }, timeout: 10)
 
-      rate_limit = run_activity(Activities::CheckRateLimitActivity,
-        { project_id: project_id }, timeout: 10)
-
-      if rate_limit[:rate_limit_low]
-        Temporalio::Workflow.logger.info(
-          message: "poll.non_critical_skipped_budget_low",
-          project_id: project_id,
-          rate_limit_remaining: rate_limit[:rate_limit_remaining]
-        )
-        return
+        if rate_limit[:rate_limit_low]
+          Temporalio::Workflow.logger.info(
+            message: "poll.non_critical_skipped_budget_low",
+            project_id: project_id,
+            rate_limit_remaining: rate_limit[:rate_limit_remaining]
+          )
+          return
+        end
       end
 
       maybe_scan_paid_prs(project_id)

@@ -118,13 +118,18 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
     end
 
-    it "skips when patch guard returns false (pre-v872 workflows)" do
+    it "skips rate limit check but still runs non-critical activities when patch guard returns false (pre-v872 workflows)" do
       allow(Temporalio::Workflow).to receive(:patched).with("add-rate-limit-budget-v1").and_return(false)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
+        .and_return({ prs_to_trigger: [] })
 
       workflow.send(:maybe_run_non_critical_activities, 1)
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
     end
   end
 
