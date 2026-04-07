@@ -6,11 +6,14 @@ require "ostruct"
 RSpec.describe Activities::FetchIssuesActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project, label_mappings: { "build" => "paid-build", "plan" => "paid-plan" }) }
-  let(:github_client) { instance_double(GithubClient) }
+  let(:octokit_client) { instance_double(Octokit::Client) }
+  let(:rate_limit) { instance_double(Octokit::RateLimit, remaining: 100) }
+  let(:github_client) { instance_double(GithubClient, client: octokit_client) }
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive_messages(issue_comments: [], rate_limit_low?: false)
+    allow(github_client).to receive(:issue_comments).and_return([])
+    allow(octokit_client).to receive(:rate_limit).and_return(rate_limit)
   end
 
   # Helper: route github_client.issues calls by label (or nil for unlabeled fetches)
@@ -188,7 +191,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       it "raises a RateLimit ApplicationError from the proactive check" do
-        allow(github_client).to receive_messages(rate_limit_low?: true, rate_limit_remaining: 5)
+        allow(rate_limit).to receive(:remaining).and_return(5)
 
         expect {
           activity.execute(project_id: project.id)

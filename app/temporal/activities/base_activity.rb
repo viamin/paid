@@ -63,16 +63,29 @@ module Activities
     # Raises a retryable Temporal error when the GitHub API rate limit is
     # near exhaustion. Call this before making API requests so polling
     # activities stop early and let the next cycle handle remaining work.
-    def check_rate_budget!(client)
-      return unless client.rate_limit_low?
+    #
+    # Bypasses GithubClient#rate_limit_remaining (which rescues Octokit
+    # errors and returns 0) so that auth/transport failures are not
+    # misclassified as rate-limit exhaustion. On probe failure we log a
+    # warning and return, letting the real API call surface the actual error.
+    def check_rate_budget!(client, threshold: 10)
+      remaining = client.client.rate_limit.remaining
+    rescue Octokit::Error => e
+      logger.warn(
+        message: "rate_limit.probe_failed",
+        error_class: e.class.name,
+        error_message: e.message.to_s.truncate(200)
+      )
+    else
+      return unless remaining < threshold
 
       logger.warn(
         message: "rate_limit.budget_low",
-        remaining: client.rate_limit_remaining
+        remaining: remaining
       )
 
       raise Temporalio::Error::ApplicationError.new(
-        "GitHub API rate limit budget low (remaining: #{client.rate_limit_remaining})",
+        "GitHub API rate limit budget low (remaining: #{remaining})",
         type: "RateLimit"
       )
     end
