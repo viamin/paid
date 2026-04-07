@@ -86,7 +86,7 @@ module Activities
       end
 
       blocking_review_methods = project.blocking_review_methods
-      review_based_methods = blocking_review_methods & %w[copilot manual]
+      review_based_methods = blocking_review_methods & %w[copilot codex manual]
       ci_review_required = blocking_review_methods.include?("ci_action")
       skip_comment_signals = project.max_draft_review_rounds.zero?
       unresolved_threads = nil
@@ -569,7 +569,7 @@ module Activities
 
       project.blocking_review_methods.each do |method|
         case method
-        when "copilot"
+        when "copilot", "codex"
           triggers.concat(check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run))
         when "paid_agent"
           case paid_agent_review_status(project, issue, unresolved_threads)
