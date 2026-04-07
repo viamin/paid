@@ -412,12 +412,11 @@ module Activities
     end
 
     # Returns the login that should be explicitly requested for a review-bot
-    # review, or nil if the configured bot auto-reviews (e.g. Codex via GitHub
-    # App) and no explicit request is needed.
+    # review, or nil when no enabled review method has a bot that accepts
+    # explicit review requests. See Project#review_bot_request_login for the
+    # precedence rules.
     def review_bot_request_login(project)
-      return Activities::RequestReviewActivity::COPILOT_LOGIN if project.review_method_enabled?("copilot")
-
-      nil
+      project.review_bot_request_login
     end
 
     def check_review_bot_status(reviews, unresolved_threads, project: nil)

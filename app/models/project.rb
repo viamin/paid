@@ -434,6 +434,18 @@ class Project < ApplicationRecord
     effective_review_settings.dig("methods", method.to_s) || {}
   end
 
+  # Returns the GitHub login Paid should request to trigger a review-bot
+  # review on a PR, or nil if no automated review method is enabled. Copilot
+  # takes precedence when multiple bots are enabled; codex is used when
+  # copilot is disabled because it does not auto-review draft PRs and
+  # requires an explicit @-mention (see RequestReviewActivity).
+  def review_bot_request_login
+    return Activities::RequestReviewActivity::COPILOT_LOGIN if review_method_enabled?("copilot")
+    return Activities::RequestReviewActivity::CODEX_LOGIN if review_method_enabled?("codex")
+
+    nil
+  end
+
   private
 
   def auto_pick_just_enabled?
