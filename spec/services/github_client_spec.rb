@@ -1336,6 +1336,14 @@ RSpec.describe GithubClient do
 
       expect { client.review_threads(repo, 1) }.to raise_error(GithubClient::ApiError)
     end
+
+    it "does not retry mutations" do
+      stub = stub_request(:post, "#{api_base}/graphql")
+        .to_return(status: 503, body: "Service Unavailable")
+
+      expect { client.resolve_review_thread("thread_id") }.to raise_error(GithubClient::ApiError)
+      expect(stub).to have_been_requested.once
+    end
   end
 
   describe "#rate_limit_remaining" do
