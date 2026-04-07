@@ -3,6 +3,7 @@
 class LlmModel < ApplicationRecord
   CATEGORIES = %w[general coding planning review].freeze
   PROVIDERS = %w[anthropic openai google mistral meta cohere].freeze
+  TIERS = %w[low mid high].freeze
 
   has_many :model_selections, dependent: :restrict_with_error
 
@@ -10,6 +11,7 @@ class LlmModel < ApplicationRecord
   validates :display_name, presence: true
   validates :provider, presence: true, length: { maximum: 50 }
   validates :category, presence: true, inclusion: { in: CATEGORIES }
+  validates :tier, inclusion: { in: TIERS }, allow_nil: true
   validates :capability_score, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 10 }, allow_nil: true
   validates :input_cost_per_million, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :output_cost_per_million, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
@@ -18,6 +20,7 @@ class LlmModel < ApplicationRecord
   scope :by_provider, ->(provider) { where(provider: provider) }
   scope :by_category, ->(category) { where(category: category) }
   scope :by_capability, -> { order(Arel.sql("capability_score DESC NULLS LAST")) }
+  scope :by_tier, ->(tier) { where(tier: tier) }
   scope :affordable, ->(budget_cents, avg_tokens) {
     return active if budget_cents.nil?
 
