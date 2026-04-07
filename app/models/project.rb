@@ -195,7 +195,9 @@ class Project < ApplicationRecord
   end
 
   def effective_priority_labels
-    DEFAULT_PRIORITY_LABELS.merge((priority_labels || {}).slice(*PRIORITY_TIERS))
+    overrides = (priority_labels || {}).slice(*PRIORITY_TIERS)
+      .reject { |_, v| v.nil? || (v.is_a?(String) && v.strip.empty?) }
+    DEFAULT_PRIORITY_LABELS.merge(overrides)
   end
 
   # All configured priority label names, used by queue ordering and PR inheritance.
