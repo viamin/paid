@@ -294,6 +294,16 @@
           <dt class="text-sm text-gray-500">Selected Model</dt>
           <dd class="text-sm font-medium text-gray-900"><%= agent_run.model_selection.llm_model.display_name %></dd>
         </div>
+        <% if agent_run.model_selection.llm_model.tier.present? %>
+          <div class="flex justify-between py-2">
+            <dt class="text-sm text-gray-500">Tier</dt>
+            <dd class="text-sm text-gray-900">
+              <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                <%= agent_run.model_selection.llm_model.tier.titleize %>
+              </span>
+            </dd>
+          </div>
+        <% end %>
         <div class="flex justify-between py-2">
           <dt class="text-sm text-gray-500">Selection Method</dt>
           <dd class="text-sm text-gray-900">
