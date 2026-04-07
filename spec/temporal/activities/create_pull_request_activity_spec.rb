@@ -273,6 +273,42 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
     end
 
+    context "when agent summary uses qualified owner/repo#NNN refs for a different issue" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue
+        agent_run.log!("stdout", "Fixed owner/repo##{other_issue.github_number} by updating the scanner")
+      end
+
+      it "detects scope mismatch from qualified references" do
+        allow(Rails).to receive(:logger).and_return(Rails.logger)
+        expect(Rails.logger).to receive(:warn).with(hash_including(
+          message: "agent_execution.summary_scope_mismatch",
+          agent_run_id: agent_run.id,
+          issue_number: issue.github_number,
+          cross_referenced_issues: [ other_issue.github_number ]
+        )).and_call_original
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when agent summary uses qualified owner/repo#NNN ref for its own issue" do
+      before do
+        create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
+        agent_run.log!("stdout", "Fixed owner/repo##{issue.github_number} by updating the scanner")
+      end
+
+      it "does not log a scope mismatch warning" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+    end
+
     context "when agent summary correctly references its own issue" do
       before do
         create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")

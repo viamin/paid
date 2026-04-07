@@ -124,12 +124,15 @@ module Activities
 
       issue_number = issue.github_number
 
-      mentions_own_issue = summary.match?(/(?<!\w)##{issue_number}\b/) ||
+      # Match both bare (#123) and qualified (owner/repo#123) issue references.
+      issue_ref_pattern = /(?:[\w.\-]+\/[\w.\-]+)?#(\d+)\b/
+
+      mentions_own_issue = summary.match?(/(?:[\w.\-]+\/[\w.\-]+)?##{issue_number}\b/) ||
                           summary.match?(/\bissue\s+#{issue_number}\b/i)
 
-      # Extract all #NNN references from the summary in a single pass, then
+      # Extract all issue numbers from the summary in a single pass, then
       # intersect with sibling open issues to avoid O(issues × summary) regex.
-      referenced_numbers = summary.scan(/(?<!\w)#(\d+)\b/).flatten.map(&:to_i).to_set
+      referenced_numbers = summary.scan(issue_ref_pattern).flatten.map(&:to_i).to_set
       referenced_numbers.delete(issue_number)
 
       sibling_numbers = sibling_open_issue_numbers(
