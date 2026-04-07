@@ -69,12 +69,31 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     context "when rate limit is low" do
-      it "raises a RateLimit ApplicationError before scanning" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 99,
+          labels: [ project.generated_label_name, project.automation_label_name ],
+          paid_state: "completed")
+      end
+
+      before { pr_issue }
+
+      it "raises a RateLimit ApplicationError before scanning a PR" do
         allow(rate_limit).to receive(:remaining).and_return(5)
 
         expect { activity.execute(project_id: project.id) }.to raise_error(
           Temporalio::Error::ApplicationError
         ) { |e| expect(e.type).to eq("RateLimit") }
+      end
+
+      it "returns empty when no PRs exist even with low rate limit" do
+        pr_issue.update!(github_state: "closed")
+        allow(rate_limit).to receive(:remaining).and_return(5)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
       end
     end
 

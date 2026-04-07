@@ -35,7 +35,6 @@ module Activities
       return { prs_to_trigger: [] } unless project.auto_scan_prs
 
       client = project.github_token.client
-      check_rate_budget!(client)
       paid_prs = find_paid_prs(project)
 
       prs_to_trigger = paid_prs.filter_map do |issue|
