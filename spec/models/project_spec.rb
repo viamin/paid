@@ -709,6 +709,44 @@ RSpec.describe Project do
       end
     end
 
+    describe "#enabled_review_bot_logins" do
+      it "returns empty set when no review methods have bot accounts" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "manual" => { "enabled" => true } }
+        })
+        expect(project.enabled_review_bot_logins).to be_empty
+      end
+
+      it "returns copilot logins when copilot method is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "copilot" => { "enabled" => true } }
+        })
+        expect(project.enabled_review_bot_logins).to include("copilot", "copilot[bot]")
+      end
+
+      it "returns codex logins when codex method is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+        expect(project.enabled_review_bot_logins).to include("chatgpt-codex-connector", "chatgpt-codex-connector[bot]")
+      end
+
+      it "does not include logins for disabled methods" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "copilot" => { "enabled" => false },
+            "codex" => { "enabled" => true }
+          }
+        })
+        expect(project.enabled_review_bot_logins).not_to include("copilot")
+        expect(project.enabled_review_bot_logins).to include("chatgpt-codex-connector")
+      end
+    end
+
     describe "#review_method_config" do
       it "returns merged config for a method" do
         project = build(:project, review_settings: {

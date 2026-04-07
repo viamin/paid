@@ -249,6 +249,47 @@
                 </div>
               </div>
 
+              <%# OpenAI Codex %>
+              <% codex = rs.dig("methods", "codex") || {} %>
+              <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3">
+                <div class="flex items-center">
+                  <input type="hidden" name="project[review_settings][methods][codex][enabled]" value="0" />
+                  <input type="checkbox" name="project[review_settings][methods][codex][enabled]" value="1" id="review_codex_enabled"
+                    <%= "checked" if codex["enabled"] %>
+                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                  <label for="review_codex_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">OpenAI Codex</label>
+                  <span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">GitHub-hosted only</span>
+                </div>
+                <p class="ml-7 text-xs text-gray-500">Waits for the <code>chatgpt-codex-connector</code> bot to review the PR and resolve its threads before advancing.</p>
+                <div class="ml-7 grid grid-cols-2 gap-3">
+                  <div>
+                    <label for="review_codex_max_rounds" class="block text-xs font-medium text-gray-600">Max Review Rounds</label>
+                    <input type="number" name="project[review_settings][methods][codex][termination][max_review_rounds]" id="review_codex_max_rounds"
+                      value="<%= codex.dig("termination", "max_review_rounds") %>" min="1" placeholder="e.g. 2"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div>
+                    <label for="review_codex_timeout" class="block text-xs font-medium text-gray-600">Timeout (minutes)</label>
+                    <input type="number" name="project[review_settings][methods][codex][termination][timeout_minutes]" id="review_codex_timeout"
+                      value="<%= codex.dig("termination", "timeout_minutes") %>" min="1" placeholder="e.g. 60"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div>
+                    <label for="review_codex_quality" class="block text-xs font-medium text-gray-600">Quality Threshold</label>
+                    <input type="text" name="project[review_settings][methods][codex][termination][quality_threshold]" id="review_codex_quality"
+                      value="<%= codex.dig("termination", "quality_threshold") %>" placeholder="e.g. approved"
+                      class="mt-1 block w-full rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600" />
+                  </div>
+                  <div class="flex items-center col-span-2">
+                    <input type="hidden" name="project[review_settings][methods][codex][termination][stop_when_no_comments]" value="0" />
+                    <input type="checkbox" name="project[review_settings][methods][codex][termination][stop_when_no_comments]" value="1" id="review_codex_stop_no_comments"
+                      <%= "checked" if codex.dig("termination", "stop_when_no_comments") %>
+                      class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" />
+                    <label for="review_codex_stop_no_comments" class="ml-2 block text-xs text-gray-600">Stop when no new comments</label>
+                  </div>
+                </div>
+              </div>
+
               <%# CI Review Action %>
               <% ci = rs.dig("methods", "ci_action") || {} %>
               <div class="rounded-md border border-gray-100 bg-gray-50 p-3 space-y-3">

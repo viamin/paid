@@ -708,8 +708,8 @@ RSpec.describe GithubClient do
             body: {
               total_count: 2,
               check_runs: [
-                { id: 1, name: "rspec", conclusion: "failure", started_at: "2024-01-01T00:00:00Z", completed_at: "2024-01-01T00:01:00Z" },
-                { id: 2, name: "rubocop", conclusion: "success", started_at: "2024-01-01T00:00:00Z", completed_at: nil }
+                { id: 1, name: "rspec", conclusion: "failure", started_at: "2024-01-01T00:00:00Z", completed_at: "2024-01-01T00:01:00Z", app: { id: 10 } },
+                { id: 2, name: "rubocop", conclusion: "success", started_at: "2024-01-01T00:00:00Z", completed_at: nil, app: { id: 10 } }
               ]
             }.to_json,
             headers: { "Content-Type" => "application/json" }
@@ -720,8 +720,8 @@ RSpec.describe GithubClient do
         result = client.check_runs_for_ref(repo, ref)
 
         expect(result).to eq([
-          { name: "rspec", conclusion: "failure", started_at: Time.zone.parse("2024-01-01T00:00:00Z"), completed_at: Time.zone.parse("2024-01-01T00:01:00Z") },
-          { name: "rubocop", conclusion: "success", started_at: Time.zone.parse("2024-01-01T00:00:00Z"), completed_at: nil }
+          { name: "rspec", conclusion: "failure", started_at: Time.zone.parse("2024-01-01T00:00:00Z"), completed_at: Time.zone.parse("2024-01-01T00:01:00Z"), app_id: 10 },
+          { name: "rubocop", conclusion: "success", started_at: Time.zone.parse("2024-01-01T00:00:00Z"), completed_at: nil, app_id: 10 }
         ])
       end
     end

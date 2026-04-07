@@ -310,7 +310,8 @@ class GithubClient
           name: cr.name,
           conclusion: cr.conclusion,
           started_at: parse_check_run_timestamp(cr.started_at),
-          completed_at: parse_check_run_timestamp(cr.completed_at)
+          completed_at: parse_check_run_timestamp(cr.completed_at),
+          app_id: cr.app&.id
         }
       end
     end

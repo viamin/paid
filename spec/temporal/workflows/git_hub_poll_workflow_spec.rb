@@ -298,7 +298,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
         current_draft_review_count: 0,
-        triggers: [ { type: "review_bot_review_pending" } ]
+        triggers: [ { type: "review_bot_review_pending", request_login: Activities::RequestReviewActivity::COPILOT_LOGIN } ]
       }
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
@@ -308,6 +308,31 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          { project_id: project_id, source_pull_request_number: 42, goal: "review",
+            provider_id: 99, agent_type: "codex" }, timeout: 30)
+    end
+
+    it "dispatches configured reviews when review_bot_review_pending has no request_login (auto-review bots)" do
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(true)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
+        .and_return({ dispatchable_review_methods: [ "paid_agent" ],
+                      paid_agent_review_provider_id: 99, paid_agent_review_agent_type: "codex" })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending", request_login: nil } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      # With paid_agent only (no copilot), no RequestReviewActivity is called
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
+      # Instead, a review run is queued via QueueAgentRunActivity
       expect(workflow).to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
           { project_id: project_id, source_pull_request_number: 42, goal: "review",
