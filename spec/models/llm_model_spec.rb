@@ -12,6 +12,22 @@ RSpec.describe LlmModel do
     it { is_expected.to validate_presence_of(:provider) }
     it { is_expected.to validate_presence_of(:category) }
     it { is_expected.to validate_inclusion_of(:category).in_array(described_class::CATEGORIES) }
+
+    it "permits a nil tier" do
+      expect(build(:llm_model, tier: nil)).to be_valid
+    end
+
+    it "rejects an unknown tier" do
+      model = build(:llm_model, tier: "ultra")
+      expect(model).not_to be_valid
+      expect(model.errors[:tier]).to be_present
+    end
+
+    it "accepts each known tier" do
+      LlmModel::TIERS.each do |tier|
+        expect(build(:llm_model, tier: tier)).to be_valid
+      end
+    end
   end
 
   describe "associations" do
@@ -34,6 +50,15 @@ RSpec.describe LlmModel do
         create(:llm_model, :openai)
 
         expect(described_class.by_provider("anthropic")).to eq([ anthropic ])
+      end
+    end
+
+    describe ".by_tier" do
+      it "filters by tier" do
+        high = create(:llm_model, tier: "high")
+        create(:llm_model, tier: "low")
+
+        expect(described_class.by_tier("high")).to eq([ high ])
       end
     end
 
