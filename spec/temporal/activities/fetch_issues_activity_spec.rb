@@ -325,16 +325,44 @@ RSpec.describe Activities::FetchIssuesActivity do
         )
       end
 
-      it "does not advance the sync watermark when the fetch is truncated" do
-        project.update!(last_issue_sync_at: 1.hour.ago)
-        original_sync_at = project.last_issue_sync_at
-
+      it "does not advance the sync watermark when a full fetch is truncated" do
         allow(Rails.logger).to receive(:warn)
 
         activity.execute(project_id: project.id)
 
         project.reload
-        expect(project.last_issue_sync_at).to eq(original_sync_at)
+        expect(project.last_issue_sync_at).to be_nil
+      end
+
+      context "when an incremental fetch is truncated" do
+        let(:latest_updated) { 5.minutes.ago }
+
+        before do
+          project.update!(last_issue_sync_at: 1.hour.ago)
+
+          allow(github_client).to receive(:issues) do |_repo, **opts|
+            page = opts[:page] || 1
+            offset = (page - 1) * 5
+            Array.new(5) do |i|
+              OpenStruct.new(
+                id: 4000 + offset + i, number: offset + i + 1,
+                title: "Issue #{offset + i + 1}", body: "Body", state: "open",
+                labels: [ OpenStruct.new(name: "paid-build") ], pull_request: nil,
+                user: OpenStruct.new(login: "viamin"),
+                created_at: 2.days.ago, updated_at: latest_updated - (offset + i).minutes
+              )
+            end
+          end
+
+          allow(Rails.logger).to receive(:warn)
+        end
+
+        it "advances the watermark to the latest updated_at" do
+          activity.execute(project_id: project.id)
+
+          project.reload
+          expect(project.last_issue_sync_at).to be_within(1.second).of(latest_updated)
+        end
       end
 
       it "does not close locally-open issues when the fetch is truncated" do
@@ -759,12 +787,12 @@ RSpec.describe Activities::FetchIssuesActivity do
         allow(github_client).to receive(:issues).and_return([ updated_issue ])
       end
 
-      it "passes since parameter and state: all to the API" do
+      it "passes since parameter, state: all, and direction: asc to the API" do
         activity.execute(project_id: project.id)
 
         expect(github_client).to have_received(:issues).with(
           project.full_name,
-          hash_including(since: sync_time.iso8601, state: "all")
+          hash_including(since: sync_time.iso8601, state: "all", direction: :asc)
         ).once
       end
 
