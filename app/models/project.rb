@@ -4,7 +4,7 @@ class Project < ApplicationRecord
   MERGE_METHODS = %w[squash merge rebase].freeze
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
   # "none" is not a method — it is represented by enabled: false at the top level
-  REVIEW_METHODS = %w[copilot paid_agent ci_action manual].freeze
+  REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
 
   DEFAULT_REVIEW_SETTINGS = {
     "enabled" => false,
@@ -26,6 +26,15 @@ class Project < ApplicationRecord
           "stop_when_no_comments" => true,
           "quality_threshold" => nil,
           "timeout_minutes" => 30
+        }
+      },
+      "codex" => {
+        "enabled" => false,
+        "termination" => {
+          "max_review_rounds" => 2,
+          "stop_when_no_comments" => true,
+          "quality_threshold" => nil,
+          "timeout_minutes" => 60
         }
       },
       "ci_action" => {
