@@ -496,13 +496,18 @@ class Provider < ApplicationRecord
     end
 
     expected_provider = Providers::DefaultTierModelIds::PROVIDER_KEY_TO_MODEL_PROVIDER[provider_key.to_s]
+    if expected_provider.nil?
+      errors.add(:tier_model_ids, "is not configurable for provider #{provider_key}")
+      return
+    end
+
     tier_model_ids.each do |tier, model_id|
       next if model_id.blank?
 
       model = LlmModel.find_by(model_id: model_id)
       if model.nil?
         errors.add(:tier_model_ids, "references unknown model #{model_id} for tier #{tier}")
-      elsif expected_provider && model.provider != expected_provider
+      elsif model.provider != expected_provider
         errors.add(:tier_model_ids, "model #{model_id} does not belong to provider #{provider_key}")
       end
     end

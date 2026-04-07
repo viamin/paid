@@ -53,6 +53,13 @@ RSpec.describe Provider do
         provider.tier_model_ids = { "low" => "haiku-y" }
         expect(provider).to be_valid
       end
+
+      it "rejects tier_model_ids for providers without a tier mapping" do
+        unmapped = build(:provider, provider_key: "copilot")
+        unmapped.tier_model_ids = { "low" => "anything" }
+        expect(unmapped).not_to be_valid
+        expect(unmapped.errors[:tier_model_ids].join).to include("not configurable")
+      end
     end
 
     it "validates auth_type inclusion" do

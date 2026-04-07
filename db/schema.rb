@@ -151,7 +151,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_071652) do
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "container_retained_until"
     t.integer "cost_cents", default: 0
-    t.boolean "count_toward_draft_review_round", default: false, null: false
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
@@ -160,7 +159,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_071652) do
     t.string "diagnosis_status", limit: 50
     t.integer "duration_seconds"
     t.text "error_message"
-    t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
@@ -203,8 +201,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_071652) do
     t.index ["issue_id"], name: "index_agent_runs_on_issue_id"
     t.index ["parent_workflow_id"], name: "index_agent_runs_on_parent_workflow_id"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])))"
+    t.index ["project_id", "issue_id"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
