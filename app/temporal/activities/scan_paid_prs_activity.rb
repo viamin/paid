@@ -644,22 +644,27 @@ module Activities
     end
 
     def check_conversation_comments(client, project, issue, last_run)
+      # recent_issue_comments returns the most recent page (up to 100) of
+      # comments via GithubClient's Link: last follow-up — see the note on
+      # that helper for why we cannot rely on sort/direction params. Within
+      # the returned page, GitHub's /issues/:n/comments endpoint lists
+      # comments in ascending order by id, so we cannot short-circuit on
+      # the first older-than-cutoff comment — we must scan the whole page.
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
       cutoff = last_run&.completed_at
 
-      relevant = comments.filter_map do |c|
-        break if cutoff && c.created_at && c.created_at <= cutoff
-
+      relevant = comments.select do |c|
         login = c.user&.login
-        next if bot_user?(login)
-        next unless project.trusted_github_user?(login)
-        next if system_generated_comment?(c.body)
-        next if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
+        next false if bot_user?(login)
+        next false unless project.trusted_github_user?(login)
+        next false if cutoff && c.created_at && c.created_at <= cutoff
+        next false if system_generated_comment?(c.body)
+        next false if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
 
-        c
+        true
       end
 
-      return [] if relevant.nil? || relevant.empty?
+      return [] if relevant.empty?
 
       [ { type: "conversation_comments", details: "#{relevant.size} new comment(s)" } ]
     rescue GithubClient::Error => e

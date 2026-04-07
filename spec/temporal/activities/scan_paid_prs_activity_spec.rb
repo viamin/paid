@@ -310,6 +310,47 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when the recent comment page starts with an older-than-cutoff comment" do
+      # Regression: GithubClient#recent_issue_comments returns comments in
+      # ascending order within the page, so a newer-than-cutoff comment can
+      # appear AFTER an older-than-cutoff comment in the same response. The
+      # scanner must scan the full page, not short-circuit on the first
+      # older entry.
+      let(:old_comment) do
+        OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "This comment is older than the last agent run — should be ignored",
+          created_at: 2.hours.ago
+        )
+      end
+      let(:new_comment) do
+        OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "Please also address the logging around the parser fallback path",
+          created_at: 20.minutes.ago
+        )
+      end
+
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago)
+        # Ascending order within the page — the older comment comes first.
+        stub_github_for_pr(issue_comments: [ old_comment, new_comment ])
+      end
+
+      it "still detects the newer comment that follows an older-than-cutoff entry" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("conversation_comments")
+      end
+    end
+
     context "when the new comment is a paid agent update" do
       let(:comment) do
         OpenStruct.new(
@@ -2181,9 +2222,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:review_threads)
       .with(project.full_name, 42)
       .and_return(review_threads)
-    allow(github_client).to receive(:recent_issue_comments)
-      .with(project.full_name, 42)
-      .and_return(issue_comments)
     allow(github_client).to receive(:recent_issue_comments)
       .with(project.full_name, 42)
       .and_return(recent_issue_comments || issue_comments)
