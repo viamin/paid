@@ -437,9 +437,16 @@ module Workflows
           request_review_method(project_id, pr_number, method, review_plan)
         end
       else
-        run_activity(Activities::RequestReviewActivity,
+        # Replay-safe legacy path: reproduces the exact activity inputs that
+        # main's request_review_bot_review recorded, including the inner
+        # "request_review_resolve_reviewer_from_project" patch guard.
+        input = if Temporalio::Workflow.patched("request_review_resolve_reviewer_from_project")
+          { project_id: project_id, pr_number: pr_number }
+        else
           { project_id: project_id, pr_number: pr_number,
-            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }
+        end
+        run_activity(Activities::RequestReviewActivity, input, timeout: 60)
       end
     rescue Temporalio::Error::CanceledError
       raise

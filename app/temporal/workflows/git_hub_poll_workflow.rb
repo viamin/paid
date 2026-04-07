@@ -216,7 +216,7 @@ module Workflows
       other_triggers = trigger_types - [ "review_bot_review_pending", Activities::ScanPaidPrsActivity::PASSIVE_REVIEW_GATE_TRIGGER ]
 
       if other_triggers.empty?
-        dispatch_configured_reviews(project_id, pr_data[:pr_number])
+        dispatch_configured_reviews(project_id, pr_data)
         return
       end
 
@@ -248,7 +248,9 @@ module Workflows
     end
 
     # TODO(#823): Remove patch guard after pre-fix review-dispatch histories continue-as-new.
-    def dispatch_configured_reviews(project_id, pr_number)
+    def dispatch_configured_reviews(project_id, pr_data)
+      pr_number = pr_data[:pr_number]
+
       if Temporalio::Workflow.patched("dispatch-configured-pr-reviews-v1")
         review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
           { project_id: project_id }, timeout: 30)
@@ -257,9 +259,18 @@ module Workflows
           request_review_method(project_id, pr_number, method, review_plan)
         end
       else
-        request_review(project_id, pr_number,
-          [ Activities::RequestReviewActivity::COPILOT_LOGIN ],
-          log_key: "pr_review.request_review_bot_review_failed")
+        # Replay-safe legacy path: reproduces the exact activity inputs that
+        # main's handle_review_bot_review_pending recorded. Old histories
+        # extracted request_login from the trigger and only requested a review
+        # when that login was present; replaying with a hardcoded reviewer
+        # would cause non-determinism errors on those histories.
+        pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
+        login = pending_trigger&.dig(:request_login)
+
+        if login
+          request_review(project_id, pr_number, [ login ],
+            log_key: "pr_review.request_review_bot_review_failed")
+        end
       end
     rescue Temporalio::Error::CanceledError
       raise

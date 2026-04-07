@@ -425,8 +425,12 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       ))
     end
 
-    it "uses the legacy copilot-only review path when the patch is not applied" do
+    it "uses the legacy review path when the dispatch patch is not applied" do
       allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(false)
+      # Inner patch returns true: legacy path sends input without explicit reviewers,
+      # matching main's request_review_resolve_reviewer_from_project behaviour.
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("request_review_resolve_reviewer_from_project").and_return(true)
       stub_existing_pr_followup(pr_review_phase: "ready")
 
       workflow.execute(input)
@@ -435,8 +439,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         .with(Activities::ResolvePrReviewPlanActivity, anything, timeout: anything, retry_policy: anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
-          { project_id: 1, pr_number: 42,
-            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
+          { project_id: 1, pr_number: 42 },
           timeout: 60)
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: 30)

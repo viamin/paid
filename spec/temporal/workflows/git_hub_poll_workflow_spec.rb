@@ -464,18 +464,33 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       ))
     end
 
-    it "uses the legacy copilot-only review path when the patch is not applied" do
+    it "uses the legacy trigger-based review path when the dispatch patch is not applied" do
       allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(false)
 
-      workflow.send(:handle_pr_trigger, project_id, review_bot_pending_pr_data)
+      # Legacy path extracts request_login from the trigger; when present it
+      # requests a review for that specific login to match the original
+      # handle_review_bot_review_pending behaviour.
+      pr_data_with_login = review_bot_pending_pr_data.deep_dup
+      pr_data_with_login[:triggers].first[:request_login] = "copilot"
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data_with_login)
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, anything, timeout: anything)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
-          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: 60)
+          hash_including(reviewers: [ "copilot" ]), timeout: 60)
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: 30)
+    end
+
+    it "skips review request on legacy path when trigger has no request_login" do
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(false)
+
+      workflow.send(:handle_pr_trigger, project_id, review_bot_pending_pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
     end
 
     it "triggers dev environment update after successful merge" do
