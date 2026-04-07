@@ -257,7 +257,14 @@ class AgentRun < ApplicationRecord
 
   # Returns "P1"/"P2"/"P3" if the run's issue or source PR carries one of
   # the project's configured priority labels (highest wins), else nil.
+  # Memoized because rendering helpers call this twice per row (once
+  # via queue_priority_tier and once via queue_priority_label).
   def label_priority_tier
+    return @label_priority_tier if defined?(@label_priority_tier)
+    @label_priority_tier = compute_label_priority_tier
+  end
+
+  def compute_label_priority_tier
     return nil unless project
 
     label_sources = []
@@ -274,6 +281,7 @@ class AgentRun < ApplicationRecord
       label_sources.any? { |labels| labels.include?(label_name) }
     end
   end
+  private :compute_label_priority_tier
 
   def queue_priority_label
     priority = QUEUE_PRIORITIES.fetch(queue_priority_tier) { UNKNOWN_PRIORITY }
