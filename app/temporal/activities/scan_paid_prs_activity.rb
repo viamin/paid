@@ -38,7 +38,6 @@ module Activities
       paid_prs = find_paid_prs(project)
 
       prs_to_trigger = paid_prs.filter_map do |issue|
-        check_rate_budget!(client)
         scan_pr(project, client, issue)
       end
 
@@ -64,6 +63,8 @@ module Activities
 
     def scan_pr(project, client, issue)
       return nil if active_run_exists?(project, issue)
+
+      check_rate_budget!(client)
 
       case issue.pr_review_phase
       when "draft", "restarted"
