@@ -8,6 +8,27 @@ class WorkflowStatusesController < ApplicationController
     @health = compute_automation_health
   end
 
+  def restart
+    @project = policy_scope(Project).find(params[:project_id])
+    authorize @project, :update?
+
+    temporal_status = ProjectWorkflowManager.workflow_status(@project)
+    if temporal_status[:running]
+      redirect_to project_path(@project), alert: "Issue monitor is already running."
+      return
+    end
+
+    ProjectWorkflowManager.restart_polling(@project, reason: "manual restart from UI")
+    redirect_to project_path(@project), notice: "Issue monitor restarted."
+  rescue Temporalio::Error::RPCError => e
+    Rails.logger.error(
+      message: "workflow_status.restart_failed",
+      project_id: @project.id,
+      error: e.message
+    )
+    redirect_to project_path(@project), alert: "Could not restart issue monitor. Please try again later."
+  end
+
   private
 
   def compute_automation_health
