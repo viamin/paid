@@ -281,36 +281,49 @@ class AgentRun < ApplicationRecord
     indicator ? "#{indicator} - #{priority[:label]}" : priority[:label]
   end
 
-  # Correlated subquery: does the agent run's associated issue or
-  # source PR carry the project's configured priority label for the
-  # given tier? `tier_key` must be one of 'P1', 'P2', 'P3'. Note that
-  # `issues.labels` is jsonb and the `?` operator returns true when a
-  # text exists as an array element.
-  PRIORITY_LABEL_EXISTS_SQL = ->(tier_key) {
-    <<~SQL.squish
-      EXISTS (
-        SELECT 1
-        FROM projects p
-        JOIN issues i ON (
+  # Static SQL: does the agent run's associated issue or source PR carry
+  # the project's configured priority label for the named tier? Reads
+  # the per-project label name from `projects.priority_labels` jsonb,
+  # falling back to the literal tier key (P1/P2/P3) when the project's
+  # mapping is empty so behavior matches Project#effective_priority_labels.
+  # `issues.labels` is jsonb; `@>` checks for element containment.
+  #
+  # NOTE: This SQL contains no interpolated values — the tier names are
+  # hardcoded literals — so it is not a SQL injection vector.
+  QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
+    CASE
+      WHEN EXISTS (
+        SELECT 1 FROM projects p JOIN issues i ON (
           i.id = agent_runs.issue_id
           OR (i.project_id = agent_runs.project_id
               AND i.github_number = agent_runs.source_pull_request_number
               AND i.is_pull_request = TRUE)
         )
         WHERE p.id = agent_runs.project_id
-          AND COALESCE(p.priority_labels->>'#{tier_key}', '') <> ''
-          AND i.labels @> jsonb_build_array(p.priority_labels->>'#{tier_key}')
-      )
-    SQL
-  }
-
-  QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
-    CASE
-      WHEN #{PRIORITY_LABEL_EXISTS_SQL.call('P1')} THEN 0
+          AND i.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P1', ''), 'P1'))
+      ) THEN 0
       WHEN trigger_type = 'manual' THEN 1
-      WHEN #{PRIORITY_LABEL_EXISTS_SQL.call('P2')} THEN 2
+      WHEN EXISTS (
+        SELECT 1 FROM projects p JOIN issues i ON (
+          i.id = agent_runs.issue_id
+          OR (i.project_id = agent_runs.project_id
+              AND i.github_number = agent_runs.source_pull_request_number
+              AND i.is_pull_request = TRUE)
+        )
+        WHERE p.id = agent_runs.project_id
+          AND i.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P2', ''), 'P2'))
+      ) THEN 2
       WHEN trigger_type = 'automatic' AND source_pull_request_number IS NOT NULL THEN 3
-      WHEN #{PRIORITY_LABEL_EXISTS_SQL.call('P3')} THEN 4
+      WHEN EXISTS (
+        SELECT 1 FROM projects p JOIN issues i ON (
+          i.id = agent_runs.issue_id
+          OR (i.project_id = agent_runs.project_id
+              AND i.github_number = agent_runs.source_pull_request_number
+              AND i.is_pull_request = TRUE)
+        )
+        WHERE p.id = agent_runs.project_id
+          AND i.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P3', ''), 'P3'))
+      ) THEN 4
       ELSE 5
     END
   SQL
