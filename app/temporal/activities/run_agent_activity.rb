@@ -452,6 +452,7 @@ module Activities
 
       agent_run.log!("system", "Starting #{provider} agent in container")
       agent_run.log!("system", "Prompt: #{prompt.truncate(500)}")
+      log_container_context(agent_run, provider)
 
       effective_timeout = if agent_run.create_issue_goal?
         user_settings&.issue_goal_timeout_seconds || DEFAULT_ISSUE_GOAL_TIMEOUT
@@ -515,6 +516,20 @@ module Activities
     def check_infinite_loop!(agent_run)
       result = AgentRuns::DetectInfiniteLoop.call(agent_run: agent_run)
       raise InfiniteLoopError, result.reason if result.loop_detected?
+    end
+
+    # Records container and worktree context at agent-run start for
+    # traceability.  If a future run exhibits cross-run contamination
+    # (see #905), these log entries make it possible to determine whether
+    # the container/worktree was reused.
+    def log_container_context(agent_run, provider)
+      logger.info(
+        message: "agent_execution.container_context",
+        agent_run_id: agent_run.id,
+        provider: provider.to_s,
+        container_id: agent_run.container_id,
+        worktree_path: agent_run.worktree_path
+      )
     end
 
     # Checks if the output indicates a rate limit error.

@@ -17,7 +17,9 @@ module Activities
 
         logger.info(
           message: "agent_execution.container_provisioned",
-          agent_run_id: agent_run_id
+          agent_run_id: agent_run_id,
+          container_id: agent_run.container_id,
+          worktree_path: agent_run.worktree_path
         )
 
         { agent_run_id: agent_run_id }

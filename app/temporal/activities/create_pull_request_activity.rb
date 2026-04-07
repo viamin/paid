@@ -53,6 +53,7 @@ module Activities
       parts = []
 
       summary = agent_run.agent_summary
+      validate_summary_scope(summary, issue, agent_run)
       description = generate_description(summary, issue, agent_run_id: agent_run.id)
 
       if description.present?
@@ -109,6 +110,49 @@ module Activities
         error: e.message
       )
       nil
+    end
+
+    # Checks whether the agent summary text plausibly relates to the target
+    # issue.  Logs a structured warning when the summary appears to describe
+    # a *different* issue — the most visible symptom of cross-run state
+    # contamination (see GitHub issue #905).
+    #
+    # The check is deliberately lightweight (string matching, no LLM call)
+    # so it never blocks PR creation.
+    def validate_summary_scope(summary, issue, agent_run)
+      return if summary.blank? || issue.nil?
+
+      issue_number = issue.github_number
+
+      mentions_own_issue = summary.match?(/(?<!\w)##{issue_number}\b/) ||
+                          summary.match?(/\bissue\s+#{issue_number}\b/i)
+
+      other_numbers = sibling_open_issue_numbers(agent_run.project, exclude: issue_number)
+      cross_refs = other_numbers.select { |num| summary.match?(/(?<!\w)##{num}\b/) }
+
+      if !mentions_own_issue && cross_refs.any?
+        logger.warn(
+          message: "agent_execution.summary_scope_mismatch",
+          agent_run_id: agent_run.id,
+          issue_number: issue_number,
+          cross_referenced_issues: cross_refs,
+          summary_preview: summary.truncate(200)
+        )
+        agent_run.log!(
+          "system",
+          "Warning: agent summary may describe a different issue. " \
+          "Expected references to ##{issue_number}, found references to: #{cross_refs.map { |n| "##{n}" }.join(", ")}"
+        )
+      end
+    end
+
+    # Returns github_numbers of other open issues in the same project,
+    # excluding the current issue.
+    def sibling_open_issue_numbers(project, exclude:)
+      project.issues
+        .where(github_state: "open", is_pull_request: false)
+        .where.not(github_number: exclude)
+        .pluck(:github_number)
     end
 
     def add_pr_labels(client, project, pr_number, agent_run_id)

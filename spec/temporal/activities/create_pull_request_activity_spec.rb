@@ -237,5 +237,55 @@ RSpec.describe Activities::CreatePullRequestActivity do
         activity.execute(agent_run_id: -1)
       }.to raise_error(ActiveRecord::RecordNotFound)
     end
+
+    context "when agent summary references a different issue (scope mismatch)" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue # ensure created
+        agent_run.log!("stdout", "Updated relationships_parsed_at for ##{other_issue.github_number}")
+      end
+
+      it "logs a scope mismatch warning" do
+        allow(Rails).to receive(:logger).and_return(Rails.logger)
+        expect(Rails.logger).to receive(:warn).with(hash_including(
+          message: "agent_execution.summary_scope_mismatch",
+          agent_run_id: agent_run.id,
+          issue_number: issue.github_number,
+          cross_referenced_issues: [ other_issue.github_number ]
+        )).and_call_original
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "adds a system log to the agent run about the mismatch" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        warning_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(warning_log).to be_present
+        expect(warning_log.content).to include("##{other_issue.github_number}")
+      end
+
+      it "still creates the PR successfully" do
+        result = activity.execute(agent_run_id: agent_run.id)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
+    end
+
+    context "when agent summary correctly references its own issue" do
+      before do
+        create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
+        agent_run.log!("stdout", "Fixed ##{issue.github_number} by updating the scanner")
+      end
+
+      it "does not log a scope mismatch warning" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+    end
   end
 end
