@@ -45,6 +45,10 @@ module Activities
 
         scanned_count += 1
         result = scan_pr(project, client, issue)
+        # Only mark as scanned when the scan actually completed — scan_pr
+        # returns :skipped when short-circuited (active run exists) or when
+        # API failures prevented full evaluation.
+        next nil if result == :skipped
         issue.update_column(:last_pr_scan_at, Time.current)
         result
       end
@@ -72,7 +76,7 @@ module Activities
     end
 
     def scan_pr(project, client, issue)
-      return nil if active_run_exists?(project, issue)
+      return :skipped if active_run_exists?(project, issue)
 
       case issue.pr_review_phase
       when "draft", "restarted"
@@ -157,8 +161,10 @@ module Activities
 
       if all_triggers.empty?
         # If we couldn't fetch PR data, don't prematurely advance the phase.
-        return nil if pr_data.nil?
-        return nil if reviews.nil?
+        # Return :skipped so the caller knows the scan was incomplete and
+        # should not update last_pr_scan_at.
+        return :skipped if pr_data.nil?
+        return :skipped if reviews.nil?
 
         # A draft PR is only ready to leave draft after the latest review-bot
         # review is explicitly clean. Resolved threads alone are not enough.
@@ -189,7 +195,7 @@ module Activities
     # --- Ready phase scanning ---
 
     def scan_ready_pr(project, client, issue, pr_data:)
-      return nil if pr_data.nil?
+      return :skipped if pr_data.nil?
 
       checks = fetch_check_runs(client, project, pr_data)
       reviews = fetch_reviews(client, project, issue)

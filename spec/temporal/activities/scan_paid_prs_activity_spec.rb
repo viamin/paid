@@ -1963,6 +1963,34 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         }.to change { unchanged_pr.reload.last_pr_scan_at }.from(nil)
       end
 
+      it "does not update last_pr_scan_at when an active run exists" do
+        unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
+        create(:agent_run,
+          project: project,
+          source_pull_request_number: 42,
+          status: "running")
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.not_to change { unchanged_pr.reload.last_pr_scan_at }
+      end
+
+      it "does not update last_pr_scan_at when API fails" do
+        unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
+        allow(github_client).to receive(:pull_request)
+          .and_raise(GithubClient::Error.new("API error"))
+        allow(github_client).to receive(:review_threads)
+          .with(project.full_name, 42)
+          .and_return([])
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, 42)
+          .and_return([])
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.not_to change { unchanged_pr.reload.last_pr_scan_at }
+      end
+
       it "reports skipped count in log output" do
         allow(Rails.logger).to receive(:info)
         allow(Rails.logger).to receive(:debug)
