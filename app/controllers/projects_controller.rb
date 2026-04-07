@@ -196,6 +196,7 @@ class ProjectsController < ApplicationController
       :auto_fix_merge_conflicts, :auto_scan_security, :security_severity_threshold,
       :generated_label_name, :automation_label_name,
       :auto_add_labels_enabled, :automation_on_label_enabled, :pr_aggregation_enabled,
+      :inherit_priority_labels,
       :agent_co_author_trailer,
       allowed_github_usernames: [])
   end
