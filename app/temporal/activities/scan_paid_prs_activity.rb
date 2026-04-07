@@ -497,18 +497,23 @@ module Activities
       request_login: nil, client: nil, issue: nil)
       allowed = allowed_logins || (project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil)
       latest = latest_allowed_bot_review(reviews, allowed)
-      status = review_bot_review_status_from(reviews, latest)
 
-      # Body-only bots (Codex) can also post their CLEAN signal as an issue
+      # Body-only bots (Codex) can post their CLEAN signal as an issue
       # comment — e.g. "Codex Review: Didn't find any major issues. Bravo." —
       # which is invisible to pull_request_reviews. When such a comment is
       # the most recent body-only-bot signal on the PR, treat the bot as
       # clean regardless of any older non-clean review. Without this check,
       # the @codex review trigger loop would re-emit pending triggers
       # forever and wedge codex-only PRs in draft.
+      #
+      # The bypass is restricted to projects whose enabled review bots are
+      # ALL body-only so a clean codex comment cannot suppress an outstanding
+      # Copilot review in mixed configurations.
       if client && issue && body_only_bot_clean_comment_present?(client, project, issue, latest, allowed)
         return []
       end
+
+      status = review_bot_review_status_from(reviews, latest)
 
       case status
       when :clean
