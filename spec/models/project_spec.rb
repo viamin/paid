@@ -753,6 +753,14 @@ RSpec.describe Project do
         expect(project.review_bot_request_login).to be_nil
       end
 
+      it "returns nil when reviews are globally disabled even if a method sub-flag is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => false,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_login).to be_nil
+      end
+
       it "returns copilot login when copilot is enabled" do
         project = build(:project, review_settings: {
           "enabled" => true,
