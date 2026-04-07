@@ -333,19 +333,18 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
-    it "re-requests Copilot review after pushing commits to a ready PR" do
+    it "re-requests a review-bot review after pushing commits to a ready PR" do
       stub_existing_pr_followup(pr_review_phase: "ready")
 
       workflow.execute(input)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
-          { project_id: 1, pr_number: 42,
-            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
+          { project_id: 1, pr_number: 42 },
           timeout: 60)
     end
 
-    it "does not request Copilot review after pushing commits to a merged PR" do
+    it "does not request a review-bot review after pushing commits to a merged PR" do
       stub_existing_pr_followup(pr_review_phase: "merged")
 
       workflow.execute(input)
@@ -383,15 +382,14 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
-    it "requests Copilot review even when agent makes no changes on existing PR" do
+    it "requests a review-bot review even when the agent makes no changes on an existing PR" do
       stub_no_changes_followup
 
       workflow.execute(input)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
-          { project_id: 1, pr_number: 42,
-            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
+          { project_id: 1, pr_number: 42 },
           timeout: 60)
     end
   end

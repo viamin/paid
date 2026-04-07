@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe Activities::RequestReviewActivity do
   let(:activity) { described_class.new }
@@ -222,6 +223,133 @@ RSpec.describe Activities::RequestReviewActivity do
         result = activity.execute(project_id: project.id, pr_number: 42, reviewers: [ "copilot" ])
 
         expect(result[:requested]).to eq([ "copilot" ])
+      end
+    end
+
+    context "when reviewers key is omitted" do
+      let(:project) do
+        create(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+      end
+      let(:head_sha) { "abc123def456" }
+      let(:pr_struct) { OpenStruct.new(head: OpenStruct.new(sha: head_sha)) }
+
+      before do
+        allow(github_client).to receive_messages(pull_request_review_requests: { users: [] }, pull_request: pr_struct, issue_comments: [])
+        allow(github_client).to receive(:add_comment)
+      end
+
+      it "resolves the reviewer from the project's enabled review bot" do
+        result = activity.execute(project_id: project.id, pr_number: 42)
+
+        expect(result[:requested]).to eq([ described_class::CODEX_LOGIN ])
+        expect(github_client).to have_received(:add_comment)
+          .with(project.full_name, 42, a_string_including("@codex review"))
+      end
+    end
+
+    context "when requesting codex via comment trigger" do
+      let(:head_sha) { "deadbeef0000" }
+      let(:marker) { "#{described_class::COMMENT_TRIGGER_MARKER_PREFIX}: #{head_sha}" }
+      let(:pr_struct) { OpenStruct.new(head: OpenStruct.new(sha: head_sha)) }
+
+      before do
+        allow(github_client).to receive_messages(pull_request_review_requests: { users: [] }, pull_request: pr_struct)
+        allow(github_client).to receive(:add_comment)
+      end
+
+      it "posts an @codex review comment embedding the HEAD SHA marker" do
+        allow(github_client).to receive(:issue_comments).and_return([])
+
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ described_class::CODEX_LOGIN ]
+        )
+
+        expect(result[:requested]).to eq([ described_class::CODEX_LOGIN ])
+        expect(github_client).to have_received(:add_comment).with(
+          project.full_name,
+          42,
+          a_string_including("<!-- #{marker} -->", "@codex review")
+        )
+      end
+
+      it "is idempotent when a marker for the current HEAD already exists" do
+        existing = OpenStruct.new(body: "<!-- #{marker} -->\n@codex review")
+        allow(github_client).to receive(:issue_comments).and_return([ existing ])
+
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ described_class::CODEX_LOGIN ]
+        )
+
+        expect(result[:requested]).to eq([])
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      it "posts a fresh trigger when the existing marker is for a different HEAD" do
+        stale = OpenStruct.new(body: "<!-- #{described_class::COMMENT_TRIGGER_MARKER_PREFIX}: oldsha123 -->\n@codex review")
+        allow(github_client).to receive(:issue_comments).and_return([ stale ])
+
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ described_class::CODEX_LOGIN ]
+        )
+
+        expect(result[:requested]).to eq([ described_class::CODEX_LOGIN ])
+        expect(github_client).to have_received(:add_comment).once
+      end
+
+      it "does not use GraphQL bot review for codex" do
+        allow(github_client).to receive(:issue_comments).and_return([])
+        allow(github_client).to receive(:request_bot_review)
+
+        activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ described_class::CODEX_LOGIN ]
+        )
+
+        expect(github_client).not_to have_received(:request_bot_review)
+      end
+
+      it "skips posting when the PR HEAD cannot be fetched" do
+        allow(github_client).to receive(:pull_request)
+          .and_raise(GithubClient::Error, "transient")
+        allow(github_client).to receive(:issue_comments).and_return([])
+
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ described_class::CODEX_LOGIN ]
+        )
+
+        expect(result[:requested]).to eq([])
+        expect(github_client).not_to have_received(:add_comment)
+      end
+    end
+
+    context "when requesting both codex and a human reviewer" do
+      let(:head_sha) { "cafef00d" }
+      let(:pr_struct) { OpenStruct.new(head: OpenStruct.new(sha: head_sha)) }
+
+      before do
+        allow(github_client).to receive_messages(pull_request_review_requests: { users: [] }, pull_request: pr_struct, issue_comments: [])
+        allow(github_client).to receive(:add_comment)
+        allow(github_client).to receive(:request_pull_request_review)
+      end
+
+      it "routes each to the correct mechanism" do
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ described_class::CODEX_LOGIN, "octocat" ]
+        )
+
+        expect(result[:requested]).to contain_exactly(described_class::CODEX_LOGIN, "octocat")
+        expect(github_client).to have_received(:add_comment)
+          .with(project.full_name, 42, a_string_including("@codex review"))
+        expect(github_client).to have_received(:request_pull_request_review)
+          .with(project.full_name, 42, reviewers: [ "octocat" ])
       end
     end
   end
