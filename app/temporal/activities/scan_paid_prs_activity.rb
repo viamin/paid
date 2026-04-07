@@ -457,12 +457,21 @@ module Activities
     end
 
     # Returns the login that should be explicitly requested for a review-bot
-    # review, or nil if the configured bot auto-reviews (e.g. Codex via GitHub
-    # App) and no explicit request is needed.
+    # review, or nil when no enabled review method has a bot that accepts
+    # explicit review requests. See Project#review_bot_request_login for the
+    # precedence rules.
     def review_bot_request_login(project)
-      return Activities::RequestReviewActivity::COPILOT_LOGIN if project.review_method_enabled?("copilot")
+      project.review_bot_request_login
+    end
 
-      nil
+    # Returns the login used to request a review from a specific bot method.
+    REVIEW_METHOD_REQUEST_LOGINS = {
+      "copilot" => Activities::RequestReviewActivity::COPILOT_LOGIN,
+      "codex" => Activities::RequestReviewActivity::CODEX_LOGIN
+    }.freeze
+
+    def review_bot_login_for_method(method)
+      REVIEW_METHOD_REQUEST_LOGINS[method.to_s]
     end
 
     # Review-bot logins that post feedback as a single top-level review body
@@ -475,8 +484,9 @@ module Activities
       .to_set
       .freeze
 
-    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil)
-      allowed = project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil
+    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, allowed_logins: nil,
+      request_login: nil)
+      allowed = allowed_logins || (project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil)
       latest = latest_allowed_bot_review(reviews, allowed)
       status = review_bot_review_status_from(reviews, latest)
 
@@ -484,8 +494,19 @@ module Activities
       when :clean
         []
       when :no_review
-        login = review_bot_request_login(project) if project
-        [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        # Only emit a pending trigger when a requestable review bot is
+        # configured. When login is nil — reviews globally disabled, or
+        # only non-bot review methods (e.g. manual) are enabled — there is
+        # no bot that could satisfy the trigger, so emitting it would wedge
+        # the draft scanner in a perpetual "waiting for bot review" state
+        # with no path out (handle_review_bot_review_pending skips the
+        # RequestReviewActivity call when login is nil).
+        login = request_login || (project && review_bot_request_login(project))
+        if login
+          [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        else
+          []
+        end
       when :has_comments
         # When unresolved_threads is nil, threads were either never fetched
         # (e.g. the skip_comment_signals path) or the API call failed. We
@@ -570,7 +591,14 @@ module Activities
       project.blocking_review_methods.each do |method|
         case method
         when "copilot", "codex"
-          triggers.concat(check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run))
+          method_logins = project.bot_logins_for_review_method(method)
+          # For legacy projects (reviews not explicitly enabled), defer to
+          # review_bot_request_login which correctly returns nil — preventing
+          # perpetual pending triggers that no bot can satisfy.
+          method_request_login = project.review_enabled? ? review_bot_login_for_method(method) : nil
+          triggers.concat(check_review_bot_status(reviews, unresolved_threads,
+            project: project, last_run: last_run, allowed_logins: method_logins,
+            request_login: method_request_login))
         when "paid_agent"
           case paid_agent_review_status(project, issue, unresolved_threads)
           when :completed
