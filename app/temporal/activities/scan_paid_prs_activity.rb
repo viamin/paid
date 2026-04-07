@@ -346,7 +346,14 @@ module Activities
     # cancelled with zero iterations), stop requeueing to prevent
     # infinite retry loops. Scoped to automatic create_pr runs so that
     # manual runs or review-phase followups don't trip the breaker.
+    #
+    # The draft_review_count guard ensures we only consider runs from the
+    # current draft phase. maybe_restart_draft resets draft_review_count
+    # to 0, so older non-draft failures can't trip the breaker when a PR
+    # is converted back to draft.
     def consecutive_draft_failures_breaker?(project, issue)
+      return false if issue.draft_review_count < MAX_CONSECUTIVE_DRAFT_FAILURES
+
       failure_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled]
 
       recent_runs = project.agent_runs

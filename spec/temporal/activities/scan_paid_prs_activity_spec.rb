@@ -1324,7 +1324,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "draft",
-          draft_review_count: 0)
+          draft_review_count: 3)
       end
 
       before do
@@ -1383,6 +1383,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         create_draft_run(status: "failed", iterations: 0, created_at: 2.minutes.ago)
         # This run is manual, not an automatic draft followup
         create_draft_run(status: "timeout", iterations: 0, created_at: 3.minutes.ago, trigger_type: "manual")
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
+      end
+
+      it "does not escalate after draft restart even with old failures" do
+        # Simulate maybe_restart_draft resetting draft_review_count to 0
+        # while old non-draft failures still exist in the DB
+        pr_issue.update!(draft_review_count: 0, pr_review_phase: "restarted")
+        3.times { |i| create_draft_run(status: "timeout", iterations: 0, created_at: i.minutes.ago) }
 
         result = activity.execute(project_id: project.id)
 
