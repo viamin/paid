@@ -240,7 +240,7 @@ RSpec.describe Activities::RequestReviewActivity do
         allow(github_client).to receive_messages(
           pull_request_review_requests: { users: [] },
           pull_request: pr_struct,
-          issue_comments: [],
+          recent_issue_comments: [],
           authenticated_login: "paid-bot"
         )
         allow(github_client).to receive(:add_comment)
@@ -271,8 +271,23 @@ RSpec.describe Activities::RequestReviewActivity do
         allow(github_client).to receive(:add_comment)
       end
 
+      it "uses the bounded recent-comments endpoint for the idempotency check" do
+        allow(github_client).to receive(:recent_issue_comments).and_return([])
+
+        activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ described_class::CODEX_LOGIN ]
+        )
+
+        # Regression: previously used issue_comments (auto-paginated full
+        # history), which scaled linearly with PR age and risked rate-limit
+        # exhaustion on long-lived PRs.
+        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 42)
+        expect(github_client).not_to have_received(:issue_comments) if github_client.respond_to?(:issue_comments)
+      end
+
       it "posts an @codex review comment embedding the HEAD SHA marker" do
-        allow(github_client).to receive(:issue_comments).and_return([])
+        allow(github_client).to receive(:recent_issue_comments).and_return([])
 
         result = activity.execute(
           project_id: project.id, pr_number: 42,
@@ -289,7 +304,7 @@ RSpec.describe Activities::RequestReviewActivity do
 
       it "is idempotent when a Paid-authored marker for the current HEAD already exists" do
         existing = OpenStruct.new(body: "<!-- #{marker} -->\n@codex review", user: paid_user)
-        allow(github_client).to receive(:issue_comments).and_return([ existing ])
+        allow(github_client).to receive(:recent_issue_comments).and_return([ existing ])
 
         result = activity.execute(
           project_id: project.id, pr_number: 42,
@@ -302,7 +317,7 @@ RSpec.describe Activities::RequestReviewActivity do
 
       it "ignores a spoofed marker authored by a different user" do
         spoof = OpenStruct.new(body: "Hey check out <!-- #{marker} -->", user: other_user)
-        allow(github_client).to receive(:issue_comments).and_return([ spoof ])
+        allow(github_client).to receive(:recent_issue_comments).and_return([ spoof ])
 
         result = activity.execute(
           project_id: project.id, pr_number: 42,
@@ -315,7 +330,7 @@ RSpec.describe Activities::RequestReviewActivity do
 
       it "falls back to author-agnostic matching when the authenticated login cannot be resolved" do
         existing = OpenStruct.new(body: "<!-- #{marker} -->\n@codex review", user: other_user)
-        allow(github_client).to receive_messages(authenticated_login: nil, issue_comments: [ existing ])
+        allow(github_client).to receive_messages(authenticated_login: nil, recent_issue_comments: [ existing ])
 
         result = activity.execute(
           project_id: project.id, pr_number: 42,
@@ -331,7 +346,7 @@ RSpec.describe Activities::RequestReviewActivity do
           body: "<!-- #{described_class::COMMENT_TRIGGER_MARKER_PREFIX}: oldsha123 -->\n@codex review",
           user: paid_user
         )
-        allow(github_client).to receive(:issue_comments).and_return([ stale ])
+        allow(github_client).to receive(:recent_issue_comments).and_return([ stale ])
 
         result = activity.execute(
           project_id: project.id, pr_number: 42,
@@ -343,7 +358,7 @@ RSpec.describe Activities::RequestReviewActivity do
       end
 
       it "does not use GraphQL bot review for codex" do
-        allow(github_client).to receive(:issue_comments).and_return([])
+        allow(github_client).to receive(:recent_issue_comments).and_return([])
         allow(github_client).to receive(:request_bot_review)
 
         activity.execute(
@@ -357,7 +372,7 @@ RSpec.describe Activities::RequestReviewActivity do
       it "skips posting when the PR HEAD cannot be fetched" do
         allow(github_client).to receive(:pull_request)
           .and_raise(GithubClient::Error, "transient")
-        allow(github_client).to receive(:issue_comments).and_return([])
+        allow(github_client).to receive(:recent_issue_comments).and_return([])
 
         result = activity.execute(
           project_id: project.id, pr_number: 42,
@@ -369,7 +384,7 @@ RSpec.describe Activities::RequestReviewActivity do
       end
 
       it "skips posting when the comment fetch fails, to avoid spam on transient errors" do
-        allow(github_client).to receive(:issue_comments)
+        allow(github_client).to receive(:recent_issue_comments)
           .and_raise(GithubClient::Error, "transient")
 
         result = activity.execute(
@@ -390,7 +405,7 @@ RSpec.describe Activities::RequestReviewActivity do
         allow(github_client).to receive_messages(
           pull_request_review_requests: { users: [] },
           pull_request: pr_struct,
-          issue_comments: [],
+          recent_issue_comments: [],
           authenticated_login: "paid-bot"
         )
         allow(github_client).to receive(:add_comment)

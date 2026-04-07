@@ -427,8 +427,19 @@ module Activities
       when :clean
         []
       when :no_review
-        login = review_bot_request_login(project) if project
-        [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        # Only emit a pending trigger when a requestable review bot is
+        # configured. When login is nil — reviews globally disabled, or
+        # only non-bot review methods (e.g. manual) are enabled — there is
+        # no bot that could satisfy the trigger, so emitting it would wedge
+        # the draft scanner in a perpetual "waiting for bot review" state
+        # with no path out (handle_review_bot_review_pending skips the
+        # RequestReviewActivity call when login is nil).
+        login = project && review_bot_request_login(project)
+        if login
+          [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        else
+          []
+        end
       when :has_comments
         # When unresolved_threads is nil, threads were either never fetched
         # (e.g. the skip_comment_signals path) or the API call failed. We

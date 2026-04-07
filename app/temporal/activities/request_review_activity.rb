@@ -195,7 +195,14 @@ module Activities
     # still applies.
     def comment_marker_present?(client, project, pr_number, marker)
       paid_login = client.authenticated_login
-      comments = client.issue_comments(project.full_name, pr_number)
+      # Use the bounded recent-comments endpoint (100 most recent, one API
+      # call) instead of auto-paginating the full comment history. The
+      # trigger marker we posted has to be among the recent comments if it
+      # exists at all — Paid polls PRs frequently enough that a matching
+      # marker for the current HEAD SHA would be very recent — and long-
+      # lived PRs can accumulate hundreds of comments, which previously
+      # risked rate-limit exhaustion on every idempotency check.
+      comments = client.recent_issue_comments(project.full_name, pr_number)
       comments.any? do |c|
         next false unless c.body.to_s.include?(marker)
         next true if paid_login.nil?
