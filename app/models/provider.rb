@@ -66,6 +66,7 @@ class Provider < ApplicationRecord
   validate :api_key_entry_must_be_unique
   validate :opencode_api_key_config_must_be_valid
   validate :kilocode_api_key_config_must_be_valid
+  validate :tier_model_ids_must_be_valid
 
   before_destroy :prevent_destroying_last_agent_run_provider
   before_destroy :prevent_destroying_default_provider
@@ -477,6 +478,38 @@ class Provider < ApplicationRecord
 
     if opencode_model_id.blank?
       errors.add(:config, "must include an OpenCode model id")
+    end
+  end
+
+  def tier_model_ids_must_be_valid
+    return if tier_model_ids.blank?
+
+    unless tier_model_ids.is_a?(Hash)
+      errors.add(:tier_model_ids, "must be a hash of tier => model_id")
+      return
+    end
+
+    invalid_tiers = tier_model_ids.keys.map(&:to_s) - LlmModel::TIERS
+    if invalid_tiers.any?
+      errors.add(:tier_model_ids, "contains invalid tier(s): #{invalid_tiers.join(', ')}")
+      return
+    end
+
+    expected_provider = Providers::DefaultTierModelIds::PROVIDER_KEY_TO_MODEL_PROVIDER[provider_key.to_s]
+    if expected_provider.nil?
+      errors.add(:tier_model_ids, "is not configurable for provider #{provider_key}")
+      return
+    end
+
+    tier_model_ids.each do |tier, model_id|
+      next if model_id.blank?
+
+      model = LlmModel.find_by(model_id: model_id)
+      if model.nil?
+        errors.add(:tier_model_ids, "references unknown model #{model_id} for tier #{tier}")
+      elsif model.provider != expected_provider
+        errors.add(:tier_model_ids, "model #{model_id} does not belong to provider #{provider_key}")
+      end
     end
   end
 
