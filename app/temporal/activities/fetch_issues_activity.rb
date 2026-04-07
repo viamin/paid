@@ -163,7 +163,7 @@ module Activities
 
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
         parent_child_changed |= Issues::ParseParentChild.call(issue: issue, comments: comment_bodies)
-        issue.update_column(:relationships_parsed_at, Time.current)
+        issue.update_column(:relationships_parsed_at, issue.github_updated_at)
       rescue GithubClient::RateLimitError
         raise
       rescue => e
