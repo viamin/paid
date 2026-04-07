@@ -402,6 +402,25 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
           timeout: 30)
     end
 
+    it "dispatches codex review via comment trigger" do
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(true)
+      stub_existing_pr_followup_with_review_plan(
+        dispatchable_review_methods: [ "codex" ],
+        paid_agent_review_provider_id: nil,
+        paid_agent_review_agent_type: nil
+      )
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: 1, pr_number: 42,
+            reviewers: [ Activities::RequestReviewActivity::CODEX_LOGIN ] },
+          timeout: 60)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity, hash_including(goal: "review"), timeout: 30)
+    end
+
     it "skips paid_agent review when the plan cannot resolve a provider" do
       logger = instance_spy(Logger)
       allow(Temporalio::Workflow).to receive(:logger).and_return(logger)

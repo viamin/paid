@@ -465,6 +465,10 @@ module Workflows
         run_activity(Activities::RequestReviewActivity,
           { project_id: project_id, pr_number: pr_number,
             reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
+      when "codex"
+        run_activity(Activities::RequestReviewActivity,
+          { project_id: project_id, pr_number: pr_number,
+            reviewers: [ Activities::RequestReviewActivity::CODEX_LOGIN ] }, timeout: 60)
       when "paid_agent"
         provider_id = review_plan[:paid_agent_review_provider_id]
         agent_type = review_plan[:paid_agent_review_agent_type]

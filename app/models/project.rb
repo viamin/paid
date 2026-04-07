@@ -453,12 +453,14 @@ class Project < ApplicationRecord
 
   # These are the review methods Paid can actively start from a workflow.
   # External checks (`ci_action`) and human reviews (`manual`) are observed
-  # by the scanner, but they are not dispatched by Paid itself.
+  # by the scanner, but they are not dispatched by Paid itself. Bot reviewers
+  # like copilot and codex are dispatched via RequestReviewActivity; paid_agent
+  # queues a dedicated review-goal agent run.
   def dispatchable_review_methods
     return [ "copilot" ] if legacy_review_settings?
     return [] unless review_enabled?
 
-    enabled_review_methods & %w[copilot paid_agent]
+    enabled_review_methods & %w[copilot paid_agent codex]
   end
 
   def paid_agent_review_provider

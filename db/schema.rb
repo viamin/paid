@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_07_182317) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_07_204258) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -742,7 +742,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_182317) do
     t.datetime "last_agent_run_at"
     t.datetime "last_code_scanning_scan_at"
     t.datetime "last_github_activity_at"
-    t.datetime "last_issue_sync_at"
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_execution_seconds", default: 1800, null: false
@@ -756,6 +755,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_182317) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
+    t.boolean "priority_label_inheritance_enabled", default: true, null: false
+    t.jsonb "priority_labels", default: ["P1", "P2", "P3"], null: false
     t.string "repo", null: false
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false

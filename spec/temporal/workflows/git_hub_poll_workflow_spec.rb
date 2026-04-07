@@ -464,6 +464,26 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       ))
     end
 
+    it "dispatches codex review via comment trigger" do
+      allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(true)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
+        .and_return({ dispatchable_review_methods: [ "codex" ],
+                      paid_agent_review_provider_id: nil, paid_agent_review_agent_type: nil })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending", request_login: Activities::RequestReviewActivity::CODEX_LOGIN } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ Activities::RequestReviewActivity::CODEX_LOGIN ]), timeout: anything)
+    end
+
     it "uses the legacy trigger-based review path when the dispatch patch is not applied" do
       allow(Temporalio::Workflow).to receive(:patched).with("dispatch-configured-pr-reviews-v1").and_return(false)
 

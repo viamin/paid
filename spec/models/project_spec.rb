@@ -889,12 +889,25 @@ RSpec.describe Project do
           "methods" => {
             "copilot" => { "enabled" => true },
             "paid_agent" => { "enabled" => true },
+            "codex" => { "enabled" => true },
             "ci_action" => { "enabled" => true, "action_name" => "codex-review" },
             "manual" => { "enabled" => true }
           }
         })
 
-        expect(project.dispatchable_review_methods).to contain_exactly("copilot", "paid_agent")
+        expect(project.dispatchable_review_methods).to contain_exactly("copilot", "paid_agent", "codex")
+      end
+
+      it "includes codex without copilot or paid_agent" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "codex" => { "enabled" => true },
+            "manual" => { "enabled" => true }
+          }
+        })
+
+        expect(project.dispatchable_review_methods).to eq([ "codex" ])
       end
     end
 

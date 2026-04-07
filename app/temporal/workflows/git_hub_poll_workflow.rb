@@ -289,6 +289,10 @@ module Workflows
         request_review(project_id, pr_number,
           [ Activities::RequestReviewActivity::COPILOT_LOGIN ],
           log_key: "pr_review.request_copilot_review_failed")
+      when "codex"
+        request_review(project_id, pr_number,
+          [ Activities::RequestReviewActivity::CODEX_LOGIN ],
+          log_key: "pr_review.request_codex_review_failed")
       when "paid_agent"
         provider_id = review_plan[:paid_agent_review_provider_id]
         agent_type = review_plan[:paid_agent_review_agent_type]
