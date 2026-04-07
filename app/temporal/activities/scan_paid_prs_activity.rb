@@ -270,14 +270,14 @@ module Activities
 
     # --- Shared detection logic ---
 
-    def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil)
+    def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil,
+      unresolved_threads: nil)
       last_run = last_completed_run(project, issue)
       pr_data ||= fetch_pr_data(client, project, issue)
       checks ||= fetch_check_runs(client, project, pr_data)
       reviews ||= fetch_reviews(client, project, issue)
+      unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
       triggers = []
-
-      unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
       triggers.concat(ci_failure_triggers(checks))
       triggers.concat(check_review_bot_status(reviews, unresolved_threads, project: project))
