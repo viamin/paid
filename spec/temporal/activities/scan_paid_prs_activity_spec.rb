@@ -48,6 +48,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
+  def enable_paid_agent_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "paid_agent" => { "enabled" => true } }
+    })
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
   end
@@ -1251,6 +1258,146 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger_types = trigger[:triggers].map { |t| t[:type] }
         expect(trigger_types).to include("review_bot_comments")
         expect(trigger_types).to include("review_bot_threads")
+      end
+    end
+
+    context "when paid_agent review includes the clean marker" do
+      before do
+        enable_paid_agent_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+                       body: "Looks good. <!-- paid-review-clean -->",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "treats the review as clean and emits no review_bot triggers" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when paid_agent review body matches the clean pattern" do
+      before do
+        enable_paid_agent_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+                       body: "Review complete. No major issues remaining.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "treats the review as clean via the text pattern" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when paid_agent review does not include a clean signal" do
+      before do
+        enable_paid_agent_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+                       body: "Found a few things to fix in the error handling.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "does not treat the review as clean" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when paid_agent is enabled alongside copilot and copilot has unresolved threads" do
+      before do
+        proj = project
+        proj.update!(review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "paid_agent" => { "enabled" => true },
+            "copilot" => { "enabled" => true }
+          }
+        })
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+              body: "Looks good. <!-- paid-review-clean -->",
+              submitted_at: 30.minutes.ago },
+            { id: 2, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+              body: "Copilot reviewed 3 out of 5 changed files and generated 2 comments.",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10,
+                            author: "copilot-pull-request-reviewer[bot]" } ]
+            }
+          ]
+        )
+      end
+
+      it "still emits review_bot_threads from Copilot — paid_agent clean signal cannot suppress other bots" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).to include("review_bot_threads", "review_bot_review_pending")
+      end
+    end
+
+    context "when paid_agent clean signal present but paid_agent is not enabled" do
+      before do
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+                       body: "Looks good. <!-- paid-review-clean -->",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "ignores the clean signal because paid_agent is not an enabled review method" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
       end
     end
 

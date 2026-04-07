@@ -28,6 +28,14 @@ module Activities
     # wording changes.
     BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN = /didn'?t find any (?:major )?issues/i
 
+    # paid_agent reviews are posted from regular GitHub accounts (not bot
+    # logins registered in PROVIDER_BOT_USERNAMES), so they are invisible
+    # to review_bot? and enabled_review_bot_logins. The agent includes a
+    # machine-readable HTML comment marker when no major findings remain.
+    # A human-readable pattern is also accepted for robustness.
+    PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
+    PAID_REVIEW_CLEAN_PATTERN = /no\s+(?:major\s+)?(?:issues|findings|concerns)\s+remaining/i
+
     def execute(input)
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
@@ -509,6 +517,20 @@ module Activities
         return []
       end
 
+      # paid_agent reviews are authored by regular GitHub accounts, not
+      # bot logins registered in PROVIDER_BOT_USERNAMES. When paid_agent
+      # is enabled and any review contains the clean marker, treat the
+      # review cycle as complete — the agent has signaled "no major
+      # findings remaining." Only bypass when no registered bot method
+      # could produce independent triggers; in mixed configurations
+      # (e.g. paid_agent + copilot), each bot's status is evaluated
+      # independently below.
+      if project&.review_method_enabled?("paid_agent") &&
+          paid_agent_clean_review_present?(reviews) &&
+          (allowed.nil? || allowed.empty?)
+        return []
+      end
+
       status = review_bot_review_status_from(reviews, latest)
 
       case status
@@ -765,6 +787,18 @@ module Activities
 
     def review_bot?(login)
       ProviderSupport.provider_bot_username?(login)
+    end
+
+    def paid_agent_review_clean?(body)
+      return false if body.nil?
+
+      body.include?(PAID_REVIEW_CLEAN_MARKER) || PAID_REVIEW_CLEAN_PATTERN.match?(body)
+    end
+
+    def paid_agent_clean_review_present?(reviews)
+      return false if reviews.nil?
+
+      reviews.any? { |r| paid_agent_review_clean?(r[:body]) }
     end
 
     def extract_actionable_labels(triggers)
