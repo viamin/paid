@@ -193,6 +193,12 @@ RSpec.describe Project do
         project = build(:project, priority_labels: {})
         expect(project.priority_label_for("P1")).to eq("P1")
       end
+
+      it "treats a null mapping value as unset and falls back to the default" do
+        project = build(:project, priority_labels: { "P1" => nil, "P2" => "high" })
+        expect(project.priority_label_for("P1")).to eq("P1")
+        expect(project.priority_label_for("P2")).to eq("high")
+      end
     end
 
     describe "#highest_priority_tier_for_labels" do
