@@ -12,6 +12,11 @@ class WorkflowStatusesController < ApplicationController
     @project = policy_scope(Project).find(params[:project_id])
     authorize @project, :update?
 
+    unless @project.active?
+      redirect_to project_path(@project), alert: "Cannot restart monitoring on an inactive project."
+      return
+    end
+
     temporal_status = ProjectWorkflowManager.workflow_status(@project)
     if temporal_status[:running]
       redirect_to project_path(@project), alert: "Issue monitor is already running."
