@@ -21,6 +21,7 @@ module Activities
     MIN_COMMENT_LENGTH = 20
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
+    BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN = /didn'?t find any major issues/i
 
     def execute(input)
       project_id = input[:project_id]
@@ -98,7 +99,7 @@ module Activities
       # other draft comment signals are skipped.
       if skip_comment_signals
         reviews = fetch_reviews(client, project, issue)
-        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run)
+        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run, client: client, issue: issue)
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
@@ -106,7 +107,7 @@ module Activities
 
         if human_triggers.blank?
           reviews = fetch_reviews(client, project, issue)
-          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run)
+          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run, client: client, issue: issue)
         end
       end
 
@@ -283,7 +284,7 @@ module Activities
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
       triggers.concat(ci_failure_triggers(checks))
-      triggers.concat(check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run))
+      triggers.concat(check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
@@ -445,9 +446,17 @@ module Activities
       .to_set
       .freeze
 
-    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil)
+    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
       allowed = project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil
       latest = latest_allowed_bot_review(reviews, allowed)
+
+      # Short-circuit: when a body-only bot posted a clean signal as an issue
+      # comment (e.g. codex's "Didn't find any major issues"), treat as clean
+      # provided the comment is at least as recent as the bot's latest review.
+      if client && issue && body_only_bot_clean_from_comments?(client, project, issue, latest)
+        return []
+      end
+
       status = review_bot_review_status_from(reviews, latest)
 
       case status
@@ -531,6 +540,35 @@ module Activities
       return true if cutoff.nil?
 
       submitted_at > cutoff
+    end
+
+    # Checks issue comments for a body-only bot's clean signal (e.g.
+    # codex's "Didn't find any major issues" posted as an issue comment).
+    # Returns true when such a comment exists and is at least as recent as
+    # the bot's latest PR review, preventing an older clean comment from
+    # masking a newer non-clean review on a subsequent commit.
+    def body_only_bot_clean_from_comments?(client, project, issue, latest_review)
+      comments = client.issue_comments(project.full_name, issue.github_number)
+      clean_comment = comments
+        .select { |c| body_only_review_bot?(c.user&.login) && BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN.match?(c.body.to_s) }
+        .max_by { |c| c.created_at || Time.at(0) }
+
+      return false if clean_comment.nil?
+
+      # If there is no review from the bot at all, the clean comment is
+      # sufficient to treat the bot as clean.
+      return true if latest_review.nil?
+
+      # Only trust the clean comment when it post-dates the latest review.
+      clean_at = clean_comment.created_at
+      review_at = latest_review[:submitted_at]
+      return true if review_at.nil?
+      return true if clean_at.nil?
+
+      clean_at >= review_at
+    rescue GithubClient::Error => e
+      log_signal_error("body_only_bot_clean_comments", project, issue, e)
+      false
     end
 
     def review_bot_thread_triggers(unresolved_threads)
