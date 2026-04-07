@@ -58,7 +58,7 @@ module Activities
       if description.present?
         parts << description
       else
-        parts << fallback_body(issue, agent_run)
+        parts << fallback_body(issue)
       end
 
       parts << ""
@@ -72,7 +72,7 @@ module Activities
       parts.join("\n")
     end
 
-    def fallback_body(issue, _agent_run)
+    def fallback_body(issue)
       parts = []
       parts << "## Summary"
       parts << ""
