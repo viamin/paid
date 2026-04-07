@@ -603,8 +603,8 @@ module Activities
     end
 
     def check_conversation_comments(client, project, issue, last_run)
-      comments = client.recent_issue_comments(project.full_name, issue.github_number)
       cutoff = last_run&.completed_at
+      comments = client.issue_comments(project.full_name, issue.github_number, since: cutoff)
 
       relevant = comments.select do |c|
         login = c.user&.login

@@ -323,16 +323,21 @@ class GithubClient
     end
   end
 
-  # Fetches all conversation comments on an issue or pull request.
-  # Uses auto_paginate to collect all comments, since the default page
-  # size (~30) would miss newer comments on busy PRs.
+  # Fetches conversation comments on an issue or pull request.
+  # Uses auto_paginate to collect all matching comments.
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Issue or PR number
+  # @param since [Time, nil] When provided, only comments updated at or after
+  #   this timestamp are returned (server-side filter via GitHub's +since+
+  #   query parameter). This dramatically reduces traffic for long-lived PRs
+  #   where only recent comments matter.
   # @return [Array<Sawyer::Resource>] Comments (each has .user.login, .body, .created_at)
-  def issue_comments(repo, number)
+  def issue_comments(repo, number, since: nil)
     handle_errors do
-      with_auto_paginate { client.issue_comments(repo, number, per_page: 100, page: 1) }
+      options = { per_page: 100, page: 1 }
+      options[:since] = since.iso8601 if since
+      with_auto_paginate { client.issue_comments(repo, number, **options) }
     end
   end
 
