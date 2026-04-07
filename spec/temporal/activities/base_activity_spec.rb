@@ -42,6 +42,26 @@ RSpec.describe Activities::BaseActivity do
     expect(connection_pool).not_to have_received(:release_connection)
   end
 
+  describe "#check_rate_budget!" do
+    let(:client) { instance_double(GithubClient) }
+
+    it "does nothing when rate limit is not low" do
+      allow(client).to receive(:rate_limit_low?).and_return(false)
+
+      expect { activity.send(:check_rate_budget!, client) }.not_to raise_error
+    end
+
+    it "raises a retryable ApplicationError when rate limit is low" do
+      allow(client).to receive_messages(rate_limit_low?: true, rate_limit_remaining: 5)
+
+      expect { activity.send(:check_rate_budget!, client) }.to raise_error(
+        Temporalio::Error::ApplicationError, /rate limit budget low/i
+      ) do |error|
+        expect(error.type).to eq("RateLimit")
+      end
+    end
+  end
+
   it "releases the DB connection even when execute raises" do
     error_activity_class = Class.new(described_class) do
       def execute(_input)

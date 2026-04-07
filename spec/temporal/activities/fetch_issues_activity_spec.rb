@@ -10,7 +10,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:issue_comments).and_return([])
+    allow(github_client).to receive_messages(issue_comments: [], rate_limit_low?: false)
   end
 
   # Helper: route github_client.issues calls by label (or nil for unlabeled fetches)
@@ -166,6 +166,30 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       it "raises a Temporal application error" do
+        expect {
+          activity.execute(project_id: project.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |e|
+          expect(e.type).to eq("RateLimit")
+        }
+      end
+    end
+
+    context "when rate limit becomes low during issue relationship parsing" do
+      let(:issue_data) do
+        OpenStruct.new(
+          id: 9001, number: 99, title: "Test", body: "body", state: "open",
+          labels: [], pull_request: nil, user: OpenStruct.new(login: "viamin"),
+          created_at: 1.day.ago, updated_at: Time.current
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:issues).and_return([ issue_data ])
+      end
+
+      it "raises a RateLimit ApplicationError from the proactive check" do
+        allow(github_client).to receive_messages(rate_limit_low?: true, rate_limit_remaining: 5)
+
         expect {
           activity.execute(project_id: project.id)
         }.to raise_error(Temporalio::Error::ApplicationError) { |e|

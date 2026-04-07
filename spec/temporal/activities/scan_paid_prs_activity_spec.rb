@@ -43,6 +43,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive(:rate_limit_low?).and_return(false)
   end
 
   describe "#execute" do
@@ -62,6 +63,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when rate limit is low" do
+      it "raises a RateLimit ApplicationError before scanning" do
+        allow(github_client).to receive_messages(rate_limit_low?: true, rate_limit_remaining: 5)
+
+        expect { activity.execute(project_id: project.id) }.to raise_error(
+          Temporalio::Error::ApplicationError
+        ) { |e| expect(e.type).to eq("RateLimit") }
       end
     end
 
