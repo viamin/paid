@@ -361,16 +361,30 @@ class GithubClient
     end
   end
 
-  # Fetches the most recent page of conversation comments (newest first).
-  # Use this for idempotency checks where auto-paginating all comments is
-  # unnecessary and wastes API rate limit on long-lived PRs.
+  # Fetches the most recent page of conversation comments. Use this for
+  # idempotency checks where auto-paginating all comments is unnecessary
+  # and wastes API rate limit on long-lived PRs.
+  #
+  # IMPORTANT: GitHub's REST `/repos/{owner}/{repo}/issues/{number}/comments`
+  # endpoint always returns comments in ascending order by ID and does NOT
+  # honor `sort` or `direction` params — those are only supported on the
+  # repo-level `/issues/comments` endpoint. To actually get the newest
+  # comments, we probe the `Link: last` header on page 1 and re-fetch the
+  # final page. When there is ≤1 page of comments, the first-page response
+  # is already the authoritative answer.
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Issue or PR number
-  # @return [Array<Sawyer::Resource>] Recent comments (each has .user.login, .body, .created_at)
+  # @return [Array<Sawyer::Resource>] Up to 100 most-recent comments, each
+  #   with .user.login, .body, .created_at. Order within the returned page
+  #   is ascending by ID — callers that need a specific order must sort.
   def recent_issue_comments(repo, number)
     handle_errors do
-      client.issue_comments(repo, number, per_page: 100, page: 1, sort: :created, direction: :desc)
+      first_page = client.issue_comments(repo, number, per_page: 100, page: 1)
+      last_rel = client.last_response&.rels&.dig(:last)
+      return first_page if last_rel.nil?
+
+      client.get(last_rel.href)
     end
   end
 
