@@ -349,6 +349,36 @@ RSpec.describe Activities::FetchIssuesActivity do
         stale.reload
         expect(stale.github_state).to eq("open")
       end
+
+      context "when the result set exactly fills the page cap" do
+        before do
+          project.update!(last_issue_sync_at: 1.hour.ago)
+
+          allow(github_client).to receive(:issues) do |_repo, **opts|
+            page = opts[:page] || 1
+            # Pages 1–3 return full pages; the probe (page 4, per_page: 1) returns empty.
+            next [] if page > 3 || opts[:per_page] == 1
+
+            offset = (page - 1) * 5
+            Array.new(5) do |i|
+              OpenStruct.new(
+                id: 4000 + offset + i, number: offset + i + 1,
+                title: "Issue #{offset + i + 1}", body: "Body", state: "open",
+                labels: [ OpenStruct.new(name: "paid-build") ], pull_request: nil,
+                user: OpenStruct.new(login: "viamin"),
+                created_at: 2.days.ago, updated_at: 1.day.ago
+              )
+            end
+          end
+        end
+
+        it "advances the watermark when the probe page is empty" do
+          activity.execute(project_id: project.id)
+
+          project.reload
+          expect(project.last_issue_sync_at).to be > 1.hour.ago
+        end
+      end
     end
 
     context "when project has no label mappings and automation-on-label is disabled" do
