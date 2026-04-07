@@ -466,7 +466,7 @@ module Activities
       # clean regardless of any older non-clean review. Without this check,
       # the @codex review trigger loop would re-emit pending triggers
       # forever and wedge codex-only PRs in draft.
-      if client && issue && body_only_bot_clean_comment_present?(client, project, issue, latest)
+      if client && issue && body_only_bot_clean_comment_present?(client, project, issue, latest, allowed)
         return []
       end
 
@@ -537,13 +537,27 @@ module Activities
     end
 
     # Returns true when the most recent issue comment authored by a body-only
-    # review bot (e.g. Codex) matches the clean signal pattern AND is at
-    # least as recent as that bot's latest review on this PR. The
-    # comment-vs-review timestamp comparison prevents an older "Bravo"
+    # review bot (e.g. Codex) matches the clean signal pattern AND can speak
+    # authoritatively for the project's review configuration AND is at least
+    # as recent as that bot's latest review on this PR.
+    #
+    # The override is restricted to projects whose enabled review bots are
+    # ALL body-only — i.e. no thread-based bot like Copilot is also enabled.
+    # A clean codex comment cannot speak for an outstanding Copilot review
+    # whose unresolved threads are tracked separately, so in mixed
+    # configurations we defer to the existing classification path.
+    #
+    # The comment-vs-review timestamp comparison prevents an older "Bravo"
     # comment from masking a newer non-clean review on a subsequent commit.
-    def body_only_bot_clean_comment_present?(client, project, issue, latest_review)
+    def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins)
+      return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
+      return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
+
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
-      bot_comments = comments.select { |c| body_only_review_bot?(c.user&.login) }
+      bot_comments = comments.select do |c|
+        login = c.user&.login&.downcase
+        login && allowed_bot_logins.include?(login)
+      end
       return false if bot_comments.empty?
 
       latest_bot_comment = bot_comments.max_by { |c| c.created_at || Time.at(0) }
