@@ -237,7 +237,12 @@ RSpec.describe Activities::RequestReviewActivity do
       let(:pr_struct) { OpenStruct.new(head: OpenStruct.new(sha: head_sha)) }
 
       before do
-        allow(github_client).to receive_messages(pull_request_review_requests: { users: [] }, pull_request: pr_struct, issue_comments: [])
+        allow(github_client).to receive_messages(
+          pull_request_review_requests: { users: [] },
+          pull_request: pr_struct,
+          issue_comments: [],
+          authenticated_login: "paid-bot"
+        )
         allow(github_client).to receive(:add_comment)
       end
 
@@ -254,9 +259,15 @@ RSpec.describe Activities::RequestReviewActivity do
       let(:head_sha) { "deadbeef0000" }
       let(:marker) { "#{described_class::COMMENT_TRIGGER_MARKER_PREFIX}: #{head_sha}" }
       let(:pr_struct) { OpenStruct.new(head: OpenStruct.new(sha: head_sha)) }
+      let(:paid_user) { OpenStruct.new(login: "paid-bot") }
+      let(:other_user) { OpenStruct.new(login: "someone-else") }
 
       before do
-        allow(github_client).to receive_messages(pull_request_review_requests: { users: [] }, pull_request: pr_struct)
+        allow(github_client).to receive_messages(
+          pull_request_review_requests: { users: [] },
+          pull_request: pr_struct,
+          authenticated_login: "paid-bot"
+        )
         allow(github_client).to receive(:add_comment)
       end
 
@@ -276,8 +287,8 @@ RSpec.describe Activities::RequestReviewActivity do
         )
       end
 
-      it "is idempotent when a marker for the current HEAD already exists" do
-        existing = OpenStruct.new(body: "<!-- #{marker} -->\n@codex review")
+      it "is idempotent when a Paid-authored marker for the current HEAD already exists" do
+        existing = OpenStruct.new(body: "<!-- #{marker} -->\n@codex review", user: paid_user)
         allow(github_client).to receive(:issue_comments).and_return([ existing ])
 
         result = activity.execute(
@@ -289,8 +300,37 @@ RSpec.describe Activities::RequestReviewActivity do
         expect(github_client).not_to have_received(:add_comment)
       end
 
+      it "ignores a spoofed marker authored by a different user" do
+        spoof = OpenStruct.new(body: "Hey check out <!-- #{marker} -->", user: other_user)
+        allow(github_client).to receive(:issue_comments).and_return([ spoof ])
+
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ described_class::CODEX_LOGIN ]
+        )
+
+        expect(result[:requested]).to eq([ described_class::CODEX_LOGIN ])
+        expect(github_client).to have_received(:add_comment).once
+      end
+
+      it "falls back to author-agnostic matching when the authenticated login cannot be resolved" do
+        existing = OpenStruct.new(body: "<!-- #{marker} -->\n@codex review", user: other_user)
+        allow(github_client).to receive_messages(authenticated_login: nil, issue_comments: [ existing ])
+
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ described_class::CODEX_LOGIN ]
+        )
+
+        expect(result[:requested]).to eq([])
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
       it "posts a fresh trigger when the existing marker is for a different HEAD" do
-        stale = OpenStruct.new(body: "<!-- #{described_class::COMMENT_TRIGGER_MARKER_PREFIX}: oldsha123 -->\n@codex review")
+        stale = OpenStruct.new(
+          body: "<!-- #{described_class::COMMENT_TRIGGER_MARKER_PREFIX}: oldsha123 -->\n@codex review",
+          user: paid_user
+        )
         allow(github_client).to receive(:issue_comments).and_return([ stale ])
 
         result = activity.execute(
@@ -347,7 +387,12 @@ RSpec.describe Activities::RequestReviewActivity do
       let(:pr_struct) { OpenStruct.new(head: OpenStruct.new(sha: head_sha)) }
 
       before do
-        allow(github_client).to receive_messages(pull_request_review_requests: { users: [] }, pull_request: pr_struct, issue_comments: [])
+        allow(github_client).to receive_messages(
+          pull_request_review_requests: { users: [] },
+          pull_request: pr_struct,
+          issue_comments: [],
+          authenticated_login: "paid-bot"
+        )
         allow(github_client).to receive(:add_comment)
         allow(github_client).to receive(:request_pull_request_review)
       end
