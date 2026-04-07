@@ -1454,4 +1454,124 @@ RSpec.describe GithubClient do
       end
     end
   end
+
+  describe "#review_comment_reactions_batch" do
+    let(:repo) { "owner/repo" }
+
+    context "when reactions exist" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    comments: {
+                      nodes: [
+                        {
+                          comments: {
+                            nodes: [
+                              {
+                                databaseId: 101,
+                                reactions: {
+                                  pageInfo: { hasNextPage: false },
+                                  nodes: [
+                                    { user: { login: "alice" }, content: "THUMBS_UP", createdAt: "2024-01-01T00:00:00Z" }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns reactions from all review comments" do
+        result = client.review_comment_reactions_batch(repo, 1)
+
+        expect(result.size).to eq(1)
+        expect(result.first[:user_login]).to eq("alice")
+        expect(result.first[:content]).to eq("+1")
+      end
+    end
+
+    context "when GraphQL returns errors" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              errors: [ { message: "rate limited" } ]
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "raises ApiError instead of returning empty results" do
+        expect { client.review_comment_reactions_batch(repo, 1) }
+          .to raise_error(GithubClient::ApiError, /rate limited/)
+      end
+    end
+
+    context "when a comment has more than 100 reactions (paginated)" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    comments: {
+                      nodes: [
+                        {
+                          comments: {
+                            nodes: [
+                              {
+                                databaseId: 202,
+                                reactions: {
+                                  pageInfo: { hasNextPage: true },
+                                  nodes: Array.new(100) { |i|
+                                    { user: { login: "user#{i}" }, content: "THUMBS_UP", createdAt: "2024-01-01T00:00:00Z" }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        stub_request(:get, "#{api_base}/repos/owner/repo/pulls/comments/202/reactions")
+          .to_return(
+            status: 200,
+            body: Array.new(105) { |i|
+              { user: { login: "user#{i}" }, content: "+1", created_at: "2024-01-01T00:00:00Z" }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "falls back to REST API for the overflowing comment" do
+        result = client.review_comment_reactions_batch(repo, 1)
+
+        expect(result.size).to eq(105)
+        expect(WebMock).to have_requested(:get, "#{api_base}/repos/owner/repo/pulls/comments/202/reactions")
+      end
+    end
+  end
 end
