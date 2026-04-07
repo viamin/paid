@@ -120,11 +120,8 @@ RSpec.describe HumanFeedbackCollectionJob do
         allow(agent_run.project.github_token).to receive(:client).and_return(github_client)
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
-        allow(github_client).to receive(:pull_request_review_comments).and_return([
-          { id: 101, user_login: "carol", body: "nice approach", created_at: 1.hour.ago }
-        ])
-        allow(github_client).to receive(:pull_request_review_comment_reactions)
-          .with(agent_run.project.full_name, 101)
+        allow(github_client).to receive(:review_comment_reactions_batch)
+          .with(agent_run.project.full_name, agent_run.source_pull_request_number, max_comments: 50)
           .and_return([
             { user_login: "alice", content: "rocket", created_at: 1.hour.ago }
           ])

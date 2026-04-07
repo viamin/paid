@@ -753,6 +753,60 @@ class GithubClient
     end
   end
 
+  # Fetches review comments and their reactions in a single GraphQL request.
+  # Replaces N+1 REST calls with one batched query.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param pr_number [Integer] Pull request number
+  # @param max_comments [Integer] Maximum number of comments to fetch
+  # @return [Array<Hash>] Reactions with :user_login, :content, :created_at keys
+  def review_comment_reactions_batch(repo, pr_number, max_comments: 50)
+    owner, name = repo.split("/", 2)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $number: Int!, $maxComments: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            reviewComments: reviews(first: 0) { totalCount }
+            comments: reviewThreads(first: $maxComments) {
+              nodes {
+                comments(first: 50) {
+                  nodes {
+                    reactions(first: 100) {
+                      nodes {
+                        user { login }
+                        content
+                        createdAt
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(
+      query,
+      owner: owner, name: name, number: pr_number, maxComments: max_comments
+    )
+
+    threads = data.dig("data", "repository", "pullRequest", "comments", "nodes") || []
+    threads.flat_map do |thread|
+      comments = thread.dig("comments", "nodes") || []
+      comments.flat_map do |comment|
+        (comment.dig("reactions", "nodes") || []).map do |r|
+          {
+            user_login: r.dig("user", "login"),
+            content: graphql_reaction_to_rest(r["content"]),
+            created_at: parse_timestamp(r["createdAt"])
+          }
+        end
+      end
+    end
+  end
+
   # Gets the remaining rate limit.
   #
   # @return [Integer] Number of requests remaining
@@ -865,6 +919,22 @@ class GithubClient
     when Time then value
     when String then Time.parse(value)
     end
+  end
+
+  # Maps GraphQL ReactionContent enum values to REST API content strings.
+  GRAPHQL_REACTION_MAP = {
+    "THUMBS_UP" => "+1",
+    "THUMBS_DOWN" => "-1",
+    "LAUGH" => "laugh",
+    "HOORAY" => "hooray",
+    "CONFUSED" => "confused",
+    "HEART" => "heart",
+    "ROCKET" => "rocket",
+    "EYES" => "eyes"
+  }.freeze
+
+  def graphql_reaction_to_rest(content)
+    GRAPHQL_REACTION_MAP.fetch(content, content)
   end
 
   # Extracts the token expiration from the GitHub API response header.
