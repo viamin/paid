@@ -327,6 +327,19 @@ RSpec.describe Activities::RequestReviewActivity do
         expect(result[:requested]).to eq([])
         expect(github_client).not_to have_received(:add_comment)
       end
+
+      it "skips posting when the comment fetch fails, to avoid spam on transient errors" do
+        allow(github_client).to receive(:issue_comments)
+          .and_raise(GithubClient::Error, "transient")
+
+        result = activity.execute(
+          project_id: project.id, pr_number: 42,
+          reviewers: [ described_class::CODEX_LOGIN ]
+        )
+
+        expect(result[:requested]).to eq([])
+        expect(github_client).not_to have_received(:add_comment)
+      end
     end
 
     context "when requesting both codex and a human reviewer" do
