@@ -15,9 +15,8 @@ module QualityMetrics
     POSITIVE_REACTIONS = CollectReactionFeedback::POSITIVE_REACTIONS
     NEGATIVE_REACTIONS = CollectReactionFeedback::NEGATIVE_REACTIONS
 
-    # Maximum number of review comments to fetch reactions for, to avoid
-    # excessive N+1 API calls on PRs with many comments.
-    MAX_REVIEW_COMMENTS = 50
+    # Maximum number of review threads to fetch in the batch GraphQL query.
+    MAX_REVIEW_THREADS = 50
 
     attr_reader :agent_run
 
@@ -49,44 +48,18 @@ module QualityMetrics
       agent_run.project.github_token&.client
     end
 
-    # Fetches reactions on individual review comments only (not PR-level
-    # reactions, which reflect sentiment about the PR rather than the review).
+    # Fetches reactions on review comments using a single batched GraphQL
+    # request instead of N+1 REST calls.
     def fetch_review_reactions
       repo = agent_run.project.full_name
       pr_number = agent_run.source_pull_request_number
 
-      fetch_review_comment_reactions(repo, pr_number)
-    end
-
-    def fetch_review_comment_reactions(repo, pr_number)
-      # Fetch a single page of comments (no auto-pagination) to bound API usage.
-      comments = github_client.pull_request_review_comments(
-        repo, pr_number, per_page: MAX_REVIEW_COMMENTS
+      github_client.review_comment_reactions_batch(
+        repo, pr_number, max_comments: MAX_REVIEW_THREADS
       )
-
-      if comments.size == MAX_REVIEW_COMMENTS
-        Rails.logger.info(
-          message: "quality_metrics.review_comments_capped",
-          agent_run_id: agent_run.id,
-          total_comments: comments.size,
-          cap: MAX_REVIEW_COMMENTS
-        )
-      end
-
-      comments.flat_map do |comment|
-        github_client.pull_request_review_comment_reactions(repo, comment[:id])
-      rescue GithubClient::Error => e
-        Rails.logger.warn(
-          message: "quality_metrics.review_comment_reaction_fetch_failed",
-          agent_run_id: agent_run.id,
-          comment_id: comment[:id],
-          error: e.message
-        )
-        []
-      end
     rescue GithubClient::Error => e
       Rails.logger.warn(
-        message: "quality_metrics.review_comments_fetch_failed",
+        message: "quality_metrics.review_reaction_batch_fetch_failed",
         agent_run_id: agent_run.id,
         error: e.message
       )

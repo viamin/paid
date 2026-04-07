@@ -12,12 +12,9 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
       allow(github_token).to receive(:client).and_return(github_client)
     end
 
-    it "creates human quality metric from reactions on review comments" do
-      allow(github_client).to receive(:pull_request_review_comments).and_return([
-        { id: 101, user_login: "carol", body: "looks good", created_at: 1.hour.ago }
-      ])
-      allow(github_client).to receive(:pull_request_review_comment_reactions)
-        .with(agent_run.project.full_name, 101)
+    it "creates human quality metric from batched reactions on review comments" do
+      allow(github_client).to receive(:review_comment_reactions_batch)
+        .with(agent_run.project.full_name, agent_run.source_pull_request_number, max_comments: 50)
         .and_return([
           { user_login: "alice", content: "+1", created_at: 1.hour.ago },
           { user_login: "bob", content: "rocket", created_at: 30.minutes.ago }
@@ -32,11 +29,7 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
     end
 
     it "calculates mixed reaction score from review comments" do
-      allow(github_client).to receive(:pull_request_review_comments).and_return([
-        { id: 101, user_login: "carol", body: "nit", created_at: 1.hour.ago }
-      ])
-      allow(github_client).to receive(:pull_request_review_comment_reactions)
-        .with(agent_run.project.full_name, 101)
+      allow(github_client).to receive(:review_comment_reactions_batch)
         .and_return([
           { user_login: "alice", content: "+1", created_at: 1.hour.ago },
           { user_login: "bob", content: "confused", created_at: 30.minutes.ago }
@@ -47,30 +40,23 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
       expect(metric.scores["reaction_score"]).to eq(0.5)
     end
 
-    it "aggregates reactions across multiple review comments" do
-      allow(github_client).to receive(:pull_request_review_comments).and_return([
-        { id: 101, user_login: "carol", body: "nit", created_at: 1.hour.ago },
-        { id: 102, user_login: "dave", body: "great", created_at: 30.minutes.ago }
-      ])
-      allow(github_client).to receive(:pull_request_review_comment_reactions)
-        .with(agent_run.project.full_name, 101)
+    it "aggregates reactions across multiple review comments into tallied counts" do
+      allow(github_client).to receive(:review_comment_reactions_batch)
         .and_return([
-          { user_login: "alice", content: "+1", created_at: 1.hour.ago }
-        ])
-      allow(github_client).to receive(:pull_request_review_comment_reactions)
-        .with(agent_run.project.full_name, 102)
-        .and_return([
-          { user_login: "bob", content: "confused", created_at: 30.minutes.ago }
+          { user_login: "alice", content: "+1", created_at: 1.hour.ago },
+          { user_login: "bob", content: "+1", created_at: 45.minutes.ago },
+          { user_login: "carol", content: "confused", created_at: 30.minutes.ago }
         ])
 
       metric = described_class.call(agent_run: agent_run)
 
-      # 1 positive + 1 negative = 0.5
-      expect(metric.scores["reaction_score"]).to eq(0.5)
+      # 2 positive + 1 negative = 0.6667
+      expect(metric.scores["reaction_score"]).to eq(0.6667)
+      expect(metric.metadata["reaction_counts"]).to eq("+1" => 2, "confused" => 1)
     end
 
-    it "returns nil when no review comments exist" do
-      allow(github_client).to receive(:pull_request_review_comments).and_return([])
+    it "returns nil when no reactions exist" do
+      allow(github_client).to receive(:review_comment_reactions_batch).and_return([])
 
       result = described_class.call(agent_run: agent_run)
 
@@ -86,7 +72,7 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
     end
 
     it "handles GitHub API errors gracefully" do
-      allow(github_client).to receive(:pull_request_review_comments)
+      allow(github_client).to receive(:review_comment_reactions_batch)
         .and_raise(GithubClient::ApiError.new("API error"))
 
       result = described_class.call(agent_run: agent_run)
@@ -94,20 +80,14 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
       expect(result).to be_nil
     end
 
-    it "passes per_page to bound the number of review comments fetched" do
-      comments = (1..50).map do |i|
-        { id: i, user_login: "user#{i}", body: "comment", created_at: i.hours.ago }
-      end
-      allow(github_client).to receive_messages(
-        pull_request_review_comments: comments,
-        pull_request_review_comment_reactions: []
-      )
+    it "uses a single batched GraphQL call instead of N+1 REST calls" do
+      allow(github_client).to receive(:review_comment_reactions_batch)
+        .with(agent_run.project.full_name, agent_run.source_pull_request_number, max_comments: 50)
+        .and_return([])
 
       described_class.call(agent_run: agent_run)
 
-      expect(github_client).to have_received(:pull_request_review_comments)
-        .with(agent_run.project.full_name, agent_run.source_pull_request_number, per_page: 50)
-      expect(github_client).to have_received(:pull_request_review_comment_reactions).exactly(50).times
+      expect(github_client).to have_received(:review_comment_reactions_batch).once
     end
   end
 end
