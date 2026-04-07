@@ -480,9 +480,12 @@ module Activities
             # resolution cannot gate re-review. Use submitted_at vs the
             # last agent run's completed_at as the anti-loop guard — a
             # review post-dating the last run is unaddressed feedback.
+            # The "(body-only)" suffix on review_bot_comments lets
+            # structured-log consumers distinguish this path from the
+            # thread-based Copilot flow above.
             [
               { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
-              { type: "review_bot_comments", details: "Latest review bot review generated comments" }
+              { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
             ]
           else
             # Thread-based bot with all bot threads resolved, or body-only
