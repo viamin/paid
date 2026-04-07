@@ -1336,11 +1336,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      def create_draft_run(status:, iterations:, created_at:)
+      def create_draft_run(status:, iterations:, created_at:, trigger_type: "automatic", goal: "create_pr")
         create(:agent_run,
           project: project,
           issue: pr_issue,
           source_pull_request_number: 42,
+          trigger_type: trigger_type,
+          goal: goal,
           status: status,
           iterations: iterations,
           created_at: created_at)
@@ -1369,6 +1371,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "does not escalate with fewer than 3 consecutive failures" do
         2.times { |i| create_draft_run(status: "timeout", iterations: 0, created_at: i.minutes.ago) }
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
+      end
+
+      it "does not count manual or review runs toward the breaker" do
+        create_draft_run(status: "timeout", iterations: 0, created_at: 1.minute.ago)
+        create_draft_run(status: "failed", iterations: 0, created_at: 2.minutes.ago)
+        # This run is manual, not an automatic draft followup
+        create_draft_run(status: "timeout", iterations: 0, created_at: 3.minutes.ago, trigger_type: "manual")
 
         result = activity.execute(project_id: project.id)
 

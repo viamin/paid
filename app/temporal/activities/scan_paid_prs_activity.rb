@@ -341,14 +341,17 @@ module Activities
       issue.pr_followup_count >= project.max_pr_followup_runs
     end
 
-    # Circuit breaker: if the last N draft follow-up runs on this PR all
-    # ended without producing any output (timeout/failed/cancelled with
-    # zero iterations), stop requeueing to prevent infinite retry loops.
+    # Circuit breaker: if the last N automatic draft follow-up runs on
+    # this PR all ended without producing any output (timeout/failed/
+    # cancelled with zero iterations), stop requeueing to prevent
+    # infinite retry loops. Scoped to automatic create_pr runs so that
+    # manual runs or review-phase followups don't trip the breaker.
     def consecutive_draft_failures_breaker?(project, issue)
       failure_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled]
 
       recent_runs = project.agent_runs
         .where(source_pull_request_number: issue.github_number)
+        .where(trigger_type: "automatic", goal: "create_pr")
         .finished
         .order(created_at: :desc)
         .limit(MAX_CONSECUTIVE_DRAFT_FAILURES)
