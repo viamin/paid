@@ -789,11 +789,13 @@ class GithubClient
         interval_randomness: 0.5,
         backoff_factor: 2,
         retry_statuses: [ 429, 500, 502, 503, 504 ],
-        retry_block: ->(env:, options:, retries:, exception:, will_retry_in:) {
+        exceptions: Faraday::Retry::Middleware::DEFAULT_EXCEPTIONS +
+          [ Octokit::ServerError ],
+        retry_block: ->(env:, options:, retry_count:, exception:, will_retry_in:) {
           Rails.logger.warn(
             message: "github_client.retry",
             url: env[:url].to_s,
-            retries: retries,
+            retry_count: retry_count,
             will_retry_in: will_retry_in,
             exception: exception&.class&.name
           )
@@ -832,12 +834,15 @@ class GithubClient
         interval: 0.5,
         interval_randomness: 0.5,
         backoff_factor: 2,
+        methods: %i[post],
         retry_statuses: [ 429, 500, 502, 503, 504 ],
-        retry_block: ->(env:, options:, retries:, exception:, will_retry_in:) {
+        exceptions: Faraday::Retry::Middleware::DEFAULT_EXCEPTIONS +
+          [ Faraday::ServerError, Faraday::TooManyRequestsError ],
+        retry_block: ->(env:, options:, retry_count:, exception:, will_retry_in:) {
           Rails.logger.warn(
             message: "github_client.graphql_retry",
             url: env[:url].to_s,
-            retries: retries,
+            retry_count: retry_count,
             will_retry_in: will_retry_in,
             exception: exception&.class&.name
           )
