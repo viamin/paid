@@ -24,6 +24,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
+  def enable_codex_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "codex" => { "enabled" => true } }
+    })
+  end
+
+  def enable_copilot_and_codex_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => {
+        "copilot" => { "enabled" => true },
+        "codex" => { "enabled" => true }
+      }
+    })
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
   end
@@ -695,6 +712,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when codex posted a clean signal as an issue comment with no prior review" do
       before do
+        enable_codex_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -723,6 +741,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when a codex clean comment supersedes an older non-clean codex review" do
       before do
+        enable_codex_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -751,8 +770,50 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a project enables both Copilot and Codex and Copilot has unresolved threads" do
+      before do
+        enable_copilot_and_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 5.minutes.ago
+        )
+        # Copilot reviewed the PR with findings; the unresolved Copilot thread
+        # must NOT be silently dropped just because Codex separately commented
+        # clean. The two bots' state is independent.
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+                       body: "Copilot reviewed 5 out of 5 changed files and generated 2 comments.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10,
+                            author: "copilot-pull-request-reviewer[bot]" } ]
+            }
+          ],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "still emits review_bot_threads from Copilot — codex's clean comment cannot speak for Copilot" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).to include("review_bot_threads", "review_bot_review_pending")
+      end
+    end
+
     context "when an older codex clean comment is followed by a newer non-clean codex review" do
       before do
+        enable_codex_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
