@@ -4,6 +4,12 @@ require "rails_helper"
 
 RSpec.describe DelayedHumanFeedbackCollectionJob do
   describe "#perform" do
+    let(:github_client) { instance_double(GithubClient, rate_limit_low?: false) }
+
+    before do
+      allow(GithubClient).to receive(:new).and_return(github_client)
+    end
+
     it "enqueues feedback collection for recently completed runs" do
       recent_run = create(:agent_run, :completed)
       recent_run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)

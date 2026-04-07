@@ -38,9 +38,18 @@ module Workflows
           handle_detection(detection, project_id)
         end
 
-        maybe_scan_paid_prs(project_id)
-        maybe_scan_code_scanning_alerts(project_id)
-        maybe_check_knowledge_staleness(project_id)
+        # Check rate limit budget before running additional polling activities.
+        # FetchIssuesActivity and DetectLabelsActivity are essential; the
+        # remaining activities are best-effort and can be deferred to the
+        # next cycle when the budget is low.
+        budget = run_activity(Activities::CheckRateLimitBudgetActivity,
+          { project_id: project_id }, timeout: 10)
+
+        if budget[:budget_ok]
+          maybe_scan_paid_prs(project_id)
+          maybe_scan_code_scanning_alerts(project_id)
+          maybe_check_knowledge_staleness(project_id)
+        end
 
         poll_config = run_activity(Activities::GetPollIntervalActivity,
           { project_id: project_id }, timeout: 10)

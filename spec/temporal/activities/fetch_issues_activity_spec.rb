@@ -10,7 +10,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:issue_comments).and_return([])
+    allow(github_client).to receive_messages(issue_comments: [], rate_limit_low?: false, rate_limit_remaining: 5000)
   end
 
   # Helper: route github_client.issues calls by label (or nil for unlabeled fetches)

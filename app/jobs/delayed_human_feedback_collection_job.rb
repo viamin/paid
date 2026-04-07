@@ -22,6 +22,11 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
   # still need reaction/review polling.
   SWEEP_INTERVAL = 4.hours
 
+  # Minimum remaining API requests before skipping feedback collection
+  # for a given token. Feedback collection is best-effort and should
+  # not exhaust rate limits needed for polling.
+  RATE_LIMIT_THRESHOLD = 100
+
   def perform
     agent_runs = AgentRun
       .where(status: "completed")
@@ -35,8 +40,23 @@ class DelayedHumanFeedbackCollectionJob < ApplicationJob
       .where.not(
         id: recently_polled_agent_run_ids
       )
+      .includes(project: :github_token)
+
+    rate_limited_tokens = Set.new
 
     agent_runs.find_each do |agent_run|
+      token = agent_run.project&.github_token
+      next unless token
+
+      unless rate_limited_tokens.include?(token.id)
+        if token.client.rate_limit_low?(threshold: RATE_LIMIT_THRESHOLD)
+          rate_limited_tokens.add(token.id)
+          next
+        end
+      else
+        next
+      end
+
       HumanFeedbackCollectionJob.perform_later(agent_run.id)
     end
   end

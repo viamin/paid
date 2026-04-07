@@ -59,6 +59,8 @@ module QualityMetrics
     end
 
     def fetch_review_comment_reactions(repo, pr_number)
+      return [] if github_client.rate_limit_low?(threshold: MAX_REVIEW_COMMENTS + 5)
+
       # Fetch a single page of comments (no auto-pagination) to bound API usage.
       comments = github_client.pull_request_review_comments(
         repo, pr_number, per_page: MAX_REVIEW_COMMENTS
@@ -73,7 +75,13 @@ module QualityMetrics
         )
       end
 
-      comments.flat_map do |comment|
+      # Only fetch reactions for comments that may have reactions.
+      # Skip comments explicitly known to have zero reactions.
+      comments_with_reactions = comments.reject { |c| c[:reactions_total_count] == 0 }
+
+      comments_with_reactions.flat_map do |comment|
+        break [] if github_client.rate_limit_low?(threshold: 10)
+
         github_client.pull_request_review_comment_reactions(repo, comment[:id])
       rescue GithubClient::Error => e
         Rails.logger.warn(

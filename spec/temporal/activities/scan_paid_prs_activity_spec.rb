@@ -16,6 +16,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive_messages(rate_limit_low?: false, rate_limit_remaining: 5000)
   end
 
   describe "#execute" do
@@ -1614,7 +1615,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:review_threads)
       .with(project.full_name, 42)
       .and_return(review_threads)
-    allow(github_client).to receive(:issue_comments)
+    allow(github_client).to receive(:recent_issue_comments)
       .with(project.full_name, 42)
       .and_return(issue_comments)
     allow(github_client).to receive(:pull_request_reviews)

@@ -8,6 +8,9 @@ module Activities
   class FetchIssuesActivity < BaseActivity
     DEFAULT_PER_PAGE = 100
 
+    # Minimum remaining API requests before aborting the poll cycle.
+    RATE_LIMIT_THRESHOLD = 100
+
     def execute(input)
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
@@ -15,11 +18,26 @@ module Activities
 
       client = project.github_token.client
 
-      github_issues, truncated = fetch_all_issues(client, project.full_name)
+      if client.rate_limit_low?(threshold: RATE_LIMIT_THRESHOLD)
+        logger.warn(
+          message: "github_sync.rate_limit_low",
+          project_id: project.id,
+          remaining: client.rate_limit_remaining
+        )
+        raise Temporalio::Error::ApplicationError.new(
+          "GitHub API rate limit too low (#{client.rate_limit_remaining} remaining)",
+          type: "RateLimit"
+        )
+      end
 
+      github_issues, truncated = fetch_all_issues(client, project.full_name, since: project.last_polled_at)
+
+      incremental = project.last_polled_at.present?
       synced_issues = github_issues.map { |gi| sync_issue(project, gi) }
       parse_issue_relationships(project, synced_issues) if synced_issues.any?
-      closed_count = close_stale_issues(project, github_issues, truncated: truncated)
+      # Stale-closure requires an authoritative snapshot of all open issues.
+      # When using incremental fetching (since parameter), the list is partial.
+      closed_count = close_stale_issues(project, github_issues, truncated: truncated || incremental)
 
       logger.info(
         message: "github_sync.fetch_issues",
@@ -46,13 +64,13 @@ module Activities
     # even when the page cap is reached in busy repos.
     # Returns [issues, truncated] where truncated is true if the
     # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
-    def fetch_all_issues(client, repo_full_name)
-      fetch_issues_for_label(client, repo_full_name, nil, sort: :updated)
+    def fetch_all_issues(client, repo_full_name, since: nil)
+      fetch_issues_for_label(client, repo_full_name, nil, sort: :updated, since: since)
     end
 
     # Returns [issues, truncated] where truncated is true when the
     # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
-    def fetch_issues_for_label(client, repo_full_name, label, sort: nil)
+    def fetch_issues_for_label(client, repo_full_name, label, sort: nil, since: nil)
       issues = []
       page = 1
       truncated = false
@@ -65,6 +83,7 @@ module Activities
           page: page
         }
         opts[:sort] = sort if sort
+        opts[:since] = since.iso8601 if since
 
         page_issues = client.issues(repo_full_name, **opts)
 
@@ -105,6 +124,7 @@ module Activities
       end
 
       issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)
+      previously_updated_at = issue.github_updated_at
       issue.update!(
         github_number: github_issue.number,
         title: github_issue.title,
@@ -117,16 +137,16 @@ module Activities
         github_updated_at: github_issue.updated_at
       )
 
-      { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted }
+      changed = previously_updated_at.nil? || previously_updated_at != issue.github_updated_at
+      { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted, changed: changed }
     end
 
-    # TODO(#430): Fetching comments per issue is an N+1 API call pattern that
-    # increases sync time and rate-limit pressure. Consider skipping unchanged
-    # issues (via github_updated_at) or batching comment fetches.
     def parse_issue_relationships(project, synced_issues)
-      synced_issue_ids = synced_issues.filter_map { |si| si[:id] }
+      changed_issue_ids = synced_issues
+        .select { |si| si[:changed] }
+        .filter_map { |si| si[:id] }
       issues_relation = project.issues.where(
-        id: synced_issue_ids,
+        id: changed_issue_ids,
         github_state: "open",
         is_pull_request: false
       )

@@ -19,6 +19,7 @@ module Activities
     activity_name "ScanPaidPrs"
 
     MIN_COMMENT_LENGTH = 20
+    RATE_LIMIT_THRESHOLD = 50
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
 
@@ -29,9 +30,23 @@ module Activities
       return { prs_to_trigger: [] } unless project.auto_scan_prs
 
       client = project.github_token.client
+
+      if client.rate_limit_low?(threshold: RATE_LIMIT_THRESHOLD)
+        logger.warn(
+          message: "pr_scanner.rate_limit_low",
+          project_id: project_id,
+          remaining: client.rate_limit_remaining
+        )
+        return { prs_to_trigger: [] }
+      end
+
       paid_prs = find_paid_prs(project)
 
-      prs_to_trigger = paid_prs.filter_map { |issue| scan_pr(project, client, issue) }
+      prs_to_trigger = paid_prs.filter_map do |issue|
+        break if client.rate_limit_low?(threshold: RATE_LIMIT_THRESHOLD / 2)
+
+        scan_pr(project, client, issue)
+      end
 
       logger.info(
         message: "pr_scanner.scan_complete",
@@ -55,6 +70,7 @@ module Activities
 
     def scan_pr(project, client, issue)
       return nil if active_run_exists?(project, issue)
+      return nil if pr_unchanged_since_last_scan?(issue)
 
       case issue.pr_review_phase
       when "draft", "restarted"
@@ -270,14 +286,13 @@ module Activities
 
     # --- Shared detection logic ---
 
-    def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil)
+    def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil, unresolved_threads: nil)
       last_run = last_completed_run(project, issue)
       pr_data ||= fetch_pr_data(client, project, issue)
       checks ||= fetch_check_runs(client, project, pr_data)
       reviews ||= fetch_reviews(client, project, issue)
+      unresolved_threads = fetch_unresolved_threads(client, project, issue) if unresolved_threads.nil?
       triggers = []
-
-      unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
       triggers.concat(ci_failure_triggers(checks))
       triggers.concat(check_review_bot_status(reviews, unresolved_threads, project: project))
@@ -310,6 +325,19 @@ module Activities
       )
 
       true
+    end
+
+    # A PR is unchanged when its github_updated_at is older than the last
+    # completed scan. We use the project's last_polled_at as a proxy: if the
+    # issue wasn't updated on GitHub between the previous poll and now, no new
+    # signals can exist. New issues (nil github_updated_at) are never skipped.
+    def pr_unchanged_since_last_scan?(issue)
+      return false if issue.github_updated_at.nil?
+
+      last_run = last_completed_run(issue.project, issue)
+      return false unless last_run&.completed_at
+
+      issue.github_updated_at < last_run.completed_at
     end
 
     def active_run_exists?(project, issue)
@@ -468,7 +496,7 @@ module Activities
     end
 
     def check_conversation_comments(client, project, issue, last_run)
-      comments = client.issue_comments(project.full_name, issue.github_number)
+      comments = client.recent_issue_comments(project.full_name, issue.github_number)
       cutoff = last_run&.completed_at
 
       relevant = comments.select do |c|

@@ -10,6 +10,7 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
 
     before do
       allow(github_token).to receive(:client).and_return(github_client)
+      allow(github_client).to receive(:rate_limit_low?).and_return(false)
     end
 
     it "creates human quality metric from reactions on review comments" do
