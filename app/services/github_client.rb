@@ -770,7 +770,9 @@ class GithubClient
               nodes {
                 comments(first: 50) {
                   nodes {
+                    databaseId
                     reactions(first: 100) {
+                      pageInfo { hasNextPage }
                       nodes {
                         user { login }
                         content
@@ -791,16 +793,23 @@ class GithubClient
       owner: owner, name: name, number: pr_number, maxComments: max_comments
     )
 
+    raise_graphql_errors(data)
+
     threads = data.dig("data", "repository", "pullRequest", "comments", "nodes") || []
     threads.flat_map do |thread|
       comments = thread.dig("comments", "nodes") || []
       comments.flat_map do |comment|
-        (comment.dig("reactions", "nodes") || []).map do |r|
-          {
-            user_login: r.dig("user", "login"),
-            content: graphql_reaction_to_rest(r["content"]),
-            created_at: parse_timestamp(r["createdAt"])
-          }
+        reactions_data = comment["reactions"] || {}
+        if reactions_data.dig("pageInfo", "hasNextPage")
+          fetch_all_comment_reactions(repo, comment["databaseId"])
+        else
+          (reactions_data["nodes"] || []).map do |r|
+            {
+              user_login: r.dig("user", "login"),
+              content: graphql_reaction_to_rest(r["content"]),
+              created_at: parse_timestamp(r["createdAt"])
+            }
+          end
         end
       end
     end
@@ -877,6 +886,17 @@ class GithubClient
     raise ApiError.new(e.message)
   end
 
+  def raise_graphql_errors(data)
+    return unless data["errors"].present?
+
+    message = data["errors"].map { |e| e["message"] }.join(", ")
+    raise ApiError.new("GraphQL error: #{message}")
+  end
+
+  def fetch_all_comment_reactions(repo, comment_id)
+    pull_request_review_comment_reactions(repo, comment_id)
+  end
+
   def graphql_connection
     @graphql_connection ||= Faraday.new(url: "https://api.github.com") do |f|
       f.request :json
@@ -897,11 +917,7 @@ class GithubClient
     GRAPHQL
 
     data = graphql_request(query, owner: owner, name: name, number: number)
-
-    if data["errors"].present?
-      message = data["errors"].map { |e| e["message"] }.join(", ")
-      raise ApiError.new("GraphQL error resolving #{repo}##{number}: #{message}")
-    end
+    raise_graphql_errors(data)
 
     data.dig("data", "repository", "pullRequest", "id")
   end
