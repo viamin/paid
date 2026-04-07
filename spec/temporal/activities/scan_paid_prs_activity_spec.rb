@@ -79,7 +79,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       before { pr_issue }
 
-      it "raises a RateLimit ApplicationError before scanning a PR" do
+      it "raises a RateLimit ApplicationError when rate budget is low" do
         allow(rate_limit).to receive(:remaining).and_return(5)
 
         expect { activity.execute(project_id: project.id) }.to raise_error(
@@ -94,6 +94,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "skips PRs with active runs without checking rate budget" do
+        create(:agent_run, project: project, source_pull_request_number: 99, status: "running")
+        allow(rate_limit).to receive(:remaining).and_return(5)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+        expect(octokit_client).not_to have_received(:rate_limit)
       end
     end
 
