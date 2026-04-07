@@ -180,6 +180,26 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, any_args)
     end
+
+    it "does not fire legacy copilot request when patch is disabled and only paid_agent is pending" do
+      allow(Temporalio::Workflow).to receive(:patched).with("request-configured-pr-reviews-v1").and_return(false)
+
+      workflow.send(:request_configured_reviews, project_id, 42, requested_methods: [ "paid_agent" ])
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
+    end
+
+    it "fires legacy copilot request when patch is disabled and copilot is in pending methods" do
+      allow(Temporalio::Workflow).to receive(:patched).with("request-configured-pr-reviews-v1").and_return(false)
+
+      workflow.send(:request_configured_reviews, project_id, 42, requested_methods: [ "copilot" ])
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: project_id, pr_number: 42,
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
+    end
   end
 
   describe "#handle_pr_trigger" do

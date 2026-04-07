@@ -252,7 +252,14 @@ module Workflows
     end
 
     def request_configured_reviews(project_id, pr_number, requested_methods: nil)
-      return request_legacy_copilot_review(project_id, pr_number) unless Temporalio::Workflow.patched("request-configured-pr-reviews-v1")
+      unless Temporalio::Workflow.patched("request-configured-pr-reviews-v1")
+        # Pre-deploy workflows that haven't continue-as-new'd yet: only fire the
+        # legacy Copilot request when the caller wants all methods or explicitly
+        # includes copilot. A paid_agent or manual pending trigger must not be
+        # misrouted to Copilot on old-path workflows.
+        return if requested_methods.present? && !Array(requested_methods).include?("copilot")
+        return request_legacy_copilot_review(project_id, pr_number)
+      end
 
       review_plan = run_activity(Activities::ResolvePrReviewPlanActivity,
         { project_id: project_id }, timeout: 30)

@@ -19,6 +19,16 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
         expect(result[:success]).to be true
       end
 
+      it "preserves result_commit_sha set by GithubProxyController" do
+        sha = "abc1234" * 5 + "abc1234"[0..5]
+        agent_run = create(:agent_run, :running, :review_goal, project: project,
+          review_posted_at: 1.minute.ago, result_commit_sha: sha[0..39])
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(agent_run.reload.result_commit_sha).to eq(sha[0..39])
+      end
+
       it "logs the completion" do
         agent_run = create(:agent_run, :running, :review_goal, project: project,
           review_posted_at: 1.minute.ago)

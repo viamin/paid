@@ -27,7 +27,12 @@ module Activities
         # Don't set pull_request_number for review runs — that field represents
         # the PR produced by the run. Review runs use source_pull_request_number
         # to track which PR was reviewed, keeping the two semantics distinct.
-        agent_run.complete!
+        #
+        # Preserve result_commit_sha: GithubProxyController sets it when the
+        # review is posted, but complete! defaults result_commit to nil which
+        # would wipe it. Pass the existing value so paid_agent_review_completed?
+        # can compare it against the current PR head.
+        agent_run.complete!(result_commit: agent_run.result_commit_sha)
         agent_run.log!("system", "Completed: review goal finished for PR ##{agent_run.source_pull_request_number}")
 
         logger.info(
