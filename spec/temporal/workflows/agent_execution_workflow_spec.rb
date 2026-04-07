@@ -352,6 +352,25 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, any_args)
     end
+
+    it "emits the pre-patch activity input shape when the workflow patch is not set" do
+      # Regression: in-flight workflows whose history recorded the old
+      # `reviewers: [copilot]` payload must replay without a
+      # non-determinism error. When the patch flag is false the workflow
+      # must reproduce the legacy input shape exactly.
+      allow(Temporalio::Workflow).to receive(:patched).and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("request_review_resolve_reviewer_from_project").and_return(false)
+      stub_existing_pr_followup(pr_review_phase: "ready")
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: 1, pr_number: 42,
+            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
+          timeout: 60)
+    end
   end
 
   describe "existing PR follow-up with no changes" do
