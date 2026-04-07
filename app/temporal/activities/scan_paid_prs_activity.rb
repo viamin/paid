@@ -82,11 +82,17 @@ module Activities
       end
     end
 
+    MAX_CONSECUTIVE_DRAFT_FAILURES = 3
+
     # --- Draft phase scanning ---
 
     def scan_draft_pr(project, client, issue, pr_data: nil)
       if project.max_draft_review_rounds.positive? &&
           issue.draft_review_count >= project.max_draft_review_rounds
+        return escalate_trigger(issue)
+      end
+
+      if consecutive_draft_failures_breaker?(project, issue)
         return escalate_trigger(issue)
       end
 
@@ -333,6 +339,25 @@ module Activities
 
     def followup_limit_reached?(project, issue)
       issue.pr_followup_count >= project.max_pr_followup_runs
+    end
+
+    # Circuit breaker: if the last N draft follow-up runs on this PR all
+    # ended without producing any output (timeout/failed/cancelled with
+    # zero iterations), stop requeueing to prevent infinite retry loops.
+    def consecutive_draft_failures_breaker?(project, issue)
+      failure_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled]
+
+      recent_runs = project.agent_runs
+        .where(source_pull_request_number: issue.github_number)
+        .finished
+        .order(created_at: :desc)
+        .limit(MAX_CONSECUTIVE_DRAFT_FAILURES)
+
+      return false if recent_runs.size < MAX_CONSECUTIVE_DRAFT_FAILURES
+
+      recent_runs.all? do |run|
+        failure_statuses.include?(run.status) && run.iterations.to_i.zero?
+      end
     end
 
     def last_completed_run(project, issue)
