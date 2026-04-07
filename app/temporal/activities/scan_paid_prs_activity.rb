@@ -21,6 +21,12 @@ module Activities
     MIN_COMMENT_LENGTH = 20
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
+    # Body-only review bots (currently Codex) signal "no findings" by posting
+    # an *issue comment* — not a review — with text like
+    # "Codex Review: Didn't find any major issues. Bravo." Match the
+    # distinctive phrase rather than the prefix so we are robust to minor
+    # wording changes.
+    BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN = /didn'?t find any (?:major )?issues/i
 
     def execute(input)
       project_id = input[:project_id]
@@ -111,7 +117,7 @@ module Activities
         end
         required_review_triggers = check_required_review_methods(project, issue,
           reviews: reviews, unresolved_threads: unresolved_threads, checks: checks, pr_data: pr_data,
-          last_run: last_run)
+          last_run: last_run, client: client)
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
@@ -126,7 +132,7 @@ module Activities
           end
           required_review_triggers = check_required_review_methods(project, issue,
             reviews: reviews, unresolved_threads: unresolved_threads, checks: checks, pr_data: pr_data,
-            last_run: last_run)
+            last_run: last_run, client: client)
         end
       end
 
@@ -325,7 +331,7 @@ module Activities
       triggers.concat(ci_failure_triggers(checks))
       triggers.concat(check_required_review_methods(project, issue,
         reviews: reviews, unresolved_threads: unresolved_threads, checks: checks, pr_data: pr_data,
-        last_run: last_run))
+        last_run: last_run, client: client))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       append_generic_review_bot_thread_triggers!(triggers, unresolved_threads,
         blocking_review_methods: project.blocking_review_methods)
@@ -478,10 +484,21 @@ module Activities
       .to_set
       .freeze
 
-    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil)
+    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
       allowed = project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil
       latest = latest_allowed_bot_review(reviews, allowed)
       status = review_bot_review_status_from(reviews, latest)
+
+      # Body-only bots (Codex) can also post their CLEAN signal as an issue
+      # comment — e.g. "Codex Review: Didn't find any major issues. Bravo." —
+      # which is invisible to pull_request_reviews. When such a comment is
+      # the most recent body-only-bot signal on the PR, treat the bot as
+      # clean regardless of any older non-clean review. Without this check,
+      # the @codex review trigger loop would re-emit pending triggers
+      # forever and wedge codex-only PRs in draft.
+      if client && issue && body_only_bot_clean_comment_present?(client, project, issue, latest, allowed)
+        return []
+      end
 
       case status
       when :clean
@@ -549,6 +566,43 @@ module Activities
       BODY_ONLY_REVIEW_BOT_LOGINS.include?(login.downcase)
     end
 
+    # Returns true when the most recent issue comment authored by a body-only
+    # review bot (e.g. Codex) matches the clean signal pattern AND can speak
+    # authoritatively for the project's review configuration AND is at least
+    # as recent as that bot's latest review on this PR.
+    #
+    # The override is restricted to projects whose enabled review bots are
+    # ALL body-only — i.e. no thread-based bot like Copilot is also enabled.
+    # A clean codex comment cannot speak for an outstanding Copilot review
+    # whose unresolved threads are tracked separately, so in mixed
+    # configurations we defer to the existing classification path.
+    #
+    # The comment-vs-review timestamp comparison prevents an older "Bravo"
+    # comment from masking a newer non-clean review on a subsequent commit.
+    def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins)
+      return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
+      return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
+
+      comments = client.recent_issue_comments(project.full_name, issue.github_number)
+      bot_comments = comments.select do |c|
+        login = c.user&.login&.downcase
+        login && allowed_bot_logins.include?(login)
+      end
+      return false if bot_comments.empty?
+
+      latest_bot_comment = bot_comments.max_by { |c| c.created_at || Time.at(0) }
+      return false unless BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN.match?(latest_bot_comment.body.to_s)
+
+      review_time = latest_review&.dig(:submitted_at)
+      comment_time = latest_bot_comment.created_at
+      return true if review_time.nil? || comment_time.nil?
+
+      comment_time >= review_time
+    rescue GithubClient::Error => e
+      log_signal_error("body_only_bot_clean_comment", project, issue, e)
+      false
+    end
+
     # Anti-loop guard for body-only review bots: returns true when the bot's
     # latest review was submitted after the last agent run completed, meaning
     # the agent has not yet addressed the feedback. Treats missing timestamps
@@ -578,16 +632,21 @@ module Activities
       [ { type: "review_bot_threads", details: "#{review_bot_threads.size} unresolved review bot thread(s)" } ]
     end
 
-    def check_required_review_methods(project, issue, reviews:, unresolved_threads:, checks:, pr_data: nil, last_run: nil)
+    def check_required_review_methods(project, issue, reviews:, unresolved_threads:, checks:, pr_data: nil, last_run: nil, client: nil)
       triggers = []
 
       project.blocking_review_methods.each do |method|
         case method
         when "copilot"
           copilot_triggers = check_review_bot_status(reviews, unresolved_threads,
-            project: project, last_run: last_run)
+            project: project, last_run: last_run, client: client, issue: issue)
           copilot_triggers.each { |t| t[:review_method] = method }
           triggers.concat(copilot_triggers)
+        when "codex"
+          codex_triggers = check_review_bot_status(reviews, unresolved_threads,
+            project: project, last_run: last_run, client: client, issue: issue)
+          codex_triggers.each { |t| t[:review_method] = method }
+          triggers.concat(codex_triggers)
         when "paid_agent"
           next if paid_agent_review_completed?(project, issue, pr_data: pr_data)
 

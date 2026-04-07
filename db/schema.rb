@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_07_182317) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_07_081149) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -151,7 +151,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_182317) do
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "container_retained_until"
     t.integer "cost_cents", default: 0
-    t.boolean "count_toward_draft_review_round", default: false, null: false
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
@@ -160,7 +159,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_182317) do
     t.string "diagnosis_status", limit: 50
     t.integer "duration_seconds"
     t.text "error_message"
-    t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
@@ -463,6 +461,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_182317) do
     t.datetime "github_updated_at", null: false
     t.boolean "is_pull_request", default: false, null: false
     t.jsonb "labels", default: [], null: false
+    t.datetime "last_pr_scan_at"
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
     t.integer "pr_followup_count", default: 0, null: false

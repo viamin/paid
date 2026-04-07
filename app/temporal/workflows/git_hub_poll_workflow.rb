@@ -247,10 +247,12 @@ module Workflows
         .uniq
 
       # Legacy triggers emitted before the review_method field was added lack
-      # a method key, so pending_methods will be empty. Firing a full
-      # request_configured_reviews here would change the activity sequence for
-      # in-flight workflows and cause non-determinism during replay. Return
-      # early to preserve the original no-op behavior for those histories.
+      # a method key, so pending_methods will be empty. This method was
+      # introduced alongside the review_method field, so legacy workflow
+      # histories never recorded a request_pending_reviews call — the early
+      # return preserves that no-op behavior. Firing request_configured_reviews
+      # here would inject new activity scheduling into replayed histories and
+      # cause non-determinism.
       return if pending_methods.empty?
 
       request_configured_reviews(project_id, pr_number, requested_methods: pending_methods)
