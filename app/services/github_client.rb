@@ -827,6 +827,21 @@ class GithubClient
   def graphql_connection
     @graphql_connection ||= Faraday.new(url: "https://api.github.com") do |f|
       f.request :json
+      f.request :retry,
+        max: 3,
+        interval: 0.5,
+        interval_randomness: 0.5,
+        backoff_factor: 2,
+        retry_statuses: [ 429, 500, 502, 503, 504 ],
+        retry_block: ->(env:, options:, retries:, exception:, will_retry_in:) {
+          Rails.logger.warn(
+            message: "github_client.graphql_retry",
+            url: env[:url].to_s,
+            retries: retries,
+            will_retry_in: will_retry_in,
+            exception: exception&.class&.name
+          )
+        }
       f.response :json
       f.response :raise_error
       f.adapter Faraday.default_adapter
