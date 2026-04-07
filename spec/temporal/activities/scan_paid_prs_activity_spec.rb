@@ -1900,7 +1900,81 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             message: "pr_scanner.scan_complete",
             project_id: project.id,
             prs_scanned: 1,
+            prs_skipped: 0,
             prs_triggered: 0
+          )
+        )
+      end
+    end
+
+    context "when skipping unchanged PRs" do
+      let!(:unchanged_pr) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          paid_state: "completed",
+          github_updated_at: 2.hours.ago,
+          last_pr_scan_at: 1.hour.ago)
+      end
+
+      it "skips PRs where github_updated_at < last_pr_scan_at" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+
+      it "scans PRs that have never been scanned" do
+        unchanged_pr.update_column(:last_pr_scan_at, nil)
+        stub_github_for_pr
+        result = activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be_present
+      end
+
+      it "scans PRs where github_updated_at >= last_pr_scan_at" do
+        unchanged_pr.update_columns(
+          github_updated_at: 30.minutes.ago,
+          last_pr_scan_at: 1.hour.ago
+        )
+        stub_github_for_pr
+        result = activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 1.minute.ago
+      end
+
+      it "scans PRs with a recently completed agent run" do
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr
+        result = activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be_present
+      end
+
+      it "updates last_pr_scan_at after scanning" do
+        unchanged_pr.update_columns(last_pr_scan_at: nil, github_updated_at: Time.current)
+        stub_github_for_pr
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.to change { unchanged_pr.reload.last_pr_scan_at }.from(nil)
+      end
+
+      it "reports skipped count in log output" do
+        allow(Rails.logger).to receive(:info)
+        allow(Rails.logger).to receive(:debug)
+
+        activity.execute(project_id: project.id)
+
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "pr_scanner.scan_complete",
+            prs_found: 1,
+            prs_scanned: 0,
+            prs_skipped: 1
           )
         )
       end

@@ -37,12 +37,24 @@ module Activities
       client = project.github_token.client
       paid_prs = find_paid_prs(project)
 
-      prs_to_trigger = paid_prs.filter_map { |issue| scan_pr(project, client, issue) }
+      scanned_count = 0
+      prs_to_trigger = paid_prs.filter_map do |issue|
+        if skip_unchanged_pr?(project, issue)
+          next nil
+        end
+
+        scanned_count += 1
+        result = scan_pr(project, client, issue)
+        issue.update_column(:last_pr_scan_at, Time.current)
+        result
+      end
 
       logger.info(
         message: "pr_scanner.scan_complete",
         project_id: project_id,
-        prs_scanned: paid_prs.size,
+        prs_found: paid_prs.size,
+        prs_scanned: scanned_count,
+        prs_skipped: paid_prs.size - scanned_count,
         prs_triggered: prs_to_trigger.size
       )
 
@@ -322,6 +334,32 @@ module Activities
       )
 
       true
+    end
+
+    def skip_unchanged_pr?(project, issue)
+      return false unless issue.last_pr_scan_at
+      return false if issue.github_updated_at >= issue.last_pr_scan_at
+      return false if recently_completed_run?(project, issue)
+
+      logger.debug(
+        message: "pr_scanner.skipped_unchanged",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        last_pr_scan_at: issue.last_pr_scan_at,
+        github_updated_at: issue.github_updated_at
+      )
+
+      true
+    end
+
+    def recently_completed_run?(project, issue)
+      project.agent_runs
+        .where(
+          "source_pull_request_number = :pr_num OR pull_request_number = :pr_num",
+          pr_num: issue.github_number
+        )
+        .where("completed_at >= ?", issue.last_pr_scan_at)
+        .exists?
     end
 
     def active_run_exists?(project, issue)
