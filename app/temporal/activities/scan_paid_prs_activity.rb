@@ -672,6 +672,14 @@ module Activities
         .group_by { |review| review[:user_login]&.downcase }
         .transform_values { |user_reviews| user_reviews.max_by { |review| review[:submitted_at] || Time.at(0) } }
 
+      # If any trusted reviewer's latest review on the current head requests changes, block completion.
+      any_changes_requested = latest_by_user.values.any? do |review|
+        next false if current_head_sha.present? && review[:commit_id] != current_head_sha
+
+        review[:state] == "CHANGES_REQUESTED"
+      end
+      return false if any_changes_requested
+
       latest_by_user.values.any? do |review|
         submitted_at = review[:submitted_at]
         next false unless submitted_at.present?

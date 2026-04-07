@@ -716,12 +716,12 @@ RSpec.describe GithubClient do
           )
       end
 
-      it "returns check run names and conclusions" do
+      it "returns check run names, conclusions, and timestamps" do
         result = client.check_runs_for_ref(repo, ref)
 
         expect(result).to eq([
-          { name: "rspec", conclusion: "failure" },
-          { name: "rubocop", conclusion: "success" }
+          { name: "rspec", conclusion: "failure", created_at: nil, started_at: nil, completed_at: nil },
+          { name: "rubocop", conclusion: "success", created_at: nil, started_at: nil, completed_at: nil }
         ])
       end
     end

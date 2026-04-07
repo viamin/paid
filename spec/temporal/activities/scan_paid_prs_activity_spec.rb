@@ -1700,6 +1700,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .to include("changes_requested", "review_bot_review_pending")
       end
 
+      it "keeps waiting when another trusted reviewer's latest review is CHANGES_REQUESTED" do
+        project.update!(allowed_github_usernames: %w[viamin anotherreviewer])
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "LGTM",
+              submitted_at: Time.current, commit_id: "abc123" },
+            { id: 2, user_login: "anotherreviewer", state: "CHANGES_REQUESTED", body: "Needs work",
+              submitted_at: Time.current, commit_id: "abc123" }
+          ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_review_pending")
+        expect(trigger_types).not_to include("ready_for_owner")
+      end
+
       it "does not treat trusted provider bots as manual reviewers" do
         project.update!(allowed_github_usernames: %w[viamin chatgpt-codex-connector])
         stub_github_for_pr(
