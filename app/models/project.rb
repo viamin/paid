@@ -422,6 +422,14 @@ class Project < ApplicationRecord
     REVIEW_METHODS.select { |m| review_method_enabled?(m) }
   end
 
+  # Returns the set of bot GitHub logins (downcased) for all enabled review
+  # methods that have a known bot account (copilot, codex, etc.).
+  def enabled_review_bot_logins
+    ProviderSupport::PROVIDER_BOT_USERNAMES
+      .slice(*enabled_review_methods)
+      .values.flatten.map(&:downcase).to_set
+  end
+
   def review_method_config(method)
     effective_review_settings.dig("methods", method.to_s) || {}
   end

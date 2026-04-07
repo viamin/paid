@@ -94,7 +94,7 @@ module Activities
       # other draft comment signals are skipped.
       if skip_comment_signals
         reviews = fetch_reviews(client, project, issue)
-        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads)
+        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project)
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
@@ -102,7 +102,7 @@ module Activities
 
         if human_triggers.blank?
           reviews = fetch_reviews(client, project, issue)
-          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads)
+          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project)
         end
       end
 
@@ -280,7 +280,7 @@ module Activities
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
       triggers.concat(ci_failure_triggers(checks))
-      triggers.concat(check_review_bot_status(reviews, unresolved_threads))
+      triggers.concat(check_review_bot_status(reviews, unresolved_threads, project: project))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
@@ -396,24 +396,40 @@ module Activities
       [ { type: "review_threads", details: "#{trusted_threads.size} unresolved thread(s)" } ]
     end
 
-    def review_bot_review_status(reviews)
+    def review_bot_review_status(reviews, allowed_bot_logins: nil)
       return :unknown if reviews.nil?
 
-      bot_reviews = reviews.select { |r| review_bot?(r[:user_login]) }
+      bot_reviews = reviews.select do |r|
+        next false unless review_bot?(r[:user_login])
+        next true if allowed_bot_logins.nil?
+
+        allowed_bot_logins.include?(r[:user_login]&.downcase)
+      end
       return :no_review if bot_reviews.empty?
 
       latest = bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
       REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
     end
 
-    def check_review_bot_status(reviews, unresolved_threads)
-      status = review_bot_review_status(reviews)
+    # Returns the login that should be explicitly requested for a review-bot
+    # review, or nil if the configured bot auto-reviews (e.g. Codex via GitHub
+    # App) and no explicit request is needed.
+    def review_bot_request_login(project)
+      return Activities::RequestReviewActivity::COPILOT_LOGIN if project.review_method_enabled?("copilot")
+
+      nil
+    end
+
+    def check_review_bot_status(reviews, unresolved_threads, project: nil)
+      allowed = project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil
+      status = review_bot_review_status(reviews, allowed_bot_logins: allowed)
 
       case status
       when :clean
         []
       when :no_review
-        [ { type: "review_bot_review_pending", details: "No review bot review found" } ]
+        login = review_bot_request_login(project) if project
+        [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
       when :has_comments
         # When unresolved_threads is nil, threads were either never fetched
         # (e.g. the skip_comment_signals path) or the API call failed. We
