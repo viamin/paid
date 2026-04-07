@@ -712,6 +712,36 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a draft PR has a codex body-only review post-dating the last agent run" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 30.minutes.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "emits draft-phase triggers for the unaddressed codex review" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_comments")
+      end
+    end
+
     context "when codex posted a body-only review after the last agent run completed" do
       before do
         create(:issue, :pull_request,

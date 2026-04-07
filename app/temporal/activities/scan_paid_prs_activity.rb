@@ -402,7 +402,14 @@ module Activities
     def review_bot_review_status(reviews, allowed_bot_logins: nil)
       return :unknown if reviews.nil?
 
-      latest = latest_allowed_bot_review(reviews, allowed_bot_logins)
+      review_bot_review_status_from(reviews, latest_allowed_bot_review(reviews, allowed_bot_logins))
+    end
+
+    # Shared status classifier so callers that have already resolved the
+    # latest allowed bot review (e.g. check_review_bot_status) do not have
+    # to iterate reviews a second time.
+    def review_bot_review_status_from(reviews, latest)
+      return :unknown if reviews.nil?
       return :no_review if latest.nil?
 
       REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
@@ -441,7 +448,8 @@ module Activities
 
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil)
       allowed = project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil
-      status = review_bot_review_status(reviews, allowed_bot_logins: allowed)
+      latest = latest_allowed_bot_review(reviews, allowed)
+      status = review_bot_review_status_from(reviews, latest)
 
       case status
       when :clean
@@ -465,26 +473,23 @@ module Activities
             triggers << { type: "review_bot_comments", details: "Latest review bot review generated comments" }
             triggers.concat(bot_thread_triggers)
             triggers
+          elsif body_only_review_bot?(latest&.dig(:user_login)) &&
+              body_only_review_needs_followup?(latest, last_run)
+            # Body-only bots (e.g. Codex): the review feedback lives in
+            # the top-level review body with no inline threads, so thread
+            # resolution cannot gate re-review. Use submitted_at vs the
+            # last agent run's completed_at as the anti-loop guard — a
+            # review post-dating the last run is unaddressed feedback.
+            [
+              { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
+              { type: "review_bot_comments", details: "Latest review bot review generated comments" }
+            ]
           else
-            latest = latest_allowed_bot_review(reviews, allowed)
-            if body_only_review_bot?(latest&.dig(:user_login)) &&
-                body_only_review_needs_followup?(latest, last_run)
-              # Body-only bots (e.g. Codex): the review feedback lives in
-              # the top-level review body with no inline threads, so thread
-              # resolution cannot gate re-review. Use submitted_at vs the
-              # last agent run's completed_at as the anti-loop guard — a
-              # review post-dating the last run is unaddressed feedback.
-              [
-                { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
-                { type: "review_bot_comments", details: "Latest review bot review generated comments" }
-              ]
-            else
-              # Thread-based bot with all bot threads resolved, or body-only
-              # review already addressed by a subsequent agent run. Treat as
-              # effectively clean to avoid re-requesting reviews that would
-              # produce no new comments.
-              []
-            end
+            # Thread-based bot with all bot threads resolved, or body-only
+            # review already addressed by a subsequent agent run. Treat as
+            # effectively clean to avoid re-requesting reviews that would
+            # produce no new comments.
+            []
           end
         end
       when :unknown
