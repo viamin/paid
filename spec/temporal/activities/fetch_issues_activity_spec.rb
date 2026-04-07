@@ -693,5 +693,107 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.labels).to include("paid-generated")
       end
     end
+
+    context "when project has last_issue_sync_at set (incremental fetch)" do
+      let(:sync_time) { 10.minutes.ago }
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, last_issue_sync_at: sync_time) }
+
+      let(:updated_issue) do
+        OpenStruct.new(
+          id: 1001,
+          number: 1,
+          title: "Updated issue",
+          body: "Updated body",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago,
+          updated_at: 5.minutes.ago
+        )
+      end
+
+      before do
+        allow(github_client).to receive(:issues).and_return([ updated_issue ])
+      end
+
+      it "passes since parameter and state: all to the API" do
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issues).with(
+          project.full_name,
+          hash_including(since: sync_time.iso8601, state: "all")
+        ).once
+      end
+
+      it "updates last_issue_sync_at after sync" do
+        freeze_time do
+          activity.execute(project_id: project.id)
+
+          project.reload
+          expect(project.last_issue_sync_at).to be_within(1.second).of(Time.current)
+        end
+      end
+
+      it "skips stale closure during incremental fetch" do
+        stale = create(:issue, project: project, github_issue_id: 5000, github_number: 50, github_state: "open")
+
+        activity.execute(project_id: project.id)
+
+        expect(stale.reload.github_state).to eq("open")
+      end
+
+      it "syncs closed issues returned in incremental results" do
+        closed_issue = OpenStruct.new(
+          id: 1002,
+          number: 2,
+          title: "Closed issue",
+          body: "Body",
+          state: "closed",
+          labels: [],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago,
+          updated_at: 5.minutes.ago
+        )
+
+        allow(github_client).to receive(:issues).and_return([ updated_issue, closed_issue ])
+
+        activity.execute(project_id: project.id)
+
+        issue = project.issues.find_by(github_issue_id: 1002)
+        expect(issue.github_state).to eq("closed")
+      end
+    end
+
+    context "when project has no last_issue_sync_at (first sync)" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, last_issue_sync_at: nil) }
+
+      before do
+        allow(github_client).to receive(:issues).and_return([])
+      end
+
+      it "does not pass since parameter to the API" do
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issues).with(
+          project.full_name,
+          hash_including(state: "open")
+        )
+        expect(github_client).not_to have_received(:issues).with(
+          project.full_name,
+          hash_including(since: anything)
+        )
+      end
+
+      it "sets last_issue_sync_at after first sync" do
+        freeze_time do
+          activity.execute(project_id: project.id)
+
+          project.reload
+          expect(project.last_issue_sync_at).to be_within(1.second).of(Time.current)
+        end
+      end
+    end
   end
 end
