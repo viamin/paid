@@ -325,6 +325,18 @@ RSpec.describe Activities::FetchIssuesActivity do
         )
       end
 
+      it "does not advance the sync watermark when the fetch is truncated" do
+        project.update!(last_issue_sync_at: 1.hour.ago)
+        original_sync_at = project.last_issue_sync_at
+
+        allow(Rails.logger).to receive(:warn)
+
+        activity.execute(project_id: project.id)
+
+        project.reload
+        expect(project.last_issue_sync_at).to eq(original_sync_at)
+      end
+
       it "does not close locally-open issues when the fetch is truncated" do
         # This issue is locally open but not in the truncated fetch results —
         # it should NOT be closed because the fetch is not authoritative.
@@ -743,7 +755,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(stale.reload.github_state).to eq("open")
       end
 
-      it "syncs closed issues returned in incremental results" do
+      it "syncs closed issues to DB but excludes them from returned results" do
         closed_issue = OpenStruct.new(
           id: 1002,
           number: 2,
@@ -759,10 +771,16 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         allow(github_client).to receive(:issues).and_return([ updated_issue, closed_issue ])
 
-        activity.execute(project_id: project.id)
+        result = activity.execute(project_id: project.id)
 
+        # Closed issue is persisted to DB
         issue = project.issues.find_by(github_issue_id: 1002)
         expect(issue.github_state).to eq("closed")
+
+        # But excluded from returned results for downstream processing
+        returned_ids = result[:issues].map { |i| i[:id] }
+        expect(returned_ids).not_to include(issue.id)
+        expect(result[:issues].size).to eq(1)
       end
     end
 

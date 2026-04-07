@@ -23,7 +23,15 @@ module Activities
       parse_issue_relationships(project, synced_issues) if synced_issues.any?
       closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
 
-      project.touch_last_issue_sync_at(sync_started_at)
+      # Only advance the watermark when the fetch was not truncated. A truncated
+      # fetch means issues beyond the page cap were not retrieved; advancing the
+      # watermark would permanently skip them on future syncs.
+      project.touch_last_issue_sync_at(sync_started_at) unless truncated
+
+      # Exclude closed issues from downstream processing (DetectLabelsActivity).
+      # sync_issue already persisted their github_state to the DB, but passing
+      # them downstream could incorrectly trigger agent runs for closed work.
+      open_issues = synced_issues.reject { |si| si[:github_state] == "closed" }
 
       logger.info(
         message: "github_sync.fetch_issues",
@@ -33,7 +41,7 @@ module Activities
         incremental: incremental
       )
 
-      { issues: synced_issues, project_id: project_id }
+      { issues: open_issues, project_id: project_id }
     rescue GithubClient::RateLimitError => e
       raise Temporalio::Error::ApplicationError.new(
         e.message,
@@ -129,7 +137,8 @@ module Activities
         github_updated_at: github_issue.updated_at
       )
 
-      { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted }
+      { id: issue.id, github_number: issue.github_number, labels: issue.labels,
+        github_state: issue.github_state, trusted: trusted }
     end
 
     # TODO(#430): Fetching comments per issue is an N+1 API call pattern that
