@@ -105,9 +105,6 @@ module Activities
       end
 
       issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)
-      previous_updated_at = issue.github_updated_at
-      github_updated_at = github_issue.updated_at
-
       issue.update!(
         github_number: github_issue.number,
         title: github_issue.title,
@@ -117,33 +114,35 @@ module Activities
         labels: extract_labels(github_issue),
         is_pull_request: github_issue.pull_request.present?,
         github_created_at: github_issue.created_at,
-        github_updated_at: github_updated_at
+        github_updated_at: github_issue.updated_at
       )
 
-      updated = previous_updated_at.nil? || !same_timestamp?(previous_updated_at, github_updated_at)
-
-      { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted, updated: updated }
+      { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted }
     end
 
     # Parses dependency and parent/child relationships from issue comments.
-    # Only fetches comments for issues whose github_updated_at changed since
-    # the last sync, skipping the N+1 API call pattern for unchanged issues.
+    # Re-parses issues whose github_updated_at has advanced beyond their last
+    # successful parse, as well as issues never parsed or whose previous parse
+    # failed — relationships_parsed_at is only bumped on success, so transient
+    # fetch errors naturally retry on the next sync. Trust-policy changes clear
+    # relationships_parsed_at on the project's issues to force reparse (see
+    # Project#invalidate_relationship_parsing_on_trust_change).
     def parse_issue_relationships(project, synced_issues)
       synced_issue_ids = synced_issues.filter_map { |si| si[:id] }
-      updated_issue_ids = synced_issues.filter_map { |si| si[:id] if si[:updated] }
-      issues_relation = project.issues.where(
-        id: updated_issue_ids,
-        github_state: "open",
-        is_pull_request: false
-      )
 
-      if updated_issue_ids.any?
+      issues_relation = project.issues
+        .where(id: synced_issue_ids, github_state: "open", is_pull_request: false)
+        .where("relationships_parsed_at IS NULL OR relationships_parsed_at < github_updated_at")
+
+      candidate_count = issues_relation.count
+
+      if candidate_count > 0
         logger.info(
           message: "github_sync.parse_issue_relationships",
           project_id: project.id,
           total_issues: synced_issue_ids.size,
-          updated_issues: updated_issue_ids.size,
-          skipped_issues: synced_issue_ids.size - updated_issue_ids.size
+          updated_issues: candidate_count,
+          skipped_issues: synced_issue_ids.size - candidate_count
         )
       end
 
@@ -164,6 +163,7 @@ module Activities
 
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
         parent_child_changed |= Issues::ParseParentChild.call(issue: issue, comments: comment_bodies)
+        issue.update_column(:relationships_parsed_at, Time.current)
       rescue GithubClient::RateLimitError
         raise
       rescue => e
@@ -314,12 +314,6 @@ module Activities
       return [] unless github_issue.labels
 
       github_issue.labels.map { |l| l.respond_to?(:name) ? l.name : l.to_s }
-    end
-
-    def same_timestamp?(a, b)
-      return false if a.nil? || b.nil?
-
-      a.to_i == b.to_i
     end
   end
 end

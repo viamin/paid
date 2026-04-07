@@ -628,10 +628,12 @@ RSpec.describe Activities::FetchIssuesActivity do
       before do
         create(:issue,
           project: project, github_issue_id: 8001, github_number: 80,
-          github_updated_at: updated_at_previous)
+          github_updated_at: updated_at_previous,
+          relationships_parsed_at: updated_at_previous)
         create(:issue,
           project: project, github_issue_id: 8002, github_number: 81,
-          github_updated_at: updated_at_previous)
+          github_updated_at: updated_at_previous,
+          relationships_parsed_at: updated_at_previous)
 
         stub_issues_by_label(nil => [ changed_issue, unchanged_issue ])
       end
@@ -676,6 +678,67 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(github_client).to have_received(:issue_comments).with(project.full_name, 80).once
         expect(github_client).to have_received(:issue_comments).with(project.full_name, 81).once
+      end
+    end
+
+    context "when a previous relationship parse failed" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: [ "viamin" ]) }
+      let(:flaky_issue) do
+        OpenStruct.new(
+          id: 8501, number: 85, title: "Flaky issue", body: "Body",
+          state: "open", labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil, user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago, updated_at: 1.day.ago
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ flaky_issue ])
+      end
+
+      it "retries parsing on the next sync even though github_updated_at is unchanged" do
+        allow(github_client).to receive(:issue_comments).with(project.full_name, 85)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        activity.execute(project_id: project.id)
+
+        issue = project.issues.find_by!(github_issue_id: 8501)
+        expect(issue.relationships_parsed_at).to be_nil
+
+        # Second sync — github_updated_at has NOT changed, but the fetch now succeeds
+        allow(github_client).to receive(:issue_comments).with(project.full_name, 85).and_return([])
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 85).twice
+        expect(issue.reload.relationships_parsed_at).to be_present
+      end
+    end
+
+    context "when the project trust list changes" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: [ "viamin" ]) }
+      let(:parsed_issue) do
+        OpenStruct.new(
+          id: 8601, number: 86, title: "Parsed issue", body: "Body",
+          state: "open", labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil, user: OpenStruct.new(login: "viamin"),
+          created_at: 3.days.ago, updated_at: 2.days.ago
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ parsed_issue ])
+        allow(github_client).to receive(:issue_comments).and_return([])
+      end
+
+      it "re-parses issue relationships after allowed_github_usernames changes" do
+        activity.execute(project_id: project.id)
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 86).once
+
+        project.update!(allowed_github_usernames: %w[viamin another-trusted])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 86).twice
       end
     end
 
