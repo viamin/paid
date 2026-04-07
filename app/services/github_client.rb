@@ -91,6 +91,20 @@ class GithubClient
     end
   end
 
+  # Returns the login of the authenticated user (or installation actor) this
+  # client is operating as. Cached per-instance because the answer does not
+  # change for the lifetime of the token. Callers should treat a nil return
+  # as "identity unknown" and fall back to author-agnostic behavior.
+  #
+  # @return [String, nil] Downcased login, or nil if lookup failed.
+  def authenticated_login
+    return @authenticated_login if defined?(@authenticated_login)
+
+    @authenticated_login = handle_errors { client.user.login&.downcase }
+  rescue Error
+    @authenticated_login = nil
+  end
+
   # Fetches repository metadata.
   #
   # @param repo [String] Repository in "owner/name" format

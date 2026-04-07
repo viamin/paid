@@ -180,14 +180,27 @@ module Activities
     end
 
     # Returns true when a trigger marker for the current HEAD is already
-    # present on the PR, false when definitely absent. Returns true on fetch
+    # present on the PR in a comment authored by Paid (this token's own
+    # identity), false when definitely absent. Returns true on fetch
     # failure as a safe default: if we cannot verify whether a trigger has
     # already been posted, skip posting this cycle to avoid spamming comments
     # on every poll while a transient GitHub API error persists. The marker
     # will be re-checked on the next invocation.
+    #
+    # Author-gating matters because the marker format is derivable from the
+    # public PR head SHA. Without it, a third-party comment containing the
+    # marker string (accidentally or maliciously) would suppress the trigger
+    # and strand the PR. When the authenticated identity cannot be resolved,
+    # fall back to matching any comment so the safe "skip if unsure" default
+    # still applies.
     def comment_marker_present?(client, project, pr_number, marker)
-      client.issue_comments(project.full_name, pr_number).any? do |c|
-        c.body.to_s.include?(marker)
+      paid_login = client.authenticated_login
+      comments = client.issue_comments(project.full_name, pr_number)
+      comments.any? do |c|
+        next false unless c.body.to_s.include?(marker)
+        next true if paid_login.nil?
+
+        c.user&.login&.downcase == paid_login
       end
     rescue GithubClient::Error => e
       logger.warn(
