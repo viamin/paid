@@ -428,11 +428,23 @@ module Workflows
     # Codex, etc.). The activity resolves the reviewer from project settings
     # when :reviewers is not supplied, so the workflow does not need to know
     # which bot is enabled.
+    #
+    # The :reviewers argument is gated behind a workflow patch so that
+    # in-flight AgentExecutionWorkflow executions started before this
+    # deployment — whose history recorded the old `reviewers: [copilot]`
+    # payload — can replay without a non-determinism error. Histories
+    # captured after the patch use the new project-resolved form.
     def request_review_bot_review(project_id, pr_number)
       return unless pr_number
 
-      run_activity(Activities::RequestReviewActivity,
-        { project_id: project_id, pr_number: pr_number }, timeout: 60)
+      input = if Temporalio::Workflow.patched("request_review_resolve_reviewer_from_project")
+        { project_id: project_id, pr_number: pr_number }
+      else
+        { project_id: project_id, pr_number: pr_number,
+          reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }
+      end
+
+      run_activity(Activities::RequestReviewActivity, input, timeout: 60)
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
