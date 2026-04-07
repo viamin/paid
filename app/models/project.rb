@@ -4,7 +4,7 @@ class Project < ApplicationRecord
   MERGE_METHODS = %w[squash merge rebase].freeze
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
   # "none" is not a method — it is represented by enabled: false at the top level
-  REVIEW_METHODS = %w[copilot paid_agent ci_action manual].freeze
+  REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
 
   DEFAULT_REVIEW_SETTINGS = {
     "enabled" => false,
@@ -26,6 +26,15 @@ class Project < ApplicationRecord
           "stop_when_no_comments" => true,
           "quality_threshold" => nil,
           "timeout_minutes" => 30
+        }
+      },
+      "codex" => {
+        "enabled" => false,
+        "termination" => {
+          "max_review_rounds" => 2,
+          "stop_when_no_comments" => true,
+          "quality_threshold" => nil,
+          "timeout_minutes" => 60
         }
       },
       "ci_action" => {
@@ -411,6 +420,14 @@ class Project < ApplicationRecord
 
   def enabled_review_methods
     REVIEW_METHODS.select { |m| review_method_enabled?(m) }
+  end
+
+  # Returns the set of bot GitHub logins (downcased) for all enabled review
+  # methods that have a known bot account (copilot, codex, etc.).
+  def enabled_review_bot_logins
+    ProviderSupport::PROVIDER_BOT_USERNAMES
+      .slice(*enabled_review_methods)
+      .values.flatten.map(&:downcase).to_set
   end
 
   def review_method_config(method)
