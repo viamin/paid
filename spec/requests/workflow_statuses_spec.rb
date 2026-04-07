@@ -149,6 +149,17 @@ RSpec.describe "WorkflowStatuses" do
         get project_workflow_status_path(project)
         expect(response.body).not_to include("Restart monitor")
       end
+
+      it "does not show restart button for viewers without update permission" do
+        viewer = create(:user, :viewer, account: account)
+        sign_in viewer
+
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :not_found, running: false)
+
+        get project_workflow_status_path(project)
+        expect(response.body).not_to include("Restart monitor")
+      end
     end
   end
 

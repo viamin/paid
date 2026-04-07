@@ -23,7 +23,7 @@
           <p class="text-sm font-semibold text-gray-900"><%= @health[:label] %></p>
           <p class="mt-1 text-sm text-gray-600"><%= @health[:description] %></p>
 
-          <% if @health[:status] == :unhealthy && @project.active? %>
+          <% if @health[:status] == :unhealthy && @project.active? && policy(@project).update? %>
             <div class="mt-3">
               <%= button_to "Restart monitor",
                     restart_project_workflow_status_path(@project),
