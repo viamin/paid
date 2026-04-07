@@ -73,7 +73,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           check_runs_for_ref: [ { name: "rspec", conclusion: "failure" } ],
           review_threads: [],
           pull_request_reviews: [],
-          issue_comments: []
+          issue_comments: [],
+          recent_issue_comments: []
         )
       end
 
@@ -689,6 +690,94 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when codex posted a clean signal as an issue comment with no prior review" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 30.minutes.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "treats the codex clean comment as a clean bot signal and emits no review_bot triggers" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when a codex clean comment supersedes an older non-clean codex review" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 10.minutes.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago } ],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "treats the bot as clean because the clean comment is newer than the non-clean review" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when an older codex clean comment is followed by a newer non-clean codex review" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+        stale_clean = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 3.hours.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: [],
+          recent_issue_comments: [ stale_clean ]
+        )
+      end
+
+      it "still emits review_bot_comments because the clean comment is older than the new non-clean review" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).to include("review_bot_comments")
       end
     end
 
@@ -1768,6 +1857,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     checks: [ { name: "ci", conclusion: "success" } ],
     review_threads: [],
     issue_comments: [],
+    recent_issue_comments: nil,
     reviews: default_clean_copilot_review
   )
     pr_data = OpenStruct.new(
@@ -1789,6 +1879,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:issue_comments)
       .with(project.full_name, 42)
       .and_return(issue_comments)
+    allow(github_client).to receive(:recent_issue_comments)
+      .with(project.full_name, 42)
+      .and_return(recent_issue_comments || issue_comments)
     allow(github_client).to receive(:pull_request_reviews)
       .with(project.full_name, 42)
       .and_return(reviews)
