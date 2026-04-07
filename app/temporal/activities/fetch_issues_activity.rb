@@ -140,6 +140,7 @@ module Activities
       parent_child_changed = false
 
       issues_relation.find_each do |issue|
+        check_rate_budget!(client)
         comment_bodies = fetch_trusted_comment_bodies(client, project, issue)
         # nil means comment fetch failed — skip ALL parsing for this issue to
         # avoid stale-removal of comment-derived deps. Body-only parsing would
@@ -148,7 +149,7 @@ module Activities
 
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
         parent_child_changed |= Issues::ParseParentChild.call(issue: issue, comments: comment_bodies)
-      rescue GithubClient::RateLimitError
+      rescue GithubClient::RateLimitError, Temporalio::Error::ApplicationError
         raise
       rescue => e
         logger.warn(
