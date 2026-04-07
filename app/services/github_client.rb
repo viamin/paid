@@ -766,7 +766,6 @@ class GithubClient
       query($owner: String!, $name: String!, $number: Int!, $maxComments: Int!) {
         repository(owner: $owner, name: $name) {
           pullRequest(number: $number) {
-            reviewComments: reviews(first: 0) { totalCount }
             comments: reviewThreads(first: $maxComments) {
               nodes {
                 comments(first: 50) {
