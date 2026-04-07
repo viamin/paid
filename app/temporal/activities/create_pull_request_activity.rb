@@ -132,7 +132,11 @@ module Activities
       referenced_numbers = summary.scan(/(?<!\w)#(\d+)\b/).flatten.map(&:to_i).to_set
       referenced_numbers.delete(issue_number)
 
-      sibling_numbers = sibling_open_issue_numbers(agent_run.project, exclude: issue_number).to_set
+      sibling_numbers = sibling_open_issue_numbers(
+        agent_run.project,
+        exclude: issue_number,
+        candidates: referenced_numbers
+      )
       cross_refs = referenced_numbers.intersection(sibling_numbers).to_a.sort
 
       if !mentions_own_issue && cross_refs.any?
@@ -153,9 +157,11 @@ module Activities
 
     # Returns github_numbers of other open issues in the same project,
     # excluding the current issue.
-    def sibling_open_issue_numbers(project, exclude:)
+    def sibling_open_issue_numbers(project, exclude:, candidates:)
+      return [] if candidates.blank?
+
       project.issues
-        .where(github_state: "open", is_pull_request: false)
+        .where(github_state: "open", is_pull_request: false, github_number: candidates)
         .where.not(github_number: exclude)
         .pluck(:github_number)
     end
