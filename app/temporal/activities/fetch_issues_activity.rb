@@ -121,14 +121,20 @@ module Activities
     end
 
     # TODO(#430): Fetching comments per issue is an N+1 API call pattern that
-    # increases sync time and rate-limit pressure. Consider skipping unchanged
-    # issues (via github_updated_at) or batching comment fetches.
+    # increases sync time and rate-limit pressure. Mitigated by skipping
+    # unchanged issues (via github_updated_at vs last_comment_sync_at).
     def parse_issue_relationships(project, synced_issues)
       synced_issue_ids = synced_issues.filter_map { |si| si[:id] }
       issues_relation = project.issues.where(
         id: synced_issue_ids,
         github_state: "open",
         is_pull_request: false
+      )
+      # Only fetch comments for issues whose github_updated_at has changed
+      # since the last successful comment sync. Issues that haven't been
+      # updated on GitHub since we last synced their comments are skipped.
+      issues_relation = issues_relation.where(
+        "last_comment_sync_at IS NULL OR github_updated_at > last_comment_sync_at"
       )
 
       client = project.github_token.client
@@ -148,6 +154,7 @@ module Activities
 
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
         parent_child_changed |= Issues::ParseParentChild.call(issue: issue, comments: comment_bodies)
+        issue.update_column(:last_comment_sync_at, Time.current)
       rescue GithubClient::RateLimitError
         raise
       rescue => e

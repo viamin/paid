@@ -521,6 +521,85 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when skipping unchanged issues for comment fetching" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: %w[viamin]) }
+      let(:unchanged_time) { 2.days.ago }
+      let(:updated_time) { 1.hour.ago }
+
+      let(:unchanged_github_issue) do
+        OpenStruct.new(
+          id: 8001,
+          number: 80,
+          title: "Unchanged issue",
+          body: "No changes",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 5.days.ago,
+          updated_at: unchanged_time
+        )
+      end
+
+      let(:updated_github_issue) do
+        OpenStruct.new(
+          id: 8002,
+          number: 81,
+          title: "Updated issue",
+          body: "Has changes",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 5.days.ago,
+          updated_at: updated_time
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ unchanged_github_issue, updated_github_issue ])
+      end
+
+      it "skips comment fetching for issues unchanged since last sync" do
+        # Pre-create the unchanged issue with last_comment_sync_at after github_updated_at
+        create(:issue, project: project, github_issue_id: 8001, github_number: 80,
+               github_updated_at: unchanged_time, last_comment_sync_at: unchanged_time + 1.minute)
+
+        activity.execute(project_id: project.id)
+
+        # Comments should only be fetched for the updated issue (number 81), not the unchanged one (80)
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 81)
+        expect(github_client).not_to have_received(:issue_comments).with(project.full_name, 80)
+      end
+
+      it "fetches comments for issues that have never been synced" do
+        activity.execute(project_id: project.id)
+
+        # Both issues are new (no last_comment_sync_at), so both should be fetched
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 80)
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 81)
+      end
+
+      it "sets last_comment_sync_at after successful comment fetch" do
+        activity.execute(project_id: project.id)
+
+        issue = project.issues.find_by(github_issue_id: 8002)
+        expect(issue.last_comment_sync_at).to be_present
+      end
+
+      it "does not set last_comment_sync_at when comment fetch fails" do
+        allow(github_client).to receive(:issue_comments)
+          .with(project.full_name, 80).and_raise(GithubClient::Error.new("API error"))
+        allow(github_client).to receive(:issue_comments)
+          .with(project.full_name, 81).and_return([])
+
+        activity.execute(project_id: project.id)
+
+        unchanged_issue = project.issues.find_by(github_issue_id: 8001)
+        expect(unchanged_issue.last_comment_sync_at).to be_nil
+      end
+    end
+
     context "when fetching comment dependencies" do
       let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: %w[viamin trusted-dev]) }
       let(:github_issue) do
