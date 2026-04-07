@@ -105,6 +105,9 @@ module Activities
       end
 
       issue = project.issues.find_or_initialize_by(github_issue_id: github_issue.id)
+      previous_updated_at = issue.github_updated_at
+      github_updated_at = github_issue.updated_at
+
       issue.update!(
         github_number: github_issue.number,
         title: github_issue.title,
@@ -114,22 +117,35 @@ module Activities
         labels: extract_labels(github_issue),
         is_pull_request: github_issue.pull_request.present?,
         github_created_at: github_issue.created_at,
-        github_updated_at: github_issue.updated_at
+        github_updated_at: github_updated_at
       )
 
-      { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted }
+      updated = previous_updated_at.nil? || !same_timestamp?(previous_updated_at, github_updated_at)
+
+      { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted, updated: updated }
     end
 
-    # TODO(#430): Fetching comments per issue is an N+1 API call pattern that
-    # increases sync time and rate-limit pressure. Consider skipping unchanged
-    # issues (via github_updated_at) or batching comment fetches.
+    # Parses dependency and parent/child relationships from issue comments.
+    # Only fetches comments for issues whose github_updated_at changed since
+    # the last sync, skipping the N+1 API call pattern for unchanged issues.
     def parse_issue_relationships(project, synced_issues)
       synced_issue_ids = synced_issues.filter_map { |si| si[:id] }
+      updated_issue_ids = synced_issues.filter_map { |si| si[:id] if si[:updated] }
       issues_relation = project.issues.where(
-        id: synced_issue_ids,
+        id: updated_issue_ids,
         github_state: "open",
         is_pull_request: false
       )
+
+      if updated_issue_ids.any?
+        logger.info(
+          message: "github_sync.parse_issue_relationships",
+          project_id: project.id,
+          total_issues: synced_issue_ids.size,
+          updated_issues: updated_issue_ids.size,
+          skipped_issues: synced_issue_ids.size - updated_issue_ids.size
+        )
+      end
 
       client = project.github_token.client
 
@@ -298,6 +314,12 @@ module Activities
       return [] unless github_issue.labels
 
       github_issue.labels.map { |l| l.respond_to?(:name) ? l.name : l.to_s }
+    end
+
+    def same_timestamp?(a, b)
+      return false if a.nil? || b.nil?
+
+      a.to_i == b.to_i
     end
   end
 end
