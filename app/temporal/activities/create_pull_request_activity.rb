@@ -127,8 +127,13 @@ module Activities
       mentions_own_issue = summary.match?(/(?<!\w)##{issue_number}\b/) ||
                           summary.match?(/\bissue\s+#{issue_number}\b/i)
 
-      other_numbers = sibling_open_issue_numbers(agent_run.project, exclude: issue_number)
-      cross_refs = other_numbers.select { |num| summary.match?(/(?<!\w)##{num}\b/) }
+      # Extract all #NNN references from the summary in a single pass, then
+      # intersect with sibling open issues to avoid O(issues × summary) regex.
+      referenced_numbers = summary.scan(/(?<!\w)#(\d+)\b/).flatten.map(&:to_i).to_set
+      referenced_numbers.delete(issue_number)
+
+      sibling_numbers = sibling_open_issue_numbers(agent_run.project, exclude: issue_number).to_set
+      cross_refs = referenced_numbers.intersection(sibling_numbers).to_a.sort
 
       if !mentions_own_issue && cross_refs.any?
         logger.warn(
