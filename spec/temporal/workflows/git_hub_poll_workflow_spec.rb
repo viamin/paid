@@ -322,7 +322,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
-    it "requests configured reviews when review_bot_review_pending is the only trigger" do
+    it "requests only the pending review method when review_bot_review_pending is the only trigger" do
       allow(Temporalio::Workflow).to receive(:patched).with("request-configured-pr-reviews-v1").and_return(true)
       allow(workflow).to receive(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
@@ -331,19 +331,43 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
         current_draft_review_count: 0,
-        triggers: [ { type: "review_bot_review_pending" } ]
+        triggers: [ { type: "review_bot_review_pending", review_method: "copilot",
+                       request_login: Activities::RequestReviewActivity::COPILOT_LOGIN } ]
       }
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
+      # Only copilot should be requested (intersection of plan and pending methods)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: anything)
-      expect(workflow).to have_received(:run_activity)
+      expect(workflow).not_to have_received(:run_activity)
         .with(Activities::QueueAgentRunActivity,
-          { project_id: project_id, source_pull_request_number: 42, goal: "review" }, timeout: 30)
+          hash_including(goal: "review"), timeout: anything)
+    end
+
+    it "requests all configured reviews when review_bot_review_pending has no review_method" do
+      allow(Temporalio::Workflow).to receive(:patched).with("request-configured-pr-reviews-v1").and_return(true)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
+        .and_return({ requested_review_methods: [ "copilot" ] })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending", request_login: nil } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      # With no review_method filter, all plan methods are requested
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ResolvePrReviewPlanActivity, { project_id: project_id }, timeout: 30)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: anything)
     end
 
     it "defers review request and dispatches followup when other triggers present" do

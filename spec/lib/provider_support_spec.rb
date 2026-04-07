@@ -204,6 +204,7 @@ RSpec.describe ProviderSupport do
 
     it "returns true for known codex bot usernames" do
       expect(described_class.provider_bot_username?("chatgpt-codex-connector")).to be true
+      expect(described_class.provider_bot_username?("chatgpt-codex-connector[bot]")).to be true
     end
 
     it "is case-insensitive" do
