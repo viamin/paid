@@ -96,14 +96,21 @@ module Activities
         page += 1
 
         if page > DEFAULT_MAX_PAGES
-          truncated = true
-          logger.warn(
-            message: "github_sync.fetch_issues_page_limit",
-            repo: repo_full_name,
-            label: label,
-            fetched_count: issues.size,
-            max_pages: DEFAULT_MAX_PAGES
-          )
+          # Probe the next page to distinguish a genuinely truncated result set
+          # from one that exactly fills DEFAULT_MAX_PAGES * DEFAULT_PER_PAGE.
+          # Without this check a false truncation prevents the watermark from
+          # ever advancing, causing the same window to be re-fetched indefinitely.
+          probe_opts = opts.merge(page: page, per_page: 1)
+          if client.issues(repo_full_name, **probe_opts).any?
+            truncated = true
+            logger.warn(
+              message: "github_sync.fetch_issues_page_limit",
+              repo: repo_full_name,
+              label: label,
+              fetched_count: issues.size,
+              max_pages: DEFAULT_MAX_PAGES
+            )
+          end
           break
         end
       end
