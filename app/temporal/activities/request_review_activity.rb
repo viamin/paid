@@ -179,6 +179,12 @@ module Activities
       posted
     end
 
+    # Returns true when a trigger marker for the current HEAD is already
+    # present on the PR, false when definitely absent. Returns true on fetch
+    # failure as a safe default: if we cannot verify whether a trigger has
+    # already been posted, skip posting this cycle to avoid spamming comments
+    # on every poll while a transient GitHub API error persists. The marker
+    # will be re-checked on the next invocation.
     def comment_marker_present?(client, project, pr_number, marker)
       client.issue_comments(project.full_name, pr_number).any? do |c|
         c.body.to_s.include?(marker)
@@ -190,7 +196,7 @@ module Activities
         pr_number: pr_number,
         error: e.message
       )
-      false
+      true
     end
 
     def fetch_pr_head_sha(client, project, pr_number)
