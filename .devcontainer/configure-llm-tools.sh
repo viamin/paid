@@ -165,12 +165,25 @@ if [ -f "/usr/local/bin/gemini" ] && [ ! -f "/usr/local/bin/gemini.real" ]; then
 fi
 
 # ============================================================================
-# OpenCode, Kilocode, GitHub Copilot CLI, Cursor
+# KiloCode
+# ============================================================================
+
+# KiloCode reads config from ~/.config/kilo/ which is NOT bind-mounted from
+# the host (only ~/.kilocode is mounted), so writing here is container-local.
+echo "Configuring KiloCode..."
+mkdir -p "$HOME/.config/kilo"
+cat << 'EOF' > "$HOME/.config/kilo/config.json"
+{
+  "permission": "allow"
+}
+EOF
+
+# ============================================================================
+# OpenCode, GitHub Copilot CLI, Cursor
 # ============================================================================
 
 # These tools use environment variables or their own config mechanisms
 # OpenCode: Uses OPENCODE_PERMISSION environment variable (set in containerEnv if needed)
-# Kilocode: Uses ~/.kilocode config (bind-mounted from host)
 # GitHub Copilot CLI: Uses ~/.copilot config (bind-mounted from host)
 # Cursor: Uses ~/.cursor config (bind-mounted from host)
 
@@ -184,10 +197,10 @@ if [ -d "$PLUGIN_DIR" ]; then
 fi
 echo "  - Codex: Auto-approve mode (approval_policy=never, sandbox=danger-full-access)"
 echo "  - Gemini CLI: Auto-accept mode (autoAccept=true)"
+echo "  - KiloCode: Auto-approve mode (permission=allow, container-specific config)"
 echo "  - Aider: Path shim (no global auto-approve mode available)"
 echo "  - Cursor: Config mounted from host (~/.cursor)"
 echo "  - OpenCode: Config mounted from host (~/.config)"
-echo "  - Kilocode: Config mounted from host (~/.kilocode)"
 echo "  - GitHub Copilot CLI: Config mounted from host (~/.copilot)"
 echo ""
 echo "WARNING: These tools will auto-approve all operations inside this container."
