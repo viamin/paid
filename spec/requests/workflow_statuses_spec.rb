@@ -190,6 +190,14 @@ RSpec.describe "WorkflowStatuses" do
         expect(flash[:notice]).to eq("Issue monitor restarted.")
       end
 
+      it "redirects with alert when project is inactive" do
+        project.update_column(:active, false)
+
+        post restart_project_workflow_status_path(project)
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:alert]).to eq("Cannot restart monitoring on an inactive project.")
+      end
+
       it "redirects with alert when workflow is already running" do
         allow(ProjectWorkflowManager).to receive(:workflow_status)
           .with(project).and_return(status: :running, running: true)
