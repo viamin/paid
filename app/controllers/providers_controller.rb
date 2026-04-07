@@ -148,7 +148,11 @@ class ProvidersController < ApplicationController
     if action_name == "create"
       permitted.push(:provider_key, :auth_type, :provider_api_key_id)
     end
-    attrs = params.require(:provider).permit(*permitted, config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ] })
+    attrs = params.require(:provider).permit(
+      *permitted,
+      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model ] },
+      tier_model_ids: LlmModel::TIERS
+    )
 
     # Convert config to a plain Hash and slice to only the relevant provider_key,
     # avoiding stale config from previously visible form fields.
@@ -159,7 +163,11 @@ class ProvidersController < ApplicationController
     provider_key = attrs[:provider_key].presence || @provider&.provider_key
     config = config.slice(provider_key) if provider_key.present?
 
-    attrs.to_h.merge("config" => config)
+    result = attrs.to_h.merge("config" => config)
+    if result.key?("tier_model_ids")
+      result["tier_model_ids"] = result["tier_model_ids"].to_h.compact_blank
+    end
+    result
   end
 
   def load_provider_options
