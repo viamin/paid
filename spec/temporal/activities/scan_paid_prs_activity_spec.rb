@@ -1099,6 +1099,56 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when draft PR on a paid_agent-only project has a human changes_requested review" do
+      let(:paid_agent_project) do
+        create(:project,
+          auto_scan_prs: true,
+          max_pr_followup_runs: 3,
+          pr_action_labels: [],
+          auto_fix_merge_conflicts: false,
+          review_settings: {
+            "enabled" => true,
+            "wait_for_reviews" => true,
+            "methods" => { "paid_agent" => { "enabled" => true } }
+          })
+      end
+
+      before do
+        create(:issue, :pull_request,
+          project: paid_agent_project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        create(:agent_run, :completed,
+          project: paid_agent_project, source_pull_request_number: 42,
+          completed_at: 1.hour.ago)
+        pr_data = OpenStruct.new(
+          head: OpenStruct.new(sha: "abc123"),
+          mergeable: true,
+          draft: false,
+          user: OpenStruct.new(login: "someone-else")
+        )
+        allow(github_client).to receive_messages(
+          pull_request: pr_data,
+          check_runs_for_ref: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          pull_request_reviews: [
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: 30.minutes.ago }
+          ],
+          issue_comments: []
+        )
+      end
+
+      it "still detects changes_requested even when no copilot/manual methods are configured" do
+        result = activity.execute(project_id: paid_agent_project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("changes_requested")
+      end
+    end
+
     context "when draft PR has review bot threads from copilot-pull-request-reviewer[bot]" do
       before do
         create(:issue, :pull_request,

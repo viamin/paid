@@ -708,20 +708,20 @@ RSpec.describe GithubClient do
             body: {
               total_count: 2,
               check_runs: [
-                { id: 1, name: "rspec", conclusion: "failure" },
-                { id: 2, name: "rubocop", conclusion: "success" }
+                { id: 1, name: "rspec", conclusion: "failure", started_at: "2024-01-01T00:00:00Z", completed_at: "2024-01-01T00:01:00Z" },
+                { id: 2, name: "rubocop", conclusion: "success", started_at: "2024-01-01T00:00:00Z", completed_at: nil }
               ]
             }.to_json,
             headers: { "Content-Type" => "application/json" }
           )
       end
 
-      it "returns check run names and conclusions" do
+      it "returns check run names, conclusions, and timestamps" do
         result = client.check_runs_for_ref(repo, ref)
 
         expect(result).to eq([
-          { name: "rspec", conclusion: "failure" },
-          { name: "rubocop", conclusion: "success" }
+          { name: "rspec", conclusion: "failure", started_at: "2024-01-01T00:00:00Z", completed_at: "2024-01-01T00:01:00Z" },
+          { name: "rubocop", conclusion: "success", started_at: "2024-01-01T00:00:00Z", completed_at: nil }
         ])
       end
     end

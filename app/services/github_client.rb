@@ -305,7 +305,7 @@ class GithubClient
         )
       end
 
-      all_check_runs.map { |cr| { name: cr.name, conclusion: cr.conclusion } }
+      all_check_runs.map { |cr| { name: cr.name, conclusion: cr.conclusion, started_at: cr.started_at, completed_at: cr.completed_at } }
     end
   end
 

@@ -112,7 +112,10 @@ module Activities
         human_triggers = human_review_thread_triggers(project, unresolved_threads)
 
         if human_triggers.blank?
-          reviews = review_based_methods.any? ? fetch_reviews(client, project, issue) : []
+          # Fetch reviews eagerly only when needed for review-method gating. When no
+          # review-based methods are configured, leave reviews nil so the lazy
+          # `reviews ||= fetch_reviews` below can still run for changes_requested checks.
+          reviews = fetch_reviews(client, project, issue) if review_based_methods.any?
           if ci_review_required
             pr_data ||= fetch_pr_data(client, project, issue)
             checks = fetch_check_runs(client, project, pr_data)
