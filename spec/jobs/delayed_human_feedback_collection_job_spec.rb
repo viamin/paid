@@ -4,6 +4,12 @@ require "rails_helper"
 
 RSpec.describe DelayedHumanFeedbackCollectionJob do
   describe "#perform" do
+    let(:github_client) { instance_double(GithubClient, rate_limit_low?: false) }
+
+    before do
+      allow(GithubClient).to receive(:new).and_return(github_client)
+    end
+
     it "enqueues feedback collection for recently completed runs" do
       recent_run = create(:agent_run, :completed)
       recent_run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
@@ -24,7 +30,7 @@ RSpec.describe DelayedHumanFeedbackCollectionJob do
 
     it "skips runs completed outside the lookback window" do
       old_run = create(:agent_run, :completed)
-      old_run.update_columns(completed_at: 8.days.ago, updated_at: 8.days.ago)
+      old_run.update_columns(completed_at: 4.days.ago, updated_at: 4.days.ago)
 
       expect {
         described_class.new.perform
@@ -61,7 +67,7 @@ RSpec.describe DelayedHumanFeedbackCollectionJob do
         metric_type: "human",
         scores: { "pr_merged" => 1.0 },
         composite_score: 1.0,
-        metadata: { "last_polled_at" => 5.hours.ago.iso8601 }
+        metadata: { "last_polled_at" => 13.hours.ago.iso8601 }
       )
 
       expect {
@@ -78,7 +84,7 @@ RSpec.describe DelayedHumanFeedbackCollectionJob do
         metric_type: "human",
         scores: { "pr_merged" => 1.0 },
         composite_score: 1.0,
-        metadata: { "webhook_comment_count" => 3, "last_polled_at" => 5.hours.ago.iso8601 },
+        metadata: { "webhook_comment_count" => 3, "last_polled_at" => 13.hours.ago.iso8601 },
         updated_at: 1.hour.ago
       )
 
@@ -97,6 +103,26 @@ RSpec.describe DelayedHumanFeedbackCollectionJob do
         metadata: {},
         updated_at: 2.hours.ago
       )
+
+      expect {
+        described_class.new.perform
+      }.to have_enqueued_job(HumanFeedbackCollectionJob).with(run.id)
+    end
+
+    it "skips runs when the GitHub token rate limit is low" do
+      run = create(:agent_run, :completed)
+      run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
+
+      allow(github_client).to receive(:rate_limit_low?).and_return(true)
+
+      expect {
+        described_class.new.perform
+      }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
+    end
+
+    it "enqueues runs when the GitHub token rate limit is sufficient" do
+      run = create(:agent_run, :completed)
+      run.update_columns(completed_at: 1.day.ago, updated_at: 1.day.ago)
 
       expect {
         described_class.new.perform
