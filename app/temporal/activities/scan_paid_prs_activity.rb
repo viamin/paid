@@ -89,12 +89,16 @@ module Activities
       human_triggers = []
       review_bot_triggers = []
       reviews = nil
+      # Needed by check_review_bot_status for the body-only bot anti-loop
+      # guard (e.g. Codex); also reused by comment/changes-requested checks
+      # below when comment signals are not skipped.
+      last_run = last_completed_run(project, issue)
 
       # Draft exit still requires an explicitly clean bot review even when
       # other draft comment signals are skipped.
       if skip_comment_signals
         reviews = fetch_reviews(client, project, issue)
-        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project)
+        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run)
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
@@ -102,7 +106,7 @@ module Activities
 
         if human_triggers.blank?
           reviews = fetch_reviews(client, project, issue)
-          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project)
+          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run)
         end
       end
 
@@ -122,7 +126,6 @@ module Activities
 
       # Only fetch conversation comments if still no triggers.
       if all_triggers.empty? && !skip_comment_signals
-        last_run = last_completed_run(project, issue)
         all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
 
         # Only check changes_requested if still no triggers.
@@ -280,7 +283,7 @@ module Activities
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
       triggers.concat(ci_failure_triggers(checks))
-      triggers.concat(check_review_bot_status(reviews, unresolved_threads, project: project))
+      triggers.concat(check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
@@ -399,16 +402,29 @@ module Activities
     def review_bot_review_status(reviews, allowed_bot_logins: nil)
       return :unknown if reviews.nil?
 
+      review_bot_review_status_from(reviews, latest_allowed_bot_review(reviews, allowed_bot_logins))
+    end
+
+    # Shared status classifier so callers that have already resolved the
+    # latest allowed bot review (e.g. check_review_bot_status) do not have
+    # to iterate reviews a second time.
+    def review_bot_review_status_from(reviews, latest)
+      return :unknown if reviews.nil?
+      return :no_review if latest.nil?
+
+      REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
+    end
+
+    def latest_allowed_bot_review(reviews, allowed_bot_logins)
+      return nil if reviews.nil?
+
       bot_reviews = reviews.select do |r|
         next false unless review_bot?(r[:user_login])
         next true if allowed_bot_logins.nil?
 
         allowed_bot_logins.include?(r[:user_login]&.downcase)
       end
-      return :no_review if bot_reviews.empty?
-
-      latest = bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
-      REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
+      bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
     end
 
     # Returns the login that should be explicitly requested for a review-bot
@@ -420,9 +436,20 @@ module Activities
       nil
     end
 
-    def check_review_bot_status(reviews, unresolved_threads, project: nil)
+    # Review-bot logins that post feedback as a single top-level review body
+    # rather than as inline review threads. These bots need the body-only
+    # anti-loop guard in check_review_bot_status because thread resolution
+    # cannot be used to detect "already addressed" state.
+    BODY_ONLY_REVIEW_BOT_LOGINS = ProviderSupport::PROVIDER_BOT_USERNAMES
+      .fetch("codex", [])
+      .map(&:downcase)
+      .to_set
+      .freeze
+
+    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil)
       allowed = project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil
-      status = review_bot_review_status(reviews, allowed_bot_logins: allowed)
+      latest = latest_allowed_bot_review(reviews, allowed)
+      status = review_bot_review_status_from(reviews, latest)
 
       case status
       when :clean
@@ -440,19 +467,60 @@ module Activities
         else
           bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
           if bot_thread_triggers.any?
+            # Thread-based bots (e.g. Copilot) with at least one unresolved
+            # bot thread: emit review_bot_comments + the thread triggers.
             triggers = [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
             triggers << { type: "review_bot_comments", details: "Latest review bot review generated comments" }
             triggers.concat(bot_thread_triggers)
             triggers
+          elsif body_only_review_bot?(latest&.dig(:user_login)) &&
+              body_only_review_needs_followup?(latest, last_run)
+            # Body-only bots (e.g. Codex): the review feedback lives in
+            # the top-level review body with no inline threads, so thread
+            # resolution cannot gate re-review. Use submitted_at vs the
+            # last agent run's completed_at as the anti-loop guard — a
+            # review post-dating the last run is unaddressed feedback.
+            # The "(body-only)" suffix on review_bot_comments lets
+            # structured-log consumers distinguish this path from the
+            # thread-based Copilot flow above.
+            [
+              { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
+              { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
+            ]
           else
-            # All bot threads resolved — treat as effectively clean to avoid
-            # an infinite loop of requesting reviews that produce no new comments.
+            # Thread-based bot with all bot threads resolved, or body-only
+            # review already addressed by a subsequent agent run. Treat as
+            # effectively clean to avoid re-requesting reviews that would
+            # produce no new comments.
             []
           end
         end
       when :unknown
         review_bot_thread_triggers(unresolved_threads)
       end
+    end
+
+    def body_only_review_bot?(login)
+      return false if login.nil?
+
+      BODY_ONLY_REVIEW_BOT_LOGINS.include?(login.downcase)
+    end
+
+    # Anti-loop guard for body-only review bots: returns true when the bot's
+    # latest review was submitted after the last agent run completed, meaning
+    # the agent has not yet addressed the feedback. Treats missing timestamps
+    # conservatively as "needs follow-up" to avoid silently dropping
+    # actionable review content.
+    def body_only_review_needs_followup?(latest_review, last_run)
+      return false if latest_review.nil?
+
+      submitted_at = latest_review[:submitted_at]
+      return true if submitted_at.nil?
+
+      cutoff = last_run&.completed_at
+      return true if cutoff.nil?
+
+      submitted_at > cutoff
     end
 
     def review_bot_thread_triggers(unresolved_threads)
