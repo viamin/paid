@@ -27,7 +27,7 @@ module Activities
           pr_number: pr.number
         )
 
-        add_pr_labels(client, project, pr.number, agent_run_id)
+        add_pr_labels(client, project, pr.number, agent_run_id, issue: issue)
 
         agent_run.log!("system", "PR created: #{pr.html_url}")
 
@@ -95,13 +95,19 @@ module Activities
       nil
     end
 
-    def add_pr_labels(client, project, pr_number, agent_run_id)
+    def inherited_priority_labels(project, issue)
+      return [] unless project.inherit_priority_labels?
+      return [] if issue.blank? || issue.labels.blank?
+
+      project.priority_label_names & Array(issue.labels)
+    end
+
+    def add_pr_labels(client, project, pr_number, agent_run_id, issue: nil)
       return unless project.auto_add_labels_enabled?
 
-      client.add_labels_to_issue(project.full_name, pr_number, [
-        project.generated_label_name,
-        project.automation_label_name
-      ])
+      labels = [ project.generated_label_name, project.automation_label_name ]
+      labels.concat(inherited_priority_labels(project, issue))
+      client.add_labels_to_issue(project.full_name, pr_number, labels.uniq)
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.add_pr_labels_failed",
