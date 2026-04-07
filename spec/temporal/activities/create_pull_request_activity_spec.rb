@@ -137,6 +137,33 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
     end
 
+    context "with priority label inheritance" do
+      let(:project) do
+        create(:project, priority_labels: { "P1" => "critical", "P2" => "high", "P3" => "low" })
+      end
+      let(:issue) { create(:issue, project: project, labels: [ "critical", "bug" ]) }
+
+      it "copies matching priority labels from the issue to the PR" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).to have_received(:add_labels_to_issue).with(
+          project.full_name, 42, [ "paid-generated", "paid-automation", "critical" ]
+        )
+      end
+
+      context "when inherit_priority_labels is disabled" do
+        before { project.update!(inherit_priority_labels: false) }
+
+        it "does not copy priority labels" do
+          activity.execute(agent_run_id: agent_run.id)
+
+          expect(github_client).to have_received(:add_labels_to_issue).with(
+            project.full_name, 42, [ "paid-generated", "paid-automation" ]
+          )
+        end
+      end
+    end
+
     context "when LLM generates a structured description" do
       let(:llm_description) { "## Summary\n\nAdds OAuth support for third-party integrations." }
 
