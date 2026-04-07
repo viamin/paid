@@ -1937,7 +1937,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:review_threads)
       .with(project.full_name, 42)
       .and_return(review_threads)
-    allow(github_client).to receive(:issue_comments)
+    allow(github_client).to receive(:recent_issue_comments)
       .with(project.full_name, 42)
       .and_return(issue_comments)
     allow(github_client).to receive(:recent_issue_comments)
