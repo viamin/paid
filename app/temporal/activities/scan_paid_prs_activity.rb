@@ -21,6 +21,7 @@ module Activities
     MIN_COMMENT_LENGTH = 20
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
+    BODY_ONLY_REVIEW_BOT_PROVIDERS = %w[codex].freeze
 
     def execute(input)
       project_id = input[:project_id]
@@ -89,12 +90,13 @@ module Activities
       human_triggers = []
       review_bot_triggers = []
       reviews = nil
+      last_run = last_completed_run(project, issue)
 
       # Draft exit still requires an explicitly clean bot review even when
       # other draft comment signals are skipped.
       if skip_comment_signals
         reviews = fetch_reviews(client, project, issue)
-        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project)
+        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run)
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
@@ -102,7 +104,7 @@ module Activities
 
         if human_triggers.blank?
           reviews = fetch_reviews(client, project, issue)
-          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project)
+          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run)
         end
       end
 
@@ -122,7 +124,6 @@ module Activities
 
       # Only fetch conversation comments if still no triggers.
       if all_triggers.empty? && !skip_comment_signals
-        last_run = last_completed_run(project, issue)
         all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
 
         # Only check changes_requested if still no triggers.
@@ -280,7 +281,7 @@ module Activities
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
       triggers.concat(ci_failure_triggers(checks))
-      triggers.concat(check_review_bot_status(reviews, unresolved_threads, project: project))
+      triggers.concat(check_review_bot_status(reviews, unresolved_threads, project: project, last_run: last_run))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
@@ -411,6 +412,19 @@ module Activities
       REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
     end
 
+    def latest_bot_review(reviews, allowed_bot_logins: nil)
+      return nil if reviews.nil?
+
+      bot_reviews = reviews.select do |r|
+        next false unless review_bot?(r[:user_login])
+        next true if allowed_bot_logins.nil?
+
+        allowed_bot_logins.include?(r[:user_login]&.downcase)
+      end
+
+      bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+    end
+
     # Returns the login that should be explicitly requested for a review-bot
     # review, or nil if the configured bot auto-reviews (e.g. Codex via GitHub
     # App) and no explicit request is needed.
@@ -420,7 +434,7 @@ module Activities
       nil
     end
 
-    def check_review_bot_status(reviews, unresolved_threads, project: nil)
+    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil)
       allowed = project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil
       status = review_bot_review_status(reviews, allowed_bot_logins: allowed)
 
@@ -445,13 +459,41 @@ module Activities
             triggers.concat(bot_thread_triggers)
             triggers
           else
-            # All bot threads resolved — treat as effectively clean to avoid
-            # an infinite loop of requesting reviews that produce no new comments.
-            []
+            # No unresolved bot threads. Two cases:
+            # 1. Thread-based bot (e.g. Copilot) with all threads resolved —
+            #    treat as clean to avoid infinite review loops.
+            # 2. Body-only bot (e.g. Codex) that never posts inline threads —
+            #    use submitted_at vs last_run.completed_at as anti-loop guard.
+            body_only_review_triggers(reviews, allowed, last_run)
           end
         end
       when :unknown
         review_bot_thread_triggers(unresolved_threads)
+      end
+    end
+
+    def body_only_review_triggers(reviews, allowed_bot_logins, last_run)
+      latest = latest_bot_review(reviews, allowed_bot_logins: allowed_bot_logins)
+      return [] if latest.nil?
+
+      # Only apply body-only logic to bots known to post reviews without
+      # inline threads (e.g. Codex). Thread-based bots (e.g. Copilot) with
+      # all threads resolved are treated as clean.
+      return [] unless body_only_review_bot?(latest[:user_login])
+
+      review_time = latest[:submitted_at]
+      run_completed = last_run&.completed_at
+
+      # If no completed run exists or the bot review post-dates the last run,
+      # the agent hasn't addressed the feedback yet — emit a trigger.
+      if run_completed.nil? || (review_time.present? && review_time > run_completed)
+        [
+          { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
+          { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
+        ]
+      else
+        # Last run completed after the review — already addressed.
+        []
       end
     end
 
@@ -571,6 +613,17 @@ module Activities
 
     def review_bot?(login)
       ProviderSupport.provider_bot_username?(login)
+    end
+
+    # Body-only review bots post their feedback entirely in the review body
+    # without inline thread comments. Unlike thread-based bots (e.g. Copilot),
+    # resolved-thread tracking cannot determine if feedback is addressed.
+    def body_only_review_bot?(login)
+      return false if login.blank?
+
+      BODY_ONLY_REVIEW_BOT_PROVIDERS.any? do |provider_key|
+        ProviderSupport.provider_bot_username_for?(provider_key, login)
+      end
     end
 
     def extract_actionable_labels(triggers)

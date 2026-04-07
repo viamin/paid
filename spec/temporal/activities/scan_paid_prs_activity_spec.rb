@@ -1585,6 +1585,113 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  # --- Codex body-only review detection ---
+
+  describe "codex body-only review detection" do
+    context "when codex body-only review post-dates last completed run" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        create(:agent_run,
+          project: project,
+          source_pull_request_number: 42,
+          status: "completed",
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          checks: [],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Here are some automated review suggestions", submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "emits review_bot_comments trigger for unaddressed body-only review" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+        expect(trigger_types).to include("review_bot_review_pending")
+      end
+    end
+
+    context "when codex body-only review pre-dates last completed run" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        create(:agent_run,
+          project: project,
+          source_pull_request_number: 42,
+          status: "completed",
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Here are some automated review suggestions", submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "treats review as already addressed and returns no triggers" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when codex body-only review exists with no prior completed run" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Here are some automated review suggestions", submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "emits triggers since no run has addressed the feedback" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
+    context "when copilot review had comments but all threads resolved (regression)" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [],
+          reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
+                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "treats the review as effectively clean for thread-based bots" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+  end
+
   private
 
   # Helper to stub GitHub API calls with sensible defaults.
