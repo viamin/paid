@@ -842,6 +842,35 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when codex posted a clean comment but codex is not an enabled review bot" do
+      before do
+        # Do NOT call enable_codex_review! — project has no review bots enabled
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 30.minutes.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "does not treat the clean comment as a bypass since the bot is not enabled" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
     context "when codex posted a body-only review with no last agent run" do
       before do
         create(:issue, :pull_request,
