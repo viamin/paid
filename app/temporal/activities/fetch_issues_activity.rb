@@ -23,10 +23,17 @@ module Activities
       parse_issue_relationships(project, synced_issues) if synced_issues.any?
       closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
 
-      # Only advance the watermark when the fetch was not truncated. A truncated
-      # fetch means issues beyond the page cap were not retrieved; advancing the
-      # watermark would permanently skip them on future syncs.
-      project.touch_last_issue_sync_at(sync_started_at) unless truncated
+      if truncated && incremental
+        # Incremental fetches sort ascending (oldest-updated first), so a
+        # truncated result contains the oldest slice of the `since` window.
+        # Advance the watermark to the latest `updated_at` among fetched
+        # issues so the next sync picks up where this one left off, ensuring
+        # forward progress instead of re-fetching the same window forever.
+        latest_updated = github_issues.filter_map { |gi| gi.updated_at }.max
+        project.touch_last_issue_sync_at(latest_updated) if latest_updated
+      elsif !truncated
+        project.touch_last_issue_sync_at(sync_started_at)
+      end
 
       # Exclude closed issues from downstream processing (DetectLabelsActivity).
       # sync_issue already persisted their github_state to the DB, but passing
@@ -55,17 +62,25 @@ module Activities
 
     # Fetches all open GitHub issues and pull requests for visibility.
     # Trigger eligibility is decided later by DetectLabelsActivity.
-    # Sorts by recently-updated so that newly-labeled issues appear first
-    # even when the page cap is reached in busy repos.
+    #
+    # Full fetches sort descending (newest-updated first) so that
+    # newly-labeled issues appear first even when the page cap is reached.
+    #
+    # Incremental fetches sort ascending (oldest-updated first) so that
+    # a truncated result set still makes forward progress — the watermark
+    # can be advanced to the latest `updated_at` among the fetched issues
+    # instead of stalling at the same `since` window indefinitely.
+    #
     # Returns [issues, truncated] where truncated is true if the
     # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
     def fetch_all_issues(client, repo_full_name, since: nil)
-      fetch_issues_for_label(client, repo_full_name, nil, sort: :updated, since: since)
+      direction = since ? :asc : :desc
+      fetch_issues_for_label(client, repo_full_name, nil, sort: :updated, direction: direction, since: since)
     end
 
     # Returns [issues, truncated] where truncated is true when the
     # DEFAULT_MAX_PAGES cap was reached before all pages were fetched.
-    def fetch_issues_for_label(client, repo_full_name, label, sort: nil, since: nil)
+    def fetch_issues_for_label(client, repo_full_name, label, sort: nil, direction: nil, since: nil)
       issues = []
       page = 1
       truncated = false
@@ -78,6 +93,7 @@ module Activities
           page: page
         }
         opts[:sort] = sort if sort
+        opts[:direction] = direction if direction
         if since
           opts[:since] = since.iso8601
           # Incremental fetches must request all states so that issues closed
