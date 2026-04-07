@@ -21,6 +21,47 @@ RSpec.describe Provider do
       expect(provider).not_to allow_value("unknown_provider").for(:provider_key)
     end
 
+    describe "tier_model_ids" do
+      let(:provider) { build(:provider, provider_key: "cursor") }
+
+      it "is valid when blank" do
+        provider.tier_model_ids = {}
+        expect(provider).to be_valid
+      end
+
+      it "rejects unknown tier keys" do
+        provider.tier_model_ids = { "ultra" => "x" }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:tier_model_ids].join).to include("invalid tier")
+      end
+
+      it "rejects references to unknown models" do
+        provider.tier_model_ids = { "low" => "no-such-model" }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:tier_model_ids].join).to include("unknown model")
+      end
+
+      it "rejects models that belong to a different provider" do
+        create(:llm_model, model_id: "gpt-low", provider: "openai", tier: "low")
+        provider.tier_model_ids = { "low" => "gpt-low" }
+        expect(provider).not_to be_valid
+        expect(provider.errors[:tier_model_ids].join).to include("does not belong")
+      end
+
+      it "accepts models that belong to the provider" do
+        create(:llm_model, model_id: "haiku-y", provider: "anthropic", tier: "low")
+        provider.tier_model_ids = { "low" => "haiku-y" }
+        expect(provider).to be_valid
+      end
+
+      it "rejects tier_model_ids for providers without a tier mapping" do
+        unmapped = build(:provider, provider_key: "copilot")
+        unmapped.tier_model_ids = { "low" => "anything" }
+        expect(unmapped).not_to be_valid
+        expect(unmapped.errors[:tier_model_ids].join).to include("not configurable")
+      end
+    end
+
     it "validates auth_type inclusion" do
       expect(provider).to allow_value("subscription").for(:auth_type)
       expect(provider).not_to allow_value("free_trial").for(:auth_type)

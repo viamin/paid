@@ -23,5 +23,30 @@ RSpec.describe Models::SeedKnownModels do
       expect(model.input_cost_per_million).to eq(3.0)
       expect(model.capability_score).to eq(9.0)
     end
+
+    it "assigns tier to seeded models" do
+      described_class.call
+
+      expect(LlmModel.find_by(model_id: "claude-haiku-4-5-20251001").tier).to eq("low")
+      expect(LlmModel.find_by(model_id: "gpt-4o-mini").tier).to eq("low")
+      expect(LlmModel.find_by(model_id: "claude-sonnet-4-6").tier).to eq("mid")
+      expect(LlmModel.find_by(model_id: "gpt-4o").tier).to eq("mid")
+      expect(LlmModel.find_by(model_id: "gemini-2.5-pro").tier).to eq("mid")
+      expect(LlmModel.find_by(model_id: "claude-opus-4-6").tier).to eq("high")
+    end
+
+    it "backfills tier on existing rows that lack it" do
+      existing = LlmModel.create!(
+        model_id: "claude-opus-4-6",
+        display_name: "Outdated",
+        provider: "anthropic",
+        category: "coding",
+        tier: nil
+      )
+
+      described_class.call
+
+      expect(existing.reload.tier).to eq("high")
+    end
   end
 end
