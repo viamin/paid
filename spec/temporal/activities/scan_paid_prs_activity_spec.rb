@@ -803,6 +803,98 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when codex posted a clean issue comment and no prior codex review exists" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [],
+          review_threads: [],
+          issue_comments: [
+            OpenStruct.new(
+              user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+              body: "Codex Review: Didn't find any major issues. Bravo.",
+              created_at: 30.minutes.ago
+            )
+          ]
+        )
+      end
+
+      it "treats the bot as clean and does not emit review bot triggers" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when codex clean comment is newer than a non-clean codex review" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago } ],
+          review_threads: [],
+          issue_comments: [
+            OpenStruct.new(
+              user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+              body: "Codex Review: Didn't find any major issues. Bravo.",
+              created_at: 30.minutes.ago
+            )
+          ]
+        )
+      end
+
+      it "treats the bot as clean because the clean comment is newer" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when codex clean comment is older than a non-clean codex review" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 30.minutes.ago } ],
+          review_threads: [],
+          issue_comments: [
+            OpenStruct.new(
+              user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+              body: "Codex Review: Didn't find any major issues. Bravo.",
+              created_at: 2.hours.ago
+            )
+          ]
+        )
+      end
+
+      it "still emits triggers because the non-clean review is newer" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_review_pending")
+      end
+    end
+
     context "when PR is in draft phase with Claude review threads" do
       before do
         create(:issue, :pull_request,
