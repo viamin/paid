@@ -294,6 +294,10 @@ class Project < ApplicationRecord
     update_column(:last_polled_at, timestamp)
   end
 
+  def touch_last_issue_sync_at(timestamp = Time.current)
+    update_column(:last_issue_sync_at, timestamp)
+  end
+
   # Shared staleness window used by both the health-check job and the
   # automation health UI. A poll workflow is considered stale when it has not
   # completed a poll cycle within 3× the configured interval plus a buffer.
