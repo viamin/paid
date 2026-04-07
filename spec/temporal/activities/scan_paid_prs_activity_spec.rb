@@ -660,6 +660,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when copilot review had comments but all threads resolved (body-only regression)" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
+                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "still treats Copilot resolved-threads as clean and does not trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "when codex posted a body-only review with no last agent run" do
       before do
         create(:issue, :pull_request,
