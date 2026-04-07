@@ -55,7 +55,7 @@ module QualityMetrics
       pr_number = agent_run.source_pull_request_number
 
       github_client.review_comment_reactions_batch(
-        repo, pr_number, max_comments: MAX_REVIEW_THREADS
+        repo, pr_number, max_threads: MAX_REVIEW_THREADS
       )
     rescue GithubClient::Error => e
       Rails.logger.warn(

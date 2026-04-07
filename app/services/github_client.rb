@@ -758,9 +758,9 @@ class GithubClient
   #
   # @param repo [String] Repository in "owner/name" format
   # @param pr_number [Integer] Pull request number
-  # @param max_comments [Integer] Maximum number of comments to fetch
+  # @param max_threads [Integer] Maximum number of review threads to fetch
   # @return [Array<Hash>] Reactions with :user_login, :content, :created_at keys
-  def review_comment_reactions_batch(repo, pr_number, max_comments: 50)
+  def review_comment_reactions_batch(repo, pr_number, max_threads: 50)
     owner, name = repo.split("/", 2)
     query = <<~GRAPHQL
       query($owner: String!, $name: String!, $number: Int!, $maxComments: Int!) {
@@ -790,7 +790,7 @@ class GithubClient
 
     data = graphql_request(
       query,
-      owner: owner, name: name, number: pr_number, maxComments: max_comments
+      owner: owner, name: name, number: pr_number, maxComments: max_threads
     )
 
     raise_graphql_errors(data)
@@ -801,7 +801,16 @@ class GithubClient
       comments.flat_map do |comment|
         reactions_data = comment["reactions"] || {}
         if reactions_data.dig("pageInfo", "hasNextPage")
-          fetch_all_comment_reactions(repo, comment["databaseId"])
+          begin
+            fetch_all_comment_reactions(repo, comment["databaseId"])
+          rescue Error => e
+            Rails.logger.warn(
+              message: "github_client.comment_reaction_fallback_failed",
+              comment_id: comment["databaseId"],
+              error: e.message
+            )
+            []
+          end
         else
           (reactions_data["nodes"] || []).map do |r|
             {

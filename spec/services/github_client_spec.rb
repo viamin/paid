@@ -1573,5 +1573,59 @@ RSpec.describe GithubClient do
         expect(WebMock).to have_requested(:get, "#{api_base}/repos/owner/repo/pulls/comments/202/reactions")
       end
     end
+
+    context "when REST fallback fails for one comment but others succeed" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    comments: {
+                      nodes: [
+                        {
+                          comments: {
+                            nodes: [
+                              {
+                                databaseId: 301,
+                                reactions: {
+                                  pageInfo: { hasNextPage: true },
+                                  nodes: []
+                                }
+                              },
+                              {
+                                databaseId: 302,
+                                reactions: {
+                                  pageInfo: { hasNextPage: false },
+                                  nodes: [
+                                    { user: { login: "bob" }, content: "THUMBS_UP", createdAt: "2024-01-01T00:00:00Z" }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        stub_request(:get, "#{api_base}/repos/owner/repo/pulls/comments/301/reactions")
+          .to_return(status: 500, body: "Internal Server Error")
+      end
+
+      it "returns reactions from successful comments and skips the failed one" do
+        result = client.review_comment_reactions_batch(repo, 1)
+
+        expect(result.size).to eq(1)
+        expect(result.first[:user_login]).to eq("bob")
+      end
+    end
   end
 end

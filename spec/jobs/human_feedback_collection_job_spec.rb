@@ -121,7 +121,7 @@ RSpec.describe HumanFeedbackCollectionJob do
         allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
 
         allow(github_client).to receive(:review_comment_reactions_batch)
-          .with(agent_run.project.full_name, agent_run.source_pull_request_number, max_comments: 50)
+          .with(agent_run.project.full_name, agent_run.source_pull_request_number, max_threads: 50)
           .and_return([
             { user_login: "alice", content: "rocket", created_at: 1.hour.ago }
           ])

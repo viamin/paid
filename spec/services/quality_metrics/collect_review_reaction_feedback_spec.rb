@@ -14,7 +14,7 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
 
     it "creates human quality metric from batched reactions on review comments" do
       allow(github_client).to receive(:review_comment_reactions_batch)
-        .with(agent_run.project.full_name, agent_run.source_pull_request_number, max_comments: 50)
+        .with(agent_run.project.full_name, agent_run.source_pull_request_number, max_threads: 50)
         .and_return([
           { user_login: "alice", content: "+1", created_at: 1.hour.ago },
           { user_login: "bob", content: "rocket", created_at: 30.minutes.ago }
@@ -82,7 +82,7 @@ RSpec.describe QualityMetrics::CollectReviewReactionFeedback do
 
     it "uses a single batched GraphQL call instead of N+1 REST calls" do
       allow(github_client).to receive(:review_comment_reactions_batch)
-        .with(agent_run.project.full_name, agent_run.source_pull_request_number, max_comments: 50)
+        .with(agent_run.project.full_name, agent_run.source_pull_request_number, max_threads: 50)
         .and_return([])
 
       described_class.call(agent_run: agent_run)
