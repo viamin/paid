@@ -210,34 +210,47 @@ class AgentRun < ApplicationRecord
     user.account.fallback_owner_id == user.id
   end
 
-  # Priority ordering for the run queue:
-  #   0 = manual runs (highest)
-  #   1 = automatic runs fixing a PR (auto-continue)
-  #   2 = automatic runs from auto-pick (lowest)
+  # Priority ordering for the run queue (6 tiers):
+  #   0 = P1-labeled issues (critical priority)
+  #   1 = manual runs
+  #   2 = P2-labeled issues (high priority)
+  #   3 = automatic runs fixing a PR (auto-continue)
+  #   4 = P3-labeled issues (medium priority)
+  #   5 = automatic runs from auto-pick (lowest)
+  #
+  # Issue labels are resolved once via a LATERAL join to avoid
+  # repeated correlated subqueries per priority tier.
+  #
   # Within each tier, create_issue runs are prioritized over create_pr
   # runs because issue creation is lighter-weight and often unblocks
   # downstream PR work.
   # Within each goal type, runs are processed FIFO by created_at, with
   # id as a stable tiebreaker for runs created in the same timestamp.
   #
-  # NOTE: The SQL sort tiers above (0/1/2) are internal ordering values.
-  # The `indicator` values below (1/2/3) are user-facing display labels
-  # shown in the priority badge (e.g. "1 - Manual").
+  # NOTE: The SQL sort tiers above (0–5) are internal ordering values.
+  # The `indicator` values below are user-facing display labels
+  # shown in the priority badge (e.g. "P1 - Critical").
   QUEUE_PRIORITIES = {
+    p1: { label: "Critical", indicator: "P1" },
     manual: { label: "Manual", indicator: 1 },
+    p2: { label: "High", indicator: "P2" },
     auto_continue: { label: "Auto-continue", indicator: 2 },
+    p3: { label: "Medium", indicator: "P3" },
     auto_pick: { label: "Auto-pick", indicator: 3 }
   }.freeze
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
 
   def queue_priority_tier
-    if manual?
-      :manual
-    elsif automatic? && existing_pr?
-      :auto_continue
-    else
-      :auto_pick
-    end
+    labels = issue&.labels || associated_pr_labels || []
+    p_labels = project.priority_labels
+
+    return :p1 if labels.include?(p_labels.fetch("P1", "P1"))
+    return :manual if manual?
+    return :p2 if labels.include?(p_labels.fetch("P2", "P2"))
+    return :auto_continue if automatic? && existing_pr?
+    return :p3 if labels.include?(p_labels.fetch("P3", "P3"))
+
+    :auto_pick
   end
 
   def queue_priority_label
@@ -246,11 +259,30 @@ class AgentRun < ApplicationRecord
     indicator ? "#{indicator} - #{priority[:label]}" : priority[:label]
   end
 
+  # LATERAL join that resolves candidate issue labels once per agent run.
+  # Matches the issue either by direct association (issue_id) or by
+  # source_pull_request_number for PR-based runs.
+  QUEUE_LATERAL_JOIN = <<~SQL.squish.freeze
+    LEFT JOIN LATERAL (
+      SELECT i.labels
+      FROM issues i
+      WHERE (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
+         OR (i.project_id = agent_runs.project_id
+             AND i.github_number = agent_runs.source_pull_request_number
+             AND i.is_pull_request = TRUE)
+      LIMIT 1
+    ) issue_labels ON TRUE
+    JOIN projects p ON p.id = agent_runs.project_id
+  SQL
+
   QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
     CASE
-      WHEN trigger_type = 'manual' THEN 0
-      WHEN trigger_type = 'automatic' AND source_pull_request_number IS NOT NULL THEN 1
-      ELSE 2
+      WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P1', ''), 'P1')) THEN 0
+      WHEN trigger_type = 'manual' THEN 1
+      WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P2', ''), 'P2')) THEN 2
+      WHEN trigger_type = 'automatic' AND source_pull_request_number IS NOT NULL THEN 3
+      WHEN issue_labels.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P3', ''), 'P3')) THEN 4
+      ELSE 5
     END
   SQL
   GOAL_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
@@ -261,14 +293,22 @@ class AgentRun < ApplicationRecord
   SQL
   QUEUE_ORDER = [ QUEUE_PRIORITY_SQL, GOAL_PRIORITY_SQL, { created_at: :asc, id: :asc } ].freeze
 
+  # Scope that adds the LATERAL join required by QUEUE_PRIORITY_SQL.
+  # All queue-ordering methods use this instead of bare `queued`.
+  scope :queued_with_priority, -> {
+    queued
+      .joins(QUEUE_LATERAL_JOIN)
+      .select("agent_runs.*")
+  }
+
   def self.next_queued_run
-    queued.order(QUEUE_ORDER).first
+    queued_with_priority.order(QUEUE_ORDER).first
   end
 
   # Returns the next queued run without claiming it.
   # Used to check per-user capacity before acquiring the lock.
   def self.peek_next_queued_run(exclude_ids: [])
-    scope = queued.order(QUEUE_ORDER)
+    scope = queued_with_priority.order(QUEUE_ORDER)
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope.first
   end
@@ -790,6 +830,18 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  # Resolves labels for PR-based runs without a direct issue association
+  # by looking up the PR issue record via source_pull_request_number.
+  def associated_pr_labels
+    return [] unless source_pull_request_number.present?
+
+    Issue.where(
+      project_id: project_id,
+      github_number: source_pull_request_number,
+      is_pull_request: true
+    ).pick(:labels) || []
+  end
 
   def normalize_log_content(content)
     text = content.to_s
