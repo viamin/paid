@@ -27,9 +27,9 @@ RSpec.describe Project do
     it { is_expected.to validate_numericality_of(:token_limit_warning_threshold).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(100) }
     it { is_expected.to validate_numericality_of(:max_execution_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(86_400) }
 
-    it "defaults max_execution_seconds to 1800" do
+    it "defaults max_execution_seconds to 3600" do
       project = build(:project)
-      expect(project.max_execution_seconds).to eq(1800)
+      expect(project.max_execution_seconds).to eq(3600)
     end
 
     it "validates knowledge_status inclusion" do
@@ -706,6 +706,94 @@ RSpec.describe Project do
           }
         })
         expect(project.enabled_review_methods).to contain_exactly("copilot", "paid_agent")
+      end
+    end
+
+    describe "#enabled_review_bot_logins" do
+      it "returns empty set when no review methods have bot accounts" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "manual" => { "enabled" => true } }
+        })
+        expect(project.enabled_review_bot_logins).to be_empty
+      end
+
+      it "returns copilot logins when copilot method is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "copilot" => { "enabled" => true } }
+        })
+        expect(project.enabled_review_bot_logins).to include("copilot", "copilot[bot]")
+      end
+
+      it "returns codex logins when codex method is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+        expect(project.enabled_review_bot_logins).to include("chatgpt-codex-connector", "chatgpt-codex-connector[bot]")
+      end
+
+      it "does not include logins for disabled methods" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "copilot" => { "enabled" => false },
+            "codex" => { "enabled" => true }
+          }
+        })
+        expect(project.enabled_review_bot_logins).not_to include("copilot")
+        expect(project.enabled_review_bot_logins).to include("chatgpt-codex-connector")
+      end
+    end
+
+    describe "#review_bot_request_login" do
+      it "returns nil when no review method is enabled" do
+        project = build(:project, review_settings: { "enabled" => false })
+        expect(project.review_bot_request_login).to be_nil
+      end
+
+      it "returns nil when reviews are globally disabled even if a method sub-flag is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => false,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_login).to be_nil
+      end
+
+      it "returns copilot login when copilot is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "copilot" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_login).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
+      end
+
+      it "returns codex login when only codex is enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "codex" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_login).to eq(Activities::RequestReviewActivity::CODEX_LOGIN)
+      end
+
+      it "prefers copilot over codex when both are enabled" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => {
+            "copilot" => { "enabled" => true },
+            "codex" => { "enabled" => true }
+          }
+        })
+        expect(project.review_bot_request_login).to eq(Activities::RequestReviewActivity::COPILOT_LOGIN)
+      end
+
+      it "returns nil for enabled methods with no bot account" do
+        project = build(:project, review_settings: {
+          "enabled" => true,
+          "methods" => { "manual" => { "enabled" => true } }
+        })
+        expect(project.review_bot_request_login).to be_nil
       end
     end
 

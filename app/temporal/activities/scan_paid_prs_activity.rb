@@ -21,6 +21,12 @@ module Activities
     MIN_COMMENT_LENGTH = 20
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
+    # Body-only review bots (currently Codex) signal "no findings" by posting
+    # an *issue comment* — not a review — with text like
+    # "Codex Review: Didn't find any major issues. Bravo." Match the
+    # distinctive phrase rather than the prefix so we are robust to minor
+    # wording changes.
+    BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN = /didn'?t find any (?:major )?issues/i
 
     def execute(input)
       project_id = input[:project_id]
@@ -76,6 +82,8 @@ module Activities
       end
     end
 
+    MAX_CONSECUTIVE_DRAFT_FAILURES = 3
+
     # --- Draft phase scanning ---
 
     def scan_draft_pr(project, client, issue, pr_data: nil)
@@ -84,17 +92,26 @@ module Activities
         return escalate_trigger(issue)
       end
 
+      if consecutive_draft_failures_breaker?(project, issue)
+        return escalate_trigger(issue, reason: "Consecutive draft follow-up failures (#{MAX_CONSECUTIVE_DRAFT_FAILURES} runs with no output)")
+      end
+
       skip_comment_signals = project.max_draft_review_rounds.zero?
       unresolved_threads = nil
       human_triggers = []
       review_bot_triggers = []
       reviews = nil
+      # Needed by check_review_bot_status for the body-only bot anti-loop
+      # guard (e.g. Codex); also reused by comment/changes-requested checks
+      # below when comment signals are not skipped.
+      last_run = last_completed_run(project, issue)
 
       # Draft exit still requires an explicitly clean bot review even when
       # other draft comment signals are skipped.
       if skip_comment_signals
         reviews = fetch_reviews(client, project, issue)
-        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads)
+        review_bot_triggers = check_review_bot_status(reviews, unresolved_threads,
+          project: project, last_run: last_run, client: client, issue: issue)
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
@@ -102,7 +119,8 @@ module Activities
 
         if human_triggers.blank?
           reviews = fetch_reviews(client, project, issue)
-          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads)
+          review_bot_triggers = check_review_bot_status(reviews, unresolved_threads,
+            project: project, last_run: last_run, client: client, issue: issue)
         end
       end
 
@@ -122,7 +140,6 @@ module Activities
 
       # Only fetch conversation comments if still no triggers.
       if all_triggers.empty? && !skip_comment_signals
-        last_run = last_completed_run(project, issue)
         all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
 
         # Only check changes_requested if still no triggers.
@@ -177,7 +194,8 @@ module Activities
           owner_approved_or_self_authored?(project, reviews, pr_data) &&
           checks.present? &&
           all_checks_green?(checks) &&
-          mergeable == true
+          mergeable == true &&
+          no_outstanding_review_feedback?(project, client, issue, reviews)
         return owner_approved_trigger(issue)
       end
 
@@ -233,13 +251,13 @@ module Activities
       }
     end
 
-    def escalate_trigger(issue)
+    def escalate_trigger(issue, reason: "Draft review limit reached")
       log_triggers(issue.project, issue, [ { type: "escalate_to_owner" } ])
 
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ],
+        triggers: [ { type: "escalate_to_owner", details: reason } ],
         phase: issue.pr_review_phase,
         current_draft_review_count: issue.draft_review_count,
         owner_reviewer_login: issue.project.owner_reviewer_login
@@ -270,17 +288,18 @@ module Activities
 
     # --- Shared detection logic ---
 
-    def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil)
+    def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil,
+      unresolved_threads: nil)
       last_run = last_completed_run(project, issue)
       pr_data ||= fetch_pr_data(client, project, issue)
       checks ||= fetch_check_runs(client, project, pr_data)
       reviews ||= fetch_reviews(client, project, issue)
+      unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
       triggers = []
 
-      unresolved_threads = fetch_unresolved_threads(client, project, issue)
-
       triggers.concat(ci_failure_triggers(checks))
-      triggers.concat(check_review_bot_status(reviews, unresolved_threads))
+      triggers.concat(check_review_bot_status(reviews, unresolved_threads,
+        project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
@@ -321,6 +340,35 @@ module Activities
 
     def followup_limit_reached?(project, issue)
       issue.pr_followup_count >= project.max_pr_followup_runs
+    end
+
+    # Circuit breaker: if the last N automatic draft follow-up runs on
+    # this PR all ended without producing any output (timeout/failed/
+    # cancelled with zero iterations), stop requeueing to prevent
+    # infinite retry loops. Scoped to automatic create_pr runs so that
+    # manual runs or review-phase followups don't trip the breaker.
+    #
+    # The draft_review_count guard ensures we only consider runs from the
+    # current draft phase. maybe_restart_draft resets draft_review_count
+    # to 0, so older non-draft failures can't trip the breaker when a PR
+    # is converted back to draft.
+    def consecutive_draft_failures_breaker?(project, issue)
+      return false if issue.draft_review_count < MAX_CONSECUTIVE_DRAFT_FAILURES
+
+      failure_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled]
+
+      recent_runs = project.agent_runs
+        .where(source_pull_request_number: issue.github_number)
+        .where(trigger_type: "automatic", goal: "create_pr")
+        .finished
+        .order(created_at: :desc)
+        .limit(MAX_CONSECUTIVE_DRAFT_FAILURES)
+
+      return false if recent_runs.size < MAX_CONSECUTIVE_DRAFT_FAILURES
+
+      recent_runs.all? do |run|
+        failure_statuses.include?(run.status) && run.iterations.to_i.zero?
+      end
     end
 
     def last_completed_run(project, issue)
@@ -396,24 +444,90 @@ module Activities
       [ { type: "review_threads", details: "#{trusted_threads.size} unresolved thread(s)" } ]
     end
 
-    def review_bot_review_status(reviews)
+    def review_bot_review_status(reviews, allowed_bot_logins: nil)
       return :unknown if reviews.nil?
 
-      bot_reviews = reviews.select { |r| review_bot?(r[:user_login]) }
-      return :no_review if bot_reviews.empty?
+      review_bot_review_status_from(reviews, latest_allowed_bot_review(reviews, allowed_bot_logins))
+    end
 
-      latest = bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+    # Shared status classifier so callers that have already resolved the
+    # latest allowed bot review (e.g. check_review_bot_status) do not have
+    # to iterate reviews a second time.
+    def review_bot_review_status_from(reviews, latest)
+      return :unknown if reviews.nil?
+      return :no_review if latest.nil?
+
       REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
     end
 
-    def check_review_bot_status(reviews, unresolved_threads)
-      status = review_bot_review_status(reviews)
+    def latest_allowed_bot_review(reviews, allowed_bot_logins)
+      return nil if reviews.nil?
+
+      bot_reviews = reviews.select do |r|
+        next false unless review_bot?(r[:user_login])
+        next true if allowed_bot_logins.nil?
+
+        allowed_bot_logins.include?(r[:user_login]&.downcase)
+      end
+      bot_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+    end
+
+    # Returns the login that should be explicitly requested for a review-bot
+    # review, or nil when no enabled review method has a bot that accepts
+    # explicit review requests. See Project#review_bot_request_login for the
+    # precedence rules.
+    def review_bot_request_login(project)
+      project.review_bot_request_login
+    end
+
+    # Review-bot logins that post feedback as a single top-level review body
+    # rather than as inline review threads. These bots need the body-only
+    # anti-loop guard in check_review_bot_status because thread resolution
+    # cannot be used to detect "already addressed" state.
+    BODY_ONLY_REVIEW_BOT_LOGINS = ProviderSupport::PROVIDER_BOT_USERNAMES
+      .fetch("codex", [])
+      .map(&:downcase)
+      .to_set
+      .freeze
+
+    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
+      allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
+      latest = latest_allowed_bot_review(reviews, allowed)
+
+      # Body-only bots (Codex) can post their CLEAN signal as an issue
+      # comment — e.g. "Codex Review: Didn't find any major issues. Bravo." —
+      # which is invisible to pull_request_reviews. When such a comment is
+      # the most recent body-only-bot signal on the PR, treat the bot as
+      # clean regardless of any older non-clean review. Without this check,
+      # the @codex review trigger loop would re-emit pending triggers
+      # forever and wedge codex-only PRs in draft.
+      #
+      # The bypass is restricted to projects whose enabled review bots are
+      # ALL body-only so a clean codex comment cannot suppress an outstanding
+      # Copilot review in mixed configurations.
+      if client && issue && body_only_bot_clean_comment_present?(client, project, issue, latest, allowed)
+        return []
+      end
+
+      status = review_bot_review_status_from(reviews, latest)
 
       case status
       when :clean
         []
       when :no_review
-        [ { type: "review_bot_review_pending", details: "No review bot review found" } ]
+        # Only emit a pending trigger when a requestable review bot is
+        # configured. When login is nil — reviews globally disabled, or
+        # only non-bot review methods (e.g. manual) are enabled — there is
+        # no bot that could satisfy the trigger, so emitting it would wedge
+        # the draft scanner in a perpetual "waiting for bot review" state
+        # with no path out (handle_review_bot_review_pending skips the
+        # RequestReviewActivity call when login is nil).
+        login = project && review_bot_request_login(project)
+        if login
+          [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        else
+          []
+        end
       when :has_comments
         # When unresolved_threads is nil, threads were either never fetched
         # (e.g. the skip_comment_signals path) or the API call failed. We
@@ -424,19 +538,97 @@ module Activities
         else
           bot_thread_triggers = review_bot_thread_triggers(unresolved_threads)
           if bot_thread_triggers.any?
+            # Thread-based bots (e.g. Copilot) with at least one unresolved
+            # bot thread: emit review_bot_comments + the thread triggers.
             triggers = [ { type: "review_bot_review_pending", details: "Latest review bot review was not clean" } ]
             triggers << { type: "review_bot_comments", details: "Latest review bot review generated comments" }
             triggers.concat(bot_thread_triggers)
             triggers
+          elsif body_only_review_bot?(latest&.dig(:user_login)) &&
+              body_only_review_needs_followup?(latest, last_run)
+            # Body-only bots (e.g. Codex): the review feedback lives in
+            # the top-level review body with no inline threads, so thread
+            # resolution cannot gate re-review. Use submitted_at vs the
+            # last agent run's completed_at as the anti-loop guard — a
+            # review post-dating the last run is unaddressed feedback.
+            # The "(body-only)" suffix on review_bot_comments lets
+            # structured-log consumers distinguish this path from the
+            # thread-based Copilot flow above.
+            [
+              { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
+              { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
+            ]
           else
-            # All bot threads resolved — treat as effectively clean to avoid
-            # an infinite loop of requesting reviews that produce no new comments.
+            # Thread-based bot with all bot threads resolved, or body-only
+            # review already addressed by a subsequent agent run. Treat as
+            # effectively clean to avoid re-requesting reviews that would
+            # produce no new comments.
             []
           end
         end
       when :unknown
         review_bot_thread_triggers(unresolved_threads)
       end
+    end
+
+    def body_only_review_bot?(login)
+      return false if login.nil?
+
+      BODY_ONLY_REVIEW_BOT_LOGINS.include?(login.downcase)
+    end
+
+    # Returns true when the most recent issue comment authored by a body-only
+    # review bot (e.g. Codex) matches the clean signal pattern AND can speak
+    # authoritatively for the project's review configuration AND is at least
+    # as recent as that bot's latest review on this PR.
+    #
+    # The override is restricted to projects whose enabled review bots are
+    # ALL body-only — i.e. no thread-based bot like Copilot is also enabled.
+    # A clean codex comment cannot speak for an outstanding Copilot review
+    # whose unresolved threads are tracked separately, so in mixed
+    # configurations we defer to the existing classification path.
+    #
+    # The comment-vs-review timestamp comparison prevents an older "Bravo"
+    # comment from masking a newer non-clean review on a subsequent commit.
+    def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins)
+      return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
+      return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
+
+      comments = client.recent_issue_comments(project.full_name, issue.github_number)
+      bot_comments = comments.select do |c|
+        login = c.user&.login&.downcase
+        login && allowed_bot_logins.include?(login)
+      end
+      return false if bot_comments.empty?
+
+      latest_bot_comment = bot_comments.max_by { |c| c.created_at || Time.at(0) }
+      return false unless BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN.match?(latest_bot_comment.body.to_s)
+
+      review_time = latest_review&.dig(:submitted_at)
+      comment_time = latest_bot_comment.created_at
+      return true if review_time.nil? || comment_time.nil?
+
+      comment_time >= review_time
+    rescue GithubClient::Error => e
+      log_signal_error("body_only_bot_clean_comment", project, issue, e)
+      false
+    end
+
+    # Anti-loop guard for body-only review bots: returns true when the bot's
+    # latest review was submitted after the last agent run completed, meaning
+    # the agent has not yet addressed the feedback. Treats missing timestamps
+    # conservatively as "needs follow-up" to avoid silently dropping
+    # actionable review content.
+    def body_only_review_needs_followup?(latest_review, last_run)
+      return false if latest_review.nil?
+
+      submitted_at = latest_review[:submitted_at]
+      return true if submitted_at.nil?
+
+      cutoff = last_run&.completed_at
+      return true if cutoff.nil?
+
+      submitted_at > cutoff
     end
 
     def review_bot_thread_triggers(unresolved_threads)
@@ -549,6 +741,24 @@ module Activities
       return false if owner_login.blank? || author_login.blank?
 
       owner_login.casecmp?(author_login)
+    end
+
+    # --- Review feedback gate for auto-merge ---
+
+    # Returns true when there is no outstanding review feedback that should
+    # block auto-merge. Checks the same review signals that detect_ready_triggers
+    # would evaluate, so owner approval cannot bypass new findings.
+    def no_outstanding_review_feedback?(project, client, issue, reviews)
+      last_run = last_completed_run(project, issue)
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+
+      return false if human_review_thread_triggers(project, unresolved_threads).any?
+      return false if check_review_bot_status(reviews, unresolved_threads,
+        project: project, last_run: last_run, client: client, issue: issue).any?
+      return false if changes_requested_from_reviews(project, reviews, last_run).any?
+      return false if check_conversation_comments(client, project, issue, last_run).any?
+
+      true
     end
 
     # --- Helpers ---

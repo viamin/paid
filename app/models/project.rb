@@ -4,7 +4,7 @@ class Project < ApplicationRecord
   MERGE_METHODS = %w[squash merge rebase].freeze
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
   # "none" is not a method — it is represented by enabled: false at the top level
-  REVIEW_METHODS = %w[copilot paid_agent ci_action manual].freeze
+  REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
 
   DEFAULT_REVIEW_SETTINGS = {
     "enabled" => false,
@@ -26,6 +26,15 @@ class Project < ApplicationRecord
           "stop_when_no_comments" => true,
           "quality_threshold" => nil,
           "timeout_minutes" => 30
+        }
+      },
+      "codex" => {
+        "enabled" => false,
+        "termination" => {
+          "max_review_rounds" => 2,
+          "stop_when_no_comments" => true,
+          "quality_threshold" => nil,
+          "timeout_minutes" => 60
         }
       },
       "ci_action" => {
@@ -94,6 +103,7 @@ class Project < ApplicationRecord
   encrypts :webhook_secret
 
   before_validation :normalize_agent_co_author_trailer
+  after_update_commit :invalidate_relationship_parsing_on_trust_change
 
   validates :name, presence: true
   validates :owner, presence: true
@@ -413,8 +423,35 @@ class Project < ApplicationRecord
     REVIEW_METHODS.select { |m| review_method_enabled?(m) }
   end
 
+  # Returns the set of bot GitHub logins (downcased) for all enabled review
+  # methods that have a known bot account (copilot, codex, etc.).
+  def enabled_review_bot_logins
+    ProviderSupport::PROVIDER_BOT_USERNAMES
+      .slice(*enabled_review_methods)
+      .values.flatten.map(&:downcase).to_set
+  end
+
   def review_method_config(method)
     effective_review_settings.dig("methods", method.to_s) || {}
+  end
+
+  # Returns the GitHub login Paid should request to trigger a review-bot
+  # review on a PR, or nil if no automated review method is enabled. Copilot
+  # takes precedence when multiple bots are enabled; codex is used when
+  # copilot is disabled because it does not auto-review draft PRs and
+  # requires an explicit @-mention (see RequestReviewActivity).
+  #
+  # Returns nil when reviews are globally disabled via
+  # review_settings["enabled"], even if an individual method sub-flag is
+  # left enabled. Without this guard, RequestReviewActivity's nil-reviewers
+  # fallback (driven by AgentExecutionWorkflow after every agent run)
+  # would request bot reviews on projects that have opted out of review.
+  def review_bot_request_login
+    return nil unless review_enabled?
+    return Activities::RequestReviewActivity::COPILOT_LOGIN if review_method_enabled?("copilot")
+    return Activities::RequestReviewActivity::CODEX_LOGIN if review_method_enabled?("codex")
+
+    nil
   end
 
   private
@@ -587,5 +624,15 @@ class Project < ApplicationRecord
     return if allowed_github_usernames.is_a?(Array) && allowed_github_usernames.any?(&:present?)
 
     errors.add(:allowed_github_usernames, "must include at least one trusted GitHub username")
+  end
+
+  # When the trusted-user list changes, previously-parsed dependency and
+  # parent/child relationships may reference content that is now untrusted
+  # (or newly visible). Clear relationships_parsed_at so the next sync
+  # re-parses every issue under the new trust policy.
+  def invalidate_relationship_parsing_on_trust_change
+    return unless saved_change_to_allowed_github_usernames?
+
+    issues.update_all(relationships_parsed_at: nil)
   end
 end
