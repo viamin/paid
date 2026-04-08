@@ -85,7 +85,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       .where("agent_runs.created_at >= ?", CANDIDATE_WINDOW.ago)
       .select("DISTINCT ON (project_id, pull_request_number) agent_runs.*")
       .order(:project_id, :pull_request_number, id: :desc)
-      .preload(project: :github_token)
+      .preload(:issue, project: :github_token)
   end
 
   # Batch-loads synced Issue records for all candidate runs, keyed by

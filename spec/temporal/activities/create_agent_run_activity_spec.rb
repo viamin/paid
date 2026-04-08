@@ -38,7 +38,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
     it "returns default max_execution_seconds when not customized" do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
-      expect(result[:max_execution_seconds]).to eq(1800)
+      expect(result[:max_execution_seconds]).to eq(3600)
     end
 
     it "accepts a custom agent_type" do
