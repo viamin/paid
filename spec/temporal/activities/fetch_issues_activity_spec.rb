@@ -367,6 +367,39 @@ RSpec.describe Activities::FetchIssuesActivity do
         end
       end
 
+      context "when all fetched issues share the same updated_at as the watermark" do
+        let(:stuck_time) { 1.hour.ago.change(usec: 0) }
+
+        before do
+          project.update!(last_issue_sync_at: stuck_time - 1.second)
+
+          allow(github_client).to receive(:issues) do |_repo, **opts|
+            page = opts[:page] || 1
+            offset = (page - 1) * 5
+            Array.new(5) do |i|
+              OpenStruct.new(
+                id: 4000 + offset + i, number: offset + i + 1,
+                title: "Issue #{offset + i + 1}", body: "Body", state: "open",
+                labels: [ OpenStruct.new(name: "paid-build") ], pull_request: nil,
+                user: OpenStruct.new(login: "viamin"),
+                created_at: 2.days.ago, updated_at: stuck_time
+              )
+            end
+          end
+
+          allow(Rails.logger).to receive(:warn)
+        end
+
+        it "uses the exact timestamp to guarantee forward progress" do
+          activity.execute(project_id: project.id)
+
+          project.reload
+          # When subtracting 1 second would not advance past the current
+          # watermark, use the exact latest_updated to avoid permanent re-fetch.
+          expect(project.last_issue_sync_at).to be_within(1.second).of(stuck_time)
+        end
+      end
+
       it "does not close locally-open issues when the fetch is truncated" do
         # This issue is locally open but not in the truncated fetch results —
         # it should NOT be closed because the fetch is not authoritative.

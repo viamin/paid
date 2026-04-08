@@ -27,16 +27,29 @@ module Activities
         # Incremental fetches sort ascending (oldest-updated first), so a
         # truncated result contains the oldest slice of the `since` window.
         # Advance the watermark to the latest `updated_at` among fetched
-        # issues so the next sync picks up where this one left off, ensuring
-        # forward progress instead of re-fetching the same window forever.
+        # issues so the next sync picks up where this one left off.
         #
-        # Subtract 1 second so the boundary is inclusive: GitHub's `since`
-        # parameter filters as "updated after" the given timestamp, so
-        # issues sharing the exact same second-level `updated_at` as the
-        # watermark would be excluded on the next poll. Overlapping by one
-        # second is safe because sync_issue is idempotent.
+        # Prefer subtracting 1 second for an inclusive boundary: GitHub's
+        # `since` filters as "updated after" the given timestamp, so
+        # issues sharing the exact second-level `updated_at` would be
+        # excluded on the next poll. Overlapping is safe (sync_issue is
+        # idempotent).
+        #
+        # However, if subtracting 1 second would not advance past the
+        # current watermark (i.e. all fetched issues share the same
+        # `updated_at` second as the watermark), use the exact timestamp
+        # to guarantee forward progress. Some same-second issues may be
+        # skipped, but permanent re-fetch of the same window is worse.
         latest_updated = github_issues.filter_map { |gi| gi.updated_at }.max
-        project.touch_last_issue_sync_at(latest_updated - 1.second) if latest_updated
+        if latest_updated
+          inclusive_cursor = latest_updated - 1.second
+          new_watermark = if project.last_issue_sync_at && inclusive_cursor <= project.last_issue_sync_at
+            latest_updated
+          else
+            inclusive_cursor
+          end
+          project.touch_last_issue_sync_at(new_watermark)
+        end
       elsif !truncated
         project.touch_last_issue_sync_at(sync_started_at)
       end
