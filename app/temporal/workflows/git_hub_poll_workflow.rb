@@ -192,6 +192,8 @@ module Workflows
         handle_escalate_to_owner(project_id, pr_data)
       elsif trigger_types.include?("owner_approved")
         handle_owner_approved(project_id, pr_data)
+      elsif trigger_types.include?("paid_agent_review_pending")
+        handle_paid_agent_review_pending(project_id, pr_data, trigger_types)
       elsif trigger_types.include?("review_bot_review_pending")
         handle_review_bot_review_pending(project_id, pr_data, trigger_types)
       elsif pr_data[:phase].in?(%w[draft restarted])
@@ -226,6 +228,22 @@ module Workflows
 
       request_review(project_id, pr_data[:pr_number], [ reviewer ],
         log_key: "pr_review.request_owner_review_failed")
+    end
+
+    def handle_paid_agent_review_pending(project_id, pr_data, trigger_types)
+      other_triggers = trigger_types - [ "paid_agent_review_pending" ]
+
+      if other_triggers.empty?
+        # No other work to do — queue a review-goal agent run directly.
+        run_activity(Activities::QueueAgentRunActivity,
+          { project_id: project_id, issue_id: pr_data[:issue_id],
+            source_pull_request_number: pr_data[:pr_number],
+            goal: "review" }, timeout: 30)
+      elsif pr_data[:phase].in?(%w[draft restarted])
+        start_draft_followup_workflow(project_id, pr_data)
+      else
+        start_pr_followup_workflow(project_id, pr_data)
+      end
     end
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
