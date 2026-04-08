@@ -3,6 +3,8 @@
     <%= link_to "Recent Agent Runs", project_agent_runs_path(project), class: "hover:text-indigo-600" %>
   </h2>
 
+  <% recent_agent_runs = recent_agent_runs.to_a %>
+  <% AgentRun.preload_source_pull_requests(recent_agent_runs) %>
   <% if recent_agent_runs.any? %>
     <div class="mt-4 flow-root">
       <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
