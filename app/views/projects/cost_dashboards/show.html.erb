@@ -19,36 +19,43 @@
 
   <% summary = @stats[:summary] %>
 
-  <%# Cost Summary Cards %>
-  <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-      <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
-      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-        <%= format_cost_cents(summary[:total_cost_cents]) %>
-      </dd>
+  <%# Cost Summary Cards — hidden when total cost is zero %>
+  <% if summary[:total_cost_cents] > 0 %>
+    <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= format_cost_cents(summary[:total_cost_cents]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Cost This Month</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= format_cost_cents(summary[:cost_this_month_cents]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Cost Today</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= format_cost_cents(summary[:cost_today_cents]) %>
+        </dd>
+      </div>
+      <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-500">Avg Cost / Run</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+          <%= format_cost_cents(summary[:avg_cost_per_run_cents]) %>
+        </dd>
+        <dd class="mt-1 text-xs text-gray-500"><%= number_with_delimiter(summary[:total_runs]) %> completed runs</dd>
+      </div>
     </div>
-    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-      <dt class="truncate text-sm font-medium text-gray-500">Cost This Month</dt>
-      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-        <%= format_cost_cents(summary[:cost_this_month_cents]) %>
-      </dd>
+  <% else %>
+    <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 text-sm text-gray-500">No cost data available yet.</div>
     </div>
-    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-      <dt class="truncate text-sm font-medium text-gray-500">Cost Today</dt>
-      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-        <%= format_cost_cents(summary[:cost_today_cents]) %>
-      </dd>
-    </div>
-    <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-      <dt class="truncate text-sm font-medium text-gray-500">Avg Cost / Run</dt>
-      <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-        <%= format_cost_cents(summary[:avg_cost_per_run_cents]) %>
-      </dd>
-      <dd class="mt-1 text-xs text-gray-500"><%= number_with_delimiter(summary[:total_runs]) %> completed runs</dd>
-    </div>
-  </div>
+  <% end %>
 
-  <%# Cost by Outcome %>
+  <%# Cost by Outcome — hidden when no cost data %>
+  <% if summary[:total_cost_cents] > 0 %>
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Cost by Outcome</h2>
     <p class="mt-1 text-sm text-gray-500">Separate successful run costs from failed/timed-out runs.</p>
@@ -77,8 +84,10 @@
       <% end %>
     </div>
   </div>
+  <% end %>
 
-  <%# Cost by Goal Type %>
+  <%# Cost by Goal Type — hidden when no cost data %>
+  <% if summary[:total_cost_cents] > 0 %>
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Cost by Goal Type</h2>
     <p class="mt-1 text-sm text-gray-500">Compare costs across different types of agent work.</p>
@@ -114,6 +123,7 @@
       </div>
     <% end %>
   </div>
+  <% end %>
 
   <%# Cost Trend Chart (30 days) %>
   <div class="mt-8">
