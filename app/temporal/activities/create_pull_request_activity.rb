@@ -12,7 +12,12 @@ module Activities
         issue = agent_run.issue
 
         client = project.github_token.client
-        pr = client.create_pull_request(
+
+        # Idempotency: reuse an existing PR for this branch if one was
+        # already created (e.g. by a prior attempt that failed after the
+        # GitHub API call but before the activity returned).
+        pr = find_existing_pr(client, project, agent_run.branch_name)
+        pr ||= client.create_pull_request(
           project.full_name,
           base: project.default_branch,
           head: agent_run.branch_name,
@@ -21,15 +26,19 @@ module Activities
           draft: true
         )
 
+        # Persist completion as the very first step after obtaining the PR,
+        # before any best-effort post-processing. This ensures a retry
+        # cannot overwrite status via MarkAgentRunFailedActivity.
         agent_run.complete!(
           result_commit: agent_run.result_commit_sha,
           pr_url: pr.html_url,
           pr_number: pr.number
         )
 
-        add_pr_labels(client, project, pr.number, agent_run_id, issue: issue)
-
-        agent_run.log!("system", "PR created: #{pr.html_url}")
+        # Best-effort post-processing — failures here must not cause the
+        # activity to be retried now that the run is already completed.
+        best_effort(agent_run_id) { add_pr_labels(client, project, pr.number, agent_run_id, issue: issue) }
+        best_effort(agent_run_id) { agent_run.log!("system", "PR created: #{pr.html_url}") }
 
         logger.info(
           message: "agent_execution.pull_request_created",
@@ -42,6 +51,26 @@ module Activities
     end
 
     private
+
+    def find_existing_pr(client, project, branch_name)
+      existing = client.pull_requests(
+        project.full_name,
+        head: "#{project.owner}:#{branch_name}",
+        state: "open"
+      )
+      existing.first
+    end
+
+    def best_effort(agent_run_id)
+      yield
+    rescue StandardError => e
+      logger.warn(
+        message: "agent_execution.post_processing_failed",
+        agent_run_id: agent_run_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
 
     def pr_title(issue)
       return "Agent changes" unless issue

@@ -12,7 +12,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:create_pull_request).and_return(pr_response)
+    allow(github_client).to receive_messages(pull_requests: [], create_pull_request: pr_response)
     allow(github_client).to receive(:add_labels_to_issue)
     # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
     # By default, return a failed response so the activity falls back to raw summary.
@@ -35,6 +35,16 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
       expect(result[:pull_request_number]).to eq(42)
+    end
+
+    it "checks for an existing PR before creating a new one" do
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:pull_requests).with(
+        project.full_name,
+        head: "#{project.owner}:#{agent_run.branch_name}",
+        state: "open"
+      )
     end
 
     it "marks the agent run as completed with PR details" do
@@ -275,6 +285,57 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect {
         activity.execute(agent_run_id: -1)
       }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    context "with idempotent retries" do
+      let(:existing_pr) { Struct.new(:html_url, :number).new("https://github.com/owner/repo/pull/99", 99) }
+
+      it "reuses an existing open PR instead of creating a new one" do
+        allow(github_client).to receive(:pull_requests).and_return([ existing_pr ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).not_to have_received(:create_pull_request)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/99")
+        expect(result[:pull_request_number]).to eq(99)
+        expect(agent_run.reload.status).to eq("completed")
+        expect(agent_run.pull_request_url).to eq("https://github.com/owner/repo/pull/99")
+      end
+
+      it "still marks the run completed when post-processing raises" do
+        allow(github_client).to receive(:add_labels_to_issue)
+          .and_raise(StandardError.new("transient failure"))
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(agent_run.reload.status).to eq("completed")
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
+
+      it "reuses existing PR on retry after partial failure" do
+        # Simulate: first attempt created the PR but failed after complete!
+        # On retry, the PR already exists on GitHub.
+        allow(github_client).to receive(:pull_requests).and_return([ existing_pr ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).not_to have_received(:create_pull_request)
+        expect(agent_run.reload.status).to eq("completed")
+        expect(result[:pull_request_number]).to eq(99)
+      end
+
+      it "does not produce orphan branches when log! raises after completion" do
+        allow(github_client).to receive(:pull_requests).and_return([])
+        # agent_run.log! is called in best_effort, so even if it raises,
+        # the run should be completed
+        allow(agent_run).to receive(:log!).and_raise(StandardError.new("DB hiccup"))
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(agent_run.reload.status).to eq("completed")
+        expect(agent_run.pull_request_url).to eq("https://github.com/owner/repo/pull/42")
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
     end
   end
 end
