@@ -33,11 +33,13 @@ export default class extends Controller {
 
     this.prSectionTargets.forEach((el) => {
       el.hidden = !showPr
-      el.querySelectorAll("input, select, textarea, button").forEach(
-        (control) => {
-          control.disabled = !showPr
-        }
-      )
+      if (!showPr) {
+        el.querySelectorAll("input, select, textarea, button").forEach(
+          (control) => {
+            control.disabled = true
+          }
+        )
+      }
     })
 
     // Toggle between dropdown (create_pr) and table (review)
