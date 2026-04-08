@@ -357,11 +357,13 @@ RSpec.describe Activities::FetchIssuesActivity do
           allow(Rails.logger).to receive(:warn)
         end
 
-        it "advances the watermark to the latest updated_at" do
+        it "advances the watermark to one second before the latest updated_at" do
           activity.execute(project_id: project.id)
 
           project.reload
-          expect(project.last_issue_sync_at).to be_within(1.second).of(latest_updated)
+          # Watermark is set 1 second before the latest updated_at to ensure
+          # the boundary is inclusive on the next poll (GitHub's `since` is exclusive).
+          expect(project.last_issue_sync_at).to be_within(1.second).of(latest_updated - 1.second)
         end
       end
 
