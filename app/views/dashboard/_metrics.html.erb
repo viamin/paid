@@ -74,50 +74,54 @@
     </div>
   </div>
 
-  <%# Cost & Token Usage %>
-  <div class="mt-8">
-    <h2 class="text-lg font-semibold text-gray-900">Cost & Token Usage</h2>
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          $<%= format("%.2f", stats[:cost_and_tokens][:total_cost_cents] / 100.0) %>
-        </dd>
+  <%# Cost & Token Usage — hidden when all values are zero %>
+  <% cost_tokens = stats[:cost_and_tokens] %>
+  <% has_cost_or_token_data = cost_tokens[:total_cost_cents] > 0 || cost_tokens[:trailing_30d_tokens].to_i > 0 %>
+  <% if has_cost_or_token_data %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Cost & Token Usage</h2>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Total Cost</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            $<%= format("%.2f", cost_tokens[:total_cost_cents] / 100.0) %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Cost (30 days)</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            $<%= format("%.2f", cost_tokens[:trailing_30d_cost_cents] / 100.0) %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Tokens (30 days)</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= number_with_delimiter(cost_tokens[:trailing_30d_tokens]) %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Avg Cost / Run</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            $<%= format("%.2f", cost_tokens[:avg_cost_per_run_cents] / 100.0) %>
+          </dd>
+        </div>
       </div>
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Cost (30 days)</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          $<%= format("%.2f", stats[:cost_and_tokens][:trailing_30d_cost_cents] / 100.0) %>
-        </dd>
-      </div>
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Tokens (30 days)</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <%= number_with_delimiter(stats[:cost_and_tokens][:trailing_30d_tokens]) %>
-        </dd>
-      </div>
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Avg Cost / Run</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          $<%= format("%.2f", stats[:cost_and_tokens][:avg_cost_per_run_cents] / 100.0) %>
-        </dd>
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Avg Tokens / Run</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= number_with_delimiter(cost_tokens[:avg_tokens_per_run]) %>
+          </dd>
+        </div>
+        <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
+          <dt class="truncate text-sm font-medium text-gray-500">Avg Iterations / Run</dt>
+          <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
+            <%= cost_tokens[:avg_iterations_per_run] %>
+          </dd>
+        </div>
       </div>
     </div>
-    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Avg Tokens / Run</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <%= number_with_delimiter(stats[:cost_and_tokens][:avg_tokens_per_run]) %>
-        </dd>
-      </div>
-      <div class="overflow-hidden rounded-lg bg-white shadow px-4 py-5 sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">Avg Iterations / Run</dt>
-        <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-          <%= stats[:cost_and_tokens][:avg_iterations_per_run] %>
-        </dd>
-      </div>
-    </div>
-  </div>
+  <% end %>
 
   <%# Duration Percentiles %>
   <div class="mt-8">
@@ -255,10 +259,11 @@
     <% end %>
   </div>
 
-  <%# Cost by Project %>
-  <div class="mt-8">
-    <h2 class="text-lg font-semibold text-gray-900">Cost by Project <span class="text-sm font-normal text-gray-500">(All Time)</span></h2>
-    <% if stats[:cost_by_project].any? %>
+  <%# Cost by Project — hidden when all costs are zero %>
+  <% cost_by_project_with_data = stats[:cost_by_project].select { |_, cost_cents| cost_cents > 0 } %>
+  <% if cost_by_project_with_data.any? %>
+    <div class="mt-8">
+      <h2 class="text-lg font-semibold text-gray-900">Cost by Project <span class="text-sm font-normal text-gray-500">(All Time)</span></h2>
       <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
@@ -268,7 +273,7 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-200 bg-white">
-            <% stats[:cost_by_project].each do |project_name, cost_cents| %>
+            <% cost_by_project_with_data.each do |project_name, cost_cents| %>
               <tr>
                 <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900"><%= project_name %></td>
                 <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500 text-right">$<%= format("%.2f", cost_cents / 100.0) %></td>
@@ -277,12 +282,8 @@
           </tbody>
         </table>
       </div>
-    <% else %>
-      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
-        <div class="px-4 py-5 text-sm text-gray-500">No project costs recorded yet.</div>
-      </div>
-    <% end %>
-  </div>
+    </div>
+  <% end %>
 
   <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
     <%# Runs by Provider (effective provider accounting for fallbacks) %>
