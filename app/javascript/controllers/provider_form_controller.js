@@ -69,6 +69,8 @@ export default class extends Controller {
     "opencodeSettings",
     "kilocodeSettings",
     "directOutboundApiProviderSelect",
+    "tierSettings",
+    "tierSelect",
   ]
 
   connect() {
@@ -131,7 +133,23 @@ export default class extends Controller {
       })
     })
 
+    this.refreshTierSettings(providerKey)
     this.refreshApiKeyOptions(providerKey)
+  }
+
+  refreshTierSettings(providerKey = this.currentProviderKey()) {
+    this.tierSettingsTargets.forEach((el) => {
+      const renderedFor = el.dataset.tierProviderKey
+      const matches = renderedFor === providerKey
+      el.hidden = !matches
+    })
+
+    this.tierSelectTargets.forEach((select) => {
+      const container = select.closest("[data-provider-form-target='tierSettings']")
+      const matches = container && container.dataset.tierProviderKey === providerKey
+      select.disabled = !matches
+      if (!matches) select.value = ""
+    })
   }
 
   refreshApiKeyOptions(providerKey = this.currentProviderKey()) {

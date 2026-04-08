@@ -371,6 +371,20 @@ RSpec.describe "Providers" do
       expect(provider.reload.enabled_for_agent_runs).to be(false)
     end
 
+    it "persists tier_model_ids on update" do
+      provider = user.providers.create!(provider_key: "cursor")
+      create(:llm_model, model_id: "haiku-x", provider: "anthropic", tier: "low")
+      create(:llm_model, model_id: "sonnet-x", provider: "anthropic", tier: "mid")
+      create(:llm_model, model_id: "opus-x", provider: "anthropic", tier: "high")
+
+      patch provider_path(provider), params: {
+        provider: { tier_model_ids: { low: "haiku-x", mid: "sonnet-x", high: "opus-x" } }
+      }
+
+      expect(response).to redirect_to(providers_path)
+      expect(provider.reload.tier_model_ids).to eq("low" => "haiku-x", "mid" => "sonnet-x", "high" => "opus-x")
+    end
+
     it "rejects enabling agent runs on a provider that has become unsupported" do
       provider = user.providers.create!(provider_key: "cursor")
 

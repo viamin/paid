@@ -115,7 +115,9 @@ RSpec.describe ProviderSupport do
         "anthropic" => "Anthropic",
         "openai" => "OpenAI",
         "openrouter" => "OpenRouter",
-        "google" => "Google AI"
+        "google" => "Google AI",
+        "zai" => "z.ai",
+        "zai_coding" => "z.ai (Coding Plan)"
       )
     end
   end
@@ -198,6 +200,11 @@ RSpec.describe ProviderSupport do
     it "returns true for known claude bot usernames" do
       expect(described_class.provider_bot_username?("claude[bot]")).to be true
       expect(described_class.provider_bot_username?("claude-code[bot]")).to be true
+    end
+
+    it "returns true for known codex bot usernames" do
+      expect(described_class.provider_bot_username?("chatgpt-codex-connector")).to be true
+      expect(described_class.provider_bot_username?("chatgpt-codex-connector[bot]")).to be true
     end
 
     it "is case-insensitive" do
