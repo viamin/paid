@@ -2260,6 +2260,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         }.not_to change { unchanged_pr.reload.last_pr_scan_at }
       end
 
+      it "still emits CI failure triggers when reviews fail in ready phase" do
+        unchanged_pr.update_columns(
+          last_pr_scan_at: nil,
+          github_updated_at: Time.current,
+          pr_review_phase: "ready"
+        )
+        stub_github_for_pr(checks: [ { name: "ci", conclusion: "failure" } ])
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, 42)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        result = activity.execute(project_id: project.id)
+        triggers = result[:prs_to_trigger].first&.dig(:triggers) || []
+
+        expect(triggers).to include(hash_including(type: "ci_failure"))
+      end
+
       it "reports skipped count in log output" do
         allow(Rails.logger).to receive(:info)
         allow(Rails.logger).to receive(:debug)

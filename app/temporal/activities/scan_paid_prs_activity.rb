@@ -314,7 +314,14 @@ module Activities
     # --- Shared detection logic ---
 
     # Returns an array of trigger hashes, or nil when critical API
-    # fetches failed and the scan should be treated as incomplete.
+    # fetches failed *and* no actionable triggers were found — callers
+    # use nil to avoid stamping last_pr_scan_at on an incomplete scan.
+    #
+    # Partial API failures no longer suppress the entire result: triggers
+    # that can be evaluated without the failed endpoint (CI failures,
+    # actionable labels, merge conflicts, etc.) are still returned. Only
+    # when no triggers are found despite missing signal sources do we
+    # return nil to prevent a false "all clear".
     def detect_ready_triggers(project, client, issue, pr_data: nil, checks: nil, reviews: nil,
       unresolved_threads: nil)
       last_run = last_completed_run(project, issue)
@@ -323,9 +330,7 @@ module Activities
       reviews ||= fetch_reviews(client, project, issue)
       unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
 
-      # If critical signal sources failed, the scan is incomplete — return
-      # nil so callers can avoid stamping last_pr_scan_at.
-      return nil if reviews.nil? || unresolved_threads.nil?
+      partial_failure = reviews.nil? || unresolved_threads.nil?
 
       triggers = []
 
@@ -337,6 +342,13 @@ module Activities
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
       triggers.concat(check_merge_conflicts(project, pr_data))
+
+      # When a critical signal source failed but we found actionable
+      # triggers from other sources, return them so downstream actions
+      # are not suppressed. When no triggers were found and some sources
+      # were unavailable, return nil to prevent stamping last_pr_scan_at
+      # on a potentially incomplete "all clear".
+      return nil if triggers.empty? && partial_failure
 
       triggers
     end
