@@ -114,8 +114,6 @@ module Activities
       )
     end
 
-    private
-
     def apply_legacy_draft_followup_fallback!(agent_run)
       return if agent_run.count_toward_draft_review_round?
       return if agent_run.expected_draft_review_count.present?
