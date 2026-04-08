@@ -50,7 +50,10 @@ class NotificationsController < ApplicationController
 
     respond_to do |format|
       format.turbo_stream do
-        render turbo_stream: turbo_stream.replace("notification_bell", partial: "notifications/bell", locals: { account: current_account })
+        render turbo_stream: [
+          turbo_stream.replace("notification_bell", partial: "notifications/bell", locals: { account: current_account }),
+          turbo_stream.replace("notification_nav_badges", partial: "notifications/nav_badges", locals: { account: current_account })
+        ]
       end
       format.html { redirect_to notifications_path, notice: "All notifications marked as read." }
     end
