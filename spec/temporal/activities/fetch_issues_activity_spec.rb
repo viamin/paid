@@ -384,8 +384,8 @@ RSpec.describe Activities::FetchIssuesActivity do
 
           allow(github_client).to receive(:issues) do |_repo, **opts|
             page = opts[:page] || 1
-            # Pages 1–3 return full pages; the probe (page 4, per_page: 1) returns empty.
-            next [] if page > 3 || opts[:per_page] == 1
+            # Pages 1–3 return full pages; the probe (page 4) returns empty.
+            next [] if page > 3
 
             offset = (page - 1) * 5
             Array.new(5) do |i|

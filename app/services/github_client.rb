@@ -789,11 +789,13 @@ class GithubClient
         interval_randomness: 0.5,
         backoff_factor: 2,
         retry_statuses: [ 429, 500, 502, 503, 504 ],
-        retry_block: ->(env:, options:, retries:, exception:, will_retry_in:) {
+        exceptions: Faraday::Retry::Middleware::DEFAULT_EXCEPTIONS +
+          [ Octokit::ServerError ],
+        retry_block: ->(env:, options:, retry_count:, exception:, will_retry_in:) {
           Rails.logger.warn(
             message: "github_client.retry",
             url: env[:url].to_s,
-            retries: retries,
+            retry_count: retry_count,
             will_retry_in: will_retry_in,
             exception: exception&.class&.name
           )
@@ -813,7 +815,11 @@ class GithubClient
   end
 
   def graphql_request(query, **variables)
-    response = graphql_connection.post("/graphql") do |req|
+    # Mutations are not idempotent — retrying them after a transient failure
+    # (where the server may have applied the mutation before returning 5xx)
+    # can cause duplicate side effects. Only retry read-only queries.
+    conn = graphql_mutation?(query) ? graphql_connection_base : graphql_connection
+    response = conn.post("/graphql") do |req|
       req.headers["Authorization"] = "token #{client.access_token}"
       req.body = { query: query, variables: variables }
     end
@@ -824,9 +830,41 @@ class GithubClient
     raise ApiError.new(e.message)
   end
 
+  def graphql_mutation?(query)
+    query.strip.start_with?("mutation")
+  end
+
   def graphql_connection
-    @graphql_connection ||= Faraday.new(url: "https://api.github.com") do |f|
+    @graphql_connection ||= build_graphql_connection(with_retry: true)
+  end
+
+  def graphql_connection_base
+    @graphql_connection_base ||= build_graphql_connection(with_retry: false)
+  end
+
+  def build_graphql_connection(with_retry:)
+    Faraday.new(url: "https://api.github.com") do |f|
       f.request :json
+      if with_retry
+        f.request :retry,
+          max: 3,
+          interval: 0.5,
+          interval_randomness: 0.5,
+          backoff_factor: 2,
+          methods: %i[post],
+          retry_statuses: [ 429, 500, 502, 503, 504 ],
+          exceptions: Faraday::Retry::Middleware::DEFAULT_EXCEPTIONS +
+            [ Faraday::ServerError, Faraday::TooManyRequestsError ],
+          retry_block: ->(env:, options:, retry_count:, exception:, will_retry_in:) {
+            Rails.logger.warn(
+              message: "github_client.graphql_retry",
+              url: env[:url].to_s,
+              retry_count: retry_count,
+              will_retry_in: will_retry_in,
+              exception: exception&.class&.name
+            )
+          }
+      end
       f.response :json
       f.response :raise_error
       f.adapter Faraday.default_adapter
