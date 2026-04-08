@@ -151,6 +151,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_032317) do
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "container_retained_until"
     t.integer "cost_cents", default: 0
+    t.boolean "count_toward_draft_review_round", default: false, null: false
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
@@ -159,6 +160,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_032317) do
     t.string "diagnosis_status", limit: 50
     t.integer "duration_seconds"
     t.text "error_message"
+    t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
@@ -461,7 +463,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_032317) do
     t.datetime "github_updated_at", null: false
     t.boolean "is_pull_request", default: false, null: false
     t.jsonb "labels", default: [], null: false
-    t.datetime "last_pr_scan_at"
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
     t.integer "pr_followup_count", default: 0, null: false
@@ -476,6 +477,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_032317) do
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
+    t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
@@ -764,6 +766,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_032317) do
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
+    t.boolean "inherit_priority_labels", default: true, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
     t.jsonb "label_mappings", default: {}, null: false
     t.datetime "last_agent_run_at"
