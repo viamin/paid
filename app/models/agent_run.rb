@@ -269,6 +269,10 @@ class AgentRun < ApplicationRecord
     @label_priority_tier = compute_label_priority_tier
   end
 
+  # When a run has both an associated issue AND a source PR, labels from
+  # both records are considered (highest configured tier wins). Label
+  # name matching is case-sensitive on both the Ruby and SQL sides; an
+  # issue tagged "p1" will not match a configured tier of "P1".
   def compute_label_priority_tier
     return nil unless project
 
@@ -302,9 +306,11 @@ class AgentRun < ApplicationRecord
   end
 
   # Batch-loads source PR Issue rows for a collection of runs and stashes
-  # each on the run via source_pull_request_record=. Call from views/
-  # helpers that render priority badges for many runs to keep
-  # label_priority_tier from issuing one query per row.
+  # each on the run via source_pull_request_record=. Call from controllers
+  # rendering priority badges for many runs to keep label_priority_tier
+  # from issuing one query per row. Groups by project_id so the query is
+  # precise per project (no cross-project over-fetch) without resorting
+  # to dynamic SQL.
   def self.preload_source_pull_requests(runs)
     targets = Array(runs).select do |r|
       r.source_pull_request_number.present? && r.project_id.present? &&
@@ -312,10 +318,13 @@ class AgentRun < ApplicationRecord
     end
     return if targets.empty?
 
-    project_ids = targets.map(&:project_id).uniq
-    pr_numbers = targets.map(&:source_pull_request_number).uniq
-    records = Issue.where(is_pull_request: true, project_id: project_ids, github_number: pr_numbers)
-      .index_by { |i| [ i.project_id, i.github_number ] }
+    records = {}
+    targets.group_by(&:project_id).each do |project_id, group|
+      numbers = group.map(&:source_pull_request_number).uniq
+      Issue.where(is_pull_request: true, project_id: project_id, github_number: numbers).each do |issue|
+        records[[ issue.project_id, issue.github_number ]] = issue
+      end
+    end
 
     targets.each do |run|
       run.source_pull_request_record = records[[ run.project_id, run.source_pull_request_number ]]
@@ -333,7 +342,16 @@ class AgentRun < ApplicationRecord
   # the per-project label name from `projects.priority_labels` jsonb,
   # falling back to the literal tier key (P1/P2/P3) when the project's
   # mapping is empty so behavior matches Project#effective_priority_labels.
-  # `issues.labels` is jsonb; `@>` checks for element containment.
+  # `issues.labels` is jsonb; `@>` checks for element containment, and
+  # element matching is case-sensitive on both the SQL and Ruby sides.
+  #
+  # The JOIN uses an OR so the EXISTS check matches either the run's
+  # directly-associated issue OR the issue row representing its source
+  # pull request. When a run has both, labels from both rows are
+  # considered (any priority match wins). This mirrors the Ruby
+  # `compute_label_priority_tier` semantics. Both branches constrain
+  # `i.project_id = agent_runs.project_id`, so cross-project leakage
+  # is impossible even if `issue_id` were ever set across projects.
   #
   # NOTE: This SQL contains no interpolated values — the tier names are
   # hardcoded literals — so it is not a SQL injection vector.
