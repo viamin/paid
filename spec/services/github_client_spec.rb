@@ -818,26 +818,64 @@ RSpec.describe GithubClient do
   describe "#recent_issue_comments" do
     let(:repo) { "owner/repo" }
 
-    context "when comments exist" do
+    context "when the comment list fits in a single page" do
       before do
         stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
-          .with(query: hash_including("per_page" => "100", "sort" => "created", "direction" => "desc"))
+          .with(query: hash_including("per_page" => "100", "page" => "1"))
           .to_return(
             status: 200,
             body: [
-              { id: 2, body: "Newest comment", user: { login: "maintainer" } },
-              { id: 1, body: "Oldest comment", user: { login: "reviewer" } }
+              { id: 1, body: "First comment", user: { login: "reviewer" } },
+              { id: 2, body: "Second comment", user: { login: "maintainer" } }
             ].to_json,
             headers: { "Content-Type" => "application/json" }
           )
       end
 
-      it "returns comments newest first without auto-pagination" do
+      it "returns the first-page result without a follow-up request" do
         result = client.recent_issue_comments(repo, 42)
 
         expect(result.size).to eq(2)
-        expect(result.first.body).to eq("Newest comment")
+        expect(result.map(&:body)).to contain_exactly("First comment", "Second comment")
         expect(client.client.auto_paginate).to be false
+      end
+    end
+
+    context "when the comment list spans multiple pages" do
+      # The /issues/:number/comments endpoint returns comments in ascending
+      # order and ignores sort/direction params, so the first page is the
+      # OLDEST comments. To get the most recent comments in a bounded
+      # request, recent_issue_comments must follow the Link: last rel.
+      before do
+        link_header = %(<#{api_base}/repos/#{repo}/issues/42/comments?page=2&per_page=100>; rel="next", ) +
+          %(<#{api_base}/repos/#{repo}/issues/42/comments?page=5&per_page=100>; rel="last")
+
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .with(query: hash_including("per_page" => "100", "page" => "1"))
+          .to_return(
+            status: 200,
+            body: [ { id: 1, body: "Very old comment", user: { login: "reviewer" } } ].to_json,
+            headers: { "Content-Type" => "application/json", "Link" => link_header }
+          )
+
+        stub_request(:get, "#{api_base}/repos/#{repo}/issues/42/comments")
+          .with(query: hash_including("per_page" => "100", "page" => "5"))
+          .to_return(
+            status: 200,
+            body: [
+              { id: 401, body: "Newer comment", user: { login: "maintainer" } },
+              { id: 402, body: "Newest comment", user: { login: "maintainer" } }
+            ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "follows the Link: last rel and returns the last-page comments, not the first" do
+        result = client.recent_issue_comments(repo, 42)
+
+        expect(result.size).to eq(2)
+        expect(result.map(&:body)).to contain_exactly("Newer comment", "Newest comment")
+        expect(result.map(&:body)).not_to include("Very old comment")
       end
     end
   end
@@ -1214,6 +1252,97 @@ RSpec.describe GithubClient do
           client.request_bot_review(repo, 42, bot_node_ids: [ bot_node_id ])
         }.to raise_error(GithubClient::ApiError, /not accessible/)
       end
+    end
+  end
+
+  describe "REST retry middleware" do
+    let(:repo) { "owner/repo" }
+
+    it "retries on 503 and succeeds" do
+      stub_request(:get, "#{api_base}/repos/#{repo}")
+        .to_return(
+          { status: 503, body: "Service Unavailable" },
+          { status: 200, body: { full_name: repo }.to_json, headers: { "Content-Type" => "application/json" } }
+        )
+
+      result = client.repository(repo)
+      expect(result.full_name).to eq(repo)
+    end
+
+    it "retries on 502 and succeeds" do
+      stub_request(:get, "#{api_base}/repos/#{repo}")
+        .to_return(
+          { status: 502, body: "Bad Gateway" },
+          { status: 200, body: { full_name: repo }.to_json, headers: { "Content-Type" => "application/json" } }
+        )
+
+      result = client.repository(repo)
+      expect(result.full_name).to eq(repo)
+    end
+  end
+
+  describe "GraphQL retry middleware" do
+    let(:repo) { "owner/repo" }
+
+    it "retries on 503 and succeeds" do
+      stub_request(:post, "#{api_base}/graphql")
+        .to_return(
+          { status: 503, body: "Service Unavailable" },
+          {
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    reviewThreads: { nodes: [] }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          }
+        )
+
+      result = client.review_threads(repo, 1)
+      expect(result).to eq([])
+    end
+
+    it "retries on 429 and succeeds" do
+      stub_request(:post, "#{api_base}/graphql")
+        .to_return(
+          { status: 429, body: "Rate limited" },
+          {
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    reviewThreads: { nodes: [] }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          }
+        )
+
+      result = client.review_threads(repo, 1)
+      expect(result).to eq([])
+    end
+
+    it "raises after exhausting retries" do
+      stub_request(:post, "#{api_base}/graphql")
+        .to_return(status: 502, body: "Bad Gateway")
+
+      expect { client.review_threads(repo, 1) }.to raise_error(GithubClient::ApiError)
+    end
+
+    it "does not retry mutations" do
+      stub = stub_request(:post, "#{api_base}/graphql")
+        .to_return(status: 503, body: "Service Unavailable")
+
+      expect { client.resolve_review_thread("thread_id") }.to raise_error(GithubClient::ApiError)
+      expect(stub).to have_been_requested.once
     end
   end
 

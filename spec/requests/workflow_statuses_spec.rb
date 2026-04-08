@@ -125,6 +125,118 @@ RSpec.describe "WorkflowStatuses" do
         expect(response.body).not_to include("View in Temporal UI")
         expect(response.body).not_to include("GitHubPoll")
       end
+
+      it "shows restart button when workflow is not running" do
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :not_found, running: false)
+
+        get project_workflow_status_path(project)
+        expect(response.body).to include("Restart monitor")
+      end
+
+      it "does not show restart button when workflow is running" do
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :running, running: true)
+        project.update_column(:last_polled_at, 30.seconds.ago)
+
+        get project_workflow_status_path(project)
+        expect(response.body).not_to include("Restart monitor")
+      end
+
+      it "does not show restart button when project is inactive" do
+        project.update_column(:active, false)
+
+        get project_workflow_status_path(project)
+        expect(response.body).not_to include("Restart monitor")
+      end
+
+      it "does not show restart button for viewers without update permission" do
+        viewer = create(:user, :viewer, account: account)
+        sign_in viewer
+
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :not_found, running: false)
+
+        get project_workflow_status_path(project)
+        expect(response.body).not_to include("Restart monitor")
+      end
+    end
+  end
+
+  describe "POST /projects/:project_id/workflow_status/restart" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        post restart_project_workflow_status_path(project)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as a viewer" do
+      before do
+        viewer = create(:user, :viewer, account: account)
+        sign_in viewer
+      end
+
+      it "redirects with authorization error" do
+        allow(ProjectWorkflowManager).to receive(:restart_polling)
+
+        post restart_project_workflow_status_path(project)
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+
+    context "when authenticated as an owner" do
+      before { sign_in user }
+
+      it "restarts the poll workflow and redirects" do
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :not_found, running: false)
+        allow(ProjectWorkflowManager).to receive(:restart_polling)
+
+        post restart_project_workflow_status_path(project)
+        expect(ProjectWorkflowManager).to have_received(:restart_polling)
+          .with(project, reason: "manual restart from UI")
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:notice]).to eq("Issue monitor restarted.")
+      end
+
+      it "redirects with alert when project is inactive" do
+        project.update_column(:active, false)
+
+        post restart_project_workflow_status_path(project)
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:alert]).to eq("Cannot restart monitoring on an inactive project.")
+      end
+
+      it "redirects with alert when workflow is already running" do
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :running, running: true)
+
+        post restart_project_workflow_status_path(project)
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:alert]).to eq("Issue monitor is already running.")
+      end
+
+      it "redirects with alert when Temporal is unavailable" do
+        allow(ProjectWorkflowManager).to receive(:workflow_status)
+          .with(project).and_return(status: :not_found, running: false)
+        allow(ProjectWorkflowManager).to receive(:restart_polling)
+          .and_raise(Temporalio::Error::RPCError.new("unavailable", code: Temporalio::Error::RPCError::Code::UNAVAILABLE, raw_grpc_status: nil))
+
+        post restart_project_workflow_status_path(project)
+        expect(response).to redirect_to(project_path(project))
+        expect(flash[:alert]).to eq("Could not restart issue monitor. Please try again later.")
+      end
+
+      it "does not allow restarting for other accounts' projects" do
+        other_account = create(:account)
+        other_token = create(:github_token, account: other_account)
+        other_project = create(:project, account: other_account, github_token: other_token)
+
+        post restart_project_workflow_status_path(other_project)
+        expect(response).to have_http_status(:not_found)
+      end
     end
   end
 end

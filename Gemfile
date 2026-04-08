@@ -102,7 +102,7 @@ group :development do
   gem "web-console"
 end
 
-gem "good_job", "~> 4.13"
+gem "good_job", "~> 4.14"
 
 # Pagination [https://github.com/ddnexus/pagy]
 gem "pagy", "~> 43.4"

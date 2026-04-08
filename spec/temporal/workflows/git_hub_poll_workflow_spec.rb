@@ -73,6 +73,66 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "rate limit budget coordination" do
+    let(:workflow) { described_class.new }
+
+    before do
+      allow(Temporalio::Workflow).to receive(:patched).and_return(true)
+      allow(workflow).to receive(:run_activity).and_return({})
+    end
+
+    it "skips non-critical activities when rate limit is low" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
+        .and_return({ rate_limit_remaining: 50, rate_limit_low: true })
+
+      logger = instance_double(Logger, info: nil)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+
+      workflow.send(:maybe_run_non_critical_activities, 1)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckKnowledgeStalenessActivity, anything, timeout: anything)
+      expect(logger).to have_received(:info).with(hash_including(
+        message: "poll.non_critical_skipped_budget_low",
+        project_id: 1,
+        rate_limit_remaining: 50
+      ))
+    end
+
+    it "runs non-critical activities when rate limit is sufficient" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
+        .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
+        .and_return({ prs_to_trigger: [] })
+
+      workflow.send(:maybe_run_non_critical_activities, 1)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
+    end
+
+    it "skips rate limit check but still runs non-critical activities when patch guard returns false (pre-v872 workflows)" do
+      allow(Temporalio::Workflow).to receive(:patched).with("add-rate-limit-budget-v1").and_return(false)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
+        .and_return({ prs_to_trigger: [] })
+
+      workflow.send(:maybe_run_non_critical_activities, 1)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
+    end
+  end
+
   describe "CheckKnowledgeStalenessActivity patch guard" do
     let(:workflow) { described_class.new }
 
@@ -342,11 +402,11 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
-    it "routes review_bot_review_pending to RequestReviewActivity with copilot" do
+    it "routes review_bot_review_pending to RequestReviewActivity using the trigger's request_login" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
         current_draft_review_count: 0,
-        triggers: [ { type: "review_bot_review_pending" } ]
+        triggers: [ { type: "review_bot_review_pending", request_login: Activities::RequestReviewActivity::COPILOT_LOGIN } ]
       }
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
@@ -354,6 +414,19 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: anything)
+    end
+
+    it "skips review request when review_bot_review_pending has no request_login (auto-review bots)" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending", request_login: nil } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
     end
 
     it "defers review request and dispatches followup when other triggers present" do

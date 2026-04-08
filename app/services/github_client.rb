@@ -91,6 +91,20 @@ class GithubClient
     end
   end
 
+  # Returns the login of the authenticated user (or installation actor) this
+  # client is operating as. Cached per-instance because the answer does not
+  # change for the lifetime of the token. Callers should treat a nil return
+  # as "identity unknown" and fall back to author-agnostic behavior.
+  #
+  # @return [String, nil] Downcased login, or nil if lookup failed.
+  def authenticated_login
+    return @authenticated_login if defined?(@authenticated_login)
+
+    @authenticated_login = handle_errors { client.user.login&.downcase }
+  rescue Error
+    @authenticated_login = nil
+  end
+
   # Fetches repository metadata.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -347,16 +361,30 @@ class GithubClient
     end
   end
 
-  # Fetches the most recent page of conversation comments (newest first).
-  # Use this for idempotency checks where auto-paginating all comments is
-  # unnecessary and wastes API rate limit on long-lived PRs.
+  # Fetches the most recent page of conversation comments. Use this for
+  # idempotency checks where auto-paginating all comments is unnecessary
+  # and wastes API rate limit on long-lived PRs.
+  #
+  # IMPORTANT: GitHub's REST `/repos/{owner}/{repo}/issues/{number}/comments`
+  # endpoint always returns comments in ascending order by ID and does NOT
+  # honor `sort` or `direction` params — those are only supported on the
+  # repo-level `/issues/comments` endpoint. To actually get the newest
+  # comments, we probe the `Link: last` header on page 1 and re-fetch the
+  # final page. When there is ≤1 page of comments, the first-page response
+  # is already the authoritative answer.
   #
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Issue or PR number
-  # @return [Array<Sawyer::Resource>] Recent comments (each has .user.login, .body, .created_at)
+  # @return [Array<Sawyer::Resource>] Up to 100 most-recent comments, each
+  #   with .user.login, .body, .created_at. Order within the returned page
+  #   is ascending by ID — callers that need a specific order must sort.
   def recent_issue_comments(repo, number)
     handle_errors do
-      client.issue_comments(repo, number, per_page: 100, page: 1, sort: :created, direction: :desc)
+      first_page = client.issue_comments(repo, number, per_page: 100, page: 1)
+      last_rel = client.last_response&.rels&.dig(:last)
+      return first_page if last_rel.nil?
+
+      client.get(last_rel.href)
     end
   end
 
@@ -761,11 +789,13 @@ class GithubClient
         interval_randomness: 0.5,
         backoff_factor: 2,
         retry_statuses: [ 429, 500, 502, 503, 504 ],
-        retry_block: ->(env:, options:, retries:, exception:, will_retry_in:) {
+        exceptions: Faraday::Retry::Middleware::DEFAULT_EXCEPTIONS +
+          [ Octokit::ServerError ],
+        retry_block: ->(env:, options:, retry_count:, exception:, will_retry_in:) {
           Rails.logger.warn(
             message: "github_client.retry",
             url: env[:url].to_s,
-            retries: retries,
+            retry_count: retry_count,
             will_retry_in: will_retry_in,
             exception: exception&.class&.name
           )
@@ -785,7 +815,11 @@ class GithubClient
   end
 
   def graphql_request(query, **variables)
-    response = graphql_connection.post("/graphql") do |req|
+    # Mutations are not idempotent — retrying them after a transient failure
+    # (where the server may have applied the mutation before returning 5xx)
+    # can cause duplicate side effects. Only retry read-only queries.
+    conn = graphql_mutation?(query) ? graphql_connection_base : graphql_connection
+    response = conn.post("/graphql") do |req|
       req.headers["Authorization"] = "token #{client.access_token}"
       req.body = { query: query, variables: variables }
     end
@@ -796,9 +830,41 @@ class GithubClient
     raise ApiError.new(e.message)
   end
 
+  def graphql_mutation?(query)
+    query.strip.start_with?("mutation")
+  end
+
   def graphql_connection
-    @graphql_connection ||= Faraday.new(url: "https://api.github.com") do |f|
+    @graphql_connection ||= build_graphql_connection(with_retry: true)
+  end
+
+  def graphql_connection_base
+    @graphql_connection_base ||= build_graphql_connection(with_retry: false)
+  end
+
+  def build_graphql_connection(with_retry:)
+    Faraday.new(url: "https://api.github.com") do |f|
       f.request :json
+      if with_retry
+        f.request :retry,
+          max: 3,
+          interval: 0.5,
+          interval_randomness: 0.5,
+          backoff_factor: 2,
+          methods: %i[post],
+          retry_statuses: [ 429, 500, 502, 503, 504 ],
+          exceptions: Faraday::Retry::Middleware::DEFAULT_EXCEPTIONS +
+            [ Faraday::ServerError, Faraday::TooManyRequestsError ],
+          retry_block: ->(env:, options:, retry_count:, exception:, will_retry_in:) {
+            Rails.logger.warn(
+              message: "github_client.graphql_retry",
+              url: env[:url].to_s,
+              retry_count: retry_count,
+              will_retry_in: will_retry_in,
+              exception: exception&.class&.name
+            )
+          }
+      end
       f.response :json
       f.response :raise_error
       f.adapter Faraday.default_adapter

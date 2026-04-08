@@ -38,9 +38,7 @@ module Workflows
           handle_detection(detection, project_id)
         end
 
-        maybe_scan_paid_prs(project_id)
-        maybe_scan_code_scanning_alerts(project_id)
-        maybe_check_knowledge_staleness(project_id)
+        maybe_run_non_critical_activities(project_id)
 
         poll_config = run_activity(Activities::GetPollIntervalActivity,
           { project_id: project_id }, timeout: 10)
@@ -68,6 +66,31 @@ module Workflows
       # Signal woke us — loop will restart immediately
     ensure
       @sleep_cancel_proc = nil
+    end
+
+    # Checks rate limit budget and runs non-critical activities only when
+    # sufficient budget remains. Issue detection (FetchIssues + DetectLabels)
+    # is prioritized as core work; PR scanning, security alerts, and knowledge
+    # staleness checks are skipped when budget is low.
+    # TODO(#872): Remove patch guard after all pre-v872 workflows have continued-as-new
+    def maybe_run_non_critical_activities(project_id)
+      if Temporalio::Workflow.patched("add-rate-limit-budget-v1")
+        rate_limit = run_activity(Activities::CheckRateLimitActivity,
+          { project_id: project_id }, timeout: 10)
+
+        if rate_limit[:rate_limit_low]
+          Temporalio::Workflow.logger.info(
+            message: "poll.non_critical_skipped_budget_low",
+            project_id: project_id,
+            rate_limit_remaining: rate_limit[:rate_limit_remaining]
+          )
+          return
+        end
+      end
+
+      maybe_scan_paid_prs(project_id)
+      maybe_scan_code_scanning_alerts(project_id)
+      maybe_check_knowledge_staleness(project_id)
     end
 
     # Scan paid-generated PRs for follow-up work.
@@ -207,16 +230,23 @@ module Workflows
 
     def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
       # If there are other triggers besides review_bot_review_pending, a followup
-      # agent will run and push changes. Defer the Copilot review request to the
-      # AgentExecutionWorkflow so Copilot reviews the fixed code, not the pre-fix
+      # agent will run and push changes. Defer the review request to the
+      # AgentExecutionWorkflow so the bot reviews the fixed code, not the pre-fix
       # state. When review_bot_review_pending is the only trigger, request
       # immediately since no followup will run.
       other_triggers = trigger_types - [ "review_bot_review_pending" ]
 
       if other_triggers.empty?
-        request_review(project_id, pr_data[:pr_number],
-          [ Activities::RequestReviewActivity::COPILOT_LOGIN ],
-          log_key: "pr_review.request_review_bot_review_failed")
+        # Use the login from the trigger: nil means the bot auto-reviews (e.g.
+        # Codex via GitHub App) and no explicit request is needed.
+        pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
+        login = pending_trigger&.dig(:request_login)
+
+        if login
+          request_review(project_id, pr_data[:pr_number],
+            [ login ],
+            log_key: "pr_review.request_review_bot_review_failed")
+        end
         return
       end
 

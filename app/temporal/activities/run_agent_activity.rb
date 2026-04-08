@@ -48,6 +48,9 @@ module Activities
       /too many requests/i,
       /(?:\bHTTP[\/\s]*429\b|status[:\s]*429\b)/i,
       /quota exceeded/i,
+      /free tier limit reached/i,
+      /(?:you'?ve|you have)\s+hit\s+your\s+limit/i,
+      /exhausted\s+your\s+capacity/i,
       /exhausted.*capacity/i,
       /(?:server|system)\s+(?:at\s+)?capacity/i,
       /(?:server|api|service)\s+overloaded/i,
@@ -478,14 +481,16 @@ module Activities
       result = with_periodic_heartbeat("executing", provider, agent_run: agent_run) do
         container_service.execute(command, timeout: effective_timeout, idle_timeout: effective_idle_timeout, env: command_env)
       end
+      stdout = normalize_output_text(result[:stdout])
+      stderr = normalize_output_text(result[:stderr])
 
       if result.success?
-        output_present = result[:stdout].present? || result[:stderr].present?
+        output_present = stdout.present? || stderr.present?
         agent_run.log!("system", "Agent execution succeeded with #{provider}")
         return { pre_agent_sha: pre_agent_sha, output_present: output_present }
       end
 
-      output = (result[:stderr].presence || result[:stdout]).to_s.strip
+      output = (stderr.presence || stdout).to_s.strip
       rate_limit_output = strip_prompt_echo(output, prompt)
 
       # Check if this is a rate limit error
@@ -546,14 +551,7 @@ module Activities
       normalized_line.gsub(/\s+/, " ")
     end
 
-    def normalize_output_text(value)
-      return "" if value.nil?
-
-      text = value.to_s
-      return text.delete("\x00") if text.encoding == Encoding::UTF_8 && text.valid_encoding?
-
-      text.dup.force_encoding(Encoding::UTF_8).scrub.delete("\x00")
-    end
+    include OutputSanitizer
 
     # Attempts to parse a rate limit reset time from the output.
     # Falls back to 1 hour from now if not parseable.
@@ -581,6 +579,23 @@ module Activities
 
         reset_time = Time.current.utc.change(hour: hour, min: minute, sec: 0)
         reset_time += 1.day if reset_time <= Time.current.utc
+        reset_time
+      elsif (match = output.match(/resets?\s+([A-Za-z]{3})\s+(\d{1,2}),\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(?\s*UTC\s*\)?/i))
+        month = Date::ABBR_MONTHNAMES.index(match[1].capitalize)
+        day = match[2].to_i
+        hour = match[3].to_i
+        minute = (match[4] || "0").to_i
+        period = match[5].downcase
+
+        hour = if period == "am"
+          hour == 12 ? 0 : hour
+        else
+          hour == 12 ? 12 : hour + 12
+        end
+
+        year = Time.current.utc.year
+        reset_time = Time.utc(year, month, day, hour, minute, 0)
+        reset_time = Time.utc(year + 1, month, day, hour, minute, 0) if reset_time <= Time.current.utc
         reset_time
       else
         1.hour.from_now
