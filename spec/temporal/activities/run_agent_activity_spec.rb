@@ -544,6 +544,78 @@ RSpec.describe Activities::RunAgentActivity do
       end
     end
 
+    context "when the run is cancelled by dev:cleanup mid-execution" do
+      before do
+        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        # Simulate dev:cleanup force-timing-out the run from a *different*
+        # process while the container call is in flight. We mutate via
+        # `update_columns` so the in-memory `agent_run` instance held by the
+        # activity stays stale — only the `reload` inside `cancelled_by_cleanup?`
+        # will surface the cleanup mark, which is what happens in production
+        # where the rake task and the Temporal worker are separate processes.
+        allow(container_service).to receive(:execute) do
+          AgentRun.where(id: agent_run.id).update_all(
+            status: "timeout",
+            error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}: process was restarted",
+            completed_at: Time.current
+          )
+          exec_failure
+        end
+      end
+
+      it "does not increment the provider circuit-breaker failure_count" do
+        state = user.provider_states.create!(provider_name: "claude", failure_count: 0, circuit_state: "closed")
+
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # Expected: AllProvidersExhausted is still raised (the run is dead),
+          # but the breaker must remain untouched.
+        end
+
+        expect(state.reload.failure_count).to eq(0)
+        expect(state.circuit_state).to eq("closed")
+      end
+
+      it "records the provider attempt as cancelled_by_cleanup" do
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+
+        attempts = agent_run.reload.providers_attempted
+        expect(attempts.last["error_type"]).to eq("cancelled_by_cleanup")
+        expect(attempts.last["success"]).to be false
+      end
+
+      it "preserves the cleanup error_message and timeout status on the run" do
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+
+        agent_run.reload
+        expect(agent_run.status).to eq("timeout")
+        expect(agent_run.error_message).to start_with(AgentRun::STALE_CLEANUP_ERROR_PREFIX)
+      end
+
+      it "stops iterating providers instead of attempting fallbacks" do
+        user.settings.update!(fallback_enabled: true)
+
+        begin
+          activity.execute(agent_run_id: agent_run.id)
+        rescue Temporalio::Error::ApplicationError
+          # expected
+        end
+
+        # Exactly one provider attempt should be recorded (the one that was
+        # mid-flight when cleanup struck) — not one per configured fallback.
+        expect(agent_run.reload.providers_attempted.size).to eq(1)
+      end
+    end
+
     context "when agent hits rate limit (single provider)" do
       let(:rate_limit_output) do
         Containers::Provision::Result.failure(

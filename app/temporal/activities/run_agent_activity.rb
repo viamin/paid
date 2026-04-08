@@ -248,12 +248,20 @@ module Activities
           rescue ProviderTimeoutError => e
             last_error = "timeout"
             timeout_error ||= e.message
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              break
+            end
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "timeout")
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
             break
           rescue ProviderExecutionError => e
             last_error = "error"
+            if cancelled_by_cleanup?(agent_run)
+              record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, e)
+              break
+            end
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "error")
             logger.warn(message: "agent_execution.provider_failed", provider: provider, agent_run_id: agent_run.id, error: e.message)
@@ -404,6 +412,31 @@ module Activities
     def record_provider_failure(user_settings, provider_state_name, provider_states)
       state = provider_state_for(user_settings, provider_state_name, provider_states)
       state.record_failure!(threshold: user_settings.circuit_breaker_failure_threshold)
+    end
+
+    # True when the agent run we're executing has already been force-timed-out
+    # by `dev:cleanup` (e.g. `bin/setup --skip-server` killed our container).
+    # In that case the failure we just rescued was caused by the cleanup, not
+    # by the provider, so we must not penalize the provider's circuit breaker.
+    def cancelled_by_cleanup?(agent_run)
+      agent_run.reload
+      agent_run.cancelled_by_cleanup?
+    rescue ActiveRecord::RecordNotFound
+      false
+    end
+
+    # Mirror of the failed-attempt bookkeeping for the cleanup-cancelled case:
+    # records the attempt with a distinct error_type so the UI can show what
+    # happened, but skips both record_provider_failure and the standard warn
+    # log (which would imply a real provider problem).
+    def record_cleanup_cancelled_attempt(agent_run, attempt_label, provider, error)
+      agent_run.record_provider_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup")
+      logger.info(
+        message: "agent_execution.cancelled_by_cleanup",
+        provider: provider,
+        agent_run_id: agent_run.id,
+        error: error.message
+      )
     end
 
     # Returns the canonical settings-level provider name for a given agent type.
