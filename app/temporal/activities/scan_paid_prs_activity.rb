@@ -124,10 +124,12 @@ module Activities
         end
       end
 
-      # review_bot_review_pending is non-blocking: it requests a review but
-      # should not prevent evaluation of CI, comments, or changes_requested.
-      pending_triggers = (review_bot_triggers || []).select { |t| t[:type] == "review_bot_review_pending" }
-      blocking_triggers = (review_bot_triggers || []).reject { |t| t[:type] == "review_bot_review_pending" }
+      # review_bot_review_pending and paid_agent_review_pending are
+      # non-blocking: they request a review but should not prevent evaluation
+      # of CI, comments, or changes_requested.
+      review_pending_types = %w[review_bot_review_pending paid_agent_review_pending].freeze
+      pending_triggers = (review_bot_triggers || []).select { |t| review_pending_types.include?(t[:type]) }
+      blocking_triggers = (review_bot_triggers || []).reject { |t| review_pending_types.include?(t[:type]) }
       all_triggers = blocking_triggers + (human_triggers || [])
 
       # Only fetch PR data and check runs if blocking review triggers aren't enough.
@@ -525,6 +527,8 @@ module Activities
         login = project && review_bot_request_login(project)
         if login
           [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
+        elsif project&.review_method_enabled?("paid_agent")
+          check_paid_agent_review_status(project, issue)
         else
           []
         end
@@ -569,6 +573,44 @@ module Activities
       when :unknown
         review_bot_thread_triggers(unresolved_threads)
       end
+    end
+
+    # Checks whether a paid_agent review-goal run is needed for this PR.
+    # Returns a paid_agent_review_pending trigger when no completed review-goal
+    # run exists and the max_review_rounds limit has not been reached. Returns
+    # an empty array when the review is already satisfied or the limit is hit.
+    def check_paid_agent_review_status(project, issue)
+      return [] unless issue
+
+      pr_number = issue.github_number
+      review_runs = project.agent_runs.where(
+        source_pull_request_number: pr_number,
+        goal: "review"
+      )
+
+      # A review-goal run is already queued or running — no new trigger needed.
+      return [] if review_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
+
+      completed_count = review_runs.where(status: "completed").count
+      max_rounds = project.review_method_config("paid_agent")
+        .dig("termination", "max_review_rounds")
+
+      if max_rounds.present? && completed_count >= max_rounds.to_i
+        return []
+      end
+
+      # Check whether the most recent completed review-goal run was posted
+      # after the last create_pr run. If so, the review is already up to date.
+      last_review_run = review_runs.where(status: "completed")
+        .order(completed_at: :desc).first
+      last_create_run = last_completed_run(project, issue)
+
+      if last_review_run && last_create_run &&
+          last_review_run.completed_at >= last_create_run.completed_at
+        return []
+      end
+
+      [ { type: "paid_agent_review_pending", details: "No paid_agent review found for PR" } ]
     end
 
     def body_only_review_bot?(login)
