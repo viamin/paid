@@ -234,6 +234,12 @@ RSpec.describe Project do
         project = build(:project, priority_labels: { "P1" => "critical", "P2" => "high", "P3" => "low" })
         expect(project).to be_valid
       end
+
+      it "trims surrounding whitespace from values on save" do
+        project = build(:project, priority_labels: { "P1" => "  critical  ", "P2" => "high", "P3" => "low" })
+        expect(project).to be_valid
+        expect(project.priority_labels["P1"]).to eq("critical")
+      end
     end
 
     describe "#project_level_max_tokens_per_run" do
