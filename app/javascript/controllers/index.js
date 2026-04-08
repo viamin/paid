@@ -37,6 +37,9 @@ application.register("local-time", LocalTimeController)
 import MobileMenuController from "./mobile_menu_controller"
 application.register("mobile-menu", MobileMenuController)
 
+import NotificationDropdownController from "./notification_dropdown_controller"
+application.register("notification-dropdown", NotificationDropdownController)
+
 import ProviderFormController from "./provider_form_controller"
 application.register("provider-form", ProviderFormController)
 

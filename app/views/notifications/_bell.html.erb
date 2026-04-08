@@ -1,0 +1,42 @@
+<div id="notification_bell" data-controller="notification-dropdown" class="relative">
+  <button type="button" data-action="notification-dropdown#toggle" class="relative rounded-full p-1 text-gray-500 hover:text-gray-700 focus:outline-none">
+    <span class="sr-only">View notifications</span>
+    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+    </svg>
+    <% unread_count = account.notifications.active.unread.count %>
+    <% if unread_count > 0 %>
+      <span class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+        <%= unread_count > 99 ? "99+" : unread_count %>
+      </span>
+    <% end %>
+  </button>
+
+  <div data-notification-dropdown-target="menu" class="hidden absolute right-0 z-50 mt-2 w-80 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5">
+    <div class="p-3 border-b border-gray-100">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-gray-900">Notifications</h3>
+        <% if unread_count > 0 %>
+          <%= button_to "Mark all read", mark_all_read_notifications_path, method: :post, class: "text-xs text-indigo-600 hover:text-indigo-800", form: { data: { turbo_stream: true } } %>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="max-h-96 overflow-y-auto divide-y divide-gray-100">
+      <% recent_notifications = account.notifications.active.unread.recent.limit(10) %>
+      <% if recent_notifications.any? %>
+        <% recent_notifications.each do |notification| %>
+          <%= render "notifications/dropdown_item", notification: notification %>
+        <% end %>
+      <% else %>
+        <div class="px-4 py-6 text-center text-sm text-gray-500">
+          No unread notifications
+        </div>
+      <% end %>
+    </div>
+
+    <div class="border-t border-gray-100 p-2">
+      <%= link_to "See all", notifications_path, class: "block rounded-md px-3 py-2 text-center text-sm font-medium text-indigo-600 hover:bg-gray-50" %>
+    </div>
+  </div>
+</div>
