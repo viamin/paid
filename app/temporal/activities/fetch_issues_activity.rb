@@ -116,7 +116,7 @@ module Activities
           # from one that exactly fills DEFAULT_MAX_PAGES * DEFAULT_PER_PAGE.
           # Without this check a false truncation prevents the watermark from
           # ever advancing, causing the same window to be re-fetched indefinitely.
-          probe_opts = opts.merge(page: page, per_page: 1)
+          probe_opts = opts.merge(page: page)
           if client.issues(repo_full_name, **probe_opts).any?
             truncated = true
             logger.warn(
