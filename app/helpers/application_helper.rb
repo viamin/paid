@@ -36,11 +36,11 @@ module ApplicationHelper
   end
 
   AGENT_RUN_PRIORITY_STYLES = {
-    p1: { bg: "bg-red-100", text: "text-red-700" },
+    label_p1: { bg: "bg-red-100", text: "text-red-700" },
     manual: { bg: "bg-sky-100", text: "text-sky-700" },
-    p2: { bg: "bg-orange-100", text: "text-orange-700" },
+    label_p2: { bg: "bg-orange-100", text: "text-orange-700" },
     auto_continue: { bg: "bg-violet-100", text: "text-violet-700" },
-    p3: { bg: "bg-yellow-100", text: "text-yellow-700" },
+    label_p3: { bg: "bg-amber-100", text: "text-amber-700" },
     auto_pick: { bg: "bg-teal-100", text: "text-teal-700" },
     unknown: { bg: "bg-gray-100", text: "text-gray-600" }
   }.freeze
