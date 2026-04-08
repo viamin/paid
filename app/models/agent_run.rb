@@ -269,10 +269,8 @@ class AgentRun < ApplicationRecord
 
     label_sources = []
     label_sources << issue.labels if issue&.labels.present?
-    if source_pull_request_number.present?
-      pr_record = project.issues.find_by(github_number: source_pull_request_number, is_pull_request: true)
-      label_sources << pr_record.labels if pr_record&.labels.present?
-    end
+    pr_record = source_pull_request_record
+    label_sources << pr_record.labels if pr_record&.labels.present?
     return nil if label_sources.empty?
 
     Project::PRIORITY_TIERS.find do |tier|
@@ -282,6 +280,42 @@ class AgentRun < ApplicationRecord
     end
   end
   private :compute_label_priority_tier
+
+  attr_writer :source_pull_request_record
+
+  # The Issue row representing this run's source pull request, used by
+  # label_priority_tier. Falls back to a per-row find_by, but callers
+  # rendering many runs should call AgentRun.preload_source_pull_requests
+  # first to avoid an N+1.
+  def source_pull_request_record
+    return @source_pull_request_record if defined?(@source_pull_request_record)
+    return nil if source_pull_request_number.blank? || project.nil?
+
+    @source_pull_request_record = project.issues.find_by(
+      github_number: source_pull_request_number, is_pull_request: true
+    )
+  end
+
+  # Batch-loads source PR Issue rows for a collection of runs and stashes
+  # each on the run via source_pull_request_record=. Call from views/
+  # helpers that render priority badges for many runs to keep
+  # label_priority_tier from issuing one query per row.
+  def self.preload_source_pull_requests(runs)
+    targets = Array(runs).select do |r|
+      r.source_pull_request_number.present? && r.project_id.present? &&
+        !r.instance_variable_defined?(:@source_pull_request_record)
+    end
+    return if targets.empty?
+
+    project_ids = targets.map(&:project_id).uniq
+    pr_numbers = targets.map(&:source_pull_request_number).uniq
+    records = Issue.where(is_pull_request: true, project_id: project_ids, github_number: pr_numbers)
+      .index_by { |i| [ i.project_id, i.github_number ] }
+
+    targets.each do |run|
+      run.source_pull_request_record = records[[ run.project_id, run.source_pull_request_number ]]
+    end
+  end
 
   def queue_priority_label
     priority = QUEUE_PRIORITIES.fetch(queue_priority_tier) { UNKNOWN_PRIORITY }

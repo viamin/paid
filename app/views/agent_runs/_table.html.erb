@@ -1,5 +1,6 @@
 <div id="<%= dom_id(project, :agent_runs_list) %>">
   <% agent_runs = agent_runs.to_a %>
+  <% AgentRun.preload_source_pull_requests(agent_runs) %>
   <% if agent_runs.any? %>
     <div class="mt-4 flow-root">
       <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">

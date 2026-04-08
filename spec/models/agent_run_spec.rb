@@ -1423,6 +1423,39 @@ RSpec.describe AgentRun do
       expect(run.queue_priority_tier).to eq(:label_p1)
       _ = pr_record
     end
+
+    describe ".preload_source_pull_requests" do
+      it "stashes the matching PR Issue row on each run with one query" do
+        pr_a = create(:issue, project: project, github_number: 101, is_pull_request: true, labels: [ "critical" ])
+        pr_b = create(:issue, project: project, github_number: 102, is_pull_request: true, labels: [ "high" ])
+        run_a = create(:agent_run, :queued, project: project, trigger_type: "automatic", source_pull_request_number: 101)
+        run_b = create(:agent_run, :queued, project: project, trigger_type: "automatic", source_pull_request_number: 102)
+        run_none = create(:agent_run, :queued, project: project, trigger_type: "manual")
+
+        runs = [ run_a, run_b, run_none ]
+        query_count = 0
+        counter = ->(_, _, _, _, payload) {
+          query_count += 1 unless payload[:name] == "SCHEMA" || payload[:sql] =~ /^(BEGIN|COMMIT|ROLLBACK)/
+        }
+        ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+          described_class.preload_source_pull_requests(runs)
+        end
+
+        expect(query_count).to eq(1)
+        expect(run_a.source_pull_request_record).to eq(pr_a)
+        expect(run_b.source_pull_request_record).to eq(pr_b)
+        expect(run_none.source_pull_request_record).to be_nil
+      end
+
+      it "does not re-query for runs that already have a memoized record" do
+        pr = create(:issue, project: project, github_number: 200, is_pull_request: true, labels: [ "critical" ])
+        run = create(:agent_run, :queued, project: project, trigger_type: "automatic", source_pull_request_number: 200)
+        run.source_pull_request_record = pr
+
+        expect(Issue).not_to receive(:where)
+        described_class.preload_source_pull_requests([ run ])
+      end
+    end
   end
 
   describe "constants" do
