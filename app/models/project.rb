@@ -2,6 +2,8 @@
 
 class Project < ApplicationRecord
   MERGE_METHODS = %w[squash merge rebase].freeze
+  PRIORITY_TIERS = %w[P1 P2 P3].freeze
+  DEFAULT_PRIORITY_LABELS = { "P1" => "P1", "P2" => "P2", "P3" => "P3" }.freeze
   KNOWLEDGE_STATUSES = %w[pending collecting ready failed stale].freeze
   # "none" is not a method — it is represented by enabled: false at the top level
   REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
@@ -131,6 +133,7 @@ class Project < ApplicationRecord
   validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
   validate :review_settings_valid
+  validate :priority_labels_valid
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -392,6 +395,10 @@ class Project < ApplicationRecord
     )
   end
 
+  def effective_priority_labels
+    DEFAULT_PRIORITY_LABELS.merge(priority_labels.select { |_, v| v.present? })
+  end
+
   def review_settings=(value)
     @effective_review_settings = nil
     super
@@ -606,6 +613,24 @@ class Project < ApplicationRecord
     return if has_any_condition
 
     errors.add(:review_settings, "#{method_name} must have at least one termination condition configured")
+  end
+
+  def priority_labels_valid
+    unless priority_labels.is_a?(Hash)
+      errors.add(:priority_labels, "must be a JSON object")
+      return
+    end
+
+    unknown_keys = priority_labels.keys - PRIORITY_TIERS
+    if unknown_keys.any?
+      errors.add(:priority_labels, "contains unknown keys: #{unknown_keys.join(', ')}")
+    end
+
+    priority_labels.each do |key, value|
+      if value.present? && !value.is_a?(String)
+        errors.add(:priority_labels, "#{key} must be a string")
+      end
+    end
   end
 
   def normalize_agent_co_author_trailer

@@ -897,6 +897,33 @@ RSpec.describe "Projects" do
         end
       end
 
+      context "with priority_labels params" do
+        it "updates priority label names" do
+          project = create(:project, account: account, github_token: github_token)
+          patch project_path(project), params: {
+            project: { priority_labels: { P1: "urgent", P2: "normal", P3: "low" } }
+          }
+          expect(project.reload.priority_labels).to eq("P1" => "urgent", "P2" => "normal", "P3" => "low")
+          expect(response).to redirect_to(project_path(project))
+        end
+
+        it "allows partial updates to priority labels" do
+          project = create(:project, account: account, github_token: github_token)
+          patch project_path(project), params: {
+            project: { priority_labels: { P1: "critical", P2: "", P3: "" } }
+          }
+          expect(project.reload.priority_labels).to eq("P1" => "critical", "P2" => "", "P3" => "")
+        end
+
+        it "rejects unknown priority keys via model validation" do
+          project = create(:project, account: account, github_token: github_token)
+          # Manually assign invalid key to bypass strong params filtering
+          project.priority_labels = { "P1" => "ok", "P4" => "bad" }
+          expect(project).not_to be_valid
+          expect(project.errors[:priority_labels].join).to include("unknown keys")
+        end
+      end
+
       context "with review_settings params" do
         let(:project) { create(:project, account: account, github_token: github_token) }
 

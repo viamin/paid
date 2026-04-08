@@ -396,6 +396,25 @@
               </div>
               <p class="mt-1 text-xs text-gray-500">Label that triggers automatic agent runs when added to issues or PRs.</p>
             </div>
+
+            <fieldset class="space-y-4 mt-4 pl-4 border-l-2 border-gray-200">
+              <legend class="text-sm font-medium leading-6 text-gray-900">Priority Labels</legend>
+              <p class="text-xs text-gray-500">Map each priority tier to a GitHub label name. Leave blank to use the default (P1, P2, P3).</p>
+
+              <% %w[P1 P2 P3].each do |tier| %>
+                <div>
+                  <%= form.label "priority_labels_#{tier}", tier, class: "block text-sm font-medium leading-6 text-gray-900" %>
+                  <div class="mt-2">
+                    <%= form.text_field "priority_labels[#{tier}]",
+                      value: @project.priority_labels[tier],
+                      placeholder: tier,
+                      id: "project_priority_labels_#{tier}",
+                      name: "project[priority_labels][#{tier}]",
+                      class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+                  </div>
+                </div>
+              <% end %>
+            </fieldset>
           </fieldset>
 
           <fieldset id="automation" class="space-y-4">
