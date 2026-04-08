@@ -13,6 +13,17 @@ RSpec.describe Notification do
     it { is_expected.to validate_presence_of(:source) }
     it { is_expected.to validate_presence_of(:title) }
 
+    it "validates nav_section inclusion" do
+      notification = build(:notification, nav_section: "projects")
+      expect(notification).to be_valid
+
+      notification.nav_section = nil
+      expect(notification).to be_valid
+
+      notification.nav_section = "invalid_section"
+      expect(notification).not_to be_valid
+    end
+
     it "validates severity inclusion" do
       notification = build(:notification, severity: :info)
       expect(notification).to be_valid
