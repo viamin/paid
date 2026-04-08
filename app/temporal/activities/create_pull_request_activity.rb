@@ -103,11 +103,16 @@ module Activities
     end
 
     def add_pr_labels(client, project, pr_number, agent_run_id, issue: nil)
-      return unless project.auto_add_labels_enabled?
-
-      labels = [ project.generated_label_name, project.automation_label_name ]
+      labels = []
+      if project.auto_add_labels_enabled?
+        labels << project.generated_label_name
+        labels << project.automation_label_name
+      end
       labels.concat(inherited_priority_labels(project, issue))
-      client.add_labels_to_issue(project.full_name, pr_number, labels.uniq)
+      labels.uniq!
+      return if labels.empty?
+
+      client.add_labels_to_issue(project.full_name, pr_number, labels)
     rescue GithubClient::Error => e
       logger.warn(
         message: "agent_execution.add_pr_labels_failed",
