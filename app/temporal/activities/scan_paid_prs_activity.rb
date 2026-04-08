@@ -644,14 +644,8 @@ module Activities
     end
 
     def check_conversation_comments(client, project, issue, last_run)
-      # recent_issue_comments returns the most recent page (up to 100) of
-      # comments via GithubClient's Link: last follow-up — see the note on
-      # that helper for why we cannot rely on sort/direction params. Within
-      # the returned page, GitHub's /issues/:n/comments endpoint lists
-      # comments in ascending order by id, so we cannot short-circuit on
-      # the first older-than-cutoff comment — we must scan the whole page.
-      comments = client.recent_issue_comments(project.full_name, issue.github_number)
       cutoff = last_run&.completed_at
+      comments = fetch_conversation_comments(client, project, issue, cutoff)
 
       relevant = comments.select do |c|
         login = c.user&.login
@@ -670,6 +664,21 @@ module Activities
     rescue GithubClient::Error => e
       log_signal_error("conversation_comments", project, issue, e)
       []
+    end
+
+    # Fetches conversation comments, preferring the lightweight single-page
+    # recent_issue_comments call. Falls back to full auto-paginated
+    # issue_comments when the cutoff window extends beyond the returned page
+    # (i.e., every comment on the page is newer than the cutoff, meaning
+    # older post-cutoff comments may exist on earlier pages).
+    def fetch_conversation_comments(client, project, issue, cutoff)
+      comments = client.recent_issue_comments(project.full_name, issue.github_number)
+
+      if cutoff && comments.size >= 100 && comments.all? { |c| c.created_at.nil? || c.created_at > cutoff }
+        client.issue_comments(project.full_name, issue.github_number)
+      else
+        comments
+      end
     end
 
     def fetch_reviews(client, project, issue)

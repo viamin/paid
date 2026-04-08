@@ -351,6 +351,51 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when cutoff window exceeds the recent comments page" do
+      # When the last page has 100+ comments all newer than the cutoff,
+      # earlier post-cutoff comments may exist on previous pages. The
+      # scanner should fall back to full pagination to avoid missing them.
+      let(:recent_page) do
+        Array.new(100) do |i|
+          OpenStruct.new(
+            user: OpenStruct.new(login: "bot-user"),
+            body: "Automated update ##{i}",
+            created_at: (50 - (i / 2)).minutes.ago
+          )
+        end
+      end
+      let(:human_comment) do
+        OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "Please also address the logging around the parser fallback path",
+          created_at: 55.minutes.ago
+        )
+      end
+
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        # recent_issue_comments returns only the last page (all newer than cutoff).
+        # issue_comments (full pagination) includes the human comment on an earlier page.
+        stub_github_for_pr(
+          recent_issue_comments: recent_page,
+          issue_comments: [ human_comment ] + recent_page
+        )
+      end
+
+      it "falls back to full pagination and detects the earlier comment" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("conversation_comments")
+      end
+    end
+
     context "when the new comment is a paid agent update" do
       let(:comment) do
         OpenStruct.new(
@@ -2225,6 +2270,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:recent_issue_comments)
       .with(project.full_name, 42)
       .and_return(recent_issue_comments || issue_comments)
+    allow(github_client).to receive(:issue_comments)
+      .with(project.full_name, 42)
+      .and_return(issue_comments)
     allow(github_client).to receive(:pull_request_reviews)
       .with(project.full_name, 42)
       .and_return(reviews)
