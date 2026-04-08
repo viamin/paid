@@ -94,9 +94,14 @@ module Activities
     end
 
     def record_draft_review_round_if_needed(agent_run)
+      # Defensive: ensure we see the latest tracking columns in case they
+      # were updated by a concurrent QueueAgentRunActivity merge.
       agent_run.reload
 
       unless agent_run.count_toward_draft_review_round?
+        # Defensive data-patch only: marks legacy in-flight runs so the
+        # tracking columns are consistent, but the terminal-status guard
+        # below means this will never actually increment draft_review_count.
         apply_legacy_draft_followup_fallback!(agent_run)
       end
       return unless agent_run.count_toward_draft_review_round?
