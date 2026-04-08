@@ -12,7 +12,7 @@ FactoryBot.define do
     container_memory_bytes { 4 * 1024 * 1024 * 1024 }
     max_concurrent_runs { 2 }
     max_parallel_agents_per_project { 3 }
-    container_timeout_seconds { 1800 }
+    container_timeout_seconds { 3600 }
     default_allowed_github_usernames { [] }
     default_branch { "main" }
     default_project_active { true }

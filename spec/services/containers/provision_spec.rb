@@ -64,8 +64,8 @@ RSpec.describe Containers::Provision do
       expect(described_class::DEFAULTS[:pids_limit]).to eq(500)
     end
 
-    it "defines default timeout of 30 minutes" do
-      expect(described_class::DEFAULTS[:timeout_seconds]).to eq(1800)
+    it "defines default timeout of 1 hour" do
+      expect(described_class::DEFAULTS[:timeout_seconds]).to eq(3600)
     end
 
     it "defines default image name" do
