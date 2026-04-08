@@ -523,6 +523,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when only a review-goal agent run is active" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        create(:agent_run, :running,
+          project: project, source_pull_request_number: 42, goal: "review")
+        stub_github_for_pr(reviews: [])
+      end
+
+      it "does not skip the PR" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).not_to be_empty
+      end
+    end
+
     context "when followup limit is reached" do
       before do
         create(:issue, :pull_request,
