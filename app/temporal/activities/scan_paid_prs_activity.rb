@@ -558,11 +558,23 @@ module Activities
               { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
               { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
             ]
+          elsif body_only_review_bot?(latest&.dig(:user_login)) &&
+              !review_diff_touches_reviewed_files?(client, project, issue, latest)
+            # Body-only bot whose review pre-dates the last agent run
+            # (timestamp guard passed), but the interceding diff did not
+            # touch any file mentioned in the review's inline comments.
+            # Treat as still-unaddressed to prevent unrelated changes
+            # (e.g. a CI schema fix) from clearing review findings.
+            [
+              { type: "review_bot_review_pending", details: "Latest review bot review was not clean" },
+              { type: "review_bot_comments", details: "Latest review bot review generated comments (body-only)" }
+            ]
           else
             # Thread-based bot with all bot threads resolved, or body-only
-            # review already addressed by a subsequent agent run. Treat as
-            # effectively clean to avoid re-requesting reviews that would
-            # produce no new comments.
+            # review already addressed by a subsequent agent run whose diff
+            # touches at least one reviewed file. Treat as effectively clean
+            # to avoid re-requesting reviews that would produce no new
+            # comments.
             []
           end
         end
@@ -629,6 +641,39 @@ module Activities
       return true if cutoff.nil?
 
       submitted_at > cutoff
+    end
+
+    # Returns true when the diff between the review's commit and the PR
+    # HEAD touches at least one file mentioned in the review's inline
+    # comments. Falls back to true (assumes addressed) when inline
+    # comments have no file paths or the comparison cannot be fetched.
+    def review_diff_touches_reviewed_files?(client, project, issue, review)
+      return true if client.nil? || project.nil? || issue.nil?
+
+      review_id = review[:id]
+      reviewed_commit = review[:commit_id]
+      return true if review_id.nil? || reviewed_commit.nil?
+
+      comments = client.pull_request_review_comments(
+        project.full_name, issue.github_number
+      )
+      reviewed_paths = comments
+        .select { |c| c[:pull_request_review_id] == review_id }
+        .filter_map { |c| c[:path] }
+        .to_set
+      return true if reviewed_paths.empty?
+
+      pr_data = client.pull_request(project.full_name, issue.github_number)
+      head_sha = pr_data&.head&.sha
+      return true if head_sha.nil? || head_sha == reviewed_commit
+
+      changed_files = client.compare_changed_files(
+        project.full_name, reviewed_commit, head_sha
+      )
+      changed_files.any? { |f| reviewed_paths.include?(f) }
+    rescue GithubClient::Error => e
+      log_signal_error("review_diff_check", project, issue, e)
+      true
     end
 
     def review_bot_thread_triggers(unresolved_threads)
