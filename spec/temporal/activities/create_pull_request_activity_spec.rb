@@ -328,6 +328,44 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
     end
 
+    context "when agent summary references own issue via external qualified ref with matching number" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue
+        # The summary references an external repo whose issue number matches the
+        # current issue — this should NOT suppress mismatch detection for cross_refs.
+        agent_run.log!("stdout", "See rails/rails##{issue.github_number} and also ##{other_issue.github_number}")
+      end
+
+      it "does not treat external qualified ref as own-issue mention and detects cross-ref mismatch" do
+        allow(Rails).to receive(:logger).and_return(Rails.logger)
+        expect(Rails.logger).to receive(:warn).with(hash_including(
+          message: "agent_execution.summary_scope_mismatch",
+          agent_run_id: agent_run.id,
+          issue_number: issue.github_number,
+          cross_referenced_issues: [ other_issue.github_number ]
+        )).and_call_original
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
+    context "when agent summary uses differently-cased qualified ref for own repo" do
+      before do
+        create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
+        agent_run.log!("stdout", "Fixed #{project.full_name.upcase}##{issue.github_number} by updating the scanner")
+      end
+
+      it "does not log a scope mismatch warning (case-insensitive match)" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+    end
+
     context "when agent summary correctly references its own issue" do
       before do
         create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
