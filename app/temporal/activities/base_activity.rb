@@ -124,7 +124,12 @@ module Activities
       return unless agent_run.issue&.draft_phase?
       return unless agent_run.source_pull_request_number.present?
       return unless agent_run.trigger_type == "automatic"
-      return unless %w[completed failed cancelled timeout].include?(agent_run.status)
+      # Exclude completed runs: legacy draft followups in completed state were
+      # already counted at trigger time by the unpatched RecordDraftReviewActivity
+      # call. Including them here would set expected_draft_review_count to the
+      # already-incremented counter, passing the idempotency guard and overcounting
+      # on completion-activity retries/replays.
+      return unless %w[failed cancelled timeout].include?(agent_run.status)
 
       expected_count = agent_run.issue.draft_review_count
       return if expected_count.blank?
