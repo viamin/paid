@@ -477,6 +477,7 @@ class Project < ApplicationRecord
     return nil unless review_enabled?
     return Activities::RequestReviewActivity::COPILOT_LOGIN if review_method_enabled?("copilot")
     return Activities::RequestReviewActivity::CODEX_LOGIN if review_method_enabled?("codex")
+    return Activities::RequestReviewActivity::PAID_AGENT_LOGIN if review_method_enabled?("paid_agent")
 
     nil
   end

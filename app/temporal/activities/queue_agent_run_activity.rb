@@ -11,6 +11,7 @@ module Activities
       requested_agent_type = input[:agent_type]
       provider_id = input[:provider_id]
       source_pull_request_number = input[:source_pull_request_number]
+      goal = input[:goal]
 
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
@@ -31,7 +32,7 @@ module Activities
         if existing
           [ existing, true ]
         else
-          run = AgentRun.create!(
+          attrs = {
             project: project,
             issue: issue,
             provider_id: provider_id,
@@ -39,7 +40,9 @@ module Activities
             custom_prompt: custom_prompt,
             source_pull_request_number: source_pull_request_number,
             status: "queued"
-          )
+          }
+          attrs[:goal] = goal if goal.present?
+          run = AgentRun.create!(**attrs)
           [ run, false ]
         end
       rescue ActiveRecord::RecordNotUnique

@@ -194,6 +194,10 @@ module ProviderSupport
     "codex" => %w[
       chatgpt-codex-connector
       chatgpt-codex-connector[bot]
+    ].freeze,
+    "paid_agent" => %w[
+      paid-agent
+      paid-agent[bot]
     ].freeze
   }.freeze
 

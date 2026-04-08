@@ -242,7 +242,12 @@ module Workflows
         pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
         login = pending_trigger&.dig(:request_login)
 
-        if login
+        if login == Activities::RequestReviewActivity::PAID_AGENT_LOGIN
+          # paid_agent reviews are Paid-internal agent runs, not external bot
+          # requests. Start a review-goal agent run so the agent posts its
+          # review via the GitHub API proxy under the paid-agent bot identity.
+          start_review_goal_workflow(project_id, pr_data)
+        elsif login
           request_review(project_id, pr_data[:pr_number],
             [ login ],
             log_key: "pr_review.request_review_bot_review_failed")
@@ -327,6 +332,13 @@ module Workflows
         { project_id: project_id, issue_id: issue_id,
           source_pull_request_number: pr_number }, timeout: 30)
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
+    end
+
+    def start_review_goal_workflow(project_id, pr_data)
+      run_activity(Activities::QueueAgentRunActivity,
+        { project_id: project_id, issue_id: pr_data[:issue_id],
+          source_pull_request_number: pr_data[:pr_number],
+          goal: "review" }, timeout: 30)
     end
   end
 end

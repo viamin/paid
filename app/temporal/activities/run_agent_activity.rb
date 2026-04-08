@@ -1043,6 +1043,11 @@ module Activities
         endpoint. This is how your review is tracked as complete. Standalone PR comments
         via `/issues/#{pr_number}/comments` are optional and do NOT satisfy the review requirement.
 
+        CLEAN SIGNAL: If you find NO issues requiring action, include the following marker
+        in your review body so the automation system can detect a clean review:
+        <!-- paid-review-signal: clean -->
+        Example clean review body: "Looks good! No issues found.\\n<!-- paid-review-signal: clean -->"
+
         Available endpoints:
         - GET  $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number} — get PR details
         - GET  $GITHUB_API_URL/repos/#{repo}/pulls/#{pr_number}/files — list changed files

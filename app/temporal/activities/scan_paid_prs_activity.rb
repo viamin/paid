@@ -20,7 +20,7 @@ module Activities
 
     MIN_COMMENT_LENGTH = 20
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
-    REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
+    REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments|<!-- paid-review-signal: clean -->/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
     # an *issue comment* — not a review — with text like
     # "Codex Review: Didn't find any major issues. Bravo." Match the
