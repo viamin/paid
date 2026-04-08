@@ -1559,9 +1559,11 @@ RSpec.describe GithubClient do
                 repository: {
                   pullRequest: {
                     comments: {
+                      pageInfo: { hasNextPage: false },
                       nodes: [
                         {
                           comments: {
+                            pageInfo: { hasNextPage: false },
                             nodes: [
                               {
                                 databaseId: 101,
@@ -1622,9 +1624,11 @@ RSpec.describe GithubClient do
                 repository: {
                   pullRequest: {
                     comments: {
+                      pageInfo: { hasNextPage: false },
                       nodes: [
                         {
                           comments: {
+                            pageInfo: { hasNextPage: false },
                             nodes: [
                               {
                                 databaseId: 202,
@@ -1665,6 +1669,57 @@ RSpec.describe GithubClient do
       end
     end
 
+    context "when review threads are truncated" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    comments: {
+                      pageInfo: { hasNextPage: true },
+                      nodes: [
+                        {
+                          comments: {
+                            pageInfo: { hasNextPage: true },
+                            nodes: [
+                              {
+                                databaseId: 401,
+                                reactions: {
+                                  pageInfo: { hasNextPage: false },
+                                  nodes: [
+                                    { user: { login: "alice" }, content: "THUMBS_UP", createdAt: "2024-01-01T00:00:00Z" }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "logs warnings for truncated threads and comments" do
+        expect(Rails.logger).to receive(:warn).with(hash_including(
+          message: "github_client.review_threads_truncated"
+        ))
+        expect(Rails.logger).to receive(:warn).with(hash_including(
+          message: "github_client.review_thread_comments_truncated"
+        ))
+
+        result = client.review_comment_reactions_batch(repo, 1)
+        expect(result.size).to eq(1)
+      end
+    end
+
     context "when REST fallback fails for one comment but others succeed" do
       before do
         stub_request(:post, "#{api_base}/graphql")
@@ -1675,9 +1730,11 @@ RSpec.describe GithubClient do
                 repository: {
                   pullRequest: {
                     comments: {
+                      pageInfo: { hasNextPage: false },
                       nodes: [
                         {
                           comments: {
+                            pageInfo: { hasNextPage: false },
                             nodes: [
                               {
                                 databaseId: 301,
