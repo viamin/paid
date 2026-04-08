@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_07_072915) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_07_230341) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -151,7 +151,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_072915) do
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "container_retained_until"
     t.integer "cost_cents", default: 0
-    t.boolean "count_toward_draft_review_round", default: false, null: false
     t.datetime "created_at", null: false
     t.integer "created_issue_number"
     t.string "created_issue_url", limit: 500
@@ -160,7 +159,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_072915) do
     t.string "diagnosis_status", limit: 50
     t.integer "duration_seconds"
     t.text "error_message"
-    t.integer "expected_draft_review_count"
     t.string "final_provider", limit: 50
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
@@ -748,7 +746,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_072915) do
     t.datetime "last_issue_sync_at"
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
-    t.integer "max_execution_seconds", default: 1800, null: false
+    t.integer "max_execution_seconds", default: 3600, null: false
     t.integer "max_pr_followup_runs", default: 8, null: false
     t.integer "max_tokens_per_run"
     t.string "merge_method", default: "squash", null: false
@@ -963,7 +961,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_072915) do
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
-    t.integer "container_timeout_seconds", default: 1800, null: false
+    t.integer "container_timeout_seconds", default: 3600, null: false
     t.datetime "created_at", null: false
     t.string "default_agent_provider", default: "claude", null: false
     t.jsonb "default_allowed_github_usernames", default: [], null: false
