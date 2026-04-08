@@ -211,7 +211,8 @@ class ProjectsController < ApplicationController
           copilot: [ :enabled, termination_permit ],
           paid_agent: [ :enabled, termination_permit ],
           ci_action: [ :enabled, :action_name, termination_permit ],
-          manual: [ :enabled, termination_permit ]
+          manual: [ :enabled, termination_permit ],
+          codex: [ :enabled, termination_permit ]
         } }
       ]
     ).dig(:review_settings)

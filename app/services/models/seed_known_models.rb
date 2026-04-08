@@ -21,7 +21,8 @@ module Models
         supports_vision: true,
         supports_tools: true,
         supports_json_output: true,
-        capability_score: 9.0
+        capability_score: 9.0,
+        tier: "mid"
       },
       {
         model_id: "claude-opus-4-6",
@@ -36,7 +37,8 @@ module Models
         supports_vision: true,
         supports_tools: true,
         supports_json_output: true,
-        capability_score: 10.0
+        capability_score: 10.0,
+        tier: "high"
       },
       {
         model_id: "claude-haiku-4-5-20251001",
@@ -51,7 +53,8 @@ module Models
         supports_vision: true,
         supports_tools: true,
         supports_json_output: true,
-        capability_score: 7.0
+        capability_score: 7.0,
+        tier: "low"
       },
       {
         model_id: "gpt-4o",
@@ -66,7 +69,8 @@ module Models
         supports_vision: true,
         supports_tools: true,
         supports_json_output: true,
-        capability_score: 8.5
+        capability_score: 8.5,
+        tier: "mid"
       },
       {
         model_id: "gpt-4o-mini",
@@ -81,7 +85,8 @@ module Models
         supports_vision: true,
         supports_tools: true,
         supports_json_output: true,
-        capability_score: 6.5
+        capability_score: 6.5,
+        tier: "low"
       },
       {
         model_id: "gemini-2.5-pro",
@@ -96,7 +101,8 @@ module Models
         supports_vision: true,
         supports_tools: true,
         supports_json_output: true,
-        capability_score: 8.0
+        capability_score: 8.0,
+        tier: "mid"
       }
     ].freeze
 

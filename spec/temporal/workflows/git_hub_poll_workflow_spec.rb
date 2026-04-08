@@ -280,11 +280,11 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
     end
 
-    it "routes review_bot_review_pending to RequestReviewActivity with copilot" do
+    it "routes review_bot_review_pending to RequestReviewActivity using the trigger's request_login" do
       pr_data = {
         issue_id: 10, pr_number: 42, phase: "draft",
         current_draft_review_count: 0,
-        triggers: [ { type: "review_bot_review_pending" } ]
+        triggers: [ { type: "review_bot_review_pending", request_login: Activities::RequestReviewActivity::COPILOT_LOGIN } ]
       }
 
       workflow.send(:handle_pr_trigger, project_id, pr_data)
@@ -292,6 +292,19 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
           hash_including(reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ]), timeout: anything)
+    end
+
+    it "skips review request when review_bot_review_pending has no request_login (auto-review bots)" do
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [ { type: "review_bot_review_pending", request_login: nil } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, anything, timeout: anything)
     end
 
     it "defers review request and dispatches followup when other triggers present" do
