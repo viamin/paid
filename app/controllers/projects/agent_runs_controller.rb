@@ -46,6 +46,15 @@ module Projects
         .pull_requests_only
         .where(github_state: "open")
         .order(github_number: :desc)
+
+      pr_numbers = @pull_requests.map(&:github_number)
+      @prs_with_active_runs = @project.agent_runs
+        .where(source_pull_request_number: pr_numbers, status: AgentRun::UNFINISHED_STATUSES)
+        .distinct
+        .pluck(:source_pull_request_number)
+        .to_set
+
+      @pr_priority_tiers = compute_pr_priority_tiers(@pull_requests)
     end
 
     def create
@@ -54,29 +63,37 @@ module Projects
       goal = params[:goal].presence || "create_pr"
       custom_prompt = params[:custom_prompt]&.strip.presence
       issue = resolve_issue
-      source_pr_number = resolve_pull_request
 
       if goal == "review"
-        unless source_pr_number
+        pr_ids = Array(params[:pull_request_ids]).reject(&:blank?)
+        if pr_ids.empty?
           redirect_to new_project_agent_run_path(@project, goal: goal),
-            alert: "Please select a pull request to review."
+            alert: "Please select at least one pull request to review."
           return
         end
+
+        create_review_runs_and_redirect(
+          pr_ids: pr_ids,
+          on_error_path: new_project_agent_run_path(@project, goal: goal),
+          custom_prompt: custom_prompt,
+          goal: goal
+        )
       else
+        source_pr_number = resolve_pull_request
         unless issue || custom_prompt || source_pr_number
           redirect_to new_project_agent_run_path(@project, goal: goal),
             alert: "Please select an issue, provide a custom prompt, or select a pull request."
           return
         end
-      end
 
-      create_run_and_redirect(
-        on_error_path: new_project_agent_run_path(@project, goal: goal),
-        issue: issue,
-        custom_prompt: custom_prompt,
-        source_pull_request_number: source_pr_number,
-        goal: goal
-      )
+        create_run_and_redirect(
+          on_error_path: new_project_agent_run_path(@project, goal: goal),
+          issue: issue,
+          custom_prompt: custom_prompt,
+          source_pull_request_number: source_pr_number,
+          goal: goal
+        )
+      end
     end
 
     def quick_create
@@ -715,6 +732,51 @@ module Projects
       agent_run.guardrail_violation_type.presence ||
         agent_run.guardrail_context&.dig("violation_type").presence ||
         "unknown"
+    end
+
+    def create_review_runs_and_redirect(pr_ids:, on_error_path:, custom_prompt:, goal:)
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        redirect_to on_error_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
+      prs = @project.issues.pull_requests_only.where(id: pr_ids)
+      prs.each do |pr|
+        create_agent_run(
+          custom_prompt: custom_prompt,
+          source_pull_request_number: pr.github_number,
+          goal: goal
+        )
+      end
+      ProcessRunQueueJob.perform_later
+
+      notice = if prs.size == 1
+        "Agent run queued for PR review."
+      else
+        "#{prs.size} agent runs queued for PR review."
+      end
+      redirect_to project_path(@project), notice: notice
+    rescue NoRunnableProviderError => e
+      redirect_to on_error_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique => e
+      alert = if (e.cause&.message || e.message).include?("proxy_token")
+        "An unexpected error occurred. Please try again."
+      else
+        "An agent run is already queued or in progress for one of the selected PRs."
+      end
+      redirect_to on_error_path, alert: alert
+    end
+
+    def compute_pr_priority_tiers(pull_requests)
+      priority_labels = @project.effective_priority_labels
+      pull_requests.each_with_object({}) do |pr, hash|
+        tier = Project::PRIORITY_TIERS.find do |t|
+          label_name = priority_labels[t]
+          label_name && pr.labels.include?(label_name)
+        end
+        hash[pr.id] = tier
+      end
     end
 
     def available_run_provider_options
