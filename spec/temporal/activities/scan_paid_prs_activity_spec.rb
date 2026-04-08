@@ -2203,6 +2203,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  context "when reviews are globally disabled but paid_agent sub-flag is true" do
+    before do
+      project.update!(review_settings: {
+        "enabled" => false,
+        "methods" => { "paid_agent" => { "enabled" => true } }
+      })
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not emit a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+  end
+
   context "when paid_agent is enabled and a review-goal run is already queued" do
     before do
       enable_paid_agent_review!
