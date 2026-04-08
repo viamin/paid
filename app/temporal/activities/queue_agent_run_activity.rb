@@ -11,6 +11,7 @@ module Activities
       requested_agent_type = input[:agent_type]
       provider_id = input[:provider_id]
       source_pull_request_number = input[:source_pull_request_number]
+      goal = input[:goal] || "create_pr"
 
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
@@ -27,7 +28,7 @@ module Activities
       # Falls back to DB unique indexes (RecordNotUnique) as a safety net
       # for races between concurrent activity executions.
       agent_run, duplicate = AgentRun.transaction do
-        existing = find_existing_run(project, issue, source_pull_request_number)
+        existing = find_existing_run(project, issue, source_pull_request_number, goal: goal)
         if existing
           [ existing, true ]
         else
@@ -38,12 +39,13 @@ module Activities
             agent_type: agent_type,
             custom_prompt: custom_prompt,
             source_pull_request_number: source_pull_request_number,
+            goal: goal,
             status: "queued"
           )
           [ run, false ]
         end
       rescue ActiveRecord::RecordNotUnique
-        existing = find_existing_run(project, issue, source_pull_request_number)
+        existing = find_existing_run(project, issue, source_pull_request_number, goal: goal)
         raise unless existing
         [ existing, true ]
       end
@@ -109,8 +111,10 @@ module Activities
 
     # Returns nil for custom-prompt-only runs (no issue or PR) intentionally:
     # custom prompts are unique by definition and cannot be meaningfully deduplicated.
-    def find_existing_run(project, issue, source_pull_request_number)
-      scope = project.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).lock("FOR UPDATE")
+    # The goal parameter ensures review-goal runs are deduplicated separately
+    # from create_pr runs targeting the same PR.
+    def find_existing_run(project, issue, source_pull_request_number, goal: "create_pr")
+      scope = project.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES, goal: goal).lock("FOR UPDATE")
       if issue
         scope.where(issue: issue).first
       elsif source_pull_request_number

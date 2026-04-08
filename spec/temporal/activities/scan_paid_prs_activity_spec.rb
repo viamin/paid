@@ -48,6 +48,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
+  def enable_paid_agent_review!(proj = project, max_review_rounds: 3)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => {
+        "paid_agent" => {
+          "enabled" => true,
+          "termination" => { "max_review_rounds" => max_review_rounds }
+        }
+      }
+    })
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
   end
@@ -2148,6 +2160,135 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           )
         )
       end
+    end
+  end
+
+  context "when paid_agent is the only review method and no review-goal run exists" do
+    before do
+      enable_paid_agent_review!
+      create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "emits a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      expect(trigger[:phase]).to eq("draft")
+      expect(trigger[:triggers].map { |t| t[:type] }).to eq([ "paid_agent_review_pending" ])
+    end
+  end
+
+  context "when paid_agent is enabled and a review-goal run is already queued" do
+    before do
+      enable_paid_agent_review!
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "queued")
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not emit a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is enabled and max_review_rounds is reached" do
+    before do
+      enable_paid_agent_review!(project, max_review_rounds: 2)
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      2.times do
+        create(:agent_run,
+          project: project, issue: issue,
+          source_pull_request_number: 42,
+          goal: "review", status: "completed",
+          completed_at: 1.hour.ago)
+      end
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not emit a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is enabled and the last review is newer than the last create_pr run" do
+    before do
+      enable_paid_agent_review!
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        completed_at: 2.hours.ago)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "completed",
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "does not emit a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      triggers = result[:prs_to_trigger].flat_map { |pr| pr[:triggers].map { |t| t[:type] } }
+      expect(triggers).not_to include("paid_agent_review_pending")
+    end
+  end
+
+  context "when paid_agent is enabled and the last create_pr run is newer than the last review" do
+    before do
+      enable_paid_agent_review!
+      issue = create(:issue, :pull_request,
+        project: project, github_number: 42,
+        labels: [ "paid-generated", "paid-automation" ],
+        pr_review_phase: "draft",
+        draft_review_count: 0)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "review", status: "completed",
+        completed_at: 2.hours.ago)
+      create(:agent_run,
+        project: project, issue: issue,
+        source_pull_request_number: 42,
+        goal: "create_pr", status: "completed",
+        completed_at: 1.hour.ago)
+      stub_github_for_pr(reviews: [])
+    end
+
+    it "emits a paid_agent_review_pending trigger" do
+      result = activity.execute(project_id: project.id)
+
+      expect(result[:prs_to_trigger].size).to eq(1)
+      trigger = result[:prs_to_trigger].first
+      expect(trigger[:triggers].map { |t| t[:type] }).to include("paid_agent_review_pending")
     end
   end
 
