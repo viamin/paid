@@ -337,6 +337,7 @@ module Activities
       project.agent_runs
         .where(source_pull_request_number: issue.github_number)
         .where(status: AgentRun::UNFINISHED_STATUSES)
+        .where(goal: "create_pr")
         .exists?
     end
 
