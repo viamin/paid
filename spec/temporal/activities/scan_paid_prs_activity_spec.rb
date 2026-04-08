@@ -31,6 +31,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
+  def enable_paid_agent_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "paid_agent" => { "enabled" => true } }
+    })
+  end
+
   def enable_copilot_and_codex_review!(proj = project)
     proj.update!(review_settings: {
       "enabled" => true,
@@ -1094,6 +1101,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
         expect(trigger_types).not_to include("review_bot_review_pending")
+      end
+    end
+
+    context "when paid_agent is the only review method and stale copilot reviews exist" do
+      before do
+        enable_paid_agent_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+                       body: "Copilot found issues.", submitted_at: 1.day.ago } ],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "ignores stale copilot reviews and does not emit review_bot triggers" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).not_to include("review_bot_comments", "review_bot_threads")
       end
     end
 

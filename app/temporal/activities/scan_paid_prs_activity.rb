@@ -455,7 +455,7 @@ module Activities
       .freeze
 
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
-      allowed = project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil
+      allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
       latest = latest_allowed_bot_review(reviews, allowed)
 
       # Body-only bots (Codex) can post their CLEAN signal as an issue
