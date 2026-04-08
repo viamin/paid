@@ -616,6 +616,159 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when skipping unchanged issues for comment fetching" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: [ "viamin" ]) }
+
+      let(:updated_at_previous) { 2.days.ago }
+      let(:updated_at_current) { 1.day.ago }
+
+      let(:changed_issue) do
+        OpenStruct.new(
+          id: 8001,
+          number: 80,
+          title: "Changed issue",
+          body: "Updated body",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 3.days.ago,
+          updated_at: updated_at_current
+        )
+      end
+
+      let(:unchanged_issue) do
+        OpenStruct.new(
+          id: 8002,
+          number: 81,
+          title: "Unchanged issue",
+          body: "Same body",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 3.days.ago,
+          updated_at: updated_at_previous
+        )
+      end
+
+      before do
+        create(:issue,
+          project: project, github_issue_id: 8001, github_number: 80,
+          github_updated_at: updated_at_previous,
+          relationships_parsed_at: updated_at_previous)
+        create(:issue,
+          project: project, github_issue_id: 8002, github_number: 81,
+          github_updated_at: updated_at_previous,
+          relationships_parsed_at: updated_at_previous)
+
+        stub_issues_by_label(nil => [ changed_issue, unchanged_issue ])
+      end
+
+      it "fetches comments only for issues with changed github_updated_at" do
+        allow(github_client).to receive(:issue_comments).and_return([])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 80).once
+        expect(github_client).not_to have_received(:issue_comments).with(project.full_name, 81)
+      end
+
+      it "fetches comments for new issues that have no previous github_updated_at" do
+        new_issue = OpenStruct.new(
+          id: 8003,
+          number: 82,
+          title: "Brand new issue",
+          body: "New",
+          state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil,
+          user: OpenStruct.new(login: "viamin"),
+          created_at: 1.hour.ago,
+          updated_at: Time.current
+        )
+        stub_issues_by_label(nil => [ changed_issue, unchanged_issue, new_issue ])
+        allow(github_client).to receive(:issue_comments).and_return([])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 80).once
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 82).once
+        expect(github_client).not_to have_received(:issue_comments).with(project.full_name, 81)
+      end
+
+      it "fetches comments for all issues on first sync when no previous data exists" do
+        Issue.where(project: project).destroy_all
+        allow(github_client).to receive(:issue_comments).and_return([])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 80).once
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 81).once
+      end
+    end
+
+    context "when a previous relationship parse failed" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: [ "viamin" ]) }
+      let(:flaky_issue) do
+        OpenStruct.new(
+          id: 8501, number: 85, title: "Flaky issue", body: "Body",
+          state: "open", labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil, user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago, updated_at: 1.day.ago
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ flaky_issue ])
+      end
+
+      it "retries parsing on the next sync even though github_updated_at is unchanged" do
+        allow(github_client).to receive(:issue_comments).with(project.full_name, 85)
+          .and_raise(GithubClient::Error.new("API error"))
+
+        activity.execute(project_id: project.id)
+
+        issue = project.issues.find_by!(github_issue_id: 8501)
+        expect(issue.relationships_parsed_at).to be_nil
+
+        # Second sync — github_updated_at has NOT changed, but the fetch now succeeds
+        allow(github_client).to receive(:issue_comments).with(project.full_name, 85).and_return([])
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 85).twice
+        expect(issue.reload.relationships_parsed_at).to be_present
+      end
+    end
+
+    context "when the project trust list changes" do
+      let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: [ "viamin" ]) }
+      let(:parsed_issue) do
+        OpenStruct.new(
+          id: 8601, number: 86, title: "Parsed issue", body: "Body",
+          state: "open", labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil, user: OpenStruct.new(login: "viamin"),
+          created_at: 3.days.ago, updated_at: 2.days.ago
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ parsed_issue ])
+        allow(github_client).to receive(:issue_comments).and_return([])
+      end
+
+      it "re-parses issue relationships after allowed_github_usernames changes" do
+        activity.execute(project_id: project.id)
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 86).once
+
+        project.update!(allowed_github_usernames: %w[viamin another-trusted])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:issue_comments).with(project.full_name, 86).twice
+      end
+    end
+
     context "when parent-child relationships exist in issue bodies" do
       let(:project) { create(:project, label_mappings: { "build" => "paid-build" }, allowed_github_usernames: [ "viamin" ]) }
 

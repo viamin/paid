@@ -64,12 +64,11 @@ module Activities
     def scan_pr(project, client, issue)
       return nil if active_run_exists?(project, issue)
 
-      check_rate_budget!(client)
-
       case issue.pr_review_phase
       when "draft", "restarted"
         scan_draft_pr(project, client, issue)
       when "ready"
+        check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
@@ -77,6 +76,7 @@ module Activities
           scan_ready_pr(project, client, issue, pr_data: pr_data)
         end
       when "escalated"
+        check_rate_budget!(client)
         pr_data = fetch_pr_data(client, project, issue)
         if maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
@@ -93,6 +93,8 @@ module Activities
           issue.draft_review_count >= project.max_draft_review_rounds
         return escalate_trigger(issue)
       end
+
+      check_rate_budget!(client)
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
       unresolved_threads = nil
@@ -192,7 +194,8 @@ module Activities
           owner_approved_or_self_authored?(project, reviews, pr_data) &&
           checks.present? &&
           all_checks_green?(checks) &&
-          mergeable == true
+          mergeable == true &&
+          no_outstanding_review_feedback?(project, client, issue, reviews)
         return owner_approved_trigger(issue)
       end
 
@@ -459,7 +462,7 @@ module Activities
       .freeze
 
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
-      allowed = project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil
+      allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
       latest = latest_allowed_bot_review(reviews, allowed)
 
       # Body-only bots (Codex) can post their CLEAN signal as an issue
@@ -709,6 +712,24 @@ module Activities
       return false if owner_login.blank? || author_login.blank?
 
       owner_login.casecmp?(author_login)
+    end
+
+    # --- Review feedback gate for auto-merge ---
+
+    # Returns true when there is no outstanding review feedback that should
+    # block auto-merge. Checks the same review signals that detect_ready_triggers
+    # would evaluate, so owner approval cannot bypass new findings.
+    def no_outstanding_review_feedback?(project, client, issue, reviews)
+      last_run = last_completed_run(project, issue)
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+
+      return false if human_review_thread_triggers(project, unresolved_threads).any?
+      return false if check_review_bot_status(reviews, unresolved_threads,
+        project: project, last_run: last_run, client: client, issue: issue).any?
+      return false if changes_requested_from_reviews(project, reviews, last_run).any?
+      return false if check_conversation_comments(client, project, issue, last_run).any?
+
+      true
     end
 
     # --- Helpers ---
