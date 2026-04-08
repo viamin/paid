@@ -188,7 +188,8 @@ module Activities
           owner_approved_or_self_authored?(project, reviews, pr_data) &&
           checks.present? &&
           all_checks_green?(checks) &&
-          mergeable == true
+          mergeable == true &&
+          no_outstanding_review_feedback?(project, client, issue, reviews)
         return owner_approved_trigger(issue)
       end
 
@@ -705,6 +706,24 @@ module Activities
       return false if owner_login.blank? || author_login.blank?
 
       owner_login.casecmp?(author_login)
+    end
+
+    # --- Review feedback gate for auto-merge ---
+
+    # Returns true when there is no outstanding review feedback that should
+    # block auto-merge. Checks the same review signals that detect_ready_triggers
+    # would evaluate, so owner approval cannot bypass new findings.
+    def no_outstanding_review_feedback?(project, client, issue, reviews)
+      last_run = last_completed_run(project, issue)
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+
+      return false if human_review_thread_triggers(project, unresolved_threads).any?
+      return false if check_review_bot_status(reviews, unresolved_threads,
+        project: project, last_run: last_run, client: client, issue: issue).any?
+      return false if changes_requested_from_reviews(project, reviews, last_run).any?
+      return false if check_conversation_comments(client, project, issue, last_run).any?
+
+      true
     end
 
     # --- Helpers ---
