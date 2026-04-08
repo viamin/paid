@@ -69,6 +69,13 @@ class PollWorkflowHealthCheckJob < ApplicationJob
 
     return unless RESTARTABLE_STATUSES.include?(status[:status])
 
+    # Record the unhealthy state before re-checking
+    WorkflowState.record_polling_status(
+      project,
+      status: map_temporal_status(status[:status]),
+      error_message: "Workflow in #{status[:status]} state"
+    )
+
     # Re-check to reduce race conditions with other lifecycle operations
     latest_status = ProjectWorkflowManager.workflow_status(project)
     return if latest_status[:running]
@@ -101,5 +108,17 @@ class PollWorkflowHealthCheckJob < ApplicationJob
       project_id: project.id
     )
     true
+  end
+
+  # Maps Temporal workflow execution statuses to WorkflowState status strings.
+  def map_temporal_status(temporal_status)
+    case temporal_status
+    when Temporalio::Client::WorkflowExecutionStatus::FAILED then "failed"
+    when Temporalio::Client::WorkflowExecutionStatus::TERMINATED then "cancelled"
+    when Temporalio::Client::WorkflowExecutionStatus::TIMED_OUT then "timed_out"
+    when Temporalio::Client::WorkflowExecutionStatus::COMPLETED then "completed"
+    when :not_found then "failed"
+    else "failed"
+    end
   end
 end
