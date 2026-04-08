@@ -545,12 +545,19 @@ module Activities
             triggers.concat(bot_thread_triggers)
             triggers
           elsif body_only_review_bot?(latest&.dig(:user_login)) &&
-              body_only_review_needs_followup?(latest, last_run)
+              (body_only_review_needs_followup?(latest, last_run) ||
+               !body_only_review_affected_files_changed?(client, project, issue, latest))
             # Body-only bots (e.g. Codex): the review feedback lives in
             # the top-level review body with no inline threads, so thread
-            # resolution cannot gate re-review. Use submitted_at vs the
-            # last agent run's completed_at as the anti-loop guard — a
-            # review post-dating the last run is unaddressed feedback.
+            # resolution cannot gate re-review. Two guards must both pass
+            # before clearing feedback:
+            #   1. Timestamp: the last agent run must have completed after
+            #      the review was submitted.
+            #   2. Affected files: the diff between the reviewed commit and
+            #      the current HEAD must touch at least one file mentioned
+            #      in the review's inline comments. This prevents unrelated
+            #      changes (e.g. db/schema.rb) from clearing findings on
+            #      files the agent never modified.
             # The "(body-only)" suffix on review_bot_comments lets
             # structured-log consumers distinguish this path from the
             # thread-based Copilot flow above.
@@ -560,9 +567,10 @@ module Activities
             ]
           else
             # Thread-based bot with all bot threads resolved, or body-only
-            # review already addressed by a subsequent agent run. Treat as
-            # effectively clean to avoid re-requesting reviews that would
-            # produce no new comments.
+            # review already addressed by a subsequent agent run that
+            # touched at least one reviewed file. Treat as effectively
+            # clean to avoid re-requesting reviews that would produce no
+            # new comments.
             []
           end
         end
@@ -629,6 +637,43 @@ module Activities
       return true if cutoff.nil?
 
       submitted_at > cutoff
+    end
+
+    # Checks whether the diff between the reviewed commit and the current
+    # PR HEAD touches at least one file mentioned in the review's inline
+    # comments. Returns true (safe to clear) when:
+    #   - the review has no commit_id or the client/project/issue is nil
+    #     (falls back to timestamp-only behavior)
+    #   - no inline review comments with paths exist (falls back)
+    #   - the interceding diff includes at least one reviewed file
+    # Returns false when the diff does not touch any reviewed file,
+    # preventing unrelated changes from clearing review findings.
+    def body_only_review_affected_files_changed?(client, project, issue, latest_review)
+      return true if client.nil? || project.nil? || issue.nil?
+
+      review_commit = latest_review&.dig(:commit_id)
+      return true if review_commit.nil?
+
+      pr_data = client.pull_request(project.full_name, issue.github_number)
+      head_sha = pr_data&.head&.sha
+      return true if head_sha.nil? || head_sha == review_commit
+
+      review_comments = client.pull_request_review_comments(
+        project.full_name, issue.github_number
+      )
+      review_bot_login = latest_review[:user_login]&.downcase
+      reviewed_paths = review_comments
+        .select { |c| c[:user_login]&.downcase == review_bot_login && c[:path].present? }
+        .map { |c| c[:path] }
+        .uniq
+
+      return true if reviewed_paths.empty?
+
+      changed_files = client.compare_files(project.full_name, review_commit, head_sha)
+      (reviewed_paths & changed_files).any?
+    rescue GithubClient::Error => e
+      log_signal_error("body_only_review_affected_files", project, issue, e)
+      true
     end
 
     def review_bot_thread_triggers(unresolved_threads)

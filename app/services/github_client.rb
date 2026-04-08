@@ -189,6 +189,19 @@ class GithubClient
     end.map(&:filename)
   end
 
+  # Compares two commits and returns the list of changed file paths.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] Base commit SHA
+  # @param head [String] Head commit SHA
+  # @return [Array<String>] File paths changed between the two commits
+  def compare_files(repo, base, head)
+    handle_errors do
+      comparison = client.compare(repo, base, head)
+      (comparison.files || []).map(&:filename)
+    end
+  end
+
   # Creates an issue on a repository.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -463,7 +476,8 @@ class GithubClient
           user_login: r.user&.login,
           state: r.state,
           body: r.body.to_s,
-          submitted_at: parse_timestamp(r.submitted_at)
+          submitted_at: parse_timestamp(r.submitted_at),
+          commit_id: r.commit_id
         }
       end
     end
@@ -709,7 +723,7 @@ class GithubClient
   # @param number [Integer] Pull request number
   # @param per_page [Integer, nil] When set, fetches a single page of this size
   #   (no auto-pagination). When nil, auto-paginates all comments.
-  # @return [Array<Hash>] Comments with :id, :user_login, :body, :created_at keys
+  # @return [Array<Hash>] Comments with :id, :user_login, :body, :created_at, :path keys
   def pull_request_review_comments(repo, number, per_page: nil)
     handle_errors do
       comments = if per_page
@@ -724,7 +738,8 @@ class GithubClient
           id: c.id,
           user_login: c.user&.login,
           body: c.body.to_s,
-          created_at: parse_timestamp(c.created_at)
+          created_at: parse_timestamp(c.created_at),
+          path: c.path
         }
       end
     end

@@ -989,6 +989,113 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when codex review was addressed but agent only changed unrelated files" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "review_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/activities/fetch_issues_activity.rb" }
+          ])
+        allow(github_client).to receive(:compare_files)
+          .with(project.full_name, "review_sha", "abc123")
+          .and_return([ "db/schema.rb" ])
+      end
+
+      it "still emits triggers because the reviewed file was not changed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
+      end
+    end
+
+    context "when codex review was addressed and agent changed a reviewed file" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "review_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "chatgpt-codex-connector", body: "Fix this",
+              created_at: 2.hours.ago, path: "app/activities/fetch_issues_activity.rb" }
+          ])
+        allow(github_client).to receive(:compare_files)
+          .with(project.full_name, "review_sha", "abc123")
+          .and_return([ "app/activities/fetch_issues_activity.rb", "db/schema.rb" ])
+      end
+
+      it "treats the review as addressed and does not trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when codex review has no inline comments (body-only feedback)" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago, commit_id: "review_sha" } ],
+          review_threads: []
+        )
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([])
+        allow(github_client).to receive(:compare_files)
+          .with(project.full_name, "review_sha", "abc123")
+          .and_return([ "db/schema.rb" ])
+      end
+
+      it "falls back to timestamp behavior and treats as addressed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
     context "when PR is in draft phase with Claude review threads" do
       before do
         create(:issue, :pull_request,
