@@ -1,0 +1,3 @@
+<% # This partial is rendered inside a turbo frame for live updates %>
+<% badge_counts = account.notifications.active.unread.where.not(nav_section: nil).group(:nav_section).count %>
+<div id="notification_nav_badges" data-badge-counts="<%= badge_counts.to_json %>"></div>

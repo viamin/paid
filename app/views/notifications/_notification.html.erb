@@ -1,0 +1,38 @@
+<%= tag.tr id: dom_id(notification), class: "#{notification.read_at? ? 'bg-white' : 'bg-indigo-50'}" do %>
+  <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
+    <div class="flex items-center gap-2">
+      <% case notification.severity %>
+      <% when "info" %>
+        <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">Info</span>
+      <% when "warning" %>
+        <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">Warning</span>
+      <% when "error" %>
+        <span class="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">Error</span>
+      <% end %>
+    </div>
+  </td>
+  <td class="px-3 py-4 text-sm text-gray-900">
+    <% if notification.action_url.present? %>
+      <%= link_to notification.title, notification.action_url, class: "font-medium hover:text-indigo-600" %>
+    <% else %>
+      <span class="font-medium"><%= notification.title %></span>
+    <% end %>
+    <% if notification.description.present? %>
+      <p class="mt-1 text-gray-500 text-xs"><%= notification.description %></p>
+    <% end %>
+  </td>
+  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+    <%= notification.source.humanize %>
+  </td>
+  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+    <%= time_ago_in_words(notification.created_at) %> ago
+  </td>
+  <td class="whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm sm:pr-6">
+    <div class="flex items-center justify-end gap-2">
+      <% unless notification.read_at? %>
+        <%= button_to "Read", read_notification_path(notification), method: :patch, class: "text-indigo-600 hover:text-indigo-900 text-xs font-medium", form: { data: { turbo_stream: true } } %>
+      <% end %>
+      <%= button_to "Dismiss", dismiss_notification_path(notification), method: :patch, class: "text-gray-600 hover:text-gray-900 text-xs font-medium", form: { data: { turbo_stream: true } } %>
+    </div>
+  </td>
+<% end %>
