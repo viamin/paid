@@ -14,6 +14,40 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   end
   let(:github_client) { instance_double(GithubClient) }
 
+  # Scanner tests that exercise the ":no_review → emit review_bot_review_pending"
+  # path need the project to have a requestable review bot configured. Without
+  # it, the scanner correctly returns no triggers (there is no bot to request).
+  def enable_copilot_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "copilot" => { "enabled" => true } }
+    })
+  end
+
+  def enable_codex_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "codex" => { "enabled" => true } }
+    })
+  end
+
+  def enable_paid_agent_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "paid_agent" => { "enabled" => true } }
+    })
+  end
+
+  def enable_copilot_and_codex_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => {
+        "copilot" => { "enabled" => true },
+        "codex" => { "enabled" => true }
+      }
+    })
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
   end
@@ -63,7 +97,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           check_runs_for_ref: [ { name: "rspec", conclusion: "failure" } ],
           review_threads: [],
           pull_request_reviews: [],
-          issue_comments: []
+          issue_comments: [],
+          recent_issue_comments: []
         )
       end
 
@@ -660,6 +695,300 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when copilot review had comments but all threads resolved (body-only regression)" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "copilot", state: "COMMENTED",
+                       body: "I found some issues.", submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "still treats Copilot resolved-threads as clean and does not trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when codex posted a clean signal as an issue comment with no prior review" do
+      before do
+        enable_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 30.minutes.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "treats the codex clean comment as a clean bot signal and emits no review_bot triggers" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when a codex clean comment supersedes an older non-clean codex review" do
+      before do
+        enable_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 10.minutes.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago } ],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "treats the bot as clean because the clean comment is newer than the non-clean review" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when a project enables both Copilot and Codex and Copilot has unresolved threads" do
+      before do
+        enable_copilot_and_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 5.minutes.ago
+        )
+        # Copilot reviewed the PR with findings; the unresolved Copilot thread
+        # must NOT be silently dropped just because Codex separately commented
+        # clean. The two bots' state is independent.
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+                       body: "Copilot reviewed 5 out of 5 changed files and generated 2 comments.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10,
+                            author: "copilot-pull-request-reviewer[bot]" } ]
+            }
+          ],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "still emits review_bot_threads from Copilot — codex's clean comment cannot speak for Copilot" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).to include("review_bot_threads", "review_bot_review_pending")
+      end
+    end
+
+    context "when an older codex clean comment is followed by a newer non-clean codex review" do
+      before do
+        enable_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+        stale_clean = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 3.hours.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: [],
+          recent_issue_comments: [ stale_clean ]
+        )
+      end
+
+      it "still emits review_bot_comments because the clean comment is older than the new non-clean review" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
+    context "when codex posted a clean comment but codex is not an enabled review bot" do
+      before do
+        # Do NOT call enable_codex_review! — project has no review bots enabled
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 30.minutes.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "does not treat the clean comment as a bypass since the bot is not enabled" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending", "review_bot_comments")
+      end
+    end
+
+    context "when codex posted a body-only review with no last agent run" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "emits a review_bot_comments trigger because the feedback is unaddressed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
+      end
+    end
+
+    context "when codex posted a body-only review before the last agent run completed" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "treats the review as already addressed and does not trigger" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when a draft PR has a codex body-only review post-dating the last agent run" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 30.minutes.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "emits draft-phase triggers for the unaddressed codex review" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:phase]).to eq("draft")
+        expect(trigger[:triggers].map { |t| t[:type] }).to include("review_bot_comments")
+      end
+    end
+
+    context "when codex posted a body-only review after the last agent run completed" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 30.minutes.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "emits a review_bot_comments trigger because the feedback is unaddressed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
     context "when PR is in draft phase with Claude review threads" do
       before do
         create(:issue, :pull_request,
@@ -749,8 +1078,59 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when no requestable review bot is configured and no reviews exist" do
+      before do
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "does not emit a review_bot_review_pending trigger that nothing can satisfy" do
+        # Regression: previously the scanner emitted a pending trigger with
+        # request_login=nil, which the workflow then skipped via the
+        # `if login; request_review(...); end` guard in
+        # handle_review_bot_review_pending, wedging the PR in draft forever.
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_review_pending")
+      end
+    end
+
+    context "when paid_agent is the only review method and stale copilot reviews exist" do
+      before do
+        enable_paid_agent_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+                       body: "Copilot found issues.", submitted_at: 1.day.ago } ],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "ignores stale copilot reviews and does not emit review_bot triggers" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).not_to include("review_bot_comments", "review_bot_threads")
+      end
+    end
+
     context "when no review bot review exists and CI is green" do
       before do
+        enable_copilot_review!
         project.update!(owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -819,6 +1199,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when no review bot review exists and CI is failing" do
       before do
+        enable_copilot_review!
         create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
@@ -965,6 +1346,92 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:current_draft_review_count]).to eq(3)
+      end
+    end
+
+    context "when consecutive draft follow-up runs all fail without output" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 3)
+      end
+
+      before do
+        stub_github_for_pr(
+          review_threads: [
+            { id: "thread_1", is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "viamin" } ] }
+          ]
+        )
+      end
+
+      def create_draft_run(status:, iterations:, created_at:, trigger_type: "automatic", goal: "create_pr")
+        create(:agent_run,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          trigger_type: trigger_type,
+          goal: goal,
+          status: status,
+          iterations: iterations,
+          created_at: created_at)
+      end
+
+      it "escalates after 3 consecutive no-output failures with breaker-specific reason" do
+        3.times { |i| create_draft_run(status: "timeout", iterations: 0, created_at: i.minutes.ago) }
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("Consecutive draft follow-up failures")
+      end
+
+      it "does not escalate when a recent run produced output" do
+        create_draft_run(status: "timeout", iterations: 0, created_at: 1.minute.ago)
+        create_draft_run(status: "completed", iterations: 5, created_at: 2.minutes.ago)
+        create_draft_run(status: "timeout", iterations: 0, created_at: 3.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
+      end
+
+      it "does not escalate with fewer than 3 consecutive failures" do
+        2.times { |i| create_draft_run(status: "timeout", iterations: 0, created_at: i.minutes.ago) }
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
+      end
+
+      it "does not count manual or review runs toward the breaker" do
+        create_draft_run(status: "timeout", iterations: 0, created_at: 1.minute.ago)
+        create_draft_run(status: "failed", iterations: 0, created_at: 2.minutes.ago)
+        # This run is manual, not an automatic draft followup
+        create_draft_run(status: "timeout", iterations: 0, created_at: 3.minutes.ago, trigger_type: "manual")
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
+      end
+
+      it "does not escalate after draft restart even with old failures" do
+        # Simulate maybe_restart_draft resetting draft_review_count to 0
+        # while old non-draft failures still exist in the DB
+        pr_issue.update!(draft_review_count: 0, pr_review_phase: "restarted")
+        3.times { |i| create_draft_run(status: "timeout", iterations: 0, created_at: i.minutes.ago) }
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
       end
     end
 
@@ -1141,6 +1608,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when max_draft_review_rounds is zero (skip draft phase)" do
       before do
+        enable_copilot_review!
         project.update!(max_draft_review_rounds: 0, owner_reviewer_login: "viamin")
         create(:issue, :pull_request,
           project: project, github_number: 42,
@@ -1281,6 +1749,104 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when owner approved but unresolved human review threads exist" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Critical security vulnerability", path: "app/model.rb", line: 10, author: "viamin" } ]
+            }
+          ]
+        )
+      end
+
+      it "does not auto-merge and emits review thread triggers instead" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("review_threads")
+      end
+    end
+
+    context "when owner approved but changes_requested exists from trusted user" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true,
+          allowed_github_usernames: [ "viamin", "reviewer" ])
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "reviewer", state: "CHANGES_REQUESTED", body: "Needs work",
+              submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "does not auto-merge" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("changes_requested")
+      end
+    end
+
+    context "when owner approved but new conversation comment from trusted user" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        issue = create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        create(:agent_run, project: project, issue: issue,
+          pull_request_number: 42, status: "completed",
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          issue_comments: [
+            OpenStruct.new(
+              user: OpenStruct.new(login: "viamin"),
+              body: "This has a critical security vulnerability that needs to be fixed",
+              created_at: 1.hour.ago
+            )
+          ]
+        )
+      end
+
+      it "does not auto-merge" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("conversation_comments")
       end
     end
 
@@ -1596,6 +2162,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     checks: [ { name: "ci", conclusion: "success" } ],
     review_threads: [],
     issue_comments: [],
+    recent_issue_comments: nil,
     reviews: default_clean_copilot_review
   )
     pr_data = OpenStruct.new(
@@ -1617,6 +2184,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:issue_comments)
       .with(project.full_name, 42)
       .and_return(issue_comments)
+    allow(github_client).to receive(:recent_issue_comments)
+      .with(project.full_name, 42)
+      .and_return(recent_issue_comments || issue_comments)
     allow(github_client).to receive(:pull_request_reviews)
       .with(project.full_name, 42)
       .and_return(reviews)

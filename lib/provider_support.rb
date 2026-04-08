@@ -146,7 +146,9 @@ module ProviderSupport
     "inception" => "InceptionLabs",
     "deepseek" => "DeepSeek",
     "mistral" => "Mistral",
-    "xai" => "xAI"
+    "xai" => "xAI",
+    "zai" => "z.ai",
+    "zai_coding" => "z.ai (Coding Plan)"
   }.freeze
 
   # Maps each provider key to the upstream API service type its CLI tool
@@ -188,6 +190,10 @@ module ProviderSupport
     "claude" => %w[
       claude[bot]
       claude-code[bot]
+    ].freeze,
+    "codex" => %w[
+      chatgpt-codex-connector
+      chatgpt-codex-connector[bot]
     ].freeze
   }.freeze
 

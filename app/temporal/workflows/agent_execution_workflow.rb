@@ -240,9 +240,9 @@ module Workflows
               { agent_run_id: agent_run_id }, timeout: 60)
 
             # New commits invalidate prior bot feedback, so request a fresh
-            # Copilot review for any still-active PR phase.
+            # review-bot review for any still-active PR phase.
             if complete_result[:pr_review_phase].in?(%w[draft restarted ready escalated])
-              request_copilot_review(project_id, source_pull_request_number)
+              request_review_bot_review(project_id, source_pull_request_number)
             end
 
             # Draft a decision record for existing PR changes (best-effort)
@@ -256,8 +256,8 @@ module Workflows
             run_activity(Activities::UpdateIssueWithPrActivity,
               { agent_run_id: agent_run_id, pull_request_url: pr_result[:pull_request_url] }, timeout: 30)
 
-            # Step 8: Request Copilot review on the new draft PR (best-effort)
-            request_copilot_review(project_id, pr_result[:pull_request_number])
+            # Step 8: Request review-bot review on the new draft PR (best-effort)
+            request_review_bot_review(project_id, pr_result[:pull_request_number])
 
             # Step 9: Draft a decision record (best-effort)
             draft_decision_record(agent_run_id)
@@ -276,10 +276,10 @@ module Workflows
               { agent_run_id: agent_run_id, reason: "no_changes" }, timeout: 30)
           end
 
-          # Still request Copilot review for existing PR runs: the previous
-          # run may have pushed a fix that Copilot hasn't reviewed yet.
+          # Still request a review-bot review for existing PR runs: the
+          # previous run may have pushed a fix the bot has not reviewed yet.
           if source_pull_request_number
-            request_copilot_review(project_id, source_pull_request_number)
+            request_review_bot_review(project_id, source_pull_request_number)
           end
         end
 
@@ -426,17 +426,32 @@ module Workflows
       cause.is_a?(Temporalio::Error::ApplicationError) && cause.type == "StalePullRequest"
     end
 
-    def request_copilot_review(project_id, pr_number)
+    # Requests a review from the project's configured review bot (Copilot,
+    # Codex, etc.). The activity resolves the reviewer from project settings
+    # when :reviewers is not supplied, so the workflow does not need to know
+    # which bot is enabled.
+    #
+    # The :reviewers argument is gated behind a workflow patch so that
+    # in-flight AgentExecutionWorkflow executions started before this
+    # deployment — whose history recorded the old `reviewers: [copilot]`
+    # payload — can replay without a non-determinism error. Histories
+    # captured after the patch use the new project-resolved form.
+    def request_review_bot_review(project_id, pr_number)
       return unless pr_number
 
-      run_activity(Activities::RequestReviewActivity,
+      input = if Temporalio::Workflow.patched("request_review_resolve_reviewer_from_project")
+        { project_id: project_id, pr_number: pr_number }
+      else
         { project_id: project_id, pr_number: pr_number,
-          reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }, timeout: 60)
+          reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] }
+      end
+
+      run_activity(Activities::RequestReviewActivity, input, timeout: 60)
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
       Temporalio::Workflow.logger.warn(
-        message: "agent_execution.copilot_review_request_failed",
+        message: "agent_execution.review_bot_request_failed",
         project_id: project_id,
         pr_number: pr_number,
         error: e.message

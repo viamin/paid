@@ -254,11 +254,11 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity"
-          { agent_run_id: 42, provider_attempt_count: 3, agent_timeout_seconds: 3600, max_execution_seconds: 1800 }
+          { agent_run_id: 42, provider_attempt_count: 3, agent_timeout_seconds: 7200, max_execution_seconds: 3600 }
         when "Activities::RunAgentActivity"
-          # Without cap: (3600 * 3) + 300 = 11_100
-          # With cap: 1800 + 300 = 2100
-          expect(opts[:start_to_close_timeout]).to eq(2100)
+          # Without cap: (7200 * 3) + 300 = 21_900
+          # With cap: 3600 + 300 = 3900
+          expect(opts[:start_to_close_timeout]).to eq(3900)
           { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
         else {}
@@ -272,11 +272,11 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity"
-          { agent_run_id: 42, provider_attempt_count: 1, agent_timeout_seconds: 1800, max_execution_seconds: 86_400 }
+          { agent_run_id: 42, provider_attempt_count: 1, agent_timeout_seconds: 3600, max_execution_seconds: 86_400 }
         when "Activities::RunAgentActivity"
-          # Computed: (1800 * 1) + 300 = 2100
+          # Computed: (3600 * 1) + 300 = 3900
           # Cap: 86_400 + 300 = 86_700 (larger, so no cap)
-          expect(opts[:start_to_close_timeout]).to eq(2100)
+          expect(opts[:start_to_close_timeout]).to eq(3900)
           { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
         else {}
@@ -333,7 +333,34 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
-    it "re-requests Copilot review after pushing commits to a ready PR" do
+    it "re-requests a review-bot review after pushing commits to a ready PR" do
+      stub_existing_pr_followup(pr_review_phase: "ready")
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity,
+          { project_id: 1, pr_number: 42 },
+          timeout: 60)
+    end
+
+    it "does not request a review-bot review after pushing commits to a merged PR" do
+      stub_existing_pr_followup(pr_review_phase: "merged")
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RequestReviewActivity, any_args)
+    end
+
+    it "emits the pre-patch activity input shape when the workflow patch is not set" do
+      # Regression: in-flight workflows whose history recorded the old
+      # `reviewers: [copilot]` payload must replay without a
+      # non-determinism error. When the patch flag is false the workflow
+      # must reproduce the legacy input shape exactly.
+      allow(Temporalio::Workflow).to receive(:patched).and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("request_review_resolve_reviewer_from_project").and_return(false)
       stub_existing_pr_followup(pr_review_phase: "ready")
 
       workflow.execute(input)
@@ -343,15 +370,6 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
           { project_id: 1, pr_number: 42,
             reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
           timeout: 60)
-    end
-
-    it "does not request Copilot review after pushing commits to a merged PR" do
-      stub_existing_pr_followup(pr_review_phase: "merged")
-
-      workflow.execute(input)
-
-      expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::RequestReviewActivity, any_args)
     end
   end
 
@@ -383,15 +401,14 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
-    it "requests Copilot review even when agent makes no changes on existing PR" do
+    it "requests a review-bot review even when the agent makes no changes on an existing PR" do
       stub_no_changes_followup
 
       workflow.execute(input)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RequestReviewActivity,
-          { project_id: 1, pr_number: 42,
-            reviewers: [ Activities::RequestReviewActivity::COPILOT_LOGIN ] },
+          { project_id: 1, pr_number: 42 },
           timeout: 60)
     end
   end
