@@ -1255,6 +1255,97 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "REST retry middleware" do
+    let(:repo) { "owner/repo" }
+
+    it "retries on 503 and succeeds" do
+      stub_request(:get, "#{api_base}/repos/#{repo}")
+        .to_return(
+          { status: 503, body: "Service Unavailable" },
+          { status: 200, body: { full_name: repo }.to_json, headers: { "Content-Type" => "application/json" } }
+        )
+
+      result = client.repository(repo)
+      expect(result.full_name).to eq(repo)
+    end
+
+    it "retries on 502 and succeeds" do
+      stub_request(:get, "#{api_base}/repos/#{repo}")
+        .to_return(
+          { status: 502, body: "Bad Gateway" },
+          { status: 200, body: { full_name: repo }.to_json, headers: { "Content-Type" => "application/json" } }
+        )
+
+      result = client.repository(repo)
+      expect(result.full_name).to eq(repo)
+    end
+  end
+
+  describe "GraphQL retry middleware" do
+    let(:repo) { "owner/repo" }
+
+    it "retries on 503 and succeeds" do
+      stub_request(:post, "#{api_base}/graphql")
+        .to_return(
+          { status: 503, body: "Service Unavailable" },
+          {
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    reviewThreads: { nodes: [] }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          }
+        )
+
+      result = client.review_threads(repo, 1)
+      expect(result).to eq([])
+    end
+
+    it "retries on 429 and succeeds" do
+      stub_request(:post, "#{api_base}/graphql")
+        .to_return(
+          { status: 429, body: "Rate limited" },
+          {
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    reviewThreads: { nodes: [] }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          }
+        )
+
+      result = client.review_threads(repo, 1)
+      expect(result).to eq([])
+    end
+
+    it "raises after exhausting retries" do
+      stub_request(:post, "#{api_base}/graphql")
+        .to_return(status: 502, body: "Bad Gateway")
+
+      expect { client.review_threads(repo, 1) }.to raise_error(GithubClient::ApiError)
+    end
+
+    it "does not retry mutations" do
+      stub = stub_request(:post, "#{api_base}/graphql")
+        .to_return(status: 503, body: "Service Unavailable")
+
+      expect { client.resolve_review_thread("thread_id") }.to raise_error(GithubClient::ApiError)
+      expect(stub).to have_been_requested.once
+    end
+  end
+
   describe "#rate_limit_remaining" do
     context "when rate limit info is available" do
       it "returns remaining requests" do
