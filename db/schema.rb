@@ -466,7 +466,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_230340) do
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
     t.bigint "project_id", null: false
-    t.datetime "relationships_parsed_at"
     t.string "source", default: "github", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
@@ -479,7 +478,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_230340) do
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
     t.index ["project_id"], name: "index_issues_on_project_id"
-    t.index ["relationships_parsed_at"], name: "index_issues_on_relationships_parsed_at"
     t.index ["source"], name: "index_issues_on_source"
   end
 
