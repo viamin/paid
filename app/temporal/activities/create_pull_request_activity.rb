@@ -129,15 +129,20 @@ module Activities
       # capturing the optional qualifier so we can discard external-repo refs.
       issue_ref_pattern = /([\w.\-]+\/[\w.\-]+)?#(\d+)\b/
 
-      mentions_own_issue = summary.match?(/(?:[\w.\-]+\/[\w.\-]+)?##{issue_number}\b/) ||
-                          summary.match?(/\bissue\s+#{issue_number}\b/i)
+      # Only count a qualified ref (owner/repo#NNN) as "own issue" when the
+      # qualifier matches this project's full_name (case-insensitive, since
+      # GitHub owner/repo names are case-insensitive).
+      mentions_own_issue = summary.scan(issue_ref_pattern).any? { |qualifier, num|
+        num.to_i == issue_number &&
+          (qualifier.nil? || qualifier.downcase == repo_full_name.downcase)
+      } || summary.match?(/\bissue\s+#{issue_number}\b/i)
 
       # Extract issue numbers from the summary in a single pass, keeping only
       # bare refs (#NNN) and qualified refs matching this project (owner/repo#NNN).
       # External qualified refs (e.g. rails/rails#1234) are ignored to avoid
       # false mismatch warnings when the same number exists locally.
       referenced_numbers = summary.scan(issue_ref_pattern)
-        .filter_map { |qualifier, num| num.to_i if qualifier.nil? || qualifier == repo_full_name }
+        .filter_map { |qualifier, num| num.to_i if qualifier.nil? || qualifier.downcase == repo_full_name.downcase }
         .to_set
       referenced_numbers.delete(issue_number)
 
