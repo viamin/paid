@@ -108,6 +108,8 @@ class Project < ApplicationRecord
   encrypts :webhook_secret
 
   before_validation :normalize_agent_co_author_trailer
+  before_validation :normalize_priority_labels
+  after_update_commit :invalidate_relationship_parsing_on_trust_change
 
   validates :name, presence: true
   validates :owner, presence: true
@@ -553,6 +555,17 @@ class Project < ApplicationRecord
     errors.add(:owner_reviewer_login, "must be in trusted GitHub usernames")
   end
 
+  # Strip surrounding whitespace from each priority label value before
+  # validation/persistence so a label entered as " critical " matches the
+  # GitHub label "critical" instead of silently failing tier detection.
+  def normalize_priority_labels
+    return unless priority_labels.is_a?(Hash)
+
+    self.priority_labels = priority_labels.each_with_object({}) do |(k, v), h|
+      h[k] = v.is_a?(String) ? v.strip : v
+    end
+  end
+
   def priority_labels_valid
     return if priority_labels.nil? || priority_labels == {}
 
@@ -677,5 +690,15 @@ class Project < ApplicationRecord
     return if allowed_github_usernames.is_a?(Array) && allowed_github_usernames.any?(&:present?)
 
     errors.add(:allowed_github_usernames, "must include at least one trusted GitHub username")
+  end
+
+  # When the trusted-user list changes, previously-parsed dependency and
+  # parent/child relationships may reference content that is now untrusted
+  # (or newly visible). Clear relationships_parsed_at so the next sync
+  # re-parses every issue under the new trust policy.
+  def invalidate_relationship_parsing_on_trust_change
+    return unless saved_change_to_allowed_github_usernames?
+
+    issues.update_all(relationships_parsed_at: nil)
   end
 end

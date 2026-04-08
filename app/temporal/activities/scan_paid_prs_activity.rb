@@ -82,12 +82,18 @@ module Activities
       end
     end
 
+    MAX_CONSECUTIVE_DRAFT_FAILURES = 3
+
     # --- Draft phase scanning ---
 
     def scan_draft_pr(project, client, issue, pr_data: nil)
       if project.max_draft_review_rounds.positive? &&
           issue.draft_review_count >= project.max_draft_review_rounds
         return escalate_trigger(issue)
+      end
+
+      if consecutive_draft_failures_breaker?(project, issue)
+        return escalate_trigger(issue, reason: "Consecutive draft follow-up failures (#{MAX_CONSECUTIVE_DRAFT_FAILURES} runs with no output)")
       end
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
@@ -188,7 +194,8 @@ module Activities
           owner_approved_or_self_authored?(project, reviews, pr_data) &&
           checks.present? &&
           all_checks_green?(checks) &&
-          mergeable == true
+          mergeable == true &&
+          no_outstanding_review_feedback?(project, client, issue, reviews)
         return owner_approved_trigger(issue)
       end
 
@@ -244,13 +251,13 @@ module Activities
       }
     end
 
-    def escalate_trigger(issue)
+    def escalate_trigger(issue, reason: "Draft review limit reached")
       log_triggers(issue.project, issue, [ { type: "escalate_to_owner" } ])
 
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ],
+        triggers: [ { type: "escalate_to_owner", details: reason } ],
         phase: issue.pr_review_phase,
         current_draft_review_count: issue.draft_review_count,
         owner_reviewer_login: issue.project.owner_reviewer_login
@@ -333,6 +340,35 @@ module Activities
 
     def followup_limit_reached?(project, issue)
       issue.pr_followup_count >= project.max_pr_followup_runs
+    end
+
+    # Circuit breaker: if the last N automatic draft follow-up runs on
+    # this PR all ended without producing any output (timeout/failed/
+    # cancelled with zero iterations), stop requeueing to prevent
+    # infinite retry loops. Scoped to automatic create_pr runs so that
+    # manual runs or review-phase followups don't trip the breaker.
+    #
+    # The draft_review_count guard ensures we only consider runs from the
+    # current draft phase. maybe_restart_draft resets draft_review_count
+    # to 0, so older non-draft failures can't trip the breaker when a PR
+    # is converted back to draft.
+    def consecutive_draft_failures_breaker?(project, issue)
+      return false if issue.draft_review_count < MAX_CONSECUTIVE_DRAFT_FAILURES
+
+      failure_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled]
+
+      recent_runs = project.agent_runs
+        .where(source_pull_request_number: issue.github_number)
+        .where(trigger_type: "automatic", goal: "create_pr")
+        .finished
+        .order(created_at: :desc)
+        .limit(MAX_CONSECUTIVE_DRAFT_FAILURES)
+
+      return false if recent_runs.size < MAX_CONSECUTIVE_DRAFT_FAILURES
+
+      recent_runs.all? do |run|
+        failure_statuses.include?(run.status) && run.iterations.to_i.zero?
+      end
     end
 
     def last_completed_run(project, issue)
@@ -455,7 +491,7 @@ module Activities
       .freeze
 
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
-      allowed = project&.review_enabled? ? project.enabled_review_bot_logins.presence : nil
+      allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
       latest = latest_allowed_bot_review(reviews, allowed)
 
       # Body-only bots (Codex) can post their CLEAN signal as an issue
@@ -705,6 +741,24 @@ module Activities
       return false if owner_login.blank? || author_login.blank?
 
       owner_login.casecmp?(author_login)
+    end
+
+    # --- Review feedback gate for auto-merge ---
+
+    # Returns true when there is no outstanding review feedback that should
+    # block auto-merge. Checks the same review signals that detect_ready_triggers
+    # would evaluate, so owner approval cannot bypass new findings.
+    def no_outstanding_review_feedback?(project, client, issue, reviews)
+      last_run = last_completed_run(project, issue)
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+
+      return false if human_review_thread_triggers(project, unresolved_threads).any?
+      return false if check_review_bot_status(reviews, unresolved_threads,
+        project: project, last_run: last_run, client: client, issue: issue).any?
+      return false if changes_requested_from_reviews(project, reviews, last_run).any?
+      return false if check_conversation_comments(client, project, issue, last_run).any?
+
+      true
     end
 
     # --- Helpers ---
