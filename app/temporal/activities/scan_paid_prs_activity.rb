@@ -668,13 +668,15 @@ module Activities
 
     # Fetches conversation comments, preferring the lightweight single-page
     # recent_issue_comments call. Falls back to full auto-paginated
-    # issue_comments when the cutoff window extends beyond the returned page
-    # (i.e., every comment on the page is newer than the cutoff, meaning
-    # older post-cutoff comments may exist on earlier pages).
+    # issue_comments when the returned page is from a multi-page result and
+    # the cutoff window extends beyond it (i.e., every comment on the page
+    # is newer than the cutoff, meaning older post-cutoff comments may exist
+    # on earlier pages).
     def fetch_conversation_comments(client, project, issue, cutoff)
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
 
-      if cutoff && comments.size >= 100 && comments.all? { |c| c.created_at.nil? || c.created_at > cutoff }
+      if cutoff && comments.respond_to?(:multi_page?) && comments.multi_page? &&
+          comments.all? { |c| c.created_at.nil? || c.created_at > cutoff }
         client.issue_comments(project.full_name, issue.github_number)
       else
         comments

@@ -383,6 +383,51 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         # issue_comments (full pagination) includes the human comment on an earlier page.
         stub_github_for_pr(
           recent_issue_comments: recent_page,
+          recent_multi_page: true,
+          issue_comments: [ human_comment ] + recent_page
+        )
+      end
+
+      it "falls back to full pagination and detects the earlier comment" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("conversation_comments")
+      end
+    end
+
+    context "when partial last page has all comments newer than cutoff" do
+      # When a multi-page PR has a last page with fewer than 100 comments
+      # (e.g., 150 total -> last page has 50), and all are newer than the
+      # cutoff, the scanner must still fall back to full pagination.
+      let(:recent_page) do
+        Array.new(50) do |i|
+          OpenStruct.new(
+            user: OpenStruct.new(login: "bot-user"),
+            body: "Automated update ##{i}",
+            created_at: (25 - (i / 2)).minutes.ago
+          )
+        end
+      end
+      let(:human_comment) do
+        OpenStruct.new(
+          user: OpenStruct.new(login: "viamin"),
+          body: "Please also address the logging around the parser fallback path",
+          created_at: 55.minutes.ago
+        )
+      end
+
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          recent_issue_comments: recent_page,
+          recent_multi_page: true,
           issue_comments: [ human_comment ] + recent_page
         )
       end
@@ -2249,6 +2294,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     review_threads: [],
     issue_comments: [],
     recent_issue_comments: nil,
+    recent_multi_page: false,
     reviews: default_clean_copilot_review
   )
     pr_data = OpenStruct.new(
@@ -2257,6 +2303,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       draft: draft,
       user: OpenStruct.new(login: author_login)
     )
+
+    recent = recent_issue_comments || issue_comments
+    recent.define_singleton_method(:multi_page?) { recent_multi_page }
 
     allow(github_client).to receive(:pull_request)
       .with(project.full_name, 42)
@@ -2269,7 +2318,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       .and_return(review_threads)
     allow(github_client).to receive(:recent_issue_comments)
       .with(project.full_name, 42)
-      .and_return(recent_issue_comments || issue_comments)
+      .and_return(recent)
     allow(github_client).to receive(:issue_comments)
       .with(project.full_name, 42)
       .and_return(issue_comments)
