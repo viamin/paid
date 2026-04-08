@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_08_031950) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_08_004407) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -475,6 +475,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_031950) do
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
+    t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
@@ -635,6 +636,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_031950) do
     t.index ["selector_type"], name: "index_model_selections_on_selector_type"
   end
 
+  create_table "notifications", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "action_url"
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.datetime "dismissed_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.string "nav_section"
+    t.datetime "read_at"
+    t.datetime "resolved_at"
+    t.integer "severity", default: 0, null: false
+    t.string "source", null: false
+    t.bigint "subject_id"
+    t.string "subject_type"
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["account_id", "nav_section", "read_at"], name: "index_notifications_on_badge"
+    t.index ["account_id", "read_at", "dismissed_at"], name: "index_notifications_on_unread"
+    t.index ["account_id", "source", "subject_type", "subject_id"], name: "index_notifications_on_dedup", unique: true
+    t.index ["subject_type", "subject_id"], name: "index_notifications_on_subject"
+  end
+
   create_table "pre_commit_requirements", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "check_type", limit: 50, default: "shell_command", null: false
@@ -740,6 +764,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_031950) do
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
+    t.boolean "inherit_priority_labels", default: true, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
     t.jsonb "label_mappings", default: {}, null: false
     t.datetime "last_agent_run_at"
@@ -1091,6 +1116,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_08_031950) do
   add_foreign_key "mcp_server_definitions", "accounts"
   add_foreign_key "model_selections", "agent_runs", on_delete: :cascade
   add_foreign_key "model_selections", "llm_models"
+  add_foreign_key "notifications", "accounts"
+  add_foreign_key "notifications", "users"
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade

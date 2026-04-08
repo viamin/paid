@@ -912,7 +912,7 @@ RSpec.describe "Projects" do
           patch project_path(project), params: {
             project: { priority_labels: { P1: "critical", P2: "", P3: "" } }
           }
-          expect(project.reload.priority_labels).to eq("P1" => "critical", "P2" => "", "P3" => "")
+          expect(project.reload.priority_labels).to eq("P1" => "critical", "P2" => nil, "P3" => nil)
         end
 
         it "rejects unknown priority keys via model validation" do
@@ -920,7 +920,7 @@ RSpec.describe "Projects" do
           # Manually assign invalid key to bypass strong params filtering
           project.priority_labels = { "P1" => "ok", "P4" => "bad" }
           expect(project).not_to be_valid
-          expect(project.errors[:priority_labels].join).to include("unknown keys")
+          expect(project.errors[:priority_labels].join).to include("may only contain keys")
         end
       end
 

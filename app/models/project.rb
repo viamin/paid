@@ -73,7 +73,9 @@ class Project < ApplicationRecord
     { label: "Auto-Fix Merge Conflicts", attribute: :auto_fix_merge_conflicts,
      description: "Automatically start a PR follow-up run when a paid-ready PR develops merge conflicts against the base branch." }.freeze,
     { label: "Aggregate PRs", attribute: :pr_aggregation_enabled,
-     description: "When a feature is decomposed into sub-tasks, aggregate all agent changes into a single PR instead of individual PRs per sub-task." }.freeze
+     description: "When a feature is decomposed into sub-tasks, aggregate all agent changes into a single PR instead of individual PRs per sub-task." }.freeze,
+    { label: "Inherit Priority Labels", attribute: :inherit_priority_labels,
+     description: "When Paid creates a PR for an issue, copy any user-defined priority labels (P1/P2/P3) from the issue onto the new PR." }.freeze
   ].freeze
 
   belongs_to :account
@@ -105,6 +107,7 @@ class Project < ApplicationRecord
   encrypts :webhook_secret
 
   before_validation :normalize_agent_co_author_trailer
+  before_validation :normalize_priority_labels
   after_update_commit :invalidate_relationship_parsing_on_trust_change
 
   validates :name, presence: true
@@ -175,6 +178,22 @@ class Project < ApplicationRecord
 
   def set_label_for_stage(stage, label)
     self.label_mappings = label_mappings.merge(stage.to_s => label)
+  end
+
+  # Returns the user-configured GitHub label name for a priority tier ("P1"/"P2"/"P3").
+  def priority_label_for(tier)
+    effective_priority_labels[tier.to_s]
+  end
+
+  def effective_priority_labels
+    overrides = (priority_labels || {}).slice(*PRIORITY_TIERS)
+      .reject { |_, v| v.nil? || (v.is_a?(String) && v.strip.empty?) }
+    DEFAULT_PRIORITY_LABELS.merge(overrides)
+  end
+
+  # All configured priority label names, used by queue ordering and PR inheritance.
+  def priority_label_names
+    effective_priority_labels.values_at(*PRIORITY_TIERS).compact
   end
 
   def worktree_service
@@ -333,20 +352,24 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_runs_update
+    runs = agent_runs.recent.includes(:issue).limit(10).to_a
+    AgentRun.preload_source_pull_requests(runs)
     broadcast_replace_to(
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs),
       partial: "projects/agent_runs",
-      locals: { project: self, recent_agent_runs: agent_runs.recent.limit(10) }
+      locals: { project: self, recent_agent_runs: runs }
     )
   end
 
   def broadcast_agent_runs_list_update
+    runs = agent_runs.recent.includes(:issue).limit(50).to_a
+    AgentRun.preload_source_pull_requests(runs)
     broadcast_replace_to(
       self, :agent_runs_list,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs_list),
       partial: "agent_runs/table",
-      locals: { project: self, agent_runs: agent_runs.recent.includes(:issue).limit(50) }
+      locals: { project: self, agent_runs: runs }
     )
   end
 
@@ -529,6 +552,40 @@ class Project < ApplicationRecord
     errors.add(:owner_reviewer_login, "must be in trusted GitHub usernames")
   end
 
+  # Strip surrounding whitespace from each priority label value before
+  # validation/persistence so a label entered as " critical " matches the
+  # GitHub label "critical" instead of silently failing tier detection.
+  def normalize_priority_labels
+    return unless priority_labels.is_a?(Hash)
+
+    self.priority_labels = priority_labels.each_with_object({}) do |(k, v), h|
+      stripped = v.is_a?(String) ? v.strip : v
+      h[k] = stripped == "" ? nil : stripped
+    end
+  end
+
+  def priority_labels_valid
+    return if priority_labels.nil? || priority_labels == {}
+
+    unless priority_labels.is_a?(Hash)
+      errors.add(:priority_labels, "must be a JSON object")
+      return
+    end
+
+    PRIORITY_TIERS.each do |tier|
+      value = priority_labels[tier]
+      next if value.nil?
+      unless value.is_a?(String) && value.strip.present?
+        errors.add(:priority_labels, "#{tier} label must be a non-blank string")
+      end
+    end
+
+    extras = priority_labels.keys - PRIORITY_TIERS
+    if extras.any?
+      errors.add(:priority_labels, "may only contain keys #{PRIORITY_TIERS.join(', ')} (got: #{extras.join(', ')})")
+    end
+  end
+
   def review_settings_valid
     return if review_settings.nil? || review_settings == {}
 
@@ -613,24 +670,6 @@ class Project < ApplicationRecord
     return if has_any_condition
 
     errors.add(:review_settings, "#{method_name} must have at least one termination condition configured")
-  end
-
-  def priority_labels_valid
-    unless priority_labels.is_a?(Hash)
-      errors.add(:priority_labels, "must be a JSON object")
-      return
-    end
-
-    unknown_keys = priority_labels.keys - PRIORITY_TIERS
-    if unknown_keys.any?
-      errors.add(:priority_labels, "contains unknown keys: #{unknown_keys.join(', ')}")
-    end
-
-    priority_labels.each do |key, value|
-      if value.present? && !value.is_a?(String)
-        errors.add(:priority_labels, "#{key} must be a string")
-      end
-    end
   end
 
   def normalize_agent_co_author_trailer
