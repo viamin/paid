@@ -6,6 +6,9 @@ class Project < ApplicationRecord
   # "none" is not a method — it is represented by enabled: false at the top level
   REVIEW_METHODS = %w[copilot paid_agent codex ci_action manual].freeze
 
+  PRIORITY_TIERS = %w[P1 P2 P3].freeze
+  DEFAULT_PRIORITY_LABELS = { "P1" => "P1", "P2" => "P2", "P3" => "P3" }.freeze
+
   DEFAULT_REVIEW_SETTINGS = {
     "enabled" => false,
     "wait_for_reviews" => true,
@@ -71,7 +74,9 @@ class Project < ApplicationRecord
     { label: "Auto-Fix Merge Conflicts", attribute: :auto_fix_merge_conflicts,
      description: "Automatically start a PR follow-up run when a paid-ready PR develops merge conflicts against the base branch." }.freeze,
     { label: "Aggregate PRs", attribute: :pr_aggregation_enabled,
-     description: "When a feature is decomposed into sub-tasks, aggregate all agent changes into a single PR instead of individual PRs per sub-task." }.freeze
+     description: "When a feature is decomposed into sub-tasks, aggregate all agent changes into a single PR instead of individual PRs per sub-task." }.freeze,
+    { label: "Inherit Priority Labels", attribute: :inherit_priority_labels,
+     description: "When Paid creates a PR for an issue, copy any user-defined priority labels (P1/P2/P3) from the issue onto the new PR." }.freeze
   ].freeze
 
   belongs_to :account
@@ -103,6 +108,7 @@ class Project < ApplicationRecord
   encrypts :webhook_secret
 
   before_validation :normalize_agent_co_author_trailer
+  before_validation :normalize_priority_labels
   after_update_commit :invalidate_relationship_parsing_on_trust_change
 
   validates :name, presence: true
@@ -131,6 +137,7 @@ class Project < ApplicationRecord
   validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
   validate :review_settings_valid
+  validate :priority_labels_valid
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -172,6 +179,22 @@ class Project < ApplicationRecord
 
   def set_label_for_stage(stage, label)
     self.label_mappings = label_mappings.merge(stage.to_s => label)
+  end
+
+  # Returns the user-configured GitHub label name for a priority tier ("P1"/"P2"/"P3").
+  def priority_label_for(tier)
+    effective_priority_labels[tier.to_s]
+  end
+
+  def effective_priority_labels
+    overrides = (priority_labels || {}).slice(*PRIORITY_TIERS)
+      .reject { |_, v| v.nil? || (v.is_a?(String) && v.strip.empty?) }
+    DEFAULT_PRIORITY_LABELS.merge(overrides)
+  end
+
+  # All configured priority label names, used by queue ordering and PR inheritance.
+  def priority_label_names
+    effective_priority_labels.values_at(*PRIORITY_TIERS).compact
   end
 
   def worktree_service
@@ -330,20 +353,24 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_runs_update
+    runs = agent_runs.recent.includes(:issue).limit(10).to_a
+    AgentRun.preload_source_pull_requests(runs)
     broadcast_replace_to(
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs),
       partial: "projects/agent_runs",
-      locals: { project: self, recent_agent_runs: agent_runs.recent.limit(10) }
+      locals: { project: self, recent_agent_runs: runs }
     )
   end
 
   def broadcast_agent_runs_list_update
+    runs = agent_runs.recent.includes(:issue).limit(50).to_a
+    AgentRun.preload_source_pull_requests(runs)
     broadcast_replace_to(
       self, :agent_runs_list,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs_list),
       partial: "agent_runs/table",
-      locals: { project: self, agent_runs: agent_runs.recent.includes(:issue).limit(50) }
+      locals: { project: self, agent_runs: runs }
     )
   end
 
@@ -520,6 +547,39 @@ class Project < ApplicationRecord
     return if trusted_github_user?(owner_reviewer_login)
 
     errors.add(:owner_reviewer_login, "must be in trusted GitHub usernames")
+  end
+
+  # Strip surrounding whitespace from each priority label value before
+  # validation/persistence so a label entered as " critical " matches the
+  # GitHub label "critical" instead of silently failing tier detection.
+  def normalize_priority_labels
+    return unless priority_labels.is_a?(Hash)
+
+    self.priority_labels = priority_labels.each_with_object({}) do |(k, v), h|
+      h[k] = v.is_a?(String) ? v.strip : v
+    end
+  end
+
+  def priority_labels_valid
+    return if priority_labels.nil? || priority_labels == {}
+
+    unless priority_labels.is_a?(Hash)
+      errors.add(:priority_labels, "must be a JSON object")
+      return
+    end
+
+    PRIORITY_TIERS.each do |tier|
+      value = priority_labels[tier]
+      next if value.nil?
+      unless value.is_a?(String) && value.strip.present?
+        errors.add(:priority_labels, "#{tier} label must be a non-blank string")
+      end
+    end
+
+    extras = priority_labels.keys - PRIORITY_TIERS
+    if extras.any?
+      errors.add(:priority_labels, "may only contain keys #{PRIORITY_TIERS.join(', ')} (got: #{extras.join(', ')})")
+    end
   end
 
   def review_settings_valid

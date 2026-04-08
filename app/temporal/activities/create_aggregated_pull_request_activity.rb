@@ -36,7 +36,7 @@ module Activities
         client, project, feature_branch, parent_issue, results, merged_branches, failed_merges
       )
 
-      add_pr_labels(client, project, pr.number)
+      add_pr_labels(client, project, pr.number, parent_issue: parent_issue)
 
       logger.info(
         message: "aggregated_pr.created",
@@ -150,13 +150,19 @@ module Activities
       parts.join("\n")
     end
 
-    def add_pr_labels(client, project, pr_number)
-      return unless project.auto_add_labels_enabled?
+    def add_pr_labels(client, project, pr_number, parent_issue: nil)
+      labels = []
+      if project.auto_add_labels_enabled?
+        labels << project.generated_label_name
+        labels << project.automation_label_name
+      end
+      if project.inherit_priority_labels? && parent_issue&.labels.present?
+        labels.concat(project.priority_label_names & Array(parent_issue.labels))
+      end
+      labels.uniq!
+      return if labels.empty?
 
-      client.add_labels_to_issue(project.full_name, pr_number, [
-        project.generated_label_name,
-        project.automation_label_name
-      ])
+      client.add_labels_to_issue(project.full_name, pr_number, labels)
     rescue GithubClient::Error => e
       logger.warn(
         message: "aggregated_pr.add_labels_failed",
