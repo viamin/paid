@@ -59,12 +59,32 @@ module Activities
       # them downstream could incorrectly trigger agent runs for closed work.
       open_issues = synced_issues.reject { |si| si[:github_state] == "closed" }
 
+      # During incremental fetches, issues whose `updated_at` did not change
+      # on GitHub are not returned by the API. However, those issues may still
+      # need re-evaluation by DetectLabelsActivity — for example when a
+      # blocking dependency was resolved, or project label/trust settings
+      # changed. Append locally-open issues in re-scannable states that were
+      # not already part of this fetch so the workflow passes them downstream.
+      if incremental
+        fetched_ids = open_issues.map { |si| si[:id] }.to_set
+        rescannable = project.issues
+          .where(github_state: "open", paid_state: %w[new needs_input recommend_close])
+          .where.not(id: fetched_ids.to_a)
+          .pluck(:id, :github_number, :github_state)
+
+        rescannable.each do |id, github_number, github_state|
+          open_issues << { id: id, github_number: github_number, labels: [],
+                           github_state: github_state, trusted: true, rescan: true }
+        end
+      end
+
       logger.info(
         message: "github_sync.fetch_issues",
         project_id: project.id,
         issue_count: synced_issues.size,
         closed_count: closed_count,
-        incremental: incremental
+        incremental: incremental,
+        rescan_count: incremental ? open_issues.count { |si| si[:rescan] } : 0
       )
 
       { issues: open_issues, project_id: project_id }
