@@ -62,6 +62,8 @@ module Activities
     # execution-failure classification because streamed stdout/stderr can
     # contain ordinary agent prose that mentions rate limiting.
     TIMEOUT_RATE_LIMIT_PATTERNS = [
+      /\bHTTP\s?429\b/,
+      /\btoo many requests\b/i,
       /quota exceeded/i,
       /free tier limit reached/i,
       /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
