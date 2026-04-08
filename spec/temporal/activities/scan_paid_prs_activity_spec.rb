@@ -1666,6 +1666,104 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when owner approved but unresolved human review threads exist" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Critical security vulnerability", path: "app/model.rb", line: 10, author: "viamin" } ]
+            }
+          ]
+        )
+      end
+
+      it "does not auto-merge and emits review thread triggers instead" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("review_threads")
+      end
+    end
+
+    context "when owner approved but changes_requested exists from trusted user" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true,
+          allowed_github_usernames: [ "viamin", "reviewer" ])
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "reviewer", state: "CHANGES_REQUESTED", body: "Needs work",
+              submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "does not auto-merge" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("changes_requested")
+      end
+    end
+
+    context "when owner approved but new conversation comment from trusted user" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        issue = create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        create(:agent_run, project: project, issue: issue,
+          pull_request_number: 42, status: "completed",
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          issue_comments: [
+            OpenStruct.new(
+              user: OpenStruct.new(login: "viamin"),
+              body: "This has a critical security vulnerability that needs to be fixed",
+              created_at: 1.hour.ago
+            )
+          ]
+        )
+      end
+
+      it "does not auto-merge" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("conversation_comments")
+      end
+    end
+
     context "when owner reviewer is also the PR author" do
       before do
         project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
