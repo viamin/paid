@@ -29,8 +29,14 @@ module Activities
         # Advance the watermark to the latest `updated_at` among fetched
         # issues so the next sync picks up where this one left off, ensuring
         # forward progress instead of re-fetching the same window forever.
+        #
+        # Subtract 1 second so the boundary is inclusive: GitHub's `since`
+        # parameter filters as "updated after" the given timestamp, so
+        # issues sharing the exact same second-level `updated_at` as the
+        # watermark would be excluded on the next poll. Overlapping by one
+        # second is safe because sync_issue is idempotent.
         latest_updated = github_issues.filter_map { |gi| gi.updated_at }.max
-        project.touch_last_issue_sync_at(latest_updated) if latest_updated
+        project.touch_last_issue_sync_at(latest_updated - 1.second) if latest_updated
       elsif !truncated
         project.touch_last_issue_sync_at(sync_started_at)
       end
