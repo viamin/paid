@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_07_230341) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_08_004407) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -474,6 +474,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_230341) do
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
+    t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"

@@ -117,11 +117,13 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   end
 
   def missing_labels(project, synced_pr, agent_run)
-    generated = project.generated_label_name
-    automation = project.automation_label_name
-
     inherited_missing = inheritable_priority_labels(project, agent_run)
       .reject { |l| synced_pr.has_label?(l) }
+
+    return inherited_missing unless project.auto_add_labels_enabled?
+
+    generated = project.generated_label_name
+    automation = project.automation_label_name
 
     if synced_pr.has_label?(generated)
       # Generated label is the marker that initial labeling succeeded; if
