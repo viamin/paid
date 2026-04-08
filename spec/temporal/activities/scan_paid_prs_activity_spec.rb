@@ -1334,6 +1334,36 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a newer non-clean review follows an older clean paid_agent review" do
+      before do
+        enable_paid_agent_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [
+            { id: 1, user_login: "human-reviewer", state: "COMMENTED",
+              body: "Looks good. <!-- paid-review-clean -->",
+              submitted_at: 2.hours.ago },
+            { id: 2, user_login: "human-reviewer", state: "COMMENTED",
+              body: "Found new issues after the latest push.",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not treat the review as clean because the latest review is non-clean" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |x| x[:type] } }
+        expect(trigger_types).not_to include("review_bot_comments")
+      end
+    end
+
     context "when paid_agent is enabled alongside copilot and copilot has unresolved threads" do
       before do
         proj = project
