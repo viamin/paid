@@ -14,6 +14,8 @@ class ProjectWorkflowManager
         task_queue: Paid.task_queue
       )
 
+      WorkflowState.record_polling_status(project, status: "running")
+
       Rails.logger.info(
         message: "github_sync.polling_started",
         project_id: project.id,
@@ -29,6 +31,8 @@ class ProjectWorkflowManager
     def stop_polling(project)
       handle = Paid.temporal_client.workflow_handle(workflow_id_for(project))
       handle.cancel
+
+      WorkflowState.record_polling_status(project, status: "cancelled")
 
       Rails.logger.info(
         message: "github_sync.polling_stopped",
@@ -62,6 +66,11 @@ class ProjectWorkflowManager
       raise unless e.code == Temporalio::Error::RPCError::Code::NOT_FOUND
       # Workflow not found — that's fine, we'll start fresh
     ensure
+      WorkflowState.record_polling_status(
+        project,
+        status: "running",
+        restart_reason: reason || "self-healing restart"
+      )
       start_polling(project)
     end
 

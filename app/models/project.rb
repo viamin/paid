@@ -316,6 +316,7 @@ class Project < ApplicationRecord
 
   def touch_last_polled_at(timestamp = Time.current)
     update_column(:last_polled_at, timestamp)
+    WorkflowState.record_polling_status(self, status: "running")
   end
 
   # Shared staleness window used by both the health-check job and the
@@ -401,6 +402,18 @@ class Project < ApplicationRecord
       partial: "projects/issues",
       locals: { project: self, issues: displayed,
                 issue_lifecycle_statuses: lifecycle_statuses }
+    )
+  end
+
+  def broadcast_workflow_status_update
+    health = WorkflowState.compute_health_for(self)
+    return unless health
+
+    broadcast_replace_to(
+      self, :project_updates,
+      target: "workflow-status",
+      partial: "workflow_statuses/status",
+      locals: { project: self, health: health }
     )
   end
 
