@@ -913,7 +913,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         create(:agent_run, :completed,
           project: project,
           source_pull_request_number: 42,
-          completed_at: 30.minutes.ago)
+          completed_at: 1.hour.ago)
         stub_github_for_pr(
           checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
@@ -923,10 +923,39 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "treats the review as already addressed and does not trigger" do
+      it "treats the review as already addressed after the timeout elapses and does not trigger" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when codex review predates an agent run but timeout has not elapsed" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 10.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 2.hours.ago } ],
+          review_threads: []
+        )
+      end
+
+      it "keeps the feedback blocking while waiting for a clean re-review on HEAD" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
       end
     end
 
@@ -981,6 +1010,88 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
 
       it "emits a review_bot_comments trigger because the feedback is unaddressed" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments")
+      end
+    end
+
+    context "when the clean review bot review is on a stale commit (not HEAD)" do
+      before do
+        enable_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Codex reviewed 3 files and generated no comments.",
+                       submitted_at: 1.hour.ago, commit_id: "old_commit_sha" } ],
+          review_threads: []
+        )
+      end
+
+      it "requests a new review because the clean review does not target HEAD" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger_types = result[:prs_to_trigger].first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_review_pending")
+      end
+    end
+
+    context "when the clean review bot review is on the current HEAD commit" do
+      before do
+        enable_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Codex reviewed 3 files and generated no comments.",
+                       submitted_at: 1.hour.ago, commit_id: "abc123" } ],
+          review_threads: []
+        )
+      end
+
+      it "treats the review as clean because it targets the current HEAD" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when a non-clean codex review targets the current HEAD and a clean comment exists" do
+      before do
+        enable_codex_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 1)
+        clean_comment = OpenStruct.new(
+          user: OpenStruct.new(login: "chatgpt-codex-connector[bot]"),
+          body: "Codex Review: Didn't find any major issues. Bravo.",
+          created_at: 2.hours.ago
+        )
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector[bot]", state: "COMMENTED",
+                       body: "Here are some automated review suggestions.",
+                       submitted_at: 1.hour.ago, commit_id: "abc123" } ],
+          review_threads: [],
+          recent_issue_comments: [ clean_comment ]
+        )
+      end
+
+      it "does not let the clean comment override a non-clean review on HEAD" do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger].size).to eq(1)
@@ -2194,6 +2305,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   def default_clean_copilot_review
     [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
-        body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago } ]
+        body: "Copilot reviewed 5 out of 5 changed files and generated no comments.", submitted_at: 1.hour.ago,
+        commit_id: "abc123" } ]
   end
 end

@@ -27,6 +27,11 @@ module Activities
     # distinctive phrase rather than the prefix so we are robust to minor
     # wording changes.
     BODY_ONLY_BOT_CLEAN_COMMENT_PATTERN = /didn'?t find any (?:major )?issues/i
+    # Fallback timeout for body-only review bots: if no clean re-review
+    # arrives within this window after the last agent run, treat the
+    # feedback as addressed to prevent permanent wedges. The primary
+    # clearance path requires a clean signal on the current HEAD commit.
+    BODY_ONLY_REVIEW_FOLLOWUP_TIMEOUT = 30.minutes
 
     def execute(input)
       project_id = input[:project_id]
@@ -108,10 +113,16 @@ module Activities
 
       # Draft exit still requires an explicitly clean bot review even when
       # other draft comment signals are skipped.
+      # Resolve HEAD SHA early so check_review_bot_status can verify
+      # clean signals target the current commit.
+      pr_data ||= fetch_pr_data(client, project, issue)
+      current_head_sha = pr_data&.head&.sha
+
       if skip_comment_signals
         reviews = fetch_reviews(client, project, issue)
         review_bot_triggers = check_review_bot_status(reviews, unresolved_threads,
-          project: project, last_run: last_run, client: client, issue: issue)
+          project: project, last_run: last_run, client: client, issue: issue,
+          head_sha: current_head_sha)
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
@@ -120,7 +131,8 @@ module Activities
         if human_triggers.blank?
           reviews = fetch_reviews(client, project, issue)
           review_bot_triggers = check_review_bot_status(reviews, unresolved_threads,
-            project: project, last_run: last_run, client: client, issue: issue)
+            project: project, last_run: last_run, client: client, issue: issue,
+            head_sha: current_head_sha)
         end
       end
 
@@ -195,7 +207,7 @@ module Activities
           checks.present? &&
           all_checks_green?(checks) &&
           mergeable == true &&
-          no_outstanding_review_feedback?(project, client, issue, reviews)
+          no_outstanding_review_feedback?(project, client, issue, reviews, head_sha: pr_data.head&.sha)
         return owner_approved_trigger(issue)
       end
 
@@ -299,7 +311,8 @@ module Activities
 
       triggers.concat(ci_failure_triggers(checks))
       triggers.concat(check_review_bot_status(reviews, unresolved_threads,
-        project: project, last_run: last_run, client: client, issue: issue))
+        project: project, last_run: last_run, client: client, issue: issue,
+        head_sha: pr_data&.head&.sha))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
@@ -490,7 +503,8 @@ module Activities
       .to_set
       .freeze
 
-    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil)
+    def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil,
+      head_sha: nil)
       allowed = project&.review_enabled? ? (project.enabled_review_bot_logins.presence || Set.new) : nil
       latest = latest_allowed_bot_review(reviews, allowed)
 
@@ -505,7 +519,8 @@ module Activities
       # The bypass is restricted to projects whose enabled review bots are
       # ALL body-only so a clean codex comment cannot suppress an outstanding
       # Copilot review in mixed configurations.
-      if client && issue && body_only_bot_clean_comment_present?(client, project, issue, latest, allowed)
+      if client && issue && body_only_bot_clean_comment_present?(client, project, issue, latest, allowed,
+        head_sha: head_sha)
         return []
       end
 
@@ -513,7 +528,17 @@ module Activities
 
       case status
       when :clean
-        []
+        if head_sha && latest[:commit_id] && latest[:commit_id] != head_sha
+          login = project && review_bot_request_login(project)
+          if login
+            [ { type: "review_bot_review_pending", details: "Clean review is not on current HEAD commit",
+                request_login: login } ]
+          else
+            []
+          end
+        else
+          []
+        end
       when :no_review
         # Only emit a pending trigger when a requestable review bot is
         # configured. When login is nil — reviews globally disabled, or
@@ -582,6 +607,11 @@ module Activities
     # authoritatively for the project's review configuration AND is at least
     # as recent as that bot's latest review on this PR.
     #
+    # When head_sha is provided, also requires that the latest non-clean
+    # review (if any) was NOT on the current HEAD commit — a non-clean
+    # review on HEAD means the bot found issues with the current code and
+    # a clean comment from a prior commit cannot override that finding.
+    #
     # The override is restricted to projects whose enabled review bots are
     # ALL body-only — i.e. no thread-based bot like Copilot is also enabled.
     # A clean codex comment cannot speak for an outstanding Copilot review
@@ -590,9 +620,19 @@ module Activities
     #
     # The comment-vs-review timestamp comparison prevents an older "Bravo"
     # comment from masking a newer non-clean review on a subsequent commit.
-    def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins)
+    def body_only_bot_clean_comment_present?(client, project, issue, latest_review, allowed_bot_logins,
+      head_sha: nil)
       return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
       return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
+
+      # If the latest review is a non-clean review on the current HEAD
+      # commit, a clean issue comment cannot override it — the bot reviewed
+      # this exact code and found issues.
+      if head_sha && latest_review &&
+          !REVIEW_BOT_CLEAN_PATTERN.match?(latest_review[:body]) &&
+          latest_review[:commit_id] == head_sha
+        return false
+      end
 
       comments = client.recent_issue_comments(project.full_name, issue.github_number)
       bot_comments = comments.select do |c|
@@ -614,11 +654,16 @@ module Activities
       false
     end
 
-    # Anti-loop guard for body-only review bots: returns true when the bot's
-    # latest review was submitted after the last agent run completed, meaning
-    # the agent has not yet addressed the feedback. Treats missing timestamps
-    # conservatively as "needs follow-up" to avoid silently dropping
-    # actionable review content.
+    # Anti-loop guard for body-only review bots. Returns true when
+    # the review feedback should still be treated as unaddressed.
+    #
+    # Primary clearance requires a clean signal on the current HEAD
+    # commit (checked elsewhere). This method acts as a safety-net
+    # fallback: if no clean re-review arrives within
+    # BODY_ONLY_REVIEW_FOLLOWUP_TIMEOUT after the last agent run
+    # completed, the feedback is treated as addressed to prevent
+    # permanent wedges. While the timeout has not elapsed, feedback
+    # remains blocking so the re-review has time to arrive.
     def body_only_review_needs_followup?(latest_review, last_run)
       return false if latest_review.nil?
 
@@ -628,7 +673,13 @@ module Activities
       cutoff = last_run&.completed_at
       return true if cutoff.nil?
 
-      submitted_at > cutoff
+      # Review was posted after the run — definitely unaddressed.
+      return true if submitted_at > cutoff
+
+      # Review predates the run. Wait for a clean re-review on HEAD
+      # until the timeout expires, then treat as addressed to avoid
+      # permanent wedges.
+      Time.current < cutoff + BODY_ONLY_REVIEW_FOLLOWUP_TIMEOUT
     end
 
     def review_bot_thread_triggers(unresolved_threads)
@@ -748,13 +799,14 @@ module Activities
     # Returns true when there is no outstanding review feedback that should
     # block auto-merge. Checks the same review signals that detect_ready_triggers
     # would evaluate, so owner approval cannot bypass new findings.
-    def no_outstanding_review_feedback?(project, client, issue, reviews)
+    def no_outstanding_review_feedback?(project, client, issue, reviews, head_sha: nil)
       last_run = last_completed_run(project, issue)
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
       return false if human_review_thread_triggers(project, unresolved_threads).any?
       return false if check_review_bot_status(reviews, unresolved_threads,
-        project: project, last_run: last_run, client: client, issue: issue).any?
+        project: project, last_run: last_run, client: client, issue: issue,
+        head_sha: head_sha).any?
       return false if changes_requested_from_reviews(project, reviews, last_run).any?
       return false if check_conversation_comments(client, project, issue, last_run).any?
 
