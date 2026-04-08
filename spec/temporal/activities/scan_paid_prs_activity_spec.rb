@@ -33,6 +33,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
+  def enable_paid_agent_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "paid_agent" => { "enabled" => true } }
+    })
+  end
+
   def enable_copilot_and_codex_review!(proj = project)
     proj.update!(review_settings: {
       "enabled" => true,
@@ -103,6 +110,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+        expect(octokit_client).not_to have_received(:rate_limit)
+      end
+
+      it "escalates draft PRs at max review rounds without checking rate budget" do
+        project.update!(max_draft_review_rounds: 3)
+        pr_issue.update!(pr_review_phase: "draft", draft_review_count: 3)
+        allow(rate_limit).to receive(:remaining).and_return(5)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        expect(result[:prs_to_trigger].first[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(octokit_client).not_to have_received(:rate_limit)
       end
     end
@@ -1139,6 +1158,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent is the only review method and stale copilot reviews exist" do
+      before do
+        enable_paid_agent_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+                       body: "Copilot found issues.", submitted_at: 1.day.ago } ],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "ignores stale copilot reviews and does not emit review_bot triggers" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).not_to include("review_bot_comments", "review_bot_threads")
+      end
+    end
+
     context "when no review bot review exists and CI is green" do
       before do
         enable_copilot_review!
@@ -1674,6 +1717,104 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when owner approved but unresolved human review threads exist" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Critical security vulnerability", path: "app/model.rb", line: 10, author: "viamin" } ]
+            }
+          ]
+        )
+      end
+
+      it "does not auto-merge and emits review thread triggers instead" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("review_threads")
+      end
+    end
+
+    context "when owner approved but changes_requested exists from trusted user" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true,
+          allowed_github_usernames: [ "viamin", "reviewer" ])
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "reviewer", state: "CHANGES_REQUESTED", body: "Needs work",
+              submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "does not auto-merge" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("changes_requested")
+      end
+    end
+
+    context "when owner approved but new conversation comment from trusted user" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        issue = create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        create(:agent_run, project: project, issue: issue,
+          pull_request_number: 42, status: "completed",
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          issue_comments: [
+            OpenStruct.new(
+              user: OpenStruct.new(login: "viamin"),
+              body: "This has a critical security vulnerability that needs to be fixed",
+              created_at: 1.hour.ago
+            )
+          ]
+        )
+      end
+
+      it "does not auto-merge" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("conversation_comments")
       end
     end
 

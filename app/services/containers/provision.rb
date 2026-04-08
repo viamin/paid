@@ -92,7 +92,7 @@ module Containers
       memory_bytes: 4 * 1024 * 1024 * 1024, # 4GB RAM default; overridden by UserSetting#container_memory_bytes
       cpu_quota: 200_000,                        # 2 CPUs (100_000 per CPU)
       pids_limit: 500,                           # 500 process limit
-      timeout_seconds: 1800,                     # 30 minutes default timeout
+      timeout_seconds: 3600,                     # 1 hour default timeout
       tmpfs_tmp_size: 1024 * 1024 * 1024,        # 1GB for /tmp
       tmpfs_cache_size: 512 * 1024 * 1024,       # 512MB for /home/agent/.cache
       image: "paid-agent:latest",
