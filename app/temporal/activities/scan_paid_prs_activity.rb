@@ -103,12 +103,18 @@ module Activities
       end
     end
 
+    MAX_CONSECUTIVE_DRAFT_FAILURES = 3
+
     # --- Draft phase scanning ---
 
     def scan_draft_pr(project, client, issue, pr_data: nil)
       if project.max_draft_review_rounds.positive? &&
           issue.draft_review_count >= project.max_draft_review_rounds
         return escalate_trigger(issue)
+      end
+
+      if consecutive_draft_failures_breaker?(project, issue)
+        return escalate_trigger(issue, reason: "Consecutive draft follow-up failures (#{MAX_CONSECUTIVE_DRAFT_FAILURES} runs with no output)")
       end
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
@@ -270,13 +276,13 @@ module Activities
       }
     end
 
-    def escalate_trigger(issue)
+    def escalate_trigger(issue, reason: "Draft review limit reached")
       log_triggers(issue.project, issue, [ { type: "escalate_to_owner" } ])
 
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ],
+        triggers: [ { type: "escalate_to_owner", details: reason } ],
         phase: issue.pr_review_phase,
         current_draft_review_count: issue.draft_review_count,
         owner_reviewer_login: issue.project.owner_reviewer_login
@@ -392,6 +398,35 @@ module Activities
 
     def followup_limit_reached?(project, issue)
       issue.pr_followup_count >= project.max_pr_followup_runs
+    end
+
+    # Circuit breaker: if the last N automatic draft follow-up runs on
+    # this PR all ended without producing any output (timeout/failed/
+    # cancelled with zero iterations), stop requeueing to prevent
+    # infinite retry loops. Scoped to automatic create_pr runs so that
+    # manual runs or review-phase followups don't trip the breaker.
+    #
+    # The draft_review_count guard ensures we only consider runs from the
+    # current draft phase. maybe_restart_draft resets draft_review_count
+    # to 0, so older non-draft failures can't trip the breaker when a PR
+    # is converted back to draft.
+    def consecutive_draft_failures_breaker?(project, issue)
+      return false if issue.draft_review_count < MAX_CONSECUTIVE_DRAFT_FAILURES
+
+      failure_statuses = AgentRun::FAILURE_STATUSES + %w[cancelled]
+
+      recent_runs = project.agent_runs
+        .where(source_pull_request_number: issue.github_number)
+        .where(trigger_type: "automatic", goal: "create_pr")
+        .finished
+        .order(created_at: :desc)
+        .limit(MAX_CONSECUTIVE_DRAFT_FAILURES)
+
+      return false if recent_runs.size < MAX_CONSECUTIVE_DRAFT_FAILURES
+
+      recent_runs.all? do |run|
+        failure_statuses.include?(run.status) && run.iterations.to_i.zero?
+      end
     end
 
     def last_completed_run(project, issue)
