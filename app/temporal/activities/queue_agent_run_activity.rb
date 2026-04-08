@@ -13,10 +13,6 @@ module Activities
       source_pull_request_number = input[:source_pull_request_number]
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
-      validate_draft_review_round_tracking!(
-        count_toward_draft_review_round: count_toward_draft_review_round,
-        expected_draft_review_count: expected_draft_review_count
-      )
 
       project = Project.find(project_id)
       issue = issue_id ? Issue.find(issue_id) : nil
@@ -139,7 +135,7 @@ module Activities
       return if agent_run.count_toward_draft_review_round? &&
         agent_run.expected_draft_review_count.present?
 
-      if agent_run.read_attribute(:trigger_type) != "automatic"
+      if agent_run.trigger_type != "automatic"
         logger.warn(
           message: "concurrency.draft_tracking_skipped_manual_run",
           agent_run_id: agent_run.id
@@ -151,14 +147,6 @@ module Activities
         count_toward_draft_review_round: true,
         expected_draft_review_count: expected_draft_review_count
       )
-    end
-
-    def validate_draft_review_round_tracking!(count_toward_draft_review_round:, expected_draft_review_count:)
-      return unless count_toward_draft_review_round
-      return if expected_draft_review_count.present?
-
-      raise ArgumentError,
-        "expected_draft_review_count is required when count_toward_draft_review_round is true"
     end
   end
 end
