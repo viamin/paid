@@ -259,6 +259,11 @@ class AgentRun < ApplicationRecord
   # the project's configured priority labels (highest wins), else nil.
   # Memoized because rendering helpers call this twice per row (once
   # via queue_priority_tier and once via queue_priority_label).
+  #
+  # NOTE: The memoization is per-instance and is only safe for the
+  # request-scoped rendering use case. Long-running processes that hold
+  # onto an AgentRun across an issue.labels update will see a stale tier;
+  # call AgentRun#reload (or instantiate a new record) in those cases.
   def label_priority_tier
     return @label_priority_tier if defined?(@label_priority_tier)
     @label_priority_tier = compute_label_priority_tier
@@ -336,7 +341,7 @@ class AgentRun < ApplicationRecord
     CASE
       WHEN EXISTS (
         SELECT 1 FROM projects p JOIN issues i ON (
-          i.id = agent_runs.issue_id
+          (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
           OR (i.project_id = agent_runs.project_id
               AND i.github_number = agent_runs.source_pull_request_number
               AND i.is_pull_request = TRUE)
@@ -347,7 +352,7 @@ class AgentRun < ApplicationRecord
       WHEN trigger_type = 'manual' THEN 1
       WHEN EXISTS (
         SELECT 1 FROM projects p JOIN issues i ON (
-          i.id = agent_runs.issue_id
+          (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
           OR (i.project_id = agent_runs.project_id
               AND i.github_number = agent_runs.source_pull_request_number
               AND i.is_pull_request = TRUE)
@@ -358,7 +363,7 @@ class AgentRun < ApplicationRecord
       WHEN trigger_type = 'automatic' AND source_pull_request_number IS NOT NULL THEN 3
       WHEN EXISTS (
         SELECT 1 FROM projects p JOIN issues i ON (
-          i.id = agent_runs.issue_id
+          (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
           OR (i.project_id = agent_runs.project_id
               AND i.github_number = agent_runs.source_pull_request_number
               AND i.is_pull_request = TRUE)

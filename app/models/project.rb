@@ -186,16 +186,6 @@ class Project < ApplicationRecord
     effective_priority_labels[tier.to_s]
   end
 
-  # Returns the highest priority tier (one of PRIORITY_TIERS) represented in
-  # the given list of GitHub label names, or nil if none of the configured
-  # priority labels are present. "Highest" means earliest in PRIORITY_TIERS.
-  def highest_priority_tier_for_labels(label_names)
-    return nil if label_names.blank?
-
-    names = Array(label_names)
-    PRIORITY_TIERS.find { |tier| names.include?(effective_priority_labels[tier]) }
-  end
-
   def effective_priority_labels
     overrides = (priority_labels || {}).slice(*PRIORITY_TIERS)
       .reject { |_, v| v.nil? || (v.is_a?(String) && v.strip.empty?) }
@@ -363,20 +353,24 @@ class Project < ApplicationRecord
   end
 
   def broadcast_agent_runs_update
+    runs = agent_runs.recent.includes(:issue).limit(10).to_a
+    AgentRun.preload_source_pull_requests(runs)
     broadcast_replace_to(
       self, :project_updates,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs),
       partial: "projects/agent_runs",
-      locals: { project: self, recent_agent_runs: agent_runs.recent.limit(10) }
+      locals: { project: self, recent_agent_runs: runs }
     )
   end
 
   def broadcast_agent_runs_list_update
+    runs = agent_runs.recent.includes(:issue).limit(50).to_a
+    AgentRun.preload_source_pull_requests(runs)
     broadcast_replace_to(
       self, :agent_runs_list,
       target: ActionView::RecordIdentifier.dom_id(self, :agent_runs_list),
       partial: "agent_runs/table",
-      locals: { project: self, agent_runs: agent_runs.recent.includes(:issue).limit(50) }
+      locals: { project: self, agent_runs: runs }
     )
   end
 
