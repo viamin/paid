@@ -139,6 +139,14 @@ module Activities
       return if agent_run.count_toward_draft_review_round? &&
         agent_run.expected_draft_review_count.present?
 
+      if agent_run.read_attribute(:trigger_type) != "automatic"
+        logger.warn(
+          message: "concurrency.draft_tracking_skipped_manual_run",
+          agent_run_id: agent_run.id
+        )
+        return
+      end
+
       agent_run.update!(
         count_toward_draft_review_round: true,
         expected_draft_review_count: expected_draft_review_count

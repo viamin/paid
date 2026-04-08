@@ -94,17 +94,10 @@ module Activities
     end
 
     def record_draft_review_round_if_needed(agent_run)
-      # Legacy fallback: if this is a draft followup that was running when the deployment happened,
-      # it won't have count_toward_draft_review_round=true set. We can detect this case by checking
-      # if it's a draft followup run without the new tracking columns but with expected count available.
-      if !agent_run.count_toward_draft_review_round? && agent_run.expected_draft_review_count.blank?
-        # Check if this looks like a legacy draft followup that should count toward review rounds
-        if agent_run.issue_id.present? && agent_run.issue&.is_pull_request? &&
-           agent_run.issue&.draft_phase? && agent_run.source_pull_request_number.present? &&
-           agent_run.trigger_type == "automatic" && %w[completed failed cancelled timeout].include?(agent_run.status)
-          # This is a legacy draft followup - treat it as if it should count
-          agent_run.update!(count_toward_draft_review_round: true)
-        end
+      agent_run.reload
+
+      unless agent_run.count_toward_draft_review_round?
+        apply_legacy_draft_followup_fallback!(agent_run)
       end
       return unless agent_run.count_toward_draft_review_round?
       return unless agent_run.issue_id.present?
@@ -113,16 +106,32 @@ module Activities
           "agent_run #{agent_run.id} is tracking a draft review round without expected_draft_review_count"
       end
 
-      # Only count successful runs toward draft review rounds
-      # Check if we're in a successful context - this provides defense in depth
-      # since the calling activities should only invoke this on successful paths
-      return if agent_run.status == "failed"
-      return if agent_run.status == "cancelled"
-      return if agent_run.status == "timeout"
+      return if %w[failed cancelled timeout].include?(agent_run.status)
 
       Activities::RecordDraftReviewActivity.new.execute(
         issue_id: agent_run.issue_id,
         expected_draft_review_count: agent_run.expected_draft_review_count
+      )
+    end
+
+    private
+
+    def apply_legacy_draft_followup_fallback!(agent_run)
+      return if agent_run.count_toward_draft_review_round?
+      return if agent_run.expected_draft_review_count.present?
+      return unless agent_run.issue_id.present?
+      return unless agent_run.issue&.is_pull_request?
+      return unless agent_run.issue&.draft_phase?
+      return unless agent_run.source_pull_request_number.present?
+      return unless agent_run.trigger_type == "automatic"
+      return unless %w[completed failed cancelled timeout].include?(agent_run.status)
+
+      expected_count = agent_run.issue.draft_review_count
+      return if expected_count.blank?
+
+      agent_run.update!(
+        count_toward_draft_review_round: true,
+        expected_draft_review_count: expected_count
       )
     end
 

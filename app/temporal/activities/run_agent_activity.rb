@@ -695,15 +695,7 @@ module Activities
       # backtrace with this method's call site. Skip when the worker was
       # intentionally interrupted (infinite loop) — re-raising the
       # Interrupt would mask the InfiniteLoopError already propagating.
-      begin
-        result = worker.value
-      rescue => e
-        # Preserve original backtrace but prepend caller location for better debugging
-        e.set_backtrace(caller + e.backtrace)
-        raise e
-      else
-        result
-      end unless interrupted
+      worker.value unless interrupted
     end
 
     def build_command(command_context, prompt)
