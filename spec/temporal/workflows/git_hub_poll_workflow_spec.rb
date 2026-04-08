@@ -73,6 +73,66 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "rate limit budget coordination" do
+    let(:workflow) { described_class.new }
+
+    before do
+      allow(Temporalio::Workflow).to receive(:patched).and_return(true)
+      allow(workflow).to receive(:run_activity).and_return({})
+    end
+
+    it "skips non-critical activities when rate limit is low" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
+        .and_return({ rate_limit_remaining: 50, rate_limit_low: true })
+
+      logger = instance_double(Logger, info: nil)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+
+      workflow.send(:maybe_run_non_critical_activities, 1)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckKnowledgeStalenessActivity, anything, timeout: anything)
+      expect(logger).to have_received(:info).with(hash_including(
+        message: "poll.non_critical_skipped_budget_low",
+        project_id: 1,
+        rate_limit_remaining: 50
+      ))
+    end
+
+    it "runs non-critical activities when rate limit is sufficient" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
+        .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
+        .and_return({ prs_to_trigger: [] })
+
+      workflow.send(:maybe_run_non_critical_activities, 1)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
+    end
+
+    it "skips rate limit check but still runs non-critical activities when patch guard returns false (pre-v872 workflows)" do
+      allow(Temporalio::Workflow).to receive(:patched).with("add-rate-limit-budget-v1").and_return(false)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything)
+        .and_return({ prs_to_trigger: [] })
+
+      workflow.send(:maybe_run_non_critical_activities, 1)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CheckRateLimitActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
+    end
+  end
+
   describe "CheckKnowledgeStalenessActivity patch guard" do
     let(:workflow) { described_class.new }
 
