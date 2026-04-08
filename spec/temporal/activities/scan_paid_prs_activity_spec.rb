@@ -31,6 +31,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     })
   end
 
+  def enable_paid_agent_review!(proj = project)
+    proj.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "paid_agent" => { "enabled" => true } }
+    })
+  end
+
   def enable_copilot_and_codex_review!(proj = project)
     proj.update!(review_settings: {
       "enabled" => true,
@@ -1097,6 +1104,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent is the only review method and stale copilot reviews exist" do
+      before do
+        enable_paid_agent_review!
+        project.update!(owner_reviewer_login: "viamin")
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 0)
+        stub_github_for_pr(
+          reviews: [ { id: 100, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+                       body: "Copilot found issues.", submitted_at: 1.day.ago } ],
+          checks: [ { name: "ci", conclusion: "success" } ]
+        )
+      end
+
+      it "ignores stale copilot reviews and does not emit review_bot triggers" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = result[:prs_to_trigger].flat_map { |t| t[:triggers].map { |tr| tr[:type] } }
+        expect(trigger_types).not_to include("review_bot_comments", "review_bot_threads")
+      end
+    end
+
     context "when no review bot review exists and CI is green" do
       before do
         enable_copilot_review!
@@ -1315,6 +1346,92 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
         expect(trigger[:current_draft_review_count]).to eq(3)
+      end
+    end
+
+    context "when consecutive draft follow-up runs all fail without output" do
+      let!(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "draft",
+          draft_review_count: 3)
+      end
+
+      before do
+        stub_github_for_pr(
+          review_threads: [
+            { id: "thread_1", is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/model.rb", line: 10, author: "viamin" } ] }
+          ]
+        )
+      end
+
+      def create_draft_run(status:, iterations:, created_at:, trigger_type: "automatic", goal: "create_pr")
+        create(:agent_run,
+          project: project,
+          issue: pr_issue,
+          source_pull_request_number: 42,
+          trigger_type: trigger_type,
+          goal: goal,
+          status: status,
+          iterations: iterations,
+          created_at: created_at)
+      end
+
+      it "escalates after 3 consecutive no-output failures with breaker-specific reason" do
+        3.times { |i| create_draft_run(status: "timeout", iterations: 0, created_at: i.minutes.ago) }
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("Consecutive draft follow-up failures")
+      end
+
+      it "does not escalate when a recent run produced output" do
+        create_draft_run(status: "timeout", iterations: 0, created_at: 1.minute.ago)
+        create_draft_run(status: "completed", iterations: 5, created_at: 2.minutes.ago)
+        create_draft_run(status: "timeout", iterations: 0, created_at: 3.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
+      end
+
+      it "does not escalate with fewer than 3 consecutive failures" do
+        2.times { |i| create_draft_run(status: "timeout", iterations: 0, created_at: i.minutes.ago) }
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
+      end
+
+      it "does not count manual or review runs toward the breaker" do
+        create_draft_run(status: "timeout", iterations: 0, created_at: 1.minute.ago)
+        create_draft_run(status: "failed", iterations: 0, created_at: 2.minutes.ago)
+        # This run is manual, not an automatic draft followup
+        create_draft_run(status: "timeout", iterations: 0, created_at: 3.minutes.ago, trigger_type: "manual")
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
+      end
+
+      it "does not escalate after draft restart even with old failures" do
+        # Simulate maybe_restart_draft resetting draft_review_count to 0
+        # while old non-draft failures still exist in the DB
+        pr_issue.update!(draft_review_count: 0, pr_review_phase: "restarted")
+        3.times { |i| create_draft_run(status: "timeout", iterations: 0, created_at: i.minutes.ago) }
+
+        result = activity.execute(project_id: project.id)
+
+        triggers = result[:prs_to_trigger].first[:triggers]
+        expect(triggers.first[:type]).not_to eq("escalate_to_owner")
       end
     end
 
@@ -1632,6 +1749,104 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         result = activity.execute(project_id: project.id)
 
         expect(result[:prs_to_trigger]).to eq([])
+      end
+    end
+
+    context "when owner approved but unresolved human review threads exist" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Critical security vulnerability", path: "app/model.rb", line: 10, author: "viamin" } ]
+            }
+          ]
+        )
+      end
+
+      it "does not auto-merge and emits review thread triggers instead" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("review_threads")
+      end
+    end
+
+    context "when owner approved but changes_requested exists from trusted user" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true,
+          allowed_github_usernames: [ "viamin", "reviewer" ])
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "reviewer", state: "CHANGES_REQUESTED", body: "Needs work",
+              submitted_at: Time.current }
+          ]
+        )
+      end
+
+      it "does not auto-merge" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("changes_requested")
+      end
+    end
+
+    context "when owner approved but new conversation comment from trusted user" do
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_enabled: true)
+        issue = create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        create(:agent_run, project: project, issue: issue,
+          pull_request_number: 42, status: "completed",
+          completed_at: 2.hours.ago)
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          issue_comments: [
+            OpenStruct.new(
+              user: OpenStruct.new(login: "viamin"),
+              body: "This has a critical security vulnerability that needs to be fixed",
+              created_at: 1.hour.ago
+            )
+          ]
+        )
+      end
+
+      it "does not auto-merge" do
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:prs_to_trigger].size).to eq(1)
+        trigger = result[:prs_to_trigger].first
+        trigger_types = trigger[:triggers].map { |t| t[:type] }
+        expect(trigger_types).not_to include("owner_approved")
+        expect(trigger_types).to include("conversation_comments")
       end
     end
 
