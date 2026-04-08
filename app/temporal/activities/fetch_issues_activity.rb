@@ -120,16 +120,31 @@ module Activities
       { id: issue.id, github_number: issue.github_number, labels: issue.labels, trusted: trusted }
     end
 
-    # TODO(#430): Fetching comments per issue is an N+1 API call pattern that
-    # increases sync time and rate-limit pressure. Consider skipping unchanged
-    # issues (via github_updated_at) or batching comment fetches.
+    # Parses dependency and parent/child relationships from issue comments.
+    # Re-parses issues whose github_updated_at has advanced beyond their last
+    # successful parse, as well as issues never parsed or whose previous parse
+    # failed — relationships_parsed_at is only bumped on success, so transient
+    # fetch errors naturally retry on the next sync. Trust-policy changes clear
+    # relationships_parsed_at on the project's issues to force reparse (see
+    # Project#invalidate_relationship_parsing_on_trust_change).
     def parse_issue_relationships(project, synced_issues)
       synced_issue_ids = synced_issues.filter_map { |si| si[:id] }
-      issues_relation = project.issues.where(
-        id: synced_issue_ids,
-        github_state: "open",
-        is_pull_request: false
-      )
+
+      issues_relation = project.issues
+        .where(id: synced_issue_ids, github_state: "open", is_pull_request: false)
+        .where("relationships_parsed_at IS NULL OR relationships_parsed_at < github_updated_at")
+
+      candidate_count = issues_relation.count
+
+      if candidate_count > 0
+        logger.info(
+          message: "github_sync.parse_issue_relationships",
+          project_id: project.id,
+          total_issues: synced_issue_ids.size,
+          updated_issues: candidate_count,
+          skipped_issues: synced_issue_ids.size - candidate_count
+        )
+      end
 
       client = project.github_token.client
 
@@ -140,6 +155,7 @@ module Activities
       parent_child_changed = false
 
       issues_relation.find_each do |issue|
+        parsed_before = issue.relationships_parsed_at
         check_rate_budget!(client)
         comment_bodies = fetch_trusted_comment_bodies(client, project, issue)
         # nil means comment fetch failed — skip ALL parsing for this issue to
@@ -149,6 +165,8 @@ module Activities
 
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
         parent_child_changed |= Issues::ParseParentChild.call(issue: issue, comments: comment_bodies)
+
+        stamp_relationships_parsed(issue, parsed_before)
       rescue GithubClient::RateLimitError, Temporalio::Error::ApplicationError
         raise
       rescue => e
@@ -293,6 +311,21 @@ module Activities
       end
 
       count
+    end
+
+    # Stamp relationships_parsed_at only if a concurrent trust-policy change
+    # has not cleared it (see Project#invalidate_relationship_parsing_on_trust_change).
+    # Uses a conditional UPDATE keyed on the value we observed when entering
+    # the loop: if the column was NULLed by a concurrent invalidation, the
+    # WHERE won't match and the next sync will re-parse under the new trust list.
+    def stamp_relationships_parsed(issue, parsed_before)
+      scope = Issue.where(id: issue.id)
+      scope = if parsed_before.nil?
+        scope.where(relationships_parsed_at: nil)
+      else
+        scope.where(relationships_parsed_at: parsed_before)
+      end
+      scope.update_all(relationships_parsed_at: issue.github_updated_at)
     end
 
     def extract_labels(github_issue)
