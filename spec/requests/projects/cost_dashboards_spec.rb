@@ -25,7 +25,9 @@ RSpec.describe "Projects::CostDashboards" do
         expect(response.body).to include("Cost Dashboard")
       end
 
-      it "shows cost summary cards" do
+      it "shows cost summary cards when cost data exists" do
+        project.update!(total_cost_cents: 100)
+
         get project_cost_dashboard_path(project)
 
         expect(response.body).to include("Total Cost")
@@ -34,10 +36,11 @@ RSpec.describe "Projects::CostDashboards" do
         expect(response.body).to include("Avg Cost / Run")
       end
 
-      it "shows empty state when no cost data" do
+      it "hides cost summary cards when no cost data" do
         get project_cost_dashboard_path(project)
 
-        expect(response.body).to include("$0.00")
+        expect(response.body).to include("No cost data available yet.")
+        expect(response.body).not_to include("Total Cost")
       end
 
       it "shows cost data when token usages exist" do
