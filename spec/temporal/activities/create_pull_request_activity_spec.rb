@@ -278,7 +278,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       before do
         other_issue
-        agent_run.log!("stdout", "Fixed owner/repo##{other_issue.github_number} by updating the scanner")
+        agent_run.log!("stdout", "Fixed #{project.full_name}##{other_issue.github_number} by updating the scanner")
       end
 
       it "detects scope mismatch from qualified references" do
@@ -297,10 +297,29 @@ RSpec.describe Activities::CreatePullRequestActivity do
     context "when agent summary uses qualified owner/repo#NNN ref for its own issue" do
       before do
         create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
-        agent_run.log!("stdout", "Fixed owner/repo##{issue.github_number} by updating the scanner")
+        agent_run.log!("stdout", "Fixed #{project.full_name}##{issue.github_number} by updating the scanner")
       end
 
       it "does not log a scope mismatch warning" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+    end
+
+    context "when agent summary references an external repo issue with a matching local number" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue
+        # The summary references an external repo whose issue number happens to
+        # match a local sibling issue — this should NOT trigger a mismatch.
+        agent_run.log!("stdout", "See also rails/rails##{other_issue.github_number} for upstream context on ##{issue.github_number}")
+      end
+
+      it "does not log a scope mismatch warning for external qualified references" do
         activity.execute(agent_run_id: agent_run.id)
 
         mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")

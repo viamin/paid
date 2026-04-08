@@ -123,16 +123,22 @@ module Activities
       return if summary.blank? || issue.nil?
 
       issue_number = issue.github_number
+      repo_full_name = agent_run.project.full_name
 
-      # Match both bare (#123) and qualified (owner/repo#123) issue references.
-      issue_ref_pattern = /(?:[\w.\-]+\/[\w.\-]+)?#(\d+)\b/
+      # Match both bare (#123) and qualified (owner/repo#123) issue references,
+      # capturing the optional qualifier so we can discard external-repo refs.
+      issue_ref_pattern = /([\w.\-]+\/[\w.\-]+)?#(\d+)\b/
 
       mentions_own_issue = summary.match?(/(?:[\w.\-]+\/[\w.\-]+)?##{issue_number}\b/) ||
                           summary.match?(/\bissue\s+#{issue_number}\b/i)
 
-      # Extract all issue numbers from the summary in a single pass, then
-      # intersect with sibling open issues to avoid O(issues × summary) regex.
-      referenced_numbers = summary.scan(issue_ref_pattern).flatten.map(&:to_i).to_set
+      # Extract issue numbers from the summary in a single pass, keeping only
+      # bare refs (#NNN) and qualified refs matching this project (owner/repo#NNN).
+      # External qualified refs (e.g. rails/rails#1234) are ignored to avoid
+      # false mismatch warnings when the same number exists locally.
+      referenced_numbers = summary.scan(issue_ref_pattern)
+        .filter_map { |qualifier, num| num.to_i if qualifier.nil? || qualifier == repo_full_name }
+        .to_set
       referenced_numbers.delete(issue_number)
 
       sibling_numbers = sibling_open_issue_numbers(
