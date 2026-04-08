@@ -13,6 +13,7 @@ class AgentRun < ApplicationRecord
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
+  STALE_CLEANUP_ERROR_PREFIX = "[cleanup] "
 
   belongs_to :project
   belongs_to :issue, optional: true
@@ -510,6 +511,10 @@ class AgentRun < ApplicationRecord
       error_message: error,
       duration_seconds: duration
     )
+  end
+
+  def cancelled_by_cleanup?
+    status == "timeout" && error_message&.start_with?(STALE_CLEANUP_ERROR_PREFIX)
   end
 
   def retried?

@@ -225,6 +225,12 @@ module Activities
               )
             end
           rescue InfiniteLoopError => e
+            agent_run.reload
+            if agent_run.cancelled_by_cleanup?
+              agent_run.record_provider_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup")
+              logger.info(message: "agent_execution.cancelled_by_cleanup", provider: provider, agent_run_id: agent_run.id)
+              break
+            end
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "infinite_loop")
             last_error = "infinite_loop"
@@ -246,6 +252,12 @@ module Activities
               non_retryable: true
             )
           rescue ProviderTimeoutError => e
+            agent_run.reload
+            if agent_run.cancelled_by_cleanup?
+              agent_run.record_provider_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup")
+              logger.info(message: "agent_execution.cancelled_by_cleanup", provider: provider, agent_run_id: agent_run.id)
+              break
+            end
             last_error = "timeout"
             timeout_error ||= e.message
             record_provider_failure(user_settings, provider_state_name, provider_states)
@@ -253,6 +265,12 @@ module Activities
             logger.warn(message: "agent_execution.provider_timeout", provider: provider, agent_run_id: agent_run.id, error: e.message)
             break
           rescue ProviderExecutionError => e
+            agent_run.reload
+            if agent_run.cancelled_by_cleanup?
+              agent_run.record_provider_attempt(attempt_label, success: false, error_type: "cancelled_by_cleanup")
+              logger.info(message: "agent_execution.cancelled_by_cleanup", provider: provider, agent_run_id: agent_run.id)
+              break
+            end
             last_error = "error"
             record_provider_failure(user_settings, provider_state_name, provider_states)
             agent_run.record_provider_attempt(attempt_label, success: false, error_type: "error")

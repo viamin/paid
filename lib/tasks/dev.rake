@@ -57,7 +57,7 @@ namespace :dev do
         next if run.finished?
 
         if grace.zero? || run.updated_at < grace.ago
-          run.timeout!(error: "Marked stale on startup: process was restarted")
+          run.timeout!(error: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}Marked stale on startup: process was restarted")
           run.log!("system", "Run marked as timed out during startup cleanup")
           run.issue&.update!(paid_state: "failed") unless run.issue&.paid_state == "failed"
           stale_container_ids << run.container_id if run.container_id.present?
