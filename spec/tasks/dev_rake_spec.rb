@@ -34,8 +34,10 @@ RSpec.describe "dev:cleanup" do
 
     running_run.reload
     expect(running_run.status).to eq("timeout")
+    expect(running_run.error_message).to start_with(AgentRun::STALE_CLEANUP_ERROR_PREFIX)
     expect(running_run.error_message).to include("process was restarted")
     expect(running_run.completed_at).to be_present
+    expect(running_run.cancelled_by_cleanup?).to be true
   end
 
   it "times out runs stuck in pending" do
@@ -45,6 +47,7 @@ RSpec.describe "dev:cleanup" do
 
     pending_run.reload
     expect(pending_run.status).to eq("timeout")
+    expect(pending_run.error_message).to start_with(AgentRun::STALE_CLEANUP_ERROR_PREFIX)
     expect(pending_run.error_message).to include("process was restarted")
   end
 

@@ -1146,6 +1146,50 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "cleanup cancellation detection" do
+    before do
+      allow(container_service).to receive(:execute).and_return(exec_success)
+      allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+    end
+
+    it "skips circuit breaker on InfiniteLoopError when run was cancelled by cleanup" do
+      call_count = 0
+      allow(activity).to receive(:run_agent_with_provider) do
+        call_count += 1
+        agent_run.update!(status: "timeout",
+          error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}Marked stale on startup: process was restarted",
+          completed_at: Time.current)
+        raise described_class::InfiniteLoopError, "loop detected"
+      end
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "All providers exhausted")
+
+      expect(call_count).to eq(1)
+    end
+
+    it "skips circuit breaker on ProviderExecutionError when run was cancelled by cleanup" do
+      call_count = 0
+      allow(activity).to receive(:run_agent_with_provider) do
+        call_count += 1
+        # On first call, simulate cleanup happening then provider error
+        if call_count == 1
+          agent_run.update!(status: "timeout",
+            error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}Marked stale on startup: process was restarted",
+            completed_at: Time.current)
+        end
+        raise described_class::ProviderExecutionError, "execution failed"
+      end
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "All providers exhausted")
+
+      expect(call_count).to eq(1)
+    end
+  end
+
   describe "paused run protection after provider exhaustion" do
     before do
       allow(container_service).to receive(:execute).and_return(exec_failure)
