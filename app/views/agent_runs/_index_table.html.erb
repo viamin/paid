@@ -1,5 +1,6 @@
 <% show_project = local_assigns.fetch(:show_project, false) %>
 <% runs = agent_runs.to_a %>
+<% AgentRun.preload_source_pull_requests(runs) %>
 <% if runs.any? %>
   <div class="mt-4 flow-root">
     <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
