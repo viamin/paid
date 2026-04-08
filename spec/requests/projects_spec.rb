@@ -863,6 +863,22 @@ RSpec.describe "Projects" do
         expect(project.reload.auto_fix_merge_conflicts).to be true
       end
 
+      it "allows updating priority label names" do
+        project = create(:project, account: account, github_token: github_token)
+        patch project_path(project), params: {
+          project: { priority_labels: { "P1" => "urgent", "P2" => "normal", "P3" => "low" } }
+        }
+        expect(project.reload.priority_labels).to eq("P1" => "urgent", "P2" => "normal", "P3" => "low")
+      end
+
+      it "rejects blank priority label values" do
+        project = create(:project, account: account, github_token: github_token)
+        patch project_path(project), params: {
+          project: { priority_labels: { "P1" => "", "P2" => "normal", "P3" => "low" } }
+        }
+        expect(project.reload.priority_labels).not_to eq("P1" => "", "P2" => "normal", "P3" => "low")
+      end
+
       it "allows updating security scanning settings" do
         project = create(:project, account: account, github_token: github_token,
           auto_scan_security: false, security_severity_threshold: "high")
