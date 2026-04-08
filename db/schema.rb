@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_07_230340) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_08_004407) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -477,6 +477,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_230340) do
     t.index ["labels"], name: "index_issues_on_labels_gin_open_prs", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))", using: :gin
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
+    t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
@@ -742,12 +743,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_230340) do
     t.string "generated_label_name", default: "paid-generated", null: false
     t.bigint "github_id", null: false
     t.bigint "github_token_id", null: false
+    t.boolean "inherit_priority_labels", default: true, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
     t.jsonb "label_mappings", default: {}, null: false
     t.datetime "last_agent_run_at"
     t.datetime "last_code_scanning_scan_at"
     t.datetime "last_github_activity_at"
-    t.datetime "last_issue_sync_at"
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_execution_seconds", default: 3600, null: false
@@ -761,6 +762,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_07_230340) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
+    t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
     t.string "repo", null: false
     t.jsonb "review_settings", default: {}, null: false
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
