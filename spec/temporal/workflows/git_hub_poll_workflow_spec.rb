@@ -479,5 +479,44 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::RequestReviewActivity, anything, timeout: anything)
     end
+
+    it "routes paid_agent_review_pending to QueueAgentRunActivity with review goal" do
+      pr_data = {
+        issue_id: 10, pr_number: 42,
+        triggers: [ { type: "paid_agent_review_pending" } ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_including(project_id: 1, issue_id: 10,
+            source_pull_request_number: 42, goal: "review"),
+          timeout: anything)
+    end
+
+    it "routes paid_agent_review_pending with other triggers to followup workflow" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      pr_data = {
+        issue_id: 10, pr_number: 42, phase: "draft",
+        current_draft_review_count: 0,
+        triggers: [
+          { type: "paid_agent_review_pending" },
+          { type: "ci_failure", details: "CI failed" }
+        ]
+      }
+
+      workflow.send(:handle_pr_trigger, project_id, pr_data)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::QueueAgentRunActivity,
+          hash_excluding(goal: "review"),
+          timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordDraftReviewActivity, anything, timeout: anything)
+    end
   end
 end
