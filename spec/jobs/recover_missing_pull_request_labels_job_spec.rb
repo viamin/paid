@@ -52,6 +52,85 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       end
     end
 
+    context "when priority labels need to be inherited" do
+      it "recovers missing priority labels alongside generated/automation" do
+        issue = create(:issue, project: project, labels: [ "P1", "bug" ])
+        create(:agent_run, :completed,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          pull_request_number: 416,
+          pull_request_url: "https://github.com/viamin/paid/pull/416")
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 416,
+          labels: [])
+
+        described_class.perform_now
+
+        expect(github_client).to have_received(:add_labels_to_issue)
+          .with("viamin/paid", 416, [ "paid-generated", "paid-automation", "P1" ])
+      end
+
+      it "recovers only the missing priority label when generated is already present" do
+        issue = create(:issue, project: project, labels: [ "P1", "bug" ])
+        create(:agent_run, :completed,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          pull_request_number: 416,
+          pull_request_url: "https://github.com/viamin/paid/pull/416")
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 416,
+          labels: [ "paid-generated", "paid-automation" ])
+
+        described_class.perform_now
+
+        expect(github_client).to have_received(:add_labels_to_issue)
+          .with("viamin/paid", 416, [ "P1" ])
+      end
+
+      it "still recovers priority labels when auto_add_labels is disabled" do
+        project.update!(auto_add_labels_enabled: false)
+        issue = create(:issue, project: project, labels: [ "P1" ])
+        create(:agent_run, :completed,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          pull_request_number: 416,
+          pull_request_url: "https://github.com/viamin/paid/pull/416")
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 416,
+          labels: [])
+
+        described_class.perform_now
+
+        expect(github_client).to have_received(:add_labels_to_issue)
+          .with("viamin/paid", 416, [ "P1" ])
+      end
+
+      it "skips priority recovery when inherit_priority_labels is disabled" do
+        project.update!(inherit_priority_labels: false)
+        issue = create(:issue, project: project, labels: [ "P1" ])
+        create(:agent_run, :completed,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          pull_request_number: 416,
+          pull_request_url: "https://github.com/viamin/paid/pull/416")
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 416,
+          labels: [ "paid-generated", "paid-automation" ])
+
+        described_class.perform_now
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+    end
+
     context "when only the automation label is missing" do
       it "preserves manual opt-out" do
         create(:agent_run, :completed,
