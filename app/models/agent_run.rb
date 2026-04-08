@@ -211,32 +211,123 @@ class AgentRun < ApplicationRecord
   end
 
   # Priority ordering for the run queue:
-  #   0 = manual runs (highest)
-  #   1 = automatic runs fixing a PR (auto-continue)
-  #   2 = automatic runs from auto-pick (lowest)
+  #   0 = P1 user-defined label (highest)
+  #   1 = manual runs
+  #   2 = P2 user-defined label
+  #   3 = automatic runs fixing a PR (auto-continue)
+  #   4 = P3 user-defined label
+  #   5 = automatic runs from auto-pick (lowest)
+  #
+  # User-defined priority labels (configured per project via
+  # Project#priority_labels) are read from either the run's associated
+  # issue OR the source pull request (looked up by source_pull_request_number
+  # against the project's issues table). If multiple priority labels are
+  # present, the highest takes precedence (P1 > P2 > P3).
+  #
   # Within each tier, create_issue runs are prioritized over create_pr
   # runs because issue creation is lighter-weight and often unblocks
-  # downstream PR work.
-  # Within each goal type, runs are processed FIFO by created_at, with
-  # id as a stable tiebreaker for runs created in the same timestamp.
-  #
-  # NOTE: The SQL sort tiers above (0/1/2) are internal ordering values.
-  # The `indicator` values below (1/2/3) are user-facing display labels
-  # shown in the priority badge (e.g. "1 - Manual").
+  # downstream PR work. Within each goal type, runs are FIFO by
+  # created_at, with id as a stable tiebreaker.
   QUEUE_PRIORITIES = {
-    manual: { label: "Manual", indicator: 1 },
-    auto_continue: { label: "Auto-continue", indicator: 2 },
-    auto_pick: { label: "Auto-pick", indicator: 3 }
+    label_p1: { label: "P1", indicator: 1 },
+    manual: { label: "Manual", indicator: 2 },
+    label_p2: { label: "P2", indicator: 3 },
+    auto_continue: { label: "Auto-continue", indicator: 4 },
+    label_p3: { label: "P3", indicator: 5 },
+    auto_pick: { label: "Auto-pick", indicator: 6 }
   }.freeze
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
 
   def queue_priority_tier
+    label_tier = label_priority_tier
+    return :label_p1 if label_tier == "P1"
+
     if manual?
       :manual
+    elsif label_tier == "P2"
+      :label_p2
     elsif automatic? && existing_pr?
       :auto_continue
+    elsif label_tier == "P3"
+      :label_p3
     else
       :auto_pick
+    end
+  end
+
+  # Returns "P1"/"P2"/"P3" if the run's issue or source PR carries one of
+  # the project's configured priority labels (highest wins), else nil.
+  # Memoized because rendering helpers call this twice per row (once
+  # via queue_priority_tier and once via queue_priority_label).
+  #
+  # NOTE: The memoization is per-instance and is only safe for the
+  # request-scoped rendering use case. Long-running processes that hold
+  # onto an AgentRun across an issue.labels update will see a stale tier;
+  # call AgentRun#reload (or instantiate a new record) in those cases.
+  def label_priority_tier
+    return @label_priority_tier if defined?(@label_priority_tier)
+    @label_priority_tier = compute_label_priority_tier
+  end
+
+  # When a run has both an associated issue AND a source PR, labels from
+  # both records are considered (highest configured tier wins). Label
+  # name matching is case-sensitive on both the Ruby and SQL sides; an
+  # issue tagged "p1" will not match a configured tier of "P1".
+  def compute_label_priority_tier
+    return nil unless project
+
+    label_sources = []
+    label_sources << issue.labels if issue&.labels.present?
+    pr_record = source_pull_request_record
+    label_sources << pr_record.labels if pr_record&.labels.present?
+    return nil if label_sources.empty?
+
+    Project::PRIORITY_TIERS.find do |tier|
+      label_name = project.priority_label_for(tier)
+      next false if label_name.blank?
+      label_sources.any? { |labels| labels.include?(label_name) }
+    end
+  end
+  private :compute_label_priority_tier
+
+  attr_writer :source_pull_request_record
+
+  # The Issue row representing this run's source pull request, used by
+  # label_priority_tier. Falls back to a per-row find_by, but callers
+  # rendering many runs should call AgentRun.preload_source_pull_requests
+  # first to avoid an N+1.
+  def source_pull_request_record
+    return @source_pull_request_record if defined?(@source_pull_request_record)
+    return nil if source_pull_request_number.blank? || project.nil?
+
+    @source_pull_request_record = project.issues.find_by(
+      github_number: source_pull_request_number, is_pull_request: true
+    )
+  end
+
+  # Batch-loads source PR Issue rows for a collection of runs and stashes
+  # each on the run via source_pull_request_record=. Call from controllers
+  # rendering priority badges for many runs to keep label_priority_tier
+  # from issuing one query per row. Groups by project_id so the query is
+  # precise per project (no cross-project over-fetch) without resorting
+  # to dynamic SQL.
+  def self.preload_source_pull_requests(runs)
+    targets = Array(runs).select do |r|
+      r.source_pull_request_number.present? && r.project_id.present? &&
+        !r.instance_variable_defined?(:@source_pull_request_record)
+    end
+    return if targets.empty?
+
+    records = {}
+    targets.group_by(&:project_id).each do |project_id, group|
+      numbers = group.map(&:source_pull_request_number).uniq
+      Issue.where(is_pull_request: true, project_id: project_id, github_number: numbers).each do |issue|
+        records[[ issue.project_id, issue.github_number ]] = issue
+      end
+    end
+
+    targets.each do |run|
+      run.source_pull_request_record = records[[ run.project_id, run.source_pull_request_number ]]
     end
   end
 
@@ -246,11 +337,59 @@ class AgentRun < ApplicationRecord
     indicator ? "#{indicator} - #{priority[:label]}" : priority[:label]
   end
 
+  # Static SQL: does the agent run's associated issue or source PR carry
+  # the project's configured priority label for the named tier? Reads
+  # the per-project label name from `projects.priority_labels` jsonb,
+  # falling back to the literal tier key (P1/P2/P3) when the project's
+  # mapping is empty so behavior matches Project#effective_priority_labels.
+  # `issues.labels` is jsonb; `@>` checks for element containment, and
+  # element matching is case-sensitive on both the SQL and Ruby sides.
+  #
+  # The JOIN uses an OR so the EXISTS check matches either the run's
+  # directly-associated issue OR the issue row representing its source
+  # pull request. When a run has both, labels from both rows are
+  # considered (any priority match wins). This mirrors the Ruby
+  # `compute_label_priority_tier` semantics. Both branches constrain
+  # `i.project_id = agent_runs.project_id`, so cross-project leakage
+  # is impossible even if `issue_id` were ever set across projects.
+  #
+  # NOTE: This SQL contains no interpolated values — the tier names are
+  # hardcoded literals — so it is not a SQL injection vector.
   QUEUE_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
     CASE
-      WHEN trigger_type = 'manual' THEN 0
-      WHEN trigger_type = 'automatic' AND source_pull_request_number IS NOT NULL THEN 1
-      ELSE 2
+      WHEN EXISTS (
+        SELECT 1 FROM projects p JOIN issues i ON (
+          (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
+          OR (i.project_id = agent_runs.project_id
+              AND i.github_number = agent_runs.source_pull_request_number
+              AND i.is_pull_request = TRUE)
+        )
+        WHERE p.id = agent_runs.project_id
+          AND i.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P1', ''), 'P1'))
+      ) THEN 0
+      WHEN trigger_type = 'manual' THEN 1
+      WHEN EXISTS (
+        SELECT 1 FROM projects p JOIN issues i ON (
+          (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
+          OR (i.project_id = agent_runs.project_id
+              AND i.github_number = agent_runs.source_pull_request_number
+              AND i.is_pull_request = TRUE)
+        )
+        WHERE p.id = agent_runs.project_id
+          AND i.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P2', ''), 'P2'))
+      ) THEN 2
+      WHEN trigger_type = 'automatic' AND source_pull_request_number IS NOT NULL THEN 3
+      WHEN EXISTS (
+        SELECT 1 FROM projects p JOIN issues i ON (
+          (i.id = agent_runs.issue_id AND i.project_id = agent_runs.project_id)
+          OR (i.project_id = agent_runs.project_id
+              AND i.github_number = agent_runs.source_pull_request_number
+              AND i.is_pull_request = TRUE)
+        )
+        WHERE p.id = agent_runs.project_id
+          AND i.labels @> jsonb_build_array(COALESCE(NULLIF(p.priority_labels->>'P3', ''), 'P3'))
+      ) THEN 4
+      ELSE 5
     END
   SQL
   GOAL_PRIORITY_SQL = Arel.sql(<<~SQL.squish).freeze
