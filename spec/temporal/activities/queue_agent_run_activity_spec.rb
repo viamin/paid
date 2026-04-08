@@ -100,7 +100,7 @@ RSpec.describe Activities::QueueAgentRunActivity do
           issue_id: issue.id,
           count_toward_draft_review_round: true
         )
-      }.to raise_error(ArgumentError, /expected_draft_review_count is required/)
+      }.to raise_error(ActiveRecord::RecordInvalid, /expected draft review count/i)
     end
 
     it "works without an issue" do

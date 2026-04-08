@@ -308,8 +308,9 @@ module Workflows
         expected_draft_review_count: pr_data[:current_draft_review_count]
       }
 
-      # TODO(#220): Remove patch guard after all workflows that can replay the
-      # legacy draft followup command sequence have continued-as-new.
+      # TODO(#220): Remove patch guard after all long-running GitHubPollWorkflows
+      # have continued-as-new past this point (i.e. no workflow history contains
+      # the legacy queue-then-record command sequence).
       unless Temporalio::Workflow.patched("draft-followup-direct-start-v1")
         run_activity(Activities::QueueAgentRunActivity,
           { project_id: project_id, issue_id: issue_id,
