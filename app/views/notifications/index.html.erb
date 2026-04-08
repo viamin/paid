@@ -53,10 +53,10 @@
       </p>
       <nav class="flex gap-1">
         <% if @pagy.prev %>
-          <%= link_to "Previous", notifications_path(page: @pagy.prev, filter: params[:filter], severity: params[:severity]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+          <%= link_to "Previous", notifications_path(page: @pagy.prev, filter: params[:filter], severity: params[:severity], source: params[:source]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
         <% end %>
         <% if @pagy.next %>
-          <%= link_to "Next", notifications_path(page: @pagy.next, filter: params[:filter], severity: params[:severity]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+          <%= link_to "Next", notifications_path(page: @pagy.next, filter: params[:filter], severity: params[:severity], source: params[:source]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
         <% end %>
       </nav>
     </div>
