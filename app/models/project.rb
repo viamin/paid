@@ -103,6 +103,7 @@ class Project < ApplicationRecord
   encrypts :webhook_secret
 
   before_validation :normalize_agent_co_author_trailer
+  after_update_commit :invalidate_relationship_parsing_on_trust_change
 
   validates :name, presence: true
   validates :owner, presence: true
@@ -623,5 +624,15 @@ class Project < ApplicationRecord
     return if allowed_github_usernames.is_a?(Array) && allowed_github_usernames.any?(&:present?)
 
     errors.add(:allowed_github_usernames, "must include at least one trusted GitHub username")
+  end
+
+  # When the trusted-user list changes, previously-parsed dependency and
+  # parent/child relationships may reference content that is now untrusted
+  # (or newly visible). Clear relationships_parsed_at so the next sync
+  # re-parses every issue under the new trust policy.
+  def invalidate_relationship_parsing_on_trust_change
+    return unless saved_change_to_allowed_github_usernames?
+
+    issues.update_all(relationships_parsed_at: nil)
   end
 end
