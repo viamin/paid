@@ -61,9 +61,13 @@ module Activities
     # Timeout reclassification is intentionally stricter than generic
     # execution-failure classification because streamed stdout/stderr can
     # contain ordinary agent prose that mentions rate limiting.
+    # "too many requests" is only matched when accompanied by HTTP 429 or
+    # status code context to avoid false positives from conversational text.
     TIMEOUT_RATE_LIMIT_PATTERNS = [
-      /\bHTTP\s?429\b/,
-      /\btoo many requests\b/i,
+      /\bHTTP\s?429\b/i,
+      /\b429\b.*\btoo many requests\b/i,
+      /\btoo many requests\b.*\b429\b/i,
+      /\bstatus[:\s]*429\b/i,
       /quota exceeded/i,
       /free tier limit reached/i,
       /(?:rate.?limit|usage limit) +(?:exceeded|reached|hit)/i,
@@ -71,6 +75,10 @@ module Activities
       /exhausted(?: +your)? +capacity/i,
       /out of (?:extra )?usage/i
     ].freeze
+
+    # Maximum number of log rows to inspect when reclassifying a timeout.
+    # Caps memory and DB load on long-running, verbose agent attempts.
+    TIMEOUT_RATE_LIMIT_LOG_LIMIT = 200
 
     # Default timeouts used when per-user settings are unavailable.
     # Runtime code resolves per-user values via UserSetting.
@@ -587,6 +595,7 @@ module Activities
         .where(log_type: %w[stdout stderr])
         .where("created_at >= ?", since)
         .order(created_at: :desc, id: :desc)
+        .limit(TIMEOUT_RATE_LIMIT_LOG_LIMIT)
         .pluck(:content)
 
       normalized_chunks = chunks.filter_map do |chunk|
