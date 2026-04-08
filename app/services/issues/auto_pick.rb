@@ -13,7 +13,7 @@ module Issues
   # - Open, non-PR issues with all dependencies satisfied
   # - No existing unfinished (queued/pending/running/paused) agent run
   # - Not labeled with excluded labels (planning, research, waiting,
-  #   tracking, epic)
+  #   tracking, epic, needs-manual-setup)
   # - Not a parent/tracking issue (has sub-issues)
   # - Ordered by priority: issues in partially-complete dependency trees
   #   first, then by unblock count (how many open issues depend on this
@@ -23,7 +23,7 @@ module Issues
   class AutoPick
     NoRunnableProviderError = Class.new(StandardError)
 
-    EXCLUDED_LABELS = %w[planning research waiting tracking epic].freeze
+    EXCLUDED_LABELS = %w[planning research waiting tracking epic needs-manual-setup].freeze
     PAID_READY_LABEL = "paid-ready"
 
     # SQL ILIKE patterns used to pre-filter potential tracker issues before
