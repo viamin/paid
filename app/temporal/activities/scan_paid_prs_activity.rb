@@ -528,7 +528,7 @@ module Activities
         login = project && review_bot_request_login(project)
         if login
           [ { type: "review_bot_review_pending", details: "No review bot review found", request_login: login } ]
-        elsif project&.review_method_enabled?("paid_agent")
+        elsif project&.review_enabled? && project.review_method_enabled?("paid_agent")
           check_paid_agent_review_status(project, issue)
         else
           []
