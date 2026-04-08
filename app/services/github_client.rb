@@ -767,8 +767,10 @@ class GithubClient
         repository(owner: $owner, name: $name) {
           pullRequest(number: $number) {
             comments: reviewThreads(first: $maxComments) {
+              pageInfo { hasNextPage }
               nodes {
                 comments(first: 50) {
+                  pageInfo { hasNextPage }
                   nodes {
                     databaseId
                     reactions(first: 100) {
@@ -795,8 +797,22 @@ class GithubClient
 
     raise_graphql_errors(data)
 
-    threads = data.dig("data", "repository", "pullRequest", "comments", "nodes") || []
+    threads_connection = data.dig("data", "repository", "pullRequest", "comments") || {}
+    if threads_connection.dig("pageInfo", "hasNextPage")
+      Rails.logger.warn(
+        message: "github_client.review_threads_truncated",
+        repo: repo, pr_number: pr_number, max_threads: max_threads
+      )
+    end
+
+    threads = threads_connection["nodes"] || []
     threads.flat_map do |thread|
+      if thread.dig("comments", "pageInfo", "hasNextPage")
+        Rails.logger.warn(
+          message: "github_client.review_thread_comments_truncated",
+          repo: repo, pr_number: pr_number
+        )
+      end
       comments = thread.dig("comments", "nodes") || []
       comments.flat_map do |comment|
         reactions_data = comment["reactions"] || {}
