@@ -155,6 +155,7 @@ module Activities
       parent_child_changed = false
 
       issues_relation.find_each do |issue|
+        parsed_before = issue.relationships_parsed_at
         comment_bodies = fetch_trusted_comment_bodies(client, project, issue)
         # nil means comment fetch failed — skip ALL parsing for this issue to
         # avoid stale-removal of comment-derived deps. Body-only parsing would
@@ -163,7 +164,8 @@ module Activities
 
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
         parent_child_changed |= Issues::ParseParentChild.call(issue: issue, comments: comment_bodies)
-        issue.update_column(:relationships_parsed_at, issue.github_updated_at)
+
+        stamp_relationships_parsed(issue, parsed_before)
       rescue GithubClient::RateLimitError
         raise
       rescue => e
@@ -308,6 +310,21 @@ module Activities
       end
 
       count
+    end
+
+    # Stamp relationships_parsed_at only if a concurrent trust-policy change
+    # has not cleared it (see Project#invalidate_relationship_parsing_on_trust_change).
+    # Uses a conditional UPDATE keyed on the value we observed when entering
+    # the loop: if the column was NULLed by a concurrent invalidation, the
+    # WHERE won't match and the next sync will re-parse under the new trust list.
+    def stamp_relationships_parsed(issue, parsed_before)
+      scope = Issue.where(id: issue.id)
+      scope = if parsed_before.nil?
+        scope.where(relationships_parsed_at: nil)
+      else
+        scope.where(relationships_parsed_at: parsed_before)
+      end
+      scope.update_all(relationships_parsed_at: issue.github_updated_at)
     end
 
     def extract_labels(github_issue)

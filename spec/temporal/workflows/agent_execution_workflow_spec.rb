@@ -254,11 +254,11 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity"
-          { agent_run_id: 42, provider_attempt_count: 3, agent_timeout_seconds: 3600, max_execution_seconds: 1800 }
+          { agent_run_id: 42, provider_attempt_count: 3, agent_timeout_seconds: 7200, max_execution_seconds: 3600 }
         when "Activities::RunAgentActivity"
-          # Without cap: (3600 * 3) + 300 = 11_100
-          # With cap: 1800 + 300 = 2100
-          expect(opts[:start_to_close_timeout]).to eq(2100)
+          # Without cap: (7200 * 3) + 300 = 21_900
+          # With cap: 3600 + 300 = 3900
+          expect(opts[:start_to_close_timeout]).to eq(3900)
           { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
         else {}
@@ -272,11 +272,11 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity"
-          { agent_run_id: 42, provider_attempt_count: 1, agent_timeout_seconds: 1800, max_execution_seconds: 86_400 }
+          { agent_run_id: 42, provider_attempt_count: 1, agent_timeout_seconds: 3600, max_execution_seconds: 86_400 }
         when "Activities::RunAgentActivity"
-          # Computed: (1800 * 1) + 300 = 2100
+          # Computed: (3600 * 1) + 300 = 3900
           # Cap: 86_400 + 300 = 86_700 (larger, so no cap)
-          expect(opts[:start_to_close_timeout]).to eq(2100)
+          expect(opts[:start_to_close_timeout]).to eq(3900)
           { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
         else {}
