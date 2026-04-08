@@ -1001,6 +1001,35 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(stale.reload.github_state).to eq("open")
       end
 
+      it "includes re-scannable open issues not in the incremental fetch results" do
+        # This issue was not updated on GitHub (so not returned by the API),
+        # but it's in a re-scannable state — it should still be passed
+        # downstream so DetectLabelsActivity can re-evaluate it (e.g., a
+        # blocking dependency may have been resolved).
+        blocked = create(:issue, project: project, github_issue_id: 5000,
+                         github_number: 50, github_state: "open", paid_state: "new")
+        # This issue is in_progress and should NOT be re-scanned.
+        in_progress = create(:issue, project: project, github_issue_id: 5001,
+                             github_number: 51, github_state: "open", paid_state: "in_progress")
+
+        result = activity.execute(project_id: project.id)
+
+        returned_ids = result[:issues].map { |i| i[:id] }
+        expect(returned_ids).to include(blocked.id)
+        expect(returned_ids).not_to include(in_progress.id)
+      end
+
+      it "does not duplicate issues already in the incremental fetch results" do
+        # Pre-create the issue so that it exists in both the fetch and the DB
+        create(:issue, project: project, github_issue_id: 1001,
+               github_number: 1, github_state: "open", paid_state: "new")
+
+        result = activity.execute(project_id: project.id)
+
+        returned_numbers = result[:issues].map { |i| i[:github_number] }
+        expect(returned_numbers.count(1)).to eq(1)
+      end
+
       it "syncs closed issues to DB but excludes them from returned results" do
         closed_issue = OpenStruct.new(
           id: 1002,
