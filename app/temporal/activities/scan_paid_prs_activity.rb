@@ -519,9 +519,9 @@ module Activities
 
       # paid_agent reviews are authored by regular GitHub accounts, not
       # bot logins registered in PROVIDER_BOT_USERNAMES. When paid_agent
-      # is enabled and any review contains the clean marker, treat the
-      # review cycle as complete — the agent has signaled "no major
-      # findings remaining." Only bypass when no registered bot method
+      # is enabled and the most recent review contains the clean marker,
+      # treat the review cycle as complete — the agent has signaled "no
+      # major findings remaining." Only bypass when no registered bot method
       # could produce independent triggers; in mixed configurations
       # (e.g. paid_agent + copilot), each bot's status is evaluated
       # independently below.
@@ -796,9 +796,10 @@ module Activities
     end
 
     def paid_agent_clean_review_present?(reviews)
-      return false if reviews.nil?
+      return false if reviews.nil? || reviews.empty?
 
-      reviews.any? { |r| paid_agent_review_clean?(r[:body]) }
+      latest = reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
+      paid_agent_review_clean?(latest[:body])
     end
 
     def extract_actionable_labels(triggers)
