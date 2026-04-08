@@ -21,7 +21,8 @@ class ProjectsController < ApplicationController
 
   def show
     authorize @project
-    @recent_agent_runs = @project.agent_runs.recent.includes(:issue).limit(10)
+    @recent_agent_runs = @project.agent_runs.recent.includes(:issue).limit(10).to_a
+    AgentRun.preload_source_pull_requests(@recent_agent_runs)
     open_items = @project.issues.where(github_state: "open").order(github_number: :desc)
     @issues = open_items.issues_only.includes(:sub_issues).limit(25)
     @issue_lifecycle_statuses = Issue.lifecycle_statuses(@issues)
@@ -199,7 +200,7 @@ class ProjectsController < ApplicationController
       :inherit_priority_labels,
       :agent_co_author_trailer,
       allowed_github_usernames: [],
-      priority_labels: Project::PRIORITY_TIERS.map(&:to_sym))
+      priority_labels: Project::PRIORITY_TIERS)
   end
 
   TERMINATION_KEYS = %i[max_review_rounds stop_when_no_comments quality_threshold timeout_minutes].freeze

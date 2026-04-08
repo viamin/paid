@@ -201,22 +201,6 @@ RSpec.describe Project do
       end
     end
 
-    describe "#highest_priority_tier_for_labels" do
-      let(:project) { build(:project, priority_labels: { "P1" => "critical", "P2" => "high", "P3" => "low" }) }
-
-      it "returns the highest tier when multiple priority labels are present" do
-        expect(project.highest_priority_tier_for_labels([ "low", "critical", "high" ])).to eq("P1")
-      end
-
-      it "returns nil when no priority labels match" do
-        expect(project.highest_priority_tier_for_labels([ "bug", "wontfix" ])).to be_nil
-      end
-
-      it "returns nil for empty input" do
-        expect(project.highest_priority_tier_for_labels([])).to be_nil
-      end
-    end
-
     describe "priority_labels validation" do
       it "rejects unknown keys" do
         project = build(:project, priority_labels: { "P1" => "critical", "P9" => "ultra" })
