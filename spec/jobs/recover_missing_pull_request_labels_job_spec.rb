@@ -91,6 +91,26 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
           .with("viamin/paid", 416, [ "P1" ])
       end
 
+      it "still recovers priority labels when auto_add_labels is disabled" do
+        project.update!(auto_add_labels_enabled: false)
+        issue = create(:issue, project: project, labels: [ "P1" ])
+        create(:agent_run, :completed,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          pull_request_number: 416,
+          pull_request_url: "https://github.com/viamin/paid/pull/416")
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 416,
+          labels: [])
+
+        described_class.perform_now
+
+        expect(github_client).to have_received(:add_labels_to_issue)
+          .with("viamin/paid", 416, [ "P1" ])
+      end
+
       it "skips priority recovery when inherit_priority_labels is disabled" do
         project.update!(inherit_priority_labels: false)
         issue = create(:issue, project: project, labels: [ "P1" ])

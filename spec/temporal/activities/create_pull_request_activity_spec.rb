@@ -151,6 +151,18 @@ RSpec.describe Activities::CreatePullRequestActivity do
         )
       end
 
+      context "when auto_add_labels is disabled but inheritance is on" do
+        before { project.update!(auto_add_labels_enabled: false) }
+
+        it "still adds inherited priority labels" do
+          activity.execute(agent_run_id: agent_run.id)
+
+          expect(github_client).to have_received(:add_labels_to_issue).with(
+            project.full_name, 42, [ "critical" ]
+          )
+        end
+      end
+
       context "when inherit_priority_labels is disabled" do
         before { project.update!(inherit_priority_labels: false) }
 

@@ -156,6 +156,18 @@ RSpec.describe Activities::CreateAggregatedPullRequestActivity do
       )
     end
 
+    it "still inherits priority labels when auto_add_labels is disabled" do
+      allow(project).to receive(:auto_add_labels_enabled?).and_return(false)
+      project.update_columns(priority_labels: { "P1" => "critical", "P2" => "high", "P3" => "low" })
+      parent_issue = create(:issue, project: project, github_number: 99, labels: [ "critical" ])
+
+      activity.execute(base_input.merge(parent_issue_id: parent_issue.id))
+
+      expect(client).to have_received(:add_labels_to_issue).with(
+        project.full_name, 42, [ "critical" ]
+      )
+    end
+
     it "skips labels when auto_add_labels disabled" do
       allow(project).to receive(:auto_add_labels_enabled?).and_return(false)
 
