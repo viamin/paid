@@ -127,7 +127,9 @@ module Activities
 
       # Match both bare (#123) and qualified (owner/repo#123) issue references,
       # capturing the optional qualifier so we can discard external-repo refs.
-      issue_ref_pattern = /([\w.\-]+\/[\w.\-]+)?#(\d+)\b/
+      # The \b anchor before the qualifier (or #) prevents in-token matches
+      # like C#123 or abc#456 from being treated as issue references.
+      issue_ref_pattern = /(?<!\w)([\w.\-]+\/[\w.\-]+)?#(\d+)\b/
 
       # Only count a qualified ref (owner/repo#NNN) as "own issue" when the
       # qualifier matches this project's full_name (case-insensitive, since

@@ -366,6 +366,25 @@ RSpec.describe Activities::CreatePullRequestActivity do
       end
     end
 
+    context "when agent summary contains in-token hash references like C#NNN" do
+      let(:other_issue) { create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open") }
+
+      before do
+        other_issue
+        # The summary contains a language/version token (C#) whose number happens
+        # to match a sibling issue — this should NOT trigger a mismatch.
+        agent_run.log!("stdout", "Updated the C##{other_issue.github_number} parser for ##{issue.github_number}")
+      end
+
+      it "does not treat in-token hash references as issue mentions" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        mismatch_log = agent_run.agent_run_logs.reload.where(log_type: "system")
+          .find { |l| l.content.include?("summary may describe a different issue") }
+        expect(mismatch_log).to be_nil
+      end
+    end
+
     context "when agent summary correctly references its own issue" do
       before do
         create(:issue, project: project, github_number: issue.github_number + 1000, github_state: "open")
