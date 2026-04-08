@@ -505,6 +505,26 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#cancelled_by_cleanup?" do
+      it "returns true when error_message starts with the cleanup prefix" do
+        agent_run = build(:agent_run, error_message: "#{AgentRun::STALE_CLEANUP_ERROR_PREFIX}Marked stale on startup")
+
+        expect(agent_run.cancelled_by_cleanup?).to be true
+      end
+
+      it "returns false for a normal error message" do
+        agent_run = build(:agent_run, error_message: "Provider timed out")
+
+        expect(agent_run.cancelled_by_cleanup?).to be false
+      end
+
+      it "returns false when error_message is nil" do
+        agent_run = build(:agent_run, error_message: nil)
+
+        expect(agent_run.cancelled_by_cleanup?).to be false
+      end
+    end
+
     describe "#total_tokens" do
       it "returns sum of input and output tokens" do
         agent_run = build(:agent_run, tokens_input: 1000, tokens_output: 500)

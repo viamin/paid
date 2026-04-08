@@ -10,6 +10,7 @@ class AgentRun < ApplicationRecord
   FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
   UNFINISHED_STATUSES = %w[queued pending running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
+  STALE_CLEANUP_ERROR_PREFIX = "[cleanup] "
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
@@ -482,6 +483,10 @@ class AgentRun < ApplicationRecord
 
   def successful?
     status == "completed"
+  end
+
+  def cancelled_by_cleanup?
+    error_message.to_s.start_with?(STALE_CLEANUP_ERROR_PREFIX)
   end
 
   def total_tokens
