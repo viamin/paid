@@ -12,7 +12,8 @@ module Activities
         issue = agent_run.issue
 
         client = project.github_token.client
-        pr = client.create_pull_request(
+        pr = find_existing_pull_request(client, project, agent_run.branch_name, agent_run_id: agent_run_id)
+        pr ||= client.create_pull_request(
           project.full_name,
           base: project.default_branch,
           head: agent_run.branch_name,
@@ -42,6 +43,33 @@ module Activities
     end
 
     private
+
+    # Look up an open PR already opened for this branch. Makes the activity
+    # idempotent: if a previous attempt created the PR but crashed before
+    # `agent_run.complete!` persisted, the retry reuses the existing PR
+    # instead of 422-ing on "A pull request already exists".
+    def find_existing_pull_request(client, project, branch_name, agent_run_id:)
+      owner = project.full_name.split("/").first
+      existing = client.pull_requests(project.full_name, state: "open", head: "#{owner}:#{branch_name}")
+      pr = Array(existing).first
+      return nil unless pr
+
+      logger.info(
+        message: "agent_execution.pull_request_reused",
+        agent_run_id: agent_run_id,
+        pull_request_url: pr.html_url,
+        pull_request_number: pr.number
+      )
+      pr
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "agent_execution.pull_request_lookup_failed",
+        agent_run_id: agent_run_id,
+        branch: branch_name,
+        error: e.message
+      )
+      nil
+    end
 
     def pr_title(issue)
       return "Agent changes" unless issue

@@ -12,7 +12,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:create_pull_request).and_return(pr_response)
+    allow(github_client).to receive_messages(create_pull_request: pr_response, pull_requests: [])
     allow(github_client).to receive(:add_labels_to_issue)
     # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
     # By default, return a failed response so the activity falls back to raw summary.
@@ -103,6 +103,42 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       result = activity.execute(agent_run_id: agent_run_no_issue.id)
       expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+    end
+
+    context "when an open PR already exists for the branch (retry after partial failure)" do
+      let(:existing_pr) { Struct.new(:html_url, :number).new("https://github.com/owner/repo/pull/77", 77) }
+
+      before do
+        allow(github_client).to receive(:pull_requests).with(
+          project.full_name,
+          state: "open",
+          head: "#{project.full_name.split('/').first}:#{agent_run.branch_name}"
+        ).and_return([ existing_pr ])
+      end
+
+      it "reuses the existing PR instead of creating a new one" do
+        expect(github_client).not_to receive(:create_pull_request)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:pull_request_number]).to eq(77)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/77")
+      end
+
+      it "marks the agent run as completed against the reused PR" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("completed")
+        expect(agent_run.pull_request_number).to eq(77)
+      end
+    end
+
+    it "falls through to create_pull_request when the lookup itself errors" do
+      allow(github_client).to receive(:pull_requests).and_raise(GithubClient::ApiError.new("boom"))
+      expect(github_client).to receive(:create_pull_request).and_return(pr_response)
+
+      expect { activity.execute(agent_run_id: agent_run.id) }.not_to raise_error
     end
 
     it "does not fail when label addition fails" do
