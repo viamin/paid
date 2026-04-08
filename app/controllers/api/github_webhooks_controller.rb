@@ -116,10 +116,17 @@ module Api
 
       # Only record feedback for successful (completed) runs to avoid skewing
       # metrics — mirrors the guard in HumanFeedbackCollectionJob#perform.
+      #
+      # Review-goal runs set source_pull_request_number (the PR they reviewed)
+      # instead of pull_request_number, so fall back to that lookup.
       @project.agent_runs
         .where(pull_request_number: pr_number, status: "completed")
         .order(created_at: :desc)
-        .first
+        .first ||
+        @project.agent_runs
+          .where(source_pull_request_number: pr_number, goal: "review", status: "completed")
+          .order(created_at: :desc)
+          .first
     end
 
     def find_agent_run_by_issue(issue_number)
