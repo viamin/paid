@@ -382,9 +382,15 @@ class GithubClient
     handle_errors do
       first_page = client.issue_comments(repo, number, per_page: 100, page: 1)
       last_rel = client.last_response&.rels&.dig(:last)
-      return first_page if last_rel.nil?
 
-      client.get(last_rel.href)
+      unless last_rel
+        first_page.define_singleton_method(:multi_page?) { false }
+        return first_page
+      end
+
+      last_page = client.get(last_rel.href)
+      last_page.define_singleton_method(:multi_page?) { true }
+      last_page
     end
   end
 
