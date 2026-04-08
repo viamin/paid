@@ -55,6 +55,7 @@ module Projects
       custom_prompt = params[:custom_prompt]&.strip.presence
       issue = resolve_issue
       source_pr_number = resolve_pull_request
+      priority_tier = resolve_priority_tier
 
       if goal == "review"
         unless source_pr_number
@@ -70,12 +71,15 @@ module Projects
         end
       end
 
+      apply_priority_label(issue, priority_tier) if issue && priority_tier
+
       create_run_and_redirect(
         on_error_path: new_project_agent_run_path(@project, goal: goal),
         issue: issue,
         custom_prompt: custom_prompt,
         source_pull_request_number: source_pr_number,
-        goal: goal
+        goal: goal,
+        priority_tier: priority_tier
       )
     end
 
@@ -441,6 +445,18 @@ module Projects
       @project.issues.find(params[:issue_id])
     end
 
+    def resolve_priority_tier
+      tier = params[:priority_tier].presence
+      tier if tier.present? && Project::PRIORITY_TIERS.include?(tier)
+    end
+
+    def apply_priority_label(issue, tier)
+      label_name = @project.priority_label_for(tier)
+      return if label_name.blank? || issue.labels.include?(label_name)
+
+      issue.update!(labels: issue.labels + [ label_name ])
+    end
+
     def resolve_pull_request
       return nil if params[:pull_request_id].blank?
 
@@ -461,7 +477,7 @@ module Projects
       @agent_run.reload
     end
 
-    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil, trigger_type: "manual")
+    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, provider_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil)
       requested_agent_type = agent_type || params[:agent_type].presence
       requested_provider_identifier = provider_identifier || params[:provider].presence
       resolved_provider = resolve_provider_selection(
@@ -484,7 +500,8 @@ module Projects
         source_pull_request_number: source_pull_request_number,
         goal: goal,
         trigger_type: trigger_type,
-        status: "queued"
+        status: "queued",
+        priority_tier: priority_tier
       )
     end
 
