@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_04_161335) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_07_230340) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pg_trgm"
@@ -587,12 +587,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_161335) do
     t.boolean "supports_json_output", default: false, null: false
     t.boolean "supports_tools", default: false, null: false
     t.boolean "supports_vision", default: false, null: false
+    t.string "tier", limit: 10
     t.datetime "updated_at", null: false
     t.index ["active"], name: "index_llm_models_on_active"
     t.index ["category"], name: "index_llm_models_on_category"
     t.index ["model_id"], name: "index_llm_models_on_model_id", unique: true
     t.index ["provider", "active"], name: "index_llm_models_on_provider_and_active"
     t.index ["provider"], name: "index_llm_models_on_provider"
+    t.index ["tier"], name: "index_llm_models_on_tier"
+    t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying, 'mid'::character varying, 'high'::character varying]::text[]))", name: "llm_models_tier_check"
   end
 
   create_table "mcp_server_definitions", force: :cascade do |t|
@@ -742,7 +745,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_161335) do
     t.datetime "last_github_activity_at"
     t.datetime "last_polled_at"
     t.integer "max_draft_review_rounds", default: 10, null: false
-    t.integer "max_execution_seconds", default: 1800, null: false
+    t.integer "max_execution_seconds", default: 3600, null: false
     t.integer "max_pr_followup_runs", default: 8, null: false
     t.integer "max_tokens_per_run"
     t.string "merge_method", default: "squash", null: false
@@ -848,10 +851,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_161335) do
     t.string "name", limit: 100, default: "", null: false
     t.bigint "provider_api_key_id"
     t.string "provider_key", limit: 50, null: false
+    t.jsonb "tier_model_ids", default: {}, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.index ["auth_type"], name: "index_providers_on_auth_type"
     t.index ["provider_api_key_id"], name: "index_providers_on_provider_api_key_id"
+    t.index ["tier_model_ids"], name: "index_providers_on_tier_model_ids", using: :gin
     t.index ["user_id", "provider_key", "provider_api_key_id", "name"], name: "idx_providers_unique_api_key", unique: true, where: "((auth_type)::text = 'api_key'::text)"
     t.index ["user_id", "provider_key"], name: "idx_providers_unique_subscription", unique: true, where: "((auth_type)::text = 'subscription'::text)"
     t.index ["user_id"], name: "index_providers_on_user_id"
@@ -955,7 +960,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_04_161335) do
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
-    t.integer "container_timeout_seconds", default: 1800, null: false
+    t.integer "container_timeout_seconds", default: 3600, null: false
     t.datetime "created_at", null: false
     t.string "default_agent_provider", default: "claude", null: false
     t.jsonb "default_allowed_github_usernames", default: [], null: false

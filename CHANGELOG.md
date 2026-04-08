@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.16.0](https://github.com/viamin/paid/compare/v0.15.0...v0.16.0) (2026-04-07)
+
+
+### Features
+
+* **projects:** show recently merged pull requests ([#774](https://github.com/viamin/paid/issues/774)) ([df585ff](https://github.com/viamin/paid/commit/df585ff129d85be93a6b90e8334227925571429d))
+* **providers:** add z.ai to DIRECT_OUTBOUND_API_PROVIDERS ([1c844c1](https://github.com/viamin/paid/commit/1c844c170f613a3495ec6930b0f3fbd9e04ff078))
+* **providers:** add z.ai to DIRECT_OUTBOUND_API_PROVIDERS ([9213c86](https://github.com/viamin/paid/commit/9213c863cf23cd36fe50839ca1fda904ae288c5e)), closes [#845](https://github.com/viamin/paid/issues/845)
+* **providers:** multi-provider direct outbound for OpenCode and KiloCode ([#769](https://github.com/viamin/paid/issues/769)) ([925c800](https://github.com/viamin/paid/commit/925c800b7aa7deff56e3eddb454494cce586fe0f))
+* **providers:** register z.ai in API_SERVICE_TYPES only ([8895586](https://github.com/viamin/paid/commit/8895586ed1892d0d9782ce28c717d35a1efcb18d))
+* **providers:** register z.ai in API_SERVICE_TYPES only ([10cc193](https://github.com/viamin/paid/commit/10cc193fdfded5d1b40eff325cc8496b86aefd54))
+* **reviews:** add OpenAI Codex as a configurable PR review method ([aa16856](https://github.com/viamin/paid/commit/aa16856e8e7b4710e43b025c07b77ce64b87b53d))
+* **reviews:** add OpenAI Codex as a configurable PR review method ([336105a](https://github.com/viamin/paid/commit/336105ae939ac0db49b1fe9307ce42c51a4f07e4)), closes [#804](https://github.com/viamin/paid/issues/804)
+
+
+### Bug Fixes
+
+* 698: feat(orchestration): conflict detection and resolution for parallel agents ([#758](https://github.com/viamin/paid/issues/758)) ([e82990c](https://github.com/viamin/paid/commit/e82990cbdbc043b87267221d2e02c423cd717430))
+* 701: feat(guardrails): add token usage limits per agent run ([#761](https://github.com/viamin/paid/issues/761)) ([8a2c631](https://github.com/viamin/paid/commit/8a2c631e7a63322215ac3c78deff9d14b843eed8))
+* 704: feat(guardrails): implement anomaly detection for agent behavior ([#766](https://github.com/viamin/paid/issues/766)) ([270f983](https://github.com/viamin/paid/commit/270f983296137b40c6d59d044903490a23235d1d))
+* 705: feat(guardrails): automatic pause and alert system for guardrail violations ([#768](https://github.com/viamin/paid/issues/768)) ([01b2e5d](https://github.com/viamin/paid/commit/01b2e5dfdcbb31d32ea1375fa9035efd11233557))
+* 707: feat(evolution): random sampling of completed runs for prompt evaluation ([#773](https://github.com/viamin/paid/issues/773)) ([85c1322](https://github.com/viamin/paid/commit/85c13225432ee6a915f79c9fafa408025958f0dc))
+* 708: feat(evolution): implement prompt mutation agent ([#772](https://github.com/viamin/paid/issues/772)) ([2b180ba](https://github.com/viamin/paid/commit/2b180ba886158b8136a10030dc843d11db7baa8a))
+* 722: feat(performance): worker pool tuning and optimization ([#816](https://github.com/viamin/paid/issues/816)) ([e02c3e8](https://github.com/viamin/paid/commit/e02c3e8740cebae756c73a66a85160446779a403))
+* add missing frozen_string_literal comment to output_sanitizer.rb ([6150103](https://github.com/viamin/paid/commit/6150103213020c0d04073d9f3dcb2447ba9d9967))
+* **agent-runs:** address binary output review feedback ([f08d6aa](https://github.com/viamin/paid/commit/f08d6aa7e4ac9e5a97eb05d35640c9fca541db89))
+* **agent-runs:** clarify automatic run provider refresh semantics ([67e0bfb](https://github.com/viamin/paid/commit/67e0bfb67e87a3902f6e8d009612488623225be7))
+* **agent-runs:** document sanitizer nil fast path ([e13bf22](https://github.com/viamin/paid/commit/e13bf2225e250ab08539cf5ce08749fb9b671e34))
+* **agent-runs:** harden output normalization ([f484728](https://github.com/viamin/paid/commit/f4847282363d3e5c008b6c294f8c2925c124e755))
+* **agent-runs:** honor provider routing and primary selection ([31fed0b](https://github.com/viamin/paid/commit/31fed0b571c79daf8c5e29d3af9b924bba961df7))
+* **agent-runs:** honor provider routing and primary selection ([2f84e07](https://github.com/viamin/paid/commit/2f84e071e5eb4a954d9c439c3f317e43a3bb7770))
+* **agent-runs:** ignore echoed prompts in rate limit detection ([da14056](https://github.com/viamin/paid/commit/da1405665fb334d30dd8a5ab4de01d7a4a7f4e9f))
+* **agent-runs:** ignore echoed prompts in rate limit detection ([e026a48](https://github.com/viamin/paid/commit/e026a480d1a64c446b56c694819e64c660e597b8))
+* **agent-runs:** normalize binary agent output ([076a38e](https://github.com/viamin/paid/commit/076a38e1661bcceed772a89c791b21ea002df21b))
+* **agent-runs:** normalize binary agent output ([cc996c3](https://github.com/viamin/paid/commit/cc996c31eec95b8772195f1ea1c1854357397ef5))
+* **agent-runs:** normalize binary output fallback paths ([53f84d2](https://github.com/viamin/paid/commit/53f84d2fc39af262c4c662a3d037dbd7576f9456))
+* **agent-runs:** normalize binary output fallback paths ([67351d4](https://github.com/viamin/paid/commit/67351d4023c04456062dc7181777595c851ec25b))
+* **agent-runs:** preserve utf-8 output bytes ([c39244a](https://github.com/viamin/paid/commit/c39244a2e73016d4a5ace1c62b30143660d1e51e))
+* **agent-runs:** refresh provider selection and require explicit provider models ([8f1d847](https://github.com/viamin/paid/commit/8f1d847d149438064d52e6690f51f1016e678558))
+* **agent-runs:** refresh provider selection and require explicit provider models ([6d2d4c9](https://github.com/viamin/paid/commit/6d2d4c960ad1f434a5b695d1e1cdd24f2135a509))
+* **agent-runs:** remove rails helper asset bootstrap ([167546b](https://github.com/viamin/paid/commit/167546b12489b86e6007ece386a52d3ce9164851))
+* **agent-runs:** restore test setup safeguards ([bc020a7](https://github.com/viamin/paid/commit/bc020a7b8df7da38ae7c0592d557d08df0524955))
+* **agent-runs:** unify poll-triggered scheduling behind queue ([#806](https://github.com/viamin/paid/issues/806)) ([5734eb3](https://github.com/viamin/paid/commit/5734eb30e1dcee0ba561d94d5b4e6219b9fb92a4))
+* **devcontainer:** configure KiloCode auto-approval inside container only ([8b5f99d](https://github.com/viamin/paid/commit/8b5f99d35f2a04aae4371e98e19929ef48df4e02))
+* **devcontainer:** configure KiloCode auto-approval inside container only ([8dcc906](https://github.com/viamin/paid/commit/8dcc906ade82e660f56b729ef37a5ae5c8ff7ad5)), closes [#861](https://github.com/viamin/paid/issues/861)
+* **projects:** expose security automation settings ([#765](https://github.com/viamin/paid/issues/765)) ([caf147f](https://github.com/viamin/paid/commit/caf147f409a0762d16ec411d6a92744bab7eb09a))
+* **providers:** align required model messaging and specs ([df79ae5](https://github.com/viamin/paid/commit/df79ae54c6b23e98f1bbe75bce3e7f4b29b50b2d))
+* **providers:** repair Copilot CLI container integration ([#786](https://github.com/viamin/paid/issues/786)) ([960907c](https://github.com/viamin/paid/commit/960907c5c37905e43d6b58db29b128c105a0073d))
+* **providers:** restore codex sandbox bypass for test agent ([6b4fb87](https://github.com/viamin/paid/commit/6b4fb87540e18b6ad294efc079877723ba5db21a))
+* **providers:** restore codex sandbox bypass for test agent ([db5edc8](https://github.com/viamin/paid/commit/db5edc81d36d6aff39f285ae7456c423395ec1d8))
+* **providers:** sync test agent status with rate limit results ([10f27bb](https://github.com/viamin/paid/commit/10f27bbc6329bb4de05bc7acfce14e560722d1d3))
+* **providers:** sync test agent status with rate limit results ([7c8a640](https://github.com/viamin/paid/commit/7c8a640ce859f161e17b96bd5f08b14d4d374538))
+* **reviews:** permit codex review settings in project updates ([0a1f1a4](https://github.com/viamin/paid/commit/0a1f1a453e36d2f8d45b6144f0181a3479c77cd2))
+* **reviews:** scope review bot detection to enabled methods; use trigger login for review requests ([ce7e5e9](https://github.com/viamin/paid/commit/ce7e5e98a6b56793587204f75933943420b51743))
+
 ## [0.15.0](https://github.com/viamin/paid/compare/v0.14.2...v0.15.0) (2026-04-03)
 
 
