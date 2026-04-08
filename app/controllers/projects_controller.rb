@@ -198,7 +198,8 @@ class ProjectsController < ApplicationController
       :auto_add_labels_enabled, :automation_on_label_enabled, :pr_aggregation_enabled,
       :inherit_priority_labels,
       :agent_co_author_trailer,
-      allowed_github_usernames: [])
+      allowed_github_usernames: [],
+      priority_labels: Project::PRIORITY_TIERS.map(&:to_sym))
   end
 
   TERMINATION_KEYS = %i[max_review_rounds stop_when_no_comments quality_threshold timeout_minutes].freeze
