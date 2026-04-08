@@ -93,7 +93,7 @@ module Activities
       end
 
       if consecutive_draft_failures_breaker?(project, issue)
-        return escalate_trigger(issue)
+        return escalate_trigger(issue, reason: "Consecutive draft follow-up failures (#{MAX_CONSECUTIVE_DRAFT_FAILURES} runs with no output)")
       end
 
       skip_comment_signals = project.max_draft_review_rounds.zero?
@@ -250,13 +250,13 @@ module Activities
       }
     end
 
-    def escalate_trigger(issue)
+    def escalate_trigger(issue, reason: "Draft review limit reached")
       log_triggers(issue.project, issue, [ { type: "escalate_to_owner" } ])
 
       {
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "escalate_to_owner", details: "Draft review limit reached" } ],
+        triggers: [ { type: "escalate_to_owner", details: reason } ],
         phase: issue.pr_review_phase,
         current_draft_review_count: issue.draft_review_count,
         owner_reviewer_login: issue.project.owner_reviewer_login

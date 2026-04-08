@@ -1348,7 +1348,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           created_at: created_at)
       end
 
-      it "escalates after 3 consecutive no-output failures" do
+      it "escalates after 3 consecutive no-output failures with breaker-specific reason" do
         3.times { |i| create_draft_run(status: "timeout", iterations: 0, created_at: i.minutes.ago) }
 
         result = activity.execute(project_id: project.id)
@@ -1356,6 +1356,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(result[:prs_to_trigger].size).to eq(1)
         trigger = result[:prs_to_trigger].first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
+        expect(trigger[:triggers].first[:details]).to include("Consecutive draft follow-up failures")
       end
 
       it "does not escalate when a recent run produced output" do
